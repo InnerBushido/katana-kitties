@@ -557,6 +557,155 @@ limit: leaving the island is the way out.
 - Bamboo: SPOTTED sent her to the start with +10s on her card. The first
   lantern lit in her colour, and the cones lie clipped by the canes.
 
+## Stage 5 — the Arena School, ranks and Shadow Lionheart
+
+Two more islands. 闘技 **ARENA SCHOOL** (ang 180, dist 150, r 28) is straight
+across from the hub. 影 **SHADOW LIONHEART** (dist 330, dy 26) is past it, by a
+light cycle that starts on the **school's far rim** (`spec.from`) rather than at
+the hub. A road from the hub would run across the school's floor, and
+`world-check` refuses any crossing that touches an island it does not end on.
+
+### 闘技 The Arena School (`dream/school.js`)
+
+- **Six practice pads (対), one per tournament mode**, in `MODES` order round
+  the ring. Each runs a 40s round against holo-kittens under the arena's own
+  rules. `decideOnTime` and `purseSplit` are now **exported from
+  tournament.js and called by both**, so the school cannot teach a rule the
+  arena does not use. `sideMean` is checked against `_sideHealth` on 300 random
+  sides.
+- In a handicap mode **she takes the handicapped seat** (`HER_SEAT`). Her blade
+  on a partner is refused in words.
+- A holo-kitten **turns white and winds up for 0.65s before every blow**. A
+  blow on her goes through `simHit`; holo-on-holo is plain arithmetic.
+- **Knocked out? The round goes on** with her counted as nought, which is the
+  tournament's rule. This uses the drill's new `caught` hook: `_simCatch` asks
+  the drill first, and only fails a drill that has no answer.
+- **板 The scoreboard** shows the nearest live round:
+  - each side's health and hits landed;
+  - who is ahead and **why** (health LEFT, or level and ahead on hits);
+  - what the purse would pay.
+
+  With nothing live, it explains the four rules. **A decided round stays up
+  for 12s** (`BOARD_HOLD`). The drill is disposed about 3s after it ends, and
+  the board used to drop back to the rules before anybody had turned round to
+  read it. Found in the browser.
+- **食 THE FEAST** is the menagerie's eating, in holograms. A blow stuns a
+  critter and never breaks it (an `accept` refusal). She stands still and
+  **holds** attack for 2s, and letting go starts the chew again. It heals what
+  the real critter heals, and starts her at 40% SIM so there is something to
+  heal. The floor was `PEN_R + 3`, and the pad is 13 out, so the drill went
+  live and stopped her for leaving the floor she was standing on. A check now
+  starts every school pad and keeps her on it.
+
+### 剣士 Ranks, the Fighter Card and the rotation (`dream/rank.js`)
+
+| rank | needs |
+| --- | --- |
+| KENSHI 3rd Class | — |
+| KENSHI 2nd Class | 24★ — and Shadow Lionheart only fights 2nd Class and up |
+| KENSHI 1st Class | 60★ **and** a win over the Shadow |
+
+First Class is the one rank stars alone cannot buy. A total can be earned an
+easy star at a time, but the final exam cannot.
+
+**The Fighter Card** (札 kiosk) is Richard's Belegarth card in the game's own
+frame:
+- her portrait, read from cell (0,0) of her own sprite sheet;
+- her name in her colour, her rank, her signature move (the gallery drill she
+  has starred best) and her stars;
+- foil that catches the light as she walks round it.
+
+It is drawn from `cardFacts`, which is pure, so the card cannot say anything
+the progress store does not.
+
+**Today's training** (今日 kiosk) is one drill a day and one a week, out of a
+pool of 32. The pick is FNV-1a over `dayKey` / `weekKey`, so two tablets set
+two sisters the same drill. The weekly pick is never the daily one.
+- Clearing the daily pays +1★.
+- Three-starring the weekly pays +2★.
+- Both are written as stars under their own ids (`daily.<day>`,
+  `weekly.<week>`), so the rank counts them with no second rule.
+- An unfinished *today* does not break a streak.
+
+### 影 Shadow Lionheart (`dream/shadow.js`)
+
+The co-op final exam. His bar is 24 blows for one kitten, plus 12 per sister.
+He has 240s. A kitten the simulator catches is set back down at the ring's
+edge, at a cost of +15s on her time, and the fight goes on.
+
+His three moves are each **drawn on the floor by the same function that tests
+the hit**: every telegraph corner was checked inside and outside, 0 wrong.
+- **SLAM**: a red line. Step out of it, or Flash Step.
+- **SWEEP**: a red disc. Jump; a jump is clear for 0.75s against a 1.1s tell.
+- **CROSS SLASH** (phase two, at half his bar): an X laid on *her*. After it
+  he is **OPEN** for 2.2s, and every blow counts twice.
+
+He only telegraphs a phase-one blow once she is inside its reach. A slam whose
+line stopped 11 short of her taught nothing.
+
+**The win pays the tenth quest**, 🦁 *Lionheart's Honor*: a free Powerup
+Kotodama at the award ceremony. It is the only quest marked `late`, so it
+**counts after the Awakening** too. That is a deliberate exception to "after
+100% doesn't count", because the Dream Dojo is where an afternoon goes after
+the ending.
+
+#### Staging — found in the browser, all of it
+
+- **Pressing the kiosk lost the fight.** The kiosk is 24.04 from the ring's
+  middle, and the walk-off line is 24. The kitten who pressed was the first to
+  "leave", and the fight was lost on its first frame. She is now **stepped
+  in** at the entry. The old check had stood her on the floor before
+  pressing.
+- **His 9.3-tall back filled her pane.** The game's camera never turns, so he
+  now closes on her from **upstage**: of the spots `BOSS_CLOSE` from her that
+  are on his floor, the furthest from the lens. He walks *round* her, never
+  through her.
+  - **The hub-side entry left him nowhere to stand.** The fixed lens looks out
+    across the ring there, so he ended 4.08 downstage of her. The entry is now
+    the ring's **downstage edge**, and he may walk out to the ring line + 2.
+    The line is her walk-off rule, not his.
+  - **If he is in the way anyway, he and his card fade to 45%.** At 28% he
+    vanished into the floor.
+- **His head was at NDC 1.23**, off the top of the pane, through the walking
+  camera. The fight now has its own **focus**, the way the Dojo does: 34 back,
+  pitch 0.5, aimed 4 up and 40% of the way to him. The yaw is never changed,
+  because the staging is measured off it.
+
+  | shot | his head | her feet |
+  | --- | --- | --- |
+  | walking (24, 0.66) | **1.23** | — |
+  | 30 / 0.52 | 0.63 | −0.39 |
+  | **34 / 0.50** | **0.51** | −0.37 |
+  | 38 / 0.46 | 0.43 | −0.36 |
+
+  `world-check` rebuilds this camera from player.js's own fov and yaw, and gets
+  0.50 / −0.36.
+- **The island's sign drew over him.** It is `renderOrder` 8, so it wins at any
+  depth. It is hidden while a fight is on.
+- **His card hangs at his screen-right**, not over his head, where the HUD's
+  pills are. It is drawn 1.4× so his lines can be read from 34 back. At 1.6× it
+  reached 0.96 of the way to a side-by-side pane's edge. The check measures
+  every pane shape with its real `paneWiden`: 16:9 ×1, 1.10 ×1.21, 0.89 ×1.50
+  and 0.67 ×2.64. The card stays inside 0.86 in all of them.
+
+### Stage 5 verified in the browser
+
+- **Feast:** live at 40% SIM. A stunned rat lies on its side, and the pen holds
+  all three critters.
+- **Tag Team:** the round ran live with partner and foes trading blows, and the
+  drill card read RED 67% · BLUE 100%. The duel board read the leader, the
+  hits, the tie-break line and the purse.
+- **Shadow:**
+  - started from the kiosk, she stays in the fight;
+  - he closes straight down the view line, upstage of her every time it was
+    sampled;
+  - the slam, sweep and Cross Slash all read on the floor;
+  - the win paid ★★ at 118s, and the real `Feats` toasted *Lionheart's Honor*,
+    with the gold token circling her.
+- **Fighter Card:** her portrait, the rank header and the stats, read back off
+  its canvas.
+- **Today board:** renders with the title de-duplicated.
+
 ## Voice
 
 Lionheart has **no recorded lines yet**, and his bubbles are text only.
@@ -580,11 +729,15 @@ When a voice exists, register it in [voices.md](voices.md) with its id.
    Built (stage 3, above).
 3. ~~**Bridges and light-cycles**, Kudamono Storm, Sine Gauntlet, Holo-Sentries,
    and Bamboo Infiltration.~~ Built (stage 4, above).
-4. **Arena School**, ranks (剣士 KENSHI and up), the holographic Fighter Card,
-   the daily and weekly rotation, and the **Shadow Lionheart** boss.
-5. **VR kitten sheets** for all four kittens (the "do both" look: the visor in
-   the real world, a generated VR sprite in the sim). Health bars only on
-   enemies tougher than three hits.
+4. ~~**Arena School**, ranks (剣士 KENSHI and up), the holographic Fighter Card,
+   the daily and weekly rotation, and the **Shadow Lionheart** boss.~~ Built
+   (stage 5, above).
+5. **VR kitten sheets** for all four kittens, plus a combat sheet for the
+   Shadow. This is the "do both" look: the visor in the real world, a generated
+   VR sprite in the sim. Generated on magenta, after a cost preflight, and so
+   is the Lionheart voice audition (three energetic young-male presets on the
+   Honor line). ~~Health bars only on enemies tougher than three hits~~: done,
+   `maxHits > 3` gets a SimBar.
 
 **Non-negotiable 3 holds in all of them.** Anything that hits in the sim is a
 hologram on the `TrainingGate`, reached through the sim's own hud. `world-check`

@@ -671,6 +671,48 @@ const SATAN_SHOT = { dist: 19, lift: 1.9, pitch: 0.16 };
 export const FEAST_TIME = 15;
 export const REGEN_FRAC = 0.10;
 
+/* ---------------------------------------------------------------------------
+   THE TWO RULES, AS FUNCTIONS — so the Dream Dojo's Arena School teaches the
+   ring's own answer and not a description of it.
+
+   Both used to live only inside `callRound` and `_payPurse`, which was fine
+   while the ring was the only thing that needed them. The school's scoreboard
+   (systems/dream/school.js) decides practice rounds and prints the purse, and
+   a copy of either rule there would be a lesson that could drift from the
+   game it teaches. These are lifted out verbatim and the tournament calls them
+   too; `world-check` pins that both sides import the same function.
+--------------------------------------------------------------------------- */
+
+/**
+ * Who leads when the clock runs out. `health[s]` is side s's MEAN bar (0..1,
+ * see `_sideHealth`) and `damage(s)` what it dealt this round. Level on health
+ * falls through to damage — and only when somebody dealt any, or the draw
+ * would stop existing (see `callRound`).
+ *
+ * @returns {{ leaders: number[], onDamage: boolean }} one leader is a win
+ */
+export function decideOnTime(health, damage) {
+  const best = Math.max(...health);
+  let leaders = health.map((v, s) => (v === best ? s : -1)).filter((s) => s >= 0);
+  let onDamage = false;
+  if (leaders.length > 1) {
+    const dmg = leaders.map((s) => damage(s));
+    const top = Math.max(...dmg);
+    if (top > 0) {
+      onDamage = true;
+      leaders = leaders.filter((_, k) => dmg[k] === top);
+    }
+  }
+  return { leaders, onDamage };
+}
+
+/** One orb's price, split between the winners; the odd points go to the
+ *  kitten named winner (see `_payPurse`). */
+export function purseSplit(purse, n) {
+  const share = n > 0 ? Math.floor(purse / n) : 0;
+  return { share, odd: purse - share * n };
+}
+
 export class Tournament {
   constructor({ game, world, audio, announcer }) {
     this.game = game;
@@ -1467,8 +1509,6 @@ export class Tournament {
        what the team has left between them, not which individual is healthiest.
        `_sideHealth` is a MEAN, so a side is never rewarded for being bigger. */
     const health = this.wins.map((_, s) => this._sideHealth(s));
-    const best = Math.max(...health);
-    let leaders = health.map((v, s) => (v === best ? s : -1)).filter((s) => s >= 0);
     /* DEAD LEVEL ON HEALTH FALLS THROUGH TO THIS ROUND'S DAMAGE, and it is
        not an edge case: two kittens who never touched each other are both on
        100%, and so are two who only ever spent each other's green. Something
@@ -1477,16 +1517,9 @@ export class Tournament {
 
        `> 0` MATTERS. Without it a round where nobody landed anything would
        find every side level on nought, pick the first one, and crown her — the
-       draw would stop existing. */
-    let onDamage = false;
-    if (leaders.length > 1) {
-      const dmg = leaders.map((s) => this._roundDamage(s));
-      const top = Math.max(...dmg);
-      if (top > 0) {
-        onDamage = true;
-        leaders = leaders.filter((_, k) => dmg[k] === top);
-      }
-    }
+       draw would stop existing. Both halves are `decideOnTime` now, so the
+       Arena School's scoreboard asks the very same question. */
+    const { leaders, onDamage } = decideOnTime(health, (s) => this._roundDamage(s));
     /* HIS SENTENCE BEFORE THE ROUND'S. On the clock this starts ZERO and hands
        back how long it runs; on anything else it silences him and hands back
        nought, and both endings below read the same either way. */
@@ -2101,8 +2134,7 @@ export class Tournament {
   _payPurse(winners) {
     const purse = this.game.kotodama?.price ?? 0;
     if (purse <= 0 || !winners.length) return;
-    const share = Math.floor(purse / winners.length);
-    const odd = purse - share * winners.length;
+    const { share, odd } = purseSplit(purse, winners.length);
     const split = winners.length > 1;
     for (const p of winners) {
       const got = share + (p === this.winner ? odd : 0);

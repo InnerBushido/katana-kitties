@@ -368,7 +368,36 @@ does, and which button does it.
 
 Things in there hit your **SIM bar**, not your real health.
 
-More islands are still being built.
+Straight across from the start is the **Arena School**:
+
+- **Practice rounds.** There's one pad for every kind of arena fight: a duel,
+  free-for-all, tag team, and the handicap ones. Each is a short round against
+  hologram kittens. A hologram flashes **white** just before it swings, so
+  watch for it. The big **scoreboard** shows who's ahead and *why*: the most
+  health LEFT wins when time runs out, and if that's level, whoever landed
+  more.
+- **The Feast.** Practise eating in the arena. Bonk a hologram rat (or rabbit,
+  or bird) to stun it, stand still, and **hold** attack to eat it. Let go and
+  you have to start chewing again!
+- **Your Fighter Card.** Stand at the 札 kiosk and a shiny card floats up with
+  your picture, your **rank**, your best move and your stars. Ranks go
+  **KENSHI 3rd Class → 2nd Class → 1st Class** as your stars add up.
+- **Today's training.** A board names one drill for today (+1 bonus star) and
+  one for the week (+2 if you get three stars on it).
+
+Ride the light cycle off the far side of the school to fight **Shadow
+Lionheart**, a giant purple copy of Lionheart. He only fights **2nd Class and
+up**, and everyone on his floor fights together:
+
+- Red on the floor shows where he's about to hit. A **red line** means step out
+  of it.
+- A **red circle** means JUMP.
+- At half health he starts doing the **Cross Slash**, an X right where you're
+  standing. Get out of it, then hit him while he glows gold, because every
+  hit counts twice!
+
+Beat him and everybody in the fight earns **Lionheart's Honor**, a free
+Powerup Kotodama. That's the only way to reach **1st Class**.
 
 ## Collect the seven dragon balls
 
@@ -703,7 +732,8 @@ quick blessing pose, as a promise. When the Kotodama wake there is an **award
 ceremony**: one kitten at a time, all of her gold orbs turn into real ones at
 once, she holds the blessing pose with her own camera pushed in on her, and a
 card names every orb she won in its own colour. Nobody flies to the arena until
-the last kitten has had her turn. Anything done after 100% doesn't count. A
+the last kitten has had her turn. Anything done after 100% doesn't count, except
+beating Shadow Lionheart in the Dream Dojo, which counts **any time**. A
 kitten already wearing eight gets hers in her **bag**; only one whose bag is
 full as well is told on her card that there was no room.
 
@@ -713,6 +743,7 @@ full as well is told on her card that there was no room.
 | Student of the circle | everybody | 45 seconds in the Dojo of the Turning Circle |
 | Panda keeper | everybody | raise a panda to fully grown |
 | Dragon pilot | everybody | fly Ryuuseki from the front seat |
+| Lionheart's Honor | everybody | beat Shadow Lionheart in the Dream Dojo (counts any time) |
 | Beam gunner | the **first** | 45 seconds in Ryuuseki's second seat |
 | The very last one | one | knock over the last piece of mischief |
 | Most mischief | the leader | knock over the most things |

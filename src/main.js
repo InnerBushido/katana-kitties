@@ -10078,7 +10078,11 @@ class Game {
          world x/z axes up with the screen, so the diagram reads exactly like
          the graph paper it's teaching. */
       const cave = near ? null : this.world.grottoAt(p.position.x, p.position.z);
-      if (near) {
+      // Shadow Lionheart's two-shot (dream/shadow.js): only in the sim, so it
+      // can never meet the Dojo, the grotto or the big screen.
+      const shadowShot = near || p.mount ? null : this.dream?.shadow?.cameraFocus?.(p) ?? null;
+      if (shadowShot) p.setFocus(shadowShot);
+      else if (near) {
         p.setFocus({
           centre: dc,
           /* Was a hard-coded 104 while the merged rig read DOJO_DIST — so a

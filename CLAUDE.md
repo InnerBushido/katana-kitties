@@ -173,14 +173,15 @@ src/
                DROP HER ORBS row, and an orb left lying in the town is saved
                with its coordinates and comes back on the same spot. Leaving
                also autosaves, since the party and the orbs both just moved)
-             feats (the quests: nine ways to earn a free Powerup Kotodama,
+             feats (the quests: ten ways to earn a free Powerup Kotodama,
                earned before 100% as a gold token circling her and paid at an
                AWARD CEREMONY once the ending is out of the way — one KITTEN
                at a time, everything she won at once, on one card she is given
                time to read, with the arena's door shut until the last turn is
                done. The five that only one kitten can win draw from the whole
                roster, rares included. One list, read by the Help card and the
-               profile checklist)
+               profile checklist. The tenth — beating Shadow Lionheart in the
+               Dream Dojo — is marked `late` and counts after 100% too)
              kotodama  profile  cutscene  shrinescene  summonscene
              mathdojo  minimap (ONE PER PANE by default — *Settings ▸ Minimaps*
                is "one in every window" or "only two, shared", and at two

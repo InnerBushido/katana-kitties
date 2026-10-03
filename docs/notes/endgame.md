@@ -1076,6 +1076,7 @@ looks exactly like one arriving on time once the ceremony has finished.
 | `mischief` | most | her own `onMischief` tally, settled in `onAwaken` |
 | `balls` | most | settled by the seventh star (cheered after the summoning scene), or in `onAwaken` if it never came |
 | `orbs` | most | the plain-orb prize — whoever collected the most, settled from `awaken`'s `winners` |
+| `shadow` | each | beat Shadow Lionheart in the Dream Dojo — the TENTH, and the only one marked `late` |
 
 **EARNED BEFORE THE END, PAID AT IT.** No Powerup Kotodama exists before 100%,
 so what a kitten gets on the spot is a promise she can see: a smaller, gold copy
@@ -1083,7 +1084,11 @@ of the plain `Orb` with the working switched off, one per unpaid quest, plus the
 `quest` chime, a toast, and — on foot only — `holdAloft(null, 1.2, { zoom: false })`,
 which is the "slight pause" through the dead pad without the camera move. The
 door is `!kotodama.awakened` and nothing else; after it `earn` and the counters
-refuse.
+refuse — **except a quest marked `late`**, and there is one: Shadow Lionheart
+(stage 5 of [the Dream Dojo](dreamdojo.md)). The Dojo is where an afternoon goes
+once the ending is done, so its final exam counts either side of it; earned
+after, the ceremony pays it the same way, because the ceremony pays any quest
+not yet paid.
 
 **THE PAYOUT IS A QUEUE, NOT AN ENDING CALLBACK.** Seventh non-negotiable: it
 waits for `_finaleDue` and `_sceneActive()` to clear, then a 1.5s beat, then the

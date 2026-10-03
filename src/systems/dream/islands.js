@@ -31,8 +31,10 @@ export const ISLANDS = {
   sine: { ang: -116, dist: 150, r: 26, dy: 5, name: 'SINE GAUNTLET', kanji: '正弦' },
   sentries: { ang: 150, dist: 250, r: 26, dy: 10, name: 'HOLO-SENTRIES', kanji: '番兵', cycle: true },
   bamboo: { ang: -150, dist: 250, r: 30, dy: 0, name: 'BAMBOO INFILTRATION', kanji: '忍', cycle: true },
-  school: { ang: 180, dist: 150, r: 28, dy: 0, name: 'ARENA SCHOOL', kanji: '闘技', },
-  shadow: { ang: 180, dist: 330, r: 30, dy: 26, name: "SHADOW LIONHEART", kanji: '影', cycle: true },
+  school: { ang: 180, dist: 150, r: 28, dy: 0, name: 'ARENA SCHOOL', kanji: '闘技' },
+  /* STRAIGHT ON PAST THE SCHOOL, so its highway starts on the school's far
+     rim (`from`) rather than at the hub — see `_raiseIsland`. */
+  shadow: { ang: 180, dist: 330, r: 30, dy: 26, name: 'SHADOW LIONHEART', kanji: '影', cycle: true, from: 'school' },
 };
 
 /**
