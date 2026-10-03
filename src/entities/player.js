@@ -1854,6 +1854,10 @@ export class Player {
        the trip: with the stick back in her paws halfway up the inside of the
        wall, a kitten who is not pushing anything stops dead over the benches. */
     if (this.vaulting) pad = FROZEN_PAD;
+    /* ...AND BEING HELD IN A VR TUBE. `pinnedAt` is the Dream Dojo's: while a
+       kitten floats up into the headset, or down out of it, the arcade owns
+       where she is and her stick owns nothing. See systems/dreamdojo.js. */
+    if (this.pinnedAt) pad = FROZEN_PAD;
 
     /* NO POWER MOVE SURVIVES GETTING ON AN ANIMAL. `_stepSpecials` only runs
        inside the ground controller, so a ward popped a frame before mounting
@@ -1874,6 +1878,17 @@ export class Player {
     else if (this.rideAlong) this._updatePassenger(dt, pad, world, hud);
     else if (this.mount) this._updateFlight(dt, pad, world, hud);
     else this._updateGround(dt, pad, world, dragons, hud);
+
+    /* PINNED: put her back where the arcade says, after the physics and
+       BEFORE the pose and the camera read her, so neither ever sees the
+       frame of gravity in between. Standing, not falling — she floats in
+       the tube in her idle pose, which is what calm looks like. */
+    if (this.pinnedAt) {
+      this.position.copy(this.pinnedAt);
+      this.velocity.set(0, 0, 0);
+      this.onGround = true;
+      this.airTime = 0;
+    }
 
     this.group.position.copy(this.position);
     this.sprite.facing = this.facing;
@@ -3007,7 +3022,9 @@ export class Player {
     } else {
       this.onGround = false;
       // Fell off the world â€” respawn in the plaza.
-      if (this.position.y < -160) this._respawn(world);
+      /* `fallY` is the Dream Dojo's simulator, which has nothing below it to
+         fall past and so lets go much sooner. The real World has none. */
+      if (this.position.y < (world.fallY ?? -160)) this._respawn(world);
     }
 
     // Time spent genuinely airborne, for the animation to threshold against.
@@ -5255,6 +5272,10 @@ export class Player {
   }
 
   _respawn(world) {
+    /* A WORLD MAY KNOW BETTER. The simulator puts her back on her own port
+       pad; the plaza is in the other reality and must not be reached from
+       inside this one. */
+    if (world.respawn) { world.respawn(this); return; }
     const g = world.heightAt(0, 30);
     this.position.set(this.style.spawnX, (g ? g.y : 10) + 2, 30);
     this.velocity.set(0, 0, 0);

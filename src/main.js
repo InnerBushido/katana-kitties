@@ -74,6 +74,8 @@ import { ProfileScreen } from './systems/profile.js';
 import { Feats } from './systems/feats.js';
 import { Inspector } from './systems/inspector.js';
 import { Payne, PAYNE_CLIPS, PAYNE_TOWN } from './systems/payne.js';
+import { DreamDojo } from './systems/dreamdojo.js';
+import { SIM } from './world/simworld.js';
 
 /* ---------------------------------------------------------------------------
    Katana Kitties — main loop.
@@ -1152,6 +1154,12 @@ class Game {
       /* PAYNE FIRST. She is in the market and no shrine is, so the two can
          never both be true — but if a future layout ever put her by one, the
          person standing in front of you is the thing the button reaches. */
+      /* THE ARCADE FIRST. Its island is nowhere near Payne or a shrine, so
+         this only ever answers on the pad, in a tube, or in the simulator,
+         where nothing else in this function could have anything to say. */
+      const dp = this.dream?.prompt(p, this.input.promptFor(p.index, 'interact'));
+      if (dp) { p.setCallout(dp); continue; }
+      if (this.dream?.realmOf(p) === 'sim') { p.setCallout(null); continue; }
       if (this.payne?.canTalk(p)) {
         const pk = this.input.promptFor(p.index, 'interact');
         p.setCallout(pk ? `[${pk}]  TALK TO PAYNE` : null);
@@ -1437,6 +1445,11 @@ class Game {
     )));
     this.payneArt = { town: payneTown?.texture?.image ? payneTown : null,
       held: payneHeld?.texture?.image ? payneHeld : null };
+    /* LIONHEART — the Dream Dojo's arcade owner. Same degrade as Payne: no
+       drawing, no man on the pad, and the tubes still work. */
+    const lionTown = await this._loadSprite('/sprites/lionheart/town.png', 1, 1, () => ({ texture: null }));
+    this.lionArt = lionTown?.texture?.image ? lionTown : null;
+    this.dream = new DreamDojo(this);
     this.payne = new Payne(this);
     await this.payne.loadArt();
 
@@ -1464,6 +1477,7 @@ class Game {
     this._spawnPickups();
     this._spawnLeaders();
     this._spawnPayne();
+    this.dream.build(this.lionArt);
 
     setLoad('Writing the story…');
     await frame();
@@ -3490,6 +3504,9 @@ class Game {
     /* And nobody has met Payne. Her marks, timers and trick go with the
        quests they were about. */
     this.payne?.reset();
+    /* ...and nobody is left in a tube or in the simulator. A new afternoon
+       starts with every kitten on her own feet in the real world. */
+    this.dream?.reset();
     /* And the debug purse, or a restart would hand the world's money to the
        next kitten who joins a game where nothing has been knocked over yet. */
     this._debugPurse = null;
@@ -7486,6 +7503,10 @@ class Game {
    */
   _undressPlayer(p) {
     if (!p) return;
+    /* Out of a tube first: a kitten leaving the game from inside the
+       simulator leaves from her TUBE — her row was already written there by
+       `castRow`, via `dreamAnchor` — and takes her puppet with her. */
+    if (this.dream?.stateOf(p.index)) this.dream.drop(p.index);
     this.scene.remove(p.group);
     if (p.orbRoot) this.scene.remove(p.orbRoot);
   }
@@ -9524,6 +9545,17 @@ class Game {
        cannot also swear an oath or swing a katana further down the frame.
        Not during a fight: `tournament.active` is the arena, and Payne is in
        the market. */
+    /* THE DREAM DOJO, BEFORE PAYNE — the same pattern again. A kitten at
+       Lionheart, in her tube or on her ring in the simulator is answered
+       here and her press is spent; the arcade refuses in words when it says
+       no (the tournament, a scene, sitting on a dragon). */
+    if (!this.paused && this.dream?.built) {
+      for (const p of this.players) {
+        const pad = this.input.players[p.index];
+        if (!pad?.pressed('interact') || this.inspector.busy(p.index)) continue;
+        if (this.dream.interact(p)) pad.consume('interact');
+      }
+    }
     if (!this.paused && this.payne && !this.tournament?.active && !this._sceneActive()) {
       const talker = this.players.find(
         (p) => this.input.players[p.index]?.pressed('interact')
@@ -9767,10 +9799,17 @@ class Game {
       /* `inspector.busy` is the personal card: her stick is driving a menu in
          her own pane and must not also walk her into the stall. Only hers —
          that is the whole point of the thing. */
-      const pad = (frozen || picking || this.leaguePicking || this.teamPicking
+      let pad = (frozen || picking || this.leaguePicking || this.teamPicking
         || this.menagerie?.eating(i) || this.inspector?.busy(i))
         ? DEAD_PAD : this.input.players[i];
-      this.players[i].update(dt, pad, this.world, this.dragons, this);
+      /* THE DREAM DOJO MAY DRIVE HER — walking her to her tube, holding her
+         still in it — and hands a kitten in the simulator the simulator to
+         walk on, with no dragons in it. For anybody it has never touched,
+         both of these are the identity. */
+      const p = this.players[i];
+      pad = this.dream?.padFor(i, pad, DEAD_PAD) ?? pad;
+      const sim = this.dream?.realmOf(p) === 'sim';
+      p.update(dt, pad, sim ? this.dream.worldFor(p) : this.world, sim ? [] : this.dragons, this);
     }
 
     // Orbs, pickups, dragons, dojo.
@@ -9784,6 +9823,9 @@ class Game {
     /* After the quests, so a quest earned this frame has already moved her
        next step on before she looks at whether anybody is stuck. */
     this.payne?.update(dt);
+    /* After the players, the arcade: it reads where they ended up, and it is
+       the thing that pins a kitten in her tube for the NEXT frame. */
+    this.dream?.update(dt);
     for (const pk of this.pickups) {
       if (pk.taken) continue;
       pk.update(dt);
@@ -9814,7 +9856,9 @@ class Game {
        rider's final position for the frame (Player.carry) and a following one
        is chasing where she actually ended up, not where she started. */
     for (const p of this.players) {
-      p.panda?.update(dt, this.world, p);
+      /* A kitten in the simulator is followed to the foot of the stones —
+         see `DreamDojo.ownerFor`. Everybody else is herself. */
+      p.panda?.update(dt, this.world, this.dream?.ownerFor(p) ?? p);
       /* THE CUB'S CHIRP IS PLAYED HERE, not by the panda, because nothing in
          `entities/panda.js` may reach the audio system — `player.js` already
          imports from it and the reverse edge would close a cycle (the note on
@@ -10050,7 +10094,10 @@ class Game {
     if (boardWas !== anyInDojo) this._mapT = 1;
     this.mathBoard.classList.toggle('hidden', !anyInDojo);
 
-    const mid = this._centroid();
+    /* THE REAL WORLD FOLLOWS THE KITTENS WHO ARE IN IT. A party with one
+       girl in the simulator has a centroid six thousand units out in the
+       void, and the petals and the shadow frustum would go with it. */
+    const mid = this._centroid(this._realMembers());
     this.world.update(dt, mid);
     this.world.focusShadows(mid.x, mid.z);
 
@@ -10165,7 +10212,7 @@ class Game {
    */
   _joinSpot() {
     const home = this.world.islands[0];
-    const mid = this._centroid();
+    const mid = this._centroid(this._realMembers());
     const T = this.townCentre();
     const onHome = Math.hypot(mid.x - home.x, mid.z - home.z) <= home.radius;
     const want = onHome ? { x: T.x, z: T.z } : { x: mid.x, z: mid.z };
@@ -10947,7 +10994,11 @@ class Game {
       const tag = document.getElementById(`map-tag-${i}`);
       if (!box) continue;
       const pane = owner[i] ?? -1;
-      const shown = pane >= 0 && !!panes[pane] && !!groups[pane]?.length;
+      /* ...and NOT in a pane that is in the Dream Dojo's simulator: a map of
+         the archipelago, with her arrow twelve thousand units off its edge, is
+         a map of a place she is not in. The pane is all hers there anyway. */
+      const shown = pane >= 0 && !!panes[pane] && !!groups[pane]?.length
+        && !this.dream?.paneIsSim(groups[pane]);
       box.classList.toggle('hidden', !shown);
       /* A HIDDEN BOX HAS NO PLACE ON SCREEN, and leaving last frame's would
          let `nearestMap` measure to where a map used to be. It is cleared here
@@ -11780,6 +11831,15 @@ class Game {
     return framedMembers(members, (i) => this._camIgnores(this.players[i]));
   }
 
+  /** Everybody standing in the real world — or everybody, if nobody is,
+   *  which is a party entirely inside the Dream Dojo's simulator. */
+  _realMembers() {
+    const all = this.players.map((_, i) => i);
+    if (!this.dream) return all;
+    const real = all.filter((i) => this.dream.realmOf(this.players[i]) !== 'sim');
+    return real.length ? real : all;
+  }
+
   _centroid(members = this.players.map((_, i) => i)) {
     const c = new THREE.Vector3();
     let n = 0;
@@ -11849,7 +11909,15 @@ class Game {
       (p) => !p.mount && inDojoView(p, dc)
     );
 
-    if (onRyu || inRing || this.settings.split === 'never' || allInDojo) {
+    /* TWO REALITIES NEVER SHARE A PANE. A kitten in the Dream Dojo's
+       simulator is twelve thousand units east and in another sky; one lens
+       cannot draw both, so every "everybody in one view" rule above stands
+       aside while the party is split between the two — even "never split",
+       which is a preference about one world and has nothing to say about two.
+       Nobody in the simulator: `mixed` is false and this is the old line. */
+    const realms = this.players.map((p) => this.dream?.realmOf(p) ?? null);
+    const mixed = realms.some((r) => r !== realms[0]);
+    if (!mixed && (onRyu || inRing || this.settings.split === 'never' || allInDojo)) {
       this._clusterOf = all.map(() => 0);
       return [all];
     }
@@ -11875,7 +11943,10 @@ class Game {
          else's game. `stablePanes` is what makes this bearable — the other
          panes do not shuffle when hers appears. */
       solo: this.players.map(
-        (p) => !!(p.mount || p.rideAlong || this.inspector?.busy(p.index))
+        (p) => !!(p.mount || p.rideAlong || this.inspector?.busy(p.index)
+          /* ...and a kitten on her way into a tube, in it, or out of it: the
+             phase is laid over HER pane, and must not wash over a sister's. */
+          || this.dream?.wantsSolo(p))
       ),
       prev: this._clusterOf,
       mergeIn: MERGE_IN,
@@ -12398,6 +12469,17 @@ class Game {
         rig.dist = wantDist;
         rig.seeded = true;
       }
+      /* A GROUP THAT HAS CROSSED INTO THE OTHER REALITY TAKES ITS RIG WITH
+         IT, by exactly the offset, so the frame does not pan twelve thousand
+         units across the void to catch up. The lesson of the frozen shared
+         rig again: a lerped camera must never be left to chase a jump. */
+      const realm = this.dream?.realmOf(this.players[members[0]]) ?? null;
+      if ((rig.realm ?? null) !== realm) {
+        const k = realm === 'sim' ? 1 : -1;
+        rig.target.x += SIM.dx * k;
+        rig.target.z += SIM.dz * k;
+        rig.realm = realm;
+      }
       rig.target.lerp(want, Math.min(1, dt * RIG_AIM_RATE));
       rig.dist += (wantDist - rig.dist) * Math.min(1, dt * RIG_DIST_RATE);
 
@@ -12771,6 +12853,7 @@ class Game {
     for (const d of this.dragons) d.faceCamera(camera);
     for (const L of this.leaders ?? []) L.faceCamera(camera);
     this.payne?.faceCamera(camera);
+    this.dream?.faceCamera(camera);
     this.cutscene?.faceCamera(camera);
     for (const s of this.world.shrines) s.faceCamera(camera);
     for (const pk of this.pickups) if (!pk.taken) pk.faceCamera(camera);
@@ -12951,7 +13034,33 @@ class Game {
     this.renderer.setViewport(x, y, w, h);
     this.renderer.setScissor(x, y, w, h);
     this.renderer.setScissorTest(true);
+    /* A PANE IN THE SIMULATOR gets the simulator's sky and fog, and the real
+       world's petals and sky sphere step out of it; a real pane does not draw
+       the simulator at all. Swapped and put back around ONE render call, so
+       no other pane, and no other part of the frame, ever sees the swap. */
+    const D = this.dream;
+    const sim = !!(members && D?.sim && D.paneIsSim(members));
+    let kept = null;
+    if (D?.sim) {
+      const W = this.world;
+      kept = [this.scene.fog, W.skyMesh?.visible, W.petals?.mesh.visible, D.sim.root.visible];
+      D.sim.root.visible = sim;
+      if (sim) {
+        this.scene.fog = D.sim.fog;
+        if (W.skyMesh) W.skyMesh.visible = false;
+        if (W.petals) W.petals.mesh.visible = false;
+      }
+    }
     this.renderer.render(this.scene, camera);
+    if (kept) {
+      const W = this.world;
+      [this.scene.fog] = kept;
+      if (W.skyMesh) W.skyMesh.visible = kept[1];
+      if (W.petals) W.petals.mesh.visible = kept[2];
+      D.sim.root.visible = kept[3];
+    }
+    /* ...and the phase over the top, in this pane only. */
+    if (members && D) D.drawPaneFx(this.renderer, members, w, h);
   }
 
   _render() {

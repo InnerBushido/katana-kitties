@@ -1746,6 +1746,9 @@ export class World {
     sky.frustumCulled = false;
     sky.renderOrder = -100;
     this.scene.add(sky);
+    /* Kept, so a Dream Dojo pane can take it out of its own frame — see
+       `Game._renderView`. The simulator has a sky of its own. */
+    this.skyMesh = sky;
 
     this.scene.fog = new THREE.Fog(0xe8a878, 420, 1900);
 

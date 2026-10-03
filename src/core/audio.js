@@ -1181,6 +1181,36 @@ export class Audio {
          a kid who has heard the bubble go up once already knows the other two
          mean the same object. Three unrelated noises around one three-second
          ability is the fastest way to make an ability feel like a bug. */
+      /* THE DREAM DOJO'S FOUR. Lionheart's arcade is the one place in the
+         game that is a MACHINE, so these are the only sounds in the game made
+         of sawtooth sweeps and stepped glitches rather than koto, wood and
+         breath — the ear should know it has left the archipelago before the
+         eye does. `jackin` climbs and `jackout` is the same climb falling, the
+         ward's up/down rule again; `rez` is a kitten being drawn in, a fast
+         arpeggio up the hirajoshi so it is still this game's key; `visor` is
+         the headset seating, a click and a hum. */
+      case 'jackin':
+        this._tone({ type: 'sawtooth', from: semi(-12), to: semi(24), dur: 0.9, gain: 0.08 * v });
+        this._tone({ type: 'square', from: semi(0), to: semi(12), dur: 0.6, gain: 0.04 * v, delay: 0.2 });
+        for (let i = 0; i < 5; i++) {
+          this._noise({ from: 2000 + i * 900, to: 4200, dur: 0.04, gain: 0.18 * v, q: 3, delay: 0.25 + i * 0.11 });
+        }
+        break;
+      case 'jackout':
+        this._tone({ type: 'sawtooth', from: semi(24), to: semi(-12), dur: 0.8, gain: 0.08 * v });
+        for (let i = 0; i < 4; i++) {
+          this._noise({ from: 4200 - i * 700, to: 1200, dur: 0.05, gain: 0.16 * v, q: 3, delay: i * 0.12 });
+        }
+        break;
+      case 'rez':
+        [0, 2, 3, 7, 8, 12, 14, 15].forEach((n, i) => {
+          this._tone({ type: 'triangle', from: semi(n + 12), dur: 0.16, gain: 0.07 * v, delay: i * 0.055 });
+        });
+        break;
+      case 'visor':
+        this._noise({ from: 5000, to: 2400, dur: 0.03, gain: 0.3 * v, type: 'highpass', q: 0.8 });
+        this._tone({ type: 'sine', from: semi(-5), to: semi(7), dur: 0.35, gain: 0.07 * v, delay: 0.03 });
+        break;
       case 'wardup':
         this._tone({ type: 'sine', from: semi(7), to: semi(19), dur: 0.26, gain: 0.17 * v });
         this._tone({ type: 'triangle', from: semi(19), dur: 0.5, gain: 0.07 * v, delay: 0.1 });

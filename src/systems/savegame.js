@@ -334,7 +334,9 @@ export function castRow(p, here = true) {
     name: p.name ?? '',
     here,
     score: Math.round(p.score ?? 0),
-    at: [p.position.x, p.position.y, p.position.z].map((n) => +n.toFixed(2)),
+    /* `dreamAnchor` FIRST: a kitten in the Dream Dojo's simulator is saved
+       standing in her tube, never at her coordinates in the void. */
+    at: ['x', 'y', 'z'].map((k) => +(p.dreamAnchor ?? p.position)[k].toFixed(2)),
     facing: +(p.facing ?? 0).toFixed(3),
     clan: p.clan?.id ?? null,
     sworn: [...(p.clansSworn ?? [])],
