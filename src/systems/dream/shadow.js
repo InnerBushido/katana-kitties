@@ -70,6 +70,34 @@ export const SLAM = { tell: 1.0, len: 11, half: 1.4, dmg: 18, recover: 0.8 };
 export const SWEEP = { tell: 1.1, r: 6.5, dmg: 14, clear: 0.6, recover: 0.7 };
 export const CROSS = { tell: 1.2, len: 14, half: 1.3, dmg: 22, open: 2.2 };
 
+/**
+ * HIS DRAWING, ONE CELL PER THING HE IS DOING — `lionheart/shadow.png`, one
+ * row of four in this order. Wound up for the whole tell, so the pose IS the
+ * telegraph as much as the red on the floor is, and held through the recover
+ * after, so the blow reads as having landed rather than snapping back to
+ * guard on the frame it does. The Cross Slash's cell is drawn with its X of
+ * light already in it, which is why it is shown from the tell on: it says the
+ * same thing as the X on the floor.
+ */
+export const POSE = { guard: 0, slam: 1, sweep: 2, cross: 3 };
+
+/** Which cell `act` shows. Pure, so world-check can walk every act. */
+export function poseCell(act) {
+  if (!act || act.kind === 'idle') return POSE.guard;
+  return POSE[act.what] ?? POSE.guard;
+}
+
+/**
+ * WHAT HE SAYS WHEN HE LOSES, BEFORE ANYBODY IS PAID. Richard's line, an
+ * homage he chose: the master handing over his sword and everything he meant
+ * to do with it. It is SAID first and the stars and the quest toast follow
+ * `secs` later — but only the SHOWING waits. The result, the flag and the
+ * quest are all committed on the frame he breaks (non-negotiable 7: nothing
+ * hangs off a line finishing), so a kitten who jacks out mid-sentence still
+ * has everything she won.
+ */
+export const HANDOVER = { line: 'My honor, my dreams…\nthey\'re yours now.', secs: 4 };
+
 /* ------------------------------ the shapes -------------------------------- */
 
 /** Inside the slam's line? `o` his feet, `dir` his facing (unit, flat). */
@@ -182,12 +210,22 @@ export class ShadowBoss extends Target {
     this.figure = new THREE.Group();
     this.body.add(this.figure);
     const art = o.art;
+    /** His own four-pose sheet (true), or Lionheart's town drawing tinted
+     *  into a shadow (false) — the degrade, and how he first shipped. */
+    this.posed = (art?.cols ?? 1) >= 4;
+    /* THE TINT IS LIGHTER ON HIS OWN SHEET. The town drawing is a bright
+       daytime figure and wants pushing a long way into purple; the shadow
+       sheet is already black robes, and the same multiply would leave a
+       silhouette with no pose left in it to read. */
+    this.tint = this.posed ? 0xc8a8ff : 0x7a3cff;
+    this.pose = POSE.guard;
     if (art?.texture) {
       const quad = SHADOW_H / (art.contentScale || 1);
       this.sprite = new Billboard(art.texture, {
-        cols: 1, rows: 1, width: quad, height: quad, footOffset: (art.pad ?? 0) * quad, mirror: false,
+        cols: this.posed ? art.cols : 1, rows: 1, width: quad, height: quad,
+        footOffset: (art.pad ?? 0) * quad, mirror: false,
       });
-      this.sprite.mat.color.set(0x7a3cff);
+      this.sprite.mat.color.set(this.tint);
       this.sprite.mat.transparent = true;
       this.sprite.mat.opacity = 0.9;
       this.figure.add(this.sprite);
@@ -208,6 +246,9 @@ export class ShadowBoss extends Target {
     this.bladeGrp = new THREE.Group();
     this.bladeGrp.add(this.blade);
     this.body.add(this.bladeGrp);
+    /* NOT ON HIS OWN SHEET, which has HONOR drawn in his hands in every pose:
+       a second, glowing one at his side was two swords. */
+    this.bladeGrp.visible = !this.posed;
     const aura = new THREE.Mesh(new THREE.CircleGeometry(3.2, 32).rotateX(-Math.PI / 2), holoMat(0x2a0a44, 0.55));
     aura.position.y = 0.04;
     this.group.add(aura);
@@ -218,7 +259,7 @@ export class ShadowBoss extends Target {
     super.update(dt);
     if (this.sprite) {
       const gold = this.open > 0;
-      this.sprite.mat.color.setHex(this.flash > 0.3 ? 0xffffff : gold ? 0xffc93c : 0x7a3cff);
+      this.sprite.mat.color.setHex(this.flash > 0.3 ? 0xffffff : gold ? 0xffc93c : this.tint);
       this.baseOp = Math.sin(this.t * 23) > 0.96 ? 0.55 : 0.9;
       this.sprite.mat.opacity = this.baseOp;
     }
@@ -229,6 +270,10 @@ export class ShadowBoss extends Target {
   faceCamera(camera, veil = 1) {
     super.faceCamera(camera);
     this.sprite?.faceCamera(camera);
+    /* faceCamera picks a cell from his FACING, which on a sheet of poses would
+       be a guard from one side and a slam from the other. Overwrite it with
+       what he is doing; facing still turns the quad to the lens. */
+    if (this.posed) this.sprite._setCell(this.pose, 0, false);
     if (this.sprite) this.sprite.mat.opacity = (this.baseOp ?? 0.9) * veil;
     _e.setFromQuaternion(camera.quaternion, 'YXZ');
     this.bladeGrp.rotation.y = _e.y;
@@ -352,7 +397,7 @@ export class ShadowFight {
     }
     this.boss = new ShadowBoss({
       parent: this.dream.sim.root, x: c.x, y: this.isle.y, z: c.z, owner: null,
-      art: this.dream.lionArt, shards: this.dream.shards, hits: SHADOW_HITS,
+      art: this.dream.game?.shadowArt ?? this.dream.lionArt, shards: this.dream.shards, hits: SHADOW_HITS,
       onHit: (b) => {
         // OPEN: the blow counts twice — the punish window the Cross Slash leaves.
         if (b.open > 0 && b.hp > 0) b.hp -= 1;
@@ -403,11 +448,16 @@ export class ShadowFight {
   _won() {
     if (this.state !== 'live') return;
     this.state = 'won';
-    this.endT = 7;
+    this.endT = HANDOVER.secs + 7;
     this._clearTells();
     const g = this.dream.game;
     g.sfx?.('victory');
-    this._say('You beat my SHADOW!\nAs promised — a share of my HONOR.', 7);
+    this._say(HANDOVER.line, HANDOVER.secs);
+    /* EVERYTHING IS DECIDED NOW; only the telling of it waits for his line.
+       See HANDOVER. The quest is earned with the same delay, which is the
+       payout queue's own — its card comes up after the line, not over it. */
+    this.payT = HANDOVER.secs;
+    this.paid = [];
     for (const { p, catches } of this.who.values()) {
       if (!g.players?.includes(p)) continue;
       const n = p.style?.name ?? p.name;
@@ -415,11 +465,19 @@ export class ShadowFight {
       const stars = starsFor(score, SHADOW_BANDS, true);
       this.dream.award(p, 'shadow', stars, score, true);
       this.dream.progress.setFlag(n, 'shadow');
-      const earned = g.feats?.earn?.(p, 'shadow');
-      g.toast?.(`${p.name} beat Shadow Lionheart! ${'★'.repeat(stars)}`
-        + (earned ? (g.feats.open ? ' A Powerup Kotodama waits for you at the award ceremony!' : ' A Powerup Kotodama is on its way!') : ''), p.index);
+      const earned = g.feats?.earn?.(p, 'shadow', { delay: HANDOVER.secs });
+      this.paid.push({ p, text: `${p.name} beat Shadow Lionheart! ${'★'.repeat(stars)}`
+        + (earned ? (g.feats.open ? ' A Powerup Kotodama waits for you at the award ceremony!' : ' A Powerup Kotodama is on its way!') : '') });
     }
     this.dream.shards.burst(this.boss.local.x, this.boss.local.y + 4, this.boss.local.z, HOLO.gold, 160, 9, 10);
+  }
+
+  /** The stars, after the hand-over line. The facts were settled in `_won`. */
+  _tellPrize() {
+    const g = this.dream.game;
+    this._say('You beat my SHADOW!\nAs promised — a share of my HONOR.', 7);
+    for (const { p, text } of this.paid) if (g.players?.includes(p)) g.toast?.(text, p.index);
+    this.paid = [];
   }
 
   _lost(why) {
@@ -467,7 +525,9 @@ export class ShadowFight {
     const b = this.boss;
     b.update(dt);
     b.open = Math.max(0, b.open - dt);
+    b.pose = this.state === 'live' ? poseCell(this.act) : POSE.guard;
     this._paint();
+    if (this.state === 'won' && this.paid?.length && (this.payT -= dt) <= 0) this._tellPrize();
     if (this.state === 'won' || this.state === 'lost') {
       this.endT -= dt;
       if (this.endT <= 0) this._reset();
@@ -640,10 +700,10 @@ export class ShadowFight {
     b.blade.rotation.z = -0.25;
     if (a.what === 'cross') {
       b.open = CROSS.open;
-      this.act = { kind: 'recover', t: CROSS.open };
+      this.act = { kind: 'recover', what: 'cross', t: CROSS.open };
       for (const { p } of this.who.values()) this.dream.hint(p, 'he is OPEN — hit him now, every blow counts TWICE!');
     } else {
-      this.act = { kind: 'recover', t: a.what === 'slam' ? SLAM.recover : SWEEP.recover };
+      this.act = { kind: 'recover', what: a.what, t: a.what === 'slam' ? SLAM.recover : SWEEP.recover };
     }
   }
 

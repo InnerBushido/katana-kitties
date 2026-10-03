@@ -462,3 +462,39 @@ described in words and never used as a reference; her likeness is hers.
 - `ember_riposte.png` / `frost_riposte.png` are the counter stance, katana
   across the body with a glint. **They belong to the Riposte orb on
   `feature/rare-orbs-reach-parry`** and are wired there, not here.
+
+## The simulator's drawings — headset turnarounds and the Shadow
+
+These are three Higgsfield `gpt_image_2_5` masters on flat magenta. Each was
+prompted off the sheet it has to match: the kittens off their own `grid`, and
+the Shadow off `lionheart_town.png`. The reasons are in the comments on their
+`sprite-bake` rows.
+
+| master | ships as | grid | worn |
+| --- | --- | --- | --- |
+| `ember_vr.png` | `kittens/ember/vr.png`, 2048×1189 | 10 × 4 | in the sim, by Ember and (recoloured) Storm |
+| `frost_vr.png` | `kittens/frost/vr.png`, 2048×1189 | 8 × 4 | in the sim, by Frost and (recoloured) Blossom |
+| `lionheart_shadow.png` | `lionheart/shadow.png`, 1925×768 | 4 × 1 | Shadow Lionheart: guard, slam, sweep, cross |
+
+- **The attack rows are spliced in.** In the first generation they did not turn.
+  Ember's row had no right-facing cell, and Frost's had a face where the back
+  three-quarter goes. Each row was regenerated as one strip. It was scaled by
+  crown-to-foot against the idle row (Ember 0.88, Frost 0.77) and **placed
+  figure by figure on the column centres measured from rows 0–2**. A row merely
+  centred under the others gets sliced through its figures, because the loader
+  cuts every row with the majority grid.
+- **world-check proves each row turns.** It finds the visor (the cyan run nearest
+  the head) in every cell, and the sign of its offset must follow a full turn:
+  front, then right, back, left. The rejected attack row fails this rule at
+  −0.20. Frost's attack row is excused from the "clearly right" clause only,
+  because her cyan blade sits beside her visor.
+- **The Shadow loads with `views` 4.** `auto` reads it as 2. The master's fourth
+  pose was moved 200px right by connected component, because the sweep's blade
+  tip overlapped the X. **`Billboard.faceCamera` would pick a cell from his
+  facing**, so `ShadowBoss` overwrites it with `poseCell(act)` every frame. He
+  is tinted lighter (`0xc8a8ff`) than the town fallback (`0x7a3cff`), and the
+  glowing blade mesh is hidden: the sheet has HONOR in his hands already.
+- **All three load lazily**, once, on the first walk into a tube
+  (`Game.loadSimArt`). A missing file falls back to the home sheet or the tinted
+  town Lionheart. Frost's sheet and the Shadow have sealed holes, so the
+  fill-everything count in world-check is now sixteen. Neither is ever filled.

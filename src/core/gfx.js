@@ -345,6 +345,25 @@ const _wp = new THREE.Vector3();
  */
 export const DIR_SENSE = 1;
 
+/** The billboard's own copy of an atlas, set up to sample one cell of it. */
+function atlasClone(texture, cols, rows) {
+  const tex = texture.clone();
+  tex.needsUpdate = true;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.repeat.set(1 / cols, 1 / rows);
+  return tex;
+}
+
+/** A quad with its pivot on the drawn feet, `footOffset` above its bottom edge. */
+function footQuad(width, height, footOffset) {
+  const geo = new THREE.PlaneGeometry(width, height);
+  geo.translate(0, height / 2 - footOffset, 0);
+  return geo;
+}
+
 /**
  * A sprite that lives in the 3D world: always upright, rotates around Y to
  * face whichever camera is currently rendering, and picks its animation frame
@@ -389,13 +408,7 @@ export class Billboard extends THREE.Object3D {
     /** row of the atlas to sample (animation state) */
     this.row = 0;
 
-    this.tex = texture.clone();
-    this.tex.needsUpdate = true;
-    this.tex.colorSpace = THREE.SRGBColorSpace;
-    this.tex.magFilter = THREE.LinearFilter;
-    this.tex.minFilter = THREE.LinearMipmapLinearFilter;
-    this.tex.wrapS = this.tex.wrapT = THREE.ClampToEdgeWrapping;
-    this.tex.repeat.set(1 / cols, 1 / rows);
+    this.tex = atlasClone(texture, cols, rows);
 
     // Half a source texel, expressed in UV space.
     const iw = this.tex.image?.width || 1024;
@@ -411,11 +424,10 @@ export class Billboard extends THREE.Object3D {
       toneMapped: false,
     });
 
-    const geo = new THREE.PlaneGeometry(width, height);
     // Pivot at the drawn feet, not at the bottom of the quad: the atlas leaves
     // transparent padding below the art, so without this the character floats
     // by exactly that margin.
-    geo.translate(0, height / 2 - footOffset, 0);
+    const geo = footQuad(width, height, footOffset);
     this.mesh = new THREE.Mesh(geo, this.mat);
     this.mesh.castShadow = false;
     this.add(this.mesh);
@@ -423,6 +435,51 @@ export class Billboard extends THREE.Object3D {
     this.width = width;
     this.height = height;
     this._flip = false;
+  }
+
+  /**
+   * WHICH DRAWING THIS IS, as one value: the atlas, its grid, and the quad it
+   * is drawn on. Everything else about a billboard — facing, row, tint,
+   * opacity, the lean and squash its owner writes into `mesh` — is about the
+   * CHARACTER and carries straight across a swap.
+   *
+   * It exists for the Dream Dojo, where a kitten is redrawn in the arcade's
+   * headset for as long as she is jacked in (`Player.setSimLook`). A second
+   * Billboard toggled visible was the other way, and it is the wrong one: the
+   * player code writes `this.sprite` in some forty places a frame — the KO
+   * fall, the invulnerable blink, the hit lean — and every one of them would
+   * have had to learn there were two.
+   */
+  get look() {
+    return {
+      tex: this.tex, cols: this.cols, rows: this.rows, geo: this.mesh.geometry,
+      insetU: this._insetU, insetV: this._insetV, width: this.width, height: this.height,
+    };
+  }
+
+  /** A look for another atlas, built the way the constructor builds its own. */
+  makeLook(texture, { cols = 4, rows = 1, width = 1.6, height = 1.6, footOffset = 0 } = {}) {
+    const tex = atlasClone(texture, cols, rows);
+    return {
+      tex, cols, rows, geo: footQuad(width, height, footOffset),
+      insetU: 0.5 / (tex.image?.width || 1024), insetV: 0.5 / (tex.image?.height || 1024),
+      width, height,
+    };
+  }
+
+  /** Wear `l`. The cell is re-picked on the next `faceCamera`, as every frame. */
+  setLook(l) {
+    if (!l || l.tex === this.tex) return;
+    this.tex = l.tex;
+    this.mat.map = l.tex;
+    this.cols = l.cols;
+    this.rows = l.rows;
+    this.mesh.geometry = l.geo;
+    this._insetU = l.insetU;
+    this._insetV = l.insetV;
+    this.width = l.width;
+    this.height = l.height;
+    this._setCell(0, this.row, false);
   }
 
   /** Called once per camera, before that viewport renders. */

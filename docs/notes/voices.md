@@ -41,6 +41,7 @@ the `voice_id` below. About **0.15 credits a line**.
 | **Payne** | the quest-giver in the market. A goblin cat, and a real person who agreed to be in the game — [payne.md](payne.md). Cheerful, cheeky, teases. | **Pixie** | `0178ef57-ada4-43d9-992b-8d9221045bb4` | all forty-five `payne_*`, including "Heyyy, …!" and "Oi! …!" for each of the four kittens |
 | **the trailer voice** | not in the game at all. The straight narrator Mr. Satan interrupts — and the one who has to say "right meow" with a straight face. | **Desmond** | `563f728c-e249-5a85-97ab-8461e8c09da6` | **six trailer lines** — 4-8 and the sign-off |
 | **Ryuuseki** | the dragon the seven stars call. | **unresolved — see below** | — | `summon1` `summon2` |
+| **Lionheart** | the Dream Dojo's arcade owner, and his Shadow. Young, keen, a showman about his sword. | **auditioning — Dylan, Kevin or Miles; see below** | — | none yet: his bubbles are text |
 | *(the thing in the dark)* | three seconds of the trailer — and, since the Cross Slash rebalance, four sounds in the game | **not a voice at all** | [tools/kitten-cackle.mjs](../../tools/kitten-cackle.mjs) | trailer line 12, `cross0`-`cross3` |
 
 [tools/trailer-vo.mjs](../../tools/trailer-vo.mjs) carries the same four ids it
@@ -170,6 +171,50 @@ the table says.
 **Do not recast him casually.** He has two lines, they are the payoff of the
 seven-star hunt, and a new voice on one of them is worse than the hole in this
 table.
+
+## Lionheart is being auditioned, and nothing is wired yet
+
+Richard's brief was **energetic and young-male**. His own voice, the intended
+long-term source, cannot be cloned on this account ("Voice limit reached", twice,
+with no custom voices listed; see [dreamdojo.md](dreamdojo.md#voice)), so three
+presets read two lines. One is the Honor line from the arcade, and the other is
+the hand-over, which he says when the Shadow falls:
+
+> Like my sword? Her name is HONOR. Beat me in the simulator someday… and maybe
+> I'll share my Honor with you.
+>
+> My honor, my dreams… they're yours now.
+
+```
+                    f0Hz   range(st)  dyn(dB)   secs
+honor   Dylan        162       16.6     20.1   6.64
+honor   Kevin        151       29.3     17.3   6.16
+honor   Miles        216       19.1     25.6   7.76
+handover Dylan       125       12.4     21.2   2.72
+handover Kevin       118       17.6     15.7   2.80
+handover Miles       190       21.0     22.9   3.36
+```
+
+| preset | `voice_id` |
+| --- | --- |
+| Dylan | `b847bc29-f184-583a-8ad9-d1f1e16d1a60` |
+| Kevin | `f1373f24-3b96-433f-9a68-e595810ef608` |
+| Miles | `e18664a7-ee4f-5273-acf8-533eb24cd366` |
+
+All six takes are kept in
+[tools/capture/lionheart-takes/audition/](../../tools/capture/lionheart-takes/audition/).
+A fourth preset, **Cody** (`1ffcdbb3-078b-5491-959d-359e3021e917`), failed to
+render and is not in the running. Harrison and Desmond were left out on purpose,
+because one voice for two characters is the mistake this file exists to prevent.
+
+**Every hand-over take fits its window.** The Shadow's line holds for
+`HANDOVER.secs` = 4 before the prize is told
+([dream/shadow.js](../../src/systems/dream/shadow.js)). The longest take, Miles,
+runs 3.36 s. If the pick is re-rendered, measure it against that number again.
+
+**When Richard picks:** fill in the table row above, render his lines into
+`public/voice/lionheart/`, and wire them so the text bubbles stay as the
+fallback.
 
 ## The castings were checked, not copied
 

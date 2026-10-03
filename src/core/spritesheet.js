@@ -614,7 +614,7 @@ export function countInk(imgData, w, box) {
  * (the dragon's lightning arcs) are then folded back in by clustering the
  * blobs on x and splitting at the widest gaps.
  */
-function findViewBoxes(imgData, w, h, expected, expectedRows = 1) {
+export function findViewBoxes(imgData, w, h, expected, expectedRows = 1) {
   const d = imgData.data;
 
   // Label at quarter resolution — plenty for separating characters, and 16x

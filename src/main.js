@@ -2055,6 +2055,46 @@ class Game {
   }
 
   /**
+   * THE SIMULATOR'S DRAWINGS: every kitten in the arcade's headset, and his
+   * Shadow's four fighting poses. Loaded ONCE, on the first walk to a tube
+   * (`DreamDojo._begin`), never at boot — about six megabytes that an
+   * afternoon which never goes near the arcade has no reason to download.
+   *
+   * The recolours are derived here for the same reason `_spawnPlayers`
+   * derives the home ones up front: so a kitten who joins later, or is
+   * swapped in by the picker, is handed a finished atlas by `_seatPlayer`
+   * rather than costing a 2048-square pass on the frame she arrives.
+   *
+   * EVERYTHING DEGRADES. A missing sheet leaves that kitten in her home
+   * drawing (`Player.setSimArt` refuses it) and a missing Shadow sheet leaves
+   * him tinted out of Lionheart's own town drawing, which is how he shipped.
+   * The views are measured, as everywhere: the kittens' column counts are
+   * auto-detected, and the Shadow is asked for exactly four, because 'auto'
+   * reads his sheet as TWO — his headband tails and the X of light reach far
+   * enough across the gaps that the 12% threshold merges neighbours.
+   */
+  loadSimArt() {
+    if (this._simArtLoad) return this._simArtLoad;
+    const none = () => ({ texture: null });
+    const real = (a) => (a?.texture?.image ? a : null);
+    this._simArtLoad = Promise.all([
+      this._loadSprite('/sprites/kittens/ember/vr.png', 'auto', 4, none),
+      this._loadSprite('/sprites/kittens/frost/vr.png', 'auto', 4, none),
+      this._loadSprite('/sprites/lionheart/shadow.png', 4, 1, none),
+    ]).then(([ember, frost, shadow]) => {
+      const base = { ember: real(ember), frost: real(frost) };
+      this.simArt = PLAYER_STYLE.map((s) => {
+        const b = base[s.sheet];
+        return b && s.recolour ? recolourAtlas(b, s.recolour) : b;
+      });
+      this.shadowArt = real(shadow);
+      this.players.forEach((p, i) => p?.setSimArt(this.simArt[this.roster[i]] ?? null));
+      return this.simArt;
+    });
+    return this._simArtLoad;
+  }
+
+  /**
    * Build player `index` and put her in the scene.
    *
    * Split out from `_spawnPlayers` because joining mid-game runs exactly this
@@ -2126,6 +2166,9 @@ class Game {
        visible and they have to arrive and leave together. */
     this.scene.add(p.orbRoot);
     this._dressPlayer(p);
+    /* Her headset drawing, if the sim's sheets have landed (`loadSimArt`); if
+       not, `loadSimArt` hands it to her when they do. */
+    p.setSimArt(this.simArt?.[styleIndex] ?? null);
     /* IF THIS CAT HAS ALREADY PLAYED TODAY, SHE PICKS UP WHERE SHE LEFT OFF.
        HERE RATHER THAN IN THE THREE CALLERS, for exactly the reason
        `_dressPlayer` is here: a player is seated in three places — boot, a

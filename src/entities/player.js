@@ -810,6 +810,15 @@ export class Player {
     /** How her billboard was built, so a scene can build its own copy of her
      *  — see systems/arenaexit.js, whose actors are its own. */
     this.spriteSpec = { texture, opts: spriteOpts };
+    /** Her home drawing, kept so the simulator's can come off again — see
+     *  `setSimLook`. `spriteSpec` stays the home one on purpose: the arena
+     *  exit and the Fighter Card draw HER, not her in a headset. */
+    this._homeLook = this.sprite.look;
+    this._simArt = null;
+    this._simLook = null;
+    /** Whether she is MEANT to be in the headset drawing — true from the
+     *  frame she crosses into the sim, whether or not the art has landed. */
+    this.simLook = false;
     /** Animation rows in the generated sheet, in order. A single-row fallback
      *  atlas collapses them all to 0. */
     this.anim = rows >= 4
@@ -1244,6 +1253,44 @@ export class Player {
     if (!this.teamMark) return;
     this.teamMark.visible = colour != null;
     if (colour != null) this.teamMark.material.color.set(colour);
+  }
+
+  /**
+   * HER DRAWING IN THE SIMULATOR: the same full turnaround in the arcade's
+   * headset (`kittens/<sheet>/vr.png`, recoloured for Storm and Blossom like
+   * every pose). Handed over late — the sheet loads when the first kitten
+   * steps into a tube, not at boot — so if she is already in there when it
+   * lands she is put into it at once.
+   *
+   * A sheet with a different number of rows is refused rather than worn:
+   * `anim` maps idle/walk/jump/attack onto rows 0-3, and a one-row fallback
+   * would freeze her on a single pose for the whole visit. Her home drawing
+   * is the rule that degrades.
+   */
+  setSimArt(art) {
+    this._simArt = art?.texture && art.rows === this._homeLook.rows ? art : null;
+    this._simLook = null;
+    if (this.simLook) this.setSimLook(true);
+  }
+
+  /** In the headset drawing (`true`, crossing into the sim) or out of it. */
+  setSimLook(on) {
+    this.simLook = !!on;
+    let l = this._homeLook;
+    if (on && this._simArt) {
+      if (!this._simLook) {
+        /* Sized exactly as the constructor sizes her home quad, so she is the
+           same height in both — `contentScale` is a ratio of the sheet's own
+           packing and does not care which sheet it came from. */
+        const a = this._simArt;
+        const quad = this.height / (a.contentScale || 1);
+        this._simLook = this.sprite.makeLook(a.texture, {
+          cols: a.cols, rows: a.rows, width: quad, height: quad, footOffset: (a.pad ?? 0) * quad,
+        });
+      }
+      l = this._simLook;
+    }
+    this.sprite.setLook(l);
   }
 
   setEatArt(art) {
