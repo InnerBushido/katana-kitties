@@ -20125,6 +20125,8 @@ console.log('\n--- Mr. Satan loses his temper ---');
        tools for the other half. */
     ok('...and how the saved games are, which arrived with the autosave',
       noKey.includes('SaveWipe'), noKey.join(', '));
+    ok("...and the Dream Dojo's stars, which are kept per kitten for good",
+      noKey.includes('DreamWipe'), noKey.join(', '));
     ok('...and the panel no longer claims the board is the only thing kept',
       !/the only thing that outlives the tab/.test(msrc));
   }
@@ -23871,9 +23873,32 @@ console.log('\n--- one press is not enough, and one player drives ---');
     /* AND NOT ON A METRONOME. Randomised inside each slot rather than one
        every Nth prop, so the gaps between them are not all the same number —
        which is the whole of "too metronomic" stated as a measurement. */
-    const gaps = sorted.slice(1).map((v, i) => v - sorted[i]);
+    /* ASKED OVER A DOZEN SLAMS, NOT ONE. A single slam is about five gaps of
+       three or four frames each, and five of THOSE coming out equal by pure
+       chance is not rare: this line went red on 1 of 13 runs with nothing
+       changed (gaps 4,4,4,4,4). A real metronome is equal on every slam;
+       jitter is equal on roughly one in thirteen, so twelve slams expect about
+       one and the bar is four. Each slam has to have actually banged at least
+       three times, or "not metronomic" would pass on silence. */
+    const slams = [];
+    for (let r = 0; r < 12; r++) {
+      const bb = [];
+      let ff = 0;
+      tide.onCrash = () => bb.push(ff);
+      tide.raise(2);
+      for (let i = 0; i < 60 * 4; i++) { ff += 1; tide.update(1 / 60); }
+      bb.length = 0;
+      const s0 = ff;
+      tide.slam();
+      for (let i = 1; i <= 60 * 8; i++) { ff = s0 + i; tide.update(1 / 60); }
+      const so = bb.map((v) => v - s0).sort((x, y) => x - y);
+      slams.push(so.slice(1).map((v, i) => v - so[i]));
+    }
+    const heard = slams.filter((g) => g.length >= 2);
+    const robots = heard.filter((g) => new Set(g).size === 1).length;
     ok('...and no two of them are the same distance apart, which is the robot',
-      gaps.length < 2 || new Set(gaps).size > 1, gaps.join(','));
+      heard.length === slams.length && robots <= 4,
+      `${robots} of ${heard.length} slams metronomic (${slams.length} slammed)`);
   }
   tide.onCrash = null;
 
@@ -34652,6 +34677,323 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
   const au = readFileSync(new URL('../src/core/audio.js', import.meta.url), 'utf8');
   ok('jacking in and out has its own sounds',
     ['jackin', 'jackout', 'rez', 'visor'].every((n) => au.includes(`case '${n}':`)));
+}
+
+/* ==========================================================================
+   THE DREAM DOJO, STAGE 2 — THE GALLERY, THE TRIAL HALL, THE RUNDOWN
+   (systems/dream/*)
+
+   Every one of these is a thing that would still LOOK right broken: a loan
+   that leaked into the orbs a girl saves and trades, a trial oath saved as her
+   real clan, a drill passable without the orb it exists to teach (so it
+   teaches nothing), a hologram's blade path that found a sister. They are
+   asked with the real classes and the real numbers.
+   ========================================================================== */
+{
+  console.log('\n--- the Dream Dojo: gallery, hall, rundown ---');
+  if (!globalThis.document) globalThis.document = domStub();
+  const DD = await import('../src/systems/dreamdojo.js');
+  const SW = await import('../src/world/simworld.js');
+  const ISL = await import('../src/systems/dream/islands.js');
+  const TG = await import('../src/systems/dream/targets.js');
+  const PR = await import('../src/systems/dream/progress.js');
+  const GAL = await import('../src/systems/dream/gallery.js');
+  const HAL = await import('../src/systems/dream/hall.js');
+  const PO = await import('../src/entities/powerorb.js');
+  const PL = await import('../src/entities/player.js');
+  const SG = await import('../src/systems/savegame.js');
+  const dc = world.dojoCentre;
+  const L = DD.arcadeLayout(dc);
+
+  /* --- the map: every island clear of every other, and of the hub and port --- */
+  {
+    const bodies = [
+      { key: 'holo-Dojo', x: dc.x, z: dc.z, r: 50 },
+      { key: 'port', x: DD.ARCADE.x, z: DD.ARCADE.z, r: DD.ARCADE.r },
+      ...Object.entries(ISL.ISLANDS).map(([key, s]) => ({ key, ...ISL.islandCentre(dc, L.u, s) })),
+    ];
+    let tight = { gap: Infinity };
+    for (let i = 0; i < bodies.length; i++) {
+      for (let j = i + 1; j < bodies.length; j++) {
+        const a = bodies[i]; const c = bodies[j];
+        const gap = Math.hypot(a.x - c.x, a.z - c.z) - a.r - c.r;
+        if (gap < tight.gap) tight = { gap, pair: `${a.key}/${c.key}` };
+      }
+    }
+    /* A bridge you can see across and cannot jump: the longest run-up in the
+       game clears ~9 units, so anything under 15 would invite a leap. */
+    ok('every training island is clear of every other, the hub and the port',
+      tight.gap > 15, `${tight.pair} ${tight.gap.toFixed(1)}`);
+  }
+
+  /* --- the islands are raised, bridged, and walkable --- */
+  const scene = new THREE.Scene();
+  const sim = new SW.SimWorld(scene, {
+    dojo: { x: dc.x, y: dc.y, z: dc.z },
+    arcade: { x: DD.ARCADE.x, z: DD.ARCADE.z, y: DD.ARCADE.y, r: DD.ARCADE.r },
+    ports: L.tubes,
+  });
+  const fakeGame = {
+    world, scene, players: [], toasts: [], sounds: [],
+    toast(t) { this.toasts.push(t); }, sfx(s) { this.sounds.push(s); },
+    input: { promptFor: () => 'E' },
+  };
+  const D = new DD.DreamDojo(fakeGame);
+  D.layout = L;
+  D.sim = sim;
+  for (const key of ['gallery', 'hall']) {
+    const I = D._raiseIsland(key);
+    const centre = sim.heightAt(I.x + SW.SIM.dx, I.z + SW.SIM.dz, I.y + 5);
+    // Walk the bridge's own path, a step at a time, from the hub rim in.
+    const from = { x: dc.x + I.fwd.x * 47, z: dc.z + I.fwd.z * 47, y: dc.y };
+    const to = { x: I.x - I.fwd.x * (I.r - 2), z: I.z - I.fwd.z * (I.r - 2), y: I.y };
+    const pts = SW.snakePath(from, to, { wobble: 3, waves: 1, n: 160 });
+    let y = dc.y;
+    let gapAt = -1;
+    let worst = 0;
+    pts.forEach((q, i) => {
+      const h = sim.heightAt(q.x + SW.SIM.dx, q.z + SW.SIM.dz, y + 0.45);
+      if (!h) { if (gapAt < 0) gapAt = i; return; }
+      worst = Math.max(worst, Math.abs(h.y - y));
+      y = h.y;
+    });
+    ok(`the ${key} island stands in the simulator, at its own height`,
+      !!centre?.sim && Math.abs(centre.y - I.y) < 0.01, `${centre?.y} vs ${I.y}`);
+    ok(`...and its bridge is walked end to end without a gap or a ledge`,
+      gapAt < 0 && worst <= 0.4, gapAt >= 0 ? `gap at sample ${gapAt}` : `worst step ${worst.toFixed(2)}`);
+    ok('...and nowhere in the real world answers for it',
+      world.heightAt(I.x + SW.SIM.dx, I.z + SW.SIM.dz, 500) == null && sim.heightAt(I.x, I.z, 500) == null);
+  }
+
+  /* --- a kitten to try things on --- */
+  const spawn = new THREE.Vector3(0, world.heightAt(0, 40).y, 40);
+  const mk = (index) => new PL.Player({ texture: new THREE.Texture(), index, spawn: spawn.clone(), cols: 8, rows: 4, mirror: false });
+  const her = mk(0);
+  const sis = mk(1);
+  fakeGame.players = [her, sis];
+  her.realm = 'sim';
+  D.st[0] = { phase: 'sim', t: 0 };
+  D.st[1] = null;
+
+  /* --- the blade in here finds holograms and nothing else --- */
+  {
+    const gate = new TG.TrainingGate();
+    const root = new THREE.Group();
+    her.position.set(SW.SIM.dx + 0, 10, 0);
+    her.facing = 0;
+    sis.position.set(SW.SIM.dx + 0, 10, 2);         // right in front of her blade
+    const hp0 = sis.hp;
+    const post = new TG.Post({ parent: root, owner: 0, x: 0, y: 10, z: 2.5 });
+    const theirs = new TG.Post({ parent: root, owner: 1, x: 0.5, y: 10, z: 2 });
+    gate.add(post); gate.add(theirs);
+    gate.strike(her, 'stand', PL.BASE_REACH, new THREE.Vector3(0, 0, 1));
+    ok('a swing in the simulator lands on her hologram', !post.live || post.hp < post.maxHits);
+    ok("...and not on her sister's, which only answers to her sister", theirs.hp === theirs.maxHits);
+    ok('...and never on her sister, standing right there', Number.isFinite(hp0) && sis.hp === hp0 && !sis.ko);
+    const code = ['targets.js', 'simhud.js', 'drill.js', 'gallery.js', 'hall.js', 'rundown.js']
+      .map((f) => readFileSync(new URL(`../src/systems/dream/${f}`, import.meta.url), 'utf8'))
+      .join('\n').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    ok('nothing in the simulator can call hurt()', !/\.hurt\(/.test(code));
+    ok('...and the hud it hands her maps strikePlayers to the training gate and nowhere else',
+      /strikePlayers: \(attacker, kind, reach, dir, spent = null\) => \{\s*dream\.onStrike\(/.test(code));
+    D.gate = gate;
+    ok('...and her player list in there is the holograms, never her sisters',
+      !D.gate.fighters.includes(sis));
+  }
+
+  /* --- a loan is in her POWER and never in her ORBS --- */
+  {
+    her.setPowerOrbs(['vigor']);
+    const before = [...her.powerOrbs];
+    // Topped up by COUNT: she owns one Nagamori, the drill wants two.
+    {
+      her.setPowerOrbs(['ward', 'aegis']);
+      D.st[0].loans = [];
+      D.lend(her, ['ward', 'aegis', 'aegis']);
+      ok('a loan tops a kind up to the count the drill wants, and lends no more',
+        JSON.stringify(D.st[0].loans) === '["aegis"]' && her.power.ward.max === PO.wardFor(1, 2).max,
+        `${D.st[0].loans.join(',')} max ${her.power.ward?.max}`);
+      D._leaveSim(her);
+      her.setPowerOrbs(['vigor']);
+      D.lend(her, ['swift', 'reach']);
+    }
+    ok('a lent orb changes what she can do', her.power.speed > 1 && her.power.reach > 1,
+      `speed ${her.power.speed} reach ${her.power.reach}`);
+    ok('...and never touches the orbs she saves, trades and can be stolen from',
+      JSON.stringify(her.powerOrbs) === JSON.stringify(before), her.powerOrbs.join(','));
+    ok('...and it is drawn on her, so she can see what she borrowed',
+      her.wornOrbs.length === 3, `${her.wornOrbs.length} worn`);
+    const row = SG.castRow ? SG.castRow(her) : null;
+    ok('...and a save taken while she wears it saves only her own',
+      !row || JSON.stringify(row.orbs) === JSON.stringify(before));
+    D._leaveSim(her);
+    ok('leaving the simulator hands it back: her power is her orbs again',
+      JSON.stringify(her.power) === JSON.stringify(PO.aggregate(her.powerOrbs)));
+    ok('...and the ring on her is her own again', her.wornOrbs.length === 1);
+    her.setPowerOrbs([]);
+  }
+
+  /* --- a trial oath is the simulator's, and the save keeps the real one --- */
+  {
+    const real = CLANS.find((c) => c.id === 'thunder');
+    const trial = CLANS.find((c) => c.id === 'river');
+    her.clan = real;
+    D.swearFor(her, trial);
+    D.swearFor(her, CLANS.find((c) => c.id === 'shadow'));
+    ok('a trial oath puts the clan on her for the trial', her.clan?.id === 'shadow');
+    const row = SG.castRow ? SG.castRow(her) : null;
+    ok('...and a save taken in the middle of two of them keeps the clan she REALLY swore',
+      row?.clan === 'thunder', row?.clan);
+    ok('...and swearing in here never calls the real oath (no cheer, no quest)',
+      !fakeGame.sounds.includes('cheer') && !/onJoinClan/.test(
+        readFileSync(new URL('../src/systems/dreamdojo.js', import.meta.url), 'utf8')
+          .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')));
+    D._leaveSim(her);
+    ok('...and leaving gives her real clan back', her.clan === real && her.dreamOath == null);
+    her.clan = null;
+    D.swearFor(her, trial);
+    D._leaveSim(her);
+    ok('...and a kitten sworn to nobody goes back to nobody', her.clan === null);
+    const save = readFileSync(new URL('../src/systems/savegame.js', import.meta.url), 'utf8');
+    ok('the save reads the real clan first, the way it reads her tube first',
+      /clan: \(p\.dreamOath \? p\.dreamOath\.was : p\.clan\)\?\.id \?\? null/.test(save));
+  }
+
+  /* --- every drill is a gate on the orb it teaches, measured --- */
+  {
+    const A = PL.ATTACKS;
+    const pad = 0.6;   // `Target.pad`, a post's default
+    const bare = A.stand.reach + pad;
+    const lent = A.stand.reach * PO.aggregate(['reach']).reach + pad;
+    const river = CLANS.find((c) => c.id === 'river');
+    const sworn = A.stand.reach * (river.buff.reach ?? 1) + pad;
+    line('a post is cut from, bare / Long Cut / Riverclaw', `${bare.toFixed(2)} / ${lent.toFixed(2)} / ${sworn.toFixed(2)}`);
+    ok('斬 the Long Cut ring cannot be cut from without the orb', GAL.REACH_RING > bare + 0.2,
+      `${GAL.REACH_RING} vs ${bare.toFixed(2)}`);
+    ok('...and leaves a real window with it', lent - GAL.REACH_RING > 0.5,
+      `${(lent - GAL.REACH_RING).toFixed(2)}`);
+    ok('河 the Riverclaw ring is out of reach of the orb alone', HAL.RIVER_RING > lent + 0.2,
+      `${HAL.RIVER_RING} vs ${lent.toFixed(2)}`);
+    ok('...and inside the oath\'s, with room', sworn - HAL.RIVER_RING > 0.8,
+      `${(sworn - HAL.RIVER_RING).toFixed(2)}`);
+
+    // The jump, the way the existing gate check models it: every jump of a
+    // chain full but the last, which is x0.86; a deck is landable 0.4 under.
+    const G = 26; const V = 11.2; const LATER = 0.86; const LAND = 0.4;
+    const apex = (v) => (v * v) / (2 * G);
+    const climb = (n, k = 1) => apex(V * k) * (n - 1) + apex(V * LATER * k);
+    const shadow = CLANS.find((c) => c.id === 'shadow').buff;
+    const two = climb(2) + LAND;
+    const three = climb(2 + PO.aggregate(['leap']).jumps) + LAND;
+    const sworn3 = climb(shadow.jumps, shadow.jump) + LAND;
+    line('best ledge on two jumps / a Leap orb / Shadowtail', `${two.toFixed(2)} / ${three.toFixed(2)} / ${sworn3.toFixed(2)}`);
+    ok('跳 the Leap ledge is out of reach of two jumps', GAL.LEAP_DECK > two * 1.05, `${GAL.LEAP_DECK} vs ${two.toFixed(2)}`);
+    ok('...and comfortably inside three', GAL.LEAP_DECK < (three - LAND) * 0.85, `${GAL.LEAP_DECK} vs ${three.toFixed(2)}`);
+    ok('影 the Shadowtail star is out of reach of two jumps', HAL.SHADOW_DECK > two * 1.3);
+    ok('...and inside the oath\'s three, with room', HAL.SHADOW_DECK < (sworn3 - LAND) * 0.85,
+      `${HAL.SHADOW_DECK} vs ${sworn3.toFixed(2)}`);
+
+    // 守: the beam is longer than a bare Ward stays up and shorter than one
+    // with a Nagamori — the drill IS the sentence on the orb's card.
+    const bareUp = PO.wardFor(1, 0).max + PO.WARD.tail;
+    // The drill lends a PAIR (gallery.js NEEDS) — measured, not assumed.
+    const lentAegis = 1 + (GAL.NEEDS.aegis ?? []).filter((x) => x === 'aegis').length;
+    const longUp = PO.wardFor(1, lentAegis).max + PO.WARD.tail;
+    line('a Ward is up for, bare / Long Guard / the beam', `${bareUp.toFixed(2)} / ${longUp.toFixed(2)} / ${GAL.BEAM_T.toFixed(2)}`);
+    ok('守 the Long Guard beam outlasts a bare Ward', GAL.BEAM_T > bareUp + 0.15);
+    ok(`...and the ${lentAegis} Nagamori it lends outlast it by a second, so she can raise it early`, longUp - GAL.BEAM_T > 0.8,
+      `${(longUp - GAL.BEAM_T).toFixed(2)}s to spare`);
+    // A held beam stands in the bubble rather than spending a blow on it,
+    // or two seconds of it would smash any Ward (WARD.hits) and nobody passes.
+    her.realm = 'sim';
+    D.st[0] = { phase: 'sim', t: 0, simHp: 100 };
+    let spent = 0;
+    const realTake = her._wardTakeHit;
+    her._wardTakeHit = () => { spent++; };
+    Object.defineProperty(her, 'warded', { value: true, configurable: true });
+    const r1 = D.simHit(her, { dmg: 6, hold: true });
+    const r2 = D.simHit(her, { dmg: 6, hold: true });
+    const r3 = D.simHit(her, { dmg: 6 });
+    ok('a held beam is blocked by the bubble and never breaks it', r1 === 'blocked' && r2 === 'blocked' && spent === 1,
+      `${r1} ${r2} ${r3}, ${spent} blow(s) spent`);
+    delete her.warded;
+    her._wardTakeHit = realTake;
+    /* A WALL OF LIGHT PUSHES HER BACK, NOT ALONG IT. The first cut pushed away
+       from the beam's END, so a kitten walking into the Flash Step wall slid
+       sideways down it — and the Long Guard beam, the same way, carried one
+       off the edge of the gallery mid-drill. */
+    {
+      const DR = await import('../src/systems/dream/drill.js');
+      const wall = { a: new THREE.Vector3(-20, 1, 5), b: new THREE.Vector3(20, 1, 5) };
+      const q = { position: new THREE.Vector3(SW.SIM.dx + 3, 0, 4.6), facing: 0 };
+      const push = DR.Drill.prototype._awayFromBeam.call(null, q, wall);
+      ok('a laser wall pushes her straight back from it, not along it',
+        push.z < -0.99 && Math.abs(push.x) < 0.05, `${push.x.toFixed(2)}, ${push.z.toFixed(2)}`);
+      const src = readFileSync(new URL('../src/systems/dreamdojo.js', import.meta.url), 'utf8');
+      const nudge = +(/p\.velocity\.x = push\.x \* ([\d.]+);/.exec(src)?.[1] ?? NaN);
+      ok('...and a hit is a nudge an island can absorb, not a throw', nudge > 0 && nudge <= 6, String(nudge));
+    }
+    // ...and a hit in here never reaches the health the ring reads.
+    const hp = her.hp;
+    D.st[0].iframes = 0;
+    const r4 = D.simHit(her, { dmg: 30 });
+    ok('a hologram hit takes her SIM bar, never her real health', r4 === 'hit' && Number.isFinite(hp) && her.hp === hp && D.st[0].simHp === 70,
+      `${r4} hp ${her.hp} sim ${D.st[0].simHp}`);
+  }
+
+  /* --- the stars: per kitten, only ever up, and wiped only on purpose --- */
+  {
+    const mem = new Map();
+    const store = { getItem: (k) => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, String(v)), removeItem: (k) => mem.delete(k) };
+    const P = new PR.DreamProgress(store);
+    const low = { lowerIsBetter: true };
+    P.award('Ember', 'gallery.swift', 2, 12, low);
+    const worse = P.award('Ember', 'gallery.swift', 1, 20, low);
+    const better = P.award('Ember', 'gallery.swift', 3, 8, low);
+    P.award('Frost', 'gallery.swift', 1, 22, low);
+    ok('stars only ever go up', worse.gained === 0 && P.stars('Ember', 'gallery.swift') === 3 && better.gained === 1);
+    ok('...and a best is a best (lower time wins)', P.best('Ember', 'gallery.swift') === 8);
+    ok('...and every kitten has her own', P.stars('Frost', 'gallery.swift') === 1);
+    const again = new PR.DreamProgress(store);
+    ok('...and they are still there next time', again.stars('Ember', 'gallery.swift') === 3 && again.count() === 2);
+    mem.set(PR.PROGRESS_KEY, '{not json');
+    const broken = new PR.DreamProgress(store);
+    ok('a corrupt store starts empty instead of throwing', broken.count() === 0);
+    ok('...and a wipe says how many kittens it took', again.wipe() === 2 && !mem.has(PR.PROGRESS_KEY));
+    const none = new PR.DreamProgress(null);
+    none.award('Ember', 'x', 1, 1);
+    ok('...and no storage at all is a session that forgets, not a crash', none.stars('Ember', 'x') === 1);
+  }
+
+  /* --- two players keep the game they know --- */
+  {
+    const kids = [0, 1].map((i) => ({ index: i, position: new THREE.Vector3(i, 0, 0) }));
+    const g2 = { players: kids, world };
+    const D2 = new DD.DreamDojo(g2);
+    ok('untouched, the arcade hands every kitten the real Game to fight in',
+      kids.every((p) => D2.hudFor(p) === g2));
+    ok('...and holds no drill, rundown or station for anybody',
+      D2.drills.length === 0 && D2.rundowns.length === 0 && D2.stations.length === 0);
+    /* A STATION STEPS ASIDE WHILE HER DRILL RUNS. Interact is the clan power
+       mid-trial, and the shrine she started at is a breath from the targets. */
+    {
+      const q = { index: 0, realm: 'sim', position: new THREE.Vector3(SW.SIM.dx + 5, 3, 5) };
+      D2.st[0] = { phase: 'sim' };
+      D2.stations = [{ x: 5, z: 5, y: 3, r: 2.4, prompt: () => 'GO', interact() {} }];
+      const free = !!D2.stationAt(q);
+      D2.drills[0] = { state: 'live' };
+      const busy = D2.stationAt(q);
+      D2.drills[0] = { state: 'won' };
+      const after = !!D2.stationAt(q);
+      ok('a station answers her, steps aside while her drill runs, and answers again after',
+        free && busy === null && after, `${free} ${busy} ${after}`);
+      D2.drills.length = 0; D2.stations = []; D2.st.length = 0;
+    }
+    const mm = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    ok('the player loop gives a kitten in the simulator its hud, and everybody else the Game',
+      /sim \? this\.dream\.hudFor\(p\) : this\);/.test(mm));
+  }
+  scene.remove(sim.root);
 }
 
 /* Print the total. HANDOFF.md quoted it in two places and they disagreed (150

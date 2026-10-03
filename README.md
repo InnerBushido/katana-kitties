@@ -320,7 +320,27 @@ see you.
 Back in the real world, a hologram of you hangs in your tube copying everything
 you do. Press **interact** to jack back out.
 
-The training games inside are still being built.
+Inside, two bridges lead off the glowing Dojo to two floating islands:
+
+- **The Kotodama Gallery.** All ten orbs stand on pedestals. Step up to one
+  and press **interact** to borrow it and try a little drill made for it:
+  run the Gale gates, cut posts from outside a red ring with Long Cut, jump
+  three times to a ledge with Leap, and so on. Whatever you borrow vanishes
+  when you jack out, and your real orbs are never touched.
+- **The Clan Trial Hall.** Six glowing gates, one per clan, each with its
+  leader standing in light. Swear to any clan **just for now** and try what it
+  does, including the two powers you can normally only use in the arena:
+  **breathing fire** and **stealing an orb**. Your real clan comes back when
+  you leave.
+
+Every drill gives up to **three stars**, and the game remembers them for each
+kitten. If you're wearing Kotodama when you jack in, Lionheart offers a
+**rundown**: talk to him and he goes through every orb you're wearing, what it
+does, and which button does it.
+
+Things in there hit your **SIM bar**, not your real health.
+
+The other training games are still being built.
 
 ## Collect the seven dragon balls
 
