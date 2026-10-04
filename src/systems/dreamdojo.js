@@ -32,6 +32,7 @@ import { GearRoom, GEAR_ITEMS } from './dream/gear.js';
 import { gateFrame, buildGate } from './dream/gate.js';
 import { TOUR, GEAR_LINES, GEAR_VOICE } from './dream/stories.js';
 import { TourShadow } from './dream/tourshadow.js';
+import { TourCast } from './dream/tourcast.js';
 
 /** Her single-cell pose billboards, which the tube puppet mirrors. */
 const PUPPET_POSES = ['eatPose', 'blessPose', 'warpPose', 'breathPose', 'scaredPose', 'sweepPose'];
@@ -136,11 +137,10 @@ export const FLOAT_H = 1.6;
 export const SIGN_Y = 9.5;
 
 /** The way across: THREE stones (see `arcadeLayout`). `rim` is the Dojo's
- *  measured walkable edge, `gap` every hop edge to edge, `psi` how far left of
- *  the straight line the first stone stands (degrees), `y0` the Dojo's floor
+ *  measured walkable edge, `gap` every hop edge to edge, `y0` the Dojo's floor
  *  and `rise` each step up — four of them, Dojo to stone to stone to stone to
  *  the gate's landing, 30 to 33. */
-export const STONES = { n: 3, r: 2.2, gap: 3.2, psi: -12, rim: 66, y0: 30, rise: 0.75 };
+export const STONES = { n: 3, r: 2.2, gap: 3.2, rim: 66, y0: 30, rise: 0.75 };
 /** How far from the Dojo's centre a kitten who fell is put back down. The
  *  rim is at 66; 63 is three units of floor in front of her toes. */
 export const LAUNCH_R = 63;
@@ -219,28 +219,59 @@ export function arcadeLayout(dojoCentre) {
        placed in front of the last floating platform".
      So: three stones, each 2.2 across, every hop STONES.gap (3.2 — a third of
      a single jump's reach, so the challenge is the landing, not the
-     distance). The first stands one hop off the Dojo's rim, a little left of
-     the straight line; the last stands ON THE GATE'S AXIS, one hop short of
-     its landing (dream/gate.js), so the gate is the thing in front of her as
-     she stands on it; the middle one is wherever is one hop from both, on the
-     left — solved, not placed, so the gaps cannot drift apart. The way still
-     curves (≈55° between the first hop and the last). */
-  const R = (STONES.rim + STONES.gap + STONES.r);
-  const psi = (STONES.psi * Math.PI) / 180;
-  const s1 = {
-    x: dojoCentre.x + (u.x * Math.cos(psi) + v.x * Math.sin(psi)) * R,
-    z: dojoCentre.z + (u.z * Math.cos(psi) + v.z * Math.sin(psi)) * R,
-  };
+     distance).
+     · Then the first three were placed one at a time — one hop off the rim
+       12° left of the straight line, one hop short of the gate on its axis,
+       and the middle wherever was one hop from both — and the hops were
+       equal but the WAY was not: it zigzagged, turning -55°, +62° and +61°,
+       and the middle stone swung out sideways so the three sat 3.2, 7.8 and
+       15.3 off the Dojo's rim with the deck at 17.6. Richard: "smooth out
+       the placement of the three platforms leading up to the Dream Dojo so
+       that they are more evenly spaced between the Dojo of the Turning
+       Circle island and the Dream Dojo island."
+     NOW ONE ARC. The four hops lie on a single circle that runs straight
+     into the gate — tangent to the gate's axis at the deck's far end — so
+     every turn is the same small turn (17°, 20°, 17°), and equal chords on a
+     circle are equal hops by construction. Its radius is solved, not chosen:
+     the one whose fourth hop lands on the Dojo's rim (~21). The stones now
+     stand 3.0, 9.5 and 14.6 off the rim — even steps across the void — and
+     the last is 0.7 off the gate's axis, so the gate is still the thing in
+     front of her. world-check measures every hop, every turn, and the gate. */
   const gate = gateFrame(ARCADE, u, v, DOME_R);
-  const s3 = gate.at(gate.tip + STONES.gap + STONES.r);
   const span = 2 * STONES.r + STONES.gap;
-  const D13 = Math.hypot(s3.x - s1.x, s3.z - s1.z);
-  const hh = Math.sqrt(Math.max(0, span * span - (D13 / 2) ** 2));
-  const t13 = { x: (s3.x - s1.x) / D13, z: (s3.z - s1.z) / D13 };
-  const mid = { x: (s1.x + s3.x) / 2, z: (s1.z + s3.z) / 2 };
-  const s2 = [1, -1]
-    .map((sg) => ({ x: mid.x + t13.z * hh * sg, z: mid.z - t13.x * hh * sg }))
-    .sort((a, b) => ((a.x - dojoCentre.x) * v.x + (a.z - dojoCentre.z) * v.z) - ((b.x - dojoCentre.x) * v.x + (b.z - dojoCentre.z) * v.z))[0];
+  const hop0 = STONES.r + STONES.gap;
+  const tip = gate.at(gate.tip);
+  /** The four hops back from the gate's landing along a circle of radius
+   *  `rho` tangent to its axis there, curving toward the Dojo: the three
+   *  stones, and where the fourth lands (which should be the rim). */
+  const arc = (rho) => {
+    // The side the Dojo is on, across the gate's axis.
+    const sg = Math.sign((dojoCentre.x - tip.x) * gate.lat.x + (dojoCentre.z - tip.z) * gate.lat.z) || 1;
+    const c = { x: tip.x + gate.lat.x * rho * sg, z: tip.z + gate.lat.z * rho * sg };
+    let a = Math.atan2(tip.z - c.z, tip.x - c.x);
+    // Away from the gate is on out along its axis (`dir` points out of the
+    // pad): which way round the circle that is.
+    const turn = Math.sign(-Math.sin(a) * gate.dir.x + Math.cos(a) * gate.dir.z) || 1;
+    const out = [];
+    for (const ch of [hop0, span, span, hop0]) {
+      a += turn * 2 * Math.asin(Math.min(1, ch / (2 * rho)));
+      out.push({ x: c.x + Math.cos(a) * rho, z: c.z + Math.sin(a) * rho });
+    }
+    return out;
+  };
+  const rimErr = (rho) => {
+    const p = arc(rho)[3];
+    return Math.hypot(p.x - dojoCentre.x, p.z - dojoCentre.z) - STONES.rim;
+  };
+  // A tight circle lands the fourth hop inside the rim, a straight line
+  // beyond it; bisect between the two.
+  let lo = span;
+  let hi = 4000;
+  for (let i = 0; i < 80; i++) {
+    const m = (lo + hi) / 2;
+    if (rimErr(m) < 0) lo = m; else hi = m;
+  }
+  const [s3, s2, s1] = arc((lo + hi) / 2);
   const stones = [s1, s2, s3].map((s, k) => {
     const d = (s.x - dojoCentre.x) * u.x + (s.z - dojoCentre.z) * u.z;
     const w = (s.x - dojoCentre.x) * v.x + (s.z - dojoCentre.z) * v.z;
@@ -2051,10 +2082,33 @@ export class DreamDojo {
        otherwise only fetched at the first tube. Forty-odd seconds of tour
        come before his line; if it has not landed by then he is drawn from
        Lionheart's tinted town drawing, which is how his fight degrades too. */
-    g.loadSimArt?.();
+    /* ...and the islands are PLAYED in two of them (dream/tourcast.js),
+       by a cast built hidden once the headset drawings have landed, so the
+       warm-up puts it on the GPU in the drawings it will be seen in. Built
+       sooner, in the town drawings, it sent three kitten sheets up that the
+       tour then never drew — ~100ms each in the pane. If the drawings are
+       still out when its line starts, `start` builds it in the town ones,
+       and `dress` changes them when they land. */
+    const cast = (this.tourCast ??= new TourCast(this));
+    const ready = () => {
+      if (!cast.build()) return;
+      cast.dress();
+      // Only into a warm-up that is running: the queue is shared with the
+      // ending's, which draws in the real world's state.
+      if (!g._simPrimed) return;
+      // Its sheets first, then whatever of its own the sweep finds.
+      g.primeTextures?.(cast.textures(), true);
+      g.primeMore?.(cast.roots);
+    };
+    const art = g.loadSimArt?.();
+    if (art?.then) art.then(ready, ready); else ready();
     const ctx = this.storyCtx();
-    ctx.actors = { simShadow: (this.tourShadow ??= new TourShadow(this)) };
-    return g.storyScene.start('tour', TOUR, ctx) ? null : 'scene';
+    ctx.actors = { simShadow: (this.tourShadow ??= new TourShadow(this)), simHub: cast, simIsles: cast };
+    const ok = g.storyScene.start('tour', TOUR, ctx);
+    /* THE SIMULATOR GOES UP WHILE PAYNE IS STILL TALKING — the tour's first
+       cut into it was a 1.3 second frame. See `Game.primeSim`. */
+    if (ok) g.primeSim?.();
+    return ok ? null : 'scene';
   }
 
   /**

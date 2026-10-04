@@ -9661,6 +9661,8 @@ class Game {
         for (const o of p.featOrbs ?? []) o.update(dt, p.position);
       }
       this._updateMusic(dt);
+      // The simulator going up a slice a frame, before the tour cuts into it.
+      this._primeSim(this.storyScene.camera);
       // Its lens says which world it is in: see StoryScene.update.
       this._renderView(this.storyScene.camera, 0, 0,
         ...this.renderer.getSize(new THREE.Vector2()).toArray(), null, true, this.storyScene.loc);
@@ -13185,15 +13187,137 @@ class Game {
     if (!root) return;
     this._primeQueue ??= [];
     this._primeHad ??= new WeakSet();
-    const walk = (o) => {
-      if (!lift && !o.visible) return;
+    /* THE ROOT ITSELF IS ALWAYS WALKED: a root handed in hidden is hidden
+       because it is about to be shown — the simulator's layer, off until a
+       lens in it draws (`primeSim`) — and the draw lifts it. Below the root,
+       hidden still means hidden unless `lift` says otherwise. */
+    const walk = (o, top = false) => {
+      if (!lift && !top && !o.visible) return;
       if ((o.isMesh || o.isPoints || o.isLine || o.isSprite) && !this._primeHad.has(o)) {
         this._primeHad.add(o);
         this._primeQueue.push(o);
       }
       for (const c of o.children) walk(c);
     };
-    walk(root);
+    walk(root, true);
+  }
+
+  /**
+   * THE SIMULATOR, ON THE GPU BEFORE THE TOUR CUTS INTO IT.
+   *
+   * Richard: "If we are playing the Payne cutscene introduction to the Dream
+   * Dojo for the first time, we should pre-load the assets for the simulator
+   * so that, during the cutscene, when we transition to the simulator, there
+   * is no lag spike like there currently is during the cutscene, which
+   * doesn't look good." Measured in the pane before this: the tour's first
+   * frame in the simulator took 1304ms against 30-50ms either side, and the
+   * program count went 29 -> 43 on that one frame — every holo material
+   * linked on the draw that first needed it, and every island's buffers
+   * uploaded with it. The tour has ~45 seconds of the real world before that
+   * cut, which is far more than the warm-up needs.
+   *
+   * The ending's two halves again (`_warmFinale`, `_primeFinale`): every
+   * program is issued through `compileAsync` UNDER THE SIMULATOR'S OWN STATE
+   * (`_simState` — its fog, the sky and petals out, the layer on), because a
+   * program's key includes the fog and the lights it is drawn with and a
+   * warm-up in the real world's state would link the wrong variants; and once
+   * they have linked, a slice of meshes a frame is drawn into one pixel to
+   * put the buffers up. `extra` is what the tour adds to the layer for its
+   * own scenes (dream/tourcast.js), built hidden for exactly this.
+   *
+   * ONCE A SESSION: what is on the GPU stays there.
+   */
+  primeSim(extra = []) {
+    const D = this.dream;
+    if (!D?.sim || this._simPrimed) return;
+    this._simPrimed = true;
+    const cam = this.storyScene?.camera ?? this.camera;
+    this._primeAdd(D.sim.root);
+    this._primeAdd(D.simDojo?.group);
+    this.primeMore(extra);
+    // The draws wait for the link: drawn early, a mesh links its program itself.
+    const done = () => { this._simLinked = true; };
+    if (!this.renderer.compileAsync) { done(); return; }
+    try {
+      const back = this._simState(true);
+      let p;
+      try {
+        p = this.renderer.compileAsync(this.scene, cam);
+      } finally {
+        back();
+      }
+      p.then(done, done);
+    } catch (e) {
+      console.warn('[sim] shader warm-up skipped', e);
+      done();
+    }
+  }
+
+  /** More for the warm-up, after it has started: things built for the
+   *  simulator once their drawings landed (the tour's cast). Lifted, because
+   *  they are hidden until their line. */
+  primeMore(roots = []) {
+    for (const r of roots) this._primeAdd(r, true);
+    /* THEIR TEXTURES FIRST, ONE A FRAME, AND STRAIGHT AWAY. The first cut of
+       this drew twelve meshes a frame and let each one's texture go up with
+       it, and three frames of it ran 86, 202 and 95ms in the middle of
+       Payne's lines — the layer's geometry is 1.7MB in all, but its labels
+       are dozens of canvases and the kittens' sheets are 3840 and 3072 wide.
+       An upload needs no program, so these do not wait for the link: they
+       start on the tour's first frames, which are under its fade from black. */
+    for (const m of this._primeQueue ?? []) {
+      for (const mat of [].concat(m.material ?? [])) {
+        this.primeTextures([mat.map, mat.alphaMap, mat.uniforms?.map?.value]);
+      }
+    }
+  }
+
+  /** Textures to put up one a frame before anything draws with them —
+   *  `first` to the front of the line: the biggest ones, so they are the
+   *  frames under the tour's fade from black. */
+  primeTextures(texs, first = false) {
+    this._primeTexHad ??= new WeakSet();
+    const add = [];
+    for (const t of texs) {
+      if (!t?.isTexture || this._primeTexHad.has(t)) continue;
+      this._primeTexHad.add(t);
+      add.push(t);
+    }
+    this._primeTex ??= [];
+    if (first) this._primeTex.unshift(...add); else this._primeTex.push(...add);
+  }
+
+  /** The simulator's look switched on (or back off): the swap `_renderView`
+   *  makes for a pane in the sim. Returns the undo. */
+  _simState(on) {
+    const D = this.dream;
+    if (!D?.sim) return () => {};
+    const W = this.world;
+    const kept = [this.scene.fog, W.skyMesh?.visible, W.petals?.mesh.visible, D.sim.root.visible];
+    D.sim.root.visible = on;
+    if (on) {
+      this.scene.fog = D.sim.fog;
+      if (W.skyMesh) W.skyMesh.visible = false;
+      if (W.petals) W.petals.mesh.visible = false;
+    }
+    return () => {
+      [this.scene.fog] = kept;
+      if (W.skyMesh) W.skyMesh.visible = kept[1];
+      if (W.petals) W.petals.mesh.visible = kept[2];
+      D.sim.root.visible = kept[3];
+    };
+  }
+
+  /** `primeSim`'s second half, a slice a frame while the tour plays. */
+  _primeSim(cam) {
+    if (!this._simPrimed) return;
+    // A texture is a frame's whole budget: the big sheets cost one alone.
+    const t = this._primeTex?.shift();
+    if (t) {
+      try { this.renderer.initTexture(t); } catch (e) { /* drawn the slow way, then */ }
+      return;
+    }
+    if (this._simLinked) this._primeDraw(cam, true);
   }
 
   _primeFinale() {
@@ -13207,9 +13331,14 @@ class Game {
       this._primeAdd(W.group, true);
       this._primeAdd(this.world.farIsles?.group, true);
     }
+    this._primeDraw(this.summonScene.camera);
+  }
+
+  /** Draw the next slice of the prime queue into one pixel through `cam` —
+   *  in the simulator's state when `sim` says so. */
+  _primeDraw(cam, sim = false) {
     const q = this._primeQueue;
     if (!q?.length) return;
-    const cam = this.summonScene.camera;
     const batch = q.splice(0, PRIME_BATCH).filter((m) => m.parent);
     const saved = [];
     const lift = (o) => {
@@ -13230,6 +13359,7 @@ class Game {
     R.shadowMap.needsUpdate = false;
     const mask = cam.layers.mask;
     cam.layers.set(PRIME_LAYER);
+    const back = sim ? this._simState(true) : null;
     try {
       R.setViewport(0, 0, 1, 1);
       R.setScissor(0, 0, 1, 1);
@@ -13239,6 +13369,7 @@ class Game {
       console.warn('[finale] prime skipped', e);
       q.length = 0;
     } finally {
+      back?.();
       cam.layers.mask = mask;
       [R.shadowMap.autoUpdate, R.shadowMap.needsUpdate] = sm;
       for (let i = saved.length - 1; i >= 0; i--) {
@@ -13267,25 +13398,9 @@ class Game {
        no other pane, and no other part of the frame, ever sees the swap. */
     const D = this.dream;
     const sim = !!(D?.sim && (realm ? realm === 'sim' : members && D.paneIsSim(members)));
-    let kept = null;
-    if (D?.sim) {
-      const W = this.world;
-      kept = [this.scene.fog, W.skyMesh?.visible, W.petals?.mesh.visible, D.sim.root.visible];
-      D.sim.root.visible = sim;
-      if (sim) {
-        this.scene.fog = D.sim.fog;
-        if (W.skyMesh) W.skyMesh.visible = false;
-        if (W.petals) W.petals.mesh.visible = false;
-      }
-    }
+    const back = this._simState(sim);
     this.renderer.render(this.scene, camera);
-    if (kept) {
-      const W = this.world;
-      [this.scene.fog] = kept;
-      if (W.skyMesh) W.skyMesh.visible = kept[1];
-      if (W.petals) W.petals.mesh.visible = kept[2];
-      D.sim.root.visible = kept[3];
-    }
+    back();
     /* ...and the phase over the top, in this pane only. */
     if (members && D) D.drawPaneFx(this.renderer, members, w, h);
   }

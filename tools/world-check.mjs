@@ -31153,9 +31153,53 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
       'drawn on the frame compileAsync was issued, the draw waits for the link');
     const add = src.slice(src.indexOf('  _primeAdd(root'), src.indexOf('  _primeFinale() {'));
     ok('priming skips what is hidden unless it is about to be revealed',
-      /if \(!lift && !o\.visible\) return;/.test(add)
+      /if \(!lift && !top && !o\.visible\) return;/.test(add)
         && /_primeAdd\(W\.group, true\)/.test(prime) && /_primeAdd\(this\.scene\);/.test(src),
       'lifting everything uploaded 200 meshes the ending never shows, one frame taking 1s');
+
+    /* THE SIMULATOR, UP BEFORE PAYNE'S TOUR CUTS INTO IT. Richard: "pre-load
+       the assets for the simulator so that, during the cutscene, when we
+       transition to the simulator, there is no lag spike". The first frame in
+       the sim was 1304ms in the pane (programs 29 -> 43 on that one frame,
+       every island's buffers with it); with this it is 17ms. Each piece below
+       was once missing in a way the screen showed as a spike: */
+    const ddSrc = readFileSync(new URL('../src/systems/dreamdojo.js', import.meta.url), 'utf8').replace(/\r/g, '');
+    const tourStart = ddSrc.slice(ddSrc.indexOf('  startTour('), ddSrc.indexOf('\n  }\n', ddSrc.indexOf('  startTour(')));
+    const storyBranch = src.slice(src.indexOf('this._primeSim(this.storyScene.camera)') - 600, src.indexOf('this._primeSim(this.storyScene.camera)') + 300);
+    ok('the tour starts the simulator\'s warm-up as Payne starts talking, and the story\'s own draw runs a slice of it a frame',
+      /if \(ok\) g\.primeSim\?\.\(\);/.test(tourStart) && /this\._primeSim\(this\.storyScene\.camera\);\s*(\/\/[^\n]*\n\s*)*this\._renderView\(this\.storyScene\.camera/.test(storyBranch));
+    const primeSimSrc = src.slice(src.indexOf('  _primeSim(cam) {'), src.indexOf('  _primeFinale() {'));
+    ok('...ONE texture a frame and nothing else on that frame — the 3840-wide sheets are a frame each — and the draws only once the programs have linked',
+      /const t = this\._primeTex\?\.shift\(\);\s*if \(t\) \{[\s\S]*?initTexture\(t\)[\s\S]*?return;\s*\}\s*if \(this\._simLinked\) this\._primeDraw\(cam, true\);/.test(primeSimSrc));
+    ok('...compiled and drawn in the simulator\'s own look (its fog is in every program\'s key), the same swap the pane makes',
+      /const back = this\._simState\(true\);[\s\S]*?compileAsync\(this\.scene, cam\)[\s\S]*?back\(\);/.test(src)
+        && /const back = this\._simState\(sim\);\s*this\.renderer\.render\(this\.scene, camera\);\s*back\(\);/.test(src)
+        && /const back = sim \? this\._simState\(true\) : null;/.test(src));
+    ok('...and the tour\'s cast is built once the headset drawings land, then its sheets go to the FRONT of the line, under the fade',
+      /g\.primeTextures\?\.\(cast\.textures\(\), true\);\s*g\.primeMore\?\.\(cast\.roots\);/.test(tourStart)
+        && /if \(art\?\.then\) art\.then\(ready, ready\); else ready\(\);/.test(tourStart)
+        && /if \(first\) this\._primeTex\.unshift\(\.\.\.add\)/.test(src));
+    const payneSrc = readFileSync(new URL('../src/systems/payne.js', import.meta.url), 'utf8').replace(/\r/g, '');
+    const dojoCase = payneSrc.slice(payneSrc.indexOf("      case 'dojo':"), payneSrc.indexOf("return 'payneDojo';"));
+    ok('...whose drawings Payne starts fetching one menu earlier, behind her card, so they have landed by the tour',
+      /g\.loadSimArt\?\.\(\);/.test(dojoCase));
+    /* A BILLBOARD'S CLONE DOES NOT RE-SEND ITS SHEET. `needsUpdate` on a clone
+       bumps the shared source too, and three re-uploads a source whose
+       version moved: every holo-kitten the tour built sent its whole sheet
+       up again, ~100ms each. */
+    {
+      const { atlasClone } = await import('../src/core/gfx.js');
+      const sheet = new THREE.Texture({ width: 8, height: 2 });
+      sheet.needsUpdate = true;
+      const had = sheet.source.version;
+      const a = atlasClone(sheet, 4, 1);
+      const b = atlasClone(sheet, 4, 1);
+      const fresh = new THREE.Texture({ width: 8, height: 2 });
+      const c = atlasClone(fresh, 4, 1);
+      ok('a billboard\'s atlas clone is drawable without re-sending a sheet that is already up, and still sends one that never was',
+        sheet.source.version === had && a.version > 0 && b.version > 0 && a.source === sheet.source && fresh.source.version > 0 && c.version > 0,
+        `source ${had} -> ${sheet.source.version}, clones ${a.version}/${b.version}`);
+    }
     ok('priming draws a fixed slice, not one timed on the JavaScript clock',
       /q\.splice\(0, PRIME_BATCH\)/.test(prime) && !/performance\.now/.test(prime),
       'render() returns before the GPU uploads; a timed slice grew to 256 and took a second');
@@ -35293,7 +35337,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
   console.log('\n--- the Dream Dojo ---');
   const DD = await import('../src/systems/dreamdojo.js');
   const SW = await import('../src/world/simworld.js');
-  const { ARCADE, DOME_R, TUBE_R, arcadeLayout } = DD;
+  const { ARCADE, DOME_R, TUBE_R, STONES, arcadeLayout } = DD;
   const dc = world.dojoCentre;
   const L = arcadeLayout(dc);
 
@@ -35333,12 +35377,47 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     L.stones.every((s) => world.heightAt(s.x, s.z, 200) == null));
   /* "a half circle pattern towards the island rather than just a straight
      line" still holds with three: every stone is off the straight line to one
-     side, and the two hops between them turn by ~55° (measured). */
+     side. But the first three were placed one at a time and the way ZIGZAGGED
+     — the hops were equal and it turned -55°, +62°, +61°, the middle stone
+     swung out sideways, and the stones stood 3.2, 7.8 and 15.3 off the rim —
+     and Richard: "smooth out the placement of the three platforms ... so that
+     they are more evenly spaced". Equal hops did not catch it; the TURNS do.
+     Now one arc. The turns that matter are the two a kitten makes standing
+     ON a stone — the middle one and the last, onto the gate's landing: the
+     zigzag's were +62° and +61°, the arc's are 20° and 17°, the same way.
+     The turn at the first stone is printed and not judged: she can jump off
+     the rim from anywhere, and the run-up measured here is the radial one
+     (32° off the first hop on the arc, -55° on the zigzag). */
   const side = L.stones.map((s) => (s.x - dc.x) * L.v.x + (s.z - dc.z) * L.v.z);
-  const turn = Math.abs(Math.atan2(L.stones[2].z - L.stones[1].z, L.stones[2].x - L.stones[1].x)
-    - Math.atan2(L.stones[1].z - L.stones[0].z, L.stones[1].x - L.stones[0].x));
-  ok('...and they curve: all three to one side of the straight line, by more than a stone’s width, turning > 40°',
-    side.every((w) => w < -4) && turn > (40 * Math.PI) / 180, `${side.map((w) => w.toFixed(1)).join(' ')} · ${(turn * 180 / Math.PI).toFixed(0)}°`);
+  const rimP = { x: dc.x + toS0.x * rim, z: dc.z + toS0.z * rim };
+  const tipP = { x: ARCADE.x + L.gate.dir.x * L.gate.tip, z: ARCADE.z + L.gate.dir.z * L.gate.tip };
+  const wayP = [rimP, ...L.stones, tipP];
+  const turns = [1, 2, 3].map((k) => {
+    const a0 = Math.atan2(wayP[k].z - wayP[k - 1].z, wayP[k].x - wayP[k - 1].x);
+    const a1 = Math.atan2(wayP[k + 1].z - wayP[k].z, wayP[k + 1].x - wayP[k].x);
+    return (Math.atan2(Math.sin(a1 - a0), Math.cos(a1 - a0)) * 180) / Math.PI;
+  });
+  ok('...and they curve: all three to one side of the straight line, by more than a stone’s width',
+    side.every((w) => Math.abs(w) > 4 && Math.sign(w) === Math.sign(side[0])), side.map((w) => w.toFixed(1)).join(' '));
+  const onStone = turns.slice(1);
+  ok('...on ONE smooth arc: both turns made on a stone the same way, each under 30°, within 8° of each other — no zigzag',
+    onStone.every((t) => Math.sign(t) === Math.sign(onStone[0]) && Math.abs(t) > 3 && Math.abs(t) < 30)
+      && Math.abs(Math.abs(onStone[0]) - Math.abs(onStone[1])) < 8,
+    `${turns.map((t) => `${t.toFixed(0)}°`).join(' ')} (the first is the run-up's, not judged)`);
+  /* ...and EVENLY across the void: how far along the straight line from the
+     rim to the gate's landing each stone's centre stands. Equal gaps edge to
+     edge put the centres at r+gap, then +2r+gap twice, then r+gap — 0.21,
+     0.50, 0.79 of the way on a straight line. The zigzag stood at 0.29, 0.51,
+     0.90 (two bunched near the middle and a long run-up); the arc at 0.18,
+     0.49, 0.80. */
+  const way = { x: tipP.x - rimP.x, z: tipP.z - rimP.z };
+  const wayL2 = way.x * way.x + way.z * way.z;
+  const frac = L.stones.map((s) => ((s.x - rimP.x) * way.x + (s.z - rimP.z) * way.z) / wayL2);
+  const legs = [STONES.r + STONES.gap, 2 * STONES.r + STONES.gap, 2 * STONES.r + STONES.gap, STONES.r + STONES.gap];
+  const even = [1, 2, 3].map((k) => legs.slice(0, k).reduce((a, b) => a + b, 0) / legs.reduce((a, b) => a + b, 0));
+  ok('...and evenly spaced from the Dojo of the Turning Circle to the Dream Dojo: each stone within 0.04 of where equal gaps put it',
+    frac.every((f, k) => Math.abs(f - even[k]) < 0.04),
+    `${frac.map((f) => f.toFixed(2)).join(' ')} vs ${even.map((f) => f.toFixed(2)).join(' ')}`);
   ok('...and a kitten who falls is put back ON the Dojo, short of the rim, facing the way across',
     !!world.heightAt(L.launch.x, L.launch.z, 200) && flatD(L.launch, dc) < rim - 1.5 && flatD(L.launch, s0) < 12,
     `${flatD(L.launch, dc).toFixed(1)} of rim ${rim}`);
@@ -35348,8 +35427,14 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const G = L.gate;
     const q = (s) => ({ along: (s.x - ARCADE.x) * G.dir.x + (s.z - ARCADE.z) * G.dir.z, side: (s.x - ARCADE.x) * G.lat.x + (s.z - ARCADE.z) * G.lat.z });
     const l3 = q(last);
-    ok('the last stone stands on the gate\'s axis, one hop out past its landing, so the gate is straight in front of her',
-      Math.abs(l3.side) < 1e-6 && l3.along > G.tip + 2.5, `along ${l3.along.toFixed(2)} · tip ${G.tip.toFixed(2)} · side ${l3.side.toExponential(1)}`);
+    /* The arc meets the gate's axis TANGENT at its landing, so the last
+       stone is within a stone's radius of the axis (0.68 measured — it was
+       exactly on it when it was placed there by hand, which is what made the
+       way zigzag) and the last hop heads straight in. */
+    const lastHop = Math.atan2(Math.abs(l3.side), l3.along - G.tip) * 180 / Math.PI;
+    ok('the last stone stands by the gate\'s axis, one hop out past its landing, and its hop heads at the gate, so the gate is straight in front of her',
+      Math.abs(l3.side) < 1 && l3.along > G.tip + 2.5 && lastHop < 25,
+      `along ${l3.along.toFixed(2)} · tip ${G.tip.toFixed(2)} · side ${l3.side.toFixed(2)} · last hop ${lastHop.toFixed(0)}° off the axis`);
     ok('...and the gate stands AT the dome\'s skin, on the deck, which runs from the pad out past the dome',
       G.ring === DOME_R && flatD(G.decks[0], ARCADE) - G.decks[0].r < ARCADE.r && G.tip > DOME_R + 2,
       `deck ${(flatD(G.decks[0], ARCADE) - G.decks[0].r).toFixed(1)} → ${G.tip.toFixed(1)}, dome ${DOME_R}`);
@@ -38817,51 +38902,81 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         /storyScene\.camera, 0, 0,\s*\.\.\.this\.renderer\.getSize\(new THREE\.Vector2\(\)\)\.toArray\(\), null, true, this\.storyScene\.loc\)/.test(main)
         && /realm \? realm === 'sim' : members && D\.paneIsSim\(members\)/.test(main));
     }
-    /* THE TOUR PANS THE ISLANDS, ON THE WORDS THAT NAME THEM. Richard:
+    /* THE TOUR PANS THE ISLANDS, ON THE WORDS THAT NAME THEM. Richard, first:
        "during this entire cutscene segment in the simulator, we focus a lot
        on the Dojo of the Turning Circle area, but not much on the other
        islands with different activities. It would be good if the camera can
        pan through each of the islands ... and likely no need to focus on the
        Dojo of the Turning Circle unless it is directly mentioned in the
        dialog or if to just give a brief zoomed out view of the entire map
-       area while rotating fairly quickly." `simHub` orbited the holo-Dojo for
-       the whole line, and `simIsles` aimed halfway between it and the
-       islands. Each stop is cued on a word; the word must be in the line, the
-       stop inside the clip, and each held for longer than the swing into it. */
+       area while rotating fairly quickly." Each stop is cued on a word; the
+       word must be in the line, the stop inside the clip, and each held for
+       longer than the swing into it.
+       Then the recut: "the transition from seeing the entire map to seeing
+       the Kotodama Gallery is a jarring and not good transition ... doesn't
+       have the camera do a 180 degrees along y-axis"; "skip showing the
+       'Holo-sentries' island and keep the camera viewing the Arena School
+       longer"; "For the 'every island is a lesson' section, instead of being
+       so zoomed out, can just have the camera panning around the center our
+       outskirts of the islands"; "we can skip showing the Bamboo
+       Infiltration island and instead stay on Kudamono Storm longer"; and
+       on the Kata, "the Sine Gauntlet or Turning Circle island is in the
+       background of the camera, but main camera focus should be on the Kata
+       Trace". So the visit list is six, not nine, ON PURPOSE. */
     {
       const { mp3Duration: mp3D } = await import('./mp3.mjs');
       const clipT = (id) => mp3D(new URL(`../public/voice/lionheart/${id}.mp3`, import.meta.url)).secs;
       const rowOf = (shot) => ST.TOUR.find((x) => x.shot === shot);
       const SIMo = (await import('../src/world/simworld.js')).SIM;
+      const TC = await import('../src/systems/dream/tourcast.js');
+      const SCH = await import('../src/systems/dream/school.js');
       D._ensureSim();
       const ctxT = D.storyCtx();
       const cueBad = [];
       const isleStops = new Set();
+      // What a stop can be: an island, the whole map, the outskirts pan, his
+      // card, or a hold of the frame before it (a word that moves the lens
+      // within its frame, or fades it, but does not change what it frames).
+      const KINDS = ['isle', 'map', 'pan', 'card', 'hold'];
       for (const [name, stops] of Object.entries(SS.TOUR_PANS)) {
         const row = rowOf(name);
         const len = clipT(row.voice);
         stops.forEach((st, i) => {
           if (!row.text.includes(st.word)) cueBad.push(`${name}:"${st.word}" not said`);
           if (st.at >= len) cueBad.push(`${name}:"${st.word}" at ${st.at} after the clip (${len.toFixed(2)})`);
+          if (i > 0 && st.at <= stops[i - 1].at) cueBad.push(`${name}:"${st.word}" out of order`);
           const next = stops[i + 1]?.at ?? len;
-          if (next - st.at <= SS.PAN_T) cueBad.push(`${name}:"${st.word}" held ${(next - st.at).toFixed(2)}s`);
+          const into = st.hold ? 0 : (st.cut ?? st.fadeIn ?? st.swing ?? SS.PAN_T);
+          if (next - st.at <= into) cueBad.push(`${name}:"${st.word}" held ${(next - st.at).toFixed(2)}s`);
+          const kinds = KINDS.filter((k) => st[k]);
+          if (kinds.length !== 1) cueBad.push(`${name}:"${st.word}" is ${kinds.join('+') || 'nothing'}`);
+          if (st.hold && i === 0) cueBad.push(`${name}:"${st.word}" holds nothing`);
           if (st.isle) {
             isleStops.add(st.isle);
             if (!ctxT.isles[st.isle]) cueBad.push(`${name}: no island ${st.isle}`);
-          } else if (!st.map) cueBad.push(`${name}:"${st.word}" frames neither an island nor the map`);
+          }
         });
       }
-      ok('the tour\'s simulator lines cut on the words that name a place: every word is said, inside its clip, and held longer than the swing',
+      ok('the tour\'s simulator lines cut on the words that name a place: every word is said, inside its clip, and held longer than the move into it',
         cueBad.length === 0, cueBad.join(' · ') || `${Object.values(SS.TOUR_PANS).flat().length} stops`);
+      const TOUR_ISLES = ['gallery', 'hall', 'range', 'school', 'storm', 'kata'];
+      const DROPPED = ['sine', 'sentries', 'bamboo'];
       const allIsles = Object.keys(ctxT.isles).filter((k) => k !== 'shadow');
-      const unseen = allIsles.filter((k) => !isleStops.has(k));
-      ok('...and between them they visit every island but the Shadow\'s, which has its own line',
-        unseen.length === 0 && allIsles.length >= 9, unseen.join(', ') || `${isleStops.size} islands`);
+      const visited = [...isleStops].sort().join(' ');
+      ok('...and between them they visit the six islands the lines name, and not the three Richard asked to lose — which are all the others but the Shadow\'s',
+        visited === [...TOUR_ISLES].sort().join(' ')
+          && allIsles.every((k) => TOUR_ISLES.includes(k) || DROPPED.includes(k))
+          && DROPPED.every((k) => allIsles.includes(k) && !isleStops.has(k)),
+        `${visited} of ${allIsles.join(' ')}`);
 
       /* THROUGH THE SCENE'S OWN LENS (42°, 16:9), every tenth of a second of
-         both lines. An island stop holds its island near the middle with the
-         holo-Dojo BEHIND the camera; a map stop holds the Dojo near the middle
-         and turns. */
+         both lines, once a stop has finished swinging in and while it is not
+         under black. An island stop frames WHAT IS PLAYED ON IT (tourcast.js)
+         — the canes, the two bouts and the pen, the stormer's spot, the Kata
+         floor — not the island's middle, which the range's and the school's
+         vignettes are not at: every piece inside the frame and above the
+         subtitles (NDC -0.38 at 16:9), their middle near the frame's, and the
+         Turning Circle out of it. */
       const camT = new THREE.PerspectiveCamera(42, 16 / 9, 0.1, 6000);
       const aim = (sh) => {
         camT.position.set(sh.pos.x, sh.pos.y, sh.pos.z);
@@ -38870,12 +38985,30 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       };
       const simP = (q) => new THREE.Vector3(q.x + SIMo.dx, q.y, q.z + SIMo.dz);
       const hub = ctxT.dojo;
+      const SUBS = -0.38;
+      const at = (isle, a, b, y) => simP(TC.isleAt(ctxT.isles[isle], a, b, y));
+      const [ka, kb] = TC.kataFloorAt(TC.STAGE.kata.floor);
+      const subjects = {
+        range: TC.STAGE.range.canes.flatMap(([a, b]) => [at('range', a, b, 0), at('range', a, b, TC.STAGE.range.cutY)]),
+        school: [at('school', SCH.RING_AT[0], SCH.RING_AT[1] - TC.STAGE.school.pairs, 0),
+          at('school', SCH.RING_AT[0], SCH.RING_AT[1] + TC.STAGE.school.pairs, 0), at('school', SCH.PEN_AT[0], SCH.PEN_AT[1], 0)],
+        storm: [at('storm', ...TC.STAGE.storm.centre, 0), at('storm', ...TC.STAGE.storm.centre, 2)],
+        kata: [at('kata', ka, kb, 0)],
+        gallery: [at('gallery', 0, 0, SS.ISLE_FRAME.lookY)],
+        hall: [at('hall', 0, 0, SS.ISLE_FRAME.lookY)],
+      };
+      const frameOf = (stops, t) => {
+        let i = 0;
+        stops.forEach((s, j) => { if (t >= s.at) i = j; });
+        while (i > 0 && stops[i].hold) i--;
+        return stops[i];
+      };
       const lensBad = [];
-      let isleF = 0;
-      let mapF = 0;
-      let worstIsle = 0;
-      let mapSeen = Infinity;
+      const isleN = {};
+      let worstMid = 0;
+      let circleIn = 0;
       for (const name of Object.keys(SS.TOUR_PANS)) {
+        const stops = SS.TOUR_PANS[name];
         const len = clipT(rowOf(name).voice) + 0.5;
         for (let t = 0; t <= len; t += 0.1) {
           const sh = SS.shotFor(name, ctxT, t / len, t);
@@ -38883,30 +39016,248 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
             lensBad.push(`${name}@${t.toFixed(1)} not a sim lens`);
             continue;
           }
-          if (t - sh.stop.at < SS.PAN_T) continue;  // mid-swing
+          const fs = frameOf(stops, t);
+          if (!fs.isle || t - fs.at < (fs.cut ?? fs.swing ?? SS.PAN_T) || sh.black > 0.5) continue;
           aim(sh);
-          const h = simP(hub).project(camT);
-          if (sh.stop.isle) {
-            isleF++;
-            const v = simP(ctxT.isles[sh.stop.isle]).project(camT);
-            worstIsle = Math.max(worstIsle, Math.abs(v.x), Math.abs(v.y));
-            if (!inF(v, 0.5)) lensBad.push(`${name}@${t.toFixed(1)} ${sh.stop.isle} off-centre`);
-            if (h.z < 1 && inF(h)) lensBad.push(`${name}@${t.toFixed(1)} Turning Circle in frame`);
-          } else {
-            mapF++;
-            if (!inF(h, 0.3)) lensBad.push(`${name}@${t.toFixed(1)} map off the Dojo`);
-            const seen = Object.values(ctxT.isles).filter((q) => inF(simP(q).project(camT))).length;
-            mapSeen = Math.min(mapSeen, seen);
-          }
+          isleN[fs.isle] = (isleN[fs.isle] ?? 0) + 1;
+          const pts = subjects[fs.isle].map((p) => p.clone().project(camT));
+          const out = pts.filter((v) => !inF(v, 0.9) || v.y < SUBS);
+          if (out.length) lensBad.push(`${name}@${t.toFixed(1)} ${fs.isle}: ${out.length} of ${pts.length} out`);
+          const mid = pts.reduce((s, v) => s + v.x, 0) / pts.length;
+          worstMid = Math.max(worstMid, Math.abs(mid));
+          if (Math.abs(mid) > 0.5) lensBad.push(`${name}@${t.toFixed(1)} ${fs.isle} off-centre ${mid.toFixed(2)}`);
+          if (inF(simP(hub).project(camT))) { circleIn++; lensBad.push(`${name}@${t.toFixed(1)} Turning Circle in frame`); }
         }
       }
-      ok('...and through the scene\'s own lens each island is held near the middle with the Turning Circle out of the frame entirely',
-        lensBad.length === 0 && isleF > 40, lensBad.slice(0, 4).join(' · ') || `${isleF} island frames, worst ${worstIsle.toFixed(2)} NDC`);
-      const m0 = SS.panShot('simHub', ctxT, 0.1);
-      const m1 = SS.panShot('simHub', ctxT, 0.9);
-      const turned = Math.abs(Math.atan2(m1.pos.z - m1.look.z, m1.pos.x - m1.look.x) - Math.atan2(m0.pos.z - m0.look.z, m0.pos.x - m0.look.x));
+      ok('...and through the scene\'s own lens each island\'s vignette is in the frame, above the subtitles, near the middle, with the Turning Circle out of it',
+        lensBad.length === 0 && TOUR_ISLES.every((k) => (isleN[k] ?? 0) >= 5),
+        lensBad.slice(0, 4).join(' · ') || `${Object.entries(isleN).map(([k, n]) => `${k} ${n}`).join(', ')} frames, worst middle ${worstMid.toFixed(2)} NDC`);
+
+      /* NO 180. The map used to look at the Turning Circle from the far side
+         of the islands it was about to dive to, so the swing onto the Gallery
+         turned the lens round about the vertical. The map now stands behind
+         the hub FROM the island it is heading for, and the outskirts pan ends
+         facing the Storm, so both moves are a push along the heading. Every
+         50th of a second of each swing, against its first frame. */
+      const head = (sh) => Math.atan2(sh.look.z - sh.pos.z, sh.look.x - sh.pos.x);
+      const swingTurn = (name, st) => {
+        const h0 = head(SS.shotFor(name, ctxT, 0, st.at - 0.05));
+        let w = 0;
+        for (let t = st.at - 0.05; t <= st.at + (st.swing ?? SS.PAN_T) + 0.05; t += 0.02) {
+          const d = head(SS.shotFor(name, ctxT, 0, t)) - h0;
+          w = Math.max(w, Math.abs(Math.atan2(Math.sin(d), Math.cos(d))));
+        }
+        return (w * 180) / Math.PI;
+      };
+      const toGallery = swingTurn('simHub', SS.TOUR_PANS.simHub.find((s) => s.isle === 'gallery'));
+      const toStorm = swingTurn('simIsles', SS.TOUR_PANS.simIsles.find((s) => s.isle === 'storm'));
+      ok('...and the whole map pushes ONTO the Kotodama Gallery, and the outskirts onto the Kudamono Storm, without turning round — under 30° each',
+        toGallery < 30 && toStorm < 30, `map → gallery ${toGallery.toFixed(0)}°, pan → storm ${toStorm.toFixed(0)}°`);
+
+      /* The map: the Turning Circle in the middle, every island round it, and
+         turning fairly quickly. The pan: from out past the Dojo's rim, the
+         Turning Circle behind it, islands big in the frame. */
+      let mapF = 0;
+      let mapSeen = Infinity;
+      let panF = 0;
+      let panBad = 0;
+      let panSeen = Infinity;
+      const panSeq = [];
+      for (let t = 0; t < SS.TOUR_PANS.simHub[1].at; t += 0.1) {
+        const sh = SS.shotFor('simHub', ctxT, 0, t);
+        aim(sh);
+        mapF++;
+        if (!inF(simP(hub).project(camT), 0.3)) mapSeen = -1;
+        else mapSeen = Math.min(mapSeen, allIsles.filter((k) => inF(simP(ctxT.isles[k]).project(camT))).length);
+      }
+      const eyeA = (t) => {
+        const p = SS.shotFor('simHub', ctxT, 0, t).pos;
+        return Math.atan2(p.z - SIMo.dz - hub.z, p.x - SIMo.dx - hub.x);
+      };
+      const spin = Math.abs(eyeA(0.9) - eyeA(0)) / 0.9;
+      for (let t = 0; t < SS.TOUR_PANS.simIsles[1].at; t += 0.1) {
+        const sh = SS.shotFor('simIsles', ctxT, 0, t);
+        aim(sh);
+        panF++;
+        const out = Math.hypot(sh.pos.x - SIMo.dx - hub.x, sh.pos.z - SIMo.dz - hub.z);
+        if (inF(simP(hub).project(camT)) || out < 66) panBad++;
+        // Close enough that an island's middle can be out of the frame with
+        // half of it in: one counts if its middle or any point of its rim is.
+        const seen = allIsles.filter((k) => {
+          const I = ctxT.isles[k];
+          return [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => inF(simP(TC.isleAt(I, a * I.r, b * I.r, 0)).project(camT), 0.95));
+        });
+        panSeen = Math.min(panSeen, seen.length);
+        panSeq.push(seen.length);
+      }
       ok('...and the Turning Circle is only the middle of the whole map, turning fairly quickly, with the islands round it in frame',
-        mapF > 10 && mapSeen >= 8 && turned / 0.8 > 0.25, `${mapF} map frames, ≥${mapSeen} of ${Object.keys(ctxT.isles).length} islands, ${(turned / 0.8 * 180 / Math.PI).toFixed(0)}°/s`);
+        mapF > 5 && mapSeen >= 8 && spin > 0.25, `${mapF} map frames, ≥${mapSeen} of ${allIsles.length} islands, ${(spin * 180 / Math.PI).toFixed(0)}°/s`);
+      ok('...and "every island is a lesson" pans the outskirts, from past the Dojo\'s rim with the Turning Circle behind the lens and islands always in the frame',
+        panF > 5 && panBad === 0 && panSeen >= 1, `${panF} frames, ${panBad} on the Dojo, ≥${panSeen} islands in each (${panSeq.join('')})`);
+
+      /* THE KATA, HELD. "stay on the Kata Trace longer so that we can
+         actually show Lionheart doing a kata routine on there. When it says
+         'even the maths of the circle' we can have the camera move around the
+         Kata Trace island so that the Sine Gauntlet or Turning Circle island
+         is in the background". From "maths of the circle" to "Earn stars" the
+         lens walks round his floor; by "Earn stars" the Sine Gauntlet stands
+         behind it, and the floor is still the middle. */
+      const kataStop = SS.TOUR_PANS.simIsles.find((s) => s.isle === 'kata');
+      const maths = SS.TOUR_PANS.simIsles.find((s) => /maths of the circle/.test(s.word));
+      const stars = SS.TOUR_PANS.simIsles.find((s) => /Earn stars/.test(s.word));
+      const climb = SS.TOUR_PANS.simIsles.find((s) => s.card);
+      const kHead0 = head(SS.shotFor('simIsles', ctxT, 0, maths.at));
+      const kEnd = SS.shotFor('simIsles', ctxT, 0, stars.at);
+      aim(kEnd);
+      const sineV = simP(ctxT.isles.sine).project(camT);
+      const floorV = subjects.kata[0].clone().project(camT);
+      const kTurn = Math.abs(Math.atan2(Math.sin(head(kEnd) - kHead0), Math.cos(head(kEnd) - kHead0))) * 180 / Math.PI;
+      ok('...and on "the maths of the circle" the lens walks round the Kata floor until the Sine Gauntlet is behind it on "Earn stars", the floor still the middle',
+        kataStop && maths && stars && kTurn > 60 && inF(sineV, 0.9) && Math.abs(floorV.x) < 0.4 && floorV.y > SUBS
+          && stars.at - kataStop.at > 3.5,
+        `held ${(stars.at - kataStop.at).toFixed(2)}s before the fade, walked ${kTurn.toFixed(0)}°, sine at (${sineV.x.toFixed(2)}, ${sineV.y.toFixed(2)}), floor at ${floorV.x.toFixed(2)}`);
+
+      /* THE FADES. "When saying 'earn stars' we can keep showing the kata and
+         then slowly fade out and when saying 'climb the ranks of kenshi' we
+         can fade in on the Kenshi card with the Lionheart info on it. Then
+         can fade out and in quickly at the end before transitioning to the
+         Shadow Lionheart scene." And the Storm -> Kata move is a dip, not a
+         swing: the two islands are 166° apart round the hub, and a swing that
+         long is the 180 he asked to lose. */
+      const B = (t) => SS.panBlack('simIsles', t);
+      const isLen = clipT(rowOf('simIsles').voice);
+      const tail = SS.TOUR_TAIL.simIsles;
+      ok('...and its fades: a dip under the cut to the Kata, slowly out from "Earn stars", in on "climb the ranks", out again after KENSHI and before the clip ends',
+        B(kataStop.at) > 0.99 && B(kataStop.at + kataStop.cut + 0.01) < 0.01
+          && B(stars.at) < 0.01 && stars.fadeOut - stars.at > 0.6 && B(stars.fadeOut) > 0.99
+          && B(climb.at + climb.fadeIn + 0.01) < 0.01 && B(tail.from - 0.05) < 0.01
+          && tail.from > 11.3 - 0.01 && B(isLen) > 0.99,
+        `cut ${B(kataStop.at).toFixed(2)}, out ${stars.at}→${stars.fadeOut}, in ${climb.at}+${climb.fadeIn}, tail ${tail.from}→${tail.to} of ${isLen.toFixed(2)}`);
+      const ssSrc = readD('../src/systems/dream/storyscene.js');
+      ok('...and the Shadow\'s line dips up out of that black — the "in" of "fade out and in quickly"',
+        SS.shotFor('simIsles', ctxT, 1).black > 0.99 && /\(prevEnd\.black \?\? 0\) >= 0\.99/.test(ssSrc)
+          && /black = Math\.max\(black, s\.black \?\? 0\)/.test(ssSrc));
+
+      /* THE CARD IS READ. Aimed below its middle so its stat rows are above
+         the subtitles (centred, they were behind them): all four corners in
+         the frame and its bottom edge over the box, the whole time it is up. */
+      const cardP = simP(TC.isleAt(ctxT.isles.school, ...TC.STAGE.school.card));
+      const cw = TC.STAGE.school.cardW / 2;
+      const ch = (TC.STAGE.school.cardW * 1.4) / 2;
+      const cardBad = [];
+      let cardLow = Infinity;
+      let cardTall = 0;
+      for (let t = climb.at + climb.fadeIn; t < tail.from; t += 0.1) {
+        const sh = SS.shotFor('simIsles', ctxT, 0, t);
+        aim(sh);
+        const right = new THREE.Vector3().setFromMatrixColumn(camT.matrixWorld, 0).setY(0).normalize();
+        const corners = [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([sx, sy]) => cardP.clone().addScaledVector(right, sx * cw).add(new THREE.Vector3(0, sy * ch, 0)).project(camT));
+        if (corners.some((v) => !inF(v, 1))) cardBad.push(`${t.toFixed(1)} off the frame`);
+        cardLow = Math.min(cardLow, ...corners.map((v) => v.y));
+        cardTall = Math.max(cardTall, (corners[2].y - corners[0].y) / 2);
+      }
+      ok('...and on "climb the ranks of KENSHI" his card fills the frame above the subtitles, corners in',
+        cardBad.length === 0 && cardLow > SUBS && cardTall > 0.6,
+        cardBad.slice(0, 3).join(' · ') || `bottom at ${cardLow.toFixed(2)} NDC (box ${SUBS}), ${(cardTall * 100).toFixed(0)}% of the frame tall`);
+
+      /* WHAT IS PLAYED ON THEM (dream/tourcast.js), driven on the line's own
+         clock with the lens it is seen through, the way StoryScene drives it.
+         Richard: "we should have some bamboo to cut shown and can maybe show
+         some of them getting cut and playing the 'cut down' animation"; "In
+         the Arena School, should have some animals running around and 4
+         players fighting each other and can show the Pokemon-style Kenshi
+         card here ... facing the camera so it can be seen and can be
+         rotating"; "Let's make sure to show gameplay for these islands";
+         "actually show Lionheart doing a kata routine on there". */
+      const cast = new TC.TourCast(D);
+      ok('the tour\'s cast builds on the simulator\'s islands, hidden until its line', !!cast.build() && cast.group.visible === false);
+      if (cast.group) {
+        const rootT = D.sim.root;
+        const hubStops = SS.TOUR_PANS.simHub;
+        const rangeStop = hubStops.find((s) => s.isle === 'range');
+        const schoolStop = hubStops.find((s) => s.isle === 'school');
+        cast.start(ctxT, null, 'simHub');
+        const hubShows = cast.canes.every((c) => c.group.visible) && cast.fighters.length === 4 && cast.fighters.every((f) => f.group.visible)
+          && cast.critters.every((c) => c.group.visible) && !cast.stormer.group.visible && !cast.ghostD.ghost.group.visible && cast.card.visible;
+        const tipAt = cast.canes.map(() => []);
+        const penOut = [];
+        let critterWalk = 0;
+        const cPrev = cast.critters.map((c) => c.group.position.clone());
+        let cardFace = 1;
+        const hpSeen = cast.fighters.map(() => new Set());
+        const hl = clipT(rowOf('simHub').voice);
+        for (let t = 0; t <= hl; t += 1 / 30) {
+          aim(SS.shotFor('simHub', ctxT, 0, t));
+          cast.update(t, camT);
+          cast.canes.forEach((c, i) => tipAt[i].push([t, 2 * Math.acos(Math.min(1, Math.abs(c.top.quaternion.w)))]));
+          cast.critters.forEach((c, i) => {
+            critterWalk += c.group.position.distanceTo(cPrev[i]);
+            cPrev[i].copy(c.group.position);
+            if (Math.hypot(c.group.position.x - cast.pen.x, c.group.position.z - cast.pen.z) > SCH.PEN_R) penOut.push(t.toFixed(1));
+          });
+          cast.fighters.forEach((f, i) => hpSeen[i].add(f.hp));
+          if (t > schoolStop.at + 1) {
+            rootT.updateMatrixWorld(true);
+            const n = new THREE.Vector3(0, 0, 1).applyQuaternion(cast.card.mesh.getWorldQuaternion(new THREE.Quaternion())).setY(0).normalize();
+            const cp = cast.card.getWorldPosition(new THREE.Vector3());
+            const toCam = camT.position.clone().sub(cp).setY(0).normalize();
+            cardFace = Math.min(cardFace, n.dot(toCam));
+          }
+        }
+        // Each cut cane: standing before its moment, lying (π/2) once the fall is through.
+        const fellBy = (i) => TC.RANGE_CUTS[i] + TC.FELL.slide + TC.FELL.tip;
+        const caneOk = TC.RANGE_CUTS.every((cut, i) => tipAt[i].filter(([t]) => t < cut).every(([, a]) => a < 1e-6)
+          && tipAt[i].filter(([t]) => t > fellBy(i) + 0.05).every(([, a]) => Math.abs(a - Math.PI / 2) < 0.02))
+          && tipAt.slice(TC.RANGE_CUTS.length).every((s) => s.every(([, a]) => a < 1e-6));
+        const fellIn = TC.RANGE_CUTS.filter((cut, i) => cut >= rangeStop.at + 0.5 && fellBy(i) <= schoolStop.at + (schoolStop.swing ?? SS.PAN_T)).length;
+        ok('...the range: the canes are cut on the lens\'s watch and fall over, and the one left uncut stays standing',
+          hubShows && caneOk && fellIn >= 3 && TC.RANGE_CUTS.length < TC.STAGE.range.canes.length,
+          `${fellIn} of ${TC.RANGE_CUTS.length} cut and down before the lens has swung away (cuts ${TC.RANGE_CUTS.join(' ')})`);
+        const hpEnd = cast.fighters.map((f) => f.hp);
+        ok('...the school: four fighters each take blows and none is knocked out, and the animals run round the pen and stay in it',
+          hpEnd.every((h) => h < TC.BOUTS.hits && h >= 1) && hpSeen.every((s) => s.size >= 2) && critterWalk > 30 && penOut.length === 0,
+          `hp ${hpEnd.join('/')} of ${TC.BOUTS.hits}, critters walked ${critterWalk.toFixed(0)}, ${penOut.length} frames out of the pen`);
+        /* It turns to the lens's HEADING, not its position, so a card off the
+           frame's middle is turned a little further by its own bearing in the
+           frame: 1.1° over the sway, measured, at the school. */
+        ok('...and his card turns to face the lens, swaying no further than CARD_SWAY so it can still be read',
+          cardFace >= Math.cos(TC.CARD_SWAY + 0.05), `worst ${(Math.acos(cardFace) * 180 / Math.PI).toFixed(1)}° off the lens (sway ${(TC.CARD_SWAY * 180 / Math.PI).toFixed(1)}°)`);
+
+        // The isles line: the stormer and her fruit, then his kata.
+        cast.start(ctxT, null, 'simIsles');
+        const islesShows = !cast.canes.some((c) => c.group.visible) && !cast.fighters.some((f) => f.group.visible)
+          && cast.stormer.group.visible && cast.ghostD.ghost.group.visible;
+        const stormStop = SS.TOUR_PANS.simIsles.find((s) => s.isle === 'storm');
+        const fruitBad = [];
+        const ghostAt = [];
+        let frostWalk = 0;
+        const fPrev = cast.stormer.group.position.clone();
+        for (let t = 0; t <= isLen; t += 1 / 30) {
+          aim(SS.shotFor('simIsles', ctxT, 0, t));
+          cast.update(t, camT);
+          for (const f of cast.fruit) {
+            const s = f.spec;
+            const ends = s.virus ? s.t0 + TC.STORM_T : s.t0 + TC.STORM_T * TC.STORM_CUT_K;
+            const up = t >= s.t0 && t < ends;
+            if (f.group.visible !== up) fruitBad.push(`${s.kind}@${t.toFixed(2)}`);
+          }
+          if (t < kataStop.at) { frostWalk += cast.stormer.group.position.distanceTo(fPrev); fPrev.copy(cast.stormer.group.position); }
+          if (t >= kataStop.at && t <= stars.fadeOut) ghostAt.push(cast.ghostD.ghost.group.position.clone());
+        }
+        const cutsT = cast.fruit.filter((f) => !f.spec.virus).map((f) => f.spec.t0 + TC.STORM_T * TC.STORM_CUT_K);
+        ok('...the storm: the fruit is in the air while the lens is on it, each cut out of it but the virus, which is left to fall',
+          islesShows && fruitBad.length === 0 && cutsT.length >= 5 && cutsT.every((c) => c > stormStop.at && c < kataStop.at)
+            && cast.fruit.some((f) => f.spec.virus) && frostWalk > 2,
+          fruitBad.slice(0, 3).join(' · ') || `${cutsT.length} cut from ${Math.min(...cutsT).toFixed(2)} to ${Math.max(...cutsT).toFixed(2)}s, she walked ${frostWalk.toFixed(1)}`);
+        let ghostWalk = 0;
+        for (let i = 1; i < ghostAt.length; i++) ghostWalk += ghostAt[i].distanceTo(ghostAt[i - 1]);
+        const marks = new Set(ghostAt.map((p) => cast.ghostD.marks.findIndex((m) => Math.hypot(m.x - p.x, m.z - p.z) < 0.3)).filter((k) => k >= 0));
+        ok('...the Kata: he runs a real routine on the floor\'s marks while the lens is on it — standing on several, moving between them',
+          marks.size >= 3 && ghostWalk > 3,
+          `${marks.size} marks stood on, walked ${ghostWalk.toFixed(1)} in ${(stars.fadeOut - kataStop.at).toFixed(1)}s`);
+        cast.stop();
+        ok('...and gone with its line, as it is on a skip', !cast.group.visible);
+      }
 
       /* SHADOW LIONHEART IS THERE. Richard: "when showing the Shadow
          Lionheart, we do not see him there, it would be cool to see him there,
@@ -38996,7 +39347,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       ok('...and he is brought on with his line and taken off with the next one, or on a skip',
         !before && during && !after && during2 && !onStage(), `before ${before} · during ${during} · after ${after} · skipped ${!onStage()}`);
       ok('...and the real tour hands him to the scene, and the scene runs him on the clock the lens is cued on',
-        /ctx\.actors = \{ simShadow: \(this\.tourShadow \?\?= new TourShadow\(this\)\) \}/.test(readD('../src/systems/dreamdojo.js'))
+        /ctx\.actors = \{ simShadow: \(this\.tourShadow \?\?= new TourShadow\(this\)\), simHub: cast, simIsles: cast \}/.test(readD('../src/systems/dreamdojo.js'))
         && /this\.actor\?\.update\?\.\(cue, this\.camera\)/.test(readD('../src/systems/dream/storyscene.js')));
     }
 

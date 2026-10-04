@@ -479,7 +479,10 @@ function flatTo(p, m) {
 
 /* ------------------------------ the ghost --------------------------------- */
 
-function buildGhost(dream, parent) {
+/* EXPORTED FOR THE TOUR (dream/tourcast.js): Payne's tour shows him doing a
+   kata on this floor, and it is THIS ghost doing THIS routine — a demo the
+   tour drew for itself would be teaching a kata the floor does not have. */
+export function buildGhost(dream, parent) {
   const group = new THREE.Group();
   const art = dream.lionArt;
   let sprite = null;
@@ -513,7 +516,7 @@ function buildGhost(dream, parent) {
 }
 
 /** Lionheart's demo, and his place during hers: a beat ahead, faint. */
-function runGhost(d, beat, T, spb, hall) {
+export function runGhost(d, beat, T, spb, hall) {
   const G = d.ghost;
   const steps = d.kata.steps;
   const hers = beat >= T.D;

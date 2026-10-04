@@ -1265,6 +1265,185 @@ enters, that should only get triggered if Lionheart executes his
 - A kitten on foot at the wall still gets the wall bubble and the toast, but
   no apology is owed.
 
+## The stones, the preload, and the tour recut
+
+Richard's "Improvements" list after the gear voice and the dome (branch
+`mixed/dojo-stones-preload-tour-recut`). It supersedes the TOUR_PANS stop list
+in the section above, which is kept as the history.
+
+**THE STONES.** "Let's smooth out the placement of the three platforms leading
+up to the Dream Dojo so that they are more evenly spaced between the Dojo of the
+Turning Circle island and the Dream Dojo island."
+- **What was wrong.** The hops were already equal (3.2 edge to edge), so the
+  checks passed. The WAY was not even. The stones were placed one at a time:
+  one off the rim 12° left of the straight line, one on the gate's axis, and
+  the middle one wherever was one hop from both. It zigzagged −55°, +62°, +61°.
+  Along the line from the rim to the gate's landing, the stones stood at 0.29,
+  0.51 and 0.90 of the way.
+- **Now one arc** (`arcadeLayout`). The four hops lie on a single circle,
+  tangent to the gate's axis at the deck's tip, so equal chords are equal hops
+  by construction. Its radius is solved by bisection so that the fourth hop
+  lands on the Dojo's rim.
+  - Turns on the stones: 20° and 17°, the same way.
+  - Along the way: 0.18, 0.49 and 0.80. Equal gaps on a straight line would be
+    0.21, 0.50 and 0.79.
+  - Hops: 3.25, 3.20, 3.20 and 3.17.
+  - The last stone is 0.68 off the gate's axis, and its hop heads 7° off it,
+    so the gate is still the thing in front of her.
+- **world-check** now judges the turns and the spacing, not only the hops. The
+  old layout fails both new checks; that was measured by running them against
+  it.
+
+**THE PRELOAD.** "If we are playing the Payne cutscene introduction to the Dream
+Dojo for the first time, we should pre-load the assets for the simulator so
+that, during the cutscene, when we transition to the simulator, there is no lag
+spike."
+- **What it was.** The tour's first frame in the simulator took 1304 ms in the
+  pane, against 30–50 ms either side. The program count went 29 → 43 on that
+  one frame: every holo material linked on the draw that first needed it, and
+  every island's buffers uploaded with it.
+- **`Game.primeSim`**, called by `startTour`, runs once a session:
+  1. `compileAsync` under `_simState(true)`. That is the simulator's fog, sky
+     and petals swapped in, the same swap `_renderView` now makes, because fog
+     is part of every program's key.
+  2. Every texture goes up through `initTexture`, ONE a frame, starting on the
+     tour's first frame, which is under its fade from black.
+  3. Then the layer's meshes are drawn into a one-pixel viewport on layer 31,
+     12 a frame, after the link. `_primeSim` is the slice; the story branch
+     of the loop runs it.
+- **What it took to get the last spikes out.** Each step was measured in the
+  pane:
+  - **Twelve meshes a frame with their textures** gave three frames of 86, 202
+    and 95 ms in the middle of Payne's lines. The fix was to split textures
+    out, one a frame.
+  - **The slow frames were then the four kitten sheets** (3840 and 3072
+    wide). The tour's cast was being built in the town drawings and re-dressed
+    later. So Payne's dojo menu now starts `loadSimArt` one menu early
+    (`payne.js`). The cast is built only once the drawings land, and its
+    sheets go to the FRONT of the texture line.
+  - **`atlasClone` re-sent whole sheets.** Every billboard built on a sheet
+    bumped the shared `source.version`, and three re-uploads a source whose
+    version moved. Dropping our own `needsUpdate` was the first fix, and it
+    was not enough. three's `Texture.copy` ends on `needsUpdate = true`, so
+    `clone()` itself bumps the source. world-check's new clone check caught
+    the source going 1 → 3 over two clones. `atlasClone` now puts the
+    source's version back to what it was.
+- **Now, in the pane, three runs:**
+  - The press of VIEW costs 106–148 ms, under the fade.
+  - The four sheet uploads are 86–375 ms on frames 0–4, at black 0.55–0.9.
+  - The warm-up runs at a median of 21–25 ms (p95 29–39) against a baseline of
+    18–24.
+  - The first simulator frame is 17 ms. The isles line is 9–12 and the
+    Shadow's 9–12. Programs: 59 before and after.
+  - One run had seven 500–700 ms frames late in the warm-up, on a pane that
+    had been sitting with its loop stopped. Two fresh runs did not repeat
+    them.
+
+**THE TOUR, RECUT.** Each note, and what answers it (`TOUR_PANS`,
+`storyscene.js`; the cast is `dream/tourcast.js`):
+- **"the transition from seeing the entire map to seeing the Kotodama Gallery
+  is a jarring ... doesn't have the camera do a 180 degrees along y-axis".**
+  The map looked at the Turning Circle from the far side of the island it was
+  about to dive to. It now stands behind the hub FROM that island, and the
+  swing is a straight push along its own heading (`blend: 'line'`). The
+  heading changes by at most 7° (was ~180°). The "every island" pan does the
+  same into the Storm, at most 12°.
+- **"When saying 'real sword skills' ... we should have some bamboo to cut
+  shown and can maybe show some of them getting cut and playing the 'cut down'
+  animation."** There are five holo-canes in a row on the range. A
+  holo-kitten walks the row and cuts four of them at 4.75, 5.2, 5.6 and 6.0.
+  Each top slides off the cut, tips over and fades (`caneFall`), with a burst
+  of shards. The fifth stays standing.
+- **"In the Arena School, should have some animals running around and 4
+  players fighting each other and can show the ... Kenshi card here with some
+  data on it (can be Lionhearts data ...), can have it facing the camera ...
+  and can be rotating."**
+  - Six holo-critters run in the pen and never leave it.
+  - Two bouts trade blows on the ring. Each fighter goes from 5 hits to 2–3
+    and none is knocked out.
+  - His FighterCard floats over the school, at the ladder's own top rung
+    (剣士 1ST CLASS, gold), with 9999 stars, 十 Juuji as his signature, and a
+    3650-day streak.
+  - The card turns to the lens's heading and sways ±28.6° on it.
+- **"skip showing the 'Holo-sentries' island and keep the camera viewing the
+  Arena School longer."** The school now holds from "how to fight" (6.1) to
+  the end of the line, with a slow push in.
+- **"For the 'every island is a lesson' section, instead of being so zoomed
+  out, can just have the camera panning around the center our outskirts of the
+  islands."** The eye is 72 out from the hub (past the Dojo's rim at 66), 20
+  up, looking outward and turning at 0.55 rad/s. The Turning Circle is behind
+  it, and an island is in the frame on every tenth of a second.
+- **"fix the transition before showing the Kudamono Storm island ... skip
+  showing the Bamboo Infiltration island and instead stay on Kudamono Storm
+  longer ... make sure to show gameplay for these islands."**
+  - The pan ends facing the Storm and pushes in onto "aim".
+  - It holds from 1.75 to the cut at 4.4.
+  - A holo-Frost cuts seven fruit out of the air from 2.08 to 4.38. One purple
+    virus is left to fall, the way the drill asks.
+- **"For Kata, we can stay on the Kata Trace longer so that we can actually
+  show Lionheart doing a kata routine on there."**
+  - **The cut to the Kata is a 0.18 s dip, not a swing.** The Storm and the
+    Kata are 166° apart round the hub, and a swing that long is the 180 he
+    asked to lose.
+  - **The lens holds 4.8 s on one Kata floor.** Lionheart's ghost runs a real
+    weekly-shaped routine (`tourKata`: the first one with a cut, a jump, a
+    guard and a step inside the time), on the floor's own beat. In the check
+    he stands on four marks and walks 24.
+- **"When it says 'even the maths of the circle' we can have the camera move
+  around the Kata Trace island so that the Sine Gauntlet or Turning Circle
+  island is in the background ... main camera focus should be on the Kata
+  Trace."** From 5.7 the lens walks 87° round the floor and comes down as it
+  goes. By "Earn stars" the Sine Gauntlet is behind it at NDC (−0.21, 0.49),
+  and the floor is dead centre.
+- **"When saying 'earn stars' we can keep showing the kata and then slowly fade
+  out and when saying 'climb the ranks of kenshi' we can fade in on the Kenshi
+  card."**
+  - It fades out from 8.27 to 9.17 and in over 0.5 s onto the card's close-up.
+  - The card is aimed BELOW its middle. Centred, its stat rows sat behind the
+    subtitles, which cover NDC −0.38 to −0.75 at 16:9. It now fills 65% of the
+    frame's height, with its bottom edge at −0.32.
+- **"Then can fade out and in quickly at the end before transitioning to the
+  Shadow Lionheart scene."** A tail fades to black from 11.30 to 11.55, after
+  "KENSHI" ends (11.31) and before the clip does (11.58). The cue clock is the
+  clip's own playhead and freezes when it ends. A line that ENDS black now
+  dips the next one in (`StoryScene._next`), so the Shadow's line comes up
+  out of it.
+
+**Measured cue words** (−30 dB silence detection on the clips):
+- `lion_tour_learn`: Kotodama 1.30, clan powers 2.50, real sword skills 4.20,
+  how to fight 6.10, every single day 9.15. The clip is 10.82 s.
+- `lion_tour_isles`: aim 2.55, timing 3.45, kata 4.40, maths of the circle
+  5.70, Earn stars 8.27, and climb 9.17, KENSHI ends 11.31. The clip is
+  11.58 s.
+
+**world-check** now asks what each shot is FOR, through the scene's own 42°
+lens every tenth of a second:
+- **Each island's vignette** (the canes, both bouts and the pen, her spot, the
+  Kata floor) is in the frame and above the subtitles, its middle within 0.19
+  NDC of the frame's, and the Turning Circle is out of the frame.
+- **The visit list is exactly six islands.** The three he dropped (sine,
+  sentries and bamboo) are checked absent.
+- **No swing turns more than 30°.**
+- **The Sine Gauntlet** is behind the Kata on "Earn stars".
+- **Every fade** lands where its word is, and the card is in frame above the
+  box.
+- **The cast**, driven on the line's clock:
+  - canes standing until their cut and lying after it;
+  - every fighter hit and none knocked out;
+  - critters inside the pen;
+  - the card facing the lens;
+  - each fruit up for exactly its flight;
+  - the ghost on several marks;
+  - all of it gone with its line.
+
+**Open.**
+- Nobody has watched it at real speed with real audio. The frames were checked
+  as contact sheets in the pane through the real lens.
+- Two in-between swings briefly show open sky: Gallery → Hall at ~2.7 s and
+  Range → School at ~6.5 s.
+- The swing onto the range peaks near 280°/s. If it reads as a whip, lengthen
+  its `swing` to 0.75 and push `RANGE_CUTS` back ~0.2 s to match.
+
 ## Voice
 
 Lionheart is **Barrett** (`d603a8cd-3fe1-55e0-9245-617a2589131e`), nine clips

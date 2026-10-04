@@ -346,9 +346,25 @@ const _wp = new THREE.Vector3();
 export const DIR_SENSE = 1;
 
 /** The billboard's own copy of an atlas, set up to sample one cell of it. */
-function atlasClone(texture, cols, rows) {
+/** Exported for a warm-up that wants the texture a billboard WILL draw
+ *  with (dream/tourcast.js `textures`), which is this, not the sheet. */
+export function atlasClone(texture, cols, rows) {
+  const had = texture.source.version;
   const tex = texture.clone();
-  tex.needsUpdate = true;
+  /* ITS OWN VERSION, NOT THE SHEET'S. `needsUpdate = true` also bumps the
+     shared `source`, and three re-uploads a source whose version moved — so
+     every billboard built on a sheet sent the WHOLE sheet to the GPU again,
+     for every other billboard drawn from it too. Measured on Payne's tour:
+     building its cast re-sent all four kitten sheets (3840 and 3072 wide),
+     ~100ms a sheet in the browser pane, though they were already up for the
+     kittens themselves. AND `clone()` ITSELF DOES IT: three's `Texture.copy`
+     ends on `needsUpdate = true`, so dropping our own `needsUpdate` (the
+     first fix) still left one bump per clone — world-check caught the source
+     going 1 -> 3 over two clones. So the source's version is put back to
+     what it was: the clone keeps the version above 0 it needs to be drawn,
+     and the source moves only if it has never been flagged at all (an image
+     that has not been through a loader). */
+  tex.source.version = Math.max(had, 1);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.magFilter = THREE.LinearFilter;
   tex.minFilter = THREE.LinearMipmapLinearFilter;
