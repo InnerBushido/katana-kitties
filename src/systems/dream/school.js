@@ -393,6 +393,24 @@ export function leagueView(d, price = 0) {
 
 /* -------------------------------- the drills ------------------------------ */
 
+/** Still enough to eat: on the floor, not mid-move, barely moving. */
+function feastStill(p) {
+  return !!p.onGround && !p.busy && !p.ko && Math.hypot(p.velocity.x, p.velocity.z) < STILL;
+}
+
+/** The stunned animal under her paw, or null — nearest inside `CATCH_RADIUS`. */
+function feastPin(d) {
+  const p = d.p;
+  let near = null;
+  let nd = CATCH_RADIUS;
+  for (const c of d.critters ?? []) {
+    if (!c.live || c.state !== 'stunned') continue;
+    const dist = Math.hypot(p.position.x - SIM.dx - c.group.position.x, p.position.z - SIM.dz - c.group.position.z);
+    if (dist <= nd) { nd = dist; near = c; }
+  }
+  return near;
+}
+
 function FEAST(school) {
   return {
     id: 'school.feast', title: 'THE FEAST', kanji: '食', goal: PEN_KINDS.length, time: 90,
@@ -422,19 +440,22 @@ function FEAST(school) {
       const s = d.dream.st[d.p.index];
       if (s) s.simHp = d.dream.simMax(d.p) * FEAST_START;
     },
+    /* IS THIS PRESS THE EAT GESTURE — `Menagerie.wouldHold`'s rule, asked by
+       the Cross Slash through `DreamDojo.critterHold`. Already chewing one, or
+       standing still on top of a stunned one inside the FIXED `CATCH_RADIUS`.
+       The same two functions `tick` decides the chew with, so the button and
+       the meal cannot disagree about which animal is under her paw. */
+    holds(d) {
+      if (d.eating) return true;
+      return feastStill(d.p) && !!feastPin(d);
+    },
     tick(d, dt) {
       const p = d.p;
       for (const c of d.critters) if (c.live) c.steer(dt, p);
       const pad = d.dream.game.input?.players?.[p.index];
       const holding = !!pad?.down?.('attack');
-      const still = !!p.onGround && !p.busy && Math.hypot(p.velocity.x, p.velocity.z) < STILL;
-      let near = null;
-      let nd = CATCH_RADIUS;
-      for (const c of d.critters) {
-        if (!c.live || c.state !== 'stunned') continue;
-        const dist = Math.hypot(p.position.x - SIM.dx - c.group.position.x, p.position.z - SIM.dz - c.group.position.z);
-        if (dist <= nd) { nd = dist; near = c; }
-      }
+      const still = feastStill(p);
+      const near = feastPin(d);
       for (const c of d.critters) {
         if (c !== near || !holding || !still) { c.chew = 0; continue; }
         // Held down: it does not wake up under her paw.

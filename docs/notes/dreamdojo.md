@@ -724,6 +724,111 @@ blow reads as landed. The tell is the drawing as much as the red on the floor.
   its canvas.
 - **Today board:** renders with the title de-duplicated.
 
+## Discs, ridden bridges, and leaving — Richard's fix list
+
+Seven notes from one play-through, each quoted. `world-check` has a section per
+note, **the Dream Dojo: discs, ridden bridges, and leaving**, plus additions to
+the Feast and Shadow checks.
+
+**"The bottoms are broken looking … maybe we can just remove the bottom portion
+and have it that players are floating on the discs part."** Every island hung
+off `rockUnder`, a ragged seeded cone 1.6 of its radius deep (70 under the
+hub). It is gone. An island is now its floor, a `DISC_T` (0.7) slab with an
+open edge band, a dark underside and a dimmer additive ring round the lower
+edge, which is what reads as *floating plate* from below. The void's debris
+was little rocks too, so it is now `shard`s, thin tilted slabs of floor; a sky
+of rocks round a world of discs was two worlds. The physics never knew about
+the rock, so nothing a kitten can do changed.
+
+**"The bridges … should work and operate like the snake way bridges in the
+real world, with the cool camera movements when crossing and inputs being
+overridden in the same way."** Not a copy. `Player._stepSnake` asks
+`heightAt(...).platform.snake` and nothing else, so `addBridge` hangs a real
+`SnakeRoad` off the deck, built from the same path in world coordinates
+(`resample` is exported from snakeway.js for it). Boarding, the locked stick,
+the rails, `SnakeCam` and the lane split are all the Snake Way's own code.
+Three exceptions, each on purpose:
+- **No Snake Way song.** `road.sim` is checked in `_wantedTrack`. Nothing in
+  the sim picks music, so a song started on a bridge would play for the rest of
+  the visit.
+- **`islands: []`.** The ride camera's "never inside an island" lift was for
+  the real islands' rock keels, and the discs have none.
+- **A light cycle is cargo.** A highway is a bridge too, and she sits on it
+  `onGround` for the whole ride, so `_stepSnake` boarded her and the orbit
+  camera chased a kitten doing 55. `p.onCycle` (highway.js) exempts her the way
+  `mount` and `carried` already did.
+
+**"The shader … should change direction and move in the direction the arrows
+are pointing and take on the color of the player."** The old chevron put the
+edges *ahead* of the centre, so the tips trailed and the arrows pointed home
+while they streamed outward. `RIBBON_FRAG` now has `uDir`: the tip leads, the
+sharp edge of each band is its front, and pattern and motion turn together.
+`SimWorld.steerBridges` writes `uDir` and `uColor` every frame:
+- **Whose bridge:** whoever is riding it (her ride's own `dir`), else whoever
+  is nearest within 14 units.
+- **Which way:** away from her end, because that is the way she would cross.
+- **Colour:** eases from cyan to hers over the last 12 units of the approach.
+- **Nobody near:** back to outward, in cyan.
+
+Verified from a top-down render with +s pointing up the screen: at dir +1 the
+arrows point up, and the bands move up between two frames 0.25 s apart.
+
+**"The bridges should connect more seamlessly … merge the vertices to look more
+smooth on the edges."** The overlap was the drawn ribbon lying across 2–3 units
+of each island's grid. `ribbonGeometry` now:
+- clips the drawn ribbon at each rim, by bisection;
+- widens the last `MOUTH_R` (2.8) on a quarter-circle fillet;
+- snaps the rim row's two edge vertices onto the circle (the merged vertices)
+  and pushes any flare vertex that would cut the corner back out to the rim.
+
+The island's rim opens over the same angles. The ring is rebuilt as arcs
+(`rimGeometry`) and the floor's glow is masked by `uGaps`, so the bridge's
+magenta edge runs round the fillet and straight on into the island's.
+**The WALKED deck is unchanged** and still runs into the island, so there is no
+seam to fall through; a check steps across every mouth. Measured: 22 mouths,
+0 edge vertices off the rim, 0 drawn vertices inside a disc.
+
+**"When player has the Cross-slash ability, they are unable to eat the animals
+when in the Feast simulation."** The sim's hud answered `critterHold` with a
+hard-coded `false`, and that is the question the Cross Slash asks before it
+takes ATTACK for itself. It now routes to `DreamDojo.critterHold`, which asks
+the live drill's `holds`. The Feast's answer is the arena's rule
+(`Menagerie.wouldHold`): already chewing, or standing still over a stunned one
+inside `CATCH_RADIUS`, using the same two functions its `tick` eats with. The
+check drives the real `Player.update` through the real `makeSimHud`.
+
+**"When player leaves the Dream Dojo simulation, then if any of Lionhearts
+voices are playing, they should be cancelled."** `LionVoice.hush(which)` cuts
+only his own clip, and only if `which(id)` agrees; anyone else on the one
+speaker is never touched. `DreamDojo._hushHolo` runs on the DISCONNECT press and
+again in `_leaveSim`. It cuts only the hologram's lines (the real Lionheart's
+two belong to the reality she returns to), and only when nobody is left inside
+to hear him. A sister still connected keeps him talking.
+
+**"Lionheart is too big … when doing the Lionhearts Shadow."** `SHADOW_H` was
+9.3, half again the man he is a shadow of; it is now `LION_HEIGHT` (6.2), and
+his hit volume, bar and panel scale with it.
+
+**"It is not showing the players generated VR sprites"** and **"doesn't seem he
+ever does his Shadow sprites."** Neither reproduced, in Chrome or in a headless
+Firefox 157 driven over WebDriver BiDi:
+- her look was the VR texture all the way through the visit
+  (`rise → link → rez → sim`);
+- the Shadow's cell walked 0 → 1 → 2 over a clean four-cell atlas.
+
+What *could* produce each was fixed instead:
+- **The holo-kittens** (sparring partners) still wore the town drawing, so
+  `kittenSpec` now dresses them in the headset sheet.
+- **The Shadow's sheet loads unawaited** (`loadSimArt` starts at the tube), so
+  a fight that began before it landed spent four minutes on the fallback.
+  `ShadowFight.update` now dresses him the frame it arrives, and `dress` removes
+  the figure of light he was spawned as. Before, it was left standing inside
+  the drawing.
+
+**Still home-sheet:** her special poses in the sim (eat, bless, warp, inhale,
+scared, sweep) are home-sheet billboards with no headset. They need generated
+art, four kittens each.
+
 ## Voice
 
 Lionheart is **Barrett** (`d603a8cd-3fe1-55e0-9245-617a2589131e`), nine clips

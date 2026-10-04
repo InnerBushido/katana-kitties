@@ -6040,7 +6040,8 @@ export class Player {
    */
   _stepSnake(dt, pad, g) {
     const road = g?.platform?.snake;
-    const onRoad = road && this.onGround && !this.mount && !this.rideAlong && !this.carried;
+    // `onCycle`: the Dream Dojo's light cycle is cargo, like a mount (highway.js).
+    const onRoad = road && this.onGround && !this.mount && !this.rideAlong && !this.carried && !this.onCycle;
     if (onRoad) {
       const hit = road.locate(this.position.x, this.position.z, this.position.y + 0.6);
       if (hit) {

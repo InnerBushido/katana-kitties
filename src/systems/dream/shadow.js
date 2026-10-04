@@ -61,7 +61,15 @@ export const SHADOW_T = 240;
 /** Score is seconds + this per catch; lower is better. */
 export const CATCH_COST = 15;
 export const SHADOW_BANDS = [SHADOW_T + 60, 150, 100];
-export const SHADOW_H = 9.3;
+/** How tall he is drawn: LIONHEART'S OWN HEIGHT (`LION_HEIGHT` in
+ *  dreamdojo.js, 6.2 — a literal here because that file imports this one).
+ *  It was 9.3, half as tall again as the man himself, and Richard: "Lionheart
+ *  is too big in the Dream Dojo simulation when doing the Lionhearts Shadow."
+ *  A boss does not need to be a giant to be a boss: he is two and a half
+ *  kittens tall either way, and at 9.3 his head and HONOR's tip were off the
+ *  top of a half-width pane through every slam. `world-check` pins the two
+ *  equal. */
+export const SHADOW_H = 6.2;
 export const BOSS_SPEED = 3.2;
 export const BOSS_CLOSE = 4;
 /** Below this fraction of his bar, phase two: the Cross Slash. */
@@ -219,37 +227,24 @@ function barMesh(cx, y, cz, w, l, d) {
 
 export class ShadowBoss extends Target {
   constructor(o) {
-    super({ centre: 3.0, pad: 2.2, hitUp: 4, hitDown: 1, colour: 0x9b4dff, name: 'Shadow Lionheart', barY: SHADOW_H + 0.8, ...o });
-    if (this.bar) this.bar.scale.setScalar(2.4);
+    /* The hit volume scales with him: it was centre 3.0 and 4 up for 9.3. */
+    super({ centre: SHADOW_H * 0.32, pad: 2.2, hitUp: SHADOW_H * 0.43, hitDown: 1, colour: 0x9b4dff, name: 'Shadow Lionheart', barY: SHADOW_H + 0.8, ...o });
+    if (this.bar) this.bar.scale.setScalar(2.0);
     this.facing = { x: 0, z: 1 };
     this.figure = new THREE.Group();
     this.body.add(this.figure);
     const art = o.art;
-    /** His own four-pose sheet (true), or Lionheart's town drawing tinted
-     *  into a shadow (false) — the degrade, and how he first shipped. */
-    this.posed = (art?.cols ?? 1) >= 4;
-    /* THE TINT IS LIGHTER ON HIS OWN SHEET. The town drawing is a bright
-       daytime figure and wants pushing a long way into purple; the shadow
-       sheet is already black robes, and the same multiply would leave a
-       silhouette with no pose left in it to read. */
-    this.tint = this.posed ? 0xc8a8ff : 0x7a3cff;
     this.pose = POSE.guard;
+    this.posed = false;
     if (art?.texture) {
-      const quad = SHADOW_H / (art.contentScale || 1);
-      this.sprite = new Billboard(art.texture, {
-        cols: this.posed ? art.cols : 1, rows: 1, width: quad, height: quad,
-        footOffset: (art.pad ?? 0) * quad, mirror: false,
-      });
-      this.sprite.mat.color.set(this.tint);
-      this.sprite.mat.transparent = true;
-      this.sprite.mat.opacity = 0.9;
-      this.figure.add(this.sprite);
+      this.dress(art);
     } else {
       // No drawing loaded: a figure of light rather than nothing (prefer a rule that degrades).
       const g = new THREE.CapsuleGeometry(1.4, SHADOW_H - 3, 4, 12).translate(0, SHADOW_H / 2, 0);
       const s = holoSolid(g, 0x7a3cff, 0.35);
       this.figure.add(s);
       this.body.userData.mats = s.userData.mats;
+      this.ghost = s;
     }
     // HONOR, held at his side — the blade the attacks swing.
     this.blade = holoSolid(new THREE.BoxGeometry(0.28, 7.2, 0.12).translate(0, 3.6, 0), 0xff3b8a, 0.5);
@@ -268,6 +263,46 @@ export class ShadowBoss extends Target {
     aura.position.y = 0.04;
     this.group.add(aura);
     this.open = 0;
+  }
+
+  /**
+   * Put a drawing on him: his own four-pose sheet, or Lionheart's town drawing
+   * tinted into a shadow — the degrade, and how he first shipped. Called
+   * again by the fight if his sheet lands AFTER he was spawned (`loadSimArt`
+   * starts at the first tube and is not awaited), so a fight that began on
+   * the fallback does not spend all four minutes in one pose.
+   */
+  dress(art) {
+    if (!art?.texture) return;
+    /* THE FIGURE OF LIGHT GOES WHEN A DRAWING ARRIVES. Dressed late, he kept
+       the capsule he was spawned as standing inside the drawing — two of
+       him, one a glowing pill — because only `sprite` was ever cleared. */
+    if (this.ghost) {
+      this.ghost.removeFromParent();
+      this.ghost = null;
+      this.body.userData.mats = [];
+    }
+    if (this.sprite) {
+      this.sprite.removeFromParent();
+      this.sprite.mat?.dispose?.();
+    }
+    /** His own sheet (true), or the tinted town drawing (false). */
+    this.posed = (art.cols ?? 1) >= 4;
+    /* THE TINT IS LIGHTER ON HIS OWN SHEET. The town drawing is a bright
+       daytime figure and wants pushing a long way into purple; the shadow
+       sheet is already black robes, and the same multiply would leave a
+       silhouette with no pose left in it to read. */
+    this.tint = this.posed ? 0xc8a8ff : 0x7a3cff;
+    const quad = SHADOW_H / (art.contentScale || 1);
+    this.sprite = new Billboard(art.texture, {
+      cols: this.posed ? art.cols : 1, rows: 1, width: quad, height: quad,
+      footOffset: (art.pad ?? 0) * quad, mirror: false,
+    });
+    this.sprite.mat.color.set(this.tint);
+    this.sprite.mat.transparent = true;
+    this.sprite.mat.opacity = 0.9;
+    this.figure.add(this.sprite);
+    if (this.bladeGrp) this.bladeGrp.visible = !this.posed;
   }
 
   update(dt) {
@@ -543,6 +578,9 @@ export class ShadowFight {
     this.sayT -= dt;
     if (this.state === 'waiting') { this.panel.visible = false; return; }
     const b = this.boss;
+    // His own sheet arrived after he was spawned on the fallback: wear it.
+    const own = this.dream.game?.shadowArt;
+    if (!b.posed && own?.texture) b.dress(own);
     b.update(dt);
     b.open = Math.max(0, b.open - dt);
     b.pose = this.state === 'live' ? poseCell(this.act) : POSE.guard;

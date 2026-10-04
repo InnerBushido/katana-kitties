@@ -96,6 +96,27 @@ export class LionVoice {
   }
 
   /**
+   * Stop him mid-line, if what is playing is one of his and `which(id)` says
+   * so. Returns true if a line was cut. Somebody ELSE talking is never
+   * touched: this is the one speaker everyone shares (`Audio.speak`).
+   *
+   * Richard: "When player leaves the Dream Dojo simulation, then if any of
+   * Lionhearts voices are playing, they should be cancelled, since the player
+   * has left the simulation." `DreamDojo._hushHolo` asks it with the
+   * hologram's lines only — the real Lionheart at the arcade is still there.
+   */
+  hush(which = () => true) {
+    const s = this.audio?._speaking;
+    if (!s || s.paused || s.ended) return false;
+    for (const [id, el] of this.els) {
+      if (el !== s || !which(id)) continue;
+      this.audio.stopSpeaking?.();
+      return true;
+    }
+    return false;
+  }
+
+  /**
    * Say `text` aloud if it is recorded and it is his turn. Returns how many
    * seconds it runs, and 0 when nothing was said — the caller holds its bubble
    * up for the longer of the two.

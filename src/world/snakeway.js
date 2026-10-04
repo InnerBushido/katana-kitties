@@ -526,9 +526,10 @@ function assemble(A, A1, mid, B1, B, dy) {
 /**
  * A horizontal polyline that already has its heights, resampled every
  * `SNAKE.step` of 3D length with a unit tangent on each sample. Shared by the
- * wound roads and the arena's, which is laid rather than wound.
+ * wound roads and the arena's, which is laid rather than wound — and the
+ * Dream Dojo's data bridges, which ride exactly like these (simworld.js).
  */
-function resample(H) {
+export function resample(H) {
   const out = [];
   let s = 0;
   let next = 0;

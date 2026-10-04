@@ -4642,7 +4642,7 @@ console.log('\n--- the simulator\'s drawings ---');
     ok('...the walk to a tube starts the load, crossing in puts it on, and every way out takes it off',
       /_begin\(p, phase\) \{ this\.game\.loadSimArt\?\.\(\);/.test(dd)
       && /if \(toSimNow\) p\.setSimLook\?\.\(true\);/.test(dd)
-      && /_leaveSim\(p\) \{ const s = this\.st\[p\.index\]; p\.setSimLook\?\.\(false\);/.test(dd)
+      && /_leaveSim\(p\) \{ const s = this\.st\[p\.index\]; this\._hushHolo\(p\); p\.setSimLook\?\.\(false\);/.test(dd)
       && /if \(!toSimNow\) this\._leaveSim\(p\);/.test(dd));
   }
 }
@@ -32658,7 +32658,7 @@ console.log('\n--- the arena road is shot, not orbited ---');
   const msrc = stripComments(readFileSync(new URL('../src/main.js', import.meta.url), 'utf8'))
     .replace(/\s+/g, ' ');
   ok('...and a kitten on a road hears it — his outranking the plain one',
-    /if \(this\.players\.some\(\(p\) => p\.snakeRide\?\.road\.arena\)\) return 'satan'; if \(this\.players\.some\(\(p\) => p\.snakeRide\)\) return 'snake';/.test(msrc));
+    /if \(this\.players\.some\(\(p\) => p\.snakeRide\?\.road\.arena\)\) return 'satan'; if \(this\.players\.some\(\(p\) => p\.snakeRide && !p\.snakeRide\.road\.sim\)\) return 'snake';/.test(msrc));
 }
 
 /* ===========================================================================
@@ -36333,6 +36333,43 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     rat.group.position.set(her.position.x - SW.SIM.dx + 1, IS.y, her.position.z - SW.SIM.dz);
     const took = rat.hit(blow);
     ok('食 a blade STUNS a holo-critter — it never breaks it', !took && rat.live && rat.state === 'stunned');
+    /* 食 THE CROSS SLASH DOES NOT TAKE THE EAT GESTURE IN HERE EITHER.
+       Richard: "When player has the Cross-slash ability, they are unable to
+       eat the animals when in the Feast simulation. We should try to use the
+       same logic, as is in the arena". The sim's hud answered `critterHold`
+       with a hard-coded false, so the technique always took the press. Asked
+       through the real `makeSimHud` and the real `Player.update`, the way
+       the ring's own check asks it, so a hud that stops routing fails here. */
+    {
+      const SHUD = await import('../src/systems/dream/simhud.js');
+      const hud = SHUD.makeSimHud(fakeGame, D);
+      her.velocity.set(0, 0, 0);
+      her.onGround = true;
+      const over = D.critterHold(her) && hud.critterHold(her);
+      her.velocity.x = SC.STILL + 1;
+      const running = D.critterHold(her);
+      her.velocity.x = 0;
+      const ratAt = rat.group.position.clone();
+      rat.group.position.x += 6;
+      const offIt = D.critterHold(her);
+      rat.group.position.copy(ratAt);
+      ok('食 standing still over a stunned holo-critter IS the eat gesture, asked through the sim\'s hud',
+        over && !running && !offIt && !D.critterHold(sis), `${over} ${running} ${offIt}`);
+      const hold = { mx: 0, my: 0, down: (a) => a === 'attack', pressed: (a) => a === 'attack' };
+      const keep = { mx: 0, my: 0, down: (a) => a === 'attack', pressed: () => false };
+      const tri0 = her.power.tri;
+      const at0 = her.position.clone();
+      her.power = { ...her.power, tri: 1 };
+      her.update(1 / 60, hold, sim, [], hud);
+      for (let i = 0; i < 40; i++) her.update(1 / 60, keep, sim, [], hud);
+      const ate = !her.triAt;
+      her.power = { ...her.power, tri: tri0 };
+      her.position.copy(at0);
+      her.velocity.set(0, 0, 0);
+      her.onGround = true;
+      ok('...so a kitten wearing the Cross Slash who holds ATTACK on it eats, and does not wind up the technique',
+        ate && rat.live && rat.state === 'stunned', `triAt ${her.triAt} ${rat.state}`);
+    }
     const hp0 = D.st[0].simHp;
     held[0] = true;
     for (let t = 0; t < CR.EAT_TIME - 0.2; t += 1 / 60) d.update(1 / 60);
@@ -36725,6 +36762,27 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       ok('...a real strike leaves a recover that names its blow, and the live boss wears it',
         afterSweep === 'sweep' && afterCross === 'cross' && B.pose === P.cross, `${afterSweep} ${afterCross} pose ${B.pose}`);
       F.act = act0; B.open = 0; D.st[0].simHp = D.simMax(her); D.st[1].simHp = D.simMax(sis);
+      /* "When fighting Shadow Lionheart, doesn't seem he ever does his
+         Shadow sprites or it only shows one of them for the entire fight" —
+         Richard. Measured working in both browsers; what COULD do it is his
+         sheet landing after he was spawned (`loadSimArt` is not awaited), so
+         the fight now dresses him the frame it arrives — and the figure of
+         light he was spawned as goes, rather than standing inside him. */
+      {
+        const wasPosed = B.posed;
+        const pill = B.ghost;
+        fakeGame.shadowArt = { texture: new THREE.Texture(), cols: 4, rows: 1, contentScale: 0.88, pad: 0 };
+        F.update(1 / 60);
+        ok('影 his four-pose sheet arriving MID-FIGHT is put on him, and the figure of light goes',
+          !wasPosed && B.posed && B.sprite.cols === 4 && !B.bladeGrp.visible && !!pill && !pill.parent && !B.ghost,
+          `${wasPosed} -> ${B.posed}, cols ${B.sprite?.cols}`);
+        delete fakeGame.shadowArt;
+      }
+      /* "Lionheart is too big in the Dream Dojo simulation when doing the
+         Lionhearts Shadow." 9.3 was half again the man he is a shadow of. */
+      ok('影 Shadow Lionheart stands exactly as tall as Lionheart',
+        SH.SHADOW_H === DD.LION_HEIGHT && Math.abs(B.sprite.height - SH.SHADOW_H / 0.88) < 1e-6,
+        `${SH.SHADOW_H} vs ${DD.LION_HEIGHT}`);
       const posed = new SH.ShadowBoss({ parent: new THREE.Group(), x: 0, y: 0, z: 0, owner: null,
         art: { texture: new THREE.Texture(), cols: 4, rows: 1, contentScale: 1, pad: 0 }, shards: D.shards, hits: 3 });
       posed.facing = { x: 1, z: 0 };
@@ -36959,6 +37017,302 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       (dd.match(/this\.voice\.saying\(this\.(say|holo)Text\)/g) ?? []).length === 2
       && /this\.dream\.voice\?\.saying\(this\.say\)/.test(read('../src/systems/dream/shadow.js')));
   }
+}
+
+/* ==========================================================================
+   THE DREAM DOJO'S ISLANDS AND BRIDGES, AND LEAVING IT
+   (world/simworld.js, systems/dreamdojo.js, systems/dream/lionvoice.js).
+
+   One afternoon's list from Richard, and each check asks what its fix is FOR
+   rather than whether a number is set: an island is a disc and nothing hangs
+   under it; a bridge is a Snake Way road a kitten is boarded onto; it opens
+   into the island it joins rather than lying across it; its arrows run the
+   way she would cross and wear her colour; his voice stops when the last
+   kitten leaves; and a holo-kitten wears the headset like she does.
+   ========================================================================== */
+{
+  console.log('\n--- the Dream Dojo: discs, ridden bridges, and leaving ---');
+  if (!globalThis.document) globalThis.document = domStub();
+  const DD = await import('../src/systems/dreamdojo.js');
+  const SW = await import('../src/world/simworld.js');
+  const SN = await import('../src/world/snakeway.js');
+  const PR = await import('../src/systems/dream/progress.js');
+  const ISL = await import('../src/systems/dream/islands.js');
+  const HW = await import('../src/systems/dream/highway.js');
+  const PL = await import('../src/entities/player.js');
+  const read = (f) => readFileSync(new URL(f, import.meta.url), 'utf8');
+  const dc = world.dojoCentre;
+  const L = DD.arcadeLayout(dc);
+  const scene = new THREE.Scene();
+  const sim = new SW.SimWorld(scene, {
+    dojo: { x: dc.x, y: dc.y, z: dc.z },
+    arcade: { x: DD.ARCADE.x, z: DD.ARCADE.z, y: DD.ARCADE.y, r: DD.ARCADE.r },
+    ports: L.tubes,
+  });
+  const fakeGame = {
+    world, scene, players: [], toasts: [], sounds: [],
+    toast(t) { this.toasts.push(t); }, sfx(s) { this.sounds.push(s); },
+    input: { promptFor: () => 'E' },
+  };
+  const D = new DD.DreamDojo(fakeGame);
+  D.layout = L;
+  D.sim = sim;
+  D.shards = { burst() {} };
+  D.progress = new PR.DreamProgress(null);
+  D.isles = {};
+  D.highway = new HW.DataHighway(D);
+  for (const key of Object.keys(ISL.ISLANDS)) D.isles[key] = D._raiseIsland(key);
+  const spawn = new THREE.Vector3(0, world.heightAt(0, 40).y, 40);
+  const mk = (index) => new PL.Player({ texture: new THREE.Texture(), index, spawn: spawn.clone(), cols: 8, rows: 4, mirror: false });
+  const her = mk(0);
+  const sis = mk(1);
+  fakeGame.players = [her, sis];
+  her.realm = 'sim'; sis.realm = 'sim';
+  D.st[0] = { phase: 'sim', t: 0 };
+  D.st[1] = { phase: 'sim', t: 0 };
+  const W = (q) => ({ x: q.x + SW.SIM.dx, y: q.y, z: q.z + SW.SIM.dz });
+  sim.root.updateMatrixWorld(true);
+  const discs = sim.decks.filter((d) => Number.isFinite(d.r) && !d.pts && !d.temp);
+
+  /* --- the islands are discs: nothing as wide as one hangs under it --- */
+  {
+    /* Richard: "the bottoms are broken looking ... Maybe we can just remove
+       the bottom portion and have it that players are floating on the discs
+       part." The rock was the one mesh as wide as its island and deeper than
+       its floor — down to 1.6 of its radius, 70 under the hub. */
+    const box = new THREE.Box3();
+    const hung = [];
+    for (const m of sim.root.children) {
+      if (!m.isMesh) continue;
+      box.setFromObject(m);
+      const w = Math.min(box.max.x - box.min.x, box.max.z - box.min.z);
+      const cx = (box.min.x + box.max.x) / 2 - sim.root.position.x;
+      const cz = (box.min.z + box.max.z) / 2 - sim.root.position.z;
+      const bottom = box.min.y - sim.root.position.y;
+      for (const d of discs) {
+        if (Math.hypot(cx - d.x, cz - d.z) > 1 || w < d.r || w > 2 * d.r + 2) continue;
+        if (bottom < d.y - SW.DISC_T - 0.1) hung.push(`${d.name} ${(d.y - bottom).toFixed(1)} deep`);
+      }
+    }
+    ok('no island hangs anything under its own disc any more', hung.length === 0 && !/function rockUnder|rockUnder\(/.test(read('../src/world/simworld.js')),
+      hung.join(', ') || `${discs.length} discs, each ${SW.DISC_T} thick`);
+    const slabs = sim.root.children.filter((m) => m.geometry?.parameters?.height === SW.DISC_T && m.geometry.parameters.openEnded);
+    ok('...and every one of them is a slab of floor with an edge, not a floor with nothing under it',
+      slabs.length >= discs.length, `${slabs.length} slabs for ${discs.length} discs`);
+  }
+
+  /* --- the bridges are Snake Way roads, and she is boarded onto them --- */
+  const B0 = sim.bridges.find((b) => b.mouths.length === 2) ?? sim.bridges[0];
+  {
+    /* Richard: "The bridges in the Dream Dojo should work and operate like
+       the snake way bridges in the real world, with the cool camera movements
+       when crossing and inputs being overridden in the same way." Not a copy:
+       `Player._stepSnake` asks `heightAt(...).platform.snake` and nothing
+       else, so a bridge is ridden exactly when its deck answers that. */
+    const bad = sim.bridges.filter((b) => {
+      const R = b.deck.snake;
+      if (!(R instanceof SN.SnakeRoad) || !R.sim || R !== b.road) return true;
+      const mid = b.deck.pts[Math.floor(b.deck.pts.length / 2)];
+      const g = sim.heightAt(mid.x + SW.SIM.dx, mid.z + SW.SIM.dz, mid.y + 0.45);
+      const hit = R.locate(mid.x + SW.SIM.dx, mid.z + SW.SIM.dz, mid.y + 0.6);
+      return g?.platform?.snake !== R || !hit || Math.abs(hit.lat) > 0.5 || Math.abs(hit.y - mid.y) > 0.3;
+    });
+    ok('every data bridge and highway in the sim is a Snake Way road, laid over its own deck',
+      sim.bridges.length >= 8 && bad.length === 0, `${sim.bridges.length} bridges, ${bad.length} wrong`);
+
+    const R = B0.road;
+    const at = R.frameAt(6);
+    const board = (p, dir) => {
+      p.snakeRide = null;
+      p.position.set(at.x, at.y, at.z);
+      p.velocity.set(at.tx * 4 * dir, 0, at.tz * 4 * dir);
+      p.onGround = true;
+      p._stepSnake(1 / 60, { mx: 0, my: 0 }, sim.heightAt(at.x, at.z, at.y + 0.45));
+      return p.snakeRide;
+    };
+    const fwd = board(her, 1);
+    const subj = her.snakeSubject();
+    const back = board(sis, -1);
+    ok('a kitten stepping on is boarded, the way she was going, and the ride camera has her',
+      fwd?.road === R && fwd.dir === 1 && back?.road === R && back.dir === -1 && subj?.road === R && subj.dir === 1,
+      `${fwd?.dir} ${back?.dir} ${!!subj}`);
+    // The rails: standing near the edge, she is pulled back inside `lock`.
+    const lock = R.lock;
+    her.position.set(at.x - at.tz * (lock + 0.6), at.y, at.z + at.tx * (lock + 0.6));
+    her.velocity.set(0, 0, 0);
+    her.onGround = true;
+    her._stepSnake(1 / 60, { mx: 0, my: 0 }, sim.heightAt(her.position.x, her.position.z, at.y + 0.45));
+    const lat = R.locate(her.position.x, her.position.z, at.y + 0.6)?.lat ?? 99;
+    ok('...and the rails hold her on, like the Snake Way\'s', Math.abs(lat) <= lock + 1e-6, `${lat.toFixed(3)} of ${lock.toFixed(2)}`);
+    ok('...but the Snake Way\'s SONG stays the real roads\' — nothing in the sim would ever stop it',
+      /p\.snakeRide && !p\.snakeRide\.road\.sim/.test(read('../src/main.js')));
+    /* A LIGHT CYCLE IS CARGO. A highway is a bridge too, so it is a road,
+       and she sits on it `onGround` the whole ride: before `onCycle`, the
+       walking ride's orbit camera and lane split chased a kitten doing 55. */
+    her.snakeRide = null;
+    const hw = D.highway.roads[0];
+    D.highway.ride(her, hw, 1);
+    let boarded = 0;
+    for (let f = 0; f < 60; f++) {
+      D.highway.update(1 / 60);
+      her._stepSnake(1 / 60, { mx: 0, my: 0 }, sim.heightAt(her.position.x, her.position.z, her.position.y + 0.45));
+      if (her.snakeRide) boarded++;
+    }
+    const onIt = her.onCycle === true && !!hw.deck?.snake;
+    D.highway.stop(her);
+    ok('...but a kitten on a light cycle is never boarded onto the walking ride',
+      onIt && boarded === 0 && her.onCycle === false, `${boarded} of 60 frames boarded`);
+    her.snakeRide = null; sis.snakeRide = null;
+  }
+
+  /* --- the drawn ribbon opens INTO the island instead of lying across it --- */
+  {
+    /* Richard: "right now it is overlapping and doesn't look too good, maybe
+       we can merge the vertices to look more smooth on the edges, as if the
+       discs are connected with the bridges." */
+    let inside = 0;
+    let offRim = 0;
+    let gapRing = 0;
+    let gapGlow = 0;
+    let mouths = 0;
+    for (const b of sim.bridges) {
+      const pos = b.mesh.geometry.attributes.position;
+      for (const m of b.mouths) {
+        mouths++;
+        const d = m.deck;
+        for (const [x, z] of [m.L, m.R]) if (Math.abs(Math.hypot(x - d.x, z - d.z) - d.r) > 1e-6) offRim++;
+        for (let i = 0; i < pos.count; i++) {
+          if (Math.abs(pos.getY(i) - 0.05 - d.y) > 0.6) continue;
+          if (Math.hypot(pos.getX(i) - d.x, pos.getZ(i) - d.z) < d.r - 1e-4) inside++;
+        }
+      }
+    }
+    for (const d of discs) {
+      if (!d.mouths?.length) continue;
+      const u = d._top.material.uniforms;
+      if (u.uGapN.value !== Math.min(12, d.mouths.length)) gapGlow++;
+      const rp = d._ring.geometry.attributes.position;
+      for (let i = 0; i < rp.count; i++) {
+        const a = Math.atan2(rp.getZ(i), rp.getX(i));
+        for (const m of d.mouths) if (Math.abs(Math.atan2(Math.sin(a - m.ang), Math.cos(a - m.ang))) < m.half - 1e-3) gapRing++;
+      }
+    }
+    ok('a bridge\'s edges are ON the rim where it meets an island, and none of it is drawn over the island',
+      mouths >= 2 * 8 && offRim === 0 && inside === 0, `${mouths} mouths, ${offRim} off the rim, ${inside} vertices inside`);
+    ok('...and the island\'s rim opens over every mouth — the ring and the floor\'s glow both',
+      gapRing === 0 && gapGlow === 0, `${gapRing} ring vertices in a mouth, ${gapGlow} floors not told`);
+    /* The WALKED deck still runs into the island, so opening the drawing
+       opened no seam: a step from the rim either way is floor. */
+    const m = B0.mouths[0];
+    const d = m.deck;
+    const seam = [-0.4, 0.4].every((k) => {
+      const mx = (m.L[0] + m.R[0]) / 2;
+      const mz = (m.L[1] + m.R[1]) / 2;
+      const l = Math.hypot(mx - d.x, mz - d.z);
+      const qx = d.x + ((mx - d.x) / l) * (l + k);
+      const qz = d.z + ((mz - d.z) / l) * (l + k);
+      return !!sim.heightAt(qx + SW.SIM.dx, qz + SW.SIM.dz, d.y + 0.45);
+    });
+    ok('...and there is floor on both sides of the mouth: no seam to fall through', seam);
+  }
+
+  /* --- the arrows run the way SHE would cross, in HER colour --- */
+  {
+    /* Richard: "The shader on the bridges should change direction and move in
+       the direction the arrows are pointing and take on the color of the
+       player when they approach it." */
+    const R = B0.road;
+    const A = R.pts[0];
+    const Z = R.pts[R.pts.length - 1];
+    const steer = (secs) => { for (let t = 0; t < secs; t += 1 / 60) sim.steerBridges(1 / 60, D.simKittens()); };
+    const near = (p, q) => { p.position.set(q.x, q.y, q.z); p.snakeRide = null; };
+    const away = (p) => { p.position.set(SW.SIM.dx + 9999, -500, 9999); p.snakeRide = null; };
+    const mine = new THREE.Color(her.style.colour);
+    const close = (c, w) => Math.abs(c.r - w.r) + Math.abs(c.g - w.g) + Math.abs(c.b - w.b) < 0.03;
+    away(sis);
+    near(her, A);
+    steer(2);
+    const fromA = B0.dir === 1 && B0.mat.uniforms.uDir.value === 1 && close(B0.mat.uniforms.uColor.value, mine);
+    near(her, Z);
+    steer(2);
+    const fromZ = B0.dir === -1 && B0.mat.uniforms.uDir.value === -1;
+    near(her, A);
+    her.snakeRide = { road: R, s: 1, dir: -1, t: 0 };
+    steer(0.5);
+    const riding = B0.dir === -1;
+    away(her);
+    steer(3);
+    const idle = B0.dir === 1 && close(B0.mat.uniforms.uColor.value, new THREE.Color(SW.HOLO.cyan));
+    near(her, A);
+    sis.position.set(Z.x, Z.y, Z.z);
+    sis.position.x += 6;
+    steer(2);
+    const nearest = B0.dir === 1 && close(B0.mat.uniforms.uColor.value, mine);
+    ok('walking up to a bridge, its arrows run away from her toward the far end, in her colour',
+      fromA && fromZ, `${fromA} ${fromZ}`);
+    ok('...on it, they run the way she is riding — not the way she happens to be nearest',
+      riding);
+    ok('...with nobody near, they go back to running outward in the system\'s cyan', idle);
+    ok('...and with two near, the bridge is the nearer kitten\'s', nearest);
+    ok('...and the Dojo steers them every frame, for the kittens inside',
+      /this\.sim\.steerBridges\(dt, inside\);/.test(read('../src/systems/dreamdojo.js')));
+    away(her); away(sis);
+  }
+
+  /* --- leaving: his voice stops when the last kitten does --- */
+  {
+    /* Richard: "When player leaves the Dream Dojo simulation, then if any of
+       Lionhearts voices are playing, they should be cancelled, since the
+       player has left the simulation." */
+    const audio = {
+      _speaking: null,
+      speak(el) { this._speaking = el; el.paused = false; el.ended = false; },
+      stopSpeaking() { if (this._speaking) this._speaking.paused = true; this._speaking = null; },
+    };
+    fakeGame.audio = audio;
+    const ids = Object.values(DD.LION_VOICE);
+    for (const id of ids) D.voice.els.set(id, { duration: 5, paused: true, ended: false });
+    const playing = (id) => { audio.speak(D.voice.els.get(id)); return D.voice.els.get(id); };
+    D.st[1] = { phase: 'sim', t: 0 };
+    let el = playing(DD.LION_VOICE.sim);
+    D.holoUntil = 99;
+    D._hushHolo(her);
+    const sisterKeeps = !el.paused && D.holoUntil === 99;
+    D.st[1] = { phase: 'derez', t: 0 };
+    D._hushHolo(her);
+    const lastOut = el.paused && audio._speaking === null && D.holoUntil === 0;
+    el = playing(DD.LION_VOICE.idle);
+    D._hushHolo(her);
+    const realStays = !el.paused;
+    const other = { paused: false, ended: false };
+    audio._speaking = other;
+    D._hushHolo(her);
+    const othersStay = !other.paused && audio._speaking === other;
+    ok('the hologram stops talking when the last kitten disconnects', lastOut);
+    ok('...but not while her sister is still inside to hear him', sisterKeeps);
+    ok('...and not the REAL Lionheart at the arcade, nor anybody else on the one speaker', realStays && othersStay);
+    ok('...and every way out runs it: the DISCONNECT press and `_leaveSim`',
+      (read('../src/systems/dreamdojo.js').match(/this\._hushHolo\(p\);/g) ?? []).length === 2);
+    D.st[1] = { phase: 'sim', t: 0 };
+    delete fakeGame.audio;
+  }
+
+  /* --- a holo-kitten wears the headset, like she does --- */
+  {
+    /* "When in the simulation, it is not showing the players generated VR
+       sprites." Measured: hers WERE on, in Chrome and in Firefox. The
+       sparring partners were the ones still in the town drawing. */
+    const bare = D.kittenSpec();
+    const art = { texture: new THREE.Texture(), cols: 10, rows: 4, contentScale: 0.9, pad: 0.04 };
+    her.setSimArt(art);
+    const spec = D.kittenSpec();
+    ok('a holo-kitten wears the VR sheet once it has landed, at her exact height',
+      bare?.texture === her.spriteSpec.texture && spec?.texture === art.texture && spec.opts.cols === 10
+      && spec.opts.rows === 4 && Math.abs(spec.opts.width - her.height / 0.9) < 1e-9,
+      `${spec?.opts.cols}x${spec?.opts.rows} ${spec?.opts.width?.toFixed(2)}`);
+    her.setSimArt(null);
+  }
+  scene.remove(sim.root);
 }
 
 /* Print the total. HANDOFF.md quoted it in two places and they disagreed (150

@@ -8632,7 +8632,10 @@ class Game {
        His outranks the plain one: a road with four kittens on two of them
        plays the funnier song. */
     if (this.players.some((p) => p.snakeRide?.road.arena)) return 'satan';
-    if (this.players.some((p) => p.snakeRide)) return 'snake';
+    /* NOT THE DREAM DOJO'S BRIDGES, which ride like Snake Way (simworld.js
+       `addBridge`) but are not it: nothing in the simulator picks a track,
+       so the song a bridge started would play on after she stepped off. */
+    if (this.players.some((p) => p.snakeRide && !p.snakeRide.road.sim)) return 'snake';
     /* THE ARENA ISLAND PLAYS THE FUNFAIR UNTIL THERE IS A MATCH. "Have that
        Gold Saucer music play when the player gets off the snake bridge and
        onto the arena, before they join the arena and the arena music plays."
