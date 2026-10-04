@@ -38,6 +38,32 @@ export const ISLANDS = {
 };
 
 /**
+ * WHAT EACH ISLAND IS, IN TWO SIZES: a word for a map with ten of them on it,
+ * and a sentence a nine-year-old can read before she decides to cross.
+ *
+ * ONE TABLE FOR EVERY PLACE THAT SAYS IT — Lionheart's card and its map
+ * (dream/lionguide.js), the minimap in here, the map kiosk on the hub and the
+ * Help page's Dream Dojo cards — so an island that changes what it does is
+ * re-described once. The Help page is HTML and cannot import this; world-check
+ * holds it to these sentences.
+ *
+ * Each `about` is checked against its island's own header comment, which is
+ * where what the island does is written down: re-read that before rewording.
+ */
+export const ISLE_ABOUT = {
+  gallery: { short: 'GALLERY', about: 'Every Kotodama orb on its own pedestal. Borrow one and try the drill that shows what it does — win it, and that orb is yours in here.' },
+  hall: { short: 'TRIAL HALL', about: 'All six clans. Swear an oath and try its power in a trial you can only pass with it — Steal Mischief and Dragon Breath included.' },
+  range: { short: 'RANGE', about: 'Test cutting with the blade alone: ONE SWING, COMBO 60, and CLEAN CUT, where the cut is drawn at (cos θ, sin θ).' },
+  kata: { short: 'KATA', about: "Lionheart's ghost dances a kata on nine marks — step, cut, jump, guard — and you do it back on the beat. A new one every day and every week." },
+  storm: { short: 'STORM', about: 'Holo-fruit lobbed at you from the rim. Cut it out of the air before it lands — and leave the purple viruses alone.' },
+  sine: { short: 'SINE', about: 'Laser bars that rise and fall as y = A·sin(ωt + φ). Walk under the crest, jump the trough — and learn to ride the wave.' },
+  sentries: { short: 'SENTRIES', about: 'The first thing in here that shoots back. Every shot is warned first: step aside or raise your Ward, then bring the core down.' },
+  bamboo: { short: 'BAMBOO', about: 'Sneak through a holo-bamboo forest past watchers whose gaze swings like a sine wave. Hide behind the bamboo and move on the slack.' },
+  school: { short: 'SCHOOL', about: "The tournament, taught before it's fought: the Feast's animals to stun and eat, a practice round of every league, and the scoreboard explained." },
+  shadow: { short: 'SHADOW', about: "Lionheart's own Shadow, on three levels. Beat MEDIUM for a special Kotodama; beat all three to inherit his 凶 Cross Slash." },
+};
+
+/**
  * Where an island's centre is, in the layer's own coordinates.
  * @param {{x:number,y:number,z:number}} dojo  the Dojo's centre (and floor)
  * @param {{x:number,z:number}} u  unit vector from the Dojo to the arcade

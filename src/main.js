@@ -11247,11 +11247,16 @@ class Game {
       const tag = document.getElementById(`map-tag-${i}`);
       if (!box) continue;
       const pane = owner[i] ?? -1;
-      /* ...and NOT in a pane that is in the Dream Dojo's simulator: a map of
-         the archipelago, with her arrow twelve thousand units off its edge, is
-         a map of a place she is not in. The pane is all hers there anyway. */
+      /* ...and in a pane that is in the Dream Dojo's simulator, only once
+         the simulator's OWN map exists (`world.simSite`, which the minimap
+         draws instead of the archipelago when everybody it is for is in
+         there). It used to be hidden there outright — a map of the
+         archipelago, with her arrow twelve thousand units off its edge, is a
+         map of a place she is not in — and then Richard: "There should be a
+         minimap of some sort in the simulator". Two realities never share a
+         pane, so a sim pane's map is always the simulator's. */
       const shown = pane >= 0 && !!panes[pane] && !!groups[pane]?.length
-        && !this.dream?.paneIsSim(groups[pane]);
+        && (!this.dream?.paneIsSim(groups[pane]) || !!this.world.simSite);
       box.classList.toggle('hidden', !shown);
       /* A HIDDEN BOX HAS NO PLACE ON SCREEN, and leaving last frame's would
          let `nearestMap` measure to where a map used to be. It is cleared here

@@ -31056,7 +31056,10 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
       const I = src('../src/systems/inspector.js');
       const from = I.indexOf('  _back(index) {');
       const body = I.slice(from + 2, I.indexOf('\n  }', from) + 4);
-      const back = new Function(`return function ${body};`)();
+      /* `isLion` is the file's own set, read out of it, so the harness asks
+         the same question the card does. */
+      const lionSet = new Set(eval(I.match(/const LION_STATES = new Set\((\[[^\]]*\])\)/)[1]));
+      const back = new Function('isLion', `return function ${body};`)((s) => lionSet.has(s));
       const self = { cards: [{ state: 'look', i: 4, _sig: 'x' }], game: {}, closed: 0,
         closeOne() { this.closed++; this.cards[0].state = null; } };
       back.call(self, 0);
@@ -31064,6 +31067,28 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
         self.cards[0].state === 'choose' && self.cards[0].i === 1 && self.closed === 0);
       back.call(self, 0);
       ok('...and LEAVE on the chooser closes the card', self.closed === 1);
+
+      /* LIONHEART'S card, the same way out (dream/lionguide.js). A sub-card
+         steps up to his rows on the row that opened it; a card the MAP KIOSK
+         opened straight onto his map closes, because she never saw the menu
+         above it; and BACK on his rows is goodbye. */
+      const said = [];
+      const rows = [{ key: 'next' }, { key: 'map' }, { key: 'orbs' }, { key: 'holo' }, { key: 'kyo' }];
+      const lion = { cards: [{ state: 'lionMap', i: 0, _sig: 'x' }], closed: 0,
+        game: { players: [{ index: 0 }], dream: { guide: { rows: () => rows, choose: (p, k) => said.push(k) } } },
+        closeOne() { this.closed++; this.cards[0].state = null; } };
+      back.call(lion, 0);
+      ok("BACK on Lionheart's map steps up to his rows, on SHOW ME THE MAP",
+        lion.cards[0].state === 'lion' && lion.cards[0].i === 1 && lion.closed === 0);
+      lion.cards[0].state = 'lionKyo';
+      back.call(lion, 0);
+      ok('...and from the 凶 card, on the 凶 row', lion.cards[0].state === 'lion' && lion.cards[0].i === 4);
+      back.call(lion, 0);
+      ok('...and BACK on his rows is goodbye, said to him', lion.closed === 1 && said.join() === 'bye');
+      lion.cards[0] = { state: 'lionMap', i: 0, direct: true };
+      back.call(lion, 0);
+      ok('...but the map kiosk\'s card closes on BACK — she never saw his menu',
+        lion.closed === 2 && said.length === 1);
     }
     ok('...and on a phone it is a target a thumb can find',
       (px(rule('body.touch-ui .pc-back'), 'min-height') ?? 0) >= 32);
@@ -35594,8 +35619,8 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
   ok('a new afternoon resets the arcade', /this\.dream\?\.reset\(\);/.test(mm));
   ok('two realities never share a pane',
     /const mixed = realms\.some\(\(r\) => r !== realms\[0\]\);/.test(mm) && /if \(!mixed && \(onRyu/.test(mm));
-  ok('...and a pane in the simulator has no map of the archipelago',
-    /&& !this\.dream\?\.paneIsSim\(groups\[pane\]\);/.test(mm));
+  ok('...and a pane in the simulator has a map only once the simulator\'s own exists, never the archipelago\'s',
+    /&& \(!this\.dream\?\.paneIsSim\(groups\[pane\]\) \|\| !!this\.world\.simSite\);/.test(mm));
   ok('...and its camera crosses with it instead of panning the void',
     /rig\.target\.x \+= SIM\.dx \* k;/.test(mm));
   const au = readFileSync(new URL('../src/core/audio.js', import.meta.url), 'utf8');
@@ -37840,6 +37865,242 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       her.powerOrbs = keep.orbs; her.orbBag = keep.bag; her.clan = keep.clan; her.dreamOath = keep.oath; her.holoOrbs = keep.holo ?? [];
       S0.holoWorn = null; S0.holoCopies = null;
       D._applyKit(her, true);
+    }
+
+    /* 獅 LIONHEART, THE QUEST-GIVER. Richard: "Lionheart should act as a
+       Quest giver like how Payne is a quest giver, to keep track of where the
+       player has visited and what they have achieved, so that the player
+       knows where they should go next or what they should do", and "There
+       should be a minimap of some sort in the simulator, could just be a
+       kiosk or map legend the player can view in the main island". */
+    {
+      const LG = await import('../src/systems/dream/lionguide.js');
+      const ddSrc = read('../src/systems/dreamdojo.js');
+
+      // Every island has a short name and a sentence, which the Help page,
+      // the map and the minimap all print.
+      ok('獅 every island has a short name and a sentence about it (ISLE_ABOUT)',
+        KEYS.every((k) => ISL.ISLE_ABOUT[k]?.short && ISL.ISLE_ABOUT[k]?.about?.length > 30)
+        && LG.GUIDE_ORDER.length === KEYS.length && KEYS.every((k) => LG.GUIDE_ORDER.includes(k)),
+        KEYS.filter((k) => !ISL.ISLE_ABOUT[k]).join());
+
+      /* LEFT AND RIGHT ARE MEASURED, off where the islands actually stand, as
+         she walks in off the port bridge — the side his `islands` line has
+         always named them on, and now his directions name them on too. */
+      const inward = { x: -L.u.x, z: -L.u.z };
+      const leftOf = { x: inward.z, z: -inward.x };
+      const sideOf = (k) => Math.sign((D.isles[k].x - dc.x) * leftOf.x + (D.isles[k].z - dc.z) * leftOf.z);
+      const sayLeft = KEYS.filter((k) => /on your LEFT/.test(LG.wayTo(k)));
+      const sayRight = KEYS.filter((k) => /on your RIGHT/.test(LG.wayTo(k)));
+      ok('...his directions say LEFT and RIGHT for the side each bridge really is on, walking in from the tubes',
+        sayLeft.length >= 3 && sayRight.length >= 3
+        && sayLeft.every((k) => sideOf(k) > 0) && sayRight.every((k) => sideOf(k) < 0),
+        `left ${sayLeft} right ${sayRight}`);
+      const byNear = (ks) => [...ks].sort((a, c) => Math.hypot(D.isles[a].x - dc.x - L.u.x * 50, D.isles[a].z - dc.z - L.u.z * 50)
+        - Math.hypot(D.isles[c].x - dc.x - L.u.x * 50, D.isles[c].z - dc.z - L.u.z * 50));
+      ok('...and counts them first, second, third from the door, the way she meets them',
+        byNear(sayLeft).every((k, i) => LG.wayTo(k).includes(`the ${['first', 'second', 'third', 'fourth'][i]} bridge`)),
+        byNear(sayLeft).map((k) => `${k}: ${LG.wayTo(k)}`).join(' | '));
+      ok('...and agrees with the line he has always said about them',
+        /Left: GALLERY, RANGE, then KUDAMONO STORM/.test(ddSrc) && ['gallery', 'range', 'storm'].every((k) => sayLeft.includes(k))
+        && /Right: TRIAL HALL, KATA, then the SINE GAUNTLET/.test(ddSrc) && ['hall', 'kata', 'sine'].every((k) => sayRight.includes(k))
+        && /straight across/.test(LG.wayTo('school')) && /past the ARENA SCHOOL/.test(LG.wayTo('shadow')));
+
+      /* WHAT NEXT walks an afternoon in order, and always has an answer. */
+      const pr = new PR.DreamProgress(null);
+      const kid = { index: 0, name: 'Testy', shadowBeat: {} };
+      const steps = [];
+      const step = () => { const n = LG.lionNext(pr, 'Testy', kid); steps.push(`${n.kind}:${n.key}`); return n; };
+      let n = step();
+      ok('...a kitten fresh in is sent to the first island she meets, by its way there',
+        n.kind === 'visit' && n.key === 'gallery' && n.text.includes(LG.wayTo('gallery')) && n.short.length < n.text.length, n.text);
+      for (const k of KEYS) pr.setFlag('Testy', `visit.${k}`);
+      n = step();
+      ok('...seen everywhere and won nothing: go back and try one', n.kind === 'try' && n.key === 'gallery', n.text);
+      for (const k of KEYS) {
+        if (k === 'shadow') continue;
+        if (k === 'kata') pr.award('Testy', 'kata.daily.test.L1', 1, 1);
+        else pr.award('Testy', LG.drillsOf(k)[0], 1, 1);
+      }
+      ok('...every island but the kata floor and the Shadow is made of the training-of-the-day\'s own drills',
+        KEYS.filter((k) => k !== 'kata' && k !== 'shadow').every((k) => LG.drillsOf(k).length > 0),
+        KEYS.filter((k) => k !== 'kata' && k !== 'shadow' && !LG.drillsOf(k).length).join());
+      n = step();
+      ok('...a star everywhere: his SHADOW, on MEDIUM', n.kind === 'shadow' && /MEDIUM/.test(n.text), n.text);
+      kid.shadowBeat = { medium: true };
+      n = step();
+      const thin = LG.isleReport(pr, 'Testy', n.key, kid);
+      ok('...then three stars, on whichever island she has the least of', n.kind === 'stars'
+        && KEYS.filter((k) => k !== 'kata' && k !== 'shadow').every((k) => {
+          const r = LG.isleReport(pr, 'Testy', k, kid);
+          return r.got / r.max >= thin.got / thin.max;
+        }), n.text);
+      for (const k of KEYS) for (const id of LG.drillsOf(k)) pr.award('Testy', id, 3, 1);
+      n = step();
+      ok('...all of it at three stars: the 凶, naming the levels still to beat',
+        n.kind === 'kyo' && /EASY and HARD/.test(n.text) && !/MEDIUM/.test(n.text), n.text);
+      kid.shadowBeat = { easy: true, medium: true, hard: true };
+      n = step();
+      ok('...and with nothing left, come back tomorrow — never nothing to say', n.kind === 'daily' && n.text.length > 20, steps.join(' > '));
+      ok('...and the kata floor has no "all of it" — its katas are new every day',
+        LG.isleReport(pr, 'Testy', 'kata', kid).max === null && !LG.isleReport(pr, 'Testy', 'kata', kid).done);
+
+      /* HIS ROWS. The 凶 row is Payne's trick row: locked until it is hers,
+         and saying what it wants when it is chosen. */
+      const G = D.guide;
+      const nm = nameOf(her);
+      const keepBeat = her.shadowBeat;
+      her.shadowBeat = { easy: true };
+      fakeGame.toasts.length = 0;
+      const kyoRow = () => G.rows(her).find((r) => r.key === 'kyo');
+      ok('...his 凶 row is locked until all three of his levels are beaten, and says which are',
+        kyoRow().locked && /EASY ✔/.test(kyoRow().blurb) && /HARD ·/.test(kyoRow().blurb));
+      ok('...and choosing it locked is refused in words, on her card', G.choose(her, 'kyo') === 'lion'
+        && fakeGame.toasts.some((t) => /^Not yet!/.test(t)), fakeGame.toasts.join(' | '));
+      her.shadowBeat = { easy: true, medium: true, hard: true };
+      ok('...and once it is hers it opens the card that shows it', !kyoRow().locked && G.choose(her, 'kyo') === 'lionKyo'
+        && /凶/.test(G.markup(0, 'lionKyo', 0, () => '')));
+      her.shadowBeat = keepBeat;
+      D.st[0].holoWorn = [];
+      fakeGame.toasts.length = 0;
+      ok('...WHAT DO MY ORBS DO with none on is refused in words too, not a blank rundown',
+        G.choose(her, 'orbs') === 'lion' && fakeGame.toasts.some((t) => /Gallery/.test(t)));
+      D.st[0].holoWorn = null;
+      ok('...a sub-card has the rows the Inspector counts, and its last one is BACK',
+        G.rowCount(her, 'lionQuests') === 2 && G.subAct('lionQuests', 0) === 'map' && G.subAct('lionQuests', 1) === 'back'
+        && G.rowCount(her, 'lionMap') === 1 && G.subAct('lionMap', 0) === 'back');
+
+      /* THE MAP: one circle and one name per island, in the same short names
+         the minimap uses, the suggestion ringed, and her dot. */
+      put(her, IS);
+      const svg = G.mapSvg(her, { next: 'storm' });
+      ok('...his map draws every island with its short name, rings the one he suggests, and marks her',
+        (svg.match(/class="ln-isle/g) ?? []).length === KEYS.length
+        && KEYS.every((k) => svg.includes(`>${ISL.ISLE_ABOUT[k].short}<`))
+        && (svg.match(/class="ln-ring"/g) ?? []).length === 1 && /class="ln-isle[^"]*next/.test(svg)
+        && /class="ln-me"/.test(svg) && (svg.match(/class="ln-hw"/g) ?? []).length === KEYS.filter((k) => ISL.ISLANDS[k].cycle).length);
+      ok('...in WORLD orientation like the town\'s map: the Arena School is drawn where it stands',
+        new RegExp(`<circle cx="${D.isles.school.x}" cy="${D.isles.school.z}"`).test(svg));
+      const css = read('../src/style.css');
+      ok('...its strokes are screen pixels, not world units, and the labels keep their own sizes',
+        /\.ln-map \* \{ vector-effect: non-scaling-stroke; \}/.test(css) && !/\.ln-map \.ln-lbl \{[^}]*font-size/.test(css)
+        && /body\.touch-ui \.ln-map-box \{ max-height: 38vh; \}/.test(css));
+
+      /* A VISIT IS STANDING ON IT, and it is written into her row. */
+      const flagged = () => KEYS.filter((k) => D.progress.flag(nm, `visit.${k}`));
+      const before = flagged();
+      const fresh = KEYS.find((k) => !before.includes(k) && k !== 'school');
+      put(her, D.isles[fresh]);
+      D._noteVisits(her, D.st[0], 1 / 60);
+      ok('...standing on an island marks it visited, in her row of the progress store',
+        D.progress.flag(nm, `visit.${fresh}`) && flagged().length === before.length + 1, fresh);
+
+      /* LOST: he calls her over by name, waits longer each time, and gives
+         up after LOST_MAX in one visit. */
+      const sayings = [];
+      const realSay = D.holoSay;
+      D.holoSay = (t) => sayings.push(t);
+      D.st[0].lostT = 0; D.st[0].lostN = 0;
+      put(her, { x: dc.x + 20, y: dc.y, z: dc.z });
+      for (let t = 0; t < LG.LOST_AFTER - 1; t += 1) D._noteVisits(her, D.st[0], 1);
+      const early = sayings.length;
+      D._noteVisits(her, D.st[0], 2);
+      const first = sayings.length;
+      for (let t = 0; t < 4000; t += 1) D._noteVisits(her, D.st[0], 1);
+      ok(`...a kitten who has won nothing for ${LG.LOST_AFTER}s is called over by name, with his one suggestion`,
+        early === 0 && first === 1 && sayings[0].startsWith(her.name) && sayings[0].includes(G.next(her).short), sayings[0]);
+      ok(`...and at most ${LG.LOST_MAX} times in one visit, however long she wanders`,
+        sayings.length === LG.LOST_MAX, `${sayings.length}`);
+      D.st[0].lostT = 0; D.st[0].lostN = 0;
+      D.drills[0] = { state: 'live' };
+      for (let t = 0; t < 400; t += 1) D._noteVisits(her, D.st[0], 1);
+      ok('...and never while she is in a drill', sayings.length === LG.LOST_MAX && D.st[0].lostT === 0);
+      D.drills[0] = null;
+      D.holoSay = realSay;
+      ok('...and the count starts again on the way in, and a win or a drill resets the wait',
+        /s\.lostT = 0;\s*s\.lostN = 0;/.test(ddSrc) && /award\(p, id, stars, score, lowerIsBetter\) \{\s*const s0 = this\.st\[p\.index\];\s*if \(s0\) s0\.lostT = 0;/.test(ddSrc)
+        && /startDrill\(p, spec, at\) \{\s*const s0 = this\.st\[p\.index\];\s*if \(s0\) s0\.lostT = 0;/.test(ddSrc));
+
+      /* THE MAP KIOSK on the hub. Measured clear of everything else on it. */
+      D._buildMapKiosk();
+      const K = D.mapKiosk;
+      const kd = Math.hypot(K.x - dc.x, K.z - dc.z);
+      ok('地図 the map kiosk stands on the hub, off the Dojo of the Turning Circle\'s floor and inside the rim',
+        kd - K.r > 38 && kd + K.r < 50, `at ${kd.toFixed(1)} r ${K.r}`);
+      const segD = (q, A, B) => {
+        const ax = B.x - A.x; const az = B.z - A.z;
+        const t = Math.max(0, Math.min(1, ((q.x - A.x) * ax + (q.z - A.z) * az) / (ax * ax + az * az || 1)));
+        return Math.hypot(q.x - A.x - ax * t, q.z - A.z - az * t);
+      };
+      let deckGap = Infinity;
+      /* The gate signs, where `_gateSign` puts them: one per island the hub
+         reaches, from the same `islandCentre` and `gateSignSpot`. The port
+         bridge has none — the kiosk stands where its sign would be. */
+      let signGap = Infinity;
+      for (const k of KEYS.filter((k2) => !ISL.ISLANDS[k2].from)) {
+        const c = ISL.islandCentre(dc, L.u, ISL.ISLANDS[k]);
+        const sg = DD.gateSignSpot(dc, c.dir, ISL.ISLANDS[k].cycle ? HW.HIGHWAY.halfW : 2.2);
+        signGap = Math.min(signGap, Math.hypot(sg.x - K.x, sg.z - K.z));
+      }
+      for (const B of sim.bridges) {
+        // The road is a Snake Way road, in WORLD coordinates; the kiosk is the layer's.
+        const pts = (B.road?.pts ?? []).map((q) => ({ x: q.x - SW.SIM.dx, z: q.z - SW.SIM.dz }));
+        for (let i = 1; i < pts.length; i++) deckGap = Math.min(deckGap, segD(K, pts[i - 1], pts[i]) - B.deck.halfW - K.r);
+      }
+      ok('...off every bridge and highway deck, by a clear stride', deckGap > 1.5, `${deckGap.toFixed(2)}`);
+      ok('...and clear of every gate sign\'s post', signGap > 6, `${signGap.toFixed(2)}`);
+      const otherSt = D.stations.filter((s) => s !== K.station);
+      const stGap = Math.min(...otherSt.map((s) => Math.hypot(s.x - K.x, s.z - K.z) - s.r - K.r));
+      ok('...and from every other station, so one press can only mean one of them', stGap > 2, `${stGap.toFixed(2)}`);
+      const towardPort = ((K.x - dc.x) * L.u.x + (K.z - dc.z) * L.u.z) / kd;
+      ok('...on the side of the hub she arrives on, the first thing she passes', towardPort > 0.95, towardPort.toFixed(3));
+      put(her, { x: K.x, y: K.y, z: K.z });
+      ok('...and standing on it, INTERACT is the kiosk\'s', D.stationAt(her) === K.station
+        && /OPEN THE MAP/.test(K.station.prompt(her, 'E')));
+      const opened = [];
+      fakeGame.inspector = { openLion: (i, s) => opened.push(`${i}:${s}`) };
+      K.station.interact(her);
+      delete fakeGame.inspector;
+      ok('...which opens Lionheart\'s card straight onto his map', opened.join() === '0:lionMap', opened.join());
+      put(her, IS);
+
+      /* THE CORNER MINIMAP in the simulator: read off the decks and bridges
+         the layer actually has, in world coordinates, so a kitten's own
+         position lands on it. */
+      const site = D.simSite();
+      const decks = sim.decks.filter((d) => d.name && Number.isFinite(d.r));
+      ok('地図 the simulator\'s minimap is drawn from the layer\'s own decks and bridges',
+        site.discs.length === decks.length && KEYS.every((k) => site.discs.some((d) => d.key === k))
+        && site.discs.some((d) => d.key === 'dojo') && site.discs.some((d) => d.key === 'port')
+        && site.roads.length === sim.bridges.length,
+        `${site.discs.length} discs, ${site.roads.length} roads`);
+      const sd = site.discs.find((d) => d.key === 'school');
+      ok('...in world coordinates: the Arena School sits where a kitten standing on it is',
+        Math.abs(sd.x - her.position.x) < 0.01 && Math.abs(sd.z - her.position.z) < 0.01);
+      /* EVERY ROAD ENDS ON A DISC. A deck and a road are in different frames
+         (a road is world already), and the first version offset both — every
+         road drawn 12000 units off its islands, passing every count above. */
+      const onDisc = (q) => site.discs.some((d) => Math.hypot(q.x - d.x, q.z - d.z) < d.r + 3);
+      const stray = site.roads.filter((r) => !onDisc(r.pts[0]) || !onDisc(r.pts[r.pts.length - 1]));
+      ok('...and every road on it runs from one island\'s disc to another\'s, in the same frame as them',
+        stray.length === 0, `${stray.length} of ${site.roads.length} stray`);
+      ok('...with the light-cycle highways told apart from the bridges',
+        site.roads.filter((r) => r.wide).length === KEYS.filter((k) => ISL.ISLANDS[k].cycle).length);
+      /* ...with room round the edge for the names written OUTBOARD of the
+         islands: fitted to the discs alone, GALLERY and RANGE were cut to
+         "GALL" and "RANGI" on screen. A tenth of the map's span at least. */
+      const span = Math.max(site.bounds.maxX - site.bounds.minX, site.bounds.maxZ - site.bounds.minZ);
+      const room = Math.min(...site.discs.map((d) => Math.min(d.x - d.r - site.bounds.minX, site.bounds.maxX - d.x - d.r,
+        d.z - d.r - site.bounds.minZ, site.bounds.maxZ - d.z - d.r)));
+      ok('...and a fit that holds every disc, with room round it for the names written outboard',
+        room >= 0.1 * span, `${(room / span).toFixed(3)} of the span`);
+      const mm = read('../src/systems/minimap.js');
+      ok('...and the minimap switches to it only when EVERY kitten it is drawn for is in the simulator',
+        /if \(site && mine\.length && mine\.every\(\(p\) => p\.realm === 'sim'\)\)/.test(mm)
+        && /this\._drawSim\(site, players\.filter\(\(p\) => p\.realm === 'sim'\), mine\)/.test(mm)
+        && /g\.world\.simSite = this\.simSite\(\);/.test(ddSrc));
+      ok('...and its names are clamped onto the canvas, which a phone\'s half-size map needs',
+        /x = Math\.min\(Math\.max\(x, half\), this\.canvas\.width - half\);/.test(mm));
     }
 
     // And it is the GATE that refuses, for every trial in the hall, not the panda's.

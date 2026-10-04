@@ -94,6 +94,12 @@ const CHOICES = [
 const PAYNE_STATES = new Set(['payne', 'payneQuests', 'payneTrick', 'payneDojo']);
 const isPayne = (state) => PAYNE_STATES.has(state);
 
+/** And LIONHEART's, in the simulator — the same card again, for the same
+ *  reasons, with his rows in dream/lionguide.js (`LionGuide`). Inline rather
+ *  than imported, so this file does not pull the simulator in with it. */
+const LION_STATES = new Set(['lion', 'lionQuests', 'lionMap', 'lionKyo']);
+const isLion = (state) => LION_STATES.has(state);
+
 /** One player's card. Never shared; there is one of these per seat. */
 class Card {
   constructor() {
@@ -160,7 +166,7 @@ export class Inspector {
        dealer AND from Payne, and BACK out of it lands on the one she opened
        it from — the same two-layers-in-one-press bug the dealer had, the
        other way round. */
-    c.state = state === 'payne' ? 'payne' : 'choose';
+    c.state = state === 'payne' ? 'payne' : state === 'lion' && this.game.dream?.guide ? 'lion' : 'choose';
     c.i = Math.max(0, Math.min(row, this._rowCount(index) - 1));
     c._sig = '';
   }
@@ -180,10 +186,31 @@ export class Inspector {
     this.game.payne.greet(p);
   }
 
+  /**
+   * Open LIONHEART's card — she pressed INTERACT at him in the simulator, or
+   * at the map kiosk on the hub, which opens straight onto his map (`state`).
+   * A card opened onto a sub-card is `direct`: BACK closes it rather than
+   * stepping up to a menu she never saw.
+   */
+  openLion(index, state = 'lion') {
+    const c = this.cards[index];
+    const p = this.game.players[index];
+    const L = this.game.dream?.guide;
+    if (!c || c.state || !p || !L || !isLion(state)) return;
+    c.state = state;
+    c.direct = state !== 'lion';
+    c.i = 0;
+    c._sig = '';
+    this.game.audio?.play('menu');
+    if (state === 'lion') L.greet(p);
+  }
+
   closeOne(index) {
     const c = this.cards[index];
     if (!c?.state) return;
     this._leftPayne(index);
+    if (isLion(c.state)) { const p = this.game.players?.[index]; if (p) this.game.dream?.guide?.leave?.(p); }
+    c.direct = false;
     c.state = null;
     c.i = 0;
     c._sig = '';
@@ -308,6 +335,23 @@ export class Inspector {
        index: the hints row comes and goes, and an index that was right before
        the Dream Dojo row arrived is one row off. Inline, not a module table,
        because world-check runs this body on its own. */
+    if (isLion(c.state)) {
+      const p = this.game.players?.[index];
+      const L = this.game.dream?.guide;
+      /* Up one level to his questions, on the row that got her here — unless
+         the card was opened onto this sub-card (the map kiosk), which closes. */
+      if (c.state !== 'lion' && !c.direct && L && p) {
+        const key = { lionQuests: 'next', lionMap: 'map', lionKyo: 'kyo' }[c.state];
+        c.i = Math.max(0, L.rows(p).findIndex((r) => r.key === key));
+        c.state = 'lion';
+        c._sig = '';
+        this.game.audio?.play('menu');
+        return;
+      }
+      if (c.state === 'lion' && p) L?.choose(p, 'bye');
+      this.closeOne(index);
+      return;
+    }
     const from = { payneQuests: 'quests', payneTrick: 'trick', payneDojo: 'dojo' }[c.state];
     if (from) {
       /* Back to her questions, with the cursor on the row that got her
@@ -338,6 +382,7 @@ export class Inspector {
   _choose(index) {
     const c = this.cards[index];
     if (isPayne(c.state)) { this._choosePayne(index); return; }
+    if (isLion(c.state)) { this._chooseLion(index); return; }
     if (c.state !== 'choose') return;
     const pick = CHOICES[c.i];
     if (!pick) return;
@@ -414,8 +459,38 @@ export class Inspector {
     c._sig = '';
   }
 
+  /** JUMP on Lionheart's card: his rows decide, and the hand-over to the holo
+   *  profile is done here, the way Payne's CHARACTER PROFILE is. */
+  _chooseLion(index) {
+    const c = this.cards[index];
+    const p = this.game.players[index];
+    const L = this.game.dream?.guide;
+    if (!p || !L) return;
+    if (c.state === 'lionKyo') return;
+    const key = c.state === 'lion' ? L.rows(p)[c.i]?.key : L.subAct(c.state, c.i);
+    if (!key) return;
+    if (key === 'back') { this._back(index); return; }
+    if (key === 'holo') {
+      const row = c.i;
+      this.closeAll();
+      this.game.profile.open('holo', { backTo: { index, row, state: 'lion' } });
+      return;
+    }
+    const next = L.choose(p, key);
+    this.game.audio?.play('menu');
+    if (!next) { this.closeOne(index); return; }
+    if (next !== c.state) c.i = 0;
+    c.state = next;
+    c._sig = '';
+  }
+
   _rowCount(index) {
     const c = this.cards[index];
+    if (isLion(c.state)) {
+      const p = this.game.players[index];
+      const L = this.game.dream?.guide;
+      return p && L ? L.rowCount(p, c.state) : 0;
+    }
     if (isPayne(c.state)) {
       const p = this.game.players[index];
       return p && this.game.payne ? this.game.payne.rowCount(p, c.state) : 0;
@@ -503,16 +578,21 @@ export class Inspector {
       ? [P.speaking(p) ?? '', JSON.stringify(P.ledger(p)), P.step(p)?.where ?? '',
         P.revealed, (this.game.players ?? []).map((q) => q?.feats?.got?.length ?? 0).join(',')].join('|')
       : '';
+    const L = this.game.dream?.guide;
+    const lion = isLion(c.state) && L ? L.sig(p) : '';
     const sig = [
       c.state, c.i, p.powerOrbs.join(','), (p.orbBag ?? []).join(','), p.score,
-      POWER_ORBS.map((s) => K?.stock?.[s.id] ?? 0).join(','), pay,
+      POWER_ORBS.map((s) => K?.stock?.[s.id] ?? 0).join(','), pay, lion,
     ].join('#');
     if (sig === c._sig) return;
     c._sig = sig;
-    c.el.innerHTML = isPayne(c.state) && P
-      ? P.markup(index, c.state, c.i, (i, w) => this._backButton(i, w))
-      : c.state === 'choose' ? this._chooseMarkup(index) : this._lookMarkup(index);
+    c.el.innerHTML = isLion(c.state) && L
+      ? L.markup(index, c.state, c.i, (i, w) => this._backButton(i, w))
+      : isPayne(c.state) && P
+        ? P.markup(index, c.state, c.i, (i, w) => this._backButton(i, w))
+        : c.state === 'choose' ? this._chooseMarkup(index) : this._lookMarkup(index);
     if (isPayne(c.state)) P?.drawFace(c.el.querySelector('.pn-face'));
+    if (isLion(c.state)) L?.drawFace(c.el.querySelector('.pn-face'));
     /* WALK THE CURSOR BACK INTO VIEW. Nine orbs do not fit in a quarter pane
        at a readable size (see `.pc-list` in style.css), and the markup is
        rebuilt from scratch on every change — so the list is scrolled to the
@@ -672,7 +752,7 @@ export class Inspector {
       const c = this.cards[i];
       if (!c?.state || !Number.isFinite(k)) return;
       if (c.i !== k) { c.i = k; this.game.audio?.play('menu'); }
-      if (c.state === 'choose' || isPayne(c.state)) this._choose(i);
+      if (c.state === 'choose' || isPayne(c.state) || isLion(c.state)) this._choose(i);
       this._paintCard(i);
     });
   }

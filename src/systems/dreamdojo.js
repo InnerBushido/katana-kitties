@@ -37,6 +37,8 @@ import { holoDojo } from './dream/holodojo.js';
 import { peekWeight } from './dream/peek.js';
 import { tickKeptPandas, dropKept } from './dream/pandatrial.js';
 import { enterHolo, grantHolo, holoLeft, HoloChoice, HOLO_MAX_EACH } from './dream/holokit.js';
+import { LionGuide, LOST_AFTER, LOST_AGAIN, LOST_MAX } from './dream/lionguide.js';
+import { Kiosk, idleIn } from './dream/kiosk.js';
 
 /** Her single-cell pose billboards, which the tube puppet mirrors. */
 const PUPPET_POSES = ['eatPose', 'blessPose', 'warpPose', 'breathPose', 'scaredPose', 'sweepPose'];
@@ -620,13 +622,18 @@ export const TUBE_COLOURS = [0xff8a3d, 0xff6fae, 0x35d7f0, 0xa96bff];
  *  screen's own card instead — see `_captionHolo`. */
 export const LION_NEAR = 20;
 
+/** Seconds a sim hit leaves her untouchable. The 凶's chained Xs are timed
+ *  against it (dream/shadow.js `CROSS.chain`). */
+export const SIM_IFRAMES = 0.6;
+/** Where the map kiosk stands on the hub: `r` from the Dojo's centre toward
+ *  the port, `side` across the port bridge's line — the same side every gate
+ *  sign stands on, so the hub reads as one row of posts. */
+export const MAP_KIOSK = { r: 43, side: 7 };
+
 /** Where a bridge's gate sign stands on the hub: `back` in from the mouth
  *  (at 47), `side` across from the deck's EDGE (a highway is wider than a
  *  bridge), `up` off the floor; one
  *  reached through another island is `stack` higher, on the same post. */
-/** Seconds a sim hit leaves her untouchable. The 凶's chained Xs are timed
- *  against it (dream/shadow.js `CROSS.chain`). */
-export const SIM_IFRAMES = 0.6;
 export const GATE_SIGN = { back: 4, side: 5.3, up: 5.5, scale: 0.62, stack: 3.4 };
 export function gateSignSpot(dc, dir, halfW = 2.2) {
   const r = 47 - GATE_SIGN.back;
@@ -699,6 +706,9 @@ export class DreamDojo {
     let store = null;
     try { store = globalThis.localStorage ?? null; } catch { store = null; }
     this.progress = new DreamProgress(store);
+    /* LIONHEART'S CARD in the simulator — his rows, on the Inspector's card
+       (dream/lionguide.js). */
+    this.guide = new LionGuide(this);
     /** Player index -> her live drill, or nothing. */
     this.drills = [];
     /** The cub each kitten keeps after the Pandapaw trial (dream/pandatrial.js). */
@@ -1198,8 +1208,13 @@ export class DreamDojo {
         if (!rd.next()) this._closeRundown(p);
         return true;
       }
+      /* HIS CARD, LIKE PAYNE'S: "Lionheart should act as a Quest giver like
+         how Payne is a quest giver" (dream/lionguide.js). The rundown and the
+         list of islands he used to answer with are rows on it now. A build
+         with no Inspector (world-check's) keeps the old answer. */
       if (this.canTalk(p)) {
-        if (p.powerOrbs?.length) this._openRundown(p);
+        if (g.inspector?.openLion) g.inspector.openLion(p.index);
+        else if (p.powerOrbs?.length) this._openRundown(p);
         else this.holoSay(LION_LINES.islands, 8);
         g.sfx?.('menu');
         return true;
@@ -1397,6 +1412,81 @@ export class DreamDojo {
       ...this.sentries.stations, ...this.bamboo.stations,
       ...this.school.stations, ...this.ranks.stations, ...this.shadow.stations,
       ...this.highway.stations];
+    this._buildMapKiosk();
+    g.world.simSite = this.simSite();
+  }
+
+  /**
+   * THE MAP KIOSK, on the hub where everybody arrives. Richard: "There should
+   * be a minimap of some sort in the simulator, could just be a kiosk or map
+   * legend the player can view in the main island, to show the player where
+   * everything is." It opens Lionheart's card straight onto its map — the one
+   * map, drawn one way, wherever it is asked for (dream/lionguide.js
+   * `mapSvg`). The corner minimap draws the same layout (`simSite`).
+   *
+   * BESIDE THE PORT BRIDGE'S MOUTH, between the Dojo's floor (38) and the
+   * hub's rim (50), off the deck's line: the first thing she walks past, and
+   * nowhere a bridge or the turning circle needs. world-check measures its
+   * clearance from every other station and sign.
+   */
+  _buildMapKiosk() {
+    const dc = this.game.world.dojoCentre;
+    const u = this.layout.u;
+    const at = MAP_KIOSK;
+    this.mapKiosk = new Kiosk(this, {
+      x: dc.x + u.x * at.r - u.z * at.side, z: dc.z + u.z * at.r + u.x * at.side, y: dc.y,
+      r: 1.8, colour: HOLO.cyan, kanji: '地図', title: 'MAP', near: 7,
+      card: (p) => {
+        const n = this.guide.next(p);
+        return [
+          { text: '地図 MAP OF THE SIMULATOR', size: 1.7, color: HOLO.cyan, glow: true, jp: true },
+          { text: 'every island, and which ones you have been to', size: 1.1 },
+          { text: `next for ${p.name}: the ${ISLANDS[n.key]?.name ?? ''}`, size: 1.05, color: HOLO.gold },
+        ];
+      },
+      /* Three lines, not four: the station's own prompt floats just under the
+         card and says the key already — a fourth line here sat on top of it. */
+      cardH: 2.6,
+      prompt: (p, key) => `[${key}]  OPEN THE MAP`,
+      interact: (p) => {
+        if (this.game.inspector?.openLion) this.game.inspector.openLion(p.index, 'lionMap');
+        else this.game.toast?.('The map is on Lionheart\'s card — talk to him at your tubes', p.index);
+      },
+    });
+    this.stations.push(this.mapKiosk.station);
+  }
+
+  /**
+   * THE SIMULATOR, AS THE CORNER MINIMAP DRAWS IT — every disc and every road,
+   * in WORLD coordinates (the layer's plus `SIM`), so a kitten's own
+   * `position` lands on it with no conversion. Read off the decks and the
+   * bridges the layer actually has, never typed, so the map cannot show a
+   * bridge that is not there (systems/minimap.js `_drawSim`).
+   *
+   * THE TWO ARE IN DIFFERENT FRAMES. A deck is the layer's; a bridge's
+   * `road` is its Snake Way road, which is ALREADY world (simworld.js
+   * `addBridge` — the ride reads it against her real position). The first
+   * version offset both, and every road was drawn 12000 units east of its
+   * islands; world-check now asks that each road ends on a disc.
+   */
+  simSite() {
+    const off = (q) => ({ x: q.x + SIM.dx, z: q.z + SIM.dz });
+    const discs = (this.sim?.decks ?? []).filter((d) => Number.isFinite(d.r) && d.name)
+      .map((d) => ({ ...off(d), r: d.r, key: d.name }));
+    const roads = (this.sim?.bridges ?? []).map((B) => ({
+      pts: (B.road?.pts ?? []).filter((_, i, a) => i % 4 === 0 || i === a.length - 1).map((q) => ({ x: q.x, z: q.z })),
+      wide: (B.deck?.halfW ?? 0) > 3,
+    })).filter((r) => r.pts.length > 1);
+    let minX = Infinity; let maxX = -Infinity; let minZ = Infinity; let maxZ = -Infinity;
+    for (const d of discs) {
+      minX = Math.min(minX, d.x - d.r); maxX = Math.max(maxX, d.x + d.r);
+      minZ = Math.min(minZ, d.z - d.r); maxZ = Math.max(maxZ, d.z + d.r);
+    }
+    /* A MARGIN FOR THE NAMES, which the minimap writes outboard of each
+       island: fitted to the discs alone, GALLERY and RANGE were cut to
+       "GALL" and "RANGI" at the canvas edge. */
+    const m = 0.14 * Math.max(maxX - minX, maxZ - minZ);
+    return { discs, roads, bounds: { minX: minX - m, maxX: maxX + m, minZ: minZ - m, maxZ: maxZ + m } };
   }
 
   /**
@@ -1642,6 +1732,8 @@ export class DreamDojo {
       enterHolo(this, p);
       this._applyKit(p, true);
       this.refillSim(p);
+      s.lostT = 0;
+      s.lostN = 0;
       /* THE INVITATION, ONCE A VISIT. A kitten wearing orbs is told there is
          a rundown; she is never put through one she did not ask for. */
       if (p.powerOrbs?.length) {
@@ -1814,6 +1906,7 @@ export class DreamDojo {
         }
         case 'sim':
           s.fx = 0;
+          this._noteVisits(p, s, dt);
           break;
         case 'derez': {
           const k = ease(Math.min(1, s.t / 0.5));
@@ -1902,6 +1995,7 @@ export class DreamDojo {
     this._updateSign();
     this._updateTraining(dt);
     tickKeptPandas(this, dt);
+    if (this.mapKiosk) this.mapKiosk.update(dt, idleIn(this));
     this._updateRez(dt);
     this._updatePuppets(dt);
     this._updateTubes(dt);
@@ -2188,6 +2282,8 @@ export class DreamDojo {
   }
 
   startDrill(p, spec, at) {
+    const s0 = this.st[p.index];
+    if (s0) s0.lostT = 0;
     this._closeRundown(p);
     this.closeChoice(p);
     const old = this.drills[p.index];
@@ -2196,7 +2292,44 @@ export class DreamDojo {
   }
 
   /** Write a result down — returns what changed, for the card. */
+  /**
+   * WHERE SHE HAS BEEN, AND IS SHE LOST. Every frame she is in the simulator.
+   *
+   * A VISIT IS STANDING ON THE ISLAND, written once per island into her row
+   * of the progress store (`visit.<key>`), where Lionheart's card reads it —
+   * so it outlives the tab the way her stars do. Crossing the bridge is not a
+   * visit; arriving is.
+   *
+   * LOST IS NOTHING WON FOR `LOST_AFTER` SECONDS, out of a drill. "Lionheart
+   * can give them suggestions of what to do next incase they are lost." He
+   * calls out the one suggestion his card would give (`lionNext`), by name,
+   * in his bubble and so in her caption when she is far from him — then waits
+   * longer, and stops after `LOST_MAX` in one visit: a voice that keeps
+   * telling her what to do is a voice she stops hearing.
+   */
+  _noteVisits(p, s, dt) {
+    if (!this.isles) return;
+    const at = this._flatPos(p);
+    const name = p.style?.name ?? p.name;
+    for (const [key, I] of Object.entries(this.isles)) {
+      if (Math.hypot(at.x - I.x, at.z - I.z) > I.r) continue;
+      if (!this.progress.flag(name, `visit.${key}`)) this.progress.setFlag(name, `visit.${key}`);
+      break;
+    }
+    const d = this.drills[p.index];
+    const busy = (d && (d.state === 'ready' || d.state === 'live')) || this.highway?.riding(p.index)
+      || this.choices[p.index] || this.rundowns[p.index] || this.game.inspector?.busy?.(p.index);
+    if (busy) { s.lostT = 0; return; }
+    s.lostT = (s.lostT ?? 0) + dt;
+    if (s.lostT < LOST_AFTER || (s.lostN ?? 0) >= LOST_MAX) return;
+    s.lostN = (s.lostN ?? 0) + 1;
+    s.lostT = LOST_AFTER - LOST_AGAIN;
+    this.holoSay(`${p.name} — ${this.guide.next(p).short}\nTalk to me any time for more.`, 7);
+  }
+
   award(p, id, stars, score, lowerIsBetter) {
+    const s0 = this.st[p.index];
+    if (s0) s0.lostT = 0;
     const r = this.progress.award(p.style?.name ?? p.name, id, stars, score, { lowerIsBetter });
     // The day's and the week's boxes (dream/rank.js) are paid off the same result.
     this.ranks?.onAward(p, id, stars);
@@ -2959,6 +3092,7 @@ export class DreamDojo {
     if (this.sim && camera.position.x > SIM.dx * 0.5) {
       for (const k of this.simPandas) k?.panda.faceCamera(camera);
       for (const c of this.choices) c?.faceCamera(camera);
+      this.mapKiosk?.faceCamera(camera);
       this.sim.faceCamera(camera);
       this.gallery?.faceCamera(camera);
       this.hall?.faceCamera(camera);
