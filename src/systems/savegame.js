@@ -409,6 +409,9 @@ export function castRow(p, here = true) {
     /* Whether she has been round Lionheart's racks THIS GAME — see
        DreamDojo.interact. An old row has none and is a kitten who has not. */
     geared: !!p.dreamGeared,
+    /* Shadow Lionheart's three levels, beaten THIS GAME — all three is his 凶
+       Cross Slash. An old row has none and is a kitten who has beaten none. */
+    shadow: { easy: !!p.shadowBeat?.easy, medium: !!p.shadowBeat?.medium, hard: !!p.shadowBeat?.hard },
   };
 }
 
@@ -494,6 +497,7 @@ export function applyCast(game, p, row) {
      — which is true of every save taken before she existed. */
   p.payne = cleanPayne(row.payne);
   p.dreamGeared = !!row.geared;
+  p.shadowBeat = { easy: !!row.shadow?.easy, medium: !!row.shadow?.medium, hard: !!row.shadow?.hard };
   return true;
 }
 

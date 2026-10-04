@@ -92,7 +92,7 @@ import {
   DOJO_NEED, RIDER_NEED, CELEBRATE_AFTER, TOKEN_COLOR,
   CEREMONY_LEAD, CEREMONY_BLESS, CEREMONY_GAP, CARD_EXTRA,
 } from '../src/systems/feats.js';
-import { drawOrb } from '../src/entities/powerorb.js';
+import { drawOrb, triDmgK } from '../src/entities/powerorb.js';
 import { CrossFx, sealStage, SIDES_BY_CUT } from '../src/systems/crossfx.js';
 import { DodgeFx, ringTexture } from '../src/systems/dodgefx.js';
 import { ClanFx } from '../src/systems/clanfx.js';
@@ -2779,8 +2779,8 @@ console.log('\n--- the panda in the ring ---');
     const from = msrc.indexOf('{', at + 1) + 1;
     const body = msrc.slice(from, msrc.indexOf('\n  }\n', from));
     // eslint-disable-next-line no-new-func
-    return new Function('ATTACKS', 'COMBAT', 'PANDA', 'BASE_REACH', 'Panda', 'tierFor', 'SWEEP_UP',
-      `return function (${args}) {${body}\n};`)(ATTACKS, COMBAT, PANDA, BASE_REACH, Panda, tierFor, SWEEP_UP);
+    return new Function('ATTACKS', 'COMBAT', 'PANDA', 'BASE_REACH', 'Panda', 'tierFor', 'SWEEP_UP', 'triDmgK',
+      `return function (${args}) {${body}\n};`)(ATTACKS, COMBAT, PANDA, BASE_REACH, Panda, tierFor, SWEEP_UP, triDmgK);
   };
   const strikePlayers = lift('strikePlayers(attacker, kind, reach, dir, spent = null)',
     'attacker, kind, reach, dir, spent = null');
@@ -38032,36 +38032,210 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       posed.dispose?.(); town.dispose?.();
     }
 
-    // The win: the hand-over line FIRST, then the stars — but everything is decided at once.
+    /* THREE LEVELS. Richard: "The current timing and difficulty should be
+       easy" — so the fight above, run off the one kiosk there always was,
+       is EASY, and easy is the shipped numbers exactly. */
+    const LV = SH.SHADOW_LEVELS;
+    ok('影 easy is the fight that shipped, number for number: every multiplier 1, the old bar, the single X, the old rotation',
+      F.level === 0 && LV[0].speed === 1 && LV[0].tellK === 1 && LV[0].restK === 1 && LV[0].dmgK === 1
+      && LV[0].hits === SH.SHADOW_HITS && LV[0].per === SH.SHADOW_PER && LV[0].crossDmg === SH.CROSS.dmg
+      && LV[0].phase2 === SH.PHASE2 && !LV[0].triple && LV[0].order.join() === 'slam,cross,sweep,slam,cross');
+    ok('...and each level up is faster, quicker to swing, more often, tougher and harder-hitting, and hard\'s 凶 is "about 80"',
+      [1, 2].every((k) => ['speed', 'hits', 'per', 'dmgK', 'phase2'].every((f) => LV[k][f] > LV[k - 1][f])
+        && LV[k].tellK < LV[k - 1].tellK && LV[k].restK < LV[k - 1].restK && LV[k].triple)
+      && Math.abs(3 * LV[2].crossDmg - 80) <= 2,
+      `hard 凶 ${3 * LV[2].crossDmg}, medium ${3 * LV[1].crossDmg}`);
+    /* A FASTER FIGHT IS STILL A FAIR ONE. Every telegraph on every level is
+       longer than a reaction (0.2s) plus walking out of its shape at her walk
+       (10.5): half a slam's width, or the X's arm from its middle. */
+    {
+      const WALK = Number(/const WALK_SPEED = ([\d.]+);/.exec(read('../src/entities/player.js'))?.[1]);
+      const outX = SH.CROSS.half / Math.SQRT1_2;
+      const worst = Math.min(...LV.map((L) => Math.min(
+        SH.SLAM.tell * 0.85 * L.tellK - (0.2 + SH.SLAM.half / WALK),
+        SH.CROSS.tell * L.tellK * (L.triple ? SH.CROSS.chain : 1) - (0.2 + outX / WALK))));
+      ok('影 on every level every red shape is up long enough to react to and walk out of', worst > 0.05, `${worst.toFixed(3)}s spare`);
+      const ifr = DD.SIM_IFRAMES;
+      const chain = Math.min(...LV.filter((L) => L.triple).map((L) => SH.CROSS.tell * L.tellK * SH.CROSS.chain));
+      ok('...and each X of the 凶 comes after the last hit\'s i-frames are over, so all three CAN land', chain > ifr + 0.02,
+        `${chain.toFixed(2)}s vs ${ifr}s`);
+    }
+    const kioskOk = F.kiosks.length === 3 && F.kiosks.every((k, i) =>
+      Math.hypot(k.x - F.centre.x, k.z - F.centre.z) > SH.ARENA_R + k.r
+      && !!sim.heightAt(k.x + SW.SIM.dx, k.z + SW.SIM.dz, IH.y + 2)
+      && F.kiosks.every((q, j) => j === i || Math.hypot(k.x - q.x, k.z - q.z) > 4));
+    ok('影 one kiosk per level, each outside his ring, on his island, and apart', kioskOk);
+
+    // EASY WON: stars and its own line, and nothing else — "They only need to
+    // defeat him on medium to get the regular 'kotodama' prize."
     fakeGame.feats.earned.length = 0;
     fakeGame.feats.delays.length = 0;
     fakeGame.toasts.length = 0;
+    her.shadowBeat = { easy: false, medium: false, hard: false };
+    sis.shadowBeat = { easy: false, medium: false, hard: false };
     F.t = 120;
     B.hp = 1;
     B.hit(blow);
     const st = D.progress.stars(nameOf(her), 'shadow');
-    ok('影 beating him decides everything on the spot: stars, the flag their rank needs, and the tenth quest',
-      F.state === 'won' && st >= 1 && D.progress.flag(nameOf(her), 'shadow') && D.progress.flag(nameOf(sis), 'shadow')
-      && [...fakeGame.feats.earned].sort().join() === '0:shadow,1:shadow',
-      `${F.state} ${st} ${fakeGame.feats.earned.join()}`);
-    /* "Have Lionheart say 'My honor, my dreams... they're yours now.' after
-       defeating him and before receiving his reward" — Richard. Said on the
-       frame he breaks; nobody is told what they won until it is over. */
-    ok('...and the first thing anybody hears is his hand-over line, with nobody told their prize over it',
-      F.say === SH.HANDOVER.line && /yours now/.test(F.say)
-      && fakeGame.toasts.filter((t) => /beat Shadow Lionheart/.test(t)).length === 0
-      && fakeGame.feats.delays.every((dl) => dl === SH.HANDOVER.secs), `${F.say} | ${fakeGame.toasts.join(' / ')}`);
-    for (let f = 0; f < Math.floor(60 * SH.HANDOVER.secs) - 6; f++) F.update(1 / 60);
-    const quietDuring = fakeGame.toasts.filter((t) => /beat Shadow Lionheart/.test(t)).length === 0 && F.say === SH.HANDOVER.line;
-    for (let f = 0; f < 12; f++) F.update(1 / 60);
-    ok('...then the stars, the quest news and "a share of my HONOR", once his line has had its time',
-      quietDuring && fakeGame.toasts.filter((t) => /Powerup Kotodama/.test(t)).length === 2 && /HONOR/.test(F.say),
-      `${quietDuring} ${fakeGame.toasts.length}`);
+    ok('影 beaten on EASY: stars and the tick, in his EASY line — and not the quest, nor the rank\'s flag',
+      F.state === 'won' && st >= 1 && F.say === SH.SHADOW_LINES.easy.line && her.shadowBeat.easy && sis.shadowBeat.easy
+      && !her.shadowBeat.medium && fakeGame.feats.earned.length === 0 && !D.progress.flag(nameOf(her), 'shadow'),
+      `${F.state} ${st} ${F.say} ${fakeGame.feats.earned.join()}`);
+    for (let f = 0; f < 60 * (SH.HANDOVER.secs + 0.2); f++) F.update(1 / 60);
+    ok('...and the toast says what is still to win; he promises no HONOR he is not paying',
+      !/HONOR/.test(F.say ?? '') && fakeGame.toasts.some((t) => /on EASY.*MEDIUM and HARD too/.test(t)),
+      fakeGame.toasts.join(' / '));
     ok('...and her catch cost her time on her score', D.progress.best(nameOf(her), 'shadow') === 120 + SH.CATCH_COST
       && D.progress.best(nameOf(sis), 'shadow') === 120, `${D.progress.best(nameOf(her), 'shadow')} ${D.progress.best(nameOf(sis), 'shadow')}`);
     for (let f = 0; f < 60 * 8; f++) F.update(1 / 60);
     ok('...and the floor clears itself afterwards: no boss, nothing left in the gate', F.state === 'waiting' && !F.boss
       && ![...D.gate.targets].some((t) => t instanceof SH.ShadowBoss));
+
+    // MEDIUM: his bar is medium's, and the win pays the tenth quest.
+    put(her, F.kiosks[1]);
+    put(sis, inside);
+    F.kiosks[1].station.interact(her);
+    const BM = F.boss;
+    ok('影 the MEDIUM kiosk opens a MEDIUM fight: his bar is medium\'s, sized for two',
+      F.level === 1 && BM.maxHits === LV[1].hits + LV[1].per, `${F.level} ${BM.maxHits}`);
+    fakeGame.toasts.length = 0;
+    F.t = 100;
+    BM.hp = 1;
+    BM.hit(blow);
+    ok('影 beaten on MEDIUM: his MEDIUM line, the flag their rank needs, and the tenth quest',
+      F.say === SH.SHADOW_LINES.medium.line && D.progress.flag(nameOf(her), 'shadow') && D.progress.flag(nameOf(sis), 'shadow')
+      && [...fakeGame.feats.earned].sort().join() === '0:shadow,1:shadow'
+      && fakeGame.feats.delays.every((dl) => dl === SH.HANDOVER.secs)
+      && fakeGame.toasts.filter((t) => /beat Shadow Lionheart/.test(t)).length === 0,
+      `${F.say} ${fakeGame.feats.earned.join()}`);
+    for (let f = 0; f < 60 * (SH.HANDOVER.secs + 0.2); f++) F.update(1 / 60);
+    ok('...then the stars, the quest news and "a share of my HONOR", once his line has had its time',
+      fakeGame.toasts.filter((t) => /Powerup Kotodama/.test(t)).length === 2 && /HONOR/.test(F.say) && !her.kyo,
+      fakeGame.toasts.join(' / '));
+    for (let f = 0; f < 60 * 12; f++) F.update(1 / 60);
+
+    // HARD: the hand-over line, the HONOR, and then 凶 — to the kitten with all three.
+    put(her, F.kiosks[2]);
+    put(sis, inside);
+    sis.shadowBeat = { easy: false, medium: false, hard: false };
+    F.kiosks[2].station.interact(her);
+    const BH = F.boss;
+    fakeGame.toasts.length = 0;
+    F.t = 100;
+    BH.hp = 1;
+    BH.hit(blow);
+    /* "Have Lionheart say 'My honor, my dreams... they're yours now.' after
+       defeating him and before receiving his reward" — and now "keep the
+       current ending voice line for when he is defeated on hardest". */
+    ok('影 beaten on HARD: the first thing anybody hears is his hand-over line, with nobody told their prize over it',
+      F.level === 2 && F.say === SH.HANDOVER.line && fakeGame.toasts.filter((t) => /beat Shadow Lionheart/.test(t)).length === 0
+      && her.kyo && !sis.kyo && sis.shadowBeat.hard, `${F.say}`);
+    for (let f = 0; f < 60 * (SH.HANDOVER.secs + 0.2); f++) F.update(1 / 60);
+    const honorFirst = /HONOR/.test(F.say);
+    const told = fakeGame.toasts.some((t) => /Ember|inherit his 凶/.test(t)) && fakeGame.toasts.some((t) => /EASY and MEDIUM too/.test(t));
+    let kyoAt = null;
+    for (let f = 0; f < 60 * 12 && kyoAt == null; f++) { F.update(1 / 60); if (F.say === SH.SHADOW_LINES.kyo.line) kyoAt = f / 60; }
+    ok('...then "a share of my HONOR", and only AFTER it, 凶 explained — told to her, and her sister told what she is missing',
+      honorFirst && told && kyoAt != null && kyoAt + 0.2 >= 6.95, `${honorFirst} ${told} ${kyoAt}`);
+    ok('...and the fight still clears itself, however long he talked', (() => {
+      for (let f = 0; f < 60 * 15; f++) F.update(1 / 60);
+      return F.state === 'waiting' && !F.boss;
+    })());
+
+    /* 凶 IN HIS HANDS: "When he does cross-slash, it should be three attacks
+       and show some special cross slash symbols in front of him". Three Xs,
+       each drawn on where she is when it is drawn, the 凶 in front of him
+       filling as they come. Standing still she takes all three; stepping off
+       after each warning she takes none. */
+    {
+      put(her, F.kiosks[2]);
+      F.kiosks[2].station.interact(her);
+      const BX = F.boss;
+      put(sis, isleSpot(IH, -40, 0));
+      for (let f = 0; f < 5; f++) F.update(1 / 60);
+      const run = (dodge) => {
+        D.refillSim(her);
+        const at = isleSpot(IH, SH.ARENA_AT[0] - 4, 2);
+        put(her, at);
+        BX.local.x = at.x + 6; BX.local.z = at.z; BX.group.position.x = BX.local.x; BX.group.position.z = BX.local.z;
+        // Facing her, so a step across his line is a step between the X's arms.
+        BX.facing = { x: -1, z: 0 };
+        F._choose(her, 6, 'cross');
+        const before = D.st[0].simHp;
+        const centres = []; let lit = 0; let emblem = false;
+        for (let f = 0; f < 60 * 5 && !(F.act.kind === 'recover'); f++) {
+          const a = F.act;
+          if (a.kind === 'tell' && a.what === 'cross' && !centres.includes(a.c)) {
+            centres.push(a.c);
+            if (dodge && centres.length > 1) put(her, { x: her.position.x - SW.SIM.dx, z: her.position.z - SW.SIM.dz + 3.2, y: IH.y });
+          }
+          F._think(1 / 60);
+          D.st[0].iframes = Math.max(0, (D.st[0].iframes ?? 0) - 1 / 60);
+          F._emblem && F.act.kind === 'tell' && F.act.cuts && F._emblem(F.act, 1 - F.act.t / F.act.tell);
+          emblem ||= F.emblem.visible;
+          lit = Math.max(lit, F.emblem.material.opacity);
+          her.dodgeT = 0;
+        }
+        return { took: before - D.st[0].simHp, n: centres.length, emblem, lit, open: BX.open > 0, after: F.emblem.visible };
+      };
+      const still = run(false);
+      ok('影 on HARD his Cross Slash is THREE Xs: a kitten who stands still takes all three, about 80, and then he is OPEN',
+        still.n === 3 && still.took === 3 * LV[2].crossDmg && still.open, `${still.n} Xs, took ${still.took}`);
+      ok('...with 凶 in front of him while it runs, fully lit by the last, and gone after', still.emblem && still.lit > 0.95 && !still.after,
+        `${still.lit.toFixed(2)} ${still.after}`);
+      BX.open = 0;
+      F.act = { kind: 'idle', t: 99 };
+      const moved = run(true);
+      ok('...and each X is aimed where she is NOW: stepping off after each warning, only the first one lands',
+        moved.n === 3 && moved.took === LV[2].crossDmg, `${moved.n} Xs, took ${moved.took}`);
+      // His walk, on hard against easy, measured over a second with her far away.
+      const walk = (lv) => {
+        F.level = lv;
+        F.act = { kind: 'idle', t: 99 };
+        put(her, isleSpot(IH, SH.ARENA_AT[0] - 16, 0));
+        const x0 = BX.local.x; const z0 = BX.local.z;
+        BX.local.x = F.centre.x + 10; BX.local.z = F.centre.z; BX.group.position.x = BX.local.x; BX.group.position.z = BX.local.z;
+        const s0 = { x: BX.local.x, z: BX.local.z };
+        for (let f = 0; f < 30; f++) F._think(1 / 60);
+        const dist = Math.hypot(BX.local.x - s0.x, BX.local.z - s0.z);
+        BX.local.x = x0; BX.local.z = z0;
+        return dist;
+      };
+      const wE = walk(0); const wH = walk(2);
+      F.level = 2;
+      ok('影 on HARD he walks LV.speed times as fast as on easy', Math.abs(wH / wE - LV[2].speed) < 0.02, `${wE.toFixed(2)} ${wH.toFixed(2)}`);
+      F.dispose();
+      put(sis, inside);
+    }
+
+    /* 凶 IN HER HANDS. "if the player defeats Shadow Lionheart on the hardest,
+       they also inherit his cross-slash technique, which instead of juji
+       symbol, now when players do cross-slash, they do the jyo symbol and deal
+       1.25x's as much damage". One formula (`triDmgK`), asked by the ring's
+       gate and the simulator's; and a fact about THIS game, in her row. */
+    {
+      const PO = await import('../src/entities/powerorb.js');
+      const k0 = PO.triDmgK({ power: { tri: { dmgK: 1.15 } }, kyo: false });
+      const k1 = PO.triDmgK({ power: { tri: { dmgK: 1.15 } }, kyo: true });
+      const mSrc = read('../src/main.js'); const tSrc = read('../src/systems/dream/targets.js');
+      ok('凶 her inherited Cross Slash hits 1.25× as hard, on top of her Juuji stack — in the ring and in the simulator alike',
+        Math.abs(k1 / k0 - 1.25) < 1e-12 && PO.KYO.dmgK === 1.25
+        && /kind === 'tri' \? triDmgK\(attacker\)/.test(mSrc) && /kind === 'tri' \? triDmgK\(attacker\)/.test(tSrc)
+        && !/power\?\.tri\?\.dmgK/.test(stripComments(mSrc) + stripComments(tSrc)));
+      const fresh = new Player({ texture: new THREE.Texture(), index: 0, cols: 8, rows: 4, mirror: false, spawn: new THREE.Vector3(), name: 'Ember' });
+      const half = { ...fresh.shadowBeat, easy: true, hard: true };
+      fresh.shadowBeat = half;
+      const notYet = fresh.kyo;
+      fresh.shadowBeat = { ...half, medium: true };
+      const SG = await import('../src/systems/savegame.js');
+      const row = SG.castRow ? SG.castRow(fresh, fakeGame) : null;
+      ok('凶 is all three levels, not the hardest alone; and it is saved in her row',
+        !notYet && fresh.kyo && (row ? row.shadow?.hard === true && row.shadow?.medium === true : /shadow: \{ easy: !!p\.shadowBeat/.test(read('../src/systems/savegame.js'))));
+      const CF = read('../src/systems/crossfx.js');
+      ok('凶 her seal draws 凶 instead of 十, brushed like it, chosen per technique',
+        /const glyph = p\.kyo \? kyoTexture\(\) : kanjiTexture\(\);/.test(CF) && /export function kyoTexture\(\) \{ return glyphTexture\('凶', KYO_STROKES\); \}/.test(CF)
+        && /p\.shadowBeat = \{ easy: false, medium: false, hard: false \};/.test(read('../src/main.js')));
+    }
 
     // Everybody walks off: it is lost, and says so.
     put(her, inside);

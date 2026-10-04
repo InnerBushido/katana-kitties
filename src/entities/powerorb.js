@@ -914,6 +914,21 @@ export const parryWindowFor = (n = 0) => PARRY.window * (1 + PARRY.longK * Math.
  *
  * @param {string[]} ids
  */
+/**
+ * 凶 — THE CROSS SLASH SHE INHERITS. Richard: "if the player defeats Shadow
+ * Lionheart on the hardest, they also inherit his cross-slash technique ...
+ * and deal 1.25x's as much damage as a modifier, since they inherited his
+ * honor in their strike". Beaten on all three of his levels, in this game
+ * (`Player.kyo`, from dream/shadow.js `inherited`).
+ */
+export const KYO = { dmgK: 1.25 };
+
+/** What each cut of HER Cross Slash is multiplied by: the Juuji stack, and
+ *  凶 on top. The one formula, asked by the ring and by the simulator. */
+export function triDmgK(p) {
+  return (p?.power?.tri?.dmgK ?? 1) * (p?.kyo ? KYO.dmgK : 1);
+}
+
 export function aggregate(ids = []) {
   const n = (id) => ids.filter((k) => k === id).length;
   const swift = n('swift');

@@ -70,7 +70,7 @@ import {
 } from './systems/savegame.js';
 import { POWER_ORBS } from './entities/powerorb.js';
 import { Kotodama, buildWornOrbs } from './systems/kotodama.js';
-import { ORB_IDS, CROSS } from './entities/powerorb.js';
+import { ORB_IDS, CROSS, triDmgK } from './entities/powerorb.js';
 import { ProfileScreen } from './systems/profile.js';
 import { Feats } from './systems/feats.js';
 import { Inspector } from './systems/inspector.js';
@@ -3427,6 +3427,8 @@ class Game {
       p.raisedPanda = false;
       // Lionheart's racks are a first-visit thing, and this is a first visit.
       p.dreamGeared = false;
+      // His Shadow's three levels, and so 凶, are earned in a game too.
+      p.shadowBeat = { easy: false, medium: false, hard: false };
       /* AND THE ONES BELONGING TO KITTENS NOBODY IS PLAYING, which live in
          `_parkedPandas` and are in the scene exactly like these. Missed, a
          restart would leave a grown panda standing in a town that has just
@@ -6412,7 +6414,7 @@ class Game {
        is the one place that can do that multiplication, because it is the one
        place holding both tables. */
     const base = kind === 'claw' ? ATTACKS.stand.dmg * PANDA.dmgK : A.dmg;
-    const dmg = base * (kind === 'tri' ? (attacker.power?.tri?.dmgK ?? 1) : 1);
+    const dmg = base * (kind === 'tri' ? triDmgK(attacker) : 1);
 
     /* --- DOES THIS SWING REACH THAT BODY? ---------------------------------
        Pulled out of the loop because there are now TWO bodies to ask it about

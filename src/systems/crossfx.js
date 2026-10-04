@@ -98,7 +98,8 @@ const AHEAD = 2.6;
 
 let _bar = null;
 let _bolt = null;
-let _kanji = null;
+/** Brushed glyphs, by character: 十 for every Cross Slash, 凶 for one inherited. */
+const _glyphs = new Map();
 
 function canvas(w, h) {
   if (typeof document === 'undefined') return null;
@@ -262,8 +263,28 @@ const KANJI_STROKES = [
   },
 ];
 
-function kanjiTexture() {
-  if (_kanji) return _kanji;
+/* 凶 — Shadow Lionheart's Cross Slash, and hers once she has beaten him on
+ * all three of his levels (dream/shadow.js `inherited`). Richard: "instead
+ * of juji symbol, now when players do cross-slash, they do the kyo symbol".
+ * Brushed by the same routine as the 十 rather than typed, for the reason
+ * that one is: the X (丿 then 丶) and the box open at the top (乚 then 丨),
+ * in stroke order. Thinner than the 十's strokes because there are five of
+ * them in the same box — at the 十's weight the X filled solid where its two
+ * strokes cross. */
+const KYO_STROKES = [
+  { p: [[322, 118], [290, 200], [240, 280], [160, 350]], w: [[0, 14], [0.15, 17], [0.7, 12], [1, 4]] },   // 丿
+  { p: [[190, 150], [240, 210], [290, 270], [350, 330]], w: [[0, 8], [0.3, 12], [0.85, 17], [1, 7]] },     // 丶
+  { p: [[98, 150], [100, 250], [102, 350], [104, 440]], w: [[0, 15], [0.1, 17], [0.9, 13], [1, 13]] },     // 乚, down
+  { p: [[104, 440], [200, 438], [320, 434], [430, 430]], w: [[0, 13], [0.5, 12], [0.9, 15], [1, 9]] },     // 乚, along
+  { p: [[430, 140], [430, 250], [430, 360], [430, 470]], w: [[0, 15], [0.1, 18], [0.85, 14], [1, 5]] },    // 丨
+];
+
+function kanjiTexture() { return glyphTexture('十', KANJI_STROKES); }
+/** The 凶 drawn the 十's way — for her inherited Cross Slash, and his. */
+export function kyoTexture() { return glyphTexture('凶', KYO_STROKES); }
+
+function glyphTexture(key, STROKES) {
+  if (_glyphs.has(key)) return _glyphs.get(key);
   const S = 256;
   const c = canvas(S, S);
   if (!c) return null;
@@ -292,7 +313,7 @@ function kanjiTexture() {
     g.lineJoin = 'round';
     g.shadowColor = style;
     g.shadowBlur = blur;
-    for (const s of KANJI_STROKES) {
+    for (const s of STROKES) {
       const steps = 120;
       for (let i = 0; i < steps; i++) {
         const t0 = i / steps;
@@ -351,8 +372,9 @@ function kanjiTexture() {
   }
   paint();
   g.setTransform(1, 0, 0, 1, 0, 0);
-  _kanji = texture(c);
-  return _kanji;
+  const tex = texture(c);
+  _glyphs.set(key, tex);
+  return tex;
 }
 
 /**
@@ -638,6 +660,13 @@ export class CrossFx {
            quietly erase a burst or a stroke offset the moment either learns to
            persist. Placed on every cut, rebuilt on the first. */
         if (stage === 1) this._reassemble(r);
+        /* 凶 OR 十, asked of her at each technique: inheriting it mid-game
+           changes the next one she throws, and a rig is built once. */
+        const glyph = p.kyo ? kyoTexture() : kanjiTexture();
+        if (stage === 1 && glyph && r.kanji.material.map !== glyph) {
+          r.kanji.material.map = glyph;
+          r.kanji.material.needsUpdate = true;
+        }
       }
       if (stage === CROSS.cuts) r.pulseT = 0;
       r.stage = stage;

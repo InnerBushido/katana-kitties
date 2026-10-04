@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { ATTACKS, BASE_REACH, COMBAT } from '../../entities/player.js';
+import { triDmgK } from '../../entities/powerorb.js';
 import { Billboard } from '../../core/gfx.js';
 import { SIM, HOLO } from '../../world/simworld.js';
 import { SimBar, holoFlicker } from './holo.js';
@@ -84,7 +85,7 @@ export class TrainingGate {
       if (dy > COMBAT.strikeHeight + t.hitUp || -dy > COMBAT.strikeHeight + t.hitDown) continue;
       const dot = dist > 1e-3 ? (dx * dir.x + dz * dir.y) / dist : 1;
       if (dot < A.arc) continue;
-      const dmg = (A.dmg ?? ATTACKS.stand.dmg) * (kind === 'tri' ? (attacker.power?.tri?.dmgK ?? 1) : 1);
+      const dmg = (A.dmg ?? ATTACKS.stand.dmg) * (kind === 'tri' ? triDmgK(attacker) : 1);
       const k = dist > 1e-3 ? 1 / dist : 0;
       if (t.hit({ attacker, kind, dmg, dist, swing, dir: { x: dx * k, z: dz * k } })) {
         spent?.add?.(t);

@@ -622,6 +622,9 @@ export const LION_NEAR = 20;
  *  (at 47), `side` across from the deck's EDGE (a highway is wider than a
  *  bridge), `up` off the floor; one
  *  reached through another island is `stack` higher, on the same post. */
+/** Seconds a sim hit leaves her untouchable. The 凶's chained Xs are timed
+ *  against it (dream/shadow.js `CROSS.chain`). */
+export const SIM_IFRAMES = 0.6;
 export const GATE_SIGN = { back: 4, side: 5.3, up: 5.5, scale: 0.62, stack: 3.4 };
 export function gateSignSpot(dc, dir, halfW = 2.2) {
   const r = 47 - GATE_SIGN.back;
@@ -2174,7 +2177,7 @@ export class DreamDojo {
     }
     if ((s.iframes ?? 0) > 0) return 'immune';
     s.simHp = (s.simHp ?? this.simMax(p)) - dmg;
-    s.iframes = 0.6;
+    s.iframes = SIM_IFRAMES;
     p.flashT = 0.3;
     /* A NUDGE, NOT A THROW. Six units a second and a hop: enough that walking
        into a wall of light reads as being stopped by it, and far short of
