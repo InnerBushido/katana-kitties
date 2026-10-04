@@ -284,7 +284,7 @@ playable or an opponent later, as Richard asked.
 
 ## The script
 
-Pixie, `voice_id 0178ef57-ada4-43d9-992b-8d9221045bb4`. All 45 lines, in
+Pixie, `voice_id 0178ef57-ada4-43d9-992b-8d9221045bb4`. All 54 lines, in
 `public/voice/payne/`, are **for Payne's approval** along with her likeness.
 The text is `PAYNE_LINES`, and the text is the line: the voice falls back
 (non-negotiable 9), and world-check requires every line to have a file and
@@ -345,9 +345,45 @@ the Sweep. `cleanPayne` gives a blank ledger rather than a NaN for anything
 malformed. The timers are deliberately **not** saved: a load is a fresh two
 minutes, and that is what "stuck" means.
 
+## The Dream Dojo section
+
+Richard: "Let's update Payne's Quest List to show the Lionheart's Honor quest.
+We can even add some voice lines from Payne about the Dream Dojo that she can
+share with players. Maybe we should add a new section in Payne's navigation UI
+specifically introducing the players to the Dream Dojo. Within that UI, there
+can be an option to "view" the Dream Dojo where it shows the dojo and maybe
+does a little introduction cutscene."
+
+- **Her quest list** has a row for Lionheart's Honor (`DOJO_QUESTS`, marked
+  `dojo: true`). It is outside her chain, because the chain is the afternoon in
+  order and this quest is open to anybody at any time. It is not a tag-along
+  either, because everybody can win it. **A late quest never shows as
+  closed**: `questState` skips the 'closed' answer for `late` feats, so her
+  list does not tell a kitten the door is shut after 100%, when it is not.
+  Once her chain is settled, the open Dojo quest is the next thing she names
+  (`payne_q_shadow`).
+- **A new section on her card, THE DREAM DOJO.** It opens with `payne_dd_intro`
+  and has three buttons that say what they do (`DOJO_ACTS`): **VIEW THE DREAM
+  DOJO**, **MARK IT ON MY MAP** (`payne_dd_mark`) and **◀ BACK**. On a phone,
+  the card uses the two-column `.pn-dd` grid and fits at 844×390.
+- **VIEW** starts the tour (`DreamDojo.startTour`, the `TOUR` rows in
+  `dream/stories.js`). Payne opens it and closes it, and Lionheart does the
+  middle. Her five tour lines are spread into `PAYNE_LINES` from `TOUR`, so her
+  card and the scene cannot say two different things. If somebody is in the
+  simulator, the tour would disconnect them, so it refuses in words
+  (`payne_dd_busy`) and the card stays open.
+
+**A bug the browser found:** VIEW started the tour, *and* toasted "Can't show
+you right now", *and* left her card open under it. The cause was
+`g.dream.startTour?.() ?? 'not ready'`: success returns `null`, and `??` turned
+that into a refusal. The check calls `choose(her, 'view')` both ways: a start
+returns 'scene' with no toast, and a refusal returns 'payneDojo' with one.
+
+All nine new lines are **pending Payne's approval**, like the rest.
+
 ## Open
 
-- **Payne's approval** of her likeness and all 45 lines.
+- **Payne's approval** of her likeness and all 54 lines.
 - **Nobody has played it.** The stuck timings (2 min, 35 s in a cave, four
   hops) are Richard's numbers or first guesses, not tuned by watching a kid.
 - The alternative held pose (both hands on the helmet) is kept outside the repo

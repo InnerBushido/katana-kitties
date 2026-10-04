@@ -6149,6 +6149,13 @@ body.touch-ui .ph-text { font-size: 13px; }
 body.touch-ui .pn-face { width: calc(8 * var(--u)); height: calc(8 * var(--u)); }
 body.touch-ui .pn-trick img { width: calc(16 * var(--u)); }
 body.touch-ui .pn-list { gap: 0; }
+/* THE DREAM DOJO card: four lines of what is in there, one per thing to do. */
+.pn-dd { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: calc(0.35 * var(--u)); }
+.pn-dd li { line-height: 1.25; }
+.pn-dd b { color: #5ff6ff; }
+/* A LANDSCAPE PHONE IS SHORT: the four lines go two-up, so the three buttons
+   stay above the fold instead of under it. */
+body.touch-ui .pn-dd { display: grid; grid-template-columns: 1fr 1fr; gap: calc(0.2 * var(--u)) calc(0.8 * var(--u)); font-size: 0.86em; }
 
 /* --- Payne in Help: her picture beside four short lines --------------------
    Her picture stands at the left like a clan leader's on the clan cards, at

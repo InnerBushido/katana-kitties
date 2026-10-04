@@ -8,6 +8,7 @@ import { BALL_COUNT, LOCKS } from '../entities/dragonball.js';
 import { bubbleTexture } from '../entities/leader.js';
 import { toNextTier } from '../entities/panda.js';
 import { DOJO_NEED, RIDER_NEED, FEAT_BY_ID } from './feats.js';
+import { TOUR } from './dream/stories.js';
 
 /* ---------------------------------------------------------------------------
    PAYNE — the quest giver.
@@ -280,6 +281,19 @@ export const PAYNE_LINES = {
     + "That's the Goblin Sweep. Everything around you goes flying!",
   payne_hints_on: "Hints on! If you get stuck, I'll find you. Goblins always find you.",
   payne_hints_off: "Hints off! Big kitten. I'll be right here if you need me.",
+
+  /* THE DREAM DOJO. Richard: "Let's update Payne's Quest List to show the
+     Lionheart's Honor quest. We can even add some voice lines from Payne about
+     the Dream Dojo that she can share with players. Maybe we should add a new
+     section in Payne's navigation UI specifically introducing the players to
+     the Dream Dojo." Her tour lines are below, spread in from dream/stories.js
+     so the card and the scene can never say two different things. */
+  payne_q_shadow: 'Lionheart’s Honor! Beat Shadow Lionheart in the Dream Dojo. '
+    + 'Anybody can try — and it pays a SPECIAL orb!',
+  payne_dd_intro: "The Dream Dojo! Lionheart's floating VR dojo, past the Turning Circle. You train in there — for real!",
+  payne_dd_mark: "Marked it! It's past the Dojo of the Turning Circle. Jump the stones — and don't look down!",
+  payne_dd_busy: "Somebody's in the simulator right now! Wait till they disconnect, then I'll show you.",
+  ...Object.fromEntries(TOUR.filter((r) => r.who === 'payne').map((r) => [r.voice, r.text])),
 };
 
 /** Every clip she can play, id -> url, for `Announcer.load`. */
@@ -347,7 +361,9 @@ const styleName = (p) => p?.style?.name ?? p?.name ?? '?';
 export function questState(g, p, id) {
   const F = g.feats;
   if (F?.has?.(p, id)) return 'done';
-  if (F && !F.open) return 'closed';
+  /* A LATE QUEST NEVER CLOSES — Lionheart's Honor counts after 100% too
+     (`late` in feats.js), so her list must not tell her the door is shut. */
+  if (F && !F.open && !FEAT_BY_ID[id]?.late) return 'closed';
   if (id === 'rider' && F?.claimed?.rider && F.claimed.rider !== styleName(p)) return 'taken';
   return 'open';
 }
@@ -523,8 +539,21 @@ export function questList(g, p) {
       note: s?.note ?? '',
     });
   }
+  /* AND THE DREAM DOJO'S, in a section of its own: it is not in her chain
+     (the chain is the afternoon, in order; this one is open to anybody at any
+     time) and not a tag-along (everybody can win it). */
+  for (const id of DOJO_QUESTS) {
+    const f = FEAT_BY_ID[id];
+    if (f) rows.push({ id, icon: f.icon, title: f.title, how: f.how, state: questState(g, p, id), tag: false, dojo: true });
+  }
   return rows;
 }
+
+/** The Dream Dojo card's buttons, in order: what each one DOES. */
+export const DOJO_ACTS = [['view', 'VIEW THE DREAM DOJO'], ['ddmark', 'MARK IT ON MY MAP'], ['back', '◀ BACK']];
+
+/** The Dream Dojo's quests on her list — Lionheart's Honor, for now. */
+export const DOJO_QUESTS = ['shadow'];
 
 /* --------------------------------- art ----------------------------------- */
 
@@ -1431,6 +1460,10 @@ export class Payne {
     }] : [];
     return [
       { key: 'quests', title: "WHAT'S MY NEXT QUEST?", blurb: 'Your quest list, and where to go next.' },
+      {
+        key: 'dojo', title: 'THE DREAM DOJO',
+        blurb: "Lionheart's floating VR dojo — what it is, how to get there, and a tour.",
+      },
       ...hintsRow,
       {
         key: 'profile', title: 'CHARACTER PROFILE',
@@ -1465,7 +1498,10 @@ export class Payne {
       case 'quests': {
         const q = currentQuest(g, p);
         const all = CHAIN.every((id) => questState(g, p, id) === 'done');
-        const line = q ? `payne_q_${q}` : all ? 'payne_q_done' : 'payne_q_closed';
+        /* WITH HER CHAIN SETTLED, the open Dream Dojo quest is the next thing
+           to do — and it is the one quest left that the ending never shuts. */
+        const dd = DOJO_QUESTS.find((id) => questState(g, p, id) === 'open');
+        const line = q ? `payne_q_${q}` : dd ? `payne_q_${dd}` : all ? 'payne_q_done' : 'payne_q_closed';
         this.say(p, [line], null, { card: false, now: true });
         return 'payneQuests';
       }
@@ -1484,6 +1520,55 @@ export class Payne {
             : 'All my quests are done — nothing left to mark!', p.index);
         }
         return 'payneQuests';
+      }
+      case 'dojo':
+        this.say(p, ['payne_dd_intro'], null, { card: false, now: true });
+        return 'payneDojo';
+      case 'view': {
+        /* VIEW THE DREAM DOJO — Richard: "there can be an option to 'view' the
+           Dream Dojo where it shows the dojo and maybe does a little
+           introduction cutscene, working like the Clan Leaders introduction
+           cutscene but longer and more detailed". Refused IN WORDS while a
+           sister is in the simulator, because a scene takes everybody out. */
+        /* NOT `startTour?.() ?? 'not ready'`: success IS null, and `??` turned
+           it into a refusal — the tour started AND she toasted "Can't show you
+           right now" and left her card open under it. Found in the browser. */
+        const why = g.dream?.startTour ? g.dream.startTour() : 'not ready';
+        if (why === 'busy') {
+          g.sfx?.('deny');
+          g.toast?.("Somebody's in the simulator — wait till they disconnect, then ask again", p.index);
+          this.say(p, ['payne_dd_busy'], null, { card: false, now: true });
+          return 'payneDojo';
+        }
+        if (why) {
+          g.sfx?.('deny');
+          g.toast?.("Can't show you right now — try again in a moment", p.index);
+          return 'payneDojo';
+        }
+        // Her own voice stops: she is in the tour, speaking from the card.
+        this.queue.length = 0;
+        this._end(true);
+        return 'scene';
+      }
+      case 'ddmark': {
+        const D = g.dream;
+        const at = D?.layout?.launch;
+        if (!at) {
+          g.toast?.('The Dream Dojo is not built yet — nothing to mark', p.index);
+          return 'payneDojo';
+        }
+        /* THE FIRST STONE, NOT THE DOME: the way in is the thing she needs
+           to find, and a mark on the dome would send a kitten on a dragon
+           straight at the wall Lionheart shouts about. Gone once she is in. */
+        const s = this._s(p);
+        s.mark = null;
+        s.override = {
+          x: at.x, z: at.z, y: g.world?.dojoCentre?.y, t: Infinity,
+          until: (q) => !!D.approach?.of(q).inside,
+        };
+        this.say(p, ['payne_dd_mark'], null, { card: false, now: true });
+        g.toast?.(`Payne marked the way to the Dream Dojo on ${p.name}'s map`, p.index);
+        return 'payneDojo';
       }
       case 'hints': {
         L.hints = !L.hints;
@@ -1542,8 +1627,9 @@ export class Payne {
         return `<li class="pn-q ${cls}"><i>${r.id === now ? '▶' : mark[r.state] ?? '·'}</i>`
           + `${r.icon} <b>${esc(r.title)}</b>${note}</li>`;
       };
-      const chain = rows.filter((r) => !r.tag).map(li).join('');
+      const chain = rows.filter((r) => !r.tag && !r.dojo).map(li).join('');
       const tags = rows.filter((r) => r.tag).map(li).join('');
+      const dojo = rows.filter((r) => r.dojo).map(li).join('');
       const next = step ? `<div class="pn-next"><b>NEXT:</b> ${esc(step.where)}</div>`
         : '<div class="pn-next"><b>ALL DONE.</b> Every one of my quests is settled.</div>';
       const acts = ['MARK IT ON MY MAP', '◀ BACK'].map((t, k) => `
@@ -1554,6 +1640,28 @@ export class Payne {
         <ol class="pn-list">${chain}</ol>
         <div class="pn-tag">TAG-ALONGS — whoever leads at the end</div>
         <ol class="pn-list">${tags}</ol>
+        <div class="pn-tag">THE DREAM DOJO — anyone can try, any time</div>
+        <ol class="pn-list">${dojo}</ol>
+        <div class="pn-acts">${acts}</div>
+        <div class="pc-foot">${backButton(index, 'BACK')}<span>JUMP <b>choose</b> · INTERACT <b>back</b></span></div>
+      </div>`;
+    }
+
+    if (state === 'payneDojo') {
+      const honor = questState(g, p, 'shadow');
+      const acts = DOJO_ACTS.map(([, t], k) => `
+        <div class="pc-row pn-act${k === cursor ? ' cursor' : ''}" data-side="${index}" data-row="${k}"><b>${t}</b></div>`)
+        .join('');
+      return `<div class="pc-inner pn-card pn-dojo">${head}
+        <div class="pn-next"><b>WHERE:</b> past the Dojo of the Turning Circle. Jump the floating stones to the
+          bubble of light — the front door is the only way in.</div>
+        <ul class="pn-dd">
+          <li>🥽 <b>Suit up</b> — talk to Lionheart for your VR gear, then step into your tube.</li>
+          <li>🏝 <b>Train</b> — Kotodama, clan powers, sword skills and the maths of the circle, an island each.</li>
+          <li>⭐ <b>Climb the ranks</b> — earn stars and become a KENSHI.</li>
+          <li>🦁 <b>Lionheart's Honor</b> — beat his Shadow for a SPECIAL Kotodama.
+            <span class="pc-dim">${honor === 'done' ? '✔ you have it!' : 'anyone can try.'}</span></li>
+        </ul>
         <div class="pn-acts">${acts}</div>
         <div class="pc-foot">${backButton(index, 'BACK')}<span>JUMP <b>choose</b> · INTERACT <b>back</b></span></div>
       </div>`;
@@ -1585,10 +1693,14 @@ export class Payne {
   /** How many rows the cursor ranges over in this state. */
   rowCount(p, state) {
     if (state === 'payneQuests') return 2;
+    if (state === 'payneDojo') return DOJO_ACTS.length;
     if (state === 'payneTrick') return 0;
     return this.rows(p).length;
   }
 
   /** Map a quests-view row to an action key. */
   questAct(row) { return row === 0 ? 'mark' : 'back'; }
+
+  /** Map a Dream Dojo row to an action key. */
+  dojoAct(row) { return DOJO_ACTS[row]?.[0] ?? 'back'; }
 }

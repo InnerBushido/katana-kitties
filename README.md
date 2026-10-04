@@ -307,13 +307,18 @@ Finish her quests, win some fights in the arena, and she'll teach you a
 ## The Dream Dojo
 
 Out past the **Dojo of the Turning Circle** there's a round pad floating on its
-own, under a glowing dome. Dragons and pandas can't get in, so you'll have to
-**jump across the stepping stones**.
+own, under a glowing dome. Dragons and pandas can't get in, and neither can
+anybody who tries to drop in over the top: you slide right off. The front door
+is **four floating stones in a half-circle**. Fall off and you pop back on the
+Dojo after a couple of seconds, so just try again! The music gets louder the
+closer you get.
 
 That's **Lionheart's VR arcade**. He's the red samurai cat with the giant
-sword, and the sword is called **Honor**. Talk to him and he'll walk you to
-**your** tube (Ember gets tube 1, Frost tube 2, and so on). Your visor comes
-down, you float up and the world melts into green code. Now you're **in the
+sword, and the sword is called **Honor**. The first time you talk to him,
+he sends you round the glowing racks for your **VR headset, gloves and
+tracking suit**, then *poof*, you're suited up. After that, talking to him
+suits you up straight away. He walks you to **your** tube (Ember gets tube 1,
+Frost tube 2, and so on), you float up and the world melts into green code. Now you're **in the
 simulator**: the same place, but a different world, where your sisters can't
 see you.
 
@@ -386,8 +391,9 @@ Straight across from the start is the **Arena School**:
   one for the week (+2 if you get three stars on it).
 
 Ride the light cycle off the far side of the school to fight **Shadow
-Lionheart**, a giant purple copy of Lionheart. He only fights **2nd Class and
-up**, and everyone on his floor fights together:
+Lionheart**, a purple copy of Lionheart. **Anyone can try**, and everyone on
+his floor fights together. Beat him for **Lionheart's Honor**, which pays a
+**special** Kotodama orb (it could be a rare one!):
 
 - Red on the floor shows where he's about to hit. A **red line** means step out
   of it.

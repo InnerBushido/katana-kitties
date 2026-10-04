@@ -324,6 +324,16 @@ export const MUSIC = {
      whenever there is no match — so walking off the road, standing at his
      doors, and the parade back out of them. `Game._wantedTrack` decides.
      0.19s eighths, 24 seconds round. */
+  /* ---- THE DREAM DOJO ------------------------------------------------------
+     A VR arcade, and the only piece made of saws — see `_vrStep`. Its volume
+     is the game's as well as the slider's: quiet across the stones, half at
+     the dome, full inside (`setMusicLevel`, `DreamDojo.musicLevel`). The
+     simulator plays it too: in there she IS in the VR dojo. */
+  vr: {
+    scale: [0, 3, 5, 7, 10], beat: 0.115, root: 110.0, oct: 1, drone: 0,
+    taiko: 0, rest: 1, tune: 'vr', mix: 1.2,
+  },
+
   saucer: {
     scale: [0, 2, 4, 7, 9], beat: 0.19, root: 174.61, oct: 1, drone: 0,
     taiko: 0, rest: 1, tune: 'saucer',
@@ -439,6 +449,8 @@ export class Audio {
     this.ready = false;
     this.sfxVolume = 0.75;
     this.musicVolume = 0.4;
+    /** The piece's own level on top of the slider — see `setMusicLevel`. */
+    this.musicLevel = 1;
     this._noiseBuf = null;
     this._voices = 0;
     /* Decoded one-shots, by name. Empty until `resume` — and possibly for
@@ -629,7 +641,24 @@ export class Audio {
   setMusicVolume(v) {
     this.musicVolume = v;
     if (this.musicBus && this._musicTimer) {
-      this.musicBus.gain.setTargetAtTime(v, this.ctx.currentTime, 0.2);
+      this.musicBus.gain.setTargetAtTime(v * this.musicLevel, this.ctx.currentTime, 0.2);
+    }
+  }
+
+  /**
+   * How loud the PIECE wants to be, 0..1, on top of the player's slider —
+   * the Dream Dojo's music swelling as she crosses to it (`Game._updateMusic`,
+   * `DreamDojo.musicLevel`). A separate number from `musicVolume` because the
+   * slider is HERS and this is the game's: multiplying the two means a kitten
+   * who turned the music down to a quarter still hears the swell, a quarter as
+   * loud, and one who turned it off hears nothing at all.
+   */
+  setMusicLevel(k) {
+    const v = Math.max(0, Math.min(1, Number.isFinite(k) ? k : 1));
+    if (Math.abs(v - this.musicLevel) < 0.01) return;
+    this.musicLevel = v;
+    if (this.musicBus && this._musicTimer && !this._ducked) {
+      this.musicBus.gain.setTargetAtTime(this.musicVolume * v, this.ctx.currentTime, 0.35);
     }
   }
 
@@ -1465,7 +1494,7 @@ export class Audio {
     if (this._musicTimer && this._mode !== mode) this.stopMusic();
     this._mode = mode;
     if (this._musicTimer) return;
-    this.musicBus.gain.setTargetAtTime(this.musicVolume, this.ctx.currentTime, 0.8);
+    this.musicBus.gain.setTargetAtTime(this.musicVolume * this.musicLevel, this.ctx.currentTime, 0.8);
     this._nextNote = this.ctx.currentTime + 0.1;
     this._step = 0;
     // Schedule ahead on a timer rather than per-frame: audio timing must not
@@ -1487,9 +1516,9 @@ export class Audio {
   /** Duck the music (pause menu) without tearing the schedule down. */
   duck(on) {
     if (!this.ready || !this._musicTimer) return;
-    this.musicBus.gain.setTargetAtTime(
-      on ? this.musicVolume * 0.25 : this.musicVolume, this.ctx.currentTime, 0.25
-    );
+    this._ducked = !!on;
+    const v = this.musicVolume * this.musicLevel;
+    this.musicBus.gain.setTargetAtTime(on ? v * 0.25 : v, this.ctx.currentTime, 0.25);
   }
 
   _schedule() {
@@ -1819,6 +1848,7 @@ export class Audio {
    *  that names a tune nobody wrote still plays a song rather than silence. */
   _tuneStep(t, step, M) {
     if (M.tune === 'kungfu') this._kungfuStep(t, step, M);
+    else if (M.tune === 'vr') this._vrStep(t, step, M);
     else if (M.tune === 'saucer') this._saucerStep(t, step, M);
     else this._strutStep(t, step, M);
   }
@@ -2105,6 +2135,114 @@ export class Audio {
    * four. And the three jokes a funfair is not a funfair without: a honk, a
    * slide whistle, and a cymbal a beat too eager.
    */
+  /**
+   * THE DREAM DOJO — a VR arcade. Richard: "Let's add some cool VR Arcade
+   * music to the Dream Dojo that starts playing quietly, from a distance, as
+   * the user is jumping/commuting to the island and starts getting louder as
+   * they get closer ... and then full blast volume when people enter the
+   * sphere, to make it feel like they are really entering a VR Dojo immersive
+   * playground."
+   *
+   * SYNTHWAVE, AUTHORED, ORIGINAL. Everything else in the game is a koto or a
+   * band; this is the one place made of light, so it is the one piece made of
+   * saws: four on the floor at 130, an octave-pumping bass in sixteenths, a
+   * gated arpeggio, a wide pad, a lead with a laser's vibrato and the odd
+   * "pew" sweeping down across the stereo of a kid's imagination. A minor —
+   * i VI III VII, the progression every arcade cabinet's attract screen has
+   * leaned on — and a tune written for this over it.
+   *
+   * One step is a SIXTEENTH (`beat` 0.115). 128 steps is eight bars, 14.7s; the
+   * lead only enters on the second time round, so the crossing — about the
+   * first eight seconds a kitten hears it, quietly — is beat and bass, and the
+   * tune arrives as she reaches the dome.
+   */
+  _vrStep(t, step, M) {
+    const B = this._band(M.mix);
+    const beat = M.beat;
+    const s = step % 256;
+    const half = s >= 128;              // second time round: the lead is in
+    const ss = s % 128;
+    const barN = Math.floor(ss / 16);
+    const i = ss % 16;
+    const A2 = M.root;                  // 110 Hz
+    const hz = (n, base = A2) => base * Math.pow(2, n / 12);
+    // Am  F  C  G, twice. Semitones from A, and the chord's own shape.
+    const ROOTS = [0, -4, 3, -2, 0, -4, 3, -2];
+    const r = ROOTS[barN];
+    const minor = r === 0;
+    const chord = minor ? [0, 3, 7] : [0, 4, 7];
+
+    // KICK on the quarter, CLAP on two and four, HATS on the off-eighths.
+    if (i % 4 === 0) B.kick(t, 0.26, 160, 42);
+    if (i === 4 || i === 12) {
+      B.noise(t, 'bandpass', 1500, 0.11, 0.12, 0.8);
+      B.noise(t + 0.012, 'bandpass', 1900, 0.07, 0.10, 0.9);
+    }
+    if (i % 4 === 2) B.noise(t, 'highpass', 7000, 0.05, 0.05);
+    else if (half && i % 2 === 1) B.noise(t, 'highpass', 9000, 0.018, 0.03);
+
+    // BASS: the root, pumping an octave, every sixteenth — ducked off the kick.
+    {
+      const n = r + (i % 2 ? 12 : 0);
+      const duck = i % 4 === 0 ? 0.6 : 1;
+      B.osc({ at: t, hz: hz(n, A2 / 2), type: 'sawtooth', peak: 0.075 * duck, a: 0.004, d: beat * 0.8, cut: 520, q: 4, det: [-6, 6] });
+    }
+
+    // PAD on the bar, a wide detuned chord that holds it.
+    if (i === 0) {
+      for (const q of chord) {
+        B.osc({ at: t, hz: hz(r + q, A2 * 2), type: 'sawtooth', peak: 0.012, a: 0.35, d: beat * 15, cut: 1400, det: [-12, 0, 12] });
+      }
+    }
+
+    // ARP: the chord up two octaves and back, square, gated.
+    if (barN >= 2 || half) {
+      const ARP = [0, 1, 2, 3, 4, 5, 4, 3, 2, 1, 0, 1, 2, 3, 4, 3];
+      const k = ARP[i];
+      const n = r + chord[k % 3] + 12 * Math.floor(k / 3);
+      B.osc({ at: t, hz: hz(n, A2 * 4), type: 'square', peak: 0.016, a: 0.003, d: beat * 0.7, cut: 2600, q: 2 });
+    }
+
+    // THE LEAD. Semitones from A4, in eighths; null is a rest, a negative
+    // length marker is a held note. Written for this.
+    if (half && i % 2 === 0) {
+      const LEAD = [
+        [12, null, 15, 14, 12, null, 10, 12],
+        [8, null, null, 7, 8, 10, null, null],
+        [7, null, 10, 12, 15, null, 14, 12],
+        [10, null, null, null, 7, 10, 12, null],
+        [12, null, 15, 14, 12, null, 10, 12],
+        [15, null, 17, 15, 12, null, 8, 10],
+        [12, null, null, 15, 19, null, 17, 15],
+        [14, null, null, null, null, null, 12, null],
+      ];
+      const n = LEAD[barN][i / 2];
+      if (n != null) {
+        const held = LEAD[barN][i / 2 + 1] === null ? 2.2 : 0.9;
+        B.osc({
+          at: t, hz: hz(n, 440), type: 'sawtooth', peak: 0.04, a: 0.01, d: beat * 2 * held,
+          cut: 3200, q: 1.5, det: [-8, 8], scoop: 0.94, vib: 6, depth: 0.008,
+        });
+      }
+    }
+
+    // THE LASER: a sine swept down two octaves, every four bars on the "and".
+    if (i === 14 && (barN === 3 || barN === 7)) {
+      const o = B.ctx.createOscillator();
+      const g = B.ctx.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(2400, t);
+      o.frequency.exponentialRampToValueAtTime(300, t + 0.3);
+      B.env(g, t, 0.05, 0.005, 0.3);
+      o.connect(g).connect(B.bus);
+      o.start(t);
+      o.stop(t + 0.36);
+    }
+    // A riser into the top of the loop, and a crash on it.
+    if (barN === 7 && i >= 8) B.noise(t, 'highpass', 1500 + (i - 8) * 900, 0.008 + (i - 8) * 0.004, 0.1);
+    if (ss === 0) B.noise(t, 'highpass', 5000, 0.06, 1.3);
+  }
+
   _saucerStep(t, step, M) {
     const B = this._band(M.mix);
     const beat = M.beat;
