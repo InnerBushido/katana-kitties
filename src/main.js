@@ -13,8 +13,6 @@ import {
 } from './core/device.js';
 import { readPrefs, writePref } from './core/prefs.js';
 
-/** sessionStorage: the intro has played in this tab. See `toTitle`. */
-const INTRO_SEEN_KEY = 'kk.introSeen';
 import { TouchPad, wardLatchExpired } from './core/touchpad.js';
 import { World, CLANS } from './world/world.js';
 import { Player, ATTACKS, COMBAT, BASE_REACH, MAX_HP, KO_TIME, SWEEP_UP } from './entities/player.js';
@@ -1352,10 +1350,6 @@ class Game {
     /* ...AND LOAD A SAVED GAME APPEARS ON IT, but only on a machine that has
        one. See `_refreshTitleLoad`. */
     this._refreshTitleLoad();
-    /* What survives the phone's trip back to the title — see `toTitle`. */
-    try {
-      if (sessionStorage.getItem(INTRO_SEEN_KEY)) this.introPlayed = true;
-    } catch { /* private mode: the intro may play again, which is the old rule */ }
     this.renderer.setAnimationLoop(() => this._tick());
   }
 
@@ -3409,6 +3403,8 @@ class Game {
       if (p.panda) this.scene.remove(p.panda.group);
       p.panda = null;
       p.raisedPanda = false;
+      // Lionheart's racks are a first-visit thing, and this is a first visit.
+      p.dreamGeared = false;
       /* AND THE ONES BELONGING TO KITTENS NOBODY IS PLAYING, which live in
          `_parkedPandas` and are in the scene exactly like these. Missed, a
          restart would leave a grown panda standing in a town that has just
@@ -3655,9 +3651,9 @@ class Game {
        looking at; a reload is the one reset that gives them back, and the
        title it lands on builds nothing until PLAY (see `boot`). Nothing is
        lost that the in-place path keeps: the record board, the saves and the
-       settings are all in localStorage, and "the intro has played" is carried
-       in sessionStorage by `startPlay`. The dialog in front of this already
-       says the game ends. */
+       settings are all in localStorage, and the PLAY that follows is a new
+       game, which opens with the intro like any other (see `startPlay`). The
+       dialog in front of this already says the game ends. */
     if (this._lazyWorld) {
       window.location.reload();
       return;
@@ -4040,16 +4036,18 @@ class Game {
 
     this._enterPlay();
 
-    /* The story, once per session. It plays here rather than on the title
+    /* THE STORY, EVERY NEW GAME. It plays here rather than on the title
        screen because this is the first guaranteed user gesture — the intro
        has music and voices, and starting it a moment earlier would mean
-       starting it silently. Restarting the world doesn't replay it; the
-       pause menu has a button for people who want it again. */
-    if (this.cutscene && !this.introPlayed) {
-      this.introPlayed = true;
-      /* "Once per session" has to survive the phone's reload to the title,
-         which is what sessionStorage is: this tab, until it is closed. */
-      try { sessionStorage.setItem(INTRO_SEEN_KEY, '1'); } catch { /* see _showTitle */ }
+       starting it silently.
+       IT USED TO BE ONCE PER TAB, carried in sessionStorage so a phone's
+       reload to the title would not replay it — and a refresh keeps
+       sessionStorage, so a refreshed tab never saw it again. Richard:
+       "Refreshing the browser isn't playing the intro cutscene ... Are these
+       states being saved independently of a new game?" PLAY is a new game,
+       and a new game opens on the story; LOAD is not, and does not (it calls
+       `_enterPlay`, never this). Esc or Start skips it, as ever. */
+    if (this.cutscene) {
       this.cutscene.play();
     } else {
       // _updateMusic takes it from here; this just avoids a silent first frame.
@@ -8069,13 +8067,11 @@ class Game {
        afternoon must not replay the intro over the top of itself, and must not
        stop to ask about the trailer.
 
-       AND THE STORY IS MARKED SPENT WITH IT. The intro is "once per session"
-       and this session is one somebody was already halfway through — the save
-       itself carries which scenes have played (`snap.scenes`), and the opening
-       narration is not one a girl resuming her afternoon should sit through. */
+       AND NO INTRO: this is an afternoon somebody was already halfway
+       through — the save itself carries which scenes have played
+       (`snap.scenes`), and the opening narration is not one a girl resuming
+       her afternoon should sit through. `startPlay` is the only door to it. */
     if (this.state !== 'play') {
-      this.introPlayed = true;
-      try { sessionStorage.setItem(INTRO_SEEN_KEY, '1'); } catch { /* see _showTitle */ }
       this._enterPlay();
       this.audio.startMusic(this._wantedTrack(0) ?? 'play');
     }
@@ -9603,8 +9599,9 @@ class Game {
         for (const o of p.featOrbs ?? []) o.update(dt, p.position);
       }
       this._updateMusic(dt);
+      // Its lens says which world it is in: see StoryScene.update.
       this._renderView(this.storyScene.camera, 0, 0,
-        ...this.renderer.getSize(new THREE.Vector2()).toArray(), null, true);
+        ...this.renderer.getSize(new THREE.Vector2()).toArray(), null, true, this.storyScene.loc);
       return;
     }
 
@@ -13188,7 +13185,9 @@ class Game {
     }
   }
 
-  _renderView(camera, x, y, w, h, members = null, scene = false) {
+  /** `realm` — 'sim' or 'real' — is for a lens with no kittens to ask: a
+   *  scene's camera that knows which world its shot is in (StoryScene). */
+  _renderView(camera, x, y, w, h, members = null, scene = false, realm = null) {
     if (w < 2 || h < 2) return;
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
@@ -13204,7 +13203,7 @@ class Game {
        the simulator at all. Swapped and put back around ONE render call, so
        no other pane, and no other part of the frame, ever sees the swap. */
     const D = this.dream;
-    const sim = !!(members && D?.sim && D.paneIsSim(members));
+    const sim = !!(D?.sim && (realm ? realm === 'sim' : members && D.paneIsSim(members)));
     let kept = null;
     if (D?.sim) {
       const W = this.world;

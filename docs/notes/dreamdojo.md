@@ -114,8 +114,9 @@ A scene that frames "the kittens" must find them in the real world.
 
 - **Layout** (`arcadeLayout`): the pad is at `ARCADE {x:-162, z:2, r:14, y:33}`.
   ~~Two stones sit across the gap from the Dojo, with hops of 2.7, 2.5 and
-  3.8.~~ "It is currently too easy to fall": four stones on a half-circle now
-  (`STONE_ARC`; see the front door, below).
+  3.8.~~ ~~"It is currently too easy to fall": four stones on a half-circle.~~
+  Three stones and a gate now (`STONES`, `dream/gate.js`; see "The front
+  door, and the fix list after it", below).
 - **The dome** (`DOME_R` 19) pushes dragons, Ryuuseki and pandas out to r 20.5
   and toasts the rider.
   **The first cut was rejected on sight.** It was a square lattice with alternate
@@ -127,8 +128,8 @@ A scene that frames "the kittens" must find them in the real world.
   world.
 - **Hard parts use `toonVertexMat`.** A bare `MeshToonMaterial` without the
   ramp looks different from every other mesh in the game.
-- **The visor** sits at `height * VISOR_Y` (0.80). This was checked by eye on
-  Ember mid-rise: it is on her eyes.
+- ~~**The visor** sits at `height * VISOR_Y` (0.80).~~ There is no visor plane
+  any more: the suit-up dresses her in the headset sheet (see below).
 
 ## Stage 2 — the Gallery, the Trial Hall and the rundown
 
@@ -877,16 +878,19 @@ Dojo island to gather all the VR gear, then have them turn to camera, and then
 have a special effect play."** Both, and the second is what fixes the first.
 The visor plane slid off her eyes because it was a separate quad over a drawing
 whose head moves from cell to cell. Now she wears the headset SHEET from the
-moment she suits up. The plane is only a fallback for a build where that sheet
-never loaded (`_wearVisor(p, !p._simArt)`).
+moment she suits up. ~~The plane is only a fallback for a build where that
+sheet never loaded.~~ The plane is gone altogether, fallback included — see the
+fix list below.
 
 - **First visit:** she talks to Lionheart, he sends her round the three racks
   (`GEAR_LINES.first`, voiced), and she picks each up by walking into it (a
   toast per rack). The tube refuses her in words until she has all three. The
   last rack starts phase `suit`: she turns to the lens, the poof covers her,
   and she is dressed at 0.33 s of `SEQ.suit` (1.9 s).
-- **Every visit after:** `geared` is in the Dream Dojo's own progress store, so
-  a second talk goes straight to the suit (`GEAR_LINES.again`).
+- **Every visit after:** a second talk goes straight to the suit
+  (`GEAR_LINES.again`). Whether she has geared is `p.dreamGeared`, in her save
+  row — ~~it was in the Dream Dojo's own progress store~~, which outlived every
+  game (see the fix list below).
 - **Each kitten gears up for herself.** A sister has her own racks to collect.
 - **Out:** "they should automatically walk out of the tube, and poof … to put
   their regular clothes back on." Phase `walkout` walks her 3.2 units toward
@@ -900,9 +904,9 @@ never loaded (`_wearVisor(p, !p._simArt)`).
 
 **"It is currently too easy to fall … Having 3 or 4 platforms to jump on …
 have it go in a half circle pattern towards the island … If they do fall …
-let them fall for 2 - 3 seconds before respawning them."** `STONE_ARC`: four
+let them fall for 2 - 3 seconds before respawning them."** ~~`STONE_ARC`: four
 stones of radius 2.0 on an arc of radius 15.5, at 44°, 66°, 88° and 110°, each
-0.6 higher than the last. The two old stones in a straight line had hops of
+0.6 higher than the last.~~ Superseded by three stones and a gate (below). The two old stones in a straight line had hops of
 2.7, 2.5 and 3.8. A kitten below the stone she left is held for `FALL_HOLD`
 (2.2 s) and put back at `LAUNCH_R` (63, three units inside the Dojo's rim, in
 front of where she took off). The check also proves she is not caught out at
@@ -937,9 +941,9 @@ the player is able to fly through still."** The dragon is hung off its rider
 (`Player._updateFlight`), so pushing the DRAGON moved a body that was put back
 under her next frame. The rider is pushed now, and the dragon goes with her
 (both 20.50 from the centre after the push), with a toast saying why. The dome
-is a wall for a kitten on foot everywhere except one DOOR: the low sector
+is a wall for a kitten on foot everywhere except one DOOR: ~~the low sector
 (`DOOR_HALF` 20°, under `DOOR_TOP`) that the third stone's hop onto the fourth
-passes through. "If a player tries to jump off of a dragon to fall into the
+passes through~~ the gate's deck (below). "If a player tries to jump off of a dragon to fall into the
 dojo … they should slide off the sides of the sphere": `domeContact` lays her
 on the surface and slides her off (47.3 out in the check), then the fall
 respawns her. The door hop is untouched.
@@ -947,7 +951,9 @@ respawns her. The door hop is untouched.
 **Lionheart's two talks.** Both are in `lecture.js`.
 - **HE SAW THAT.** Trying the wall or dropping from a dragon sets the `cheat`
   flag, and he yells as a bubble (`yellWall` / `yellDrop`): "in a funny and
-  overly excited and berating way".
+  overly excited and berating way". Only `yellDrop` is VOICED: the wall yell's
+  clip was cut ("not a good voice and is too loud and aggressive"), so it is a
+  bubble and a toast and nothing louder.
 - **HONOR** (seven lines) plays when a kitten with `cheat` who has since come
   in by the stones walks near him. "He can apologize for getting angry … why
   try to sneak into a space when the front door is already opened … 'Do' means
@@ -985,6 +991,95 @@ Payne's side of it is in [payne.md](payne.md#the-dream-dojo-section).
 **Two players.** None of this has a two-player special case to break. The
 state is per kitten; the cameras, the music and the talks ask the same
 questions at any count. The check runs a pair through it and pins that.
+
+## The front door, and the fix list after it
+
+Richard's list after playing the gear-up and the four stones. Each item is
+quoted, then what was actually wrong, then what changed.
+
+**"Too many jumping platforms on the way to the Dream Dojo, let's just make it
+3 platforms to make it a bit more challenging. Also, we need to make sure the
+entrance is bigger, more interesting looking, and placed in front of the last
+floating platform, and that it is the only way to enter the dojo, so we can put
+a railing all around the dojo that ends at the entrance."**
+- **Three stones** (`STONES` in `dreamdojo.js`): radius 2.2, every hop 3.2 edge
+  to edge, each 0.75 higher, Dojo (30) → 30.75 → 31.5 → 32.25 → the landing
+  (33). Measured hops 3.45, 3.20, 3.20, 3.20 (the first is against the rim as
+  measured along the line, 65.75). A single jump reaches ~9, so the challenge
+  is the landing, not the distance. The middle stone is SOLVED as one hop from
+  both of its neighbours, on the left, so the gaps cannot drift; the way still
+  turns 62°.
+- **The gate** (`dream/gate.js`): a deck runs out of the pad along the old
+  door's bearing (55° from the near side toward screen-left, so every prop
+  laid out clear of "the way in" still is), past the dome to a round landing
+  at 22.2. A torii stands on it exactly at the dome's skin, so walking through
+  the gate and walking through the dome are the same act. The last stone sits
+  on the gate's axis, one hop out from the landing.
+  **First cut, rejected in the browser:** a steel-dark torii like the rest of
+  the pad, which from the stones read as two more posts of the railing. It is
+  vermilion and black-capped now, 10.8 tall, with neon outlines, a 夢 plaque,
+  two lanterns, chevrons on the deck pulsing inward and a faint scanline
+  shimmer in the opening.
+- **The railing is real.** `railCorrect` holds a kitten on foot inside the pad
+  and the deck's strip, and lets her out only through the gate's mouth. The
+  check runs at it on 36 bearings: held at ≤ 13.75 on every one except the
+  gate's, out through the gate to 20+. A kitten carried off (a fall, a scene, a
+  summons) has moved further in a frame than she can run, and is not dragged
+  back.
+- **The door is the deck's strip, not a wedge.** It was an angle seen from the
+  pad's centre, and an angle narrows as she walks in: the check's kitten 2.45
+  off the axis was in the door at the skin and in the wall three units on, and
+  was slid back out of the gate she had just walked through. And the dome now
+  leaves alone a kitten inside the railing; with both, the dome slid her off
+  the deck's side while the rail pulled her back, and the dome won.
+- **A treadmill moved.** The second one stood 1.9 off the gate's axis, its
+  waist hoop across the lane in. It is 6 off it now.
+
+**"The Dream Dojo is not currently appearing in the minimap."** It is not one
+of `world.islands`, which is all the map's island loop ever drew. `build` now
+leaves `world.dreamDojo` (`dreamSite`), and `Minimap._drawDream` draws the
+pad, the dome's ring, the gate as a magenta bar, a dot per stone and its name.
+**First cut, seen in the browser:** the name under the pad landed on the
+Dojo's own label at world zoom. It is above the pad now, 36px clear.
+
+**"When talking to Payne and marking the Dream Dojo on the minimap, once the
+player gets there, the mark should be removed."** It waited for her to stand
+on the pad, so the beam stood on the rim behind her all the way across. It
+comes off at the marked spot (`DD_MARK_NEAR`, 7), on any stone, or on the pad
+(`ddMarkReached` in payne.js).
+
+**"During the cutscene with Payne about the Dream Dojo, when the cutscene
+transitions to the 'simulation' world ... I can only see the dojo of the
+turning circle."** `Game._renderView` draws the simulator layer only for a
+pane whose kittens are in it, and a scene's lens has no kittens. The holo-Dojo's
+MathDojo hangs off the scene rather than the layer, so it was the one thing
+left. `StoryScene` now sets `loc` from each frame's shot and the renderer takes
+its word (`realm`). The check plays the whole tour: 125 of 539 frames in the
+sim, none mislabelled.
+
+**"When player is entering the simulation, the camera is in the wrong
+placement."** The dome camera's weight eased out at `CAM_BLEND` after she
+crossed, and its centre is the REAL pad, 12,000 units from her. Without the fix
+the lens ended 8358 off her. On the far side the weights drop on the spot, and
+in the tube phases her own follow camera frames her (`TUBE_PHASES`).
+
+**"No longer need to place the 3D VR headset in front of their face."** The
+visor plane is gone, fallback and puppet included. A build with no headset
+sheet shows her in her own clothes: a drawing that is right rather than a
+plane that is wrong.
+
+**"Refreshing the browser isn't playing the intro cutscene and ... Lionheart
+just suits you up right away ... even on a brand new game. Are these states
+being saved independently of a new game?"** Yes, both were.
+- The intro was once per TAB, in sessionStorage, which a refresh keeps. PLAY
+  is a new game and now always opens on the story; LOAD never does.
+- `geared` was in `kk.dreamdojo.v1`, beside her stars, which outlives every
+  game. It is `p.dreamGeared` now: saved in her row (`castRow` / `applyCast`)
+  and cleared by `restart`.
+
+**"Lionheart's voice when the player tries to enter the dojo by running into
+the wall with a dragon is not needed."** `lion_yell_wall` is deleted (clip and
+raw take). The bubble and the toast stay; `lion_yell_drop` stays. 34 clips.
 
 ## Voice
 

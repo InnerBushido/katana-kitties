@@ -593,8 +593,9 @@ quoted.
     poofs on; later visits go straight to the suit. She walks out of the tube
     and poofs back into her own look.
   - **The six special poses exist in the headset** (12 masters, 4 kittens).
-  - **The way across** is four stones on a half-circle. A fall is held 2.2 s,
-    then puts her back on the Dojo. On the stones the camera holds one bearing.
+  - **The way across** ~~is four stones on a half-circle~~ is three stones and
+    a gate now (the next list). A fall is held 2.2 s, then puts her back on the
+    Dojo. On the stones the camera holds one bearing.
   - **The `vr` synthwave piece** swells from 0.08 to 0.5 to 1 as she crosses
     and enters.
   - **The dome** pushes the RIDER, so the dragon goes with her. A kitten
@@ -608,6 +609,38 @@ quoted.
   - **Open:** nobody has played it. The tour has fifteen rows and is long by
     design ("longer and more detailed"). If it drags, it gets cut by rows, not
     by speeding the voices. All new Payne lines are pending her approval.
+
+- **Richard's next Dream Dojo list** (branch
+  `mixed/dojo-riposte-minimap-gate-dealer`).
+  [dreamdojo.md](docs/notes/dreamdojo.md#the-front-door-and-the-fix-list-after-it)
+  has each note quoted with its cause and numbers:
+  - **Three stones and a gate.** A vermilion holographic torii on a deck at
+    the dome's skin, the last stone on its axis, and a REAL railing round the
+    pad and along the deck that only the gate lets you through
+    (`dream/gate.js`; 36 bearings checked).
+  - **The Dream Dojo is on the minimap**: pad, dome ring, gate, stones, name.
+  - **Payne's mark comes off** at the marked spot, a stone or the pad.
+  - **The tour's sim shots draw the simulator** (`StoryScene.loc` →
+    `_renderView`'s `realm`). Only the holo MathDojo showed before.
+  - **The camera into the sim** no longer drags back toward the real pad.
+  - **No visor plane at all**, fallback included.
+  - **A new game is a new game:** PLAY always opens on the story (not once per
+    tab), and the gear-up is `p.dreamGeared` in her save row, cleared by
+    `restart` (it lived in the Dream Dojo's own long-term store).
+  - **The profile tags Lionheart's Honor as a special quest.**
+  - **The wall yell is unvoiced** (`lion_yell_wall` deleted; 34 clips).
+  - **The Kotodama Dealer's booth is 1.5× bigger**, solid and prompt with it.
+  - **Open — the rare orbs are still not merged.** `feature/rare-orbs-reach-parry`
+    (Riposte, Far Step, Long Parry) is the branch the Gallery's missing orbs
+    live on. It was held out of alpha and main on purpose ("not for alpha
+    until Richard has played the Payne work"), which is why the Gallery lacks
+    them. Merging it conflicts in HANDOFF.md, docs/notes/art.md,
+    src/entities/powerorb.js and tools/world-check.mjs, and the session's
+    attempt to resolve them was stopped by the permission guard. It needs
+    Richard's go-ahead in the session, then the conflicts resolved and the
+    three orbs wired into the Gallery and the simulator. No other unmerged
+    branch is critical: `extra/scratchpad-ideas` is scratch files and
+    Richard's clone takes, which stay out.
 
 - **Richard's Dream Dojo fix list** (branch
   `mixed/dojo-islands-bridges-feast-shadow`).

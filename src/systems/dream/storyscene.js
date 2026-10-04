@@ -379,6 +379,14 @@ export class StoryScene {
     const s = shotFor(row.shot, this.ctx, k);
     this.camera.position.set(s.pos.x, s.pos.y, s.pos.z);
     this.camera.lookAt(s.look.x, s.look.y, s.look.z);
+    /* WHICH WORLD THIS LENS IS IN, for the renderer (`Game._renderView`).
+       A pane is drawn with the simulator in it only when its kittens are in
+       the simulator, and a scene's lens has no kittens — so the tour's three
+       sim shots were drawn with the whole layer switched off, and the only
+       thing left was the holo-Dojo's MathDojo, which hangs off the scene
+       rather than the layer. Richard: "I can only see the dojo of the turning
+       circle parts of the cutscene and everything else is not being shown". */
+    this.loc = s.loc;
 
     // Typewriter, on the clip's own playhead when it has one.
     const clock = this.voiceEl && this.voiceEl.currentTime > 0 ? this.voiceEl.currentTime : this.t;

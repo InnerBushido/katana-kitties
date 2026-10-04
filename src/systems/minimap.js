@@ -84,6 +84,17 @@ export class Minimap {
       minZ = Math.min(minZ, isl.z - isl.radius);
       maxZ = Math.max(maxZ, isl.z + isl.radius);
     }
+    /* The Dream Dojo is not one of `world.islands` — it is raised afterwards,
+       by DreamDojo.build, which leaves `world.dreamDojo` for exactly this. It
+       sits well inside the archipelago's box today (measured), so this
+       changes no scale; it is here so it never silently falls off an edge. */
+    const dd = world.dreamDojo;
+    if (dd) {
+      minX = Math.min(minX, dd.x - dd.reach);
+      maxX = Math.max(maxX, dd.x + dd.reach);
+      minZ = Math.min(minZ, dd.z - dd.reach);
+      maxZ = Math.max(maxZ, dd.z + dd.reach);
+    }
     this.bounds = { minX, maxX, minZ, maxZ };
     this._resize();
 
@@ -160,6 +171,69 @@ export class Minimap {
     return this.zoom;
   }
 
+  /**
+   * THE DREAM DOJO, ON THE MAP. Richard: "The Dream Dojo is not currently
+   * appearing in the minimap. We should show it as it is a location players
+   * can go to." It was not an island (`world.islands` is the six and the two
+   * special ones), so the loop above never knew it was there. Drawn as what it
+   * IS from above: the pad, the dome's ring round it, the three stones leading
+   * to it, the gate as a magenta bar on the ring, and its name.
+   */
+  _drawDream() {
+    const dd = this.world.dreamDojo;
+    if (!dd) return;
+    const c = this.ctx;
+    const x = this._px(dd.x);
+    const y = this._py(dd.z);
+    const dpr = this.dpr;
+    // The pad, at least a few pixels across even at world zoom.
+    const r = Math.max(3 * dpr, dd.r * this.scale);
+    c.beginPath();
+    c.arc(x, y, r, 0, Math.PI * 2);
+    c.fillStyle = '#323a52';
+    c.globalAlpha = 0.92;
+    c.fill();
+    c.globalAlpha = 1;
+    c.lineWidth = 1.5 * dpr;
+    c.strokeStyle = 'rgba(28,16,22,0.75)';
+    c.stroke();
+    // The dome.
+    const R = Math.max(r + 2 * dpr, dd.dome * this.scale);
+    c.beginPath();
+    c.arc(x, y, R, 0, Math.PI * 2);
+    c.lineWidth = 1.6 * dpr;
+    c.strokeStyle = '#5ff6ff';
+    c.stroke();
+    // The gate, a bar across the dome's ring where the deck goes through it.
+    const gx = Math.cos(dd.gate);
+    const gz = Math.sin(dd.gate);
+    c.beginPath();
+    c.moveTo(x + gx * R - gz * 3 * dpr, y + gz * R + gx * 3 * dpr);
+    c.lineTo(x + gx * R + gz * 3 * dpr, y + gz * R - gx * 3 * dpr);
+    c.lineWidth = 2.6 * dpr;
+    c.strokeStyle = '#ff4fd8';
+    c.stroke();
+    // The stones.
+    c.fillStyle = '#5ff6ff';
+    for (const s of dd.stones) {
+      c.beginPath();
+      c.arc(this._px(s.x), this._py(s.z), Math.max(1.3 * dpr, s.r * this.scale), 0, Math.PI * 2);
+      c.fill();
+    }
+    /* The name, OVER it. Under it was the first cut, and at world zoom it
+       landed on the Dojo's own label, which sits just above the middle of the
+       island this one is ~40px down-left of (seen in the browser). */
+    c.font = `800 ${10 * dpr}px Nunito, sans-serif`;
+    c.textAlign = 'center';
+    c.lineWidth = 3 * dpr;
+    c.lineJoin = 'round';
+    c.strokeStyle = 'rgba(20,12,18,0.9)';
+    const ly = y - R - 4 * dpr;
+    c.strokeText('Dream Dojo', x, ly);
+    c.fillStyle = '#c8fdff';
+    c.fillText('Dream Dojo', x, ly);
+  }
+
   _px(x) { return x * this.scale + this.ox; }
 
   _py(z) { return z * this.scale + this.oy; }
@@ -216,6 +290,9 @@ export class Minimap {
       c.strokeStyle = 'rgba(28,16,22,0.75)';
       c.stroke();
     }
+
+    // --- the Dream Dojo ---
+    this._drawDream();
 
     // --- landmarks ---
     for (const m of this.marks) {

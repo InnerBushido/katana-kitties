@@ -21,10 +21,28 @@ import { POWER_ORBS } from './powerorb.js';
    than a line of red text inside a menu.
 --------------------------------------------------------------------------- */
 
+/** HOW BIG THE BOOTH IS DRAWN. Richard: "Let's make the Kotodama Dealer booth
+ *  1.5x's bigger, as currently it's a bit small and hard to notice." The
+ *  booth's geometry is built at its old size inside one group scaled by this,
+ *  so every proportion that was right stays right; the two labels are NOT in
+ *  that group (they were already sized for a quarter of a screen, and scaling
+ *  them would spend texture on nothing) and are lifted to clear the taller
+ *  roof instead. The solid, the prompt radius and the clear space round it
+ *  grow with it, in `Kotodama.raiseStall`. */
+export const STALL_SCALE = 1.5;
+
+/** Where the roof beam tops out in the booth's own space, at that scale —
+ *  the line the sign has to clear. */
+export const STALL_ROOF = 3.35 * STALL_SCALE;
+
 /** How close you have to stand for the prompt. Comfortably outside the solid
  *  registered around the counter, so you cannot be shoved out of range of the
- *  thing you are standing at. */
-export const STALL_RADIUS = 6.5;
+ *  thing you are standing at. 6.5 at the old size; the counter's long side
+ *  is now 3.6 from its middle, so 8 keeps the same margin past it. */
+export const STALL_RADIUS = 8;
+
+/** The counter's solid, scaled with it (1.9 at the old size). */
+export const STALL_SOLID = 1.9 * STALL_SCALE;
 
 export class KotodamaStall {
   constructor(x, y, z) {
@@ -45,12 +63,16 @@ export class KotodamaStall {
     const dark = new THREE.MeshLambertMaterial({ color: 0x3c2418 });
     const cloth = new THREE.MeshLambertMaterial({ color: 0x8f1f2e });
 
+    /* The booth itself, built at its old size and scaled as one (STALL_SCALE). */
+    this.body = new THREE.Group();
+    this.body.scale.setScalar(STALL_SCALE);
+    this.group.add(this.body);
     const add = (geo, mat, px, py, pz, ry = 0) => {
       const m = new THREE.Mesh(geo, mat);
       m.position.set(px, py, pz);
       m.rotation.y = ry;
       m.castShadow = true;
-      this.group.add(m);
+      this.body.add(m);
       return m;
     };
 
@@ -75,7 +97,7 @@ export class KotodamaStall {
       );
       lamp.position.set(sx, 2.95, 0.25);
       lamp.scale.y = 1.25;
-      this.group.add(lamp);
+      this.body.add(lamp);
     }
 
     /* --- the wares ---
@@ -99,7 +121,7 @@ export class KotodamaStall {
         })
       );
       g.add(core, halo);
-      this.group.add(g);
+      this.body.add(g);
       return { spec, group: g, core, halo, phase: i * 0.7 };
     });
 
@@ -123,13 +145,13 @@ export class KotodamaStall {
        only magnifies past 1:1 if you stand closer than about four units to it
        on a full screen, and the counter's solid stops you at three.
 
-       It sits higher to make room. The roof beam tops out at 3.35 and the quad
-       is 1.2 tall, so 4.1 puts its bottom edge at 3.5 — the same clearance the
-       old one had at 3.85. */
+       It sits higher to make room. The roof beam tops out at STALL_ROOF and
+       the quad is 1.2 tall, so 0.75 over it puts its bottom edge 0.15 clear —
+       the clearance it had before the booth grew (4.1 over a 3.35 beam). */
     this.sign = new Label('KOTODAMA — 言霊', {
       height: 1.2, size: 68, color: '#ffe6a8', stroke: '#2a1408', strokeWidth: 8,
     });
-    this.sign.position.set(0, 4.1, -0.4);
+    this.sign.position.set(0, STALL_ROOF + 0.75, -0.4 * STALL_SCALE);
     this.group.add(this.sign);
 
     /* The prompt only appears when somebody is standing at it — the same
@@ -141,7 +163,7 @@ export class KotodamaStall {
     /* Above the sign with a gap: both quads doubled, so the old 0.75 between
        their centres is now less than their two half-heights and they would be
        drawn through each other. */
-    this.prompt.position.set(0, 5.6, -0.4);
+    this.prompt.position.set(0, STALL_ROOF + 2.25, -0.4 * STALL_SCALE);
     this.prompt.visible = false;
     this.group.add(this.prompt);
   }

@@ -278,10 +278,13 @@ Lionheart's new lines:
 - HONOR, seven (`lion_honor_*`);
 - FALL, four (`lion_fall_*`);
 - the gear-up, three (`lion_gear_*`);
-- the yell at a kitten who goes over the wall (`lion_yell_wall`);
+- ~~the yell at a kitten who goes over the wall (`lion_yell_wall`)~~ — cut.
+  Richard: "It is not a good voice and is too loud and aggressive, so let's
+  just not use it. We only need the 'dropping in' sound". The clip and its raw
+  take are deleted; the wall yell is a bubble and a toast now;
 - the yell at a kitten who drops in from a dragon (`lion_yell_drop`).
 
-That makes 26 new lines and 35 clips in all. They were made and cut the same
+That made 26 new lines and 35 clips; with the wall yell gone, 34. They were made and cut the same
 way as the first nine (raw takes in `lionheart-takes/raw/`, then
 `lionheart-vo.mjs`). Payne's nine are the tour's five, the Dream Dojo card's
 three, and `payne_q_shadow`. All nine are pending her approval.

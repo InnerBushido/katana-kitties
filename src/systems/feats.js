@@ -705,7 +705,11 @@ export class Feats {
          least readable version of this screen the one a kid reads right after
          the ending. `ProfileScreen` puts it beside the QUESTS heading instead;
          the rows keep saying only what is true about themselves. */
-      return { feat: f, got, paid, star, note, special: f.who !== 'each' };
+      /* `isSpecial`, not `who !== 'each'`: the second was the rule before
+         Lionheart's Honor became an everybody-quest that pays the special
+         draw, and the profile went on calling it an ordinary one while the
+         award paid it special. One question, asked in one place. */
+      return { feat: f, got, paid, star, note, special: isSpecial(f.id) };
     });
   }
 

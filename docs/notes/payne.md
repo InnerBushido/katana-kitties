@@ -366,6 +366,10 @@ does a little introduction cutscene."
   and has three buttons that say what they do (`DOJO_ACTS`): **VIEW THE DREAM
   DOJO**, **MARK IT ON MY MAP** (`payne_dd_mark`) and **◀ BACK**. On a phone,
   the card uses the two-column `.pn-dd` grid and fits at 844×390.
+- **The mark comes off when she gets there** (`ddMarkReached`): within
+  `DD_MARK_NEAR` (7) of the spot it marks, on any stone, or on the pad. It
+  used to wait for the pad, and Richard: "once the player gets there, the mark
+  should be removed from the minimap and placement".
 - **VIEW** starts the tour (`DreamDojo.startTour`, the `TOUR` rows in
   `dream/stories.js`). Payne opens it and closes it, and Lionheart does the
   middle. Her five tour lines are spread into `PAYNE_LINES` from `TOUR`, so her
