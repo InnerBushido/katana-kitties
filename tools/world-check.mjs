@@ -35716,6 +35716,71 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const r4 = D.simHit(her, { dmg: 30 });
     ok('a hologram hit takes her SIM bar, never her real health', r4 === 'hit' && Number.isFinite(hp) && her.hp === hp && D.st[0].simHp === 70,
       `${r4} hp ${her.hp} sim ${D.st[0].simHp}`);
+
+    /* --- the dealer's three rare orbs, merged after the simulator was built.
+       Richard: "make it work with the simulator". A pedestal, a how-to and a
+       drill for every orb there is, and each drill a gate on its own orb. */
+    {
+      const ids = PO.POWER_ORBS.map((o) => o.id);
+      const lack = ids.filter((id) => !GAL.HOW_TO[id] || typeof GAL.DRILLS[id] !== 'function');
+      ok(`every one of the ${ids.length} orbs has a Gallery card and a drill`, ids.length >= 13 && !lack.length, lack.join(' ') || ids.join(' '));
+      const bare = PO.DODGE.range;
+      const far1 = PO.lockRangeFor(1);
+      const ring = GAL.farRing();
+      const floorR = ISL.ISLANDS.gallery.r;
+      const pedR = floorR - 5;   // `Gallery._build`: where she starts
+      line('Flash Step lock, bare / Far Step / the ring / the floor', `${bare} / ${far1} / ${ring.toFixed(1)} / ${floorR}`);
+      /* Read off the LIVE Lock range (tuning.json has it at 10): the first cut
+         was 16.5 / 19.5 against the shipped 15, unreachable as tuned. */
+      ok('遠 the Far Step ring is past a bare Lock range', ring > bare * 1.08);
+      ok('...and leaves a band to stand in that one Far Step reaches', far1 - ring > bare * 0.25, `${(far1 - ring).toFixed(2)}`);
+      /* One 瞬 pivots her round the one she locked, at the distance she locked
+         from: round the middle, the far side is that far out the other way.
+         The first design moved the hologram toward the middle, and from there
+         the far side was off the island — refused, in the browser. */
+      ok('...and stepping round it from the edge of what she can lock lands on the floor', far1 < floorR - 1,
+        `${far1} vs ${floorR}`);
+      ok('...and the pedestal she starts at is outside the ring', pedR > ring + 1, `${pedR} vs ${ring.toFixed(1)}`);
+      ok('遠 and 間 are lent with what they boost', (GAL.NEEDS.far ?? []).includes('blink') && (GAL.NEEDS.longparry ?? []).includes('parry'));
+      const win0 = PO.PARRY.window;
+      const win1 = PO.parryWindowFor(1);
+      line('Riposte window, bare / Long Parry / tell / its wait', `${win0} / ${win1.toFixed(3)} / ${GAL.PARRY_TELL} / ${GAL.PARRY_LATE}`);
+      ok('返 the tell is longer than a guard, so a guard raised AT the flash shuts first', GAL.PARRY_TELL > win0 + 0.2);
+      ok('間 the waiting blow lands after a bare guard has shut', GAL.PARRY_LATE > win0 + 0.03);
+      ok('...and before one Long Parry\'s has', GAL.PARRY_LATE < win1 - 0.05, `${(win1 - GAL.PARRY_LATE).toFixed(3)}s to spare`);
+      ok('...and a kitten who waits has the whole tell to raise it in', GAL.PARRY_TELL_MAX > GAL.PARRY_LATE + 0.6);
+
+      /* simHit asks the parry: a blow from in front of her guard is caught and
+         answered; from behind it lands; a held beam is never "caught". */
+      const realRip = her.riposte;
+      const answered = [];
+      her.riposte = (foe) => { answered.push(foe); };
+      const lx = her.position.x - SW.SIM.dx;
+      const lz = her.position.z - SW.SIM.dz;
+      const fresh = () => { D.st[0].iframes = 0; D.st[0].simHp = 100; her.parryT = 0.3; her.parryDir = 0; };
+      fresh();
+      const front = D.simHit(her, { dmg: 10, from: { x: lx, z: lz + 2 }, foe: 'F' });
+      fresh();
+      const behind = D.simHit(her, { dmg: 10, from: { x: lx, z: lz - 2 }, foe: 'B' });
+      fresh();
+      const beam = D.simHit(her, { dmg: 10, hold: true, from: { x: lx, z: lz + 2 } });
+      fresh(); her.parryT = 0;
+      const shut = D.simHit(her, { dmg: 10, from: { x: lx, z: lz + 2 } });
+      ok('返 in the sim: a blow from in front of her guard is caught and answered',
+        front === 'parried' && answered.length === 1 && answered[0] === 'F', `${front} ${answered.join(',')}`);
+      ok('...from behind it lands', behind === 'hit', behind);
+      ok('...a held beam is not a blow to catch', beam === 'hit', beam);
+      ok('...and with the window shut it lands', shut === 'hit' && answered.length === 1, shut);
+      her.riposte = realRip;
+      her.parryT = 0;
+      D.st[0].simHp = 100;
+      // Every blow the sim throws says where it came from, or 返 cannot catch it.
+      const srcOf = (f) => readFileSync(new URL(`../src/systems/dream/${f}`, import.meta.url), 'utf8');
+      ok('...and the bolts, the holo-kittens\' blades and Shadow Lionheart all say where from',
+        /src: 'bolt', drill: this, from,/.test(srcOf('drill.js'))
+        && /src: 'blade', drill: d, from: me, foe: f/.test(srcOf('school.js'))
+        && /src: 'shadow', from, foe: b/.test(srcOf('shadow.js')));
+    }
   }
 
   /* --- the stars: per kitten, only ever up, and wiped only on purpose --- */

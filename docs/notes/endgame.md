@@ -1437,8 +1437,11 @@ who looks over a few seconds later.
 
 ## 遠 Far Step, 返 Riposte and 間 Long Parry — three more at the dealer's
 
-Branch `feature/rare-orbs-reach-parry`, asked for together and kept **off
-alpha** until Richard says so. His words, the three of them:
+Branch `feature/rare-orbs-reach-parry`, asked for together and kept ~~off
+alpha until Richard says so~~ off main until Richard had played the Payne work;
+merged on 2026-10-04 ("I playtested the Payne features extensively and it is
+all working well"), with a drill each in the Dream Dojo's Gallery
+([dreamdojo.md](dreamdojo.md)). His words, the three of them:
 
 > "increases the potency of the teleporting ability … by 1.5x's as much … This
 > orb is stackable, so with two orbs equipped, it is now 2x's as much as the

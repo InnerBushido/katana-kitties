@@ -461,7 +461,7 @@ described in words and never used as a reference; her likeness is hers.
   flips per sweep.
 - `ember_riposte.png` / `frost_riposte.png` are the counter stance, katana
   across the body with a glint, `kittens/<sheet>/riposte.png` at 768. They
-  belong to the Riposte orb, on `feature/rare-orbs-reach-parry`
+  belong to the Riposte orb (`feature/rare-orbs-reach-parry`, merged)
   ([endgame.md](endgame.md) has when she wears it). **This is the one single
   pose that MIRRORS**: the blade sticks out to one side, and which side she is
   guarding is the move. So its Billboard is `mirror: true` and

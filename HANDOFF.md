@@ -608,7 +608,8 @@ quoted.
     refusal on success (`??` on a `null` success).
   - **Open:** nobody has played it. The tour has fifteen rows and is long by
     design ("longer and more detailed"). If it drags, it gets cut by rows, not
-    by speeding the voices. All new Payne lines are pending her approval.
+    by speeding the voices. ~~All new Payne lines are pending her approval.~~
+    Approved: "Payne approved the lines and her voice, so we are good there."
 
 - **Richard's next Dream Dojo list** (branch
   `mixed/dojo-riposte-minimap-gate-dealer`).
@@ -630,15 +631,9 @@ quoted.
   - **The profile tags Lionheart's Honor as a special quest.**
   - **The wall yell is unvoiced** (`lion_yell_wall` deleted; 34 clips).
   - **The Kotodama Dealer's booth is 1.5× bigger**, solid and prompt with it.
-  - **Open — the rare orbs are still not merged.** `feature/rare-orbs-reach-parry`
-    (Riposte, Far Step, Long Parry) is the branch the Gallery's missing orbs
-    live on. It was held out of alpha and main on purpose ("not for alpha
-    until Richard has played the Payne work"), which is why the Gallery lacks
-    them. Merging it conflicts in HANDOFF.md, docs/notes/art.md,
-    src/entities/powerorb.js and tools/world-check.mjs, and the session's
-    attempt to resolve them was stopped by the permission guard. It needs
-    Richard's go-ahead in the session, then the conflicts resolved and the
-    three orbs wired into the Gallery and the simulator. No other unmerged
+  - ~~**Open — the rare orbs are still not merged.**~~ Merged since, with a
+    Gallery drill each and the sim's combat taught the parry: see the rare
+    orbs' own entry below. No other unmerged
     branch is critical: `extra/scratchpad-ideas` is scratch files and
     Richard's clone takes, which stay out.
 
@@ -687,7 +682,7 @@ quoted.
   - ONE SWING cut 4 in one press.
   - COMBO 60 chained 6, then reset.
 - **Stage 2 built:**
-  - The **Kotodama Gallery**: ten pedestals, ten drills, each lending its orb
+  - The **Kotodama Gallery**: ~~ten~~ thirteen pedestals, thirteen drills (the rare three since), each lending its orb
     for the drill only.
   - The **Clan Trial Hall**: six holo-leaders, six trials, each a trial oath
     that never touches her real clan.
@@ -744,9 +739,16 @@ work: "I playtested the Payne features extensively and it is all working well".
   is the ordinary attack row. [endgame.md](docs/notes/endgame.md) explains
   why it isn't worn during the hold before the push.
 - The Help grid's sixth cell is a PLACEHOLDER drawing until a clip is filmed.
-- **The published project page is one line behind** (the placeholder-tools row).
-  Republish it to the same URL when this branch merges, then
-  `npm run artifact -- --stamp`. Until then `world-check` has those two reds.
+- ~~**The published project page is one line behind**~~ — republished with the
+  merge.
+- **In the Dream Dojo, too** (branch `mixed/rare-orbs-into-main`). Richard:
+  "make it work with the simulator". The Gallery has thirteen pedestals, and
+  each new orb has a drill that cannot be passed without it
+  ([dreamdojo.md](docs/notes/dreamdojo.md#the-dealers-three-rare-orbs-in-the-gallery)):
+  遠 three Flash Steps round a holo-kitten from outside a ring past bare Lock
+  range; 返 three of its blows caught and answered; 間 the same partner, but it
+  waits until a bare guard has shut. `simHit` asks the parry now, so a 返 guard
+  catches bolts, the Arena School's holo-blades and Shadow Lionheart too.
 - **Open:** nobody has played it; every number is a first guess on the balance
   page.
 
@@ -754,8 +756,8 @@ work: "I playtested the Payne features extensively and it is all working well".
 [payne.md](docs/notes/payne.md) has the design, every note quoted, and the
 script.
 
-- **She is a real person, and her approval is pending.** Richard is sending
-  her the result. Her likeness and all 45 lines are hers to sign off.
+- **She is a real person, and she has approved her lines and her voice**
+  (2026-10-04): "Payne approved the lines and her voice, so we are good there."
 - **In the market at (-10, 24).** INTERACT opens her card: the next quest in
   Richard's order (Icewhisker saved for last among the oaths), the three
   tag-alongs, the hints toggle, the Character Profile, and the trick.
@@ -789,7 +791,7 @@ script.
     down. Then she sends you to Icewhisker until you hold the oath. Then a
     temper, then a Goblin Sweep of her own: no damage, a gag through
     `Player.blast`.
-  - Six new Pixie lines, pending Payne's approval with the rest.
+  - Six new Pixie lines, ~~pending Payne's approval~~ approved with the rest.
   - **Ryuuseki is summoned only by a kitten on her own feet on the home
     island.** Flying a dragon over the torii used to call him down.
 
@@ -825,8 +827,8 @@ script.
 - **The Goblin Sweep has a pose** for all four kittens.
 - **Open:**
   - Nobody has heard the roll call.
-  - The Riposte stance is wired on `feature/rare-orbs-reach-parry` with the
-    unmerged orbs; see that entry.
+  - The Riposte stance is wired on `feature/rare-orbs-reach-parry`, merged
+    into main with the orbs since; see that entry.
 
 **The big screen outside the arena.** Branch `feature/arena-billboard`.
 [tournament.md](docs/notes/tournament.md) has the design and every note quoted,

@@ -191,8 +191,8 @@ src/
                box", so a map in every pane makes its second half unreachable
                and not one line of the assignment had to change)
              menunav  trailer (the opt-in video player)
-             payne (the quest-giver in the market — a REAL PERSON, pending her
-               approval of the likeness and the script. `nextStep` is pure and
+             payne (the quest-giver in the market — a REAL PERSON, who has
+               approved her lines and her voice. `nextStep` is pure and
                decides everything she says; hints and teases are OPT-IN; the
                card sits above the warning strip via `payneSpot` in split.js.
                docs/notes/payne.md)

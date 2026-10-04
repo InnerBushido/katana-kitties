@@ -567,12 +567,12 @@ files** — and deleting them is real and cheap, because `kitten-cackle.mjs` wit
 no reference synthesises its own ladder, and `Audio.play` falls through to
 synthesised stand-ins after that. Three levels of degradation, on purpose.
 
-**Payne is a real person, and she has not signed off yet.** The quest-giver in
-the market is a fighter from Belegarth Medieval Combat Society, drawn as a
-goblin cat with her permission. **Richard is sending her the finished result
-for her final approval.** Until she has approved her likeness and her 54 lines,
-a public release that includes her waits. Her photos went to Higgsfield as
-image references and nowhere else. → [payne.md](docs/notes/payne.md)
+**Payne is a real person, and she has approved her lines and her voice.** The
+quest-giver in the market is a fighter from Belegarth Medieval Combat Society,
+drawn as a goblin cat with her permission. Richard sent her the finished result
+for her final approval, and on 2026-10-04: "Payne approved the lines and her voice, so we are good there." Her
+photos went to Higgsfield as image references and nowhere else. →
+[payne.md](docs/notes/payne.md)
 
 **`out/` is a local-only repo with no remote, deliberately.** It holds generated
 artwork and trailer working files, 9MB+ of PNG that Vite would never ship. The
@@ -677,7 +677,7 @@ you are about to change that area, and not before.
 | [performance.md](docs/notes/performance.md) | why frame time is a straight line in pixels, and what is measured *not* to be a cause |
 | [audio.md](docs/notes/audio.md) | the synthesised sound set and a piece of music per island |
 | [voices.md](docs/notes/voices.md) | **the voice registry** — which preset is which character, with ids |
-| [payne.md](docs/notes/payne.md) | **Payne, the quest-giver**: her quest chain, the opt-in hints and teases, the hint card, the helmet and her face, the Goblin Sweep, and her whole script. **A real person's likeness, pending her approval** |
+| [payne.md](docs/notes/payne.md) | **Payne, the quest-giver**: her quest chain, the opt-in hints and teases, the hint card, the helmet and her face, the Goblin Sweep, and her whole script. **A real person's likeness; her lines and voice approved** |
 | [dreamdojo.md](docs/notes/dreamdojo.md) | **the Dream Dojo, Lionheart's VR arcade** — the simulator as a second reality in the same place, the tubes, the training gate that lets a blade in there find holograms only, the Gallery and Trial Hall (orbs and oaths LENT, never given), the Tameshigiri Range and Kata Trace (a daily and a weekly kata seeded by the date, so every machine gets the same one), the far islands (light-cycle highways, Kudamono Storm, the Sine Gauntlet, Holo-Sentries and Bamboo Infiltration, every star band measured by a search), **the Arena School** (a practice round per tournament mode, under the tournament's own `decideOnTime` and `purseSplit`), **KENSHI ranks**, the foil **Fighter Card**, the daily and weekly training, and **Shadow Lionheart** — the co-op boss whose win is the **tenth quest**, the only one that counts after the Awakening — and what is still to build (the VR kitten sheets, his voice). Lionheart is Richard, likeness approved |
 | [consent.md](docs/notes/consent.md) | why nothing irreversible happens on one press |
 | [rules.md](docs/notes/rules.md) | the gameplay invariants in full, with the measurements behind them |
