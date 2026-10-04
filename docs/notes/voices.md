@@ -268,6 +268,31 @@ card and its recording cannot be two sentences. Two kinds of line:
 time and the clip plus 0.6s — and also asks `saying()` each frame, because a
 clip asked for before its metadata arrived reports a length of 0.
 
+### The front door: 26 more of his lines, 9 more of hers
+
+Richard's Dream Dojo improvements list ([dreamdojo.md](dreamdojo.md#the-front-door--richards-improvements-list))
+added three scenes and the gear-up, all in `dream/stories.js`. Every row is
+`{ who, text, voice }` and the clip is a render of exactly `text`, as above.
+Lionheart's new lines:
+- the tour, eleven lines (`lion_tour_*`);
+- HONOR, seven (`lion_honor_*`);
+- FALL, four (`lion_fall_*`);
+- the gear-up, three (`lion_gear_*`);
+- the yell at a kitten who goes over the wall (`lion_yell_wall`);
+- the yell at a kitten who drops in from a dragon (`lion_yell_drop`).
+
+That makes 26 new lines and 35 clips in all. They were made and cut the same
+way as the first nine (raw takes in `lionheart-takes/raw/`, then
+`lionheart-vo.mjs`). Payne's nine are the tour's five, the Dream Dojo card's
+three, and `payne_q_shadow`. All nine are pending her approval.
+
+Writing them, the casting rule did most of the work. The HONOR talk is an
+apology and a lesson about 道 *dō*. It is the easiest place in the game to
+drift into a voice that sounds intimate, so it stays a coach to a nine-year-old:
+"toughness, patience, and practice — again, and again, and again." The tour's
+last line keeps Richard's own "(or is it tangible?)" as Lionheart's joke on
+himself, answered with "BOTH! They all matter."
+
 ## The castings were checked, not copied
 
 Five of the eight were **confirmed by measurement** rather than transcribed from

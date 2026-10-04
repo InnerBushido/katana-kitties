@@ -4642,8 +4642,17 @@ console.log('\n--- the simulator\'s drawings ---');
     ok('...the walk to a tube starts the load, crossing in puts it on, and every way out takes it off',
       /_begin\(p, phase\) \{ this\.game\.loadSimArt\?\.\(\);/.test(dd)
       && /if \(toSimNow\) p\.setSimLook\?\.\(true\);/.test(dd)
-      && /_leaveSim\(p\) \{ const s = this\.st\[p\.index\]; this\._hushHolo\(p\); p\.setSimLook\?\.\(false\);/.test(dd)
-      && /if \(!toSimNow\) this\._leaveSim\(p\);/.test(dd));
+      && /_leaveSim\(p, keepSuit = false\) \{ const s = this\.st\[p\.index\]; this\._hushHolo\(p\); if \(!keepSuit\) p\.setSimLook\?\.\(false\);/.test(dd)
+      && /if \(!toSimNow\) this\._leaveSim\(p, keepSuit\);/.test(dd));
+    /* THE SUIT: "When exiting the VR, they should automatically walk out of
+       the tube, and poof with special effects to put their regular clothes
+       back on." So the ORDINARY way out keeps the gear on (the derez crosses
+       with keepSuit), and the descend hands her to the walk out and the
+       un-suit; every OTHER way out (`exitAll`, `drop`) takes it off at once. */
+    ok('...except the ordinary way out, which keeps the gear on for the walk out of the tube and the poof',
+      /this\._cross\(p, false, true\);/.test(dd) && /this\._begin\(p, 'walkout'\);/.test(dd)
+      && /this\._begin\(p, 'unsuit'\);/.test(dd)
+      && /exitAll\(\) \{[^}]*?if \(p\.simLook && this\.realmOf\(p\) !== 'sim'\) p\.setSimLook\?\.\(false\);/.test(dd));
   }
 }
 
@@ -5882,6 +5891,9 @@ console.log('\n--- background removal keeps the drawn whites ---');
     'lionheart/town.png',
     // ...and the simulator's drawings: the two headset turnarounds and his Shadow.
     'kittens/ember/vr.png', 'kittens/frost/vr.png', 'lionheart/shadow.png',
+    // ...and her six special poses in the headset, per sheet (`vr_<pose>.png`).
+    ...['ember', 'frost'].flatMap((s) => ['eat', 'bless', 'warp', 'inhale', 'scared', 'sweep']
+      .map((p) => `kittens/${s}/vr_${p}.png`)),
   ];
   {
     const dir = new URL('../public/sprites/', import.meta.url);
@@ -6034,8 +6046,14 @@ console.log('\n--- background removal keeps the drawn whites ---');
        head in the slam). Measured by this loop; never filled, because both come
        through `Game.loadSimArt` and `_loadSprite`, which do not ask for it.
        Ember's headset sheet closes nothing. */
-    ok('turning the fill on for every sheet would repaint sixteen of them',
-      touched.length === 16 && touched.includes('beasts/dragon_sheet.png')
+    /* TWENTY-THREE SINCE THE HEADSET POSES: seven of the twelve `vr_<pose>`
+       drawings close an arm against the body or a paw against the face, as
+       their home poses mostly already did (Ember's inhale, scared and warp;
+       Frost's bless, eat, scared and warp). Measured by this loop; never
+       filled, because `Game._loadSimPoses` does not ask for it either. */
+    ok('turning the fill on for every sheet would repaint twenty-three of them',
+      touched.length === 23 && touched.includes('beasts/dragon_sheet.png')
+      && touched.filter((f) => /\/vr_/.test(f)).length === 7
       && touched.includes('lionheart/town.png')
       && touched.includes('kittens/frost/vr.png') && touched.includes('lionheart/shadow.png')
       && touched.includes('kittens/frost/champion.png') && touched.includes('satan/flex_trophy.png')
@@ -6308,9 +6326,11 @@ console.log('\n--- the art that ships is smaller than the art that made it ---')
        through the same recolour as everything else. */
     /* SEVEN SINCE THE GOBLIN SWEEP: `sweep.png` is worn for the spin of the
        trick Payne teaches. */
-    ok('...with the same seven poses drawn for each of them',
+    /* THIRTEEN SINCE THE HEADSET: each of the six special poses again with
+       the VR gear on (`vr_<pose>.png`), worn in the tube and in the sim. */
+    ok('...with the same thirteen poses drawn for each of them',
       posesOf('ember') === posesOf('frost')
-      && posesOf('ember').split(' ').length === 7, posesOf('ember'));
+      && posesOf('ember').split(' ').length === 13, posesOf('ember'));
   }
 
   /* --- and nothing else in public/ is quietly enormous ----------------------
@@ -28646,9 +28666,14 @@ console.log('\n--- quests: earned before the end, paid one at a time after it --
   /* TEN SINCE THE DREAM DOJO'S FINAL EXAM: Lionheart's Honor is the fifth
      everybody-quest, and the only one with `late` — the door does not shut on
      it (see its row in feats.js, and the checks in the stage 5 block). */
-  ok('ten quests: five for everybody, five special',
+  /* SIX SPECIAL SINCE RICHARD: "Lionheart's Honor quest should give a Special
+     Kotodama orb, but make it that anyone can do the quest." It stays one of
+     the five everybody-quests and pays the special draw. */
+  ok('ten quests: five for everybody, six special — the five one-kitten ones and Lionheart’s Honor',
     FEATS.length === 10 && FEATS.filter((f) => f.who === 'each').length === 5
-      && FEATS.filter((f) => isSpecial(f.id)).length === 5,
+      && FEATS.filter((f) => isSpecial(f.id)).length === 6
+      && FEAT_BY_ID.shadow.who === 'each' && isSpecial('shadow')
+      && FEATS.filter((f) => f.who === 'each' && isSpecial(f.id)).map((f) => f.id).join() === 'shadow',
     FEATS.map((f) => `${f.id}:${f.who}`).join(' '));
   ok('...and only the Shadow’s is earned after the Awakening',
     FEATS.filter((f) => f.late).map((f) => f.id).join() === 'shadow');
@@ -32644,9 +32669,12 @@ console.log('\n--- the arena road is shot, not orbited ---');
   ok('...which is an original, and says why it is not the song that was asked for',
     /NOT THAT SONG/.test(asrc) && /_tuneStep\(t, step, M\)/.test(asrc)
       && /STILL NOT THOSE SONGS/.test(asrc));
+  // The strut is the fall-through of `_tuneStep`; the others are named.
+  const TUNES = { strut: '_strutStep', kungfu: '_kungfuStep', saucer: '_saucerStep', vr: '_vrStep' };
   ok('...and every tune a piece names is one somebody wrote',
-    Object.values(MUSIC).filter((m) => m.tune).every((m) => ({ strut: '_strutStep', kungfu: '_kungfuStep', saucer: '_saucerStep' })[m.tune]
-      && new RegExp(`${({ strut: '_strutStep', kungfu: '_kungfuStep', saucer: '_saucerStep' })[m.tune]}\\(t, step, M\\) \\{`).test(asrc)));
+    Object.values(MUSIC).filter((m) => m.tune).every((m) => TUNES[m.tune]
+      && new RegExp(`${TUNES[m.tune]}\\(t, step, M\\) \\{`).test(asrc)
+      && new RegExp(`M\\.tune === '${m.tune}'\\) this\\.${TUNES[m.tune]}`).test(asrc) || m.tune === 'strut'));
   /* "...have that Gold Saucer music play when the player gets off the snake
      bridge and onto the arena, before they join the arena and the arena music
      plays." An original funfair, in the arena's key so the fight resolves out
@@ -34746,28 +34774,43 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     world.heightAt(ARCADE.x, ARCADE.z, 200) == null
     && L.tubes.every((t) => world.heightAt(t.x, t.z, 200) == null));
 
-  /* THE WAY ACROSS IS A JUMP, AND ONLY A JUMP. The Dojo's rim is measured
-     along the same line the stones sit on; each gap must be wider than a
-     step (so she has to jump) and well inside the ~9 units a walking jump
-     clears, and no stone may sit more than a unit above where she leaves. */
+  /* THE WAY ACROSS IS A JUMP, AND ONLY A JUMP — and since Richard's "too
+     easy to fall ... 3 or 4 platforms ... in a half circle pattern", four
+     short ones. The Dojo's rim is measured along the line from its centre to
+     the first stone; each gap is edge to edge, wider than a step (so she has
+     to jump) and short (the old straight line was 2.7, 2.5 and 3.8). */
+  const flatD = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+  const s0 = L.stones[0];
+  const toS0 = { x: (s0.x - dc.x) / flatD(s0, dc), z: (s0.z - dc.z) / flatD(s0, dc) };
   let rim = 0;
   for (let d = 0; d < L.L; d += 0.25) {
-    if (world.heightAt(dc.x + L.u.x * d, dc.z + L.u.z * d, 200)) rim = d; else if (d > 20) break;
+    if (world.heightAt(dc.x + toS0.x * d, dc.z + toS0.z * d, 200)) rim = d; else if (d > 20) break;
   }
-  const rimY = world.heightAt(dc.x + L.u.x * (rim - 0.5), dc.z + L.u.z * (rim - 0.5), 200)?.y ?? 0;
-  const dOf = (s) => (s.x - dc.x) * L.u.x + (s.z - dc.z) * L.u.z;
+  const rimY = world.heightAt(dc.x + toS0.x * (rim - 0.5), dc.z + toS0.z * (rim - 0.5), 200)?.y ?? 0;
+  const last = L.stones.at(-1);
   const hops = [
-    { from: rim, fromY: rimY, to: dOf(L.stones[0]) - L.stones[0].r, toY: L.stones[0].y },
-    { from: dOf(L.stones[0]) + L.stones[0].r, fromY: L.stones[0].y, to: dOf(L.stones[1]) - L.stones[1].r, toY: L.stones[1].y },
-    { from: dOf(L.stones[1]) + L.stones[1].r, fromY: L.stones[1].y, to: L.L - ARCADE.r, toY: ARCADE.y },
+    { gap: flatD(s0, dc) - s0.r - rim, rise: s0.y - rimY },
+    ...L.stones.slice(1).map((s, k) => ({ gap: flatD(s, L.stones[k]) - s.r - L.stones[k].r, rise: s.y - L.stones[k].y })),
+    { gap: flatD(last, ARCADE) - last.r - ARCADE.r, rise: ARCADE.y - last.y },
   ];
-  const gaps = hops.map((h) => h.to - h.from);
-  ok('three hops from the Dojo to the pad, every one a jump and none a long one',
-    gaps.every((g) => g > 1.2 && g < 5), gaps.map((g) => g.toFixed(1)).join(' '));
-  ok('...and no step up is more than a unit',
-    hops.every((h) => h.toY - h.fromY <= 1.01), hops.map((h) => (h.toY - h.fromY).toFixed(2)).join(' '));
+  ok('four stones, five hops from the Dojo to the pad, every one a jump and none longer than 2.5',
+    L.stones.length === 4 && hops.every((h) => h.gap > 1.2 && h.gap < 2.5), hops.map((h) => h.gap.toFixed(2)).join(' '));
+  ok('...and no step up is more than a unit, and every one is UP',
+    hops.every((h) => h.rise <= 1.01 && h.rise > 0), hops.map((h) => h.rise.toFixed(2)).join(' '));
   ok('...and the stones stay off the Dojo itself',
     L.stones.every((s) => world.heightAt(s.x, s.z, 200) == null));
+  /* "a half circle pattern towards the island rather than just a straight
+     line": every stone is off the straight line to one side, and the hops
+     turn as they go — the first hop between stones and the last differ by 44°
+     (measured), against 0° for the old straight line. */
+  const side = L.stones.map((s) => (s.x - dc.x) * L.v.x + (s.z - dc.z) * L.v.z);
+  const turn = Math.abs(Math.atan2(L.stones[3].z - L.stones[2].z, L.stones[3].x - L.stones[2].x)
+    - Math.atan2(L.stones[1].z - L.stones[0].z, L.stones[1].x - L.stones[0].x));
+  ok('...and they curve: all four to one side of the straight line, by more than a stone’s width, turning > 40°',
+    side.every((w) => w < -4) && turn > (40 * Math.PI) / 180, `${side.map((w) => w.toFixed(1)).join(' ')} · ${(turn * 180 / Math.PI).toFixed(0)}°`);
+  ok('...and a kitten who falls is put back ON the Dojo, short of the rim, facing the way across',
+    !!world.heightAt(L.launch.x, L.launch.z, 200) && flatD(L.launch, dc) < rim - 1.5 && flatD(L.launch, s0) < 12,
+    `${flatD(L.launch, dc).toFixed(1)} of rim ${rim}`);
 
   /* --- the pad --- */
   const onPad = (q, pad = 0) => Math.hypot(q.x - ARCADE.x, q.z - ARCADE.z) + pad < ARCADE.r;
@@ -36476,20 +36519,21 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     put(her, F.kiosk);
     put(sis, inside);
     fakeGame.toasts.length = 0;
-    F.kiosk.station.interact(her);
-    ok('影 a 3rd-Class kitten is refused at his door, in words, with the stars she still needs',
-      F.state === 'waiting' && fakeGame.toasts.some((t) => /only fights KENSHI 2nd Class.*earn 24 more/.test(t)),
-      fakeGame.toasts.join(' | '));
-    for (let i = 0; i < 24; i++) D.progress.award(nameOf(her), `x.${i}`, 1);
+    // A 3RD-CLASS KITTEN, NO STARS AT ALL: his door used to ask for 2nd
+    // Class. Richard: "make it that anyone can do the quest."
+    ok('影 the card tells a kitten with no stars that she may try, for a SPECIAL orb',
+      F.card(her).some((l) => /Anyone may try.*SPECIAL Kotodama/.test(l.text))
+      && !F.card(her).some((l) => /KENSHI|★ of/.test(l.text)), F.card(her).map((l) => l.text).join(' | '));
     // Pressed AT THE KIOSK, which is outside his ring: found in the browser
     // losing to "Everybody left" on its first frame, because this check used
     // to stand her on the floor before she pressed.
     put(her, F.kiosk);
     F.kiosk.station.interact(her);
     const B = F.boss;
-    ok('影 a 2nd-Class kitten opens the fight, and her sister on the floor is in it too — his bar sized for two',
+    ok('影 a 3rd-Class kitten with 0★ opens the fight, and her sister on the floor is in it too — his bar sized for two',
       F.state === 'live' && F.who.size === 2 && B.owner === null && D.gate.targets.has(B)
-      && B.maxHits === SH.SHADOW_HITS + SH.SHADOW_PER, `${F.state} ${F.who.size} ${B.maxHits}`);
+      && B.maxHits === SH.SHADOW_HITS + SH.SHADOW_PER && D.progress.total(nameOf(her)) === 0
+      && !fakeGame.toasts.some((t) => /only fights/.test(t)), `${F.state} ${F.who.size} ${B.maxHits}`);
     for (let f = 0; f < 30; f++) F.update(1 / 60);
     ok('...and the kitten who pressed the button at his kiosk is stepped into the ring, still in the fight',
       F.state === 'live' && F.who.has(her.index) && F._onFloor().includes(her), `${F.state} ${[...F.who.keys()]}`);
@@ -36867,6 +36911,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
   const DD = await import('../src/systems/dreamdojo.js');
   const SH = await import('../src/systems/dream/shadow.js');
   const LV = await import('../src/systems/dream/lionvoice.js');
+  const ST = await import('../src/systems/dream/stories.js');
   const { mp3Duration } = await import('./mp3.mjs');
   const read = (f) => readFileSync(new URL(f, import.meta.url), 'utf8');
 
@@ -36892,6 +36937,10 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     ...Object.entries(DD.LION_VOICE).map(([k, id]) => [DD.LION_LINES[k], id, k]),
     ...Object.entries(SH.SHADOW_LINES).map(([k, l]) => [l.line, l.voice, `shadow.${k}`]),
     [SH.HANDOVER.line, SH.HANDOVER.voice, 'handover'],
+    /* The gear-up bubbles and his lines in the three Dream Dojo scenes
+       (dream/stories.js) — the same voice, the same folder, the same rule. */
+    ...Object.entries(ST.GEAR_VOICE).map(([k, id]) => [ST.GEAR_LINES[k], id, `gear.${k}`]),
+    ...ST.STORY_ROWS.filter((r) => r.who === 'lion').map((r) => [r.text, r.voice, r.voice]),
   ];
   ok('every recorded line of his is a line he actually has',
     Object.keys(DD.LION_VOICE).every((k) => typeof DD.LION_LINES[k] === 'string'));
@@ -36997,8 +37046,10 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const D = new DD.DreamDojo({ players: [], world, audio: a });
     const v = D.voice;
     for (const id of ids) v.els.set(id, { duration: secs[id], paused: true, ended: false });
+    /* The scenes' lines are played by the scene (dream/storyscene.js), not
+       by the Dojo's voice: those pairs are the ones keyed by their own id. */
     ok('the Dojo builds his voice out of the very strings its cards show',
-      pairs.every(([t, id]) => v.idOf(t) === id));
+      pairs.filter(([, id, k]) => k !== id).every(([t, id]) => v.idOf(t) === id));
     D.t = 10;
     D.holoSay(DD.LION_LINES.sim, 7);
     ok('the welcome card stays up until he has finished saying it, not for its old seven seconds',
@@ -37313,6 +37364,606 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     her.setSimArt(null);
   }
   scene.remove(sim.root);
+}
+
+/* ==========================================================================
+   THE DREAM DOJO, RICHARD'S IMPROVEMENTS LIST — the hologram sign, the gear
+   room and the suit-up, the dome that only opens at the stones, the fall that
+   puts her back, the crossing's cameras, the swell of the music, Lionheart's
+   two talks, the tour, and Payne's Dream Dojo card
+   (systems/dreamdojo.js, systems/dream/{approach,gear,lecture,stories,
+   storyscene}.js, systems/payne.js).
+
+   Built for real: `DreamDojo.build` runs headless here, so every check below
+   reads the meshes, the colliders and the cameras the game itself makes. Each
+   asks what its fix is FOR — a camera that frames the island, not a camera
+   whose distance is 50.
+   ========================================================================== */
+{
+  console.log('\n--- the Dream Dojo: the sign, the gear, the dome, the cameras, the talks ---');
+  const DD = await import('../src/systems/dreamdojo.js');
+  const AP = await import('../src/systems/dream/approach.js');
+  const GR = await import('../src/systems/dream/gear.js');
+  const LC = await import('../src/systems/dream/lecture.js');
+  const ST = await import('../src/systems/dream/stories.js');
+  const SS = await import('../src/systems/dream/storyscene.js');
+  const PNd = await import('../src/systems/payne.js');
+  const PLd = await import('../src/entities/player.js');
+  const { MUSIC: MUSd } = await import('../src/core/audio.js');
+  const readD = (f) => readFileSync(new URL(f, import.meta.url), 'utf8');
+  const { ARCADE, DOME_R, TUBE_R } = DD;
+  const dcD = world.dojoCentre;
+  const hyp = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+  const toastsD = [];
+  const started = [];
+  const story = { active: false, start(kind, rows, ctx, cast) { started.push({ kind, rows, ctx, cast }); return true; } };
+  const gD = {
+    world, scene: new THREE.Scene(), players: [], dragons: [], toasts: toastsD, sounds: [],
+    toast(t) { this.toasts.push(t); }, sfx(s) { this.sounds.push(s); },
+    input: { promptFor: () => 'E', players: [] }, storyScene: story,
+  };
+  const D = new DD.DreamDojo(gD);
+  D.build(null);
+  const L = D.layout;
+  const spawnD = new THREE.Vector3(0, world.heightAt(0, 40).y, 40);
+  const mkD = (index) => new PLd.Player({ texture: new THREE.Texture(), index, spawn: spawnD.clone(), cols: 8, rows: 4, mirror: false });
+  const kits = [0, 1, 2, 3].map(mkD);
+  const [her, sis] = kits;
+  const nameD = (p) => p.style?.name ?? p.name;
+  // `pinnedAt` cleared because these checks set phases by hand; the game's
+  // own ways out (`exitAll`, the end of a phase) clear it themselves.
+  const stand = (p, x, z, y = ARCADE.y) => { p.position.set(x, y, z); p.velocity.set(0, 0, 0); p.onGround = true; p.pinnedAt = null; };
+  const park = (p) => stand(p, spawnD.x + p.index * 3, spawnD.z, spawnD.y);
+
+  /* --- the sign has no posts, and floats --- */
+  {
+    /* Richard: "Seems The Dream Dojo sign, the billboard is behind the poles
+       holding it up ... maybe we can just remove the poles ... If it is
+       floating, have it bouncing around and fading in/out a bit". The posts
+       were two tall opaque meshes on the sign's own spot; now nothing opaque
+       stands taller than the projector's puck within reach of the board. */
+    const box = new THREE.Box3();
+    D.group.updateMatrixWorld(true);
+    const tall = D.group.children.filter((m) => {
+      if (!m.isMesh || m === D.sign || m === D.signCone || m.material?.transparent) return false;
+      box.setFromObject(m);
+      const cx = (box.min.x + box.max.x) / 2;
+      const cz = (box.min.z + box.max.z) / 2;
+      return Math.hypot(cx - L.sign.x, cz - L.sign.z) < 7 && box.max.y > ARCADE.y + 1;
+    });
+    ok('the Dream Dojo sign stands on no posts: nothing solid rises within 7 of the board',
+      tall.length === 0, `${tall.length} tall`);
+    const ys = [];
+    const as = [];
+    const t0 = D.t;
+    for (let f = 0; f < 600; f++) { D.t = t0 + f / 60; D._updateSign(); ys.push(D.sign.position.y); as.push(D.signU.uAlpha.value); }
+    D.t = t0;
+    const spanY = Math.max(...ys) - Math.min(...ys);
+    const spanA = Math.max(...as) - Math.min(...as);
+    ok('...and it bobs, and fades in and out, like a hologram', spanY > 0.4 && spanY < 1.5 && spanA > 0.1,
+      `bob ${spanY.toFixed(2)} · alpha ${Math.min(...as).toFixed(2)}–${Math.max(...as).toFixed(2)}`);
+  }
+
+  /* --- the gear room --- */
+  const solidsD = world.solids.filter((s) => hyp(s, ARCADE) < ARCADE.r + 1);
+  {
+    const racks = D.gear.racks;
+    const onPadD = (q, pad) => hyp(q, ARCADE) + pad < ARCADE.r;
+    ok('three gear racks — headset, gloves, suit — each on the pad',
+      racks.length === 3 && GR.GEAR_ITEMS.every((it) => racks.some((r) => r.item.id === it.id))
+      && racks.every((r) => onPadD(r.at, GR.RACK_R + 0.5)), racks.map((r) => hyp(r.at, ARCADE).toFixed(1)).join(' '));
+    const tubeClear = Math.min(...racks.flatMap((r) => L.tubes.map((t) => hyp(r.at, t))));
+    const lionClear = Math.min(...racks.map((r) => hyp(r.at, L.lion)));
+    ok('...clear of every tube and of Lionheart', tubeClear > TUBE_R + GR.GRAB_R && lionClear > 3,
+      `tubes ${tubeClear.toFixed(2)} · Lionheart ${lionClear.toFixed(2)}`);
+    /* THE WAY IN AND THE WAY OUT STAY OPEN. The last stone lands her on the
+       pad's edge, and the walk out of a tube ends 3.2 toward the middle: a
+       kitten (radius ~0.6) stands at every one of those without a prop's
+       collider under her. */
+    const last = L.stones.at(-1);
+    const k = (ARCADE.r - 0.8) / hyp(last, ARCADE);
+    const entry = { x: ARCADE.x + (last.x - ARCADE.x) * k, z: ARCADE.z + (last.z - ARCADE.z) * k };
+    const outs = L.tubes.map((t) => {
+      const d = hyp(t, ARCADE);
+      return { x: t.x + ((ARCADE.x - t.x) / d) * 3.2, z: t.z + ((ARCADE.z - t.z) / d) * 3.2 };
+    });
+    const spots = [entry, ...outs, ...racks.map((r) => r.at)];
+    const blocked = spots.filter((q, i) => solidsD.some((s) => hyp(q, s) < s.r + 0.6 - (i > outs.length ? 9 : 0)));
+    const entryClear = Math.min(...solidsD.map((s) => hyp(entry, s) - s.r));
+    ok('...and no prop stands where she steps off the stones or walks out of a tube',
+      solidsD.length >= 6 && blocked.length === 0, `${solidsD.length} props · entry clear by ${entryClear.toFixed(2)}`);
+  }
+
+  /* --- the gear flow --- */
+  {
+    gD.players = [her, sis];
+    park(sis);
+    const lion = L.lion;
+    stand(her, lion.x + 2, lion.z);
+    toastsD.length = 0;
+    D.interact(her);
+    const s = D.st[0];
+    ok('the first talk sends her round the racks, and the toast names all three pieces',
+      s?.gather?.size === 3 && !s.phase && /VR HEADSET, VR GLOVES, TRACKING SUIT/.test(toastsD.at(-1) ?? ''), toastsD.at(-1));
+    const t = L.tubes[0];
+    stand(her, t.x, t.z);
+    toastsD.length = 0;
+    D.interact(her);
+    ok('...and her tube refuses her without the gear, IN WORDS, saying who has it',
+      !D.st[0].phase && /talk to Lionheart first/.test(toastsD.at(-1) ?? ''), toastsD.at(-1));
+    D.gear.racks.forEach((r, i) => {
+      stand(her, r.at.x, r.at.z);
+      D._updateGear(1 / 60);
+      if (i < 2) stand(her, lion.x + 2, lion.z);
+    });
+    ok('...every rack she reaches is ticked off, and the last one suits her up and remembers it',
+      D.st[0].gather === null && D.st[0].phase === 'suit' && D.progress.flag(nameD(her), 'geared')
+      && toastsD.filter((x) => /✓ \(\d of 3\)/.test(x)).length === 3);
+    let dressedAt = null;
+    for (let f = 0; f < 240 && D.st[0].phase === 'suit'; f++) {
+      D.update(1 / 60);
+      if (dressedAt == null && her.simLook) dressedAt = D.st[0].t;
+    }
+    ok('...the cloud comes first and she changes inside it, then walks to her tube',
+      dressedAt != null && dressedAt >= 0.3 && dressedAt < DD.SEQ.suit && D.st[0].phase === 'walk' && her.simLook,
+      `dressed at ${dressedAt?.toFixed(2)}s of ${DD.SEQ.suit}`);
+    // ANYONE: her sister, who has never been, gets her own round of the racks.
+    stand(sis, lion.x + 2, lion.z + 1);
+    D.interact(sis);
+    ok('...her sister gets her own round of the racks — the gear is per kitten',
+      D.st[1]?.gather?.size === 3 && !sis.simLook);
+    D.exitAll();
+    D.st[1].gather = null;
+    ok('every way out that is not the walk out takes the gear off at once', !her.simLook && !sis.simLook);
+    // THE SECOND TIME: straight to the poof.
+    stand(her, lion.x + 2, lion.z);
+    D.st[0].phase = null;
+    D.interact(her);
+    ok('a kitten who has geared before poofs straight into it at a word', D.st[0].phase === 'suit' && !D.st[0].gather);
+    D.st[0].phase = null;
+    her.setSimLook(true);
+    stand(her, ARCADE.x + ARCADE.r + 4, ARCADE.z);
+    D._updateGear(1 / 60);
+    ok('...and one who wanders off the pad in it is poofed back into her clothes', !her.simLook);
+    park(her);
+    D.reset();
+    D.st.length = 0;
+  }
+
+  /* --- the dome: a wall, a slide, and a door --- */
+  {
+    gD.players = [her];
+    const A = ARCADE;
+    const behind = L.door + Math.PI;
+    const ap = D.approach;
+    ap.st.length = 0;
+    // Into the side, away from the door: pushed out, flagged, yelled at.
+    her.position.set(A.x + Math.cos(behind) * (DOME_R - 1), A.y + 2, A.z + Math.sin(behind) * (DOME_R - 1));
+    her.velocity.set(-Math.cos(behind) * 8, 0, -Math.sin(behind) * 8);
+    her.onGround = false;
+    toastsD.length = 0;
+    ap.update(1 / 60);
+    const h1 = hyp(her.position, A);
+    ok('the dome is a wall to a kitten jumping at its side: put back outside it, and told where the door is',
+      h1 > DOME_R && ap.of(her).cheat && toastsD.some((t) => /only opens at the stones/.test(t)), `${h1.toFixed(2)} of ${DOME_R}`);
+    // Dropped on top, as if off a dragon: she slides off and lands outside.
+    ap.st.length = 0;
+    her.position.set(A.x + 0.3, A.y + DOME_R + 3, A.z + 0.2);
+    her.velocity.set(0, -4, 0);
+    her.onGround = false;
+    let inside = false;
+    for (let f = 0; f < 240; f++) {
+      ap.update(1 / 60);
+      her.position.addScaledVector(her.velocity, 1 / 60);
+      her.velocity.y -= 24 / 60;
+      if (hyp(her.position, A) < A.r && her.position.y < A.y + 1) inside = true;
+    }
+    const hOut = hyp(her.position, A);
+    ok('...and a kitten dropped on its top slides off the side and down, never onto the pad',
+      !inside && hOut > DOME_R - 1 && ap.of(her).cheat, `${hOut.toFixed(1)} from the middle, y ${(her.position.y - A.y).toFixed(1)}`);
+    // Through the door, low, on foot: nothing stops her.
+    ap.st.length = 0;
+    const s2 = L.stones[2];
+    const s3 = L.stones[3];
+    her.position.set((s2.x + s3.x) / 2, A.y - 0.6, (s2.z + s3.z) / 2);
+    her.velocity.set(0, 0, 0);
+    her.onGround = false;
+    const before = her.position.clone();
+    ap.update(1 / 60);
+    ok('...but the hop from the third stone to the fourth goes through the door untouched',
+      her.position.distanceTo(before) < 1e-9 && !ap.of(her).cheat && AP.inDoor(Math.atan2(before.z - A.z, before.x - A.x), L.door));
+    // A dragon, and her on it: both pushed, by the same amount.
+    ap.st.length = 0;
+    const drake = { position: new THREE.Vector3(A.x + 4, A.y + 6, A.z + 1), group: new THREE.Group() };
+    drake.rider = her;
+    her.mount = drake;
+    her.position.copy(drake.position);
+    gD.dragons = [drake];
+    toastsD.length = 0;
+    D._updateDome(1 / 60);
+    const dh = hyp(drake.position, A);
+    ok('a dragon flying into the dome is pushed out — and the kitten riding it goes with it',
+      dh >= DOME_R + 1.5 - 1e-6 && hyp(her.position, drake.position) < 1e-6 && ap.of(her).cheat
+      && toastsD.some((t) => /keeps animals out/.test(t)), `dragon ${dh.toFixed(2)} · her ${hyp(her.position, A).toFixed(2)}`);
+    her.mount = null;
+    gD.dragons = [];
+  }
+
+  /* --- the fall: two seconds of air, then back to the start --- */
+  {
+    const ap = D.approach;
+    ap.st.length = 0;
+    const dcY = world.heightAt(L.launch.x, L.launch.z, dcD.y + 20).y;
+    stand(her, L.launch.x + 1, L.launch.z, dcY);
+    ap.update(1 / 60);
+    const safe = her.position.clone();
+    const s1 = L.stones[1];
+    const lowest = Math.min(...L.stones.map((s) => s.y));
+    her.position.set(s1.x + 3, lowest - AP.FALL_DROP - 0.5, s1.z);
+    her.velocity.set(0, -6, 0);
+    her.onGround = false;
+    toastsD.length = 0;
+    let t = 0;
+    while (t < AP.FALL_HOLD - 0.1) { ap.update(1 / 60); t += 1 / 60; }
+    const stillFalling = !her.onGround && her.position.y < lowest;
+    while (t < AP.FALL_HOLD + 0.2) { ap.update(1 / 60); t += 1 / 60; }
+    ok('a kitten who misses a stone falls for FALL_HOLD — "2 - 3 seconds" — and is not caught before',
+      stillFalling && AP.FALL_HOLD >= 2 && AP.FALL_HOLD <= 3, `${AP.FALL_HOLD}s`);
+    ok('...then stands where she last stood on the Dojo, facing the stones, told to try again',
+      her.onGround && hyp(her.position, safe) < 1e-6 && ap.of(her).fell
+      && toastsD.some((x) => /Back to the start/.test(x)) && !!world.heightAt(her.position.x, her.position.z, her.position.y + 1));
+    // Out at sea, nowhere near: not the Dream Dojo's to catch.
+    ap.st.length = 0;
+    her.position.set(dcD.x + 200, -40, dcD.z);
+    her.onGround = false;
+    for (let f = 0; f < 200; f++) ap.update(1 / 60);
+    ok('...but a fall anywhere else is not the Dream Dojo\'s business', !ap.st[0]);
+    park(her);
+  }
+
+  /* --- the crossing's cameras, through the real lens --- */
+  const settle = (p, secs = 5) => {
+    p.camera.aspect = 16 / 9;
+    p.camera.updateProjectionMatrix();
+    p.camTarget.copy(p.position);
+    p.focusT = 0;
+    for (let f = 0; f < secs * 60; f++) {
+      D._dt = 1 / 60;
+      const fo = D.cameraFocus(p);
+      if (fo) p.setFocus(fo); else p.setFocus(null);
+      p._updateCamera(1 / 60);
+    }
+    p.camera.updateMatrixWorld(true);
+  };
+  const ndc = (p, q) => new THREE.Vector3(q.x, q.y, q.z).project(p.camera);
+  const inF = (v, m = 1) => Math.abs(v.x) <= m && Math.abs(v.y) <= m && v.z < 1;
+  {
+    gD.players = [her];
+    // FAR AWAY, NOTHING: the town's camera is the town's.
+    park(her);
+    D._cam = [];
+    ok('away from the Dream Dojo it asks for no camera at all', D.cameraFocus(her) === null);
+    /* IN THE DOME: "when the player is within the Dream Dojo sphere, the
+       camera should zoom out a bit to show the entire VR island and sign."
+       The rim of the pad all the way round, the sign's corners, all four
+       tubes and Lionheart's head, inside the frame. */
+    stand(her, ARCADE.x + 2, ARCADE.z + 1);
+    D._cam = [];
+    settle(her);
+    const rim = Array.from({ length: 24 }, (_, i) => {
+      const a = (i / 24) * Math.PI * 2;
+      return { x: ARCADE.x + Math.cos(a) * ARCADE.r, y: ARCADE.y, z: ARCADE.z + Math.sin(a) * ARCADE.r };
+    });
+    // The board's own corners, turned to this lens the way the game turns it.
+    D.faceCamera(her.camera);
+    D.sign.updateMatrixWorld(true);
+    const signPts = [-6, 6].flatMap((dx) => [-2.25, 2.25].map((dy) => new THREE.Vector3(dx, dy, 0).applyMatrix4(D.sign.matrixWorld)));
+    const look = [...rim, ...signPts, ...L.tubes.map((t) => ({ x: t.x, y: ARCADE.y + 5.6, z: t.z })),
+      { x: L.lion.x, y: ARCADE.y + DD.LION_HEIGHT, z: L.lion.z }];
+    const pts = look.map((q) => ndc(her, q));
+    const worst = Math.max(...pts.map((v) => Math.max(Math.abs(v.x), Math.abs(v.y))));
+    ok('inside the dome the camera holds the whole island — rim, sign, tubes, Lionheart',
+      pts.every((v) => inF(v, 0.98)), `worst ${worst.toFixed(2)} NDC`);
+    const herV = ndc(her, { x: her.position.x, y: her.position.y + 1.4, z: her.position.z });
+    ok('...and she is still in it', inF(herV, 0.9), `${herV.x.toFixed(2)}, ${herV.y.toFixed(2)}`);
+    /* ON THE STONES: "the camera should follow the player as they get closer
+       to the dream dojo, but shouldn't move around too dynamically while they
+       are jumping on the platforms." One bearing for the whole crossing, her
+       in frame and the NEXT stone too, and her shadow (her feet) visible. */
+    const yaws = [];
+    const frames = [];
+    L.stones.forEach((s, i) => {
+      stand(her, s.x, s.z, s.y);
+      settle(her, 3);
+      yaws.push(her.focus?.yaw);
+      const next = L.stones[i + 1] ?? { x: ARCADE.x, y: ARCADE.y, z: ARCADE.z };
+      frames.push([ndc(her, { x: s.x, y: s.y, z: s.z }), ndc(her, { x: next.x, y: next.y ?? ARCADE.y, z: next.z })]);
+    });
+    /* The stones OUTSIDE the dome: the last one is inside it (the door is
+       the gap before it), where the dome's camera takes over at CAM_BLEND.
+       The 0.003 left between the first stone and the others is the blend
+       still finishing after three seconds, not a turn. */
+    const outside = yaws.filter((_, i) => hyp(L.stones[i], ARCADE) > DOME_R);
+    const spreadYaw = Math.max(...outside) - Math.min(...outside);
+    ok('on the stones the camera keeps ONE bearing the whole way across',
+      yaws.every(Number.isFinite) && outside.length >= 3 && spreadYaw < 0.01, yaws.map((y) => y.toFixed(3)).join(' '));
+    ok('...with her feet and the next stone both in frame from every stone',
+      frames.every(([a, b]) => inF(a, 0.85) && inF(b, 0.95)),
+      frames.map(([a, b]) => `${a.y.toFixed(2)}/${b.x.toFixed(2)},${b.y.toFixed(2)}`).join(' '));
+    // MID-JUMP, THE LENS DOES NOT BOB: her height is read on landing only.
+    const s0 = L.stones[0];
+    stand(her, s0.x, s0.z, s0.y);
+    settle(her, 3);
+    const cy = D.cameraFocus(her).centre.y;
+    her.position.y += 2.5;
+    her.onGround = false;
+    const cy2 = D.cameraFocus(her).centre.y;
+    // What is left is the walking camera's sliver of weight (1 - j, ~0.0004).
+    ok('...and it does not bob with her jump', Math.abs(cy2 - cy) < 0.01 * 2.5, `${(cy2 - cy).toFixed(4)} for a 2.5 jump`);
+    // CLOSER AT THE EDGE: "zoom in more dynamically" as she nears the rim.
+    const dists = [24, 15, 5].map((r) => {
+      const dir = { x: (L.stones[0].x - L.launch.x), z: (L.stones[0].z - L.launch.z) };
+      const n = Math.hypot(dir.x, dir.z);
+      const x = L.launch.x - (dir.x / n) * r;
+      const z = L.launch.z - (dir.z / n) * r;
+      stand(her, x, z, world.heightAt(x, z, dcD.y + 20)?.y ?? dcD.y);
+      settle(her, 3);
+      return her.focus ? her.focus.dist : DD.WALK_CAM?.dist ?? 26;
+    });
+    ok('...and it moves in as she walks up to the edge, not all at once',
+      dists[0] > dists[1] && dists[1] > dists[2] && Math.abs(dists[2] - DD.JUMP_CAM.dist) < 2, dists.map((d) => d.toFixed(1)).join(' → '));
+    park(her);
+    her.setFocus(null);
+    D._cam = [];
+  }
+
+  /* --- the music swells --- */
+  {
+    const A = ARCADE;
+    const at = (d) => {
+      const dir = { x: L.launch.x - A.x, z: L.launch.z - A.z };
+      const n = Math.hypot(dir.x, dir.z);
+      stand(her, A.x + (dir.x / n) * d, A.z + (dir.z / n) * d);
+      return D.musicLevel([her]);
+    };
+    D._vrMusic = false;
+    const far = hyp(L.launch, A) + DD.MUSIC_SWELL.beyond;
+    const lv = { in: at(5), skin: at(DOME_R + 0.01), launch: at(hyp(L.launch, A)), edge: at(far - 0.5) };
+    D._vrMusic = false;
+    const off = at(far + 3);
+    D._vrMusic = true;
+    const held = at(far + 3);
+    D._vrMusic = false;
+    ok('the Dream Dojo\'s music: full inside the dome, about half at its skin, quiet at the start of the stones',
+      lv.in === 1 && Math.abs(lv.skin - 0.5) < 0.02 && lv.launch > 0.05 && lv.launch < 0.25 && lv.edge > 0,
+      `${lv.in} · ${lv.skin.toFixed(2)} · ${lv.launch.toFixed(2)} · ${lv.edge.toFixed(2)}`);
+    ok('...silent past the far edge, and once on it holds for a few units so the line does not restart it',
+      off === 0 && held > 0, `${off} · ${held.toFixed(3)}`);
+    her.mount = {};
+    ok('...and a kitten on a dragon does not count — the flight theme has her', at(5) === 0);
+    her.mount = null;
+    ok('...and the piece is the Dream Dojo\'s own synthwave, wired into the router',
+      MUSd.vr?.tune === 'vr' && /this\._vrLevel = this\.dream\?\.musicLevel\?\.\(this\.players\) \?\? 0;\s*if \(this\._vrLevel > 0\) return 'vr';/.test(readD('../src/main.js')));
+    park(her);
+  }
+
+  /* --- Lionheart's two talks: once, with everybody, on their marks --- */
+  {
+    gD.players = [her, sis];
+    const ap = D.approach;
+    ap.st.length = 0;
+    D.lecture.reset();
+    started.length = 0;
+    const lion = D.lion.position;
+    stand(her, lion.x + 6, lion.z + 3);
+    stand(sis, ARCADE.x + 3, ARCADE.z - 2);
+    Object.assign(ap.of(her), { inside: true, cheat: true });
+    Object.assign(ap.of(sis), { inside: true });
+    ok('nothing plays while the floor is busy', (() => { D.st[1] = { phase: 'walk', t: 0 }; const r = D.lecture.update(); D.st[1] = null; return r === null; })());
+    const kind = D.lecture.update();
+    const sc = started.at(-1);
+    const mk = SS.marks(lion, ARCADE, 2);
+    ok('a kitten who tried the wall and came in by the stones hears the HONOR talk when she nears him',
+      kind === 'honor' && sc?.rows === ST.HONOR && sc.cast[0] === her);
+    ok('...her sister on the island is in it, and both stand on their marks facing him',
+      sc?.cast.length === 2 && sc.cast.every((p, i) => hyp(p.position, mk[i]) < 1e-9 && Math.abs(p.facing - mk[i].facing) < 1e-9));
+    /* "the camera is behind, over the shoulder": through the scene's own
+       first lens, the DRAWING (the billboard's own `facing`, which picks the
+       cell) is turned away from the camera. Found in the browser: `p.facing`
+       was set and the billboard's was not, and she was drawn face-on. */
+    {
+      const s = SS.shotFor('ots', sc.ctx, 0);
+      const away = sc.cast.map((p) => {
+        let rel = p.sprite.facing - Math.atan2(s.pos.x - p.position.x, s.pos.z - p.position.z);
+        rel = Math.atan2(Math.sin(rel), Math.cos(rel));
+        return Math.abs(rel);
+      });
+      ok('...and through the over-the-shoulder lens they are DRAWN from behind, not face-on',
+        away.every((a) => a > Math.PI * 0.7), away.map((a) => `${(a * 180 / Math.PI).toFixed(0)}°`).join(' '));
+    }
+    ok('...and it is spent the moment it STARTS, not when it finishes', D.lecture.update() === null && !ap.of(her).cheat);
+    // The fall talk, for a kitten who fell and never cheated.
+    started.length = 0;
+    const third = kits[2];
+    gD.players = [her, sis, third];
+    stand(third, lion.x + 5, lion.z - 2);
+    Object.assign(ap.of(third), { inside: true, fell: true });
+    const k2 = D.lecture.update();
+    ok('a kitten who fell on the way hears the FALL talk, once', k2 === 'fall' && started.at(-1)?.rows === ST.FALL
+      && D.lecture.update() === null);
+    // One who heard the honor talk is not lectured again for falling.
+    started.length = 0;
+    Object.assign(ap.of(her), { inside: true, fell: true });
+    stand(her, lion.x + 4, lion.z);
+    ok('...and one who has had the honor talk is not given the fall one on top', D.lecture.update() === null && !started.length);
+    // A mounted kitten is never in a talk; a kitten off the island is not cast.
+    D.lecture.reset();
+    Object.assign(ap.of(her), { inside: true, cheat: true });
+    stand(sis, ARCADE.x + LC.CAST_R + 30, ARCADE.z);
+    D.lecture.update();
+    ok('...and a sister away across the sea is not dragged into one', !started.at(-1)?.cast.includes(sis));
+    gD.players = [her];
+    for (const p of kits) park(p);
+    ap.st.length = 0;
+    D.lecture.reset();
+  }
+
+  /* --- the scenes' shots: every one finite, and every talk shot holds its party --- */
+  {
+    const used = [...new Set(ST.STORY_ROWS.map((r) => r.shot))];
+    const ctx0 = D.storyCtx();
+    const bad = used.filter((name) => [0, 0.5, 1].some((k) => {
+      const s = SS.shotFor(name, ctx0, k);
+      return ![s.pos.x, s.pos.y, s.pos.z, s.look.x, s.look.y, s.look.z].every(Number.isFinite)
+        || Math.hypot(s.pos.x - s.look.x, s.pos.y - s.look.y, s.pos.z - s.look.z) < 2;
+    }));
+    ok('every shot the three scenes name is a real camera, at every point through its line',
+      bad.length === 0 && used.length >= 12, bad.join(', ') || `${used.length} shots`);
+    ok('...and every scene line has a voice and a shot', ST.STORY_ROWS.every((r) => r.voice && r.shot && r.text));
+    const cam = new THREE.PerspectiveCamera(38, 16 / 9, 0.5, 4000);
+    const lion = D.lion.position;
+    const misses = [];
+    for (let n = 1; n <= 4; n++) {
+      const spots = SS.marks(lion, ARCADE, n).map((m) => ({ x: m.x, y: ARCADE.y, z: m.z }));
+      const ctx = D.storyCtx(spots);
+      for (const name of ['ots', 'otsLion', 'otsWide']) {
+        for (const k of [0, 1]) {
+          const s = SS.shotFor(name, ctx, k);
+          cam.position.set(s.pos.x, s.pos.y, s.pos.z);
+          cam.lookAt(s.look.x, s.look.y, s.look.z);
+          cam.updateMatrixWorld(true);
+          const face = new THREE.Vector3(lion.x, ARCADE.y + 4.4, lion.z).project(cam);
+          if (!inF(face, 0.95)) misses.push(`${n}·${name}·lion`);
+          /* Over her shoulder: the party's heads are in frame, or behind the
+             lens (the shoulder in the foreground is allowed to be cut). */
+          if (name === 'otsWide') {
+            for (const q of spots) {
+              const v = new THREE.Vector3(q.x, q.y + 2.2, q.z).project(cam);
+              if (!inF(v, 0.98)) misses.push(`${n}·wide·kit`);
+            }
+          }
+        }
+      }
+    }
+    ok('the over-the-shoulder talks keep Lionheart\'s face in frame, and the wide holds the whole party of one to four',
+      misses.length === 0, misses.slice(0, 6).join(' ') || '24 frames');
+  }
+
+  /* --- the tour, and Payne's card --- */
+  {
+    started.length = 0;
+    const r = D.startTour();
+    ok('VIEW THE DREAM DOJO starts the tour with the whole of TOUR', r === null && started.at(-1)?.kind === 'tour' && started.at(-1).rows === ST.TOUR);
+    D.st[0] = { phase: 'sim', t: 0 };
+    ok('...and refuses, with a reason she can say, while anybody is in a tube', D.startTour() === 'busy');
+    D.st.length = 0;
+    story.active = true;
+    ok('...or while a scene is already up', D.startTour() === 'scene');
+    story.active = false;
+    ok('the tour tells the brief: what it is, why, Lionheart\'s past and his mission',
+      ST.TOUR.some((x) => /Lionheart/.test(x.text)) && ST.TOUR.some((x) => /fell down a thousand times/.test(x.text))
+      && ST.TOUR.some((x) => /Kotodama.*clan powers/.test(x.text)) && ST.TOUR.some((x) => /equanimity/.test(x.text))
+      && ST.TOUR.some((x) => /tangential.*tangible/.test(x.text)));
+    ok('the honor talk teaches DO, the way — and the fall talk, getting up again',
+      ST.HONOR.some((x) => /DO means THE WAY/.test(x.text)) && ST.HONOR.some((x) => /sorry/.test(x.text))
+      && ST.FALL.some((x) => /pick yourself up/.test(x.text)));
+    const kid = { name: 'Ember', style: { name: 'Ember' }, index: 0 };
+    const shut = { open: false, has: () => false, claimed: {}, status: () => [] };
+    const list = PNd.questList({ feats: shut }, kid);
+    const row = list.find((x) => x.id === 'shadow');
+    ok('Payne\'s quest list shows Lionheart\'s Honor, in a Dream Dojo section of its own',
+      row?.dojo === true && !list.filter((x) => x.dojo).some((x) => x.id !== 'shadow') && row.title === "Lionheart's Honor");
+    ok('...and it says open after the ending too, because it is a LATE quest',
+      row?.state === 'open' && PNd.questState({ feats: shut }, kid, 'rider') === 'closed');
+    ok('her card has a DREAM DOJO row, and its buttons say what they do',
+      PNd.DOJO_ACTS.map(([k]) => k).join() === 'view,ddmark,back'
+      && /VIEW THE DREAM DOJO/.test(PNd.DOJO_ACTS[0][1]) && /MARK IT ON MY MAP/.test(PNd.DOJO_ACTS[1][1])
+      && /key: 'dojo', title: 'THE DREAM DOJO'/.test(readD('../src/systems/payne.js')));
+    ok('...and her new lines are pending her approval like all of them, and are hers (Pixie)',
+      ['payne_dd_intro', 'payne_dd_mark', 'payne_dd_busy', 'payne_q_shadow'].every((id) => PNd.PAYNE_LINES[id])
+      && ST.TOUR.filter((x) => x.who === 'payne').every((x) => PNd.PAYNE_LINES[x.voice] === x.text));
+    /* HER VIEW BUTTON, THROUGH HER OWN `choose`, against the real Dream Dojo:
+       a started tour is 'scene' (every card comes down) and nothing is
+       toasted. `startTour` answers null for yes, and `?? 'not ready'` once
+       read that as a no — the tour played under her open card and a toast
+       said it could not. */
+    {
+      story.active = false;
+      started.length = 0;
+      toastsD.length = 0;
+      const said = [];
+      const stub = { game: { ...gD, dream: D }, ledger: () => PNd.blankPayne(), queue: ['x'], _end() {}, say: (_p, ids) => said.push(...ids) };
+      const yes = PNd.Payne.prototype.choose.call(stub, her, 'view');
+      const toastedYes = toastsD.length;
+      story.active = true;
+      const no = PNd.Payne.prototype.choose.call(stub, her, 'view');
+      story.active = false;
+      ok('VIEW THE DREAM DOJO on her card starts the tour and takes the card down, without a word of refusal',
+        yes === 'scene' && started.at(-1)?.kind === 'tour' && toastedYes === 0 && stub.queue.length === 0,
+        `${yes} · ${toastedYes} toast(s)`);
+      ok('...and when it cannot, she keeps her card up and says so', no === 'payneDojo' && toastsD.length === 1);
+    }
+    ok('the inspector routes the Dream Dojo card back to its own row, and the tour closes the menu',
+      /payneDojo: 'dojo'/.test(readD('../src/systems/inspector.js')) && /next === 'scene'/.test(readD('../src/systems/inspector.js')));
+  }
+
+  /* --- her special poses come into the headset with her --- */
+  {
+    /* Richard: "we should generate the sprite for their other abilities, so
+       that if they do them while in the simulation, it will show them do it
+       in the main world as well while in the tube." Six per SHEET (Storm and
+       Blossom are recoloured from them by style), each baked from a master,
+       and each the SAME DRAWING as its home pose but for the gear: measured
+       crown-to-foot and foot line against the four home poses that are on the
+       chroma route (eat and bless are on the old white route, whose alpha is
+       the whole frame until the loader keys it, so there is nothing to read
+       off the file). Measured at generation: 1.00-1.02, feet within 8px. */
+    const POSES = ['eat', 'bless', 'warp', 'inhale', 'scared', 'sweep'];
+    const bake = readD('./sprite-bake.mjs');
+    const missing = ['ember', 'frost'].flatMap((s) => POSES.filter((p) =>
+      !existsSync(new URL(`../public/sprites/kittens/${s}/vr_${p}.png`, import.meta.url))
+      || !existsSync(new URL(`../docs/art-masters/${s}_vr_${p}.png`, import.meta.url))).map((p) => `${s}/${p}`));
+    ok('all six special poses exist in the headset, for both sheets, baked from a kept master',
+      missing.length === 0 && /\$\{s\}_vr_\$\{p\}\.png/.test(bake) && POSES.every((p) => bake.includes(`'${p}'`)),
+      missing.join(' ') || '12 poses');
+    const box = (file) => {
+      const { w, h, d } = readPNG(new URL(file, import.meta.url));
+      let top = h;
+      let foot = -1;
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) if (d[(y * w + x) * 4 + 3] > 128) { if (y < top) top = y; foot = y; break; }
+      }
+      return { top, foot, h: foot - top };
+    };
+    const drift = [];
+    for (const s of ['ember', 'frost']) {
+      for (const p of ['warp', 'inhale', 'scared', 'sweep']) {
+        const a = box(`../public/sprites/kittens/${s}/${p}.png`);
+        const b = box(`../public/sprites/kittens/${s}/vr_${p}.png`);
+        const k = b.h / a.h;
+        if (Math.abs(k - 1) > 0.05 || Math.abs(b.foot - a.foot) > 16) drift.push(`${s}/${p} ${k.toFixed(2)} ${b.foot - a.foot}px`);
+      }
+    }
+    ok('...each the same size and stood on the same line as the pose she does at home', drift.length === 0, drift.join(', ') || '8 measured');
+    ok('...and the player swaps every one of them with the turnaround, keeping her home drawing for any that is missing',
+      /for \(const \[key, file, k\] of SIM_POSES\)/.test(readD('../src/entities/player.js'))
+      && /vr_\$\{f\}\.png/.test(readD('../src/main.js')));
+  }
+
+  /* --- two players keep the game they know --- */
+  {
+    const two = [mkD(0), mkD(1)];
+    const g2 = { world, scene: new THREE.Scene(), players: two, dragons: [], toasts: [], sounds: [], toast() {}, sfx() {}, input: { promptFor: () => 'E' } };
+    const D2 = new DD.DreamDojo(g2);
+    D2.build(null);
+    two.forEach((p) => park(p));
+    for (let f = 0; f < 60; f++) D2.update(1 / 60);
+    ok('two kittens nowhere near: no state, no camera, no music, no talk',
+      D2.st.length === 0 && D2.approach.st.length === 0 && two.every((p) => D2.cameraFocus(p) === null)
+      && D2.musicLevel(two) === 0 && D2.lecture.heard.size === 0);
+    g2.scene.remove(D2.group);
+  }
+  gD.scene.remove(D.group);
 }
 
 /* Print the total. HANDOFF.md quoted it in two places and they disagreed (150

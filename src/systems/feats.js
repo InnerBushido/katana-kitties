@@ -139,13 +139,18 @@ export const FEATS = [
      AND THE ONLY ONE THE DOOR DOES NOT SHUT ON. Lionheart has
      promised it since the Dream Dojo opened — "Beat me in the simulator
      someday, and you'll earn a share of my HONOR!" — and the simulator's
-     final exam (dream/shadow.js) asks for KENSHI 2nd Class first, which is an
-     afternoon of stars on its own. A kitten who gets there after the ending
+     final exam (dream/shadow.js) used to ask for KENSHI 2nd Class first.
+     Richard: "Lionheart's Honor quest should give a Special Kotodama orb, but
+     make it that anyone can do the quest." So the door is open to a 3rd-Class
+     kitten, and the prize is the special draw (`special: true`, which
+     `isSpecial` reads) while the quest stays `'each'` — every kitten who beats
+     him earns her own. It is the only everybody-quest that pays a special
+     orb, because it is the only one that is a fight. A kitten who gets there after the ending
      has not missed a deadline she was never told about, so `late` lets it be
      earned after the Awakening; the ceremony is already running then, and
      `_ceremony` pays it on her next turn like any other unpaid quest. Before
      the Awakening it is a gold token like the other nine. */
-  { id: 'shadow', who: 'each', icon: '🦁', title: "Lionheart's Honor", late: true,
+  { id: 'shadow', who: 'each', icon: '🦁', title: "Lionheart's Honor", late: true, special: true,
     short: "Lionheart's Honor", how: 'Beat Shadow Lionheart in the Dream Dojo.' },
   { id: 'rider', who: 'one', icon: '🎯', title: 'Beam gunner',
     short: 'Beam gunner',
@@ -160,7 +165,9 @@ export const FEATS = [
     short: 'Orb collector', how: 'Collect more Kotodama Orbs than anybody else.' },
 ];
 export const FEAT_BY_ID = Object.fromEntries(FEATS.map((f) => [f.id, f]));
-export const isSpecial = (id) => FEAT_BY_ID[id]?.who !== 'each';
+/** Does this quest pay the SPECIAL draw (rares in the bag)? Every quest only
+ *  one kitten can win does, and so does Lionheart's Honor (`special`). */
+export const isSpecial = (id) => FEAT_BY_ID[id]?.who !== 'each' || !!FEAT_BY_ID[id]?.special;
 
 /** A kitten's quest ledger. Every field survives a save and a drop-out. */
 export const blankFeats = () => ({

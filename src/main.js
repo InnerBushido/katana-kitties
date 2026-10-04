@@ -45,6 +45,7 @@ import { ClanFx } from './systems/clanfx.js';
 import { Confirm } from './systems/confirm.js';
 import { onTap } from './core/tap.js';
 import { ShrineScene, SCENE_RADIUS } from './systems/shrinescene.js';
+import { StoryScene } from './systems/dream/storyscene.js';
 import { ArenaExit } from './systems/arenaexit.js';
 import { SummonScene } from './systems/summonscene.js';
 import { DragonBall, BALL_COUNT, PICKUP_RADIUS } from './entities/dragonball.js';
@@ -1496,6 +1497,11 @@ class Game {
        buffered here at boot, not fetched at the moment she opens her mouth. */
     this.shrineScene = new ShrineScene({ world: this.world, audio: this.audio });
     await this.shrineScene.load(this.leaders);
+    /* The Dream Dojo's three scenes — Payne's tour and Lionheart's two talks
+       (systems/dream/storyscene.js). Its clips are buffered when a scene is
+       first asked for, not here: two of the three are earned, and most
+       afternoons will never play them. */
+    this.storyScene = new StoryScene(this);
 
     /* The walk out of the arena's front door, and its stretcher-bearers. The
        bearers fall back to a drawn placeholder rather than to nothing: a
@@ -2089,9 +2095,38 @@ class Game {
       });
       this.shadowArt = real(shadow);
       this.players.forEach((p, i) => p?.setSimArt(this.simArt[this.roster[i]] ?? null));
-      return this.simArt;
+      return this._loadSimPoses().then(() => this.simArt);
     });
     return this._simArtLoad;
+  }
+
+  /**
+   * THE SIX SPECIAL POSES IN THE HEADSET — `kittens/<sheet>/vr_<pose>.png`,
+   * loaded exactly as the home ones are (one cell, `cell: 256, maxAtlas: 768`)
+   * and recoloured BY STYLE, never by slot, like every pose in `_loadArt`.
+   * Behind the turnaround, so a kitten connecting is never kept waiting for a
+   * Goblin Sweep she may never do in there. A missing file costs that one pose
+   * its headset and nothing else (`Player.setSimLook` keeps her home drawing).
+   */
+  _loadSimPoses() {
+    const FILES = ['eat', 'bless', 'warp', 'inhale', 'scared', 'sweep'];
+    const load = (sheet, f) => loadSpriteAtlas(`/sprites/kittens/${sheet}/vr_${f}.png`, {
+      views: 1, rows: 1, cell: 256, maxAtlas: 768,
+    }).then((a) => (a?.texture?.image ? a : null)).catch(() => null);
+    return Promise.all(['ember', 'frost'].map((sheet) =>
+      Promise.all(FILES.map((f) => load(sheet, f))).then((arr) =>
+        [sheet, Object.fromEntries(FILES.map((f, i) => [f, arr[i]]))])
+    )).then((pairs) => {
+      const base = Object.fromEntries(pairs);
+      this.simPoseArt = PLAYER_STYLE.map((s) => {
+        const b = base[s.sheet];
+        if (!s.recolour) return b;
+        return Object.fromEntries(FILES.map((f) => [f, b[f] ? recolourAtlas(b[f], s.recolour) : null]));
+      });
+      const n = pairs.reduce((k, [, m]) => k + Object.values(m).filter(Boolean).length, 0);
+      console.log(`[art] VR poses → ${n}/${FILES.length * 2} sheets`);
+      this.players.forEach((p, i) => p?.setSimPoseArt(this.simPoseArt[this.roster[i]] ?? null));
+    });
   }
 
   /**
@@ -2169,6 +2204,7 @@ class Game {
     /* Her headset drawing, if the sim's sheets have landed (`loadSimArt`); if
        not, `loadSimArt` hands it to her when they do. */
     p.setSimArt(this.simArt?.[styleIndex] ?? null);
+    p.setSimPoseArt(this.simPoseArt?.[styleIndex] ?? null);
     /* IF THIS CAT HAS ALREADY PLAYED TODAY, SHE PICKS UP WHERE SHE LEFT OFF.
        HERE RATHER THAN IN THE THREE CALLERS, for exactly the reason
        `_dressPlayer` is here: a player is seated in three places — boot, a
@@ -3111,7 +3147,8 @@ class Game {
   /** True while any full-screen story scene owns the screen. */
   _sceneActive() {
     return !!(this.cutscene?.active || this.summonScene?.active
-      || this.shrineScene?.active || this.finaleScene?.active || this.arenaExit?.active);
+      || this.shrineScene?.active || this.finaleScene?.active || this.arenaExit?.active
+      || this.storyScene?.active);
   }
 
   /** Skip whichever scene is up. Harmless if none is. */
@@ -3121,6 +3158,7 @@ class Game {
     if (this.shrineScene?.active) this.shrineScene.skip();
     if (this.finaleScene?.active) this.finaleScene.skip();
     if (this.arenaExit?.active) this.arenaExit.skip();
+    if (this.storyScene?.active) this.storyScene.skip();
     if (this.travel) this.griffin?.skip();
   }
 
@@ -3463,6 +3501,7 @@ class Game {
        leftover that makes a "restart" feel like it only half worked. */
     this.shrineScene?.finish();
     this.shrineScene?.dwell.clear();
+    this.storyScene?.finish();
     for (const L of this.leaders) { L.met = false; L.lookAt(null); }
 
     /* The dragon hunt goes back in its box too: stars back on their islands,
@@ -8518,6 +8557,9 @@ class Game {
     if (this.audio.musicVolume <= 0) return;
     const want = this._wantedTrack(dt);
     if (want && want !== this.audio.mode) this.audio.startMusic(want);
+    /* THE DREAM DOJO SWELLS; everything else plays at the slider's level.
+       Set every frame, but `setMusicLevel` only touches the bus on a change. */
+    this.audio.setMusicLevel?.(want === 'vr' ? this._vrLevel ?? 1 : 1);
   }
 
   /**
@@ -8643,6 +8685,14 @@ class Game {
        still starts where it always did; the parade back out of the doors is
        after `Tournament.finish`, so it gets the fanfare too. The griffin's
        party never hears it — they land straight into the picker. */
+    /* THE DREAM DOJO — across the stones, under the dome, and in the
+       simulator. Below the rides, so a dragon flying past it keeps the flight
+       theme; above the islands, because the crossing starts ON the Dojo of
+       the Turning Circle and "starts playing quietly, from a distance" means
+       before she has left it. `musicLevel` is the swell, applied in
+       `_updateMusic`. */
+    this._vrLevel = this.dream?.musicLevel?.(this.players) ?? 0;
+    if (this._vrLevel > 0) return 'vr';
     const isl = this._islandTrack(dt);
     if (isl === 'arena' && !this.inMatch) return 'saucer';
     return isl;
@@ -9536,6 +9586,28 @@ class Game {
       return;
     }
 
+    /* --- the Dream Dojo's tour and Lionheart's talks ---
+       The shrine scene's rules: kittens not ticked (a talk stands them on
+       marks, and a stick still pushed must not walk one off the pad), the
+       world, the dragons and the Dream Dojo itself go on living — the sign
+       floats, the lasers sweep, the racks glow, his bubbles stay quiet. */
+    if (this.storyScene?.active) {
+      if (this._skipPressed()) this.storyScene.skip();
+      this.storyScene.update(dt);
+      this.world.update(dt, this.dream?.arcadePos ?? this.players[0].position);
+      for (const d of this.dragons) d.update(dt, this.world, []);
+      this.dream?.update(dt);
+      for (const p of this.players) {
+        for (const o of p.orbs ?? []) o.update(dt, p.position);
+        for (const o of p.wornOrbs ?? []) o.update(dt, p.position);
+        for (const o of p.featOrbs ?? []) o.update(dt, p.position);
+      }
+      this._updateMusic(dt);
+      this._renderView(this.storyScene.camera, 0, 0,
+        ...this.renderer.getSize(new THREE.Vector2()).toArray(), null, true);
+      return;
+    }
+
     if (this.shrineScene?.active) {
       if (this._skipPressed()) {
         this.shrineScene.skip();
@@ -10127,7 +10199,13 @@ class Game {
       // Shadow Lionheart's two-shot (dream/shadow.js): only in the sim, so it
       // can never meet the Dojo, the grotto or the big screen.
       const shadowShot = near || p.mount ? null : this.dream?.shadow?.cameraFocus?.(p) ?? null;
+      /* THE WAY ACROSS AND THE DOME (DreamDojo.cameraFocus): in close behind
+         her for the stones, pulled back over the whole island inside the
+         bubble. Never on the Dojo floor itself — `near` wins, so the maths
+         camera is exactly what it was. */
+      const dreamShot = near || shadowShot ? null : this.dream?.cameraFocus?.(p) ?? null;
       if (shadowShot) p.setFocus(shadowShot);
+      else if (dreamShot) p.setFocus(dreamShot);
       else if (near) {
         p.setFocus({
           centre: dc,

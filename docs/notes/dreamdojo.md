@@ -113,9 +113,9 @@ A scene that frames "the kittens" must find them in the real world.
 ## The arcade
 
 - **Layout** (`arcadeLayout`): the pad is at `ARCADE {x:-162, z:2, r:14, y:33}`.
-  Two stones sit across the gap from the Dojo. `world-check` measures the hops
-  at **2.7, 2.5 and 3.8 units with steps up of 1.0**. A walking jump clears
-  about 9, so she has to jump and cannot miss.
+  ~~Two stones sit across the gap from the Dojo, with hops of 2.7, 2.5 and
+  3.8.~~ "It is currently too easy to fall": four stones on a half-circle now
+  (`STONE_ARC`; see the front door, below).
 - **The dome** (`DOME_R` 19) pushes dragons, Ryuuseki and pandas out to r 20.5
   and toasts the rider.
   **The first cut was rejected on sight.** It was a square lattice with alternate
@@ -602,7 +602,7 @@ the hub. A road from the hub would run across the school's floor, and
 | rank | needs |
 | --- | --- |
 | KENSHI 3rd Class | — |
-| KENSHI 2nd Class | 24★ — and Shadow Lionheart only fights 2nd Class and up |
+| KENSHI 2nd Class | 24★ (Shadow Lionheart used to ask for it; since Richard's "anyone can do the quest" his door is open to all) |
 | KENSHI 1st Class | 60★ **and** a win over the Shadow |
 
 First Class is the one rank stars alone cannot buy. A total can be earned an
@@ -825,9 +825,166 @@ What *could* produce each was fixed instead:
   the figure of light he was spawned as. Before, it was left standing inside
   the drawing.
 
-**Still home-sheet:** her special poses in the sim (eat, bless, warp, inhale,
-scared, sweep) are home-sheet billboards with no headset. They need generated
-art, four kittens each.
+~~**Still home-sheet:** her special poses in the sim.~~ Generated: all six, in
+the headset, for all four kittens (see the front door, below).
+
+## The front door — Richard's improvements list
+
+One long note, eight parts, each quoted. `world-check` has one section for the
+lot, **the Dream Dojo: the sign, the gear, the dome, the cameras, the talks**.
+The new code is in five files under `dream/`: `approach.js` (the stones, the
+dome and the fall), `gear.js` (the racks and the props), `stories.js` (every
+line), `storyscene.js` (the scene player and its shots) and `lecture.js`
+(Lionheart's two talks).
+
+**"Lionheart's Honor quest should give a Special Kotodama orb, but make it that
+anyone can do the quest."** The Shadow no longer asks for KENSHI 2nd Class; the
+refusal toast and the red "He fights 2nd Class" line are gone and the panel
+says *Anyone may try!* The quest stays `who: 'each'`, so every kitten who beats
+him earns her own orb, and it gains `special: true`. `isSpecial` now answers
+yes for it, so the draw has rares in the bag. It is the only everybody-quest
+that pays the special draw, because it is the only one that is a fight. 2nd
+Class is still a rank; it just stopped being a door.
+
+**"Seems The Dream Dojo sign, the billboard is behind the poles … If it is
+floating, have it bouncing around and fading in/out a bit to look more
+holographic."** The posts are gone. The sign floats, bobs 0.80 and breathes
+between 0.25 and 0.92 alpha. The check asserts that no post stands within 7 of
+it and that both ranges are what the code says.
+
+**"When the player is within the Dream Dojo sphere, the camera should zoom out
+a bit to show the entire VR island and sign."** `DOME_CAM`: the pad's centre,
+pulled back to 50 at the walking camera's own bearing (the angle Richard
+already likes is kept; only the distance changes). Measured through the real
+`cameraFocus` → `_updateCamera`: the whole island, sign included, fits with
+the worst point at NDC 0.78.
+
+**"Let's also add some props … VR gear, practice swords, shinai, VR Gloves +
+Full-body tracking equipment … laser tag looking equipment with large
+rifles/guns … omni-directional treadmills and lasers/colored lights."**
+`gear.js` builds three glowing racks (headset, gloves, tracking suit) and the
+scenery: a practice-sword stand with bokken and shinai, a laser-tag rifle rack
+("a hint to future VR Training possibilities"), two omni treadmills and a
+full-body tracking frame. The "lasers" are additive beams that sweep. They add no lights,
+because the game is fill-bound ([performance.md](performance.md)). `gearLayout`
+is pure, so the check can measure it: every rack is on the pad, 8.04 clear of
+the tubes, 13.70 clear of Lionheart, and nothing stands within 4.70 of the way
+in from the stones or on a walk-out spot.
+
+**The headset: "is there a way to align that better or do we need to generate
+new sprites … Alternatively, we can have them go to a few areas in the Dream
+Dojo island to gather all the VR gear, then have them turn to camera, and then
+have a special effect play."** Both, and the second is what fixes the first.
+The visor plane slid off her eyes because it was a separate quad over a drawing
+whose head moves from cell to cell. Now she wears the headset SHEET from the
+moment she suits up. The plane is only a fallback for a build where that sheet
+never loaded (`_wearVisor(p, !p._simArt)`).
+
+- **First visit:** she talks to Lionheart, he sends her round the three racks
+  (`GEAR_LINES.first`, voiced), and she picks each up by walking into it (a
+  toast per rack). The tube refuses her in words until she has all three. The
+  last rack starts phase `suit`: she turns to the lens, the poof covers her,
+  and she is dressed at 0.33 s of `SEQ.suit` (1.9 s).
+- **Every visit after:** `geared` is in the Dream Dojo's own progress store, so
+  a second talk goes straight to the suit (`GEAR_LINES.again`).
+- **Each kitten gears up for herself.** A sister has her own racks to collect.
+- **Out:** "they should automatically walk out of the tube, and poof … to put
+  their regular clothes back on." Phase `walkout` walks her 3.2 units toward
+  the pad's middle, then `unsuit` poofs her home look back. A kitten who walks
+  off the pad in her gear poofs back too, and `exitAll` (any scene) undresses
+  everybody.
+- **"We should generate the sprite for their other abilities."** The six
+  special poses (eat, bless, warp, inhale, scared, sweep) now exist in the
+  headset, so a sister doing one in the sim shows it in the tube as well.
+  [art.md](art.md#the-six-special-poses-in-the-headset) has how they were made.
+
+**"It is currently too easy to fall … Having 3 or 4 platforms to jump on …
+have it go in a half circle pattern towards the island … If they do fall …
+let them fall for 2 - 3 seconds before respawning them."** `STONE_ARC`: four
+stones of radius 2.0 on an arc of radius 15.5, at 44°, 66°, 88° and 110°, each
+0.6 higher than the last. The two old stones in a straight line had hops of
+2.7, 2.5 and 3.8. A kitten below the stone she left is held for `FALL_HOLD`
+(2.2 s) and put back at `LAUNCH_R` (63, three units inside the Dojo's rim, in
+front of where she took off). The check also proves she is not caught out at
+sea first.
+
+**The jump camera: "zoom in more dynamically … easier to see the players shadow
+while jumping … shouldn't move around too dynamically while they are jumping
+on the platforms."** `JUMP_CAM`. Walking toward the edge, the distance eases
+25.9 → 22.0 → 18.0, and the pitch drops from 0.66 to 0.5. On the stones the
+bearing is FIXED, aimed from the launch spot at the middle of the arc, so all
+four stones stay in frame the whole way. The height changes only when she
+lands. Measured:
+- one yaw on every stone outside the dome (the fourth is inside it, where the
+  dome camera takes over on purpose);
+- her feet and the next stone in frame on every hop;
+- the lens bobs -0.0009, which is the walking camera's leftover weight, inside
+  a 0.025 bar.
+
+**"Some cool VR Arcade music … quietly, from a distance … about 50% volume
+when near it and then full blast volume when people enter the sphere."** A new
+piece, `vr`, the only one in the game made of saws (synthwave, authored and
+original, in `audio.js`). Its loudness is `DreamDojo.musicLevel`, multiplied
+into the player's own slider (`setMusicLevel`), so a kitten who turned music
+down to a quarter hears the swell a quarter as loud. `MUSIC_SWELL`, measured:
+1 in the dome or the sim, 0.50 at the dome's skin, 0.14 mid-crossing, 0.08 at
+the far edge, silent beyond. There are six units of hysteresis (0.080 in
+level), so a kitten standing on the line does not restart the piece. A kitten
+on a mount counts as 0, and the loudest kitten wins.
+
+**The dragon: "the dragon is not flying through, it is getting blocked, but
+the player is able to fly through still."** The dragon is hung off its rider
+(`Player._updateFlight`), so pushing the DRAGON moved a body that was put back
+under her next frame. The rider is pushed now, and the dragon goes with her
+(both 20.50 from the centre after the push), with a toast saying why. The dome
+is a wall for a kitten on foot everywhere except one DOOR: the low sector
+(`DOOR_HALF` 20°, under `DOOR_TOP`) that the third stone's hop onto the fourth
+passes through. "If a player tries to jump off of a dragon to fall into the
+dojo … they should slide off the sides of the sphere": `domeContact` lays her
+on the surface and slides her off (47.3 out in the check), then the fall
+respawns her. The door hop is untouched.
+
+**Lionheart's two talks.** Both are in `lecture.js`.
+- **HE SAW THAT.** Trying the wall or dropping from a dragon sets the `cheat`
+  flag, and he yells as a bubble (`yellWall` / `yellDrop`): "in a funny and
+  overly excited and berating way".
+- **HONOR** (seven lines) plays when a kitten with `cheat` who has since come
+  in by the stones walks near him. "He can apologize for getting angry … why
+  try to sneak into a space when the front door is already opened … 'Do' means
+  'the way'."
+- **FALL** (four lines) plays for `fell` instead: "if you fall, just need to
+  pick yourself up again and try again".
+- **Once per kitten per afternoon.** HONOR outranks FALL and marks both heard.
+- **"If more than one player is nearby … then all the players are in the
+  cutscene."** Everybody within `CAST_R` (34) is cast and stood on `marks`.
+- **It waits while anybody is in a tube or the sim**, because a scene would
+  disconnect them.
+- **It is spent on START** (non-negotiable 7), so a skip at the first frame
+  has spent it.
+- **"Camera is behind, over the shoulder, and have Lionheart facing the
+  player."** Shots `ots`, `otsLion`, `otsWide`. The check frames his face and
+  the whole party of one to four.
+
+  **A bug the browser found:** she stood on her mark facing him, but was drawn
+  FACE-ON to the over-the-shoulder lens. The billboard picks its cell from its
+  own `sprite.facing`, which only `Player.update` copies across, and kittens
+  are not ticked under a scene. `play` now sets both, as the shrine scene
+  does. The check measures the drawn view from behind (150° and 175°); without
+  the fix it reads 28° and 39°.
+
+**The tour.** Richard: "a little introduction cutscene, working like the Clan
+Leaders introduction cutscene but longer and more detailed." `TOUR` in
+`stories.js` is fifteen rows. Payne opens and closes it; Lionheart covers his
+past, why he built the dojo, what is learned there, the islands, the Shadow
+and the mission. The mission line keeps Richard's own "(or is it tangible?)"
+as Lionheart's joke on himself, answered with "BOTH!". It has its own shots,
+from `isleWide` to `skyPull2`, including three into the sim's hub, islands and
+Shadow. It refuses with `'busy'` (somebody is in the sim) or `'scene'`.
+Payne's side of it is in [payne.md](payne.md#the-dream-dojo-section).
+
+**Two players.** None of this has a two-player special case to break. The
+state is per kitten; the cameras, the music and the talks ask the same
+questions at any count. The check runs a pair through it and pins that.
 
 ## Voice
 

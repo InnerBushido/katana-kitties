@@ -578,6 +578,37 @@ quoted.
   - [voices.md](docs/notes/voices.md#lionheart-is-barrett-and-the-wording-is-half-the-casting)
     has the casting, the rule and the gating.
 
+- **Richard's Dream Dojo improvements list** (branch
+  `mixed/dojo-honor-payne-gear-platforms`).
+  [dreamdojo.md](docs/notes/dreamdojo.md#the-front-door--richards-improvements-list)
+  has each note quoted, with the measured numbers:
+  - **Lionheart's Honor is open to anybody** and pays the SPECIAL draw.
+  - **Payne lists it**, and her card has a **THE DREAM DOJO** section: VIEW
+    (a fifteen-line tour, voiced by her and Lionheart) and MARK IT.
+  - **The sign** has no posts; it floats, bobs and breathes.
+  - **The camera** pulls back to 50 inside the dome, so the whole island fits.
+  - **Props:** the gear racks, a sword stand, a laser-tag rack, treadmills, a
+    tracking frame and sweeping beams.
+  - **Gearing up.** The first visit sends her round three racks, then the suit
+    poofs on; later visits go straight to the suit. She walks out of the tube
+    and poofs back into her own look.
+  - **The six special poses exist in the headset** (12 masters, 4 kittens).
+  - **The way across** is four stones on a half-circle. A fall is held 2.2 s,
+    then puts her back on the Dojo. On the stones the camera holds one bearing.
+  - **The `vr` synthwave piece** swells from 0.08 to 0.5 to 1 as she crosses
+    and enters.
+  - **The dome** pushes the RIDER, so the dragon goes with her. A kitten
+    dropped onto the dome slides off it.
+  - **Lionheart reacts:** he yells at a cheat, then gives the HONOR talk (道 *dō*)
+    once she comes in properly, or the FALL talk after a fall. Each plays once
+    per kitten, the whole party is cast, and it is shot over the shoulder.
+  - **Two bugs found in the browser, both now checked:** the talk drew her
+    face-on (the billboard's own `sprite.facing`), and Payne's VIEW toasted a
+    refusal on success (`??` on a `null` success).
+  - **Open:** nobody has played it. The tour has fifteen rows and is long by
+    design ("longer and more detailed"). If it drags, it gets cut by rows, not
+    by speeding the voices. All new Payne lines are pending her approval.
+
 - **Richard's Dream Dojo fix list** (branch
   `mixed/dojo-islands-bridges-feast-shadow`).
   [dreamdojo.md](docs/notes/dreamdojo.md#discs-ridden-bridges-and-leaving--richards-fix-list)
@@ -594,8 +625,8 @@ quoted.
   - The Shadow is Lionheart's height (6.2, was 9.3).
   - **Open:** the "VR sprites not showing" and "Shadow stuck on one pose"
     reports did not reproduce in Chrome or Firefox. The holo-kittens' headsets
-    and the Shadow's late re-skin were fixed instead. Her special poses in the
-    sim (eat, bless, warp and the rest) are still home-sheet art.
+    and the Shadow's late re-skin were fixed instead. ~~Her special poses in
+    the sim are still home-sheet art.~~ Generated (the improvements list, above).
 
 - **Stage 4 built:**
   - The **data highways and light cycles** to the two far islands.

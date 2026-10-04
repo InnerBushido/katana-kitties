@@ -355,6 +355,18 @@ const EAT_CROUCH = 0.86;
  */
 export const EAT_MOUTH_Y = EAT_CROUCH * 0.62;
 
+/** Her single-cell poses: the property, the file stem their art is filed
+ *  under, and the height factor their setter sizes them by. The Dream Dojo
+ *  redraws each in the headset (`setSimLook`). */
+const SIM_POSES = [
+  ['eatPose', 'eat', EAT_CROUCH],
+  ['blessPose', 'bless', BLESS_STRETCH],
+  ['warpPose', 'warp', 1],
+  ['breathPose', 'inhale', 1],
+  ['scaredPose', 'scared', 1],
+  ['sweepPose', 'sweep', 1],
+];
+
 export class Player {
   constructor(opts) {
     const {
@@ -1291,6 +1303,41 @@ export class Player {
       l = this._simLook;
     }
     this.sprite.setLook(l);
+    /* AND HER SPECIAL POSES GO INTO THE GEAR WITH HER. Richard: "we should
+       generate the sprite for their other abilities, so that if they do them
+       while in the simulation, it will show them do it in the main world as
+       well while in the tube." Each pose is its own single-cell billboard, so
+       each gets the same treatment as the turnaround: a second look on the
+       SAME billboard, sized by the same rule its setter sizes the home one by.
+       A pose with no VR drawing keeps her home one — degrades, never vanishes. */
+    for (const [key, file, k] of SIM_POSES) {
+      const pose = this[key];
+      if (!pose) continue;
+      pose.userData.home ??= pose.look;
+      const a = on ? this._simPoseArt?.[file] : null;
+      if (a?.texture) {
+        if (!pose.userData.sim) {
+          const q = this.height * k / (a.contentScale || 1);
+          pose.userData.sim = pose.makeLook(a.texture, {
+            cols: 1, rows: 1, width: q, height: q, footOffset: (a.pad ?? 0) * q,
+          });
+        }
+        pose.setLook(pose.userData.sim);
+      } else {
+        pose.setLook(pose.userData.home);
+      }
+    }
+  }
+
+  /**
+   * The headset versions of her six special poses, `{eat, bless, warp,
+   * inhale, scared, sweep}` → loaded atlas (`kittens/<sheet>/vr_<file>.png`).
+   * Handed over late, with the turnaround, by `Game.loadSimArt`.
+   */
+  setSimPoseArt(map) {
+    this._simPoseArt = map ?? null;
+    for (const [key] of SIM_POSES) if (this[key]) this[key].userData.sim = null;
+    if (this.simLook) this.setSimLook(true);
   }
 
   setEatArt(art) {

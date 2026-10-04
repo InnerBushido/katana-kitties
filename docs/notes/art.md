@@ -498,3 +498,29 @@ the Shadow off `lionheart_town.png`. The reasons are in the comments on their
   (`Game.loadSimArt`). A missing file falls back to the home sheet or the tinted
   town Lionheart. Frost's sheet and the Shadow have sealed holes, so the
   fill-everything count in world-check is now sixteen. Neither is ever filled.
+
+## The six special poses in the headset
+
+Richard: "we should generate the sprite for their other abilities, so that if
+they do them while in the simulation, it will show them do it in the main world
+as well while in the tube." There are twelve masters
+(`docs/art-masters/{ember,frost}_vr_{eat,bless,warp,inhale,scared,sweep}.png`,
+1024², `gpt_image_2_5` on magenta), baked to `kittens/<sheet>/vr_<pose>.png` at
+768. Storm and Blossom are these recoloured by `Game`, like every pose.
+
+- **Two references per prompt.** The first is that kitten's own home pose, so
+  the pose, framing and scale are the same drawing. The second is the front
+  idle cell of her `vr` sheet, so the headset and trim match.
+- **Loaded exactly as the home poses are** (`Game._loadSimPoses`, one cell
+  each). `Player.setSimLook` gives each pose billboard a second look sized by
+  the same rule as its home one. A pose with no VR drawing keeps her home one:
+  it degrades, it never vanishes.
+- **world-check measures each against its home pose**, for warp, inhale, scared
+  and sweep: crown-to-foot within ±5% and foot line within ±16px (measured
+  at generation: 1.00–1.02, feet within 8px). Eat and bless are not measured.
+  Their home poses are on the old white route, whose alpha is the whole frame
+  until the loader keys it, so the file has nothing to read.
+- **Seven of the twelve close a hole** (an arm against the body, a paw against
+  the face), as their home poses mostly already did. So the fill-everything
+  count is now twenty-three. Nothing fills them, because `_loadSimPoses` does
+  not ask for it.

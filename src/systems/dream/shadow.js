@@ -5,7 +5,7 @@ import { Kiosk, idleIn, isleSpot } from './kiosk.js';
 import { HoloPanel } from './holo.js';
 import { Target, holoSolid, holoMat } from './targets.js';
 import { starsFor } from './progress.js';
-import { rankOf, atLeast, RANKS, SHADOW_RANK } from './rank.js';
+import { rankOf } from './rank.js';
 import { VOICE_TAIL } from './lionvoice.js';
 
 /* ---------------------------------------------------------------------------
@@ -372,32 +372,19 @@ export class ShadowFight {
     const P = this.dream.progress;
     const n = p.style?.name ?? p.name;
     const r = rankOf(P, n);
-    const need = RANKS.find((x) => x.id === SHADOW_RANK);
     const best = P.best(n, 'shadow');
     return [
       { text: '影 SHADOW LIONHEART', size: 1.8, color: 0xc89bff, glow: true, jp: true },
       { text: 'The final exam. Fight him TOGETHER — everyone on the island joins in', size: 1.0 },
       { text: 'Red on the floor = where he will hit. SWEEP? JUMP! After the CROSS he is OPEN', size: 0.9, color: 0x9fefff },
-      atLeast(P, n, SHADOW_RANK)
-        ? { text: r.shadow ? `beaten! best ${best != null ? `${Math.round(best)}s` : '—'}` : 'Beat him for a Powerup Kotodama!', size: 1.1, color: HOLO.gold }
-        : { text: `He fights ${need.name} — you have ${r.stars}★ of ${need.need}`, size: 1.0, color: 0xff8a8a },
+      { text: r.shadow ? `beaten! best ${best != null ? `${Math.round(best)}s` : '—'}` : 'Anyone may try! Beat him for a SPECIAL Kotodama!', size: 1.1, color: HOLO.gold },
     ];
   }
 
   /** The kiosk's button. Refused in words, or the fight begins. */
   begin(p) {
-    const P = this.dream.progress;
-    const n = p.style?.name ?? p.name;
     if (this.state === 'live') {
       this.dream.hint(p, 'the fight is ON — step into the purple ring to join!');
-      return;
-    }
-    if (!atLeast(P, n, SHADOW_RANK)) {
-      const need = RANKS.find((x) => x.id === SHADOW_RANK);
-      const r = rankOf(P, n);
-      this.dream.game.sfx?.('deny');
-      this.dream.game.toast?.(`${p.name} — Shadow Lionheart only fights ${need.name}. `
-        + `You have ${r.stars}★: earn ${need.need - r.stars} more on the islands, then come back!`, p.index);
       return;
     }
     if (this.state !== 'waiting') return;

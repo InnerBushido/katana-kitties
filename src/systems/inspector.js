@@ -91,7 +91,7 @@ const CHOICES = [
  *  dim behind it, the way out on the card) is a rule her card needs too, and a
  *  second host would have had to learn them all again. What she SAYS and what
  *  her rows DO live in systems/payne.js; this file only drives the cursor. */
-const PAYNE_STATES = new Set(['payne', 'payneQuests', 'payneTrick']);
+const PAYNE_STATES = new Set(['payne', 'payneQuests', 'payneTrick', 'payneDojo']);
 const isPayne = (state) => PAYNE_STATES.has(state);
 
 /** One player's card. Never shared; there is one of these per seat. */
@@ -304,10 +304,17 @@ export class Inspector {
   _back(index) {
     const c = this.cards[index];
     if (!c?.state) return;
-    if (c.state === 'payneQuests' || c.state === 'payneTrick') {
-      /* Back to her three questions, with the cursor on the row that got her
+    /* Which of her main rows each sub-card was opened from. By KEY, not
+       index: the hints row comes and goes, and an index that was right before
+       the Dream Dojo row arrived is one row off. Inline, not a module table,
+       because world-check runs this body on its own. */
+    const from = { payneQuests: 'quests', payneTrick: 'trick', payneDojo: 'dojo' }[c.state];
+    if (from) {
+      /* Back to her questions, with the cursor on the row that got her
          here — so a second press of JUMP does the same thing again. */
-      c.i = c.state === 'payneQuests' ? 0 : 3;
+      const p = this.game.players?.[index];
+      const rows = p && this.game.payne ? this.game.payne.rows(p) : [];
+      c.i = Math.max(0, rows.findIndex((r) => r.key === from));
       c.state = 'payne';
       c._sig = '';
       this.game.audio?.play('menu');
@@ -382,6 +389,7 @@ export class Inspector {
     if (c.state === 'payneTrick') return;
     let key;
     if (c.state === 'payneQuests') key = P.questAct(c.i);
+    else if (c.state === 'payneDojo') key = P.dojoAct(c.i);
     else key = P.rows(p)[c.i]?.key;
     if (!key) return;
     if (key === 'back') { this._back(index); return; }
@@ -397,6 +405,10 @@ export class Inspector {
     const next = P.choose(p, key);
     this.game.audio?.play('menu');
     if (!next) { this.closeOne(index); return; }
+    /* A SCENE TOOK THE SCREEN (her VIEW THE DREAM DOJO): every card comes
+       down, the profile's way — a card left open under a cutscene is a
+       cursor nobody can see, still listening for JUMP. */
+    if (next === 'scene') { this.closeAll(); return; }
     if (next !== c.state) c.i = 0;
     c.state = next;
     c._sig = '';

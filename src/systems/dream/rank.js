@@ -40,8 +40,9 @@ export const RANKS = [
   { id: 'k2', kanji: '剣士', name: 'KENSHI 2nd Class', short: '2ND CLASS', need: 24, colour: HOLO.magenta },
   { id: 'k1', kanji: '剣士', name: 'KENSHI 1st Class', short: '1ST CLASS', need: 60, shadow: true, colour: HOLO.gold },
 ];
-/** The rank the Shadow's door asks for. */
-export const SHADOW_RANK = 'k2';
+/* THE SHADOW'S DOOR IS OPEN TO EVERYONE. It asked for 2nd Class (24 stars,
+   an afternoon) until Richard: "make it that anyone can do the quest." 1st
+   Class still needs him beaten, so the ladder still ends at his door. */
 
 /** Where she stands. Pure, on the progress store and her name. */
 export function rankOf(progress, name) {

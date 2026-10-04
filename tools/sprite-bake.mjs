@@ -182,6 +182,16 @@ const WORK = [
      2048 wide because ten columns pack at maxAtlas/10 anyway. */
   { file: 'ember_vr.png', out: 'kittens/ember/vr.png', to: [2048, 1189], chroma: true },
   { file: 'frost_vr.png', out: 'kittens/frost/vr.png', to: [2048, 1189], chroma: true },
+  /* HER SIX SPECIAL POSES, IN THE HEADSET. Richard: "we should generate the
+     sprite for their other abilities, so that if they do them while in the
+     simulation, it will show them do it in the main world as well while in
+     the tube." Each was prompted with TWO references - that kitten's own home
+     pose (so the pose, framing and scale are the same drawing) and the front
+     idle cell of her `vr` sheet (so it is the same headset and trim) - and
+     loaded exactly as the home poses are (`Game._loadSimPoses`, one cell,
+     768). Storm and Blossom are these recoloured by `Game`, like every pose. */
+  ...['ember', 'frost'].flatMap((s) => ['eat', 'bless', 'warp', 'inhale', 'scared', 'sweep'].map((p) => (
+    { file: `${s}_vr_${p}.png`, out: `kittens/${s}/vr_${p}.png`, to: [768, 768], chroma: true }))),
   /* HIS SHADOW, the simulator's last boss (systems/dream/shadow.js): one row
      of four, in the order the fight reads them - guard, the overhead SLAM,
      the low SWEEP wound up, and the CROSS with its X of light. Generated off

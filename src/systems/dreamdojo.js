@@ -26,6 +26,16 @@ import { LionVoice, VOICE_TAIL } from './dream/lionvoice.js';
 import { Rundown } from './dream/rundown.js';
 import { ISLANDS, islandCentre } from './dream/islands.js';
 import { SimBar } from './dream/holo.js';
+import { Approach } from './dream/approach.js';
+import { Lecture } from './dream/lecture.js';
+import { GearRoom, GEAR_ITEMS } from './dream/gear.js';
+import { TOUR, GEAR_LINES, GEAR_VOICE } from './dream/stories.js';
+
+/** Her single-cell pose billboards, which the tube puppet mirrors. */
+const PUPPET_POSES = ['eatPose', 'blessPose', 'warpPose', 'breathPose', 'scaredPose', 'sweepPose'];
+
+/** The key her progress is filed under — the kitten, not the seat. */
+const nameOf = (p) => p.style?.name ?? p.name;
 
 /* ---------------------------------------------------------------------------
    LIONHEART'S DREAM DOJO — the VR arcade north-east of the Turning Circle.
@@ -71,10 +81,62 @@ export const TUBE_IN = 1.7;
 /** How high she floats in the tube with the visor on. */
 export const FLOAT_H = 1.6;
 
+/** How high the hologram sign floats over the deck, at the middle of its bob. */
+export const SIGN_Y = 9.5;
+
+/** The way across: four stones on an arc (see `arcadeLayout`). `back` is how
+ *  far the arc's centre sits short of the pad's centre, `angles` where on it
+ *  each stone is, `y0` the Dojo's floor and `rise` each stone's step up. */
+export const STONE_ARC = { R: 15.5, back: 15.75, angles: [44, 66, 88, 110], r: 2.0, y0: 30, rise: 0.6 };
+/** How far from the Dojo's centre a kitten who fell is put back down. The
+ *  rim is at 66; 63 is three units of floor in front of her toes. */
+export const LAUNCH_R = 63;
+
+/**
+ * THE TWO CAMERAS OF THE WAY ACROSS (`DreamDojo.cameraFocus`).
+ *
+ * JUMP — Richard: "when the player gets close to the edge on the Dojo of the
+ * Turning Circle and before jumping on the platforms, the camera should zoom
+ * in more dynamically to give more of a 3D effect of jumping on the platforms
+ * and to make it easier to see the players shadow while jumping, the camera
+ * should follow the player as they get closer to the dream dojo, but
+ * shouldn't move around too dynamically while they are jumping". So: in
+ * close and lower than the walking camera (26 → 18, pitch 0.66 → 0.5), a
+ * bearing that is FIXED for the whole crossing (from the launch spot toward
+ * the middle of the arc, so all four stones sit in the frame the whole way)
+ * and a height that only changes when she LANDS — the lens follows her across
+ * and does not bob with every jump.
+ *
+ * DOME — "when the player is within the Dream Dojo sphere, the camera should
+ * zoom out a bit to show the entire VR island and sign": the pad's centre,
+ * pulled back to 50 at the walking camera's own bearing.
+ */
+export const JUMP_CAM = { dist: 18, pitch: 0.5, near: 10, far: 20, lift: 1.4 };
+export const DOME_CAM = { dist: 50, pitch: 0.6, lift: 3.5 };
+const WALK_CAM = { dist: 26, pitch: 0.66, yaw: -Math.PI * 0.25 };
+/**
+ * THE MUSIC'S SWELL (`DreamDojo.musicLevel`). "starts playing quietly, from a
+ * distance, as the user is jumping/commuting to the island and starts getting
+ * louder as they get closer, maybe about 50% volume when near it and then full
+ * blast volume when people enter the sphere". `far` is measured from the
+ * launch spot, so the piece is already there — just — when she stands at the
+ * first stone; `floor` is how quiet "quietly" is at the far edge; `near` is
+ * the level at the dome's skin. Entering is `in`, leaving is `out`: six units
+ * of hysteresis, so a kitten stood on the line does not restart the piece.
+ */
+export const MUSIC_SWELL = { beyond: 10, floor: 0.08, near: 0.5, out: 6 };
+
+/** How fast the crossing's cameras blend in and out, per second. The Dojo's own
+ *  `focusT` eases on top; the two together never snap. */
+const CAM_BLEND = 1.6;
+
 /** The sequence, in seconds. Named so a check can read them. */
 export const SEQ = {
   walkMax: 7,      // auto-walk gives up and places her after this
-  rise: 1.8,       // visor on, floating up, a little rain in her pane
+  suit: 1.9,       // the poof: she turns to the lens and comes out of it in her gear
+  unsuit: 1.2,     // the poof on the way out: her own clothes again
+  walkOutMax: 4,   // out of the tube on her own legs, then the poof
+  rise: 1.8,       // floating up in her gear, a little rain in her pane
   link: 0.7,       // the rain fills the pane; she crosses at the end
   rez: 1.4,        // she is drawn in on the other side
   derez: 1.1,      // disconnecting: drawn away, the rain fills
@@ -91,17 +153,45 @@ export function arcadeLayout(dojoCentre) {
   const u = { x: dx / L, z: dz / L };
   const v = { x: -u.z, z: u.x };
   const at = (a, b) => ({ x: ARCADE.x + u.x * a + v.x * b, z: ARCADE.z + u.z * a + v.z * b });
-  /* Two stones across the 16-unit gap, each a short hop up. A single jump at
-     a walk clears about nine units and rises 2.4; the widest gap here is 3.8
-     and the biggest step up is one unit, so a nine-year-old cannot miss it
-     but she does have to JUMP, which is the whole of the brief. */
-  const stones = [
-    { d: 70.5, y: 31.0 },
-    { d: 76.6, y: 32.0 },
-  ].map(({ d, y }) => ({ x: dojoCentre.x + u.x * d, z: dojoCentre.z + u.z * d, y, r: 1.8 }));
+  /* FOUR STONES ON A HALF-CIRCLE. There were two in a straight line, with
+     hops of 2.7, 2.5 and 3.8 — and Richard: "It is currently too easy to
+     fall ... Having 3 or 4 platforms to jump on may make it easier, have it go
+     in a half circle pattern towards the island rather than just a straight
+     line." So the way across swings out to the LEFT (screen-left, `-v`) on an
+     arc of radius STONE_ARC.R and lands on the pad's near-left side, which is
+     where Lionheart stands, so the first thing off the last stone is him.
+     Every hop is ~1.9 (solved for equal gaps against the Dojo's measured rim
+     at 66 and the pad's edge), each stone is 2.0 across — wider than the old
+     1.8 — and each rises STONE_ARC.rise, so the climb from the Dojo (30) to
+     the pad (33) is spread over five even steps. A 1.9 gap is still a JUMP:
+     nothing walks across it, which was the whole of the original brief. */
+  const arcC = L - STONE_ARC.back;
+  const stones = STONE_ARC.angles.map((deg, k) => {
+    const a = (deg * Math.PI) / 180;
+    const d = arcC - STONE_ARC.R * Math.cos(a);
+    const w = -STONE_ARC.R * Math.sin(a);
+    return {
+      x: dojoCentre.x + u.x * d + v.x * w, z: dojoCentre.z + u.z * d + v.z * w,
+      y: STONE_ARC.y0 + STONE_ARC.rise * (k + 1), r: STONE_ARC.r, d, w,
+    };
+  });
+  /* WHERE A FALL PUTS HER BACK: on the Dojo, on the line from its centre to
+     the first stone, LAUNCH_R out — "spawn them back to the start on the Dojo
+     of the Turning Circle before they started jumping". */
+  const s0 = stones[0];
+  const k0 = LAUNCH_R / Math.hypot(s0.d, s0.w);
+  const launch = {
+    x: dojoCentre.x + (s0.x - dojoCentre.x) * k0, z: dojoCentre.z + (s0.z - dojoCentre.z) * k0,
+  };
+  /* THE DOOR in the dome: the bearing, from the pad's centre, of the gap the
+     third stone jumps across onto the fourth. Only a kitten coming through
+     that sector, low, on foot, is let in — see dream/approach.js. */
+  const s2 = stones[2];
+  const s3 = stones[3];
+  const door = Math.atan2(((s2.z + s3.z) / 2) - ARCADE.z, ((s2.x + s3.x) / 2) - ARCADE.x);
   return {
     u, v, L,
-    stones,
+    stones, launch, door,
     /* The tubes along the back of the pad, left to right in player order, so
        Tube 1 is on the left where Ember's score is. */
     tubes: [-7.5, -2.5, 2.5, 7.5].map((b) => at(6, b)),
@@ -144,6 +234,10 @@ export const LION_LINES = {
   rundown: '%n — you\'re wearing %k Kotodama!\nTalk to me for a rundown\nof what each one does.',
   /* The spokes in the order she meets them walking round from the port
      (dream/islands.js): +38 and +78 are on her left, -38 and -78 her right. */
+  /* The improper way in — over the dome, or on a dragon. Shouted, and
+     funny about it: he is overexcited, not cross. */
+  yellWall: 'HEY! HEY HEY HEY! Not over the WALL!\nThat is the DISHONORABLE way in!\nThe front door is RIGHT THERE — use the STONES!',
+  yellDrop: 'Did you just try to DROP into my dojo?!\nNo, no, NO! Down you slide!\nBack to the start, and jump the STONES like a true warrior!',
   islands: 'Left: GALLERY, RANGE, then KUDAMONO STORM.\nRight: TRIAL HALL, KATA, then the SINE GAUNTLET.\nStraight across: the ARENA SCHOOL.\nFar ones? LIGHT CYCLE! The farthest is my SHADOW.',
 };
 
@@ -156,9 +250,36 @@ export const LION_VOICE = {
   sim: 'lion_sim',
   simIdle: 'lion_simidle',
   islands: 'lion_islands',
+  yellWall: 'lion_yell_wall',
+  yellDrop: 'lion_yell_drop',
 };
 
 /* ------------------------------ shaders ---------------------------------- */
+
+/* The sign: its canvas, scanlined, with a flicker and now and then a glitch
+   that slides a band of it sideways — a projection, not a board. */
+const SIGN_VERT = /* glsl */`
+  varying vec2 vUv;
+  void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+`;
+const SIGN_FRAG = /* glsl */`
+  uniform sampler2D map;
+  uniform float uTime;
+  uniform float uAlpha;
+  varying vec2 vUv;
+  void main() {
+    vec2 uv = vUv;
+    float band = step(0.93, fract(sin(floor(uTime * 3.0) * 12.9898) * 43758.5453));
+    float row = step(abs(uv.y - fract(uTime * 0.37)), 0.06);
+    uv.x += band * row * 0.025;
+    vec4 c = texture2D(map, uv);
+    float scan = 0.82 + 0.18 * sin(vUv.y * 260.0 - uTime * 9.0);
+    float sweep = smoothstep(0.0, 0.04, abs(fract(vUv.y - uTime * 0.25) - 0.5));
+    c.rgb *= scan * (0.85 + 0.15 * sweep);
+    c.rgb += vec3(0.25, 0.9, 1.0) * (1.0 - sweep) * 0.12 * c.a;
+    gl_FragColor = vec4(c.rgb, c.a * uAlpha);
+  }
+`;
 
 const SCREEN_VERT = /* glsl */`
   varying vec2 vUv;
@@ -447,6 +568,7 @@ export class DreamDojo {
       ...Object.entries(LION_VOICE).map(([k, id]) => [LION_LINES[k], id]),
       ...Object.values(SHADOW_LINES).map((l) => [l.line, l.voice]),
       [HANDOVER.line, HANDOVER.voice],
+      ...Object.entries(GEAR_VOICE).map(([k, id]) => [GEAR_LINES[k], id]),
     ]);
   }
 
@@ -478,6 +600,8 @@ export class DreamDojo {
       return p;
     };
     this.padDeck = plat(ARCADE.x, ARCADE.z, ARCADE.r, ARCADE.y, { step: 0.6 });
+    this.approach = new Approach(this, { arcade: ARCADE, domeR: DOME_R });
+    this.lecture = new Lecture(this);
     for (const s of L.stones) plat(s.x, s.z, s.r, s.y, { step: 0.6 });
 
     const parts = [];
@@ -573,21 +697,50 @@ export class DreamDojo {
       return { glass, num };
     });
 
-    // The sign over the back of the pad.
+    /* THE SIGN IS A HOLOGRAM NOW, AND HAS NO POSTS. Richard: "Seems The
+       Dream Dojo sign, the billboard is behind the poles holding it up. Since
+       this is a hologram dojo, maybe we can just remove the poles ... If it is
+       floating, have it bouncing around and fading in/out a bit to look more
+       holographic." It was a camera-facing plane between two posts at ±5.2
+       on the same spot, so as the plane turned to the lens the posts came in
+       front of it from most of the angles a kitten walks up at. Now it is
+       projected: a puck on the deck, a faint cone of light, and the board
+       floating in it — bobbing, swaying a little, scanlined and flickering
+       (`SIGN_FRAG`; `_updateSign` drives it). */
+    this.signU = { map: { value: signTexture() }, uTime: { value: 0 }, uAlpha: { value: 0.92 } };
     const sign = new THREE.Mesh(
       new THREE.PlaneGeometry(12, 4.5),
-      new THREE.MeshBasicMaterial({ map: signTexture(), transparent: true, side: THREE.DoubleSide, toneMapped: false })
+      new THREE.ShaderMaterial({
+        vertexShader: SIGN_VERT, fragmentShader: SIGN_FRAG, uniforms: this.signU,
+        transparent: true, depthWrite: false, side: THREE.DoubleSide,
+      })
     );
-    sign.position.set(L.sign.x, ARCADE.y + 9.5, L.sign.z);
+    sign.position.set(L.sign.x, ARCADE.y + SIGN_Y, L.sign.z);
+    sign.renderOrder = 12;
     this.sign = sign;
     this.group.add(sign);
-    const posts = [];
-    for (const k of [-5.2, 5.2]) {
-      const pg = new THREE.CylinderGeometry(0.22, 0.28, 9.6, 8);
-      pg.translate(L.sign.x + L.v.x * k, ARCADE.y + 4.8, L.sign.z + L.v.z * k);
-      posts.push(paint(pg, 0x22252f));
-    }
-    this.group.add(new THREE.Mesh(mergeParts(posts), toonVertexMat()));
+    const puck = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.3, 0.35, 24), new THREE.MeshBasicMaterial({ color: 0x2a3042 }));
+    puck.position.set(L.sign.x, ARCADE.y + 0.18, L.sign.z);
+    this.group.add(puck);
+    const lens = new THREE.Mesh(new THREE.CircleGeometry(0.8, 24), new THREE.MeshBasicMaterial({ color: HOLO.cyan, toneMapped: false }));
+    lens.rotation.x = -Math.PI / 2;
+    lens.position.set(L.sign.x, ARCADE.y + 0.37, L.sign.z);
+    this.group.add(lens);
+    const cone = new THREE.Mesh(
+      new THREE.CylinderGeometry(4.6, 0.75, SIGN_Y - 2.3, 24, 1, true),
+      new THREE.MeshBasicMaterial({
+        color: HOLO.cyan, transparent: true, opacity: 0.07, depthWrite: false,
+        blending: THREE.AdditiveBlending, side: THREE.DoubleSide, toneMapped: false,
+      })
+    );
+    cone.position.set(L.sign.x, ARCADE.y + 0.37 + (SIGN_Y - 2.3) / 2, L.sign.z);
+    this.signCone = cone;
+    this.group.add(cone);
+
+    /* THE GEAR ROOM: the VR-dojo props, the three racks a first-timer is sent
+       round, the lasers and the suit-up poof (dream/gear.js). */
+    const atPad = (a, b) => ({ x: ARCADE.x + L.u.x * a + L.v.x * b, z: ARCADE.z + L.u.z * a + L.v.z * b });
+    this.gear = new GearRoom(this, this.group, atPad, ARCADE);
 
     this._buildLion(lionArt);
     this.visorTex = visorTexture();
@@ -659,6 +812,19 @@ export class DreamDojo {
     this.sayUntil = this.t + Math.max(secs, d > 0 ? d + VOICE_TAIL : 0);
   }
 
+  /** HE SAW THAT. Richard: "If players try to enter this way, we can have
+   *  Lionheart in a funny and overly excited and berating way, yell at the
+   *  players for being dishonorable and trying to enter the 'improper way'."
+   *  One line per kind of attempt; the dome's own gate decides how often
+   *  (`Approach._yell`, ten seconds), and nobody else talking keeps him quiet
+   *  but leaves the bubble — `say` already knows that. */
+  yell(kind, p) {
+    if (!this.lion) return;
+    if (this.t - (this._yellAt ?? -99) < 8) return;
+    this._yellAt = this.t;
+    this.say(kind === 'drop' ? LION_LINES.yellDrop : LION_LINES.yellWall, 6);
+  }
+
   /** An AMBIENT line: voiced only when `LionVoice` says it is time (it gates
    *  on the gaps and on anybody else talking), and when it IS voiced the
    *  bubble is pinned to it for the clip — the nine-second swap between his
@@ -715,9 +881,12 @@ export class DreamDojo {
     const s = this.st[p.index];
     if (!s) return p;
     if (!s.proxy) {
+      /* At the take-off for the first stone since the way across curved:
+         the old spot, 61 out along the straight line, is no longer "the foot
+         of the stones". */
       const dc = this.game.world.dojoCentre;
-      const u = this.layout.u;
-      const wait = new THREE.Vector3(dc.x + u.x * 61, dc.y, dc.z + u.z * 61);
+      const at = this.layout.launch;
+      const wait = new THREE.Vector3(at.x, dc.y, at.z);
       s.proxy = new Proxy(p, {
         get: (t, k) => (k === 'position' ? wait : Reflect.get(t, k)),
       });
@@ -729,7 +898,7 @@ export class DreamDojo {
   padFor(i, pad, dead) {
     const s = this.st[i];
     if (!s?.phase) return pad;
-    if (s.phase === 'walk') return s.walkPad ?? dead;
+    if (s.phase === 'walk' || s.phase === 'walkout') return s.walkPad ?? dead;
     if (s.phase === 'sim') {
       // On a light cycle she is cargo: a stick still pushed must not steer
       // her off the highway (highway.js).
@@ -805,7 +974,14 @@ export class DreamDojo {
       const st = this.stationAt(p);
       return st ? st.prompt(p, key) : null;
     }
-    if (this.canTalk(p)) return `[${key}]  TRAIN WITH LIONHEART`;
+    if (this.canTalk(p)) {
+      if (p.simLook) return `[${key}]  TRAIN WITH LIONHEART`;
+      if (this.progress.flag(nameOf(p), 'geared')) return `[${key}]  SUIT UP`;
+      return s?.gather ? `[${key}]  WHAT GEAR DO I NEED?` : `[${key}]  GET YOUR VR GEAR`;
+    }
+    /* At a lit rack she has only to walk in; the toast is the confirmation. */
+    const rack = s?.gather && this.gear?.rackAt(p, 2);
+    if (rack && s.gather.has(rack)) return `PICKING UP THE ${GEAR_ITEMS.find((x) => x.id === rack).name}…`;
     const k = this.tubeAt(p);
     if (k < 0) return null;
     if (k !== p.index) {
@@ -813,6 +989,8 @@ export class DreamDojo {
       return owner ? `TUBE ${k + 1} IS ${owner.name.toUpperCase()}'S — YOURS IS ${p.index + 1}`
         : `YOUR TUBE IS NUMBER ${p.index + 1}`;
     }
+    // The refusal said BEFORE the press, as an instruction (non-negotiable 6).
+    if (!p.simLook) return 'SUIT UP FIRST — TALK TO LIONHEART';
     return `[${key}]  CONNECT`;
   }
 
@@ -859,14 +1037,43 @@ export class DreamDojo {
       return true;
     }
     if (talk) {
-      this.say(LION_LINES.send.replace('%n', p.name).replace('%t', String(p.index + 1)), 5);
       g.sfx?.('menu');
-      this._begin(p, 'walk');
+      // The headset drawings start down the wire now, behind the walk round the racks.
+      g.loadSimArt?.();
+      /* SUITED ALREADY (she took the stick back on the walk): straight to
+         her tube. */
+      if (p.simLook) {
+        this.say(LION_LINES.send.replace('%n', p.name).replace('%t', String(p.index + 1)), 5);
+        this._begin(p, 'walk');
+        return true;
+      }
+      /* "After that, they can just go to Lionheart and they will poof into
+         their equipment without needing to gather it again." */
+      if (this.progress.flag(nameOf(p), 'geared')) {
+        this.say(GEAR_LINES.again, 4);
+        this._begin(p, 'suit');
+        return true;
+      }
+      /* THE FIRST TIME: round the racks. "the players need to talk to
+         Lionheart first to gather their equipment to go into VR for the
+         first time." The racks light for her, and the toast says what. */
+      const s = (this.st[p.index] ??= { phase: null, t: 0 });
+      s.gather ??= new Set(GEAR_ITEMS.map((x) => x.id));
+      this.say(GEAR_LINES.first, 7);
+      g.toast?.(`${p.name} — collect your VR gear from the glowing racks: `
+        + `${GEAR_ITEMS.filter((x) => s.gather.has(x.id)).map((x) => x.name).join(', ')}`, p.index);
       return true;
     }
     if (k !== p.index) {
       g.sfx?.('deny');
       g.toast?.(`${p.name} — your tube is number ${p.index + 1}`, p.index);
+      return true;
+    }
+    /* NO GEAR, NO SIMULATOR — and it says where the gear is. */
+    if (!p.simLook) {
+      g.sfx?.('deny');
+      g.toast?.(`${p.name} — talk to Lionheart first: he has your VR gear!`, p.index);
+      this.say(GEAR_LINES.talk, 4);
       return true;
     }
     this._begin(p, 'rise');
@@ -891,7 +1098,28 @@ export class DreamDojo {
       p.pinnedAt = p.position.clone();
       s.from = p.position.clone();
       this.game.sfx?.('visor');
-      this._wearVisor(p, true);
+      /* THE VISOR PLANE IS ONLY THE FALLBACK NOW. Richard: "The VR headset
+         overlay over the players characters face when they enter the VR tube
+         does not align very well with their eyes when they are moving
+         around". She is already wearing the headset SHEET from the suit-up,
+         drawn with her; the plane is for a build whose sheet never loaded. */
+      this._wearVisor(p, !p._simArt);
+    }
+    if (phase === 'suit' || phase === 'unsuit') {
+      p.pinnedAt = p.position.clone();
+      p.velocity?.set?.(0, 0, 0);
+      s.poofed = false;
+      s.dressed = false;
+    }
+    if (phase === 'walkout') {
+      /* OUT OF THE TUBE ON HER OWN LEGS: "When exiting the VR, they should
+         automatically walk out of the tube, and poof with special effects to
+         put their regular clothes back on." Toward the middle of the pad,
+         three units — clear of the glass, still in front of her tube. */
+      const dx = ARCADE.x - tube.x;
+      const dz = ARCADE.z - tube.z;
+      const d = Math.hypot(dx, dz) || 1;
+      s.outTo = new THREE.Vector3(tube.x + (dx / d) * 3.2, ARCADE.y, tube.z + (dz / d) * 3.2);
     }
     if (phase === 'derez') {
       const port = toSim(tube.x, tube.z);
@@ -1027,8 +1255,8 @@ export class DreamDojo {
   }
 
   /** Move her (and her camera) across the boundary, by exactly the offset. */
-  _cross(p, toSimNow) {
-    if (!toSimNow) this._leaveSim(p);
+  _cross(p, toSimNow, keepSuit = false) {
+    if (!toSimNow) this._leaveSim(p, keepSuit);
     const k = toSimNow ? 1 : -1;
     const dx = SIM.dx * k;
     const dz = SIM.dz * k;
@@ -1039,9 +1267,11 @@ export class DreamDojo {
     p.group.position.copy(p.position);
     p.realm = toSimNow ? 'sim' : null;
     /* AND HER DRAWING CROSSES WITH HER: in the headset for as long as she is
-       in here (`_leaveSim` takes it off, on every way out). The tube puppet
-       keeps her home drawing and its own visor plane — it is her body in the
-       real world, not her in the sim. */
+       in here. Since the suit-up she put it on at Lionheart's, so this only
+       matters for a kitten sent in some other way. `_leaveSim` takes it off
+       on every way out EXCEPT the ordinary one, where she walks out of her
+       tube and poofs back into her clothes (`walkout`, `unsuit`). The tube
+       puppet wears her gear too — it is her body, suited, in the tube. */
     if (toSimNow) p.setSimLook?.(true);
     /* AND A SAVE TAKEN NOW SAYS SHE IS IN HER TUBE. `castRow` reads this
        before `position`, so nobody ever loads a game standing in the void. */
@@ -1072,6 +1302,12 @@ export class DreamDojo {
     for (const p of this.game.players ?? []) {
       if (!p) continue;
       const s = this.st[p.index];
+      /* OUT OF THE GEAR TOO, and off the racks: a scene or the tournament
+         takes her out of the Dream Dojo entirely, and nothing she was halfway
+         through survives it. A half-gathered set is gathered again from the
+         start, which costs three short walks and can never lose anything. */
+      if (p.simLook && this.realmOf(p) !== 'sim') p.setSimLook?.(false);
+      if (s) s.gather = null;
       if (!s?.phase) continue;
       if (this.realmOf(p) === 'sim') {
         const tube = this.layout.tubes[p.index];
@@ -1096,6 +1332,9 @@ export class DreamDojo {
     this.st = [];
     this._welcomed = false;
     this.sayText = null;
+    this.approach?.reset();
+    this.lecture?.reset();
+    this._cam = [];
   }
 
   /** Forget a kitten who has left the game. */
@@ -1104,6 +1343,7 @@ export class DreamDojo {
     if (!s) return;
     const p = this.game.players?.[i];
     if (p && this.realmOf(p) === 'sim') this._leaveSim(p);
+    else if (p?.simLook) p.setSimLook?.(false);
     s.puppet?.removeFromParent();
     s.visor?.removeFromParent();
     this.st[i] = null;
@@ -1221,7 +1461,7 @@ export class DreamDojo {
           s.fx = ease(Math.min(1, s.t / SEQ.derez));
           if (s.t >= SEQ.derez) {
             p.position.copy(s.to);
-            this._cross(p, false);
+            this._cross(p, false, true);
             p.pinnedAt = p.position.clone();
             this._hidePuppet(p);
             this._wearVisor(p, true);
@@ -1239,20 +1479,76 @@ export class DreamDojo {
             p.pinnedAt = null;
             this._wearVisor(p, false);
             g.sfx?.('visor');
-            s.phase = null;
             s.fx = 0;
+            this._begin(p, 'walkout');
           }
+          break;
+        }
+        case 'suit':
+        case 'unsuit': {
+          /* TURN TO THE LENS — "have them turn to camera, and then have a
+             special effect play, covering up their body while they magically
+             appear with all the sprite/VR outfit on". Her own pane's camera,
+             so in a split screen each kitten turns to the one watching her. */
+          const cam = p.camera?.position;
+          if (cam) p.facing = Math.atan2(cam.x - p.position.x, cam.z - p.position.z);
+          if (p.sprite && p.anim) p.sprite.row = p.anim.idle;
+          if (!s.poofed && s.t >= 0.05) {
+            s.poofed = true;
+            this.poof(p, s.phase === 'suit' ? 'full' : 'small');
+            g.sfx?.('pandapoof');
+          }
+          // Changed while the cloud is at its thickest.
+          if (!s.dressed && s.t >= 0.32) {
+            s.dressed = true;
+            p.setSimLook?.(s.phase === 'suit');
+            if (s.phase === 'suit') g.sfx?.('visor');
+          }
+          if (s.t >= (s.phase === 'suit' ? SEQ.suit : SEQ.unsuit)) {
+            p.pinnedAt = null;
+            if (s.phase === 'suit') {
+              this.say(LION_LINES.send.replace('%n', p.name).replace('%t', String(p.index + 1)), 5);
+              this._begin(p, 'walk');
+            } else {
+              s.phase = null;
+            }
+          }
+          break;
+        }
+        case 'walkout': {
+          const dx = s.outTo.x - p.position.x;
+          const dz = s.outTo.z - p.position.z;
+          const d = Math.hypot(dx, dz);
+          if (d < 0.4 || s.t > SEQ.walkOutMax) {
+            s.walkPad = null;
+            this._begin(p, 'unsuit');
+            break;
+          }
+          const { fwd, right } = p._basis();
+          const wx = dx / d;
+          const wz = dz / d;
+          const slow = Math.min(1, d / 1.2);
+          s.walkPad = {
+            mx: (wx * right.x + wz * right.z) * slow,
+            my: -(wx * fwd.x + wz * fwd.z) * slow,
+            down: () => false, pressed: () => false,
+          };
           break;
         }
         default: break;
       }
     }
 
+    this._updateGear(dt);
+    this._updateSign();
     this._updateTraining(dt);
     this._updateRez(dt);
     this._updatePuppets(dt);
     this._updateTubes(dt);
     this._updateDome(dt);
+    this.approach?.update(dt);
+    this._dt = dt;
+    this.lecture?.update();
     this._updateLion(dt);
     if (this.sim) {
       this.sim.update(dt);
@@ -1421,10 +1717,10 @@ export class DreamDojo {
   }
 
   /** Everything sim-only comes off her: drill, rundown, loans, oath, bar. */
-  _leaveSim(p) {
+  _leaveSim(p, keepSuit = false) {
     const s = this.st[p.index];
     this._hushHolo(p);
-    p.setSimLook?.(false);
+    if (!keepSuit) p.setSimLook?.(false);
     this.highway?.stop(p);
     const d = this.drills[p.index];
     if (d) { d.dispose(); this.drills[p.index] = null; }
@@ -1573,6 +1869,203 @@ export class DreamDojo {
   /* --------------------------- the look of her ---------------------------- */
 
   /** The headset on her own head, for the rise and the descent. */
+  /**
+   * THE SIGN FLOATS. "If it is floating, have it bouncing around and fading
+   * in/out a bit to look more holographic." A slow bob (0.35 units, 0.9 rad/s
+   * — slow enough to read the words on the way past), a sway of a few degrees
+   * that `faceCamera` adds on top of its turn to the lens, and a flicker that
+   * now and then drops it most of the way out for a few frames, the way a bad
+   * projector does. Seeded off the clock, so two panes flicker together.
+   */
+  _updateSign() {
+    if (!this.sign || !this.signU) return;
+    const t = this.t;
+    this.sign.position.y = ARCADE.y + SIGN_Y + Math.sin(t * 0.9) * 0.35 + Math.sin(t * 2.3) * 0.06;
+    this._signSway = Math.sin(t * 0.55) * 0.07;
+    this._signTilt = Math.sin(t * 0.7 + 1.3) * 0.025;
+    this.signU.uTime.value = t;
+    const blink = Math.sin(Math.floor(t * 7) * 91.7) > 0.965 ? 0.35 : 1;
+    this.signU.uAlpha.value = (0.78 + 0.14 * Math.sin(t * 1.7)) * blink;
+    if (this.signCone) this.signCone.material.opacity = 0.05 + 0.03 * Math.sin(t * 1.7) * blink;
+  }
+
+  /**
+   * The Dream Dojo's music for this frame: 1 inside the dome or the simulator,
+   * `MUSIC_SWELL.near` at the dome's skin, falling to `floor` at the far edge
+   * of the crossing, and 0 beyond it. The loudest kitten wins: the music is
+   * one speaker for the whole screen, and the sister at the door is the one it
+   * is for. A kitten on a dragon does not count — the flight theme has her.
+   */
+  musicLevel(players = this.game.players ?? []) {
+    const L = this.layout;
+    if (!L) return 0;
+    const far = Math.hypot(L.launch.x - ARCADE.x, L.launch.z - ARCADE.z) + MUSIC_SWELL.beyond;
+    const edge = far + (this._vrMusic ? MUSIC_SWELL.out : 0);
+    let best = 0;
+    for (const p of players) {
+      if (!p || p.mount || p.rideAlong) continue;
+      if (this.realmOf(p) === 'sim') { best = 1; break; }
+      const d = Math.hypot(p.position.x - ARCADE.x, p.position.z - ARCADE.z);
+      let k = 0;
+      if (d < DOME_R) k = 1;
+      else if (d < edge) {
+        const x = THREE.MathUtils.clamp(1 - (d - DOME_R) / (far - DOME_R), 0, 1);
+        k = MUSIC_SWELL.floor + (MUSIC_SWELL.near - MUSIC_SWELL.floor) * x * x;
+      }
+      best = Math.max(best, k);
+    }
+    this._vrMusic = best > 0;
+    return best;
+  }
+
+  /** The pad's centre, for the scenes. */
+  get arcadePos() { return ARCADE; }
+
+  /**
+   * The places a scene reads (`shotFor` in dream/storyscene.js). `cast` is the
+   * kittens' marks for a talk. Every field degrades — `shotFor` has a fallback
+   * for each — so a scene started before the sim was raised aims somewhere real.
+   */
+  storyCtx(cast = []) {
+    const L = this.layout;
+    const dc = this.game.world?.dojoCentre ?? { x: ARCADE.x + 60, y: 30, z: ARCADE.z };
+    return {
+      arcade: ARCADE,
+      lion: this.lion ? { x: this.lion.position.x, y: ARCADE.y, z: this.lion.position.z } : null,
+      sign: this.sign ? { x: this.sign.position.x, y: ARCADE.y + SIGN_Y, z: this.sign.position.z } : null,
+      stones: L?.stones ?? [],
+      tubes: L?.tubes ?? [],
+      gear: Object.values(this.gear?.layout?.racks ?? {}),
+      u: L?.u ?? { x: 1, z: 0 },
+      v: L?.v ?? { x: 0, z: 1 },
+      dojo: { x: dc.x, y: dc.y, z: dc.z },
+      isles: this.isles ?? {},
+      cast,
+    };
+  }
+
+  /**
+   * Payne's VIEW THE DREAM DOJO. Returns null when it started, or the reason
+   * it did not, IN WORDS, for her to say (non-negotiable 6). Refused while
+   * anybody is in a tube: a scene takes everybody out (`update` calls
+   * `exitAll`), and a tour that throws a sister out of a drill is not worth it.
+   */
+  startTour() {
+    const g = this.game;
+    if (!this.built || !g.storyScene) return 'not ready';
+    if (this.busy) return 'busy';
+    if (g.storyScene.active || g._sceneActive?.()) return 'scene';
+    // The simulator's islands are in two of the shots.
+    this._ensureSim();
+    return g.storyScene.start('tour', TOUR, this.storyCtx()) ? null : 'scene';
+  }
+
+  /**
+   * The crossing's camera for her pane, or null (see JUMP_CAM / DOME_CAM).
+   * ONE focus, blended, rather than two handed over: `_updateCamera` takes a
+   * focus's pitch the frame it changes, so swapping one focus for another at
+   * the door would snap the tilt. Both weights ease, and the result is mixed
+   * with the walking camera by them.
+   */
+  cameraFocus(p) {
+    const L = this.layout;
+    if (!L || !p) return null;
+    const c = (this._cam ??= [])[p.index] ??= { j: 0, d: 0, y: p.position.y, centre: new THREE.Vector3() };
+    const dt = Math.min(0.1, this._dt ?? 1 / 60);
+    const pos = p.position;
+    let wantJ = 0;
+    let wantD = 0;
+    const free = !p.mount && !p.rideAlong && this.realmOf(p) !== 'sim';
+    if (free) {
+      const h = Math.hypot(pos.x - ARCADE.x, pos.z - ARCADE.z);
+      if (h < DOME_R && pos.y > ARCADE.y - 3) wantD = 1;
+      else {
+        const dl = Math.hypot(pos.x - L.launch.x, pos.z - L.launch.z);
+        const onStones = L.stones.some((s) => Math.hypot(pos.x - s.x, pos.z - s.z) < s.r + 5);
+        const falling = !p.onGround && this.approach?.fallZone(p);
+        wantJ = onStones || falling ? 1
+          : THREE.MathUtils.clamp((JUMP_CAM.far - dl) / (JUMP_CAM.far - JUMP_CAM.near), 0, 1);
+      }
+    }
+    const k = Math.min(1, dt * CAM_BLEND);
+    c.j += (wantJ - c.j) * k;
+    c.d += (wantD - c.d) * k;
+    if (c.j + c.d < 0.005) { c.y = pos.y; return null; }
+    // Her height moves on landing only — the lens does not bob with the jump.
+    if (p.onGround) c.y = pos.y;
+    // The fixed bearing: from the launch toward the middle of the arc.
+    const s1 = L.stones[1] ?? L.stones[0];
+    const s2 = L.stones[2] ?? s1;
+    const lx = (s1.x + s2.x) / 2 - L.launch.x;
+    const lz = (s1.z + s2.z) / 2 - L.launch.z;
+    const yawJ = Math.atan2(-lx, -lz);
+    const w = 1 - c.j - c.d;
+    const walkY = pos.y + 1.4;
+    c.centre.set(
+      pos.x * (w + c.j) + ARCADE.x * c.d,
+      walkY * w + (c.y + JUMP_CAM.lift) * c.j + (ARCADE.y + DOME_CAM.lift) * c.d,
+      pos.z * (w + c.j) + ARCADE.z * c.d
+    );
+    // Yaw by the shorter way round from the walking bearing.
+    let dy = yawJ - WALK_CAM.yaw;
+    while (dy > Math.PI) dy -= 2 * Math.PI;
+    while (dy < -Math.PI) dy += 2 * Math.PI;
+    return {
+      centre: c.centre,
+      aim: true,
+      dist: WALK_CAM.dist * w + JUMP_CAM.dist * c.j + DOME_CAM.dist * c.d,
+      pitch: WALK_CAM.pitch * w + JUMP_CAM.pitch * c.j + DOME_CAM.pitch * c.d,
+      yaw: WALK_CAM.yaw + dy * c.j,
+    };
+  }
+
+  /** The suit-up's cloud, on her (dream/gear.js). */
+  poof(p, size = 'full') {
+    this.gear?.poof(p.position, p.style?.colour ?? HOLO.cyan, size, (p.height ?? 3) * 1.05);
+  }
+
+  /**
+   * The racks, the gathering, and the suit coming off.
+   *
+   * A KITTEN IN HER GEAR WHO WANDERS OFF THE PAD poofs back into her clothes:
+   * the gear lives here, and a kitten in a headset in the arena or at the
+   * dealer's would be a drawing the rest of the game has no reason for. The
+   * tournament and the scenes take everybody out through `exitAll` anyway;
+   * this is the kitten who simply walks away.
+   */
+  _updateGear(dt) {
+    const g = this.game;
+    this.gear?.update(dt);
+    const need = new Set();
+    for (const p of g.players ?? []) {
+      if (!p || this.realmOf(p) === 'sim') continue;
+      const s = this.st[p.index];
+      const h = Math.hypot(p.position.x - ARCADE.x, p.position.z - ARCADE.z);
+      if (s?.gather && !s.phase) {
+        for (const id of s.gather) need.add(id);
+        const id = this.gear?.rackAt(p);
+        if (id && s.gather.has(id)) {
+          s.gather.delete(id);
+          const item = GEAR_ITEMS.find((x) => x.id === id);
+          const got = GEAR_ITEMS.length - s.gather.size;
+          g.sfx?.('orb');
+          g.toast?.(`${p.name} — ${item.name} ✓ (${got} of ${GEAR_ITEMS.length})`, p.index);
+          if (!s.gather.size) {
+            s.gather = null;
+            this.progress.setFlag(nameOf(p), 'geared');
+            this.say(GEAR_LINES.suit, 4);
+            this._begin(p, 'suit');
+          }
+        }
+      }
+      if (p.simLook && !s?.phase && (h > ARCADE.r + 2 || g.tournament?.active)) {
+        this.poof(p, 'small');
+        p.setSimLook?.(false);
+      }
+    }
+    this.gear?.light(need);
+  }
+
   _wearVisor(p, on) {
     const s = this.st[p.index];
     if (!s) return;
@@ -1608,6 +2101,8 @@ export class DreamDojo {
       s.puppet = grp;
       s.puppetSprite = b;
       s.puppetVisor = visor;
+      s.puppetHome = b.look;
+      s.puppetPoses = {};
     }
     this.game.scene.add(s.puppet);
     s.puppet.visible = true;
@@ -1626,9 +2121,49 @@ export class DreamDojo {
          of a pose in this game (see `Billboard`), so copying the two is the
          real-world body doing her moves, a frame behind, in the tube. */
       const b = s.puppetSprite;
+      /* IN HER GEAR, LIKE HER. She suited up at Lionheart's, so the body in
+         the tube wears the headset sheet too, and the visor plane — the thing
+         Richard saw sliding off her eyes — is only for a build whose sheet
+         never arrived. Its own look off the same atlas: two billboards cannot
+         share one texture, since each moves its own cell window. */
+      const suited = p.simLook && p._simArt;
+      if (suited && s.puppetSimFor !== p._simArt) {
+        const a = p._simArt;
+        const q = (p.height ?? 3) / (a.contentScale || 1);
+        s.puppetSim = b.makeLook(a.texture, { cols: a.cols, rows: a.rows, width: q, height: q, footOffset: (a.pad ?? 0) * q });
+        s.puppetSimFor = a;
+      }
+      b.setLook(suited ? s.puppetSim : s.puppetHome);
+      s.puppetVisor.visible = !suited;
       b.row = p.sprite.row;
       b.facing = p.sprite.facing;
       b.mesh.scale.copy(p.sprite.mesh.scale);
+      /* AND HER SPECIAL POSES: a Goblin Sweep in the sim is a Goblin Sweep in
+         the tube. Each of hers that is showing gets a copy on the puppet, off
+         whichever drawing she is wearing for it (`Player.setSimLook`), and her
+         turnaround is hidden under it the way hers is. */
+      let posing = false;
+      for (const key of PUPPET_POSES) {
+        const src = p[key];
+        let cp = s.puppetPoses[key];
+        if (src?.visible) {
+          const l = src.look;
+          if (!cp || cp.userData.tex !== l.tex) {
+            cp?.removeFromParent();
+            cp = new Billboard(l.tex, { cols: 1, rows: 1, mirror: false, width: l.width, height: l.height });
+            cp.mesh.geometry = l.geo;
+            cp.userData.tex = l.tex;
+            s.puppet.add(cp);
+            s.puppetPoses[key] = cp;
+          }
+          cp.visible = true;
+          cp.mesh.scale.copy(src.mesh.scale);
+          posing = true;
+        } else if (cp) {
+          cp.visible = false;
+        }
+      }
+      b.visible = !posing;
       const a = s.anchor;
       s.puppet.position.set(a.x, a.y + Math.sin(this.t * 1.7 + p.index) * 0.12, a.z);
     }
@@ -1698,7 +2233,8 @@ export class DreamDojo {
     this.tubeU.forEach((u, i) => {
       u.uTime.value = this.t;
       const s = this.st[i];
-      const busy = !!(s?.phase && s.phase !== 'walk');
+      // Lit while she is IN it; half-lit while she is on her way to it or out of it.
+      const busy = !!(s?.phase && !['walk', 'suit', 'unsuit', 'walkout'].includes(s.phase));
       const p = this.game.players?.[i];
       u.uGlow.value += ((busy ? 1 : (p && s?.phase === 'walk' ? 0.5 : 0)) - u.uGlow.value) * 0.08;
       if (p?.style?.colour != null) u.uColor.value.set(busy || s?.phase === 'walk' ? p.style.colour : HOLO.cyan);
@@ -1726,16 +2262,35 @@ export class DreamDojo {
       const d = Math.hypot(dx, dz);
       if (d >= R) return;
       const k = d > 1e-3 ? R / d : 0;
+      const ox = pos.x;
+      const oz = pos.z;
       pos.x = ARCADE.x + (k ? dx * k : R);
       pos.z = ARCADE.z + (k ? dz * k : 0);
       body.group?.position.copy?.(pos);
+      /* THE KITTENS ON IT MOVE WITH IT. A dragon and Ryuuseki are hung off
+         their pilot every frame (`Player._updateFlight`), so pushing only the
+         animal put it straight back under her next frame and she flew on
+         into the dome — Richard: "the dragon is not flying through, it is
+         getting blocked, but the player is able to fly through still". Same
+         shift for every kitten whose seat is on this body. */
+      const sx = pos.x - ox;
+      const sz = pos.z - oz;
+      for (const q of g.players ?? []) {
+        if (!q || (q.mount !== body && q.rideAlong !== body)) continue;
+        q.position.x += sx;
+        q.position.z += sz;
+        const vn = (q.velocity?.x ?? 0) * dx + (q.velocity?.z ?? 0) * dz;
+        if (vn < 0 && d > 1e-3) { q.velocity.x -= (dx / d) * (vn / d); q.velocity.z -= (dz / d) * (vn / d); }
+        if (this.approach) this.approach.of(q).cheat = true;
+      }
       this._domeHit = 1;
       if (rider) {
+        this.yell('dragon', rider);
         const last = this._toastAt.get(rider) ?? -99;
         if (this.t - last > 4) {
           this._toastAt.set(rider, this.t);
           g.sfx?.('deny');
-          g.toast?.(`${rider.name} — Lionheart's dome keeps animals out. Land on the Dojo and hop across the stones!`, rider.index);
+          g.toast?.(`${rider.name} — Lionheart's dome keeps animals out. Land on the Dojo and jump across the stones!`, rider.index);
         }
       }
     };
@@ -1771,7 +2326,13 @@ export class DreamDojo {
       if (Math.hypot(p.position.x - this.lion.position.x, p.position.z - this.lion.position.z) < 26) near = true;
     }
     let text = null;
-    if (this.sayText && (this.t < this.sayUntil || this.voice.saying(this.sayText))) text = this.sayText;
+    /* QUIET WHILE A SCENE IS TALKING. In a story scene he is speaking from
+       the card, and a bubble over his head saying something else would be two
+       of him at once — the same rule as #announce's one card. */
+    const scene = g.storyScene?.active;
+    if (scene) this.sayText = null;
+    if (scene) near = false;
+    else if (this.sayText && (this.t < this.sayUntil || this.voice.saying(this.sayText))) text = this.sayText;
     else if (near) {
       text = this._welcomed && Math.floor(this.t / 9) % 2 ? LION_LINES.honor : LION_LINES.idle;
       this._ambient(text, false);
@@ -1835,7 +2396,8 @@ export class DreamDojo {
     if (this.sign) {
       // Only ever turn about Y — a sign that tips back is a sign on a hinge.
       _e.setFromQuaternion(camera.quaternion, 'YXZ');
-      this.sign.rotation.set(0, _e.y, 0);
+      // ...plus the hologram's own little sway (`_updateSign`), on top.
+      this.sign.rotation.set(this._signTilt ?? 0, _e.y + (this._signSway ?? 0), 0);
     }
     for (const t of this.tubeMats ?? []) t.num.quaternion.copy(camera.quaternion);
     const head = (p, grp, visor) => {
@@ -1850,6 +2412,7 @@ export class DreamDojo {
       if (!s) continue;
       if (s.puppet?.visible) {
         s.puppetSprite.faceCamera(camera);
+        for (const cp of Object.values(s.puppetPoses ?? {})) if (cp.visible) cp.faceCamera(camera);
         head(p, s.puppet, s.puppetVisor);
       }
       if (s.visor?.parent) head(p, p.group, s.visor);
