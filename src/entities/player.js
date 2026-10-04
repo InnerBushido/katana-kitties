@@ -9,6 +9,7 @@ import { tune } from '../core/tuning.js';
 import { Label } from '../core/label.js';
 import { SNAKE } from '../world/snakeway.js';
 import { SnakeCam } from '../systems/snakecam.js';
+import { BridgePeek } from '../systems/dream/peek.js';
 
 /* ---------------------------------------------------------------------------
    A Katana Kitty and the camera that follows it.
@@ -1232,6 +1233,11 @@ export class Player {
        at rest. See `_snakeWish`. */
     this.snakeRide = null;
     this.snakeCam = new SnakeCam();
+    /* THE LOOK ACROSS at a sim bridge's mouth, before she steps on: the
+       Dream Dojo sets `peekAt` every frame ({ x, y, z, far, w }, or null) and
+       this camera lays it on — see dream/peek.js. */
+    this.peekAt = null;
+    this.bridgePeek = new BridgePeek();
   }
 
   /** @param {{centre: THREE.Vector3, dist: number, pitch: number}|null} f */
@@ -6729,8 +6735,11 @@ export class Player {
 
     this.camera.position.copy(this.camTarget).add(this._offset);
     this.camera.lookAt(this.camTarget);
-    /* AND THE RIDE ON TOP, when she is on a road. It is a layer over the pose
-       above, not a replacement for it — see `SnakeCam`. */
+    /* THE LOOK ACROSS, walking up to a sim bridge, and THE RIDE ON TOP once
+       she is on it. Both are layers over the pose above, in that order, so
+       the ride starts from wherever the look across left the lens and there
+       is no cut between them — see dream/peek.js and `SnakeCam`. */
+    this.bridgePeek.apply(dt, this.peekAt, this.camera, this.camTarget);
     this.snakeCam.apply(dt, this.snakeSubject(), this.camera, this.camTarget);
   }
 }

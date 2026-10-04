@@ -27,6 +27,7 @@ import { clusterPlayers, MERGE_IN, MERGE_OUT } from './core/cluster.js';
 import { SNAKE, COIN_CANES } from './world/snakeway.js';
 import { BAMBOO_POINTS } from './entities/prop.js';
 import { SnakeCam } from './systems/snakecam.js';
+import { BridgePeek } from './systems/dream/peek.js';
 import { Dragon, BREEDS } from './entities/dragon.js';
 import { Panda, PANDA, PANDA_TIERS, tierFor, toNextTier } from './entities/panda.js';
 import { ClanLeader, LEADERS } from './entities/leader.js';
@@ -703,6 +704,9 @@ class Game {
       /** The ride camera, for when every kitten this rig frames is on the same
        *  road — see `_snakeGroup`. */
       snakeCam: new SnakeCam(),
+      /** The look across a sim bridge, for a group walking up to one
+       *  together — see `_peekGroup`. */
+      bridgePeek: new BridgePeek(),
     }));
     this.sharedCamera = this.rigs[0].camera;
     /** Player index -> her group's lowest member, last frame. The hysteresis
@@ -12223,6 +12227,26 @@ class Game {
   }
 
   /**
+   * What a group's look across a sim bridge frames: only when EVERY one of
+   * them is walking up to the same mouth (the same `far`), from their middle,
+   * as much as the least of them wants. Otherwise null — one sister at a
+   * mouth does not swing the camera the others are drawn by.
+   */
+  _peekGroup(members) {
+    let far = null;
+    let w = 1;
+    for (const i of members) {
+      const at = this.players[i]?.peekAt;
+      if (!at || (far && at.far !== far)) return null;
+      far = at.far;
+      w = Math.min(w, at.w);
+    }
+    if (!far) return null;
+    const mid = this._centroid(members);
+    return { x: mid.x, y: mid.y, z: mid.z, far, w, spread: this._spread(members) };
+  }
+
+  /**
    * What a group's ride camera frames, or null if not every one of them is on
    * the same road. A group that is half on a road and half off is framed the
    * ordinary way — that is the two-to-three seconds before the lane splits it.
@@ -12742,6 +12766,7 @@ class Game {
       /* THE RIDE CAMERA, when everybody this rig frames is on one road. A
          group of one draws with her own camera instead (`_cameraFor`), and
          hers carries the same layer — see `Player._updateCamera`. */
+      rig.bridgePeek.apply(dt, members.length > 1 ? this._peekGroup(members) : null, rig.camera, rig.target);
       rig.snakeCam.apply(dt, members.length > 1 ? this._snakeGroup(members) : null,
         rig.camera, rig.target, this.world.islands);
       /* AFTER `lookAt`, so the shake moves the camera without re-aiming it.

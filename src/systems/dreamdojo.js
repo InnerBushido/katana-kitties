@@ -34,6 +34,7 @@ import { TOUR, GEAR_LINES, GEAR_VOICE } from './dream/stories.js';
 import { TourShadow } from './dream/tourshadow.js';
 import { TourCast } from './dream/tourcast.js';
 import { holoDojo } from './dream/holodojo.js';
+import { peekWeight } from './dream/peek.js';
 
 /** Her single-cell pose billboards, which the tube puppet mirrors. */
 const PUPPET_POSES = ['eatPose', 'blessPose', 'warpPose', 'breathPose', 'scaredPose', 'sweepPose'];
@@ -616,6 +617,19 @@ export const TUBE_COLOURS = [0xff8a3d, 0xff6fae, 0x35d7f0, 0xa96bff];
  *  (and to get his pitch at all). Further than this, his words go on the
  *  screen's own card instead — see `_captionHolo`. */
 export const LION_NEAR = 20;
+
+/** Where a bridge's gate sign stands on the hub: `back` in from the mouth
+ *  (at 47), `side` across from its centre line, `up` off the floor; one
+ *  reached through another island is `stack` higher, on the same post. */
+export const GATE_SIGN = { back: 4, side: 7.5, up: 5.5, scale: 0.62, stack: 3.4 };
+export function gateSignSpot(dc, dir, side = 1) {
+  const r = 47 - GATE_SIGN.back;
+  return {
+    x: dc.x + dir.x * r - dir.z * GATE_SIGN.side * side,
+    y: dc.y + GATE_SIGN.up,
+    z: dc.z + dir.z * r + dir.x * GATE_SIGN.side * side,
+  };
+}
 /** Who the caption card says is talking. */
 export const LION_WHO = { name: 'LIONHEART', sub: 'Dream Dojo', colour: '#ff3b3b' };
 
@@ -1388,7 +1402,94 @@ export class DreamDojo {
     if (spec.cycle) this.highway.add(key, spec.name, from, to, prev ? ISLANDS[spec.from].name : undefined);
     else this.sim.addBridge(from, to, { wobble: 3, waves: 1, name: `${key} bridge` });
     const sign = this.sim.addSign(c.x + c.dir.x * (spec.r - 2), c.y + 12, c.z + c.dir.z * (spec.r - 2), spec.kanji, spec.name);
-    return { key, x: c.x, y: c.y, z: c.z, r: spec.r, fwd: c.dir, sign };
+    const gate = this._gateSign(key);
+    return { key, x: c.x, y: c.y, z: c.z, r: spec.r, fwd: c.dir, sign, gate };
+  }
+
+  /**
+   * THE SAME SIGN AT THE HUB END. Richard: "Lets have every area's/islands
+   * signage and text in the simulation also be at the entrance of the bridge
+   * in the main simulation island where the dojo of the turning circle is,
+   * as well as having it on the island it belongs to."
+   *
+   * Every island's own sign hangs over its far rim, 128 to 330 units out, so
+   * from the hub it was a smudge of pink over a disc — and the hub is where
+   * the choosing happens. So each bridge mouth on the hub carries its
+   * island's name too: beside the mouth, not over it, because the bridge
+   * camera looks down the bridge from behind her and a sign over the deck
+   * would be the first thing between her and the island it names. Smaller
+   * than the island's own, and low, at a kitten's eye line.
+   *
+   * An island reached THROUGH another (the Shadow, past the Arena School)
+   * has no mouth on the hub, so its sign is stacked over the sign of the
+   * mouth it is reached by, saying so — a signpost. Across the mouth was
+   * tried first and stood 7.8 from the Holo-Sentries' sign, the next spoke
+   * round: the far spokes are only 30 degrees apart.
+   */
+  _gateSign(key) {
+    const spec = ISLANDS[key];
+    let via = key;
+    let hops = 0;
+    while (ISLANDS[via].from) { via = ISLANDS[via].from; hops++; }
+    const dc = this.game.world.dojoCentre;
+    const c = islandCentre(dc, this.layout.u, ISLANDS[via]);
+    const at = gateSignSpot(dc, c.dir, 1);
+    return this.sim.addSign(at.x, at.y + hops * GATE_SIGN.stack, at.z, spec.kanji, spec.name, HOLO.cyan,
+      { scale: GATE_SIGN.scale, sub: hops ? `past the ${ISLANDS[via].name}` : '' });
+  }
+
+  /**
+   * Every mouth of every bridge in the layer, as the look across wants it:
+   * where the deck starts (world coordinates, as the roads are), which way
+   * it runs from there, and the floor of the island at the OTHER end.
+   */
+  _peekEnds() {
+    const ends = [];
+    for (const B of this.sim?.bridges ?? []) {
+      const pts = B.road.pts;
+      for (const [i, j, k] of [[0, pts.length - 1, 1], [pts.length - 1, 0, pts.length - 2]]) {
+        const m = pts[i];
+        const n = pts[i === 0 ? 1 : k];
+        const tl = Math.hypot(n.x - m.x, n.z - m.z) || 1;
+        const o = pts[j];
+        const disc = this.sim._discAt({ x: o.x - SIM.dx, y: o.y, z: o.z - SIM.dz });
+        const far = disc
+          ? { x: disc.x + SIM.dx, y: disc.y, z: disc.z + SIM.dz }
+          : { x: o.x, y: o.y, z: o.z };
+        ends.push({ road: B.road, mouth: m, toward: { x: (n.x - m.x) / tl, z: (n.z - m.z) / tl }, far });
+      }
+    }
+    return ends;
+  }
+
+  /**
+   * The look across for one kitten this frame, or null. Only a kitten in
+   * the layer, on her own paws, on a floor, and not in a drill — a drill
+   * near a rim (the Shadow's floor runs to its edge) must keep its camera.
+   * See dream/peek.js for the distances and the heading rule.
+   */
+  _peekFor(p) {
+    const s = this.st[p.index];
+    if (s?.phase !== 'sim' || !p.onGround || p.snakeRide || p.onCycle || p.mount || p.rideAlong
+      || p.pandaMount || p.pinnedAt) {
+      if (s) s.peek = null;
+      return null;
+    }
+    const dr = this.drills[p.index];
+    if (dr && (dr.state === 'ready' || dr.state === 'live')) { s.peek = null; return null; }
+    this._ends ??= this._peekEnds();
+    let best = null;
+    let bw = 0;
+    for (const E of this._ends) {
+      const w = peekWeight(p.position, p.velocity ?? { x: 0, z: 0 }, E);
+      /* STANDING STILL KEEPS THE ANSWER: she stopped to look, or she stopped
+         walking away. A negative weight is "no opinion" at that strength. */
+      const k = w < 0 ? (s.peek?.end === E ? -w : 0) : w;
+      if (k > bw) { bw = k; best = E; }
+    }
+    if (!best) { s.peek = null; return null; }
+    s.peek = { end: best };
+    return { x: p.position.x, y: p.position.y, z: p.position.z, far: best.far, w: bw };
   }
 
   /** Lionheart, in light, at his own spot on the port. */
@@ -1490,6 +1591,9 @@ export class DreamDojo {
   /** Move her (and her camera) across the boundary, by exactly the offset. */
   _cross(p, toSimNow, keepSuit = false) {
     if (!toSimNow) this._leaveSim(p, keepSuit);
+    // The look across is in the layer's coordinates: never carried over.
+    p.peekAt = null;
+    if (p.bridgePeek) p.bridgePeek.w = 0;
     const k = toSimNow ? 1 : -1;
     const dx = SIM.dx * k;
     const dz = SIM.dz * k;
@@ -1585,6 +1689,8 @@ export class DreamDojo {
     const g = this.game;
     this.t += dt;
     const ease = (x) => x * x * (3 - 2 * x);
+
+    for (const p of g.players ?? []) if (p) p.peekAt = this._peekFor(p);
 
     /* FIRST: is anything taking the whole screen? Then nobody stays inside —
        a scene that frames "the kittens" must find them in the real world,

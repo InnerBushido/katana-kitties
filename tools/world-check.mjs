@@ -38236,6 +38236,150 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       slabs.length >= discs.length, `${slabs.length} slabs for ${discs.length} discs`);
   }
 
+  /* --- every island's sign is at the hub too, beside its bridge and not over it --- */
+  {
+    /* Richard: "Lets have every area's/islands signage and text in the
+       simulation also be at the entrance of the bridge in the main simulation
+       island ... as well as having it on the island it belongs to." */
+    const keys = Object.keys(ISL.ISLANDS);
+    const bad = [];
+    let nearDeck = Infinity; let deckWho = '';
+    for (const key of keys) {
+      const I = D.isles[key];
+      const s = I.gate?.userData.sign;
+      const own = I.sign?.userData.sign;
+      if (!s || !own || s.kanji !== own.kanji || s.name !== own.name) { bad.push(`${key}: not the same words`); continue; }
+      const g = I.gate.position;
+      const r = Math.hypot(g.x - dc.x, g.z - dc.z);
+      const hops = ISL.ISLANDS[key].from ? 1 : 0;
+      if (r > 47 || r < 38 || Math.abs(g.y - dc.y - DD.GATE_SIGN.up - hops * DD.GATE_SIGN.stack) > 1e-6) bad.push(`${key}: at r ${r.toFixed(1)} y ${(g.y - dc.y).toFixed(1)}`);
+      for (const B of sim.bridges) {
+        for (const q of B.deck.pts) {
+          const d = Math.hypot(g.x - q.x, g.z - q.z) - B.road.halfW;
+          if (d < nearDeck) { nearDeck = d; deckWho = `${key} by ${B.deck.name ?? '?'}`; }
+        }
+      }
+    }
+    ok('門 every island\'s name stands on the hub as well as over the island, in the same words', bad.length === 0, bad.join('; '));
+    // Half the sign is 13 * scale / 2 = 4.0 wide; it must not hang over a deck.
+    const half = 13 * DD.GATE_SIGN.scale / 2;
+    ok('...beside its bridge\'s mouth, never over a deck, where the bridge camera looks along it',
+      nearDeck > half, `${nearDeck.toFixed(2)} clear of ${deckWho}, sign half-width ${half.toFixed(2)}`);
+    // Two signs collide when they overlap across AND up: half-heights from the planes themselves.
+    const hh = (m) => m.geometry.parameters.height / 2;
+    let tight = Infinity; let pair = '';
+    for (let i = 0; i < keys.length; i++) for (let j = i + 1; j < keys.length; j++) {
+      const a = D.isles[keys[i]].gate; const c = D.isles[keys[j]].gate;
+      const across = Math.hypot(a.position.x - c.position.x, a.position.z - c.position.z) - 2 * half;
+      const up = Math.abs(a.position.y - c.position.y) - hh(a) - hh(c);
+      const d = Math.max(across, up);
+      if (d < tight) { tight = d; pair = `${keys[i]} / ${keys[j]}`; }
+    }
+    ok('...and no two of them stand on each other', tight > 0.3, `${tight.toFixed(2)} clear (${pair})`);
+    // The Shadow has no mouth on the hub: its name is on the School's post, over it, saying so.
+    const sh = D.isles.shadow.gate; const sc = D.isles.school.gate;
+    ok('...and the Shadow, reached through the Arena School, is named on the School\'s post, above it, saying so',
+      /ARENA SCHOOL/.test(sh.userData.sign.sub) && !sc.userData.sign.sub
+      && Math.hypot(sh.position.x - sc.position.x, sh.position.z - sc.position.z) < 1e-6 && sh.position.y > sc.position.y,
+      sh.userData.sign.sub);
+  }
+
+  /* --- 望 the look across: over her shoulder at the island, before she steps on --- */
+  {
+    /* Richard: "Before the player steps on a bridge in the simulation, we
+       should have the camera zoom in over the shoulder of the player and
+       looking towards the island they are about to travel to ... It kind of
+       does that currently, but should happen sooner, as soon as they are
+       within a decent area of the entrance of the bridge, 15 - 30ft". */
+    const PK = await import('../src/systems/dream/peek.js');
+    const ends = D._ends = D._peekEnds();
+    ok('望 every bridge in the layer has a look across from both of its mouths', ends.length === 2 * sim.bridges.length
+      && ends.every((E) => Number.isFinite(E.far.x + E.far.y + E.far.z)), `${ends.length} for ${sim.bridges.length}`);
+    const G = D.isles.gallery;
+    const gW = W(G);
+    const E = ends.find((e) => Math.hypot(e.far.x - gW.x, e.far.z - gW.z) < 1);
+    const dcW = W(dc);
+    const fromHub = !!E && Math.hypot(E.mouth.x - dcW.x, E.mouth.z - dcW.z) < 48;
+    // Walk her straight down the hub toward the gallery's mouth, at running pace.
+    const at = (k) => ({ x: E.mouth.x - E.toward.x * k, z: E.mouth.z - E.toward.z * k });
+    her.onGround = true; her.snakeRide = null; her.onCycle = false; her.pinnedAt = null;
+    D.st[0].peek = null;
+    const walk = (k, vx, vz) => {
+      const q = at(k);
+      her.position.set(q.x, E.mouth.y, q.z);
+      her.velocity.set(vx, 0, vz);
+      return D._peekFor(her);
+    };
+    const run = 6;
+    const far20 = walk(20, E.toward.x * run, E.toward.z * run);
+    const at9 = walk(9, E.toward.x * run, E.toward.z * run);
+    const at4 = walk(4, E.toward.x * run, E.toward.z * run);
+    ok('...from about ten of her heights out it starts, and over the rim it is all the way in — not from the deck, as the ride camera was',
+      fromHub && !far20 && at9?.w > 0 && at9.w < 1 && at4?.w === 1 && at4.far === E.far,
+      `${far20?.w ?? 0} / ${at9?.w?.toFixed(2)} / ${at4?.w}, mouth ${E ? Math.hypot(E.mouth.x - dcW.x, E.mouth.z - dcW.z).toFixed(1) : '-'} from the hub`);
+    const still = walk(4, 0, 0);
+    const away = walk(5, -E.toward.x * run, -E.toward.z * run);
+    const stillAfter = walk(5, 0, 0);
+    // Along the rim, square to the way the bridge runs: passing it, not choosing it.
+    const past = walk(7, -E.toward.z * run, E.toward.x * run);
+    D.st[0].peek = null;
+    const arrived = walk(4, 0, 0);
+    ok('...a kitten who stops to look keeps it; one walking away, or running round the rim past the mouth, never gets it',
+      still?.w === 1 && !away && !stillAfter && !past && !arrived);
+    // From the island end it looks back at the hub.
+    const back = ends.find((e) => e.road === E.road && e !== E);
+    ok('...and from the island end of the same bridge it looks back at the hub',
+      !!back && Math.hypot(back.far.x - dcW.x, back.far.z - dcW.z) < 1);
+    // THE SHOT, measured through a lens: the island in the middle, her upper body in frame, below and beside it.
+    const cam = new THREE.PerspectiveCamera(38, 16 / 9, 0.1, 2000);
+    const pose = PK.peekPose({ x: at4.x, y: at4.y, z: at4.z, far: at4.far });
+    cam.position.set(pose.x, pose.y, pose.z);
+    cam.lookAt(pose.lx, pose.ly, pose.lz);
+    cam.updateMatrixWorld(true);
+    const ndc = (x, y, z) => new THREE.Vector3(x, y, z).project(cam);
+    const isle = ndc(gW.x, G.y + PK.PEEK.aimUp, gW.z);
+    const rim = ndc(gW.x - G.fwd.x * G.r, G.y, gW.z - G.fwd.z * G.r);
+    const head = ndc(at4.x, at4.y + 1.8, at4.z);
+    const mid = ndc(at4.x, at4.y + 1, at4.z);
+    const paws = ndc(at4.x, at4.y, at4.z);
+    const mouth = ndc(E.mouth.x, E.mouth.y, E.mouth.z);
+    const inF = (v) => Math.abs(v.x) < 0.95 && Math.abs(v.y) < 0.95 && v.z < 1;
+    ok('...and the shot is the island in the middle of the frame, the near rim and the mouth in it, her head and back below and beside it',
+      Math.abs(isle.x) < 0.05 && Math.abs(isle.y) < 0.05 && inF(rim) && inF(mouth) && inF(head) && inF(mid) && inF(paws)
+      && head.y < -0.1 && Math.abs(head.x) > 0.15,
+      `isle ${isle.x.toFixed(2)},${isle.y.toFixed(2)} rim ${rim.x.toFixed(2)},${rim.y.toFixed(2)} head ${head.x.toFixed(2)},${head.y.toFixed(2)} paws ${paws.y.toFixed(2)} mouth ${mouth.x.toFixed(2)},${mouth.y.toFixed(2)}`);
+    // THE LAYER: comes in, and when she leaves it goes, back to exactly the ordinary pose.
+    const L0 = new THREE.PerspectiveCamera(38, 16 / 9, 0.1, 2000);
+    const look = new THREE.Vector3(at4.x, at4.y + 1.4, at4.z);
+    const ord = new THREE.Vector3(look.x + 17, look.y + 14, look.z + 17);
+    const BP = new PK.BridgePeek();
+    let maxStep = 0;
+    let prev = null;
+    for (let k = 0; k < 120; k++) {
+      L0.position.copy(ord); L0.lookAt(look);
+      BP.apply(1 / 60, k < 60 ? at4 : null, L0, look);
+      if (prev) maxStep = Math.max(maxStep, prev.distanceTo(L0.position));
+      prev = L0.position.clone();
+      if (k === 59) var inPose = L0.position.distanceTo(new THREE.Vector3(pose.x, pose.y, pose.z));
+    }
+    for (let k = 0; k < 120; k++) { L0.position.copy(ord); L0.lookAt(look); BP.apply(1 / 60, null, L0, look); }
+    ok('...laid on as a layer: in over a second, out again to exactly the ordinary pose, never a jump',
+      inPose < 0.5 && L0.position.distanceTo(ord) < 1e-9 && !BP.live && maxStep < 3,
+      `in ${inPose.toFixed(2)} from the pose, biggest frame step ${maxStep.toFixed(2)}`);
+    const pl = read('../src/entities/player.js');
+    const mn = read('../src/main.js');
+    ok('...on her own camera and on a group\'s, and BEFORE the ride camera, which starts from wherever it left the lens',
+      /this\.bridgePeek\.apply\([^\n]*\n\s*this\.snakeCam\.apply/.test(pl)
+      && /rig\.bridgePeek\.apply\([^\n]*\n\s*rig\.snakeCam\.apply/.test(mn));
+    // In a drill, the drill keeps the camera.
+    D.drills[0] = { state: 'live' };
+    const inDrill = walk(4, E.toward.x * run, E.toward.z * run);
+    D.drills[0] = null;
+    ok('...and never in the middle of a drill', !inDrill);
+    her.velocity.set(0, 0, 0);
+    D.st[0].peek = null;
+  }
+
   /* --- the bridges are Snake Way roads, and she is boarded onto them --- */
   const B0 = sim.bridges.find((b) => b.mouths.length === 2) ?? sim.bridges[0];
   {
