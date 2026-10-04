@@ -14,7 +14,7 @@ import { Gallery } from './dream/gallery.js';
 import { TrialHall } from './dream/hall.js';
 import { TameshigiriRange } from './dream/range.js';
 import { KataHall } from './dream/kata.js';
-import { DataHighway } from './dream/highway.js';
+import { DataHighway, HIGHWAY } from './dream/highway.js';
 import { KudamonoStorm } from './dream/storm.js';
 import { SineGauntlet } from './dream/sine.js';
 import { HoloSentries } from './dream/sentries.js';
@@ -619,15 +619,17 @@ export const TUBE_COLOURS = [0xff8a3d, 0xff6fae, 0x35d7f0, 0xa96bff];
 export const LION_NEAR = 20;
 
 /** Where a bridge's gate sign stands on the hub: `back` in from the mouth
- *  (at 47), `side` across from its centre line, `up` off the floor; one
+ *  (at 47), `side` across from the deck's EDGE (a highway is wider than a
+ *  bridge), `up` off the floor; one
  *  reached through another island is `stack` higher, on the same post. */
-export const GATE_SIGN = { back: 4, side: 7.5, up: 5.5, scale: 0.62, stack: 3.4 };
-export function gateSignSpot(dc, dir, side = 1) {
+export const GATE_SIGN = { back: 4, side: 5.3, up: 5.5, scale: 0.62, stack: 3.4 };
+export function gateSignSpot(dc, dir, halfW = 2.2) {
   const r = 47 - GATE_SIGN.back;
+  const side = halfW + GATE_SIGN.side;
   return {
-    x: dc.x + dir.x * r - dir.z * GATE_SIGN.side * side,
+    x: dc.x + dir.x * r - dir.z * side,
     y: dc.y + GATE_SIGN.up,
-    z: dc.z + dir.z * r + dir.x * GATE_SIGN.side * side,
+    z: dc.z + dir.z * r + dir.x * side,
   };
 }
 /** Who the caption card says is talking. */
@@ -1433,7 +1435,7 @@ export class DreamDojo {
     while (ISLANDS[via].from) { via = ISLANDS[via].from; hops++; }
     const dc = this.game.world.dojoCentre;
     const c = islandCentre(dc, this.layout.u, ISLANDS[via]);
-    const at = gateSignSpot(dc, c.dir, 1);
+    const at = gateSignSpot(dc, c.dir, ISLANDS[via].cycle ? HIGHWAY.halfW : 2.2);
     return this.sim.addSign(at.x, at.y + hops * GATE_SIGN.stack, at.z, spec.kanji, spec.name, HOLO.cyan,
       { scale: GATE_SIGN.scale, sub: hops ? `past the ${ISLANDS[via].name}` : '' });
   }

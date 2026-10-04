@@ -25,6 +25,26 @@ import { Kiosk, idleIn } from './kiosk.js';
    this; it is how the tube holds her too).
 --------------------------------------------------------------------------- */
 
+/**
+ * TWO-WAY TRAFFIC. Richard: "When there is a Light Cycle, we should consider
+ * making the bridge wider and allowing for 2 way traffic, so that players
+ * don't crash into each other when heading back/forth between the islands.
+ * Currently it looks like the motorcycle rides in the middle of the bridge,
+ * even if the bridge is wider, let's have the motorcycle ride in the proper
+ * lane for 2 way traffic."
+ *
+ * It was 3.2 each side of the gold line, and every ride ran ON the gold line,
+ * so two sisters going opposite ways met head-on in the middle. Now 5 each
+ * side, and a cycle keeps RIGHT of the centre line (the kids drive on the
+ * right): `lane` off it, eased in over the first `merge` units off the pad.
+ * IT ARRIVES IN ITS LANE, not back on the centre line — it stops beside the
+ * far pad, on the side away from where a sister would be leaving from it, so
+ * a cycle arriving and a cycle departing at the same pad are never on the
+ * same spot. Both lanes are well inside the deck's edge, so a ride cut short
+ * still leaves her on a floor (non-negotiable 4).
+ */
+export const HIGHWAY = { halfW: 5, lane: 2.5, merge: 9 };
+
 /** Units a second at full throttle. ~180 units is ~4 seconds with the ramps. */
 export const CYCLE_SPEED = 55;
 /** Seconds spent speeding up and slowing down, each end. */
@@ -49,11 +69,11 @@ export class DataHighway {
    */
   add(key, name, from, to, back = 'HOLO-DOJO') {
     const sim = this.dream.sim;
-    const deck = sim.addBridge(from, to, { halfW: 3.2, wobble: 0.8, waves: 1, name: `${key} highway` });
+    const deck = sim.addBridge(from, to, { halfW: HIGHWAY.halfW, wobble: 0.8, waves: 1, name: `${key} highway` });
     const pts = deck.pts;
     const L = Math.hypot(to.x - from.x, to.z - from.z) || 1;
     const dir = { x: (to.x - from.x) / L, z: (to.z - from.z) / L };
-    // The lane line down the middle, so it reads as a road and not a bridge.
+    // The centre line, so it reads as a two-way road and not a bridge.
     const dash = [];
     for (let i = 0; i < pts.length - 1; i += 2) {
       const a = pts[i]; const b = pts[i + 1];
@@ -135,7 +155,7 @@ export class DataHighway {
       const { p } = r;
       r.t += dt;
       const s = rideDistance(r.t, r.T, r.L);
-      const q = pointAt(r.path, r.cum, s);
+      const q = laneAt(r.path, r.cum, s);
       p.position.set(q.x + SIM.dx, q.y + SEAT, q.z + SIM.dz);
       p.velocity?.set(0, 0, 0);
       p.onGround = true;
@@ -179,6 +199,23 @@ export function rideDistance(t, T, L) {
     return L - 0.5 * (v / RAMP) * r * r;
   }
   return 0.5 * v * RAMP + v * (c - RAMP);
+}
+
+/**
+ * Where a cycle is at `s` along the path it is riding (already reversed for
+ * a ride back): on the polyline, then `HIGHWAY.lane` to the right of the way
+ * it is going, eased in off the pad and held to the end. Right of travel is
+ * (-dz, dx) — looking down -z, that is +x.
+ */
+export function laneAt(path, cum, s) {
+  const q = pointAt(path, cum, s);
+  const u = Math.min(1, Math.max(0, s / HIGHWAY.merge));
+  const off = HIGHWAY.lane * u * u * (3 - 2 * u);
+  const l = Math.hypot(q.dx, q.dz) || 1;
+  q.x += (-q.dz / l) * off;
+  q.z += (q.dx / l) * off;
+  q.lane = off;
+  return q;
 }
 
 /** The point `s` along a polyline with cumulative lengths `cum`, and its heading. */

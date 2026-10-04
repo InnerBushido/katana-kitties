@@ -36495,7 +36495,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         for (const other of KEYS) {
           if (other === key) continue;
           const O = D.isles[other];
-          const gap = Math.hypot(x - O.x, z - O.z) - O.r - 3.2;
+          const gap = Math.hypot(x - O.x, z - O.z) - O.r - HW.HIGHWAY.halfW;
           if (gap < worst) { worst = gap; where = `${key} over ${other}`; }
         }
       }
@@ -36554,13 +36554,15 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         else if (D.highway.riding(0)) fell = Math.max(fell, Math.abs(h.y + HW.SEAT - q.y));
         if (t >= cutAt) D._leaveSim(her);
       }
-      const end = way > 0 ? road.B : road.A;
+      const path = way > 0 ? road.path : [...road.path].reverse();
+      const cum = way > 0 ? road.cum : road.cum.map((c) => road.length - c).reverse();
+      const end = HW.laneAt(path, cum, road.length);
       return { t, offDeck, nan, fell, dead, swallowed,
         miss: Math.hypot(her.position.x - SW.SIM.dx - end.x, her.position.z - SW.SIM.dz - end.z),
         cycleGone: !sim.root.getObjectByName('light-cycle') };
     };
     const out = run(1);
-    ok('光 a light-cycle ride never leaves the deck, never NaNs, and stops at the far pad',
+    ok('光 a light-cycle ride never leaves the deck, never NaNs, and stops beside the far pad, in its lane',
       out.offDeck === 0 && !out.nan && out.fell < 0.05 && out.miss < 0.05 && out.cycleGone,
       `off ${out.offDeck} nan ${out.nan} fell ${out.fell.toFixed(2)} miss ${out.miss.toFixed(2)}`);
     ok('...in about the time its card promises, and well under the walk',
@@ -36568,7 +36570,42 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       `${out.t.toFixed(2)}s vs walk ${(road.length / 10.5).toFixed(1)}s`);
     ok('...while she rides her stick is dead, INTERACT is swallowed and no prompt shows', out.dead && out.swallowed);
     const back = run(-1);
-    ok('...and back again lands on the hub pad', back.miss < 0.05 && back.offDeck === 0, back.miss.toFixed(2));
+    ok('...and back again lands beside the hub pad', back.miss < 0.05 && back.offDeck === 0, back.miss.toFixed(2));
+    /* TWO-WAY TRAFFIC. Richard: "allowing for 2 way traffic, so that players
+       don't crash into each other ... have the motorcycle ride in the proper
+       lane". Two cycles on the same highway, opposite ways, the second leaving
+       at every moment of the first's ride: never closer than a cycle's width
+       plus a margin, at the crossing OR at a pad one is leaving as the other
+       arrives. On the old centre line they met head-on at 0. */
+    {
+      const T = HW.rideTime(road.length);
+      const rev = [...road.path].reverse();
+      const rcum = road.cum.map((c) => road.length - c).reverse();
+      let closest = Infinity; let when = '';
+      for (let lag = -T; lag <= T; lag += 0.1) {
+        for (let t = Math.max(0, lag); t <= Math.min(T, T + lag); t += 1 / 60) {
+          const a = HW.laneAt(road.path, road.cum, HW.rideDistance(t, T, road.length));
+          const c = HW.laneAt(rev, rcum, HW.rideDistance(t - lag, T, road.length));
+          const d = Math.hypot(a.x - c.x, a.z - c.z);
+          if (d < closest) { closest = d; when = `lag ${lag.toFixed(1)}s at ${t.toFixed(2)}s`; }
+        }
+      }
+      // Before and after either ride: the parked cycle beside a pad vs the one leaving it.
+      const parkedA = HW.laneAt(rev, rcum, road.length);
+      for (let t = 0; t <= T; t += 1 / 60) {
+        const a = HW.laneAt(road.path, road.cum, HW.rideDistance(t, T, road.length));
+        closest = Math.min(closest, Math.hypot(a.x - parkedA.x, a.z - parkedA.z));
+      }
+      const mid = HW.laneAt(road.path, road.cum, road.length / 2);
+      ok('光 two cycles going opposite ways never meet: each keeps right of the centre line, and arrives beside a pad, not on it',
+        closest > 2.4 && Math.abs(mid.lane - HW.HIGHWAY.lane) < 1e-9 && HW.HIGHWAY.lane + 1.1 / 2 < HW.HIGHWAY.halfW - 1,
+        `closest ${closest.toFixed(2)} (${when}); lane ${HW.HIGHWAY.lane} of a ${HW.HIGHWAY.halfW} half-width`);
+      // Right of travel, on screen: a kitten facing down the road sees her lane on her right.
+      const q = HW.laneAt(road.path, road.cum, road.length / 2);
+      const c0 = HW.pointAt(road.path, road.cum, road.length / 2);
+      const right = (q.x - c0.x) * -c0.dz + (q.z - c0.z) * c0.dx;
+      ok('...and right is right: the lane is on the rider\'s right hand, both ways', right > 0);
+    }
     D.st[0] = { phase: 'sim', t: 0 };
     const cut = run(1, 1.5);
     D.st[0] = { phase: 'sim', t: 0 };
@@ -37029,7 +37066,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       for (const k of KEYS) {
         if (k === 'school' || k === 'shadow') continue;
         const O = D.isles[k];
-        const g = Math.hypot(q.x - O.x, q.z - O.z) - O.r - 3.2;
+        const g = Math.hypot(q.x - O.x, q.z - O.z) - O.r - HW.HIGHWAY.halfW;
         if (g < worst) { worst = g; where = k; }
       }
     }
