@@ -899,7 +899,26 @@ export class DreamDojo {
       s.to = new THREE.Vector3(port.x, ARCADE.y + FLOAT_H, port.z);
       p.pinnedAt = p.position.clone();
       this.game.sfx?.('disconnect');
+      this._hushHolo(p);
     }
+  }
+
+  /**
+   * SHE HAS LEFT, SO HE STOPS TALKING — if nobody is left in there to hear
+   * him. Called on the DISCONNECT press (the 1.1s de-rez is her already
+   * leaving) and again from `_leaveSim`, which every way out runs through:
+   * the tournament, a scene, the ending, a kitten dropping out of the game.
+   * Only the HOLOGRAM's lines: the real Lionheart's two at the arcade are
+   * said in the reality she is going back to. A sister still inside keeps
+   * him — he is talking to her too.
+   */
+  _hushHolo(leaving) {
+    const others = this.simKittens().filter((q) => q !== leaving && this.st[q.index]?.phase !== 'derez');
+    if (others.length) return;
+    const real = new Set([LION_VOICE.idle, LION_VOICE.honor]);
+    if (!this.voice.hush((id) => !real.has(id))) return;
+    this.holoUntil = 0;
+    if (this.shadow) this.shadow.sayT = 0;
   }
 
   /** Build the simulator the first time anybody goes in, under the rain. */
@@ -963,8 +982,7 @@ export class DreamDojo {
     const spec = ISLANDS[key];
     const dc = this.game.world.dojoCentre;
     const c = islandCentre(dc, this.layout.u, spec);
-    const seed = [...key].reduce((a, ch) => a + ch.charCodeAt(0), 0);
-    this.sim.addDisc({ x: c.x, z: c.z, r: spec.r, y: c.y, name: key, grid: 2, seed });
+    this.sim.addDisc({ x: c.x, z: c.z, r: spec.r, y: c.y, name: key, grid: 2 });
     /* FROM THE HUB, or from the far rim of the island in front of it. The
        Shadow is straight on past the Arena School, and a road from the hub
        would run across the school's floor — `world-check` refuses any
@@ -1240,6 +1258,7 @@ export class DreamDojo {
       this.sim.update(dt);
       const inside = (g.players ?? []).filter((p) => p && this.realmOf(p) === 'sim');
       this.simDojo?.update(dt, inside);
+      this.sim.steerBridges(dt, inside);
     }
   }
 
@@ -1248,6 +1267,16 @@ export class DreamDojo {
   /** The Game as a kitten in here sees it — see dream/simhud.js. */
   hudFor(p) {
     return this.realmOf(p) === 'sim' && this.simHud ? this.simHud : this.game;
+  }
+
+  /**
+   * `Game.critterHold`, for a kitten in the sim: is this ATTACK press the eat
+   * gesture? Only her live drill can say — the Feast is the one that owns
+   * animals (`holds` in school.js). Everywhere else the technique is hers.
+   */
+  critterHold(p) {
+    const d = p ? this.drills[p.index] : null;
+    return d?.state === 'live' && !!d.spec.holds?.(d);
   }
 
   /** `Game.strikePlayers`, for a kitten in the sim: holograms only. */
@@ -1269,10 +1298,27 @@ export class DreamDojo {
     return this.game.input?.promptFor?.(p.index, action) ?? action.toUpperCase();
   }
 
-  /** A kitten's drawing for a holo-kitten to wear — anybody's will do. */
+  /**
+   * A kitten's drawing for a holo-kitten to wear — anybody's will do — IN THE
+   * HEADSET, when the sim's sheets have landed. A sparring partner in here is
+   * somebody else in the simulator, and they were the one thing left wearing
+   * the town drawing: "When in the simulation, it is not showing the players
+   * generated VR sprites." Sized and sensed exactly as `Player.setSimLook`
+   * puts her own on, so the two stand the same height; the home drawing is
+   * the rule that degrades.
+   */
   kittenSpec() {
-    for (const p of this.game.players ?? []) if (p?.spriteSpec?.texture) return p.spriteSpec;
-    return null;
+    const players = (this.game.players ?? []).filter((p) => p?.spriteSpec?.texture);
+    for (const p of players) {
+      const a = p._simArt;
+      if (!a?.texture) continue;
+      const quad = p.height / (a.contentScale || 1);
+      return {
+        texture: a.texture,
+        opts: { ...p.spriteSpec.opts, cols: a.cols, rows: a.rows, width: quad, height: quad, footOffset: (a.pad ?? 0) * quad },
+      };
+    }
+    return players[0]?.spriteSpec ?? null;
   }
 
   /** A drill telling her how — throttled, so a held button is one toast. */
@@ -1377,6 +1423,7 @@ export class DreamDojo {
   /** Everything sim-only comes off her: drill, rundown, loans, oath, bar. */
   _leaveSim(p) {
     const s = this.st[p.index];
+    this._hushHolo(p);
     p.setSimLook?.(false);
     this.highway?.stop(p);
     const d = this.drills[p.index];

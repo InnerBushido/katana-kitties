@@ -109,6 +109,12 @@ export class DataHighway {
     const trail = new Trail(this.dream.sim.root, p.style?.colour ?? HOLO.cyan);
     this.trails.push(trail);
     this.rides[p.index] = { p, road, path, cum, L: road.length, t: 0, T: rideTime(road.length), cycle, trail };
+    /* CARGO TO THE SNAKE WAY TOO. A highway's deck is a ridden road now
+       (`SimWorld.addBridge`), and she sits on it `onGround` for the whole
+       ride — so without this `Player._stepSnake` boarded her, and the walking
+       ride's orbit camera and lane split chased a kitten doing 55. */
+    p.onCycle = true;
+    p.snakeRide = null;
     this.dream.game.sfx?.('cycle');
     return true;
   }
@@ -119,6 +125,7 @@ export class DataHighway {
     if (!r) return;
     r.cycle.removeFromParent();
     r.trail.done = true;
+    p.onCycle = false;
     this.rides[p.index] = null;
   }
 

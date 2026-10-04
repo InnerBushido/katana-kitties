@@ -526,7 +526,8 @@ own branch:
 | 4 | `feature/dream-dojo-highway` |
 | 5 | `feature/dream-dojo-school` |
 
-All five are merged into local main and not pushed.
+All five are merged into local main and pushed to **`alpha`** (2026-10-03),
+for testing. They are **not** on origin/main.
 [dreamdojo.md](docs/notes/dreamdojo.md) has the design and Richard's brief,
 quoted.
 
@@ -576,6 +577,25 @@ quoted.
     It is the long tour of the map; shortening it means rewriting the card.
   - [voices.md](docs/notes/voices.md#lionheart-is-barrett-and-the-wording-is-half-the-casting)
     has the casting, the rule and the gating.
+
+- **Richard's Dream Dojo fix list** (branch
+  `mixed/dojo-islands-bridges-feast-shadow`).
+  [dreamdojo.md](docs/notes/dreamdojo.md#discs-ridden-bridges-and-leaving--richards-fix-list)
+  has each note quoted with its cause:
+  - Islands are discs, with no rock under them.
+  - Bridges and highways are real Snake Way roads: boarding, the stick lock,
+    the rails and `SnakeCam`. There is no Snake Way song in the sim, and a
+    light cycle is cargo.
+  - The arrows point and run the way she would cross, in her colour.
+  - The ribbon flares into each rim, and the rim opens over it.
+  - The Feast eats with the Cross Slash on (the sim hud's `critterHold` was
+    hard-coded false).
+  - The hologram stops talking when the last kitten disconnects.
+  - The Shadow is Lionheart's height (6.2, was 9.3).
+  - **Open:** the "VR sprites not showing" and "Shadow stuck on one pose"
+    reports did not reproduce in Chrome or Firefox. The holo-kittens' headsets
+    and the Shadow's late re-skin were fixed instead. Her special poses in the
+    sim (eat, bless, warp and the rest) are still home-sheet art.
 
 - **Stage 4 built:**
   - The **data highways and light cycles** to the two far islands.

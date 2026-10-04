@@ -5,7 +5,7 @@
    questions: may I fight (`arenaLive`), who could I aim at (`players`), did my
    swing reach anybody (`strikePlayers`), did I knock something over
    (`onMischief`), is a rat in my mouth (`critterHold`). In the real world
-   every answer is the real one. In here, five of them have to be different,
+   every answer is the real one. In here, six of them have to be different,
    and this Proxy is the whole of the difference — `Player` is not told.
 
      · `arenaLive` is YES. The simulator is a training ring: "they can also
@@ -22,6 +22,7 @@
        only find holograms. A kitten in the sim cannot hurt a kitten anywhere.
      · `onMischief`, `strikeCritters`, `strikeWards` do nothing. Nothing in
        here is the town's, and nothing in here counts.
+     · `critterHold` is the Feast's: is this press the EAT gesture.
 
    Everything else is the Game, bound to the Game, so `hud.sfx` and `hud.toast`
    behave exactly as they always have.
@@ -43,7 +44,15 @@ export function makeSimHud(game, dream) {
     strikeCritters: () => 0,
     strikeWards: () => false,
     onMischief: () => {},
-    critterHold: () => false,
+    /* THE FEAST'S ANIMALS ARE HERS TO EAT — `DreamDojo.critterHold`. This was
+       `() => false`, and it is the question the Cross Slash asks before it
+       takes ATTACK for itself (`Player.update`'s `deferred`): so in the
+       simulator a kitten wearing the orb who stood over a stunned holo-rat
+       and held the button got the technique, every time, and could never
+       eat. Richard: "We should try to use the same logic, as is in the
+       arena" — so it is the arena's rule (`Menagerie.wouldHold`), asked of
+       the drill that owns the animals. */
+    critterHold: (q) => dream.critterHold(q),
     onJoinClan: () => {},
     onMeetLeader: () => false,
     onPandaShrine: () => {},
