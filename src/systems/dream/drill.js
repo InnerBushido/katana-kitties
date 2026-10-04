@@ -74,11 +74,28 @@ export class Drill {
     return { x: this.at.x + f.x * a + r.x * b, y: this.at.y + dy, z: this.at.z + f.z * a + r.z * b };
   }
 
-  /** A target of hers. `Cls` is one of targets.js's. */
+  /** A target of hers. `Cls` is one of targets.js's.
+   *
+   *  NOTHING COUNTS BEFORE GO — AND NOTHING BREAKS BEFORE IT EITHER. Richard:
+   *  "sometimes you cut all the bamboo, but it shows there is still 1 or more
+   *  left, this is happening because the player can hit the bamboo before the
+   *  trial has started". The cane BROKE in the 1.2 s count-in (the gate only
+   *  asked the target), but `progress()` refused it because the drill was not
+   *  live yet — so the cane was gone and the count could never reach ten. The
+   *  fix is at the gate, for every drill at once: a target refuses a blow
+   *  until its drill is live, and the count-in says why. After the drill has
+   *  ended it refuses quietly, because nothing is being asked of her then. */
   target(Cls, o) {
+    const accept = o.accept;
+    const refuse = o.onRefuse;
     const t = new Cls({
       parent: this.root, owner: this.p.index, colour: this.colour,
       shards: this.dream.shards, ...o,
+      accept: (info, tt) => this.state === 'live' && (!accept || accept(info, tt)),
+      onRefuse: (tt, info) => {
+        if (this.state === 'ready') this.dream.hint?.(this.p, 'Not yet — wait for GO!');
+        else if (this.state === 'live') refuse?.(tt, info);
+      },
     });
     this.dream.gate.add(t);
     this.targets.push(t);

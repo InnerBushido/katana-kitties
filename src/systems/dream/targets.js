@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { ATTACKS, BASE_REACH, COMBAT } from '../../entities/player.js';
 import { Billboard } from '../../core/gfx.js';
 import { SIM, HOLO } from '../../world/simworld.js';
-import { SimBar } from './holo.js';
+import { SimBar, holoFlicker } from './holo.js';
 
 /* ---------------------------------------------------------------------------
    WHAT A KATANA CAN HIT IN THE SIMULATOR, AND WHAT CAN HIT HER BACK.
@@ -429,7 +429,8 @@ export class HoloKitten extends Target {
   update(dt) {
     super.update(dt);
     if (this.sprite) {
-      this.sprite.mat.opacity = (Math.sin(this.t * 31) > 0.95 ? 0.4 : 0.82) + this.flash * 0.18;
+      // A gentle flicker, not a blink — see `holoFlicker`.
+      this.sprite.mat.opacity = holoFlicker(this.t) + this.flash * 0.18;
       this.sprite.mat.color.setHex(this.flash > 0.3 ? 0xffffff : (this.o.tint ?? 0x7ff4ff));
     }
     // Its position follows its group, for the gate and for a mark's ring.
@@ -494,42 +495,86 @@ export class GateRing {
 
 /** A star to reach — on top of something, usually. */
 export class HoloStar {
-  constructor({ parent, x, y, z, owner = null, colour = HOLO.gold, onTake }) {
+  /**
+   * @param {number} [o.lock]  seconds it refuses EVERYBODY before it can be
+   *   taken — a knocked-loose orb's `STEAL.lock`, the same four seconds the
+   *   real ring keeps. A ring on the floor closes in as it runs out.
+   * @param {object[]} [o.rivals]  holo-figures that may take it too (anything
+   *   with a layer-space `group.position`). `onTake` is handed whichever got
+   *   there first, so a drill can tell her from them.
+   */
+  constructor({ parent, x, y, z, owner = null, colour = HOLO.gold, onTake, lock = 0, rivals = [] }) {
     this.local = new THREE.Vector3(x, y, z);
     this.owner = owner;
     this.onTake = onTake;
     this.taken = false;
+    this.lockT = lock;
+    this.lock0 = lock;
+    this.rivals = rivals;
     this.group = new THREE.Group();
     this.group.position.set(x, y + 1.0, z);
     const g = new THREE.OctahedronGeometry(0.6, 0);
     const solid = holoSolid(g, colour, 0.5);
+    this.solid = solid;
     this.group.add(solid);
     const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.25, 14, 8, 1, true), holoMat(colour, 0.18));
     beam.position.y = 7;
     this.group.add(beam);
     parent.add(this.group);
+    /* THE LOCK, DRAWN. A grey ring on the floor that shrinks onto the orb as
+       the seconds run out — "wait" said without a word, in the place both of
+       them are looking. It is a sibling of the group, so it does not bob. */
+    if (lock > 0) {
+      this.lockRing = new THREE.Mesh(new THREE.RingGeometry(0.85, 1.0, 40).rotateX(-Math.PI / 2), holoMat(0x9aa4b4, 0.75));
+      this.lockRing.position.set(x, y + 0.06, z);
+      parent.add(this.lockRing);
+    }
     this.t = 0;
   }
 
+  /** Can anybody take it yet? */
+  get locked() { return this.lockT > 0; }
+
   update(dt, players) {
     this.t += dt;
-    this.group.rotation.y += dt * 2;
+    this.group.rotation.y += dt * (this.locked ? 0.6 : 2);
     this.group.position.y = this.local.y + 1.0 + Math.sin(this.t * 2.2) * 0.2;
     if (this.taken) return;
+    if (this.lockT > 0) {
+      this.lockT = Math.max(0, this.lockT - dt);
+      const k = this.lockT / Math.max(this.lock0, 1e-6);
+      if (this.lockRing) {
+        this.lockRing.scale.setScalar(0.6 + 2.4 * k);
+        this.lockRing.visible = k > 0;
+      }
+      this.solid.scale.setScalar(this.locked ? 0.75 : 1);
+      if (this.locked) return;
+    }
+    // HER FIRST, then the rivals: a dead heat on the same frame is hers.
     for (const p of players) {
       if (this.owner != null && p.index !== this.owner) continue;
       const x = p.position.x - SIM.dx;
       const z = p.position.z - SIM.dz;
       if (Math.hypot(x - this.local.x, z - this.local.z) < 1.5 && Math.abs(p.position.y - this.local.y) < 2.2) {
-        this.taken = true;
-        this.group.visible = false;
-        this.onTake?.(p, this);
-        break;
+        this._take(p);
+        return;
       }
+    }
+    for (const r of this.rivals) {
+      if (!r?.group || r.live === false) continue;
+      const q = r.group.position;
+      if (Math.hypot(q.x - this.local.x, q.z - this.local.z) < 1.5) { this._take(r); return; }
     }
   }
 
-  dispose() { this.group.removeFromParent(); }
+  _take(who) {
+    this.taken = true;
+    this.group.visible = false;
+    if (this.lockRing) this.lockRing.visible = false;
+    this.onTake?.(who, this);
+  }
+
+  dispose() { this.group.removeFromParent(); this.lockRing?.removeFromParent(); }
 }
 
 /* -------------------------------- hazards -------------------------------- */

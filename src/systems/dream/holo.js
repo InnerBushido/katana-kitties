@@ -28,6 +28,36 @@ import { HOLO } from '../../world/simworld.js';
 const css = (hex) => `#${new THREE.Color(hex).getHexString()}`;
 
 /**
+ * How bright a hologram is at time `t` — the ONE flicker every holo-figure in
+ * the simulator uses.
+ *
+ * Richard: "The hologram flickering on the clan leaders in the simulation is
+ * flickering too fast and hurts to look at". It was a hard blink:
+ * `sin(t * 29) > 0.94 ? 0.35 : 0.8` — the opacity jumping 0.45 in ONE frame,
+ * 4.6 times a second, on six leaders at once, each on its own phase. The
+ * holo-kittens blinked at 4.9 Hz and the Lionheart over the arcade at 5.9 Hz.
+ * Three-plus hard flashes a second is exactly the band the photosensitivity
+ * guidelines say to stay out of.
+ *
+ * NOW: a slow breath (~0.2 Hz) and, about every five seconds, one soft dip
+ * that fades down and back up over a third of a second. Nothing steps; the
+ * steepest it ever changes is ~1.2 opacity a second (the blink was 27 a frame
+ * at 60), and `world-check` pins both the slew and the dip count. It still
+ * reads as a projection — the dip is what says "light", not "glass".
+ *
+ * @param {number} t      seconds
+ * @param {number} seed   any number; different seeds dip at different times
+ * @param {number} hi     the brightest it gets
+ * @param {number} depth  how far a full dip takes it down
+ */
+export function holoFlicker(t, seed = 0, hi = 0.82, depth = 0.2) {
+  const breath = 0.5 + 0.5 * Math.sin(t * 1.3 + seed * 1.7);
+  const ph = (((t * 0.19 + seed * 0.37) % 1) + 1) % 1;
+  const dip = ph < 0.07 ? Math.sin((Math.PI * ph) / 0.07) ** 2 : 0;
+  return hi - depth * (0.3 * breath + 0.7 * dip);
+}
+
+/**
  * A card of light. `lines` is a list of `{ text, size?, color?, weight? }`
  * (or bare strings), drawn top to bottom and centred.
  */

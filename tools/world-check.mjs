@@ -37226,6 +37226,152 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       fakeGame.toasts.join(' | '));
   }
 
+  /* --- the trial hall: nothing before GO, a gentle flicker, the Icewhisker race --- */
+  {
+    const HAL2 = await import('../src/systems/dream/hall.js');
+    const HO = await import('../src/systems/dream/holo.js');
+    const CP = await import('../src/entities/clanpower.js');
+    const H = new HAL2.TrialHall(D, D.isles.hall);
+    const shrine = (id) => H.shrines.find((s) => s.clan.id === id);
+    const cut = { kind: 'stand', dir: { x: 0, z: 1 }, dmg: 10, attacker: her };
+    const IHall = D.isles.hall;
+
+    /* PANDAPAW. Richard: "sometimes you cut all the bamboo, but it shows there
+       is still 1 or more left ... the player can hit the bamboo before the
+       trial has started". A cane cut in the count-in broke and was never
+       counted, so the goal could not be reached. */
+    put(her, IHall);
+    D.t += 10;
+    fakeGame.toasts.length = 0;
+    H.start(her, shrine('panda'));
+    let d = D.drills[0];
+    const canes = d.targets.slice();
+    const early = canes.map((c) => c.hit(cut));
+    ok('熊 a cane struck before GO does not break, and she is told to wait',
+      d.state === 'ready' && early.every((x) => x === false) && canes.every((c) => c.live)
+      && fakeGame.toasts.some((t) => /wait for GO/.test(t)), `${d.state} ${early} ${fakeGame.toasts.join(' | ')}`);
+    d.update(1.3);
+    for (const c of canes) c.hit(cut);
+    ok('...and once it is live, ten cuts are ten canes and the trial is won', d.state === 'won' && d.count === 10,
+      `${d.state} ${d.count}/${d.goal}`);
+    d.dispose(); D.drills[0] = null;
+
+    // And it is the GATE that refuses, for every trial in the hall, not the panda's.
+    const leaky = [];
+    for (const sh of H.shrines) {
+      put(her, IHall);
+      H.start(her, sh);
+      const dd = D.drills[0];
+      for (const t of dd.targets) {
+        if (t.hit(cut) || !t.live) leaky.push(`${sh.clan.id}:${t.name}`);
+      }
+      dd.dispose(); D.drills[0] = null;
+    }
+    ok('...and no target in any clan trial can be struck before its GO', leaky.length === 0, leaky.join(' '));
+
+    /* THE FLICKER. Richard: "flickering too fast and hurts to look at". It was
+       a hard blink, 0.45 of opacity in one frame, ~4.6 times a second. Sampled
+       at 240 Hz over a minute on six phases (the six leaders). */
+    let slew = 0; let dips = 0; let lo = 1; let hi = 0;
+    for (let s = 0; s < 6; s++) {
+      const seed = s * 1.37;
+      let prev = HO.holoFlicker(0, seed); let prevD = 0;
+      for (let k = 1; k <= 240 * 60; k++) {
+        const v = HO.holoFlicker(k / 240, seed);
+        slew = Math.max(slew, Math.abs(v - prev) * 240);
+        const dv = v - prev;
+        if (prevD < 0 && dv >= 0 && v < 0.82 - 0.2 * 0.5) dips++;
+        prevD = dv; prev = v;
+        lo = Math.min(lo, v); hi = Math.max(hi, v);
+      }
+    }
+    const perSec = dips / 6 / 60;
+    ok('幻 a hologram never steps: its brightness changes by at most 1.5 a second (the blink was 27)',
+      slew < 1.5, `${slew.toFixed(2)}/s`);
+    ok('...and dips at most once every three seconds, staying visible throughout',
+      perSec <= 1 / 3 && lo >= 0.6 && hi <= 0.82 + 1e-9, `${perSec.toFixed(3)} dips/s, ${lo.toFixed(2)}..${hi.toFixed(2)}`);
+    const blink = /Math\.sin\([^)]*\*\s*\d{2}(\.\d+)?[^)]*\)\s*>\s*0\.9/;
+    const files = ['dream/hall.js', 'dream/targets.js', 'dream/shadow.js', 'dream/tourshadow.js', 'dreamdojo.js'];
+    const still = files.filter((f) => {
+      const src = read(`../src/systems/${f}`).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+      return blink.test(src) || !/holoFlicker\(/.test(src);
+    });
+    ok('...and every holo-figure in the simulator uses it — the leaders, the holo-kittens, both Shadows, the Lionheart',
+      still.length === 0, still.join(' '));
+
+    /* ICEWHISKER. Richard: "make it wait the certain amount of seconds that
+       player normally needs to wait before being able to pick it up, and make
+       the opponent also try to pick it up ... so it's a race". */
+    const knock = () => {
+      put(her, IHall);
+      D.t += 10;
+      fakeGame.toasts.length = 0;
+      H.start(her, shrine('ice'));
+      const dd = D.drills[0];
+      dd.update(1.3);
+      const m = dd.mark;
+      put(her, { x: m.group.position.x - 2.5, z: m.group.position.z, y: IHall.y });
+      her.stealMarkT = 5; her.stealTarget = m;
+      m.hit({ ...cut, dir: { x: 1, z: 0 } });
+      return dd;
+    };
+    d = knock();
+    const s0 = d.loose;
+    const away = s0 ? Math.hypot(s0.local.x - (her.position.x - SW.SIM.dx), s0.local.z - (her.position.z - SW.SIM.dz))
+      - Math.hypot(d.mark.group.position.x - (her.position.x - SW.SIM.dx), d.mark.group.position.z - (her.position.z - SW.SIM.dz)) : 0;
+    ok('盗 a knocked-loose orb is thrown off her AWAY from the thief, by the ring\'s own toss',
+      !!s0 && s0.locked && Math.abs(away - CP.STEAL.toss) < 0.05 && d.mark.powerOrbs.length === 0, `${away.toFixed(2)}`);
+    put(her, s0.local);
+    let openAt = null;
+    for (let f = 0; f < 60 * 6 && d.state === 'live'; f++) {
+      d.update(1 / 60);
+      if (!s0.locked && openAt == null) openAt = d.t;
+    }
+    ok('...and nobody may take it for STEAL.lock seconds, not even her standing on it — then it is hers',
+      d.state === 'won' && openAt != null && Math.abs(openAt - CP.STEAL.lock) < 0.05,
+      `${d.state} open at ${openAt?.toFixed(2)}`);
+    d.dispose(); D.drills[0] = null;
+
+    // She wanders off: the holo-kitten races in and wins it, and wears it again.
+    d = knock();
+    const s1 = d.loose;
+    // As far from it as the floor allows (the floor's edge would end the trial).
+    const ox = IHall.x - s1.local.x; const oz = IHall.z - s1.local.z; const on = Math.hypot(ox, oz) || 1;
+    put(her, { x: IHall.x + (ox / on) * (IHall.r - 4), z: IHall.z + (oz / on) * (IHall.r - 4), y: IHall.y });
+    let theirs = null;
+    D.t += 10;   // the dream's clock moves on, as it does in four seconds of play (the hint throttle)
+    for (let f = 0; f < 60 * 8 && !s1.taken; f++) { d.update(1 / 60); if (s1.taken) theirs = d.t; }
+    ok('...and the holo-kitten races for it once it opens: away from it, she loses it — and the trial goes on',
+      s1.taken && d.state === 'live' && d.mark.powerOrbs.length === 1 && theirs >= 0.1 + CP.STEAL.lock - 1e-6
+      && fakeGame.toasts.some((t) => /grabbed it back/.test(t)), `${s1.taken} ${d.state} ${theirs?.toFixed(2)}`);
+    d.dispose(); D.drills[0] = null;
+
+    // Near it when it opens (5 away) and running at a walk: she wins the race.
+    d = knock();
+    const s2 = d.loose;
+    for (let f = 0; f < 60 * 3; f++) d.update(1 / 60);
+    const hx = d.mark.group.position.x - s2.local.x; const hz = d.mark.group.position.z - s2.local.z;
+    const hn = Math.hypot(hx, hz) || 1;
+    const hover = Math.hypot(hx, hz);
+    // Stand her 5 off on the far side from the holo-kitten, then run in when it opens.
+    let at = { x: s2.local.x - (hx / hn) * 5, z: s2.local.z - (hz / hn) * 5 };
+    put(her, { ...at, y: IHall.y });
+    const WALK = 10.5;
+    for (let f = 0; f < 60 * 4 && d.state === 'live'; f++) {
+      if (!s2.locked) {
+        const dx = s2.local.x - at.x; const dz = s2.local.z - at.z; const n = Math.hypot(dx, dz);
+        if (n > 1e-3) { const st = Math.min(n, WALK / 60); at = { x: at.x + (dx / n) * st, z: at.z + (dz / n) * st }; }
+        put(her, { ...at, y: IHall.y });
+      }
+      d.update(1 / 60);
+    }
+    ok('...and a kitten 5 away when it opens, running at a walk, beats the holo-kitten waiting at its hover',
+      d.state === 'won' && Math.abs(hover - HAL2.ICE_HOVER) < 0.05, `${d.state} hover ${hover.toFixed(2)}`);
+    d.dispose(); D.drills[0] = null;
+    her.stealMarkT = 0; her.stealTarget = null;
+    D.refillSim(her);
+  }
+
   /* --- 影 Shadow Lionheart --- */
   {
     const F = D.shadow;
@@ -37596,6 +37742,48 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     for (let f = 0; f < 10; f++) F.update(1 / 60);
     ok('影 a fight everybody walks away from ends, in words', F.state === 'lost' && /Everybody left/.test(F.say), F.say);
     F.dispose();
+
+    /* ONE CHARGE, ONE BLOW. Richard: "using the charge ability quickly kills
+       him, it should just do 1 hit amount of damage to him and not keep
+       recursively hitting him". `_chargeStrike` asks the gate every frame it
+       is live; 20 frames of one charge must cost him one blow. */
+    {
+      put(her, inside);
+      F.begin(her);
+      const B2 = F.boss;
+      B2.open = 0;
+      B2.group.position.set(her.position.x - SW.SIM.dx + 2, IH.y, her.position.z - SW.SIM.dz);
+      B2.local.copy(B2.group.position);
+      B2.update(0);
+      const hp0 = B2.hp;
+      const dir = new THREE.Vector2(1, 0);
+      her._chargeHit = new Set();
+      for (let f = 0; f < 20; f++) D.onStrike(her, 'charge', PL.BASE_REACH, dir);
+      const one = hp0 - B2.hp;
+      her._chargeHit = new Set();
+      for (let f = 0; f < 20; f++) D.onStrike(her, 'charge', PL.BASE_REACH, dir);
+      const two = hp0 - B2.hp;
+      for (let f = 0; f < 3; f++) D.onStrike(her, 'stand', PL.BASE_REACH, dir);
+      const swings = hp0 - B2.hp - two;
+      ok('影 a charge through Shadow Lionheart costs him ONE blow, however many frames it touches him — and the next charge one more',
+        one === 1 && two === 2, `${one} then ${two}`);
+      ok('...and ordinary swings still count one each', swings === 3, `${swings}`);
+      /* A HIT YOU CAN SEE. Richard: "Currently, he just turns white which is
+         hard to see or notice." */
+      fakeGame.sounds.length = 0;
+      D.onStrike(her, 'stand', PL.BASE_REACH, dir);
+      const sp = B2.sparks?.length ?? 0;
+      const sideOk = sp && (B2.sparks.at(-1).s.position.x < B2.local.x);
+      const knocked = B2.knock === 1;
+      B2.update(1 / 60);
+      const jolt = Math.hypot(B2.figure.position.x, B2.figure.position.z);
+      for (let f = 0; f < 30; f++) B2.update(1 / 60);
+      ok('...and every blow throws a starburst on the side she hit from, jolts him and sounds — then it all settles',
+        sp >= 1 && sideOk && knocked && jolt > 0.3 && fakeGame.sounds.includes('hit')
+        && (B2.sparks?.length ?? 0) === 0 && B2.knock === 0 && B2.figure.position.length() < 1e-6,
+        `${sp} ${sideOk} ${jolt.toFixed(2)} ${fakeGame.sounds.join(',')}`);
+      F.dispose();
+    }
 
     // The tenth quest counts after the Awakening, and only it does.
     const g = { players: [her], kotodama: { awakened: true } };

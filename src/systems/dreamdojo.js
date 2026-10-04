@@ -25,7 +25,7 @@ import { ShadowFight, SHADOW_LINES, HANDOVER } from './dream/shadow.js';
 import { LionVoice, VOICE_TAIL } from './dream/lionvoice.js';
 import { Rundown } from './dream/rundown.js';
 import { ISLANDS, islandCentre } from './dream/islands.js';
-import { SimBar } from './dream/holo.js';
+import { SimBar, holoFlicker } from './dream/holo.js';
 import { Approach } from './dream/approach.js';
 import { Lecture } from './dream/lecture.js';
 import { GearRoom, GEAR_ITEMS } from './dream/gear.js';
@@ -1678,6 +1678,17 @@ export class DreamDojo {
 
   /** `Game.strikePlayers`, for a kitten in the sim: holograms only. */
   onStrike(attacker, kind, reach, dir, spent = null) {
+    /* ONE CHARGE, ONE BLOW PER HOLOGRAM. Richard: "using the charge ability
+       quickly kills him, it should just do 1 hit amount of damage to him and
+       not keep recursively hitting him." `_chargeStrike` asks the gate on
+       EVERY frame the charge is live; in the ring it is `hurt`'s
+       invulnerability that makes that one blow, and a hologram has no such
+       window — so a charge through the Shadow landed about a blow a frame,
+       a dozen of his 24 in one press. The charge's own spent set
+       (`_chargeHit`, new each charge, which already stops a barrel or a rat
+       being hit forty times) is handed to the gate HERE, in the sim only, so
+       the ring's answer is untouched (non-negotiable 5). */
+    if (!spent && kind === 'charge') spent = attacker._chargeHit ?? null;
     const n = this.gate.strike(attacker, kind, reach, dir, spent);
     /* EVERY SWING, EVEN ONE THAT FOUND NOTHING — a kata's CUT is the swing
        on the beat, and the range's ONE SWING counts what one call reached. */
@@ -2479,7 +2490,8 @@ export class DreamDojo {
       s.mesh.scale.set(1 - Math.sin(this.t * 1.6) * 0.012, 1 + Math.sin(this.t * 1.6) * 0.016, 1);
     }
     if (this.holoLionSprite) {
-      const flick = Math.sin(this.t * 37) > 0.93 ? 0.4 : 0.85;
+      // Soft, not a blink — see `holoFlicker` (it was 5.9 hard blinks a second).
+      const flick = holoFlicker(this.t, 1, 0.85, 0.25);
       this.holoLionSprite.mat.opacity = flick;
       this.holoLionSprite.mesh.scale.copy(s?.mesh.scale ?? this.holoLionSprite.mesh.scale);
     }

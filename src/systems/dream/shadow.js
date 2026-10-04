@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { Billboard } from '../../core/gfx.js';
 import { SIM, HOLO } from '../../world/simworld.js';
 import { Kiosk, idleIn, isleSpot } from './kiosk.js';
-import { HoloPanel } from './holo.js';
+import { HoloPanel, holoFlicker } from './holo.js';
 import { Target, holoSolid, holoMat } from './targets.js';
 import { starsFor } from './progress.js';
 import { rankOf } from './rank.js';
@@ -225,6 +225,38 @@ function barMesh(cx, y, cz, w, l, d) {
 
 /* ------------------------------- the boss --------------------------------- */
 
+/** How long a hit's starburst lasts. */
+export const SPARK_T = 0.28;
+let _sparkTex = null;
+/** The starburst: drawn once, on a CPU canvas, and shared by every spark. A
+ *  material each, because each fades on its own clock. */
+function sparkMat() {
+  if (!_sparkTex && typeof document !== 'undefined') {
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.translate(64, 64);
+    const grad = g.createRadialGradient(0, 0, 0, 0, 0, 60);
+    grad.addColorStop(0, 'rgba(255,255,255,1)');
+    grad.addColorStop(0.35, 'rgba(255,236,150,0.95)');
+    grad.addColorStop(1, 'rgba(255,120,60,0)');
+    g.fillStyle = grad;
+    g.beginPath();
+    for (let i = 0; i < 20; i++) {
+      const a = (i / 20) * Math.PI * 2;
+      const r = i % 2 ? 22 : 60 - (i % 4) * 9;
+      g.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    g.closePath();
+    g.fill();
+    _sparkTex = new THREE.CanvasTexture(c);
+  }
+  return new THREE.SpriteMaterial({
+    map: _sparkTex, transparent: true, depthTest: false, depthWrite: false,
+    blending: THREE.AdditiveBlending, color: 0xffffff,
+  });
+}
+
 export class ShadowBoss extends Target {
   constructor(o) {
     /* The hit volume scales with him: it was centre 3.0 and 4 up for 9.3. */
@@ -305,15 +337,75 @@ export class ShadowBoss extends Target {
     if (this.bladeGrp) this.bladeGrp.visible = !this.posed;
   }
 
+  /**
+   * A BLOW HE CAN BE SEEN TO TAKE. Richard: "a 'hit' effect should be played
+   * on Shadow when he is hit so that the player knows they are damaging him.
+   * Currently, he just turns white which is hard to see or notice." A purple-
+   * black figure going white for a fifth of a second, 34 back, was the whole
+   * of it. Now each blow that counts throws:
+   *   · a starburst of light ON THE SIDE SHE HIT FROM, at his chest, drawn
+   *     over everything (it is a spark, not a thing in the room);
+   *   · a spray of shards in her colour;
+   *   · a knock — the figure jolts away from the blade and squashes, and
+   *     settles over a quarter of a second;
+   *   · the ring's own `hit` sound.
+   * His bar dropping was already there; it is no longer the only sign.
+   */
+  hit(info) {
+    const ok = super.hit(info);
+    if (ok) this._struck(info);
+    return ok;
+  }
+
+  _struck(info) {
+    const d = info.dir ?? { x: 0, z: 1 };
+    const y = this.local.y + SHADOW_H * 0.45;
+    const sx = this.local.x - d.x * 1.4;
+    const sz = this.local.z - d.z * 1.4;
+    const s = new THREE.Sprite(sparkMat());
+    s.position.set(sx, y, sz);
+    s.renderOrder = 30;
+    this.group.parent?.add(s);
+    (this.sparks ??= []).push({ s, t: 0 });
+    const colour = info.attacker?.style?.colour ?? HOLO.gold;
+    this.o.shards?.burst(sx, y, sz, colour, 34, 8, 5);
+    this.knock = 1;
+    this.knockDir = d;
+    this.o.sfx?.('hit');
+  }
+
   update(dt) {
     super.update(dt);
+    for (let i = (this.sparks?.length ?? 0) - 1; i >= 0; i--) {
+      const k = this.sparks[i];
+      k.t += dt;
+      const e = Math.min(1, k.t / SPARK_T);
+      k.s.scale.setScalar(1.5 + 3.5 * Math.sqrt(e));
+      k.s.material.opacity = 1 - e * e;
+      k.s.material.rotation = e * 0.6;
+      if (e >= 1) { k.s.removeFromParent(); k.s.material.dispose(); this.sparks.splice(i, 1); }
+    }
+    if (this.knock > 0) {
+      this.knock = Math.max(0, this.knock - dt / 0.25);
+      const kn = this.knock * this.knock;
+      const d = this.knockDir ?? { x: 0, z: 0 };
+      this.figure.position.set(d.x * 0.7 * kn, 0, d.z * 0.7 * kn);
+      this.figure.scale.set(1 + 0.08 * kn, 1 - 0.1 * kn, 1);
+    }
     if (this.sprite) {
       const gold = this.open > 0;
       this.sprite.mat.color.setHex(this.flash > 0.3 ? 0xffffff : gold ? 0xffc93c : this.tint);
-      this.baseOp = Math.sin(this.t * 23) > 0.96 ? 0.55 : 0.9;
+      // Soft, not a blink — see `holoFlicker` (it was 3.7 hard blinks a second).
+      this.baseOp = holoFlicker(this.t, 3, 0.9, 0.3);
       this.sprite.mat.opacity = this.baseOp;
     }
     this.position.set(this.group.position.x + SIM.dx, this.group.position.y + this.o.centre, this.group.position.z + SIM.dz);
+  }
+
+  dispose() {
+    for (const k of this.sparks ?? []) { k.s.removeFromParent(); k.s.material.dispose(); }
+    this.sparks = [];
+    super.dispose();
   }
 
   /** `veil` is per PANE: in the way of one kitten's lens is not in another's. */
@@ -435,6 +527,7 @@ export class ShadowFight {
     this.boss = new ShadowBoss({
       parent: this.dream.sim.root, x: c.x, y: this.isle.y, z: c.z, owner: null,
       art: this.dream.game?.shadowArt ?? this.dream.lionArt, shards: this.dream.shards, hits: SHADOW_HITS,
+      sfx: (n) => this.dream.game.sfx?.(n),
       onHit: (b) => {
         // OPEN: the blow counts twice — the punish window the Cross Slash leaves.
         if (b.open > 0 && b.hp > 0) b.hp -= 1;
