@@ -532,3 +532,12 @@ as well while in the tube." There are twelve masters
   the face), as their home poses mostly already did. So the fill-everything
   count is now twenty-three (twenty-four with Frost's Riposte stance, merged
   after). Nothing fills them, because `_loadSimPoses` does not ask for it.
+- **A seventh, 返 Riposte** (`vr_riposte`). Richard: "Need to generate VR
+  sprites for the Riposte ability for the players and use that in the
+  simulation." It was made the same way: her home Riposte stance and her `vr`
+  front cell as the two references, plus one more sentence in the prompt to
+  keep the katana held across her body where it is. world-check measures it
+  against the home stance like the others (ten measured now). It also checks
+  that its blade sticks out to the RIGHT (ember 0.22/0.45, frost 0.26/0.44),
+  because the billboard mirrors on `artFacesRight`. Frost's closes a pocket,
+  so the fill count is twenty-five, and the kitten-pose count is fifteen.

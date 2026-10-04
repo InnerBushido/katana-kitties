@@ -80,11 +80,20 @@ export const FALL = [
 ];
 
 /** The gear-up, said by the real Lionheart as bubbles (DreamDojo.say). Text
- *  with newlines, read as spaces in the recording, like LION_LINES. */
+ *  with newlines, read as spaces in the recording, like LION_LINES.
+ *
+ *  "SUIT UP!" IS WRITTEN QUIETLY NOW. Richard: "the 'lion_gear_suit' voice
+ *  needs to be re-recorded as it is loud, aggressive, and doesn't sound like
+ *  Lionheart." It WAS Barrett — the render's own voice_id says so — but the
+ *  capitals and the bang made him shout it: 128Hz against his 83-96 on every
+ *  other line, the same thing that sank `lion_yell_wall`. The prompt is the
+ *  line (voices.md), so the line is the fix: "suit up." in lower case, a full
+ *  stop for the bang, re-rendered and measured 86Hz (suit) and 89Hz (again).
+ *  Write him cool and he comes back cool. */
 export const GEAR_LINES = {
   first: 'First time? You need your VR gear!\nGrab a headset, gloves and a tracking suit\nfrom the glowing racks — then you are ready!',
-  again: 'Back for more training?\nGood! Face the front... and SUIT UP!',
-  suit: 'All your gear! Face the front...\nand SUIT UP!',
+  again: 'Back for more training?\nGood. Face the front... and suit up.',
+  suit: 'All your gear. Face the front...\nand suit up.',
   talk: 'Your gear is waiting!\nTalk to me first, and I will suit you up.',
 };
 export const GEAR_VOICE = {

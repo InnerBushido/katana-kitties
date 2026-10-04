@@ -611,6 +611,28 @@ quoted.
     by speeding the voices. ~~All new Payne lines are pending her approval.~~
     Approved: "Payne approved the lines and her voice, so we are good there."
 
+- **Richard's list after the rare orbs** (branch
+  `mixed/dojo-gear-voice-riposte-vr-tour-orbtext-dome`).
+  [dreamdojo.md](docs/notes/dreamdojo.md#the-gear-voice-the-headset-riposte-the-tours-islands-the-cards-and-the-dome)
+  has each note quoted:
+  - **The gear voice was Barrett all along.** He was SHOUTING because the card
+    said "SUIT UP!". The suit and again lines are re-written quietly and
+    re-rendered (128 → 86 Hz).
+  - **返 Riposte in the headset** (`vr_riposte`, both sheets). There are seven
+    headset poses now.
+  - **The tour pans the islands, cued on the words that name them**
+    (`TOUR_PANS`). The Turning Circle is only the turning whole-map frame.
+  - **Shadow Lionheart performs in his tour line** (`dream/tourshadow.js`):
+    walk, slam, sweep, Cross, at 33–46% of the frame.
+  - **The Gallery's cards wrap**, at 0.44 units a letter, on a 10 × 5.2 card
+    over the kitten reading it. Only her nearest card lights.
+  - **The dome is its own shape for animals.** It has open sky beside and over
+    it, it slides, and a riderless dragon over it is sent to the stones.
+  - **Only the drop owes the apology.** A mount on the shell gets a toast.
+  - **Open:** none of it has been played at real speed with real audio. The
+    frames were checked through the real lenses in the browser pane, and the
+    dragon over the dome was checked by simulation, not watched.
+
 - **Richard's next Dream Dojo list** (branch
   `mixed/dojo-riposte-minimap-gate-dealer`).
   [dreamdojo.md](docs/notes/dreamdojo.md#the-front-door-and-the-fix-list-after-it)

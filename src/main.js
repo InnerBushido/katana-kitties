@@ -2120,7 +2120,7 @@ class Game {
    * its headset and nothing else (`Player.setSimLook` keeps her home drawing).
    */
   _loadSimPoses() {
-    const FILES = ['eat', 'bless', 'warp', 'inhale', 'scared', 'sweep'];
+    const FILES = ['eat', 'bless', 'warp', 'inhale', 'scared', 'sweep', 'riposte'];
     const load = (sheet, f) => loadSpriteAtlas(`/sprites/kittens/${sheet}/vr_${f}.png`, {
       views: 1, rows: 1, cell: 256, maxAtlas: 768,
     }).then((a) => (a?.texture?.image ? a : null)).catch(() => null);

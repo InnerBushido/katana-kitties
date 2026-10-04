@@ -198,8 +198,12 @@ const WORK = [
      pose (so the pose, framing and scale are the same drawing) and the front
      idle cell of her `vr` sheet (so it is the same headset and trim) - and
      loaded exactly as the home poses are (`Game._loadSimPoses`, one cell,
-     768). Storm and Blossom are these recoloured by `Game`, like every pose. */
-  ...['ember', 'frost'].flatMap((s) => ['eat', 'bless', 'warp', 'inhale', 'scared', 'sweep'].map((p) => (
+     768). Storm and Blossom are these recoloured by `Game`, like every pose.
+     The seventh, 返 RIPOSTE'S stance, the same way off `<sheet>_riposte.png`
+     — Richard: "Need to generate VR sprites for the Riposte ability for the
+     players and use that in the simulation." It mirrors, as its home one
+     does, and world-check measures which side its blade is on. */
+  ...['ember', 'frost'].flatMap((s) => ['eat', 'bless', 'warp', 'inhale', 'scared', 'sweep', 'riposte'].map((p) => (
     { file: `${s}_vr_${p}.png`, out: `kittens/${s}/vr_${p}.png`, to: [768, 768], chroma: true }))),
   /* HIS SHADOW, the simulator's last boss (systems/dream/shadow.js): one row
      of four, in the order the fight reads them - guard, the overhead SLAM,
