@@ -50,9 +50,9 @@ import { tune } from '../core/tuning.js';
  *
  * IT IS NOT THE SIZE OF THE ROSTER AND THE TWO USED TO BE THE SAME NUMBER.
  * There were eight kinds and eight slots, so every screen drew eight of
- * something and it was never clear which eight it meant. The roster is nine
- * ten now — see `aegis` and `blink` — and the screens that show a LIST of
- * kinds scroll, while
+ * something and it was never clear which eight it meant. The roster is
+ * thirteen now — see `aegis`, `blink` and the three after it — and the screens
+ * that show a LIST of kinds scroll, while
  * the screens that show her SLOTS still draw exactly this many. Any screen
  * that hard-codes 8 is wrong about one of the two.
  */
@@ -75,7 +75,7 @@ export const MAX_BAG = 16;
 export const MAX_CARRIED = MAX_EQUIPPED + MAX_BAG;
 
 /**
- * The ten.
+ * The thirteen.
  *
  * `kanji` is what the orb prints on itself and what the profile screen shows;
  * `name` is the romaji the toasts use, because a nine-year-old cannot read the
@@ -242,7 +242,110 @@ export const POWER_ORBS = [
     label: 'FLASH STEP',
     color: 0x21d6a8,
     blurb: 'Rare — the dealer only. Sprint + Interact: vanish, and land somewhere else. Nothing can touch you on the way.',
-    detail: () => `${DODGE.invuln.toFixed(2)}s gone, ${DODGE.cool.toFixed(2)}s wait`,
+    /* THE LOCK RANGE IS PRINTED BECAUSE 遠 FAR STEP MOVES IT, and a row that
+       said the same thing to a girl wearing three of them as to one wearing
+       none would be the shelf lying about what she paid for — the argument
+       the Ward's row makes about 守. */
+    detail: (n, counts) => `${DODGE.invuln.toFixed(2)}s gone, ${DODGE.cool.toFixed(2)}s wait, `
+      + `${lockRangeFor(counts?.far ?? 0).toFixed(1)}m lock`,
+  },
+  {
+    /* 遠 FAR STEP — THE FLASH STEP'S 守. Asked for as "increases the potency
+       of the teleporting ability, thus increasing its range of how far the
+       player can teleport while using it, by 1.5x's as much ... with two orbs
+       equipped, it is now 2x's as much as the 1.5x is applied to the original
+       maximum range known as 'Lock range' in the balance page."
+
+       ADDITIVE, AND THE ASK SAYS SO: 1.5x, then 2x — not 1.5 x 1.5 = 2.25.
+       Each orb adds half of the SHIPPED Lock range, which is the stacking
+       rule every other orb in this file already follows (`1 + k*n`). See
+       `lockRangeFor`.
+
+       IT MOVES THE WHOLE MOVE, NOT ONE NUMBER IN IT. `DODGE.range` is read in
+       three places and they are the same distance said three ways: how far
+       away somebody can be and still be locked, how far an aimed (two-orb)
+       landing can go, and — at `selfK` of it — the flee. "How far the player
+       can teleport" is all three; stretching the lock and not the flee would
+       leave the escape the one part of the move the orb forgot.
+
+       `needs: 'blink'`, like 守 needs 壁: eight of these and no 瞬 is eight
+       slots spent on nothing, and `world-check` asserts exactly that. Stocked
+       as a booster (two), for 守's reason — a booster is half a purchase. */
+    id: 'far',
+    stack: true,
+    shopOnly: true,
+    needs: 'blink',
+    stockN: 2,
+    priceK: 2.5,
+    name: 'Enpo',
+    kanji: '遠',
+    label: 'FAR STEP',
+    color: 0x3fa7ff,
+    blurb: 'Rare — the dealer only. Your 瞬 Flash Step reaches further: half as far again per orb. Useless without one.',
+    detail: (n) => `Flash Step range x${(1 + DODGE.farK * n).toFixed(1)}, with 瞬 Flash Step`,
+  },
+  {
+    /* 返 RIPOSTE — BLOCK IT AND ANSWER IT. Asked for as "if the player
+       executing the riposte is facing the player and executes it within a
+       small duration of time of when the attack happens, then they can block
+       the attack and instantly throw an attack of their own."
+
+       THE THIRD MOVE ON THE DEALER'S SHELF AND THE ONLY ONE THAT IS A
+       READ. The Ward is a wall you hold, the Flash Step is a door you leave
+       by; this one is a guess about WHEN and FROM WHERE, and it pays only if
+       she is right about both. Standing still, ACTION held, stick pushed: she
+       plants and faces the push for `PARRY.window`, and a blow arriving from
+       anywhere in the half of the world she is facing is stopped dead and
+       answered with a swing of her own. From behind it is an ordinary hit —
+       "infront of the player doing the riposte and not behind them". See
+       PARRY for every number and `Player._startParry` for the sequencing.
+
+       NOT A SECOND COMBAT PATH. The block is a question `Game.strikePlayers`
+       asks before it spends a blow, and the answer swing goes back through
+       that same gate as `ATTACKS.riposte` — so a parry in the market square
+       stops nothing and answers nobody, because nothing reaches her there to
+       be stopped (third non-negotiable). */
+    id: 'parry',
+    shopOnly: true,
+    priceK: 2.5,
+    name: 'Kaeshi',
+    kanji: '返',
+    label: 'RIPOSTE',
+    color: 0xe8e8f4,
+    blurb: 'Rare — the dealer only. Stand still, HOLD Interact and push the stick: block a blow from in front, and hit back.',
+    detail: (n, counts) => `${parryWindowFor(counts?.longparry ?? 0).toFixed(2)}s to catch a blow, `
+      + `${PARRY.cool.toFixed(1)}s wait`,
+  },
+  {
+    /* 間 LONG PARRY — THE RIPOSTE'S 守. "There can be another Kotodama orb
+       that is stackable and that increases the potency of the parry ability
+       by increasing the timing/window of the ability by 1.5x's."
+
+       1.5x PER ORB, ADDITIVELY, for the reason 遠 gives: two is 2x, three is
+       2.5x, never 1.5 to the power of anything. `ma` is the Japanese word for
+       exactly this — the interval, the beat of timing between two things —
+       and it is the word a kendo teacher would use for what this orb buys.
+
+       IT LENGTHENS THE CATCH AND NOTHING ELSE. The recovery after a whiff is
+       the same, and so is the wait: a longer window is a bigger target for
+       her guess, not a cheaper miss. */
+    /* `longparry` AND NOT `timing`, which was its first id: `kanaFor` hashes
+       the id to pick the orb's slice of katakana, and `timing` landed on
+       exactly `parry`'s slice, so the booster and the move it boosts rained
+       the same five characters — `world-check`'s "no two orbs rain the same
+       set" caught it on the first run. */
+    id: 'longparry',
+    stack: true,
+    shopOnly: true,
+    needs: 'parry',
+    stockN: 2,
+    priceK: 2.5,
+    name: 'Ma',
+    kanji: '間',
+    label: 'LONG PARRY',
+    color: 0xc9b6ff,
+    blurb: 'Rare — the dealer only. Your 返 Riposte stays ready for longer: half as long again per orb. Useless without one.',
+    detail: (n) => `Parry window x${(1 + PARRY.longK * n).toFixed(1)}, with 返 Riposte`,
   },
 ];
 
@@ -268,8 +371,9 @@ export const ORB_IDS = POWER_ORBS.map((o) => o.id);
  * WHOLE roster, dealer's shelf included, uniformly. That uniformity is the
  * lottery as it was asked for — "the chances are randomly selected between all
  * regular and Rare powerup orbs" — so the odds are whatever the roster says:
- * today 2 rare kinds in 10, and a new rare orb changes them without anybody
- * editing a percentage. The quests that only ONE kitten can win (and the
+ * today 5 rare kinds in 13, and a new rare orb changes them without anybody
+ * editing a percentage. (It was 2 in 10 until 遠, 返 and 間 arrived, and
+ * nothing here was edited to make it 5.) The quests that only ONE kitten can win (and the
  * plain-orb prize, which is one of them) draw rare; see `systems/feats.js`.
  *
  * THIS WAS "NEVER RARE" UNTIL IT WAS ASKED FOR. The reasoning then was that a
@@ -727,7 +831,75 @@ export const DODGE = tune('DODGE', {
    *  swing (1.0) but not inside her drawing: she arrives able to cut, which
    *  is the whole point of choosing to land there. */
   nearK: 0.85,
+  /** 遠 FAR STEP: how much of the SHIPPED Lock range each orb adds. 0.5 is
+   *  the ask word for word — one orb 1.5x, two 2x — and it is a fraction of
+   *  `range` rather than a distance so that tuning Lock range carries every
+   *  Far Step kitten with it. See `lockRangeFor`. */
+  farK: 0.5,
 });
+
+/**
+ * How far a kitten wearing `far` 遠 Far Step orbs can lock, and so how far her
+ * whole Flash Step reaches — see the orb's own note for why the flee rides on
+ * it too.
+ *
+ * ONE PLACE, because the landing, the reticle, the drawn ring and three
+ * inventory rows all ask. Zero orbs is `DODGE.range` exactly, by
+ * multiplication by one, which is what keeps the move bit-identical for
+ * everybody who has not bought one (fifth non-negotiable, read across).
+ */
+export const lockRangeFor = (far = 0) => DODGE.range * (1 + DODGE.farK * Math.max(0, far));
+
+/**
+ * 返 RIPOSTE — a parry, and the swing that answers it.
+ *
+ * THE GESTURE IS THE ASK, READ LITERALLY: "if the player is standing still,
+ * then holds down the Action button and moves the joystick in a certain
+ * direction". Still at the press (`still`), ACTION held, and then a push past
+ * `push` is the moment she commits, in the direction pushed. It is a HOLD and
+ * a push rather than a press because every other meaning of ACTION in the
+ * ring — the clan power, the dive — fires on the press; a tap that never saw
+ * a push is handed back to whichever of those it would have been (`tap`), the
+ * way the Cross Slash hands a tapped Slash back as an ordinary swing.
+ *
+ * `window` IS THE PARRY. For that long, a blow from the half of the world she
+ * is facing is stopped and answered. Asked for as "a small duration", and a
+ * third of a second is small to an adult and a fair target for a nine-year-old
+ * — it is on the balance page because the right number is found by playing.
+ *
+ * `recover` IS WHAT A WRONG GUESS COSTS. A parry that catches nothing leaves
+ * her planted this long afterwards, blade down, in front of the sister she
+ * guessed wrong about. Without it the move is free to throw on every exchange
+ * and stops being a read. A parry that CATCHES something skips it: the answer
+ * swing is her recovery.
+ *
+ * `cool` STARTS WHEN THE MOVE ENDS, not when it starts, so a window stretched
+ * by 間 Long Parry cannot eat its own wait.
+ *
+ * `longK` IS 間's HALF-AGAIN, per orb and additive — see `parryWindowFor`.
+ *
+ * IN THE AIR SHE HANGS. "Can also be activated when in the air, if so,
+ * velocity of player is zero and gravity is turned off until the technique is
+ * finished" — the Flash Step's pin, for the whole of the window and the
+ * recovery. See `Player._gravityK`.
+ */
+export const PARRY = tune('PARRY', {
+  window: 0.35,
+  recover: 0.35,
+  cool: 1.2,
+  tap: 0.25,
+  still: 0.2,
+  push: 0.45,
+  longK: 0.5,
+});
+
+/**
+ * The parry window for a kitten wearing `n` 間 Long Parry orbs. One
+ * place, for the reason `wardFor` and `lockRangeFor` are one place each: the
+ * shelf row, the profile and the running move all ask, and two answers are
+ * two numbers.
+ */
+export const parryWindowFor = (n = 0) => PARRY.window * (1 + PARRY.longK * Math.max(0, n));
 
 /* ------------------------------- aggregation ------------------------------ */
 
@@ -754,6 +926,9 @@ export function aggregate(ids = []) {
   const charge = n('charge');
   const aegis = n('aegis');
   const blink = n('blink');
+  const far = n('far');
+  const parry = n('parry');
+  const longparry = n('longparry');
 
   return {
     counts: Object.fromEntries(ORB_IDS.map((id) => [id, n(id)])),
@@ -792,7 +967,16 @@ export function aggregate(ids = []) {
        same way the ninth Long Cut is still a longer cut. There is no rung
        above this one, and an orb that silently stopped working at three
        would be the kind of rule nobody could ever discover. */
-    blink: blink ? { aim: blink >= 2 } : null,
+    /* ...AND 遠 FAR STEP IS A NUMBER ON THE SAME OBJECT, not an object of
+       its own. `range` is the Lock range she carries into every Flash Step;
+       with no 瞬 there is no object to put it on, which is how eight of them
+       and no Flash Step come to nothing — the `needs` rule, by construction
+       rather than by a branch. */
+    blink: blink ? { aim: blink >= 2, range: lockRangeFor(far) } : null,
+    /* 返 RIPOSTE, AND 間 ON IT the way 守 sits on 壁 and 遠 on 瞬. One 返 is
+       the whole move — a second is a slot spent on nothing, like a second
+       Charge — so the only number here is the window, and only 間 moves it. */
+    parry: parry ? { window: parryWindowFor(longparry) } : null,
   };
 }
 

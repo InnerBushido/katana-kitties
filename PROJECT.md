@@ -369,6 +369,7 @@ mark is derived too: it means the number was read out of a `tune()` table, so a
 | **air** ✎ | dmg 14 · knock 13 · lift 7.5 · reach 3.7 | slash in the air |
 | **tri / dive / charge** ✎ | the three power-orb moves | entries in the same table, so they cannot leak out of the ring |
 | **sweep** ✎ | dmg 8 · knock 8 · lift 7.5 · reach 4.4 | Payne's Goblin Sweep: sprint held, stick still, attack. A full circle |
+| **riposte** ✎ | dmg 12 · knock 16 · lift 5 · reach 4.6 | 返 Riposte's answer: a parry that catches a blow from in front throws this back at once |
 <!-- /doc-sync:numbers -->
 
 **MISCHIEF is the spine**: 80% opens the tournament, 100% wakes the Powerup
@@ -512,7 +513,7 @@ to lock it on.** → [mobile.md](docs/notes/mobile.md)
 | **Steam shelf art & icons** | `tools/steam-art.mjs` crops and composites `docs/art-masters/title_art.png` — the **master**, because every crop is a pixel coordinate measured on that 2752x1536 file and the shipped copy is WebP. **Nothing here is a new drawing** — a prompt to an image model would put art on the box that is nowhere inside the game. | `node tools/steam-art.mjs` → `out/steam/` |
 | **Steam store capsules** | `tools/steam-capsules.sh` | → [trailer.md](docs/notes/trailer.md) |
 | **Clan leader portraits (Help)** | `tools/help-portraits.mjs` | |
-| **A Help picture that isn't filmed yet** | `tools/help-blink-placeholder.mjs` draws the still that holds 瞬 Flash Step's cell in the abilities grid until its clip is shot. It reads the jade out of the orb roster and the kitten out of `PLAYER_STYLE`, so it cannot drift from the game, and it stamps **PLACEHOLDER** in its own corner — everything else on that page is an engine capture and a drawing must not pass for one. Swapping in the clip is one attribute in `index.html`. | `node tools/help-blink-placeholder.mjs` |
+| **A Help picture that isn't filmed yet** | `tools/help-blink-placeholder.mjs` and `tools/help-riposte-placeholder.mjs` draw the stills that hold 瞬 Flash Step's and 返 Riposte's cells in the abilities grid until their clips are shot. They read the orb's colour out of the roster and the kittens out of `PLAYER_STYLE`, so they cannot drift from the game, and each stamps **PLACEHOLDER** in its own corner — everything else on that page is an engine capture and a drawing must not pass for one. Both draw with `tools/placeholder-raster.mjs` (a dependency-free rasteriser, a pixel font and a kitten silhouette); lifting it out left `blink.png` byte-identical. Swapping in a clip is one attribute in `index.html`. | `node tools/help-blink-placeholder.mjs`, `node tools/help-riposte-placeholder.mjs` |
 | **README screenshots** | Rendered to a canvas and POSTed to a throwaway local HTTP server — browser downloads don't reach disk from a preview pane. | → [hosting.md](docs/notes/hosting.md) |
 
 **Where a finished asset lives.** `public/` is filed by subject, not flat:
@@ -566,12 +567,12 @@ files** — and deleting them is real and cheap, because `kitten-cackle.mjs` wit
 no reference synthesises its own ladder, and `Audio.play` falls through to
 synthesised stand-ins after that. Three levels of degradation, on purpose.
 
-**Payne is a real person, and she has not signed off yet.** The quest-giver in
-the market is a fighter from Belegarth Medieval Combat Society, drawn as a
-goblin cat with her permission. **Richard is sending her the finished result
-for her final approval.** Until she has approved her likeness and her 54 lines,
-a public release that includes her waits. Her photos went to Higgsfield as
-image references and nowhere else. → [payne.md](docs/notes/payne.md)
+**Payne is a real person, and she has approved her lines and her voice.** The
+quest-giver in the market is a fighter from Belegarth Medieval Combat Society,
+drawn as a goblin cat with her permission. Richard sent her the finished result
+for her final approval, and on 2026-10-04: "Payne approved the lines and her voice, so we are good there." Her
+photos went to Higgsfield as image references and nowhere else. →
+[payne.md](docs/notes/payne.md)
 
 **`out/` is a local-only repo with no remote, deliberately.** It holds generated
 artwork and trailer working files, 9MB+ of PNG that Vite would never ship. The
@@ -676,7 +677,7 @@ you are about to change that area, and not before.
 | [performance.md](docs/notes/performance.md) | why frame time is a straight line in pixels, and what is measured *not* to be a cause |
 | [audio.md](docs/notes/audio.md) | the synthesised sound set and a piece of music per island |
 | [voices.md](docs/notes/voices.md) | **the voice registry** — which preset is which character, with ids |
-| [payne.md](docs/notes/payne.md) | **Payne, the quest-giver**: her quest chain, the opt-in hints and teases, the hint card, the helmet and her face, the Goblin Sweep, and her whole script. **A real person's likeness, pending her approval** |
+| [payne.md](docs/notes/payne.md) | **Payne, the quest-giver**: her quest chain, the opt-in hints and teases, the hint card, the helmet and her face, the Goblin Sweep, and her whole script. **A real person's likeness; her lines and voice approved** |
 | [dreamdojo.md](docs/notes/dreamdojo.md) | **the Dream Dojo, Lionheart's VR arcade** — the simulator as a second reality in the same place, the tubes, the training gate that lets a blade in there find holograms only, the Gallery and Trial Hall (orbs and oaths LENT, never given), the Tameshigiri Range and Kata Trace (a daily and a weekly kata seeded by the date, so every machine gets the same one), the far islands (light-cycle highways, Kudamono Storm, the Sine Gauntlet, Holo-Sentries and Bamboo Infiltration, every star band measured by a search), **the Arena School** (a practice round per tournament mode, under the tournament's own `decideOnTime` and `purseSplit`), **KENSHI ranks**, the foil **Fighter Card**, the daily and weekly training, and **Shadow Lionheart** — the co-op boss whose win is the **tenth quest**, the only one that counts after the Awakening — and what is still to build (the VR kitten sheets, his voice). Lionheart is Richard, likeness approved |
 | [consent.md](docs/notes/consent.md) | why nothing irreversible happens on one press |
 | [rules.md](docs/notes/rules.md) | the gameplay invariants in full, with the measurements behind them |

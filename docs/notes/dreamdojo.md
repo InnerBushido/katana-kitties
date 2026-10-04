@@ -1081,6 +1081,55 @@ being saved independently of a new game?"** Yes, both were.
 the wall with a dragon is not needed."** `lion_yell_wall` is deleted (clip and
 raw take). The bubble and the toast stay; `lion_yell_drop` stays. 34 clips.
 
+## The dealer's three rare orbs, in the Gallery
+
+遠 Far Step, 返 Riposte and 間 Long Parry were built on their own branch while
+the simulator was being built on main, and kept off main until Richard had
+played the Payne work. When they were merged, Richard: "In the Kotodama
+Gallery, it seems some of the newer kotodama are missing like Riposte ... make
+it work with the simulator." The pedestals are `POWER_ORBS.forEach`, so the
+three stood up on their own; what was missing was everything behind them.
+
+- **The sim's combat had never heard of the parry.** `simHit` is the whole of
+  it, and it asked the Flash Step and the Ward and nothing else, so a kitten
+  lent 返 could raise her guard at a bolt and be hit through it. It asks
+  `p.parries(from)` now, before the Ward, which is where `Game.strikePlayers`
+  asks it; a catch calls `riposte` through the sim's hud, so the answer reaches
+  holograms only. `from` is passed by every BLOW: a bolt (from three units back
+  along its flight, because the hit test fires within a unit of her), an Arena
+  School holo-blade, and Shadow Lionheart's slam, sweep and cross. Beams and
+  laser walls pass none: there is no "when" to guess at a wall.
+- **遠 FAR STEP DRILL.** A holo-kitten in the middle of the floor, a red ring
+  of `farRing` round it, three Flash Steps round it from outside. The ring is
+  a FRACTION of the live Lock range (1.12×): the first cut was 16.5 against the
+  shipped 15, and the balance page has Lock range at 10, where one Far Step
+  reaches 15, so it was unreachable with the orb. world-check caught it.
+  **Second cut, rejected in the browser:** the hologram moved toward the
+  floor's middle after each step, and one 瞬 PIVOTS her round whoever she
+  locked at the distance she locked from, so from the middle the far side was
+  off the island and the step was refused. Round the centre the far side is
+  the same distance out the other way (15 at most, as tuned, on a floor of 24)
+  and still outside the ring, so she can go straight round again. A step
+  counts when she has GONE: a locked step with the stick let go is the "stay
+  put" half of the move, and the first cut paid a star for one.
+  Measured live: from the pedestal (19 out) no lock; from 13 out, locked,
+  carried 26 round to 13 the other side, counted; bare, no lock; from 5.5,
+  locked but inside the ring, not counted.
+- **返 RIPOSTE DRILL.** A holo-kitten walks up, goes white and still for
+  `PARRY_TELL` (0.7 s), and swings. The tell is longer than a bare guard
+  (0.35 s), so a guard raised AT the flash has shut before the blow: the read is
+  when. It answers only to `riposte`. Measured live: a miss cost 10 of the bar,
+  then three guards 0.45 s into the tell were caught and answered (its bar
+  99 → 96), three stars in 11 s. **First cut, seen in the browser:** it aimed
+  at 1.9 and walked while further than 1.9, so it closed on 1.9000x forever and
+  never swung. It stops 0.1 short now.
+- **間 LONG PARRY DRILL.** The same partner, but it WAITS: its blow lands
+  `PARRY_LATE` (0.42 s) after she raises her guard, past a bare window (0.35)
+  and inside one Ma's (0.525). So bare it cannot be passed however it is timed,
+  and lent it is the sentence on the orb's card, the way Long Guard's beam is.
+  Measured live: guard 0.11 s into the tell, blow at 0.53, caught with Ma; the
+  same timing with the window set bare, hit.
+
 ## Voice
 
 Lionheart is **Barrett** (`d603a8cd-3fe1-55e0-9245-617a2589131e`), nine clips

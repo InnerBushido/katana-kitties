@@ -157,6 +157,8 @@ const NUMBERS = () => [
     'entries in the same table, so they cannot leak out of the ring'],
   ['*sweep*', TUNE, hit(attack('sweep')),
     "Payne's Goblin Sweep: sprint held, stick still, attack. A full circle"],
+  ['*riposte*', TUNE, hit(attack('riposte')),
+    "返 Riposte's answer: a parry that catches a blow from in front throws this back at once"],
 ];
 
 /** How a key code reads to somebody looking at a keyboard. */

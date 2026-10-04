@@ -137,7 +137,12 @@ export class Drill {
       onHit: (q, bolt) => {
         const v = bolt.vel;
         const n = Math.hypot(v.x, v.z) || 1;
-        const r = this.dream.simHit(q, { dmg: bolt.dmg, push: { x: v.x / n, z: v.z / n }, src: 'bolt', drill: this });
+        /* FROM one step back along its flight, not from where it is: the hit
+           test fires within a unit of her, which can already be level with
+           her or past her middle, and the half-plane a 返 guard covers is
+           asked about where the bolt CAME from. */
+        const from = { x: bolt.pos.x - v.x / n * 3, z: bolt.pos.z - v.z / n * 3 };
+        const r = this.dream.simHit(q, { dmg: bolt.dmg, push: { x: v.x / n, z: v.z / n }, src: 'bolt', drill: this, from, foe: o.foe ?? null });
         o.onResult?.(r, bolt);
       },
       ...o,

@@ -8,8 +8,8 @@
    WHO SAYS WHAT. Lionheart is Barrett (`lion_*`, public/voice/lionheart/),
    Payne is Pixie (`payne_*`, public/voice/payne/ — her rows are ALSO in
    `PAYNE_LINES`, which is the list her own world-check asks about, so a tour
-   line is one of her lines like any other). Payne's lines are pending her
-   approval, like all of them (docs/notes/payne.md).
+   line is one of her lines like any other). Payne has approved her lines
+   and her voice, these with the rest (docs/notes/payne.md).
 
    HIS LINES ARE NOT SEDUCTIVE (voices.md: "we don't want it to sound too
    seductive, so need to be careful with the wording"). They are a coach

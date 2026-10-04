@@ -328,7 +328,7 @@ you do. Stand on your ring and press **interact** to disconnect.
 
 Inside, bridges lead off the glowing Dojo to floating islands:
 
-- **The Kotodama Gallery.** All ten orbs stand on pedestals. Step up to one
+- **The Kotodama Gallery.** All thirteen orbs stand on pedestals, even the three rare ones only the dealer sells. Step up to one
   and press **interact** to borrow it and try a little drill made for it:
   run the Gale gates, cut posts from outside a red ring with Long Cut, jump
   three times to a ledge with Leap, and so on. Whatever you borrow vanishes

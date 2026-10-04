@@ -287,7 +287,7 @@ Lionheart's new lines:
 That made 26 new lines and 35 clips; with the wall yell gone, 34. They were made and cut the same
 way as the first nine (raw takes in `lionheart-takes/raw/`, then
 `lionheart-vo.mjs`). Payne's nine are the tour's five, the Dream Dojo card's
-three, and `payne_q_shadow`. All nine are pending her approval.
+three, and `payne_q_shadow`. All nine are approved by her, with the rest.
 
 Writing them, the casting rule did most of the work. The HONOR talk is an
 apology and a lesson about 道 *dō*. It is the easiest place in the game to

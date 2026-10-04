@@ -733,7 +733,8 @@ export class ShadowFight {
       const from = a.what === 'cross' ? a.c : a.o;
       const dx = x - from.x; const dz = z - from.z;
       const n = Math.hypot(dx, dz) || 1;
-      this.dream.simHit(p, { dmg: A.dmg, push: { x: dx / n, z: dz / n }, src: 'shadow' });
+      // `from` and `foe`: a 返 Riposte guard toward him catches it and answers him.
+      this.dream.simHit(p, { dmg: A.dmg, push: { x: dx / n, z: dz / n }, src: 'shadow', from, foe: b });
     }
     // The tell turns white for a blink, then goes: the blade came down HERE.
     for (const m of a.meshes) {

@@ -576,7 +576,7 @@ function LEAGUE(school, mode) {
             if (fd <= HOLO_REACH + 0.4) {
               if (foe.her) {
                 const k = 1 / (fd || 1);
-                const r = d.dream.simHit(p, { dmg: HOLO_DMG / her.hk, push: { x: (q.x - me.x) * k, z: (q.z - me.z) * k }, src: 'blade', drill: d });
+                const r = d.dream.simHit(p, { dmg: HOLO_DMG / her.hk, push: { x: (q.x - me.x) * k, z: (q.z - me.z) * k }, src: 'blade', drill: d, from: me, foe: f });
                 if (r === 'hit') L.hits[f.side] += 1;
               } else {
                 foe.hp -= 1;

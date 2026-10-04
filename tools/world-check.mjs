@@ -82,6 +82,7 @@ import {
   POWER_ORBS, ORB_IDS, WORLD_ORB_IDS, SHOP_ONLY_IDS, MAX_EQUIPPED, MAX_BAG, MAX_CARRIED,
   aggregate, countsOf, orbPrice, orbSellPrice, orbPriceFor, orbSellPriceFor,
   WARD, AEGIS, DIVE, CROSS, CHARGE, DODGE, wardFor,
+  PARRY, lockRangeFor, parryWindowFor,
   stockFor, STOCK_STACKABLE, STOCK_UNIQUE,
   PowerOrb, PowerOrbPickup, ORB_BY_ID,
 } from '../src/entities/powerorb.js';
@@ -96,6 +97,7 @@ import { CrossFx, sealStage, SIDES_BY_CUT } from '../src/systems/crossfx.js';
 import { DodgeFx, ringTexture } from '../src/systems/dodgefx.js';
 import { ClanFx } from '../src/systems/clanfx.js';
 import { ATTACKS, COMBAT, BASE_REACH, MAX_HP, DAZE_TIME, SWEEP_UP } from '../src/entities/player.js';
+import { ParryFx, yawFor, guardGeometry, GUARD_R } from '../src/systems/parryfx.js';
 import {
   Tournament, WINS_NEEDED, MAX_ROUNDS, FEAST_TIME, REGEN_FRAC, OUT_FLOOR,
   CARD_TIME, CARD_MAX, TOUCH_BOX,
@@ -3196,6 +3198,364 @@ console.log('\n--- the panda in the ring ---');
     ok('...and it takes several blows rather than one', swings > 2);
   }
 
+  /* --- 返 RIPOSTE: CAUGHT, AND ANSWERED -------------------------------
+     The shipped `strikePlayers`, lifted as everything above lifts it. The
+     answer swing is a second call to the gate — `Player.riposte` asks
+     `hud.strikePlayers` — so this game stub has one, pointed at the same
+     lifted function. */
+  {
+    const told = [];
+    const gameOf = (ps, over = {}) => {
+      const g = mkGame(ps, { toast: (t, i) => told.push([t, i]), ...over });
+      g.strikePlayers = function (...args) { return strikePlayers.apply(this, args); };
+      return g;
+    };
+    /* `b` stands two metres along +x from `a` and raises a guard facing
+       `heading`. -PI/2 is facing -x: straight at `a`. */
+    const pair = (heading) => {
+      const a = mkP(0, 0);
+      const b = mkP(1, 2);
+      const dir = face(a, b);
+      b.setPowerOrbs(['parry']);
+      b._startParry(heading, null);
+      return { a, b, dir };
+    };
+    const AT_A = -Math.PI / 2;
+    {
+      const { a, b, dir } = pair(AT_A);
+      told.length = 0;
+      strikePlayers.call(gameOf([a, b]), a, 'stand', BASE_REACH, dir);
+      line('返 a slash into a live parry', `her ${b.maxHp - b.hp} dmg, the slasher ${a.maxHp - a.hp}`);
+      ok('返 a blow from in front of a live parry does nothing to her', b.hp === b.maxHp);
+      ok('...and is answered at once, with ATTACKS.riposte',
+        a.maxHp - a.hp === ATTACKS.riposte.dmg, `${a.maxHp - a.hp}`);
+      ok('...the window shuts on the catch, and it counts as one', b.parryT === 0 && b.parryHitSeq === 1);
+      ok('...she is turned on the kitten she caught', Math.abs(Math.sin(b.facing) + 1) < 1e-9);
+      ok('...and planted for her answer swing, not for a whiff',
+        b.parryRecT > 0 && b.parryRecT === b.attackTimer && b.parryRecT < PARRY.recover + 1e-9);
+      ok('...and the kitten whose blow was caught is told which way round it is',
+        told.some(([t, i]) => i === a.index && /parried you/.test(t) && /behind/.test(t)));
+    }
+    {
+      const { a, b, dir } = pair(Math.PI / 2);          // her back to the blade
+      strikePlayers.call(gameOf([a, b]), a, 'stand', BASE_REACH, dir);
+      ok('...but from BEHIND it is an ordinary hit — "not behind them"',
+        b.maxHp - b.hp === ATTACKS.stand.dmg && a.hp === a.maxHp);
+      ok('...which ends the parry, so its pin cannot eat the throw', !b.parryAt && b.parryCool === PARRY.cool);
+    }
+    /* 180 DEGREES: a guard turned 80 degrees off the blow still catches it,
+       one turned 100 degrees does not. */
+    {
+      const deg = Math.PI / 180;
+      const r80 = pair(AT_A + 80 * deg);
+      strikePlayers.call(gameOf([r80.a, r80.b]), r80.a, 'stand', BASE_REACH, r80.dir);
+      const r100 = pair(AT_A + 100 * deg);
+      strikePlayers.call(gameOf([r100.a, r100.b]), r100.a, 'stand', BASE_REACH, r100.dir);
+      ok('...the guarded half is 180 degrees: 80 off the blow is caught, 100 off is not',
+        r80.b.hp === r80.b.maxHp && r100.b.hp < r100.b.maxHp);
+    }
+    {
+      const { a, b, dir } = pair(AT_A);
+      b.parryT = 0; b.parryRecT = PARRY.recover;        // the window is over: a whiff
+      strikePlayers.call(gameOf([a, b]), a, 'stand', BASE_REACH, dir);
+      ok('...and a blow in the whiff\'s recovery lands — the cost of a wrong guess',
+        b.hp < b.maxHp && a.hp === a.maxHp);
+    }
+    /* THIRD NON-NEGOTIABLE. The gate returns before it asks anybody anything,
+       so a guard in the market square neither stops nor answers. */
+    {
+      const { a, b, dir } = pair(AT_A);
+      strikePlayers.call(gameOf([a, b], { tournament: { fighting: false, allies: () => false, onHit: () => {} } }),
+        a, 'stand', BASE_REACH, dir);
+      ok('...and outside a live round there is nothing to parry and nobody is answered',
+        a.hp === a.maxHp && b.hp === b.maxHp && b.parryT > 0 && b.parryHitSeq === 0);
+    }
+    {
+      const { a, b, dir } = pair(AT_A);
+      strikePlayers.call(gameOf([a, b], { tournament: { fighting: true, allies: () => true, onHit: () => {} } }),
+        a, 'stand', BASE_REACH, dir);
+      ok('...and a PARTNER\'s swing is a daze as it always was — never answered with a sword',
+        a.hp === a.maxHp && b.parryHitSeq === 0);
+    }
+    {
+      const { a, b, dir } = pair(AT_A);
+      strikePlayers.call(gameOf([a, b]), a, 'tri', BASE_REACH, dir);
+      ok('...a parried Cross Slash cut holds nobody', !b.heldBy && b.hp === b.maxHp && a.hp < a.maxHp);
+    }
+    /* A CHAIN ENDS. Both guards up, facing each other; `a` swings anyway.
+       She is parried, answered, parries the answer, and answers that — at
+       which point `b`'s window is already shut, so the last answer lands. */
+    {
+      const { a, b, dir } = pair(AT_A);
+      a.setPowerOrbs(['parry']);
+      a._startParry(Math.PI / 2, null);
+      strikePlayers.call(gameOf([a, b]), a, 'stand', BASE_REACH, dir);
+      ok('...and a parry of a parry\'s answer ends: one catch each, one blow landed',
+        a.parryHitSeq === 1 && b.parryHitSeq === 1 && a.hp === a.maxHp
+        && b.maxHp - b.hp === ATTACKS.riposte.dmg, `a ${a.hp} b ${b.hp}`);
+    }
+    {
+      const { b } = pair(AT_A);
+      b.setPowerOrbs(['parry', 'ward']);
+      b.wardOn = true;
+      b.parryT = 0; b.parryRecT = 0; b.parryCool = 0;
+      b._startParry(AT_A, null);
+      ok('...raising the guard drops the Ward, as asked', !b.wardOn && b.parryT > 0);
+    }
+  }
+
+  /* --- 返 RIPOSTE: THE GESTURE, through the whole ground controller ------
+     "If the player is standing still, then holds down the Action button and
+     moves the joystick in a certain direction". Driven through
+     `_updateGround`, because the precedence between this, the clan power and
+     the dive lives in there and a test of `_startParry` alone would prove
+     nothing about it. */
+  {
+    const pad = (o = {}) => ({
+      mx: o.mx ?? 0, my: o.my ?? 0,
+      down: (x) => (o.hold ?? []).includes(x),
+      pressed: (x) => (o.tap ?? []).includes(x),
+      doubled: () => false, consume: () => {},
+    });
+    const NONE = pad();
+    const kid = (orbs, ring = true) => {
+      const k = mkP(0, 0);
+      k.camYaw = Math.PI;                         // push up = +Z, as the Flash Step checks pin it
+      k.setPowerOrbs(orbs);
+      k.clans = 0;
+      k._startClanPower = () => { k.clans++; return true; };
+      const toasts = [];
+      const hud = {
+        players: [k], sfx: () => {}, arenaLive: () => ring,
+        toast: (t, i, o) => toasts.push(o?.key ?? t),
+      };
+      /* SETTLED FIRST. A fresh Player is not `onGround` until a frame has
+         landed her, and a press before that is an AIRBORNE press — the dive's,
+         not the clan power's — which is what the first run of these measured. */
+      for (let i = 0; i < 20; i++) k._updateGround(1 / 60, pad(), world, [], hud);
+      return { k, hud, toasts };
+    };
+    const tick = (k, p, hud, n = 1) => { for (let i = 0; i < n; i++) k._updateGround(1 / 60, p, world, [], hud); };
+
+    {
+      const { k, hud } = kid([]);
+      tick(k, pad({ tap: ['interact'], hold: ['interact'] }), hud);
+      ok('返 without the orb, ACTION in the ring is the clan power ON THE PRESS, as it always was',
+        k.clans === 1 && !k.parryPend);
+    }
+    {
+      const { k, hud } = kid(['parry'], false);
+      tick(k, pad({ tap: ['interact'], hold: ['interact'] }), hud);
+      ok('...and so it is outside the ring WITH the orb: nothing there to parry, nothing held back',
+        k.clans === 1 && !k.parryPend);
+    }
+    {
+      const { k, hud } = kid(['parry']);
+      tick(k, pad({ mx: 1, tap: ['interact'], hold: ['interact'] }), hud);
+      ok('...and a kitten already RUNNING who presses ACTION gets the clan power on the press',
+        k.clans === 1 && !k.parryPend);
+    }
+    {
+      const { k, hud } = kid(['parry']);
+      tick(k, pad({ tap: ['interact'], hold: ['interact'] }), hud);
+      const held = k.parryPend && k.clans === 0;
+      tick(k, pad({ hold: ['interact'] }), hud, 5);
+      tick(k, pad({ mx: 1, hold: ['interact'] }), hud);
+      line('返 the stance', `window ${k.parryT.toFixed(3)}s, facing ${k.facing.toFixed(3)}`);
+      ok('...standing still, the press is HELD — it might be a parry', held);
+      ok('...and the push is the parry, facing the push',
+        k.parryT > 0 && Math.abs(k.parryDir - k._stickHeading(pad({ mx: 1 }))) < 1e-9
+        && k.facing === k.parryDir && k.clans === 0);
+      const x0 = k.position.x; const z0 = k.position.z;
+      tick(k, pad({ mx: 1, hold: ['interact'] }), hud, 8);
+      ok('...planted: the stick that raised the guard does not walk her or turn her',
+        Math.hypot(k.position.x - x0, k.position.z - z0) < 1e-6 && k.facing === k.parryDir);
+      let t = 0;
+      while (k.parryT > 0 && t < 600) { tick(k, NONE, hud); t++; }
+      ok('...a whiff leaves her standing there for the recovery', k.parryRecT > 0);
+      while (k.parryAt && t < 600) { tick(k, NONE, hud); t++; }
+      ok('...and the wait starts when the move ENDS', k.parryCool > PARRY.cool - 0.05 && !k.parryAt);
+    }
+    {
+      const { k, hud, toasts } = kid(['parry']);
+      tick(k, pad({ tap: ['interact'], hold: ['interact'] }), hud);
+      tick(k, NONE, hud);
+      ok('...a quick TAP with no push is handed back to the clan power', k.clans === 1 && !k.parryPend && !k.parryAt);
+      tick(k, pad({ tap: ['interact'], hold: ['interact'] }), hud);
+      tick(k, pad({ hold: ['interact'] }), hud, Math.ceil((PARRY.tap + 0.2) * 60));
+      tick(k, NONE, hud);
+      ok('...a long hold let go with no push does nothing, and SAYS how the move goes',
+        k.clans === 1 && !k.parryAt && toasts.includes('parryhow'));
+      k.parryCool = 1;
+      tick(k, pad({ tap: ['interact'], hold: ['interact'] }), hud);
+      tick(k, pad({ mx: 1, hold: ['interact'] }), hud);
+      ok('...and a push while it is still coming back is refused OUT LOUD',
+        !k.parryAt && toasts.includes('parrywait'));
+    }
+    {
+      /* --- AND SHE LOOKS LIKE IT: THE STANCE ---
+         "when the player is holding the Action button, the player will go
+         into a 'charging' stance with their katana and if they are attacked
+         while in the stance, then they will do the counter attack". The pose
+         is worn exactly while a blow WOULD be caught — the window — and not
+         in the hold before the push, which catches nothing. A pose that
+         promised a counter it would not throw is the lie this checks for. */
+      const { k, hud } = kid(['parry']);
+      k.setRiposteArt({ texture: new THREE.Texture(), contentScale: 1, pad: 0 });
+      const look = () => { k._updateFeedback(1 / 60, world); return k.ripostePose.visible && !k.sprite.mesh.visible; };
+      tick(k, pad({ tap: ['interact'], hold: ['interact'] }), hud);
+      tick(k, pad({ hold: ['interact'] }), hud, 5);
+      const inPend = k.parryPend && look();
+      tick(k, pad({ mx: 1, hold: ['interact'] }), hud);
+      let frames = 0; let worn = 0; let caught = 0;
+      while (k.parryT > 0 && frames < 600) {
+        frames++;
+        if (look()) worn++;
+        if (k.parries(k.position.clone().add(new THREE.Vector3(Math.sin(k.parryDir), 0, Math.cos(k.parryDir))))) caught++;
+        tick(k, pad({ mx: 1, hold: ['interact'] }), hud);
+      }
+      line('返 the stance worn', `${worn}/${frames} frames of the window, a blow caught on ${caught}`);
+      ok('返 she wears the stance for the WHOLE window, which is every frame a blow from in front is caught',
+        frames > 10 && worn === frames && caught === frames, `${worn}/${caught}/${frames}`);
+      ok('...and not in the hold before the push, which catches nothing yet', !inPend);
+      ok('...and not in a whiff\'s recovery: her own drawing coming back is the tell',
+        k.parryRecT > 0 && !look() && k.sprite.mesh.visible);
+
+      /* CAUGHT: the answer is the ordinary blade, "just a regular attack". */
+      const c = kid(['parry']);
+      c.k.setRiposteArt({ texture: new THREE.Texture(), contentScale: 1, pad: 0 });
+      tick(c.k, pad({ tap: ['interact'], hold: ['interact'] }), c.hud);
+      tick(c.k, pad({ mx: 1, hold: ['interact'] }), c.hud);
+      c.k._updateFeedback(1 / 60, world);
+      const upBefore = c.k.ripostePose.visible;
+      const foe = mkP(0, 0);
+      foe.position.set(c.k.position.x + 2, c.k.position.y, c.k.position.z);
+      const struck = [];
+      c.k.riposte(foe, { ...c.hud, strikePlayers: (who, kind) => struck.push(kind) });
+      c.k._updateFeedback(1 / 60, world);
+      ok('...a blow caught in it drops the stance for the answer swing, thrown through the one gate',
+        upBefore && !c.k.ripostePose.visible && c.k.sprite.mesh.visible && c.k.attackTimer > 0
+        && struck.join() === 'riposte', struck.join());
+
+      /* IT FACES THE HALF SHE IS GUARDING. Lens on +Z, so screen-right is +X:
+         guarding +X shows the drawing as drawn, guarding -X mirrors it. */
+      const cam = new THREE.PerspectiveCamera(50, 16 / 9, 0.1, 500);
+      const side = (dir) => {
+        c.k.parryT = 0.2;
+        c.k.parryDir = dir;
+        c.k._updateFeedback(1 / 60, world);
+        c.k.group.updateMatrixWorld(true);
+        cam.position.set(c.k.position.x, c.k.position.y + 6, c.k.position.z + 20);
+        c.k.ripostePose.faceCamera(cam);
+        return Math.sign(c.k.ripostePose.tex.repeat.x);
+      };
+      ok('...facing the side she is guarding: the blade on the right for a guard to screen-right, mirrored for the left',
+        side(Math.PI / 2) === 1 && side(-Math.PI / 2) === -1 && side(Math.PI / 2) === 1);
+    }
+    {
+      /* THE ART'S FACING IS MEASURED, NOT TRUSTED (eighth non-negotiable).
+         `setRiposteArt` says `artFacesRight: true`; that is only true if the
+         blade actually sticks out to the right of each baked drawing. Top 35%
+         of the rows, where the blade is and the tail is not: measured 0.279 /
+         0.954 for Ember and 0.245 / 0.944 for Frost, so the right-hand reach
+         beats the left by 0.23 and 0.19. The bar is 0.1. */
+      const reach = [];
+      for (const s of ['ember', 'frost']) {
+        const { w, h, d } = readPNG(new URL(`../public/sprites/kittens/${s}/riposte.png`, import.meta.url));
+        let lo = w; let hi = -1;
+        for (let y = 0; y < Math.floor(h * 0.35); y++) {
+          for (let x = 0; x < w; x++) {
+            if (d[(y * w + x) * 4 + 3] > 128) { lo = Math.min(lo, x); hi = Math.max(hi, x); }
+          }
+        }
+        reach.push({ s, left: 0.5 - lo / w, right: hi / w - 0.5 });
+      }
+      const psrc = readFileSync(new URL('../src/entities/player.js', import.meta.url), 'utf8');
+      ok('返 both stance drawings hold the blade out to the RIGHT, which is what the Billboard is told',
+        reach.every((r) => r.right - r.left > 0.1)
+        && /setRiposteArt\(art\) \{[\s\S]{0,400}mirror: true,\s*artFacesRight: true,/.test(psrc),
+        reach.map((r) => `${r.s} ${r.left.toFixed(2)}/${r.right.toFixed(2)}`).join(' '));
+      const m = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+      const files = ['ember', 'frost'].map((s) => `kittens/${s}/riposte.png`);
+      ok('...and all four kittens have it: two drawings, recoloured by STYLE for Storm and Blossom',
+        files.every((f) => existsSync(new URL(`../public/sprites/${f}`, import.meta.url)))
+        && files.every((f) => m.includes(`'${f}', false]`))
+        && /this\.riposteArt = PLAYER_STYLE\.map\(\(s\) => \{\s*const base = s\.sheet === 'ember' \? critterArt\.ember_riposte : critterArt\.frost_riposte;[\s\S]{0,120}if \(!s\.recolour\) return base;\s*const a = recolourAtlas\(base, s\.recolour\);/.test(m)
+        && /p\.setRiposteArt\(this\.riposteArt\?\.\[this\.roster\[p\.index\]\] \?\? null\);/.test(m));
+    }
+    {
+      /* IN THE AIR: "velocity of player is zero and gravity is turned off
+         until the technique is finished". */
+      const { k, hud } = kid(['parry']);
+      k.position.y += 6;
+      k.onGround = false;
+      k.velocity.set(3, 4, 0);
+      tick(k, pad({ tap: ['interact'], hold: ['interact'] }), hud);
+      tick(k, pad({ my: -1, hold: ['interact'] }), hud);
+      const y0 = k.position.y;
+      tick(k, NONE, hud, 20);
+      line('返 in the air', `hung ${(k.position.y - y0).toFixed(4)} in 20 frames`);
+      ok('...in the air she HANGS: no velocity, no gravity, for the whole move',
+        k.parryAt && k.position.y === y0 && k.velocity.length() === 0 && k._gravityK() === 0);
+      let t = 0;
+      while (k.parryAt && t < 600) { tick(k, NONE, hud); t++; }
+      tick(k, NONE, hud, 10);
+      ok('...and falls again the moment it is over', k.position.y < y0);
+    }
+  }
+
+  /* --- 返 WHAT THE HELP PAGE SAYS IS WHAT THE CODE DOES ---------------- */
+  {
+    const h = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+    const card = helpTopic(h, 'Riposte expanded').replace(/\s+/g, ' ');
+    ok('返 the Help card teaches the gesture the controller reads',
+      /Stand still, hold Interact, and push the stick/.test(card));
+    ok('...that it is the FRONT, and not from behind', /half-circle on the floor/.test(card) && /behind/.test(card));
+    ok('...that it hangs her in the air and only works in the arena', /in the air/.test(card) && /in the arena/.test(card));
+    ok('...and that 間 is half as long again per orb, which is `longK`',
+      /half as long again/.test(card) && PARRY.longK === 0.5);
+    const png = readPNG(new URL('../public/help/ability/riposte.png', import.meta.url));
+    ok('...and its grid cell has a picture the size of the clips beside it',
+      png.w === 640 && png.h === 362 && /src="\/help\/ability\/riposte\.png"[^>]*width="640" height="362"/.test(h));
+  }
+
+  /* --- 返 WHAT THE FLOOR SAYS IS WHAT THE GATE DOES --------------------
+     The half-disc `parryfx` draws is the guarded half. Measured: the middle
+     of the drawn shape, turned by `yawFor`, has to be a place a blow is
+     parried FROM, and the point opposite it a place it is not. A guard drawn
+     a quarter turn off would tell a sister to come round the wrong side. */
+  {
+    const g = guardGeometry(1);
+    const pos = g.attributes.position;
+    let bad = 0;
+    for (const h of [0, 0.7, Math.PI / 2, 2.4, Math.PI, -1.1, -Math.PI / 2]) {
+      const m = new THREE.Mesh(g);
+      m.rotation.y = yawFor(h);
+      m.updateMatrixWorld(true);
+      const c = new THREE.Vector3();
+      for (let i = 0; i < pos.count; i++) {
+        c.add(new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld));
+      }
+      c.divideScalar(pos.count);
+      const guard = { parryT: 1, parryDir: h, position: new THREE.Vector3() };
+      const front = Player.prototype.parries.call(guard, { x: c.x * 5, z: c.z * 5 });
+      const back = Player.prototype.parries.call(guard, { x: -c.x * 5, z: -c.z * 5 });
+      if (!front || back || Math.abs(c.y) > 1e-6) bad++;
+    }
+    ok('返 the drawn guard lies flat and covers exactly the half the gate parries', bad === 0, `${bad} of 7 headings wrong`);
+    const fx = new ParryFx(new THREE.Scene());
+    const k = { position: new THREE.Vector3(), parrySeq: 1, parryHitSeq: 0, parryT: 0.3, parryWin: 0.35, parryDir: 0, style: {} };
+    fx.update(1 / 60, [k]);
+    const r = fx.rigs.get(k);
+    const shown = r.guard.visible && r.guard.scale.x <= GUARD_R + 1e-9;
+    k.parryT = 0; k.parryHitSeq = 1;
+    fx.update(1 / 60, [k]);
+    ok('...drawn while the window is open, gone when it shuts, and a burst on the catch',
+      shown && !r.guard.visible && r.burst.visible);
+    ok('...and nothing is built for a kitten who never parried',
+      (fx.update(1 / 60, [{ position: new THREE.Vector3(), parrySeq: 0 }]), fx.rigs.size === 1));
+  }
+
   /* --- THE CUB LICKS HER BETTER ---------------------------------------- */
   {
     const owner = mkP(0, 0);
@@ -5894,6 +6254,8 @@ console.log('\n--- background removal keeps the drawn whites ---');
     // ...and her six special poses in the headset, per sheet (`vr_<pose>.png`).
     ...['ember', 'frost'].flatMap((s) => ['eat', 'bless', 'warp', 'inhale', 'scared', 'sweep']
       .map((p) => `kittens/${s}/vr_${p}.png`)),
+    // ...and 返 Riposte's stance.
+    'kittens/ember/riposte.png', 'kittens/frost/riposte.png',
   ];
   {
     const dir = new URL('../public/sprites/', import.meta.url);
@@ -6051,10 +6413,14 @@ console.log('\n--- background removal keeps the drawn whites ---');
        their home poses mostly already did (Ember's inhale, scared and warp;
        Frost's bless, eat, scared and warp). Measured by this loop; never
        filled, because `Game._loadSimPoses` does not ask for it either. */
-    ok('turning the fill on for every sheet would repaint twenty-three of them',
-      touched.length === 23 && touched.includes('beasts/dragon_sheet.png')
+    /* TWENTY-FOUR SINCE 返 RIPOSTE'S STANCE: Frost holds the katana level across
+       her body with both paws, and the arms and the hilt close a gap against
+       her robe; Ember's, measured by the same loop, closes none. Not filled either — a
+       single-pose billboard off `_loadSprite`, like the sweep. */
+    ok('turning the fill on for every sheet would repaint twenty-four of them',
+      touched.length === 24 && touched.includes('beasts/dragon_sheet.png')
       && touched.filter((f) => /\/vr_/.test(f)).length === 7
-      && touched.includes('lionheart/town.png')
+      && touched.includes('lionheart/town.png') && touched.includes('kittens/frost/riposte.png')
       && touched.includes('kittens/frost/vr.png') && touched.includes('lionheart/shadow.png')
       && touched.includes('kittens/frost/champion.png') && touched.includes('satan/flex_trophy.png')
       && ['base', 'sweep', 'town'].every((n) => touched.includes(`payne/${n}.png`)),
@@ -6325,12 +6691,12 @@ console.log('\n--- the art that ships is smaller than the art that made it ---')
        outside the arena draws her in, and Storm and Blossom reach for it
        through the same recolour as everything else. */
     /* SEVEN SINCE THE GOBLIN SWEEP: `sweep.png` is worn for the spin of the
-       trick Payne teaches. */
-    /* THIRTEEN SINCE THE HEADSET: each of the six special poses again with
+       trick Payne teaches. EIGHT SINCE 返 RIPOSTE: `riposte.png` is her guard. */
+    /* FOURTEEN SINCE THE HEADSET: each of the six special poses again with
        the VR gear on (`vr_<pose>.png`), worn in the tube and in the sim. */
-    ok('...with the same thirteen poses drawn for each of them',
+    ok('...with the same fourteen poses drawn for each of them',
       posesOf('ember') === posesOf('frost')
-      && posesOf('ember').split(' ').length === 13, posesOf('ember'));
+      && posesOf('ember').split(' ').length === 14, posesOf('ember'));
   }
 
   /* --- and nothing else in public/ is quietly enormous ----------------------
@@ -6361,19 +6727,20 @@ console.log('\n--- the Powerup Kotodama ---');
 {
   const ids = ORB_IDS;
   line('the roster', POWER_ORBS.map((o) => `${o.kanji} ${o.name}`).join(', '));
-  ok('there are ten of them', ids.length === 10);
+  ok('there are thirteen of them', ids.length === 13);
   ok('every id is unique', new Set(ids).size === ids.length);
   ok('every one has a kanji, a colour and a blurb',
     POWER_ORBS.every((o) => o.kanji && o.color && o.blurb && o.label));
   ok('no two share a colour',
     new Set(POWER_ORBS.map((o) => o.color)).size === ids.length);
-  /* EIGHT ARE IN THE WORLD AND TWO ARE THE DEALER'S ALONE. The split is what
+  /* EIGHT ARE IN THE WORLD AND FIVE ARE THE DEALER'S ALONE (two until 遠,
+     返 and 間). The split is what
      every other count in this file now has to pick between — a rare orb you
      can trip over on a beach is not rare, and a "one of each kind" that
      included one would put it on an island in every full set. */
-  ok('...eight of the ten lie in the world', WORLD_ORB_IDS.length === 8);
-  ok('...and exactly two are bought and never found',
-    SHOP_ONLY_IDS.length === 2 && SHOP_ONLY_IDS.join() === 'aegis,blink');
+  ok('...eight of the thirteen lie in the world', WORLD_ORB_IDS.length === 8);
+  ok('...and exactly five are bought and never found',
+    SHOP_ONLY_IDS.join() === 'aegis,blink,far,parry,longparry', SHOP_ONLY_IDS.join());
   ok('...and the two lists partition the roster',
     [...WORLD_ORB_IDS, ...SHOP_ONLY_IDS].sort().join() === [...ids].sort().join());
 
@@ -6463,6 +6830,57 @@ console.log('\n--- the Powerup Kotodama ---');
     JSON.stringify(wardFor(1, 1)) === JSON.stringify(g1));
   ok('the tail is much shorter than the block it follows',
     WARD.tail > 0 && WARD.tail < WARD.max / 4);
+
+  /* --- 遠 FAR STEP: "1.5x's ... with two orbs equipped, it is now 2x's" ---
+     Read straight off the ask. ADDITIVE, so the eighth is 5x and not 1.5^8;
+     the shape is what is asserted, so tuning `farK` cannot pass a compounding
+     rule through. */
+  {
+    const r0 = aggregate(['blink']).blink.range;
+    const r1 = aggregate(['blink', 'far']).blink.range;
+    const r2 = aggregate(['blink', 'far', 'far']).blink.range;
+    const r8 = aggregate(['blink', ...Array(7).fill('far')]).blink.range;
+    line('瞬 Lock range with 0 / 1 / 2 遠', `${r0} / ${r1} / ${r2}`);
+    ok('遠 Far Step: no orb is the shipped Lock range exactly', r0 === DODGE.range);
+    ok('...one is 1.5x it', Math.abs(r1 - DODGE.range * 1.5) < 1e-9 || DODGE.farK !== 0.5);
+    ok('...two is 2x it, "as the 1.5x is applied to the original"',
+      Math.abs(r2 - DODGE.range * 2) < 1e-9 || DODGE.farK !== 0.5);
+    ok('...and a stack is additive: seven is seven times one',
+      Math.abs((r8 - r0) - 7 * (r1 - r0)) < 1e-9);
+    ok('...`lockRangeFor` is the one place it comes from', lockRangeFor(2) === r2);
+    ok('...it does not buy the aim, which is still the second 瞬',
+      aggregate(['blink', 'far', 'far']).blink.aim === false
+      && aggregate(['blink', 'blink', 'far']).blink.aim === true);
+    ok('...and eight of them with no 瞬 are eight wasted slots',
+      aggregate(Array(8).fill('far')).blink === null);
+  }
+
+  /* --- 返 RIPOSTE and 間 LONG PARRY: "increasing the timing/window of the
+     ability by 1.5x's" --- */
+  {
+    const w0 = aggregate(['parry']).parry.window;
+    const w1 = aggregate(['parry', 'longparry']).parry.window;
+    const w2 = aggregate(['parry', 'longparry', 'longparry']).parry.window;
+    const w7 = aggregate(['parry', ...Array(7).fill('longparry')]).parry.window;
+    line('返 parry window with 0 / 1 / 2 間', `${w0.toFixed(3)}s / ${w1.toFixed(3)}s / ${w2.toFixed(3)}s`);
+    ok('返 Riposte: one orb is the whole move, at the shipped window', w0 === PARRY.window);
+    ok('...a second 返 buys nothing — it is a move, not a stat',
+      JSON.stringify(aggregate(['parry', 'parry']).parry) === JSON.stringify(aggregate(['parry']).parry));
+    ok('間 Long Parry: one makes the window 1.5x', Math.abs(w1 - PARRY.window * 1.5) < 1e-9 || PARRY.longK !== 0.5);
+    ok('...two makes it 2x', Math.abs(w2 - PARRY.window * 2) < 1e-9 || PARRY.longK !== 0.5);
+    ok('...additively, seven is seven times one', Math.abs((w7 - w0) - 7 * (w1 - w0)) < 1e-9);
+    ok('...`parryWindowFor` is the one place it comes from', parryWindowFor(2) === w2);
+    ok('...and with no 返 there is no window to lengthen',
+      aggregate(Array(8).fill('longparry')).parry === null);
+    /* THE SHELF: a move stocks one, a booster two, all at the rare price. */
+    ok('the shelf keeps one 返 and two of each booster',
+      stockFor('parry') === STOCK_UNIQUE && stockFor('far') === 2 && stockFor('longparry') === 2);
+    ok('...and all three cost two and a half times an ordinary orb',
+      ['far', 'parry', 'longparry'].every((id) => ORB_BY_ID[id].priceK === 2.5));
+    ok('...and the shelf rows print what her OWN stack buys',
+      ORB_BY_ID.parry.detail(1, { longparry: 2 }).startsWith(`${(PARRY.window * (1 + 2 * PARRY.longK)).toFixed(2)}s`)
+      && ORB_BY_ID.blink.detail(1, { far: 2 }).includes(`${lockRangeFor(2).toFixed(1)}m lock`));
+  }
 
   /* =========================================================================
      THE BUBBLE COSTS SOMETHING TO RUN INTO NOW.
@@ -6979,8 +7397,11 @@ console.log('\n--- the Powerup Kotodama ---');
       /the dealer has them/i.test(body) && /not out in\s+the world/i.test(body));
     ok('...and names the only other way: a special quest, by luck',
       /special quest/i.test(body) && /luck/i.test(body));
+    /* PLURAL NOW: the three boosters share one warning ("Those last three do
+       nothing on their own") because the 750-character budget had no room for
+       three. The check asks the same question of either wording. */
     ok('...and that it does nothing on its own',
-      /does nothing on its own/i.test(body));
+      /do(es)? nothing on (its|their) own/i.test(body));
     ok('...and warns about the longer wait',
       /a fifth longer/i.test(body));
     /* AND IT COUNTS THE ONES SHE CANNOT FIND. It said "a ninth kind" while
@@ -6988,9 +7409,11 @@ console.log('\n--- the Powerup Kotodama ---');
        a nine-year-old back out to search the islands for something that is not
        on them. The number is what matters here, so the check reads it. */
     ok('...and the eight-orb card no longer implies the roster is all findable',
-      /two more kinds[\s\S]{0,80}only ever at the dealer/i.test(helpHtml));
-    ok('...and the rare card teaches both of them, and sends 瞬 to the moves',
-      /two more Kotodama/i.test(body)
+      /five more kinds[\s\S]{0,80}only ever at the dealer/i.test(helpHtml));
+    ok('...and the rare card teaches all five, and sends 瞬 to the moves',
+      /five more Kotodama/i.test(body)
+      && ['瞬 Flash Step', '返 Riposte', '守 Long Guard', '遠 Far Step', '間 Long Parry']
+        .every((n) => body.includes(`<b>${n}</b>`))
       && /瞬 Flash Step[\s\S]{0,200}Special[\s\S]{0,40}abilities/i.test(body));
 
     const aud = readFileSync(new URL('../src/core/audio.js', import.meta.url), 'utf8');
@@ -7989,6 +8412,30 @@ console.log('\n--- half a second of not being there ---');
     Math.random = roll;
   }
 
+  /* --- 遠 FAR STEP, through the real move -------------------------------
+     Every distance the Flash Step measures asks `_lockRange`, so the reticle,
+     the flee and the aimed landing all stretch together. */
+  {
+    const me = kitten(['blink', 'far']);
+    me.facing = 0;
+    const out = DODGE.range * 1.25;                    // past the shipped lock, inside one 遠's
+    const foe = kitten([], new THREE.Vector3(0, SPOT.y, 40 + out), 1);
+    const plain = kitten(['blink']);
+    plain.facing = 0;
+    ok('遠 Far Step: a kitten past the shipped Lock range is lockable with one',
+      me._dodgeTargetFor(hudFor(me, foe)) === foe && plain._dodgeTargetFor(hudFor(plain, foe)) === null);
+    ok('...the flee stretches with it', Math.abs(me._dodgeFar(null) - lockRangeFor(1) * DODGE.selfK) < 1e-9
+      && Math.abs(plain._dodgeFar(null) - DODGE.range * DODGE.selfK) < 1e-9);
+    const aimer = kitten(['blink', 'blink', 'far', 'far']);
+    ok('...and so does the aimed landing: two 遠 put it at twice the range',
+      Math.abs(aimer._dodgeFar(foe) - DODGE.range * (1 + 2 * DODGE.farK)) < 1e-9);
+    const { q, from } = landing(['blink', 'far'], { my: -1 });
+    const d = Math.hypot(q.position.x - from.x, q.position.z - from.z);
+    line('遠 one orb, flee landing', `${d.toFixed(2)} (shipped ${(DODGE.range * DODGE.selfK).toFixed(2)})`);
+    ok('...measured on the ground, where she actually came down',
+      Math.abs(d - lockRangeFor(1) * DODGE.selfK) < 0.01, d.toFixed(2));
+  }
+
   /* --- 12. THE HELP PAGE AND THE BALANCE PAGE ----------------------------- */
   {
     const helpHtml = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
@@ -7997,8 +8444,9 @@ console.log('\n--- half a second of not being there ---');
        today; it is read this way so that it may. */
     const card = helpTopic(helpHtml, 'Special abilities');
     ok('the Flash Step is in the Special abilities card', /Flash Step/.test(card));
-    ok('...on the same grid as the other four, ready for its clip',
-      (card.match(/<figure class="move"/g) ?? []).length === 5);
+    /* SIX: 返 Riposte's still joined it in the same grid. */
+    ok('...on the same grid as the other moves, ready for its clip',
+      (card.match(/<figure class="move"/g) ?? []).length === 6);
     /* THE SLOT IS THE POINT. It has a still now and a GIF later, and the swap
        has to be one attribute — so the placeholder sits in the same figure, at
        the same size, as the four clips beside it. */
@@ -18074,6 +18522,7 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
     /* AND ONE LEVEL DEEPER AGAIN, which is where the detail went. */
     ['Flash Step expanded', 'The rare orbs — dealer only'],
     ['Long Guard expanded', 'The rare orbs — dealer only'],
+    ['Riposte expanded', 'The rare orbs — dealer only'],
   ]) {
     const plain = (s) => s.replace(/&amp;/g, '&');
     ok(`..."${plain(title)}" is inside "${plain(parent)}"`,
@@ -18094,12 +18543,13 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
   /* FOURTEEN, AND A FOURTH GROUP: "Ask Payne" lives inside "Quests &
      achievements", which is a top-level `help` card, so it gets `help-quests`
      for the reason the other three have theirs. */
+  /* FIFTEEN: "Riposte expanded" joined the two in "The rare orbs". */
   ok('...and every sub-card is in its parent\'s own accordion group',
-    subs.length === 14
+    subs.length === 15
     && subs.every((n) => ['help-move', 'help-arena', 'help-rare', 'help-quests'].includes(n)),
     `${subs.length}: ${[...new Set(subs)].join(', ')}`);
-  ok('...and the two expanders are the ones in the third group',
-    subs.filter((n) => n === 'help-rare').length === 2);
+  ok('...and the three expanders are the ones in the third group',
+    subs.filter((n) => n === 'help-rare').length === 3);
   ok('...never in the top-level group, which would close its parent',
     !subs.includes('help'));
   /* THE CLIPS AND THE PICTURE STAY OUTSIDE THE FOLD. A reader who opens a topic
@@ -18171,7 +18621,7 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
        out of the parent and into a card nobody filled would pass every budget
        above and lose the explanation — which is the failure mode of trimming,
        not of growing, and the one this pass could have caused. */
-    for (const t of ['Flash Step expanded', 'Long Guard expanded']) {
+    for (const t of ['Flash Step expanded', 'Long Guard expanded', 'Riposte expanded']) {
       const n = vis(helpTopic(help, t)).length;
       ok(`..."${t}" is where the detail went, not where it died`,
         n > 250, `${n} chars`);
@@ -18390,16 +18840,17 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
   const moves = help.slice(help.indexOf('Special abilities'), help.indexOf('Trading'));
   const moveFigs = [...moves.matchAll(/<figure class="move">[\s\S]*?<\/figure>/g)]
     .map((m) => m[0]);
-  /* FIVE CELLS, FOUR OF THEM FILMED. The fifth is 瞬 Flash Step and it holds a
-     drawing until its clip is shot — the count is here, the pairing below is
-     only about the four that exist as GIFs, and the still's own checks live
-     with the rest of the move up in "half a second of not being there". When
-     the clip lands, this stays 5 and that list becomes 5. */
-  ok('the abilities section shows all five moves', moveFigs.length === 5,
+  /* SIX CELLS, FOUR OF THEM FILMED. The fifth and sixth are 瞬 Flash Step and
+     返 Riposte, and each holds a drawing until its clip is shot — the count is
+     here, the pairing below is only about the four that exist as GIFs, and
+     each still's own checks live with the rest of its move. When a clip lands,
+     this stays 6 and that list grows by one. */
+  ok('the abilities section shows all six moves', moveFigs.length === 6,
     `(${moveFigs.length})`);
-  ok('...four of them filmed, and exactly one still awaiting its clip',
+  ok('...four of them filmed, and exactly two stills awaiting their clips',
     moveFigs.filter((f) => /data-help-gif=/.test(f)).length === 4
-    && moveFigs.filter((f) => /src="\/help\/ability\/blink\.png"/.test(f)).length === 1);
+    && moveFigs.filter((f) => /src="\/help\/ability\/blink\.png"/.test(f)).length === 1
+    && moveFigs.filter((f) => /src="\/help\/ability\/riposte\.png"/.test(f)).length === 1);
   for (const [kanji, gif] of [['壁', 'ability/ward'], ['落', 'ability/dive'],
     ['十', 'ability/cross'], ['突', 'ability/charge']]) {
     ok(`...the ${kanji} move is illustrated by ${gif}.gif`,
@@ -35265,6 +35716,71 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const r4 = D.simHit(her, { dmg: 30 });
     ok('a hologram hit takes her SIM bar, never her real health', r4 === 'hit' && Number.isFinite(hp) && her.hp === hp && D.st[0].simHp === 70,
       `${r4} hp ${her.hp} sim ${D.st[0].simHp}`);
+
+    /* --- the dealer's three rare orbs, merged after the simulator was built.
+       Richard: "make it work with the simulator". A pedestal, a how-to and a
+       drill for every orb there is, and each drill a gate on its own orb. */
+    {
+      const ids = PO.POWER_ORBS.map((o) => o.id);
+      const lack = ids.filter((id) => !GAL.HOW_TO[id] || typeof GAL.DRILLS[id] !== 'function');
+      ok(`every one of the ${ids.length} orbs has a Gallery card and a drill`, ids.length >= 13 && !lack.length, lack.join(' ') || ids.join(' '));
+      const bare = PO.DODGE.range;
+      const far1 = PO.lockRangeFor(1);
+      const ring = GAL.farRing();
+      const floorR = ISL.ISLANDS.gallery.r;
+      const pedR = floorR - 5;   // `Gallery._build`: where she starts
+      line('Flash Step lock, bare / Far Step / the ring / the floor', `${bare} / ${far1} / ${ring.toFixed(1)} / ${floorR}`);
+      /* Read off the LIVE Lock range (tuning.json has it at 10): the first cut
+         was 16.5 / 19.5 against the shipped 15, unreachable as tuned. */
+      ok('遠 the Far Step ring is past a bare Lock range', ring > bare * 1.08);
+      ok('...and leaves a band to stand in that one Far Step reaches', far1 - ring > bare * 0.25, `${(far1 - ring).toFixed(2)}`);
+      /* One 瞬 pivots her round the one she locked, at the distance she locked
+         from: round the middle, the far side is that far out the other way.
+         The first design moved the hologram toward the middle, and from there
+         the far side was off the island — refused, in the browser. */
+      ok('...and stepping round it from the edge of what she can lock lands on the floor', far1 < floorR - 1,
+        `${far1} vs ${floorR}`);
+      ok('...and the pedestal she starts at is outside the ring', pedR > ring + 1, `${pedR} vs ${ring.toFixed(1)}`);
+      ok('遠 and 間 are lent with what they boost', (GAL.NEEDS.far ?? []).includes('blink') && (GAL.NEEDS.longparry ?? []).includes('parry'));
+      const win0 = PO.PARRY.window;
+      const win1 = PO.parryWindowFor(1);
+      line('Riposte window, bare / Long Parry / tell / its wait', `${win0} / ${win1.toFixed(3)} / ${GAL.PARRY_TELL} / ${GAL.PARRY_LATE}`);
+      ok('返 the tell is longer than a guard, so a guard raised AT the flash shuts first', GAL.PARRY_TELL > win0 + 0.2);
+      ok('間 the waiting blow lands after a bare guard has shut', GAL.PARRY_LATE > win0 + 0.03);
+      ok('...and before one Long Parry\'s has', GAL.PARRY_LATE < win1 - 0.05, `${(win1 - GAL.PARRY_LATE).toFixed(3)}s to spare`);
+      ok('...and a kitten who waits has the whole tell to raise it in', GAL.PARRY_TELL_MAX > GAL.PARRY_LATE + 0.6);
+
+      /* simHit asks the parry: a blow from in front of her guard is caught and
+         answered; from behind it lands; a held beam is never "caught". */
+      const realRip = her.riposte;
+      const answered = [];
+      her.riposte = (foe) => { answered.push(foe); };
+      const lx = her.position.x - SW.SIM.dx;
+      const lz = her.position.z - SW.SIM.dz;
+      const fresh = () => { D.st[0].iframes = 0; D.st[0].simHp = 100; her.parryT = 0.3; her.parryDir = 0; };
+      fresh();
+      const front = D.simHit(her, { dmg: 10, from: { x: lx, z: lz + 2 }, foe: 'F' });
+      fresh();
+      const behind = D.simHit(her, { dmg: 10, from: { x: lx, z: lz - 2 }, foe: 'B' });
+      fresh();
+      const beam = D.simHit(her, { dmg: 10, hold: true, from: { x: lx, z: lz + 2 } });
+      fresh(); her.parryT = 0;
+      const shut = D.simHit(her, { dmg: 10, from: { x: lx, z: lz + 2 } });
+      ok('返 in the sim: a blow from in front of her guard is caught and answered',
+        front === 'parried' && answered.length === 1 && answered[0] === 'F', `${front} ${answered.join(',')}`);
+      ok('...from behind it lands', behind === 'hit', behind);
+      ok('...a held beam is not a blow to catch', beam === 'hit', beam);
+      ok('...and with the window shut it lands', shut === 'hit' && answered.length === 1, shut);
+      her.riposte = realRip;
+      her.parryT = 0;
+      D.st[0].simHp = 100;
+      // Every blow the sim throws says where it came from, or 返 cannot catch it.
+      const srcOf = (f) => readFileSync(new URL(`../src/systems/dream/${f}`, import.meta.url), 'utf8');
+      ok('...and the bolts, the holo-kittens\' blades and Shadow Lionheart all say where from',
+        /src: 'bolt', drill: this, from,/.test(srcOf('drill.js'))
+        && /src: 'blade', drill: d, from: me, foe: f/.test(srcOf('school.js'))
+        && /src: 'shadow', from, foe: b/.test(srcOf('shadow.js')));
+    }
   }
 
   /* --- the stars: per kitten, only ever up, and wiped only on purpose --- */

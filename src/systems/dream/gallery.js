@@ -1,15 +1,15 @@
 import * as THREE from 'three';
-import { POWER_ORBS, PowerOrbPickup, WARD, AEGIS, DODGE, CHARGE } from '../../entities/powerorb.js';
+import { POWER_ORBS, PowerOrbPickup, WARD, AEGIS, DODGE, CHARGE, PARRY, lockRangeFor, parryWindowFor } from '../../entities/powerorb.js';
 import { SIM, HOLO } from '../../world/simworld.js';
 import { HoloPanel } from './holo.js';
-import { Post, Tile, Mat } from './targets.js';
+import { Post, Tile, Mat, HoloKitten } from './targets.js';
 
 /* ---------------------------------------------------------------------------
    THE KOTODAMA GALLERY — every orb in the game, one at a time, in your paws.
 
    Richard: "they can look at each individual powerup Kotodama orb and can
-   learn what they do and how each ability works." So: ten pedestals in a
-   horseshoe, open toward the bridge, one orb floating over each. Walk up to
+   learn what they do and how each ability works." So: a pedestal per orb
+   (thirteen since the dealer's three rare ones were merged) in a horseshoe, open toward the bridge, one orb floating over each. Walk up to
    one and its card lights — what it is, what it does, which button — and
    press INTERACT to be LENT it and dropped into a short drill that cannot be
    passed without it.
@@ -43,6 +43,9 @@ export const HOW_TO = {
   charge: 'Hold {sprint} and press {attack}',
   aegis: 'With Ward: HOLD {mount} for longer',
   blink: 'Hold {sprint} and press {interact}',
+  far: 'Face them, hold {sprint} and press {interact} from further away',
+  parry: 'Stand still, HOLD {interact}, then PUSH the stick at them',
+  longparry: 'With Riposte: your guard stays up longer',
 };
 
 /** What each drill lends, beyond the orb itself. */
@@ -50,7 +53,10 @@ export const HOW_TO = {
    WITH, and is lent as a pair: one Nagamori is 0.36s of slack on the beam,
    which a child who raises the shield early runs out of (measured — she held
    from 0.39s before it fired and lost the last two frames); two is a second. */
-export const NEEDS = { aegis: ['ward', 'aegis'] };
+/* The three rare ones are each useless alone or a booster: 遠 Far Step needs a
+   瞬 to stretch, and 間 Long Parry a 返 to lengthen. One of each is the
+   difference their drills measure (`farRing`, PARRY_LATE). */
+export const NEEDS = { aegis: ['ward', 'aegis'], far: ['blink'], longparry: ['parry'] };
 
 /* THE NUMBERS EACH DRILL IS A GATE ON, exported so `world-check` measures
    them against the real reach and the real jump rather than against these
@@ -59,6 +65,25 @@ export const NEEDS = { aegis: ['ward', 'aegis'] };
 export const REACH_RING = 4.3;
 /** 跳: the ledge the star sits on, above the island floor. */
 export const LEAP_DECK = 5.0;
+/* 遠: A FRACTION OF THE LIVE LOCK RANGE, NOT A DISTANCE. The first cut was
+   16.5 and 19.5, against the shipped 15 — and the balance page has Lock range
+   at 10 (tuning.json), where one Far Step reaches 15 and the spot was out of
+   reach even with the orb. world-check caught it. One Far Step is 1 + farK
+   (1.5) of it, so the ring sits between 1 and that whatever it is tuned to. */
+/** 遠: a Flash Step only counts if it locked from outside this ring round the
+ *  holo-kitten — past a bare Lock range, inside one Far Step's. */
+export const farRing = () => DODGE.range * 1.12;
+/** 遠: she has gone somewhere when the step carried her this far. */
+export const FAR_MOVED = 1.5;
+/** 返: the holo-kitten's tell, white and still, lasts this long before the
+ *  blow — longer than a bare window (0.35), so a guard raised AT the flash
+ *  has closed by the time it lands. The read is when, not just whether. */
+export const PARRY_TELL = 0.7;
+/** 間: this one WAITS — its blow lands this long after she raises her guard.
+ *  Past a bare window, inside one Long Parry's (0.525). */
+export const PARRY_LATE = 0.42;
+/** 間: ...unless she never raises it, and then it lands at the end of this. */
+export const PARRY_TELL_MAX = 1.4;
 
 export class Gallery {
   constructor(dream, isle) {
@@ -435,6 +460,93 @@ export const DRILLS = {
     },
   }),
 
+  /* 遠 FAR STEP. One holo-kitten in the middle of the floor, a red ring of
+     `farRing` round it. A Flash Step locks on only within Lock range (10 as
+     tuned, 15 shipped), and half as far again with the one Enpo this drill
+     lends — so from outside the ring only the lent orb reaches. Three steps
+     round it.
+     IT STANDS STILL, IN THE MIDDLE, and that is the second design. The first
+     moved it to a fresh spot toward the floor's middle after each step — and
+     one 瞬 PIVOTS her round whoever she locked, at the distance she locked
+     from (`_dodgeSpotFor`), so from the middle the far side was off the
+     island and the step was refused out loud (seen in the browser). Round the
+     centre, the far side is the same distance out the other way, inside the
+     floor for any lock the orb can make (world-check), and still outside the
+     ring — so she can go straight round again. She starts at the pedestal,
+     19 out: past a tuned lock even with the orb, so the first thing she
+     learns is where to stand. */
+  far: (g, p) => ({
+    title: 'FAR STEP DRILL', goal: 3, time: 35, bands: [35, 16, 10],
+    goalText: 'Flash Step round it from OUTSIDE the red ring', countLabel: 'steps ',
+    setup(d) {
+      const spec = d.dream.kittenSpec();
+      const c = d.spot(0, 0);
+      d.holo = d.target(HoloKitten, {
+        x: c.x, y: c.y, z: c.z, spec, name: 'the holo-kitten', hits: 1,
+        accept: () => false,
+        onRefuse: () => d.dream.hint(d.p, `Flash Step round it — [${g.key(d.p, 'sprint')}] + [${g.key(d.p, 'interact')}]`),
+      });
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(farRing() - 0.2, farRing(), 96).rotateX(-Math.PI / 2),
+        new THREE.MeshBasicMaterial({ color: 0xff3b5b, transparent: true, opacity: 0.8, toneMapped: false, depthWrite: false })
+      );
+      ring.position.y = 0.06;
+      d.holo.group.add(ring);
+      d.seq = d.p.dodgeSeq;
+      d.placed = true;
+    },
+    tick(d) {
+      const p = d.p;
+      if (p.dodgeSeq !== d.seq) {
+        d.seq = p.dodgeSeq;
+        d.placed = false;
+        d.good = p.dodgeTarget === d.holo && p.dodgeD0 > farRing();
+        if (d.good) d.dream.hint(p, '遠 Locked from far away!');
+        else if (p.dodgeTarget === d.holo) d.dream.hint(p, 'Too close — step back OUTSIDE the red ring first');
+        else d.dream.hint(p, 'No lock — FACE it from just outside the ring, then Flash Step');
+      }
+      /* Counted when she has GONE, not when she locks: a locked step with
+         the stick let go is the "stay put, untouchable" half of the move
+         (`_commitDodge`), and the first cut paid a star for one in the
+         browser while she never left her spot. */
+      if (!d.placed && p.dodgePlaced) {
+        d.placed = true;
+        if (d.good) {
+          d.good = false;
+          if (Math.hypot(p.position.x - p.dodgeFrom.x, p.position.z - p.dodgeFrom.z) > FAR_MOVED) d.progress();
+          else d.dream.hint(p, 'Locked — now PUSH the stick as you step, to go round it');
+        }
+      }
+    },
+  }),
+
+  /* 返 RIPOSTE. A holo-kitten walks up and swings. Before it does it goes
+     white and still for PARRY_TELL — the tell. Guard toward it inside the last
+     0.35s of that and the blow is caught and answered (`simHit` asks the
+     parry, then `riposte` swings back through the sim's gate). It only
+     answers to a riposte: a swing at it rocks it and she is told how. */
+  parry: (g, p) => parryDrill(g, p, {
+    title: 'RIPOSTE DRILL', bands: [40, 20, 12],
+    goalText: 'When it flashes: HOLD Interact, PUSH the stick at it',
+    blowAt: () => PARRY_TELL,
+    missed: (g2, d) => `Too early or too late — HOLD [${g2.key(d.p, 'interact')}] and PUSH just before it swings`,
+  }),
+
+  /* 間 LONG PARRY. The same partner, but this one WAITS: its blow lands
+     PARRY_LATE after she raises her guard, which is 0.07s after a bare
+     window (0.35) has shut and 0.105s before one Ma's (0.525) does. So bare it
+     cannot be passed however it is timed, and lent it is the sentence on the
+     orb's card: raise it any time in the tell and it holds. `world-check`
+     pins both sides, as it does Long Guard's beam. */
+  longparry: (g, p) => parryDrill(g, p, {
+    title: 'LONG PARRY DRILL', bands: [40, 20, 12],
+    goalText: 'It waits you out — raise your guard as it flashes and HOLD it',
+    blowAt: (d) => (d.guardAt != null ? Math.min(PARRY_TELL_MAX, d.guardAt + PARRY_LATE) : PARRY_TELL_MAX),
+    missed: (g2, d) => (d.p.parryWin > PARRY.window + 1e-6
+      ? 'Raise it while it flashes — Long Parry holds it till the blow'
+      : 'It waited until your guard dropped — Long Parry holds it longer'),
+  }),
+
   /* 瞬 FLASH STEP. A wall of three stacked beams right across the island,
      and a star on the far side. Walking through it costs bar and throws her
      back; a Flash Step is untouchable for DODGE.invuln and crosses it. */
@@ -459,6 +571,85 @@ function armNext(d, i) {
   const nx = d.gateList[i + 1];
   if (nx) { nx.armed = true; nx.setColour(d.colour); }
   d.gateList[i].setColour(0x224433);
+}
+
+/**
+ * 返 / 間: a holo-kitten that walks up to her, tells, and swings — the
+ * school's partner, one of them, with the tell a drill can time.
+ * `o.blowAt(d)` is when, after the tell starts, the blow lands.
+ */
+const PARRY_REST = 1.3;
+function parryDrill(g, p, o) {
+  return {
+    title: o.title, goal: 3, time: 45, bands: o.bands, goalText: o.goalText, countLabel: 'caught ',
+    setup(d) {
+      const spec = d.dream.kittenSpec();
+      const c = d.spot(6, 0);
+      d.holo = d.target(HoloKitten, {
+        x: c.x, y: c.y, z: c.z, spec, name: 'the holo-kitten', hits: 99, kinds: ['riposte'],
+        onRefuse: () => d.dream.hint(d.p, 'Don\u2019t swing — catch ITS blow, then you hit back'),
+      });
+      d.mode = 'rest';
+      d.modeT = 0.6;
+      d.seq = d.p.parrySeq;
+      d.dream.refillSim(d.p);
+    },
+    tick(d, dt) {
+      const p = d.p;
+      const h = d.holo;
+      const me = h.group.position;
+      const x = p.position.x - SIM.dx;
+      const z = p.position.z - SIM.dz;
+      const dist = Math.hypot(x - me.x, z - me.z);
+      const raised = p.parrySeq !== d.seq;
+      d.seq = p.parrySeq;
+      if (d.mode === 'rest') {
+        d.modeT -= dt;
+        if (d.modeT <= 0) d.mode = 'walk';
+      } else if (d.mode === 'walk') {
+        /* STOPS 0.1 SHORT OF WHERE IT AIMS. It aimed at 1.9 and walked
+           while further than 1.9, and a step clamped to the gap closes on a
+           number it never quite reaches: it stood at 1.9000x forever and
+           never swung (seen in the browser). */
+        if (dist > 2.0) {
+          const k = Math.min(4.5 * dt, dist - 1.9) / (dist || 1);
+          me.x += (x - me.x) * k;
+          me.z += (z - me.z) * k;
+        } else {
+          d.mode = 'wind';
+          d.windT = 0;
+          d.guardAt = null;
+        }
+      } else if (d.mode === 'wind') {
+        // THE TELL: white, and still.
+        h.flash = Math.max(h.flash, 0.6);
+        d.windT += dt;
+        if (raised && d.guardAt == null) d.guardAt = d.windT;
+        if (d.windT >= o.blowAt(d)) {
+          const k = 1 / (dist || 1);
+          const r = d.dream.simHit(p, {
+            dmg: 10, push: { x: (x - me.x) * k, z: (z - me.z) * k }, src: 'blade', drill: d,
+            from: { x: me.x, z: me.z }, foe: h,
+          });
+          if (r === 'parried') d.progress();
+          else if (r === 'dodged') d.dream.hint(p, 'A Flash Step is not a catch — guard and PUSH at it');
+          else if (r === 'blocked') d.dream.hint(p, 'A shield is not a catch — drop it, guard and PUSH');
+          else if (r === 'hit') d.dream.hint(p, o.missed(g, d));
+          // And back off, to come at her from somewhere new.
+          const a = Math.atan2(me.x - x, me.z - z) + (Math.random() < 0.5 ? -1 : 1) * (0.8 + Math.random() * 0.8);
+          me.x = x + Math.sin(a) * 6;
+          me.z = z + Math.cos(a) * 6;
+          const R = d.at.r - 2;
+          const ox = me.x - d.at.x; const oz = me.z - d.at.z;
+          const od = Math.hypot(ox, oz);
+          if (od > R) { me.x = d.at.x + (ox / od) * R; me.z = d.at.z + (oz / od) * R; }
+          h.local.set(me.x, d.at.y, me.z);
+          d.mode = 'rest';
+          d.modeT = PARRY_REST;
+        }
+      }
+    },
+  };
 }
 
 /** The Long Guard beam: past a bare Ward (2.2s), well short of the lent pair (3.4s). */
@@ -491,4 +682,4 @@ function wardDrill(g, p, o) {
   };
 }
 
-export { CHARGE, DODGE };
+export { CHARGE, DODGE, PARRY, lockRangeFor, parryWindowFor };

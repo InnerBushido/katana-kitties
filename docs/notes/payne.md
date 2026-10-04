@@ -2,11 +2,11 @@
 
 **She is a real person.** Payne is a fighter from Belegarth Medieval Combat
 Society, drawn here as a green cat-goblin. Richard asked her permission to put
-her in the game and will send her the finished result **for her final
-approval**. Until she has approved it, she has not approved it: a public release
-that includes her waits for that answer, like the cackle in PROJECT.md §8. Her
-photos went to Higgsfield as image references with Richard's OK, and to nowhere
-else.
+her in the game and sent her the finished result for her final approval.
+**She has approved her lines and her voice** (2026-10-04). Richard:
+"Payne approved the lines and her voice, so we are good there." ~~Until she has approved it, a public release
+that includes her waits for that answer.~~ Her photos went to Higgsfield as
+image references with Richard's OK, and to nowhere else.
 
 The brief, verbatim where it decides something:
 
@@ -285,7 +285,7 @@ playable or an opponent later, as Richard asked.
 ## The script
 
 Pixie, `voice_id 0178ef57-ada4-43d9-992b-8d9221045bb4`. All 54 lines, in
-`public/voice/payne/`, are **for Payne's approval** along with her likeness.
+`public/voice/payne/`, are ~~for Payne's approval~~ **approved by her**.
 The text is `PAYNE_LINES`, and the text is the line: the voice falls back
 (non-negotiable 9), and world-check requires every line to have a file and
 every file to have a line.
@@ -335,7 +335,7 @@ every file to have a line.
 goblin speak (whatever that sounds like!)"*, and the audience is nine and
 younger, so every "swear" is a made-up word that means nothing in any language.
 The six `last_*` lines are the second batch. They were cast on the same Pixie
-preset, and are as pending her approval as the first 39.
+preset, and ~~are as pending her approval as~~ were approved with the first 39.
 
 ## What is saved
 
@@ -383,11 +383,11 @@ you right now", *and* left her card open under it. The cause was
 that into a refusal. The check calls `choose(her, 'view')` both ways: a start
 returns 'scene' with no toast, and a refusal returns 'payneDojo' with one.
 
-All nine new lines are **pending Payne's approval**, like the rest.
+All nine new lines are ~~pending Payne's approval~~ approved by her, like the rest.
 
 ## Open
 
-- **Payne's approval** of her likeness and all 54 lines.
+- ~~**Payne's approval** of her likeness and all 54 lines.~~ Approved: "Payne approved the lines and her voice, so we are good there."
 - **Nobody has played it.** The stuck timings (2 min, 35 s in a cave, four
   hops) are Richard's numbers or first guesses, not tuned by watching a kid.
 - The alternative held pose (both hands on the helmet) is kept outside the repo

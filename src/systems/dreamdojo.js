@@ -1806,12 +1806,30 @@ export class DreamDojo {
    * costs the Ward exactly what it costs in the arena, through her own
    * `_wardTakeHit`), and a fresh hit is followed by a moment of grace.
    *
-   * @returns {'none'|'dodged'|'blocked'|'immune'|'hit'}
+   * 返 RIPOSTE IS ASKED HERE TOO, before the Ward, which is where
+   * `Game.strikePlayers` asks it. `from` is where the blow came from, in the
+   * layer, and only a BLOW has one: a beam (`hold`) or a wall of light is not
+   * something a guess about when and where can catch, so lasers pass none.
+   * Without this a kitten lent 返 in the Gallery could raise her guard at a
+   * bolt and be hit through it, because this function was the whole of the
+   * sim's combat and had never heard of the orb — it was merged after the
+   * simulator was built (Richard: "make it work with the simulator").
+   * The answer swing is `riposte`, through the sim's own hud, so it reaches
+   * holograms and only holograms (`TrainingGate.strike`).
+   *
+   * @returns {'none'|'dodged'|'parried'|'blocked'|'immune'|'hit'}
    */
-  simHit(p, { dmg = 10, push = null, src = 'laser', hold = false } = {}) {
+  simHit(p, { dmg = 10, push = null, src = 'laser', hold = false, from = null, foe = null } = {}) {
     const s = this.st[p.index];
     if (!s || this.realmOf(p) !== 'sim') return 'none';
     if (p.dodgeAt) return 'dodged';
+    if (from && !hold) {
+      const at = { x: from.x + SIM.dx, z: from.z + SIM.dz };
+      if (p.parries?.(at)) {
+        p.riposte?.(foe ?? { position: at }, this.simHud);
+        return 'parried';
+      }
+    }
     if (p.warded) {
       // A held beam is blocked by the bubble being UP; it does not break it.
       if (hold) p.wardFlash = 0.25;
