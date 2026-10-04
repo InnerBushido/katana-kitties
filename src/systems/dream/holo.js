@@ -31,6 +31,69 @@ const css = (hex) => `#${new THREE.Color(hex).getHexString()}`;
  * A card of light. `lines` is a list of `{ text, size?, color?, weight? }`
  * (or bare strings), drawn top to bottom and centred.
  */
+/** The widest a line may run, as a share of the card. */
+const MAX_W = 0.9;
+/** The most of the card's height the text may fill before it all shrinks. */
+const MAX_H = 0.92;
+
+/**
+ * Lay a card's lines out: which words go on which row, at what size.
+ *
+ * A LINE MAY WRAP. Richard, on the Gallery's cards: "The subtext on the
+ * kotodama orbs in the simulator is too small and can't be read. It is okay
+ * if the subtext is more than 1 line long and made bigger. Let's focus on
+ * readability". Every line used to be ONE row, shrunk to the card's width —
+ * "shrink to fit rather than clip" — and the Riposte's 112-character blurb
+ * came out at about a sixth of its size. A line marked `wrap` now breaks at
+ * spaces into as many rows as it needs at its OWN size; only a single word
+ * wider than the card still shrinks.
+ *
+ * AND THE WHOLE CARD SHRINKS BEFORE ANYTHING IS CLIPPED. If the rows add up
+ * taller than the card, every size comes down by the same factor, so the
+ * proportions hold and nothing falls off the bottom. A clipped instruction is
+ * still a lie. Exported for `world-check`, which hands it a measuring stub.
+ */
+export function layoutLines(g, items, W, H) {
+  const fit = (k) => {
+    const unit = (H / 10) * k;
+    const rows = [];
+    for (const l of items) {
+      const s = (l.size ?? 1) * unit;
+      const face = l.font ?? (l.jp ? '"Noto Serif JP", serif' : 'Nunito, sans-serif');
+      const font = `${l.weight ?? 800} ${s}px ${face}`;
+      g.font = font;
+      const maxW = W * MAX_W;
+      const parts = [];
+      if (l.wrap) {
+        let cur = '';
+        for (const w of String(l.text).split(/\s+/).filter(Boolean)) {
+          const next = cur ? `${cur} ${w}` : w;
+          if (cur && g.measureText(next).width > maxW) { parts.push(cur); cur = w; } else cur = next;
+        }
+        if (cur || !parts.length) parts.push(cur);
+      } else {
+        parts.push(String(l.text));
+      }
+      parts.forEach((text, i) => {
+        g.font = font;
+        const mw = g.measureText(text).width;
+        // Shrink to fit rather than clip: a clipped instruction is a lie.
+        const ft = mw > maxW ? `${l.weight ?? 800} ${s * (maxW / mw)}px ${face}` : font;
+        rows.push({ item: l, text, font: ft, h: s, last: i === parts.length - 1, px: mw > maxW ? s * (maxW / mw) : s });
+      });
+    }
+    const gap = unit * 0.28;
+    const lead = unit * 0.1;
+    const total = rows.reduce((a, r) => a + r.h + (r.last ? gap : lead), 0) - (rows.length ? gap : 0);
+    return { rows, gap, lead, total, k };
+  };
+  let lay = fit(1);
+  if (lay.total > H * MAX_H) lay = fit(Math.max(0.3, (H * MAX_H) / lay.total));
+  // Wrapping depends on the size, so one more pass settles it.
+  if (lay.total > H * MAX_H) lay = fit(lay.k * ((H * MAX_H) / lay.total));
+  return lay;
+}
+
 export class HoloPanel extends THREE.Object3D {
   /**
    * @param {object} o
@@ -94,27 +157,20 @@ export class HoloPanel extends THREE.Object3D {
       g.stroke();
     }
     const items = (lines ?? []).map((l) => (typeof l === 'string' ? { text: l } : l)).filter((l) => l.text != null);
-    const unit = H / 10;
-    const sizes = items.map((l) => (l.size ?? 1) * unit);
-    const gap = unit * 0.28;
-    const total = sizes.reduce((a, b) => a + b, 0) + gap * Math.max(0, items.length - 1);
-    let y = (H - total) / 2;
+    const lay = layoutLines(g, items, W, H);
+    let y = (H - lay.total) / 2;
     g.textAlign = 'center';
     g.textBaseline = 'top';
-    items.forEach((l, i) => {
-      const s = sizes[i];
-      const font = l.font ?? (l.jp ? '"Noto Serif JP", serif' : 'Nunito, sans-serif');
-      g.font = `${l.weight ?? 800} ${s}px ${font}`;
-      // Shrink to fit rather than clip: a clipped instruction is a lie.
-      const maxW = W * 0.9;
-      const mw = g.measureText(l.text).width;
-      if (mw > maxW) g.font = `${l.weight ?? 800} ${s * (maxW / mw)}px ${font}`;
+    for (const r of lay.rows) {
+      g.font = r.font;
+      const l = r.item;
       g.fillStyle = l.color ? (typeof l.color === 'number' ? css(l.color) : l.color) : '#d8fdff';
       if (l.glow) { g.shadowColor = g.fillStyle; g.shadowBlur = 16; }
-      g.fillText(l.text, W / 2, y);
+      g.fillText(r.text, W / 2, y);
       g.shadowBlur = 0;
-      y += s + gap;
-    });
+      y += r.h + (r.last ? lay.gap : lay.lead);
+    }
+    this.layout = lay;
     this.tex.needsUpdate = true;
   }
 

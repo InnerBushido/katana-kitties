@@ -6251,8 +6251,8 @@ console.log('\n--- background removal keeps the drawn whites ---');
     'lionheart/town.png',
     // ...and the simulator's drawings: the two headset turnarounds and his Shadow.
     'kittens/ember/vr.png', 'kittens/frost/vr.png', 'lionheart/shadow.png',
-    // ...and her six special poses in the headset, per sheet (`vr_<pose>.png`).
-    ...['ember', 'frost'].flatMap((s) => ['eat', 'bless', 'warp', 'inhale', 'scared', 'sweep']
+    // ...and her seven special poses in the headset, per sheet (`vr_<pose>.png`).
+    ...['ember', 'frost'].flatMap((s) => ['eat', 'bless', 'warp', 'inhale', 'scared', 'sweep', 'riposte']
       .map((p) => `kittens/${s}/vr_${p}.png`)),
     // ...and 返 Riposte's stance.
     'kittens/ember/riposte.png', 'kittens/frost/riposte.png',
@@ -6417,9 +6417,12 @@ console.log('\n--- background removal keeps the drawn whites ---');
        her body with both paws, and the arms and the hilt close a gap against
        her robe; Ember's, measured by the same loop, closes none. Not filled either — a
        single-pose billboard off `_loadSprite`, like the sweep. */
-    ok('turning the fill on for every sheet would repaint twenty-four of them',
-      touched.length === 24 && touched.includes('beasts/dragon_sheet.png')
-      && touched.filter((f) => /\/vr_/.test(f)).length === 7
+    /* TWENTY-FIVE SINCE THE STANCE WENT INTO THE HEADSET: Frost's
+       `vr_riposte` closes the same pocket her home stance does. Ember's
+       closes none, as at home. Not filled: `_loadSimPoses` does not ask. */
+    ok('turning the fill on for every sheet would repaint twenty-five of them',
+      touched.length === 25 && touched.includes('beasts/dragon_sheet.png')
+      && touched.filter((f) => /\/vr_/.test(f)).length === 8 && touched.includes('kittens/frost/vr_riposte.png')
       && touched.includes('lionheart/town.png') && touched.includes('kittens/frost/riposte.png')
       && touched.includes('kittens/frost/vr.png') && touched.includes('lionheart/shadow.png')
       && touched.includes('kittens/frost/champion.png') && touched.includes('satan/flex_trophy.png')
@@ -6693,10 +6696,11 @@ console.log('\n--- the art that ships is smaller than the art that made it ---')
     /* SEVEN SINCE THE GOBLIN SWEEP: `sweep.png` is worn for the spin of the
        trick Payne teaches. EIGHT SINCE 返 RIPOSTE: `riposte.png` is her guard. */
     /* FOURTEEN SINCE THE HEADSET: each of the six special poses again with
-       the VR gear on (`vr_<pose>.png`), worn in the tube and in the sim. */
-    ok('...with the same fourteen poses drawn for each of them',
+       the VR gear on (`vr_<pose>.png`), worn in the tube and in the sim.
+       FIFTEEN SINCE 返 RIPOSTE WENT INTO THE HEADSET (`vr_riposte.png`). */
+    ok('...with the same fifteen poses drawn for each of them',
       posesOf('ember') === posesOf('frost')
-      && posesOf('ember').split(' ').length === 14, posesOf('ember'));
+      && posesOf('ember').split(' ').length === 15, posesOf('ember'));
   }
 
   /* --- and nothing else in public/ is quietly enormous ----------------------
@@ -38179,15 +38183,18 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const behind = L.door + Math.PI;
     const ap = D.approach;
     ap.st.length = 0;
-    // Into the side, away from the door: pushed out, flagged, yelled at.
+    // Into the side, away from the door: pushed out and told — but NOT
+    // marked for the apology, which only the drop earns (Richard: "that
+    // should only get triggered if Lionheart executes his 'lion_yell_drop'
+    // voice").
     her.position.set(A.x + Math.cos(behind) * (DOME_R - 1), A.y + 2, A.z + Math.sin(behind) * (DOME_R - 1));
     her.velocity.set(-Math.cos(behind) * 8, 0, -Math.sin(behind) * 8);
     her.onGround = false;
     toastsD.length = 0;
     ap.update(1 / 60);
     const h1 = hyp(her.position, A);
-    ok('the dome is a wall to a kitten jumping at its side: put back outside it, and told where the door is',
-      h1 > DOME_R && ap.of(her).cheat && toastsD.some((t) => /only opens at the gate/.test(t)), `${h1.toFixed(2)} of ${DOME_R}`);
+    ok('the dome is a wall to a kitten jumping at its side: put back outside it, told where the door is, and owed no apology for it',
+      h1 > DOME_R && !ap.of(her).cheat && toastsD.some((t) => /only opens at the gate/.test(t)), `${h1.toFixed(2)} of ${DOME_R}`);
     // Dropped on top, as if off a dragon: she slides off and lands outside.
     ap.st.length = 0;
     her.position.set(A.x + 0.3, A.y + DOME_R + 3, A.z + 0.2);
@@ -38201,7 +38208,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       if (hyp(her.position, A) < A.r && her.position.y < A.y + 1) inside = true;
     }
     const hOut = hyp(her.position, A);
-    ok('...and a kitten dropped on its top slides off the side and down, never onto the pad',
+    ok('...and a kitten dropped on its top slides off the side and down, never onto the pad — and THAT is the attempt the apology is owed for',
       !inside && hOut > DOME_R - 1 && ap.of(her).cheat, `${hOut.toFixed(1)} from the middle, y ${(her.position.y - A.y).toFixed(1)}`);
     // Through the gate, on foot, off its landing: nothing stops her...
     ap.st.length = 0;
@@ -38233,7 +38240,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     her.onGround = false;
     ap.update(1 / 60);
     ok('...and just outside the pillars the dome is a wall again — the door is exactly the gate',
-      ap.of(her).cheat && hyp(her.position, A) > DOME_R, hyp(her.position, A).toFixed(2));
+      hyp(her.position, A) > DOME_R, hyp(her.position, A).toFixed(2));
     /* THE RAILING: "a railing all around the dojo that ends at the entrance
        to force players to enter from the entrance". Run at it from the pad
        on every bearing, ten degrees apart, for two seconds: she ends outside
@@ -38313,11 +38320,93 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     gD.dragons = [drake];
     toastsD.length = 0;
     D._updateDome(1 / 60);
-    const dh = hyp(drake.position, A);
-    ok('a dragon flying into the dome is pushed out — and the kitten riding it goes with it',
-      dh >= DOME_R + 1.5 - 1e-6 && hyp(her.position, drake.position) < 1e-6 && ap.of(her).cheat
-      && toastsD.some((t) => /keeps animals out/.test(t)), `dragon ${dh.toFixed(2)} · her ${hyp(her.position, A).toFixed(2)}`);
+    const cyD = A.y - 0.5;
+    const r3 = (q) => Math.hypot(q.x - A.x, q.y - cyD, q.z - A.z);
+    const dh = r3(drake.position);
+    ok('a dragon flying into the dome is pushed out onto its skin — and the kitten riding it goes with it',
+      dh >= DOME_R + DD.ANIMAL_PAD - 1e-6 && hyp(her.position, drake.position) < 1e-6
+      && toastsD.some((t) => /keeps animals out/.test(t)), `dragon ${dh.toFixed(2)} from the dome's centre`);
+    /* "If player on dragon or panda mount run into the shell of the dojo, it
+       should not trigger the apology from Lionheart". */
+    ok('...and brushing the dome on a dragon owes no apology: nothing is marked and Lionheart does not yell',
+      !ap.of(her).cheat && D.lecture.owed(her) === null);
+
+    /* THE DOME'S SHAPE, NOT A TUBE. Richard: "seems there is a barrier above
+       the dream dojo preventing dragon from flying directly above it, let's
+       remove that, we want the player and dragon to be able to fly next to the
+       dome". The tube it replaced held every animal within 20.5 of the axis
+       from 12 under the deck to 4 over the crown. Each of these points was
+       inside it, and each is open sky beside or above the glass. */
+    const R = DOME_R + DD.ANIMAL_PAD;
+    const sky = [
+      { x: A.x, y: cyD + R + 1, z: A.z, what: 'over the crown' },
+      { x: A.x + 15, y: cyD + 15, z: A.z, what: 'at the shoulder' },
+      { x: A.x + 4, y: cyD + R + 2.5, z: A.z - 3, what: 'just over the top' },
+      { x: A.x + 18, y: A.y - 8, z: A.z, what: 'under the hem, clear of the rock' },
+    ];
+    const blocked = sky.filter((q) => DD.animalContact(q));
+    ok('the sky round the dome is open: over the crown, at the shoulder and under the hem, where the old tube stood',
+      blocked.length === 0, blocked.map((q) => q.what).join(', ') || 'all four clear');
+    // ...and what IS drawn still holds: the glass, its rim, the rock.
+    const solid = [
+      { x: A.x + 3, y: cyD + 8, z: A.z + 2, what: 'inside the glass' },
+      { x: A.x + R - 0.5, y: A.y - 1, z: A.z, what: 'under the rim' },
+      { x: A.x + 4, y: A.y - 9, z: A.z, what: 'in the rock' },
+    ];
+    const open = solid.filter((q) => !DD.animalContact(q));
+    ok('...and the glass, its rim and the rock under the pad still keep a dragon out', open.length === 0,
+      open.map((q) => q.what).join(', ') || 'all three hold');
+    // Every contact puts it ON the surface it hit and pushes outward.
+    let badN = 0;
+    for (let i = 0; i < 400; i++) {
+      const q = { x: A.x - 22 + ((i * 7) % 20) * 2.2, y: A.y - 20 + ((i * 3) % 20) * 2.2, z: A.z - 22 + (i % 20) * 2.2 };
+      const c = DD.animalContact(q);
+      if (!c) continue;
+      if (DD.animalContact({ x: c.x + c.n.x * 1e-3, y: c.y + c.n.y * 1e-3, z: c.z + c.n.z * 1e-3 })) badN++;
+    }
+    ok('...and every push lands it just outside, so a dragon is moved once and is never pinned by the next frame', badN === 0, `${badN} of 400`);
+
+    /* FLY STRAIGHT AT IT, at the height of the dome's upper half, holding the
+       stick the whole way like a pilot: she is lifted over the crown and out
+       the far side. In the tube she stopped dead at 20.5 from the axis. */
+    her.mount = drake;
+    const start = { x: A.x - 40, y: cyD + 14, z: A.z + 1 };
+    drake.position.set(start.x, start.y, start.z);
+    her.position.copy(drake.position);
+    let deepest = Infinity;
+    for (let f = 0; f < 60 * 6; f++) {
+      her.velocity.set(18, 0, 0);
+      her.position.addScaledVector(her.velocity, 1 / 60);
+      drake.position.copy(her.position);
+      D._updateDome(1 / 60);
+      deepest = Math.min(deepest, r3(drake.position));
+    }
+    ok('...and a dragon flown straight at the dome rides up over the crown and comes down the far side, never inside the glass',
+      drake.position.x > A.x + 30 && deepest >= R - 1e-6, `ended ${(drake.position.x - A.x).toFixed(1)} past the middle, closest ${deepest.toFixed(2)} of ${R}`);
     her.mount = null;
+    drake.rider = null;
+
+    /* A DRAGON LEFT OVER THE DOME. Her dismount aims it at the ground under
+       her (`landAt`), and over the dome that is the pad: it sat on the glass
+       trying to land through it — "getting stuck on the shell". It goes to
+       the foot of the stones instead. */
+    const homeDragon = {
+      position: new THREE.Vector3(A.x + 2, cyD + R + 0.5, A.z), group: new THREE.Group(),
+      home: new THREE.Vector3(A.x + 2, A.y + 20, A.z), state: 'perched', rider: null,
+      flyTo(x, z) { this.home.set(x, this.position.y, z); this.state = 'returning'; },
+    };
+    gD.dragons = [homeDragon];
+    D._updateDome(1 / 60);
+    ok('a dragon left over the dome is sent to the foot of the stones, not left trying to land through the glass',
+      homeDragon.state === 'returning' && Math.hypot(homeDragon.home.x - L.launch.x, homeDragon.home.z - L.launch.z) < 1e-6,
+      `home ${hyp(homeDragon.home, A).toFixed(1)} from the pad`);
+    // ...and one perched anywhere else is left alone.
+    const away = { x: L.launch.x + 3, z: L.launch.z };
+    homeDragon.home.set(away.x, A.y, away.z);
+    homeDragon.state = 'perched';
+    homeDragon.position.set(away.x, A.y, away.z);
+    D._updateDome(1 / 60);
+    ok('...and a dragon perched anywhere else keeps its spot', homeDragon.state === 'perched' && homeDragon.home.x === away.x);
     gD.dragons = [];
   }
 
@@ -38728,6 +38817,312 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         /storyScene\.camera, 0, 0,\s*\.\.\.this\.renderer\.getSize\(new THREE\.Vector2\(\)\)\.toArray\(\), null, true, this\.storyScene\.loc\)/.test(main)
         && /realm \? realm === 'sim' : members && D\.paneIsSim\(members\)/.test(main));
     }
+    /* THE TOUR PANS THE ISLANDS, ON THE WORDS THAT NAME THEM. Richard:
+       "during this entire cutscene segment in the simulator, we focus a lot
+       on the Dojo of the Turning Circle area, but not much on the other
+       islands with different activities. It would be good if the camera can
+       pan through each of the islands ... and likely no need to focus on the
+       Dojo of the Turning Circle unless it is directly mentioned in the
+       dialog or if to just give a brief zoomed out view of the entire map
+       area while rotating fairly quickly." `simHub` orbited the holo-Dojo for
+       the whole line, and `simIsles` aimed halfway between it and the
+       islands. Each stop is cued on a word; the word must be in the line, the
+       stop inside the clip, and each held for longer than the swing into it. */
+    {
+      const { mp3Duration: mp3D } = await import('./mp3.mjs');
+      const clipT = (id) => mp3D(new URL(`../public/voice/lionheart/${id}.mp3`, import.meta.url)).secs;
+      const rowOf = (shot) => ST.TOUR.find((x) => x.shot === shot);
+      const SIMo = (await import('../src/world/simworld.js')).SIM;
+      D._ensureSim();
+      const ctxT = D.storyCtx();
+      const cueBad = [];
+      const isleStops = new Set();
+      for (const [name, stops] of Object.entries(SS.TOUR_PANS)) {
+        const row = rowOf(name);
+        const len = clipT(row.voice);
+        stops.forEach((st, i) => {
+          if (!row.text.includes(st.word)) cueBad.push(`${name}:"${st.word}" not said`);
+          if (st.at >= len) cueBad.push(`${name}:"${st.word}" at ${st.at} after the clip (${len.toFixed(2)})`);
+          const next = stops[i + 1]?.at ?? len;
+          if (next - st.at <= SS.PAN_T) cueBad.push(`${name}:"${st.word}" held ${(next - st.at).toFixed(2)}s`);
+          if (st.isle) {
+            isleStops.add(st.isle);
+            if (!ctxT.isles[st.isle]) cueBad.push(`${name}: no island ${st.isle}`);
+          } else if (!st.map) cueBad.push(`${name}:"${st.word}" frames neither an island nor the map`);
+        });
+      }
+      ok('the tour\'s simulator lines cut on the words that name a place: every word is said, inside its clip, and held longer than the swing',
+        cueBad.length === 0, cueBad.join(' · ') || `${Object.values(SS.TOUR_PANS).flat().length} stops`);
+      const allIsles = Object.keys(ctxT.isles).filter((k) => k !== 'shadow');
+      const unseen = allIsles.filter((k) => !isleStops.has(k));
+      ok('...and between them they visit every island but the Shadow\'s, which has its own line',
+        unseen.length === 0 && allIsles.length >= 9, unseen.join(', ') || `${isleStops.size} islands`);
+
+      /* THROUGH THE SCENE'S OWN LENS (42°, 16:9), every tenth of a second of
+         both lines. An island stop holds its island near the middle with the
+         holo-Dojo BEHIND the camera; a map stop holds the Dojo near the middle
+         and turns. */
+      const camT = new THREE.PerspectiveCamera(42, 16 / 9, 0.1, 6000);
+      const aim = (sh) => {
+        camT.position.set(sh.pos.x, sh.pos.y, sh.pos.z);
+        camT.lookAt(sh.look.x, sh.look.y, sh.look.z);
+        camT.updateMatrixWorld(true);
+      };
+      const simP = (q) => new THREE.Vector3(q.x + SIMo.dx, q.y, q.z + SIMo.dz);
+      const hub = ctxT.dojo;
+      const lensBad = [];
+      let isleF = 0;
+      let mapF = 0;
+      let worstIsle = 0;
+      let mapSeen = Infinity;
+      for (const name of Object.keys(SS.TOUR_PANS)) {
+        const len = clipT(rowOf(name).voice) + 0.5;
+        for (let t = 0; t <= len; t += 0.1) {
+          const sh = SS.shotFor(name, ctxT, t / len, t);
+          if (![sh.pos.x, sh.pos.y, sh.pos.z, sh.look.x, sh.look.y, sh.look.z].every(Number.isFinite) || sh.loc !== 'sim') {
+            lensBad.push(`${name}@${t.toFixed(1)} not a sim lens`);
+            continue;
+          }
+          if (t - sh.stop.at < SS.PAN_T) continue;  // mid-swing
+          aim(sh);
+          const h = simP(hub).project(camT);
+          if (sh.stop.isle) {
+            isleF++;
+            const v = simP(ctxT.isles[sh.stop.isle]).project(camT);
+            worstIsle = Math.max(worstIsle, Math.abs(v.x), Math.abs(v.y));
+            if (!inF(v, 0.5)) lensBad.push(`${name}@${t.toFixed(1)} ${sh.stop.isle} off-centre`);
+            if (h.z < 1 && inF(h)) lensBad.push(`${name}@${t.toFixed(1)} Turning Circle in frame`);
+          } else {
+            mapF++;
+            if (!inF(h, 0.3)) lensBad.push(`${name}@${t.toFixed(1)} map off the Dojo`);
+            const seen = Object.values(ctxT.isles).filter((q) => inF(simP(q).project(camT))).length;
+            mapSeen = Math.min(mapSeen, seen);
+          }
+        }
+      }
+      ok('...and through the scene\'s own lens each island is held near the middle with the Turning Circle out of the frame entirely',
+        lensBad.length === 0 && isleF > 40, lensBad.slice(0, 4).join(' · ') || `${isleF} island frames, worst ${worstIsle.toFixed(2)} NDC`);
+      const m0 = SS.panShot('simHub', ctxT, 0.1);
+      const m1 = SS.panShot('simHub', ctxT, 0.9);
+      const turned = Math.abs(Math.atan2(m1.pos.z - m1.look.z, m1.pos.x - m1.look.x) - Math.atan2(m0.pos.z - m0.look.z, m0.pos.x - m0.look.x));
+      ok('...and the Turning Circle is only the middle of the whole map, turning fairly quickly, with the islands round it in frame',
+        mapF > 10 && mapSeen >= 8 && turned / 0.8 > 0.25, `${mapF} map frames, ≥${mapSeen} of ${Object.keys(ctxT.isles).length} islands, ${(turned / 0.8 * 180 / Math.PI).toFixed(0)}°/s`);
+
+      /* SHADOW LIONHEART IS THERE. Richard: "when showing the Shadow
+         Lionheart, we do not see him there, it would be cool to see him there,
+         moving around and doing his attack moves during that cutscene focusing
+         on him." He only exists while a fight is live, so the line framed an
+         empty island. One routine, inside the line: all four of his cells and
+         all three of his tells, each landing before the clip ends. */
+      const TS = await import('../src/systems/dream/tourshadow.js');
+      const SHo = await import('../src/systems/dream/shadow.js');
+      const shLen = clipT(rowOf('simShadow').voice) + 0.5;
+      const poses = new Set();
+      const landed = new Set();
+      let moved = 0;
+      let last = null;
+      for (let t = 0; t <= shLen; t += 0.05) {
+        const a = TS.shadowActAt(t);
+        poses.add(a.pose);
+        if (a.tell?.landed) landed.add(a.tell.what);
+        if (last) moved += Math.hypot(a.a - last.a, a.b - last.b);
+        last = a;
+      }
+      ok('the tour\'s Shadow Lionheart walks and lands all three of his moves inside his line, in the cells his fight uses for them',
+        poses.size === 4 && ['slam', 'sweep', 'cross'].every((w) => landed.has(w)) && moved > 8 && TS.ROUTINE_T <= shLen + 1,
+        `${poses.size} cells, landed ${[...landed].join('/')}, walked ${moved.toFixed(1)} in ${shLen.toFixed(1)}s`);
+      // ...on the ring the fight uses, which is where the lens aims.
+      const actor = new TS.TourShadow(D);
+      const c0 = actor.centre();
+      ok('...on the very ring his fight is held on, which is what the shot aims at',
+        !!c0 && !!ctxT.shadowStage && Math.hypot(c0.x - ctxT.shadowStage.x, c0.z - ctxT.shadowStage.z) < 1e-6);
+      // Through the simShadow lens, head and feet and each tell's root in frame.
+      actor.start(ctxT, SS.shotFor('simShadow', ctxT, 0, 0).pos);
+      const root = D.sim.root;
+      root.updateMatrixWorld(true);
+      const outF = [];
+      let frames = 0;
+      for (let t = 0; t <= shLen; t += 0.1) {
+        const sh = SS.shotFor('simShadow', ctxT, t / shLen, t);
+        aim(sh);
+        actor.update(t, camT);
+        const act = TS.shadowActAt(t);
+        const at = actor.spot(act);
+        const feet = root.localToWorld(new THREE.Vector3(at.x, at.y, at.z)).project(camT);
+        const head = root.localToWorld(new THREE.Vector3(at.x, at.y + SHo.SHADOW_H, at.z)).project(camT);
+        frames++;
+        if (!inF(feet, 0.9) || !inF(head, 0.9)) outF.push(`${t.toFixed(1)}s`);
+      }
+      ok('...and through the shot\'s own lens he is in the frame, head to feet, every tenth of a second of it',
+        outF.length === 0 && frames > 50, outF.slice(0, 5).join(' ') || `${frames} frames`);
+      /* HIS BLOWS COME AT THE LENS. The lens is in world coordinates and the
+         ring in the layer's; the first cut took one for the other, and in the
+         browser the slam swung off to his side. The axis his tells are drawn
+         along must point at the camera, as the layer sees it. */
+      const cam0 = SS.shotFor('simShadow', ctxT, 0, 0).pos;
+      const tc = { x: cam0.x - root.position.x - c0.x, z: cam0.z - root.position.z - c0.z };
+      const tcl = Math.hypot(tc.x, tc.z);
+      const facing = (actor.fa.x * tc.x + actor.fa.z * tc.z) / tcl;
+      ok('...and his slam and his Cross are drawn coming at the camera, not off to his side',
+        facing > 0.999, `cos ${facing.toFixed(4)}`);
+      actor.stop();
+
+      /* AND HE IS THE SCENE'S, NOT THE WORLD'S: brought on with his line, gone
+         with the next one, gone on a skip. A billboard left standing on the
+         Shadow's island would be a boss with no fight in it. */
+      const onStage = () => !!D.sim.root.getObjectByName('tour-shadow');
+      const playTo = (sc, shot) => {
+        for (let f = 0; f < 4000 && sc.active && sc.rows[sc.i]?.shot !== shot; f++) sc.update(0.25);
+      };
+      const sc1 = new SS.StoryScene({ audio: null });
+      const ctx1 = D.storyCtx();
+      ctx1.actors = { simShadow: new TS.TourShadow(D) };
+      sc1.start('tour', ST.TOUR, ctx1);
+      const before = onStage();
+      playTo(sc1, 'simShadow');
+      const during = onStage();
+      const iShadow = sc1.i;
+      for (let f = 0; f < 400 && sc1.active && sc1.i === iShadow; f++) sc1.update(0.25);
+      const after = onStage();
+      sc1.finish();
+      const sc2 = new SS.StoryScene({ audio: null });
+      const ctx2 = D.storyCtx();
+      ctx2.actors = { simShadow: new TS.TourShadow(D) };
+      sc2.start('tour', ST.TOUR, ctx2);
+      playTo(sc2, 'simShadow');
+      sc2.update(1.5);
+      const during2 = onStage();
+      sc2.skip();
+      ok('...and he is brought on with his line and taken off with the next one, or on a skip',
+        !before && during && !after && during2 && !onStage(), `before ${before} · during ${during} · after ${after} · skipped ${!onStage()}`);
+      ok('...and the real tour hands him to the scene, and the scene runs him on the clock the lens is cued on',
+        /ctx\.actors = \{ simShadow: \(this\.tourShadow \?\?= new TourShadow\(this\)\) \}/.test(readD('../src/systems/dreamdojo.js'))
+        && /this\.actor\?\.update\?\.\(cue, this\.camera\)/.test(readD('../src/systems/dream/storyscene.js')));
+    }
+
+    /* THE GALLERY'S CARDS CAN BE READ. Richard: "The subtext on the kotodama
+       orbs in the simulator is too small and can't be read. It is okay if the
+       subtext is more than 1 line long and made bigger." Every line was ONE
+       row shrunk to the card's width, so 返 Riposte's 112-character blurb came
+       out a fraction of its size. Laid out here with the real `layoutLines`
+       and a measuring stub (0.55 of the size per character, Nunito's
+       average): every row fits the card, the whole fits its height, and the
+       blurb's letters are bigger in WORLD UNITS than they were. */
+    {
+      const HO = await import('../src/systems/dream/holo.js');
+      const GAc = await import('../src/systems/dream/gallery.js');
+      const { POWER_ORBS: PO } = await import('../src/entities/powerorb.js');
+      const stub = {
+        font: '',
+        measureText(t) { return { width: String(t).length * Number(/([\d.]+)px/.exec(this.font)[1]) * 0.55 }; },
+      };
+      const PX = 96;
+      const C = GAc.GALLERY_CARD;
+      const W = Math.round(C.w * PX);
+      const H = Math.round(C.h * PX);
+      const specs = Object.values(PO).filter((x) => x?.blurb);
+      const over = [];
+      const gain = [];
+      for (const sp of specs) {
+        const how = (GAc.HOW_TO[sp.id] ?? '').replace(/\{\w+\}/g, 'SHIFT');
+        const lay = HO.layoutLines(stub, GAc.galleryCardLines(sp, how, 2), W, H);
+        for (const r of lay.rows) {
+          stub.font = r.font;
+          if (stub.measureText(r.text).width > W * 0.9 + 0.5) over.push(`${sp.id}: "${r.text.slice(0, 20)}"`);
+        }
+        if (lay.total > H * 0.92 + 0.5) over.push(`${sp.id}: ${lay.total.toFixed(0)}px tall of ${H}`);
+        // The old card: 6.6 x 3.4, blurb 0.95 of a tenth, on one row.
+        const oW = 6.6 * PX;
+        const oS = 0.95 * (3.4 * PX) / 10;
+        stub.font = `800 ${oS}px Nunito`;
+        const oMw = stub.measureText(sp.blurb).width;
+        const oldPx = oMw > oW * 0.9 ? oS * (oW * 0.9 / oMw) : oS;
+        const newPx = Math.min(...lay.rows.filter((r) => r.item.text === sp.blurb).map((r) => r.px));
+        gain.push({ id: sp.id, k: newPx / oldPx, wrapped: lay.rows.filter((r) => r.item.text === sp.blurb).length });
+      }
+      const worst = gain.reduce((a, b) => (b.k < a.k ? b : a), gain[0]);
+      const longest = gain.reduce((a, b) => (b.wrapped > a.wrapped ? b : a), gain[0]);
+      ok('the Gallery\'s cards: every row fits the card and the whole card fits its height, for every orb',
+        over.length === 0 && specs.length >= 13, over.slice(0, 4).join(' · ') || `${specs.length} cards`);
+      ok('...and every orb\'s blurb is drawn bigger than it was, wrapping onto more rows rather than shrinking',
+        gain.every((x) => x.k > 1.3) && longest.wrapped >= 3,
+        `smallest gain ${worst.id} ×${worst.k.toFixed(2)}, ${longest.id} on ${longest.wrapped} rows`);
+      /* AND THE CARD IS IN HER FRAME. The first wrapped card was 8.2 x 6.4
+         and, through her own follow camera at the pedestal, its top was at
+         NDC 1.05 — the words were bigger and the top line was gone. Her
+         camera keeps ONE bearing (`CAM_YAW`), so round a horseshoe of
+         pedestals the worst place to stand is on the far side of one, with
+         the card nearer the lens than she is. Every pedestal, her at eight
+         points round it on the station's ring (2.2) and at 1.0, her own
+         camera settled: every corner of the card inside the frame. */
+      {
+        const gal = D.gallery;
+        const SIMg = (await import('../src/world/simworld.js')).SIM;
+        const pedR = gal.pedestals.find((q) => q.spec.id === 'parry');
+        const isle = gal.isle;
+        const dir = { x: pedR.x - isle.x, z: pedR.z - isle.z };
+        const dl = Math.hypot(dir.x, dir.z);
+        let worst = { top: -9 };
+        let clear = { gap: 9 };
+        let n = 0;
+        her.realm = 'sim';
+        const wasK = D.simKittens;
+        const wasDr = D.drills;
+        D.simKittens = () => [her];
+        D.drills = [];
+        for (const ped of gal.pedestals) {
+          for (const r of [1.0, 2.2]) {
+            for (let k = 0; k < 8; k++) {
+              const a = (k / 8) * Math.PI * 2;
+              stand(her, ped.x + Math.cos(a) * r + SIMg.dx, ped.z + Math.sin(a) * r + SIMg.dz, isle.y);
+              her.camTarget.copy(her.position);
+              her.camera.position.copy(her.position);
+              D._cam = [];
+              settle(her, 2);
+              for (let f = 0; f < 90; f++) gal.update(1 / 60);
+              ped.card.faceCamera(her.camera);
+              ped.card.updateMatrixWorld(true);
+              const corners = [-1, 1].flatMap((sx) => [-1, 1].map((sy) => ped.card.localToWorld(new THREE.Vector3(sx * C.w / 2, sy * C.h / 2, 0)).project(her.camera)));
+              const top = Math.max(...corners.map((v) => Math.max(v.y, Math.abs(v.x))));
+              n++;
+              if (top > worst.top) worst = { top, id: ped.spec.id, r, k };
+              // ...and it hangs over her, not across her: the card's lower
+              // edge is above her ears on screen wherever she stands.
+              const ears = new THREE.Vector3(her.position.x, her.position.y + 2.2, her.position.z).project(her.camera);
+              const gap = Math.min(...corners.map((v) => v.y)) - ears.y;
+              if (gap < clear.gap) clear = { gap, id: ped.spec.id, r, k };
+            }
+          }
+        }
+        D.simKittens = wasK;
+        D.drills = wasDr;
+        for (const q of gal.pedestals) { q.show = 0; q.card.visible = false; }
+        her.realm = null;
+        park(her);
+        D._cam = [];
+        ok('...and from anywhere round any pedestal she can read it from, the whole card is inside her own camera\'s frame',
+          worst.top <= 0.95 && n === gal.pedestals.length * 16, `worst ${worst.top.toFixed(2)} NDC (${worst.id}, ${worst.r} out, point ${worst.k}) over ${n} spots`);
+        ok('...and it hangs over her rather than across her: its lower edge is above her head on screen at every one of them',
+          clear.gap > 0, `closest ${clear.gap.toFixed(2)} NDC (${clear.id}, ${clear.r} out, point ${clear.k})`);
+        /* ONE CARD PER KITTEN. Every card within 9 of her lit, and the
+           pedestals are 8 apart: standing at one put both neighbours' cards
+           up beside it, which at 10 wide overlap. */
+        const was = D.simKittens;
+        const her2 = { position: new THREE.Vector3(pedR.x - (dir.x / dl) * 2 + SIMg.dx, isle.y, pedR.z - (dir.z / dl) * 2 + SIMg.dz), index: 0, style: { name: 'Ember' }, name: 'Ember' };
+        const within9 = gal.pedestals.filter((q) => Math.hypot(her2.position.x - SIMg.dx - q.x, her2.position.z - SIMg.dz - q.z) < 9).length;
+        D.simKittens = () => [her2];
+        for (const q of gal.pedestals) q.show = 0;
+        for (let f = 0; f < 60; f++) gal.update(1 / 60);
+        D.simKittens = was;
+        const litNow = gal.pedestals.filter((q) => q.card.visible).map((q) => q.spec.id);
+        for (const q of gal.pedestals) { q.show = 0; q.card.visible = false; }
+        ok('...and a kitten at a pedestal lights that one card, not its neighbours\' as well',
+          litNow.length === 1 && litNow[0] === 'parry' && within9 >= 2, `${litNow.join(',')} lit, ${within9} within reach`);
+      }
+      ok('...and the pedestals draw that card, at that size',
+        /ped\.card\.set\(galleryCardLines\(s, this\.howTo\(p, s\.id\), stars\), s\.color\)/.test(readD('../src/systems/dream/gallery.js'))
+        && /new HoloPanel\(\{ w: GALLERY_CARD\.w, h: GALLERY_CARD\.h/.test(readD('../src/systems/dream/gallery.js')));
+    }
     ok('the inspector routes the Dream Dojo card back to its own row, and the tour closes the menu',
       /payneDojo: 'dojo'/.test(readD('../src/systems/inspector.js')) && /next === 'scene'/.test(readD('../src/systems/inspector.js')));
   }
@@ -38743,14 +39138,16 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
        chroma route (eat and bless are on the old white route, whose alpha is
        the whole frame until the loader keys it, so there is nothing to read
        off the file). Measured at generation: 1.00-1.02, feet within 8px. */
-    const POSES = ['eat', 'bless', 'warp', 'inhale', 'scared', 'sweep'];
+    /* SEVEN SINCE 返 RIPOSTE. Richard: "Need to generate VR sprites for the
+       Riposte ability for the players and use that in the simulation." */
+    const POSES = ['eat', 'bless', 'warp', 'inhale', 'scared', 'sweep', 'riposte'];
     const bake = readD('./sprite-bake.mjs');
     const missing = ['ember', 'frost'].flatMap((s) => POSES.filter((p) =>
       !existsSync(new URL(`../public/sprites/kittens/${s}/vr_${p}.png`, import.meta.url))
       || !existsSync(new URL(`../docs/art-masters/${s}_vr_${p}.png`, import.meta.url))).map((p) => `${s}/${p}`));
-    ok('all six special poses exist in the headset, for both sheets, baked from a kept master',
+    ok('all seven special poses exist in the headset, for both sheets, baked from a kept master',
       missing.length === 0 && /\$\{s\}_vr_\$\{p\}\.png/.test(bake) && POSES.every((p) => bake.includes(`'${p}'`)),
-      missing.join(' ') || '12 poses');
+      missing.join(' ') || '14 poses');
     const box = (file) => {
       const { w, h, d } = readPNG(new URL(file, import.meta.url));
       let top = h;
@@ -38762,14 +39159,30 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     };
     const drift = [];
     for (const s of ['ember', 'frost']) {
-      for (const p of ['warp', 'inhale', 'scared', 'sweep']) {
+      for (const p of ['warp', 'inhale', 'scared', 'sweep', 'riposte']) {
         const a = box(`../public/sprites/kittens/${s}/${p}.png`);
         const b = box(`../public/sprites/kittens/${s}/vr_${p}.png`);
         const k = b.h / a.h;
         if (Math.abs(k - 1) > 0.05 || Math.abs(b.foot - a.foot) > 16) drift.push(`${s}/${p} ${k.toFixed(2)} ${b.foot - a.foot}px`);
       }
     }
-    ok('...each the same size and stood on the same line as the pose she does at home', drift.length === 0, drift.join(', ') || '8 measured');
+    ok('...each the same size and stood on the same line as the pose she does at home', drift.length === 0, drift.join(', ') || '10 measured');
+    /* 返 THE HEADSET STANCE GUARDS THE SAME SIDE. Its billboard mirrors, and
+       is told `artFacesRight` — so the blade must stick out to the right of
+       the headset drawing too, measured the same way as the home one (top
+       35% of the rows), or a guard to screen-right would show her covering
+       the left. */
+    const vreach = ['ember', 'frost'].map((s) => {
+      const { w, h, d } = readPNG(new URL(`../public/sprites/kittens/${s}/vr_riposte.png`, import.meta.url));
+      let lo = w; let hi = -1;
+      for (let y = 0; y < Math.floor(h * 0.35); y++) {
+        for (let x = 0; x < w; x++) if (d[(y * w + x) * 4 + 3] > 128) { lo = Math.min(lo, x); hi = Math.max(hi, x); }
+      }
+      return { s, left: 0.5 - lo / w, right: hi / w - 0.5 };
+    });
+    ok('...and the headset Riposte stance holds its blade out to the RIGHT, as its mirrored billboard is told',
+      vreach.every((r) => r.right - r.left > 0.1) && /\['ripostePose', 'riposte', 1\]/.test(readD('../src/entities/player.js')),
+      vreach.map((r) => `${r.s} ${r.left.toFixed(2)}/${r.right.toFixed(2)}`).join(' '));
     ok('...and the player swaps every one of them with the turnaround, keeping her home drawing for any that is missing',
       /for \(const \[key, file, k\] of SIM_POSES\)/.test(readD('../src/entities/player.js'))
       && /vr_\$\{f\}\.png/.test(readD('../src/main.js')));

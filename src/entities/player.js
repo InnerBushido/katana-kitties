@@ -389,6 +389,11 @@ const SIM_POSES = [
   ['breathPose', 'inhale', 1],
   ['scaredPose', 'scared', 1],
   ['sweepPose', 'sweep', 1],
+  /* 返 Riposte's stance, sized as `setRiposteArt` sizes it. Its billboard
+     MIRRORS and a second look keeps that — `mirror` and `artFacesRight` are
+     the billboard's, not the look's — so the headset drawing guards the same
+     side the home one does. */
+  ['ripostePose', 'riposte', 1],
 ];
 
 export class Player {
@@ -1652,6 +1657,8 @@ export class Player {
     });
     this.ripostePose.visible = false;
     this.group.add(this.ripostePose);
+    // Handed over after she is already in the headset: put it on now.
+    if (this.simLook) this.setSimLook(true);
   }
 
   /* ------------------------ Powerup Kotodama ---------------------------- */

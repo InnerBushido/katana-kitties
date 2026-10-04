@@ -937,7 +937,9 @@ level), so a kitten standing on the line does not restart the piece. A kitten
 on a mount counts as 0, and the loudest kitten wins.
 
 **The dragon: "the dragon is not flying through, it is getting blocked, but
-the player is able to fly through still."** The dragon is hung off its rider
+the player is able to fly through still."** (The push below was a tube round
+the axis; it is the dome's own shape now, and slides —
+[below](#the-gear-voice-the-headset-riposte-the-tours-islands-the-cards-and-the-dome).) The dragon is hung off its rider
 (`Player._updateFlight`), so pushing the DRAGON moved a body that was put back
 under her next frame. The rider is pushed now, and the dragon goes with her
 (both 20.50 from the centre after the push), with a toast saying why. The dome
@@ -949,8 +951,10 @@ on the surface and slides her off (47.3 out in the check), then the fall
 respawns her. The door hop is untouched.
 
 **Lionheart's two talks.** Both are in `lecture.js`.
-- **HE SAW THAT.** Trying the wall or dropping from a dragon sets the `cheat`
-  flag, and he yells as a bubble (`yellWall` / `yellDrop`): "in a funny and
+- **HE SAW THAT.** ~~Trying the wall or dropping from a dragon sets the `cheat`
+  flag~~ Only DROPPING onto the dome sets the `cheat` flag (Richard: "that
+  should only get triggered if Lionheart executes his 'lion_yell_drop'
+  voice"), and he yells as a bubble (`yellWall` / `yellDrop`): "in a funny and
   overly excited and berating way". Only `yellDrop` is VOICED: the wall yell's
   clip was cut ("not a good voice and is too loud and aggressive"), so it is a
   bubble and a toast and nothing louder.
@@ -1129,6 +1133,137 @@ three stood up on their own; what was missing was everything behind them.
   and lent it is the sentence on the orb's card, the way Long Guard's beam is.
   Measured live: guard 0.11 s into the tell, blow at 0.53, caught with Ma; the
   same timing with the window set bare, hit.
+
+## The gear voice, the headset Riposte, the tour's islands, the cards and the dome
+
+Richard's list after the rare orbs were merged (branch
+`mixed/dojo-gear-voice-riposte-vr-tour-orbtext-dome`). Each note is quoted, with
+what was actually wrong.
+
+**"The 'All your gear' voice sounds like the wrong voice for Lionheart ... In
+the least, the 'lion_gear_suit' voice needs to be re-recorded as it is loud,
+aggressive, and doesn't sound like Lionheart."** It was the right voice. All
+three `lion_gear_*` renders were Barrett, read off their job's voice id. The
+card said "SUIT UP!" in capitals, and on this preset capitals and "!" are how a
+line is shouted. There is no style prompt; the line is the prompt. Measured
+pitch was 128 Hz for the suit line against his normal 86. Both the suit and
+again lines are now written quietly ("Face the front... and suit up.") and
+re-rendered. They now measure 86 and 89 Hz. `lion_gear_first` was already 86
+and is unchanged. See [voices.md](voices.md#the-front-door-26-more-of-his-lines-9-more-of-hers).
+
+**"Need to generate VR sprites for the Riposte ability for the players and use
+that in the simulation."** There is a seventh headset pose,
+`vr_riposte`, made the way the other six were.
+[art.md](art.md#the-six-special-poses-in-the-headset) has the details.
+
+**THE TOUR'S SIMULATOR LINES.** Richard: "during this entire cutscene segment in
+the simulator, we focus a lot on the Dojo of the Turning Circle area, but not
+much on the other islands ... It would be good if the camera can pan through
+each of the islands and different activities ... and likely no need to focus
+on the Dojo of the Turning Circle unless it is directly mentioned in the dialog
+or if to just give a brief zoomed out view of the entire map area while
+rotating fairly quickly."
+- **What was wrong.** `simHub` was an eleven-second orbit of the holo-Dojo.
+  `simIsles` swung wide but aimed halfway between the Dojo and the islands'
+  average, so it was on the Dojo too.
+- **Now: `TOUR_PANS` in `storyscene.js`.** It is a list of stops per line, each
+  cued on the WORD that names a place, at the second that word is said. The
+  times were measured off the clip with silencedetect (−35 dB, 0.12 s), and the
+  camera reads the clip's own playhead.
+  - *Kotodama* → the Gallery; *clan powers* → the Trial Hall; *real sword
+    skills* → the Range; *how to fight* → the Arena School; *every single day*
+    → the Holo-Sentries.
+  - *aim* → Kudamono Storm; *timing* → Bamboo; *kata* → Kata Trace; *the maths
+    of the circle* → the Sine Gauntlet.
+  - That is every island but the Shadow's, which has its own line.
+- **The Turning Circle is only ever the middle of the map**: a wide frame (430
+  out, 330 up) turning at 18°/s. It opens both lines and closes the second on
+  "Earn stars".
+- **Each swing takes 0.6 s.** The shortest hold is 1.1 s.
+- **world-check** puts both lines through the scene's own lens (42°, 16:9)
+  every tenth of a second:
+  - each island is held within 0.08 NDC of the middle, with the Turning Circle
+    out of the frame;
+  - the map frames hold at least 8 of the 10 islands;
+  - every cue word is in its line and inside its clip.
+
+**SHADOW LIONHEART IN THE TOUR.** Richard: "when showing the Shadow Lionheart,
+we do not see him there, it would be cool to see him there, moving around and
+doing his attack moves during that cutscene focusing on him."
+- **Why he was missing.** He exists only while a fight is live, so the shot
+  framed an empty island.
+- **`dream/tourshadow.js` is the scene's own actor.** It is a billboard of his
+  sheet plus three floor tells, never the real `ShadowBoss` (a Target, which
+  would start counting a fight).
+  - `ctx.actors.simShadow` is started with his line and stopped by the next
+    line or by a skip.
+  - It runs on the same clock as the lens.
+- **His routine.** Walk, SLAM, walk, SWEEP, walk, CROSS, all inside the 8.6 s
+  line. Each tell lasts exactly as long as the real one, and each move shows
+  the cell his fight shows for it.
+- **The shot is aimed at his ring** (the fight's own `ARENA_AT`).
+- **Measured in the browser, as a share of the frame's height:**
+  - 34 → 24 back: a fifth;
+  - 30 → 20 back: 24–37%;
+  - 22 → 16 back (now): 33–46%.
+- **First cut, seen in the browser:** his slam swung off to his side. The
+  tells' "toward the camera" axis was taken from the lens in world coordinates
+  against a ring in the layer's, so it pointed along the simulator's offset
+  from the town. world-check now asks that the axis points at the camera
+  (cos 1.0000).
+
+**THE GALLERY'S CARDS.** Richard: "The subtext on the kotodama orbs in the
+simulator is too small and can't be read. It is okay if the subtext is more
+than 1 line long and made bigger."
+- **Lines can wrap now.** Every line used to be one row shrunk to the card's
+  width, so the 112-character Riposte blurb came out at a fraction of its size.
+  A line marked `wrap` now breaks into rows at its own size (`layoutLines`,
+  `holo.js`). If the rows do not fit, the whole card shrinks uniformly, never
+  clips.
+- **The blurb's letters are 0.44 units tall.** Every orb's blurb is at least
+  1.37× the old size, and the longest runs to four or five rows.
+- **The card is 10 × 5.2 and hangs over the kitten reading it, not over the
+  pedestal.** Her camera is high and keeps one bearing. world-check stands her
+  at 16 points round each of the 13 pedestals, settles her own camera and
+  measures where the card's corners land:
+  - 8.2 × 6.4 over the pedestal: top at 1.05;
+  - 10 × 5.2 over the pedestal: 1.08 with her on its far side, because things
+    beyond her ride UP the frame;
+  - hung toward the lens: in frame, but lying across her by 0.22–0.33;
+  - halfway: 1.03;
+  - over her: top 0.90 at worst, with its lower edge 0.17 clear of her head.
+- **Only her nearest card lights.** The pedestals are 8 apart and a card used
+  to light for any kitten within 9, so her two neighbours' cards were up as
+  well.
+
+**THE DOME.** Richard: "Dragon outside of the Dream Dojo is getting stuck on the
+shell of the dojo island ... seems there is a barrier above the dream dojo
+preventing dragon from flying directly above it, let's remove that, we want the
+player and dragon to be able to fly next to the dome".
+- **The barrier was a tube.** Every animal was held 20.5 from the axis, from
+  12 under the deck to 4 over the crown, so the sky beside the glass and above
+  it was walled off.
+- **It had no slide.** A dragon flown at it stopped dead.
+- **The dragon itself stuck on the shell.** Her dismount aims a dragon at the
+  ground under her (`landAt`), and over the dome that ground is the pad, so it
+  sat on the glass trying to land through it.
+- **Now `animalContact` is the dome's real shape**, plus 1.5 of room: the
+  hemisphere, the rim under it and the cone of rock below.
+  - It pushes along the surface's normal and removes only the inward part of
+    the velocity, so a dragon flown straight at the dome rides up over the
+    crown and down the far side. In the check it ended 64 past the middle,
+    never closer than 20.5.
+  - A riderless dragon whose home is over the dome is sent to the foot of the
+    stones instead.
+
+**THE APOLOGY.** Richard: "If player on dragon or panda mount run into the shell
+of the dojo, it should not trigger the apology from Lionheart when player
+enters, that should only get triggered if Lionheart executes his
+'lion_yell_drop' voice."
+- **Only the drop sets `cheat` now**: a kitten coming down onto the top.
+- A mount brushing the dome gets a toast and nothing more.
+- A kitten on foot at the wall still gets the wall bubble and the toast, but
+  no apology is owed.
 
 ## Voice
 

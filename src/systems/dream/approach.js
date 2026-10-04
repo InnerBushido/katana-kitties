@@ -29,8 +29,9 @@ import { GATE, inRail, inGateway, throughGate, railCorrect } from './gate.js';
    dojo, so we can put a railing all around the dojo that ends at the
    entrance to force players to enter from the entrance." 
 
-   WHAT IT REMEMBERS is two flags per kitten — `cheat` (she tried the wall or a
-   dragon) and `fell` (she fell off the stones) — which are the two things
+   WHAT IT REMEMBERS is two flags per kitten — `cheat` (she dropped onto the
+   dome, the one attempt Lionheart yells at with his voice) and `fell` (she
+   fell off the stones) — which are the two things
    Lionheart has something to say about (dream/lecture.js). Nothing here
    decides a story; it only notices.
 
@@ -158,8 +159,16 @@ export class Approach {
           v.x += hx * SLIDE * dt;
           v.z += hz * SLIDE * dt;
           p.onGround = false;
-          s.cheat = true;
-          this._yell(p, s, hit.n.y > 0.5 ? 'drop' : 'wall');
+          /* ONLY THE DROP EARNS THE APOLOGY. Richard: "it should not trigger
+             the apology from Lionheart when player enters, that should only
+             get triggered if Lionheart executes his 'lion_yell_drop' voice."
+             HONOR opens "I'm sorry I shouted", and the drop is the one yell
+             with a voice — the wall's is a bubble (dreamdojo.js
+             `LION_VOICE`), and an animal brushing the glass is not a yell at
+             all now. So brushing the side on foot is told off and forgotten. */
+          const kind = hit.n.y > 0.5 ? 'drop' : 'wall';
+          if (kind === 'drop') s.cheat = true;
+          this._yell(p, s, kind);
         }
       }
 

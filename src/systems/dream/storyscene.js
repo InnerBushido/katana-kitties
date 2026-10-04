@@ -74,6 +74,123 @@ export function marks(lion, padCentre, n) {
 }
 
 /**
+ * THE TOUR'S SIMULATOR LINES PAN THE ISLANDS, ONE PER WORD THAT NAMES ONE.
+ *
+ * Richard: "during this entire cutscene segment in the simulator, we focus a
+ * lot on the Dojo of the Turning Circle area, but not much on the other
+ * islands with different activities. It would be good if the camera can pan
+ * through each of the islands and different activities that there is to do,
+ * and likely no need to focus on the Dojo of the Turning Circle unless it is
+ * directly mentioned in the dialog or if to just give a brief zoomed out view
+ * of the entire map area while rotating fairly quickly." `simHub` was a slow
+ * orbit of the holo-Dojo for all eleven seconds of "you learn your Kotodama,
+ * your clan powers...", and `simIsles` a wide swing whose aim sat halfway
+ * between the Dojo and the islands' average — the Dojo again.
+ *
+ * Now each line is a list of STOPS, cued on the word that names a place
+ * (`word`) at the second that word is said (`at`, measured off the clip with
+ * silencedetect at -35dB, 0.12s: the phrase starts after each pause). The
+ * Turning Circle is in neither list; the wide `map` frame — the whole
+ * archipelago, turning — opens both lines and closes the second, on "Earn
+ * stars" where the line is about all of it. `world-check` asks that every
+ * `word` is in its row's text, and that every stop is in its clip.
+ *
+ * WHICH ISLAND FOR WHICH WORD (dream/islands.js):
+ *   learn:  Kotodama → GALLERY, clan powers → TRIAL HALL, real sword skills →
+ *           TAMESHIGIRI RANGE, how to fight → ARENA SCHOOL, every single day
+ *           → HOLO-SENTRIES (the one that shoots back);
+ *   isles:  aim → KUDAMONO STORM (cut it out of the air), timing → BAMBOO (a
+ *           watcher's sweep is a rhythm to walk through), kata → KATA TRACE,
+ *           the maths of the circle → SINE GAUNTLET.
+ * That is every island but the Shadow's, which has its own line next.
+ */
+export const TOUR_PANS = {
+  simHub: [
+    { at: 0, word: 'In here', map: true },
+    { at: 1.0, word: 'Kotodama', isle: 'gallery' },
+    { at: 2.45, word: 'clan powers', isle: 'hall' },
+    { at: 3.9, word: 'real sword skills', isle: 'range' },
+    { at: 6.05, word: 'how to fight', isle: 'school' },
+    { at: 7.6, word: 'every single day', isle: 'sentries' },
+  ],
+  simIsles: [
+    { at: 0, word: 'Every island', map: true },
+    { at: 2.2, word: 'aim', isle: 'storm' },
+    { at: 3.3, word: 'timing', isle: 'bamboo' },
+    { at: 4.35, word: 'kata', isle: 'kata' },
+    { at: 5.1, word: 'maths of the circle', isle: 'sine' },
+    { at: 7.85, word: 'Earn stars', map: true },
+  ],
+};
+/** How long a swing from one stop to the next takes. Under the shortest stop
+ *  (aim → timing, 1.1s), so every island is held still for a moment. */
+export const PAN_T = 0.6;
+/** The clips' measured lengths, for a lens asked with no clock (`k` only). */
+const PAN_LINE_T = { simHub: 10.8, simIsles: 11.6 };
+/** The wide frame: how far out and up from the holo-Dojo, and how fast it
+ *  turns (radians a second) — "rotating fairly quickly". */
+export const MAP_FRAME = { r: 430, h: 330, spin: 0.32 };
+/** An island's frame: back toward the hub by this many of its radii, and up
+ *  by this many. Measured: a 24-radius island fills ~57% of a 16:9 frame. */
+export const ISLE_FRAME = { back: 2.3, up: 1.25, swing: 0.12, drift: 0.05 };
+
+const angOf = (p, hub) => Math.atan2(p.z - hub.z, p.x - hub.x);
+const wrapA = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+
+/** One stop's lens, `t` seconds into the line, as polar round the hub:
+ *  {a, r, y} for the eye and the same for the aim. */
+function panFrame(stop, i, ctx, t) {
+  const hub = ctx.dojo;
+  const isle = stop.isle && ctx.isles?.[stop.isle];
+  if (!isle) {
+    const u = ctx.u ?? { x: 1, z: 0 };
+    const a0 = Math.atan2(u.z, u.x);
+    const a = a0 + MAP_FRAME.spin * t;
+    return { eye: { a, r: MAP_FRAME.r, y: hub.y + MAP_FRAME.h }, aim: { a, r: 0, y: hub.y } };
+  }
+  const ai = angOf(isle, hub);
+  const D = Math.hypot(isle.x - hub.x, isle.z - hub.z);
+  // Alternate sides, and drift a little the way the next swing will go.
+  const side = i % 2 ? 1 : -1;
+  const a = ai + side * ISLE_FRAME.swing + ISLE_FRAME.drift * (t - stop.at) * side;
+  return {
+    eye: { a, r: Math.max(20, D - isle.r * ISLE_FRAME.back), y: isle.y + isle.r * ISLE_FRAME.up },
+    aim: { a: ai, r: D, y: isle.y + 2 },
+  };
+}
+
+/** The pan's lens at `t`: the stop that is live, swung into from the last. */
+export function panShot(name, ctx, t) {
+  const stops = TOUR_PANS[name];
+  const hub = ctx.dojo;
+  let i = 0;
+  for (let j = 0; j < stops.length; j++) if (t >= stops[j].at) i = j;
+  const cur = panFrame(stops[i], i, ctx, t);
+  let f = cur;
+  if (i > 0 && t - stops[i].at < PAN_T) {
+    const prev = panFrame(stops[i - 1], i - 1, ctx, t);
+    const e = ease((t - stops[i].at) / PAN_T);
+    const mix = (p, q) => ({ a: p.a + wrapA(q.a - p.a) * e, r: lerp(p.r, q.r, e), y: lerp(p.y, q.y, e) });
+    f = { eye: mix(prev.eye, cur.eye), aim: mix(prev.aim, cur.aim) };
+  }
+  const at = (q) => v3(hub.x + SIM.dx + Math.cos(q.a) * q.r, q.y, hub.z + SIM.dz + Math.sin(q.a) * q.r);
+  return { pos: at(f.eye), look: at(f.aim), loc: 'sim', stop: stops[i] };
+}
+
+/**
+ * THE SHADOW'S SHOT: on his ring, from the hub's side, where the cutscene's
+ * own Shadow Lionheart (dream/tourshadow.js) walks and swings. It looked at
+ * the island's middle from 42-60 back with nobody on it; now it is on the
+ * ring's middle (`ctx.shadowStage`, the fight's own `ARENA_AT`), 22 → 16
+ * back. Measured in the browser, as a share of the frame's height: 34 → 24
+ * back had him at a fifth; 30 → 20 at 24-37%. "Focusing on him" wants more,
+ * and his blows are drawn coming at the lens, so the lens can come in until
+ * the slam's far end runs off the bottom edge. `world-check` puts him,
+ * head to feet, through this lens at every tenth of a second of the line.
+ */
+export const SHADOW_SHOT = { from: { back: 22, up: 9, off: 6 }, to: { back: 16, up: 6.5, off: 3.5 }, aimUp: 3.2 };
+
+/**
  * The camera for a named shot, `k` (0..1) through its line.
  *
  * `ctx` is the places: `arcade` {x,y,z,r}, `lion`, `sign` {x,y,z}, `stones`,
@@ -82,7 +199,7 @@ export function marks(lion, padCentre, n) {
  * `cast` (the kittens' marks for a talk). Returns {pos, look, loc}; `loc` is
  * 'real' or 'sim' and decides where a dip to black goes.
  */
-export function shotFor(name, ctx, k = 0) {
+export function shotFor(name, ctx, k = 0, t = null) {
   const A = ctx.arcade;
   const u = ctx.u;
   const v = ctx.v;
@@ -149,32 +266,20 @@ export function shotFor(name, ctx, k = 0) {
       return { pos: lerpP(from, to, e), look: mid, loc: 'real' };
     }
     /* --- the tour, in the simulator --- */
-    case 'simHub': {
-      const c = sim(v3(ctx.dojo.x, ctx.dojo.y, ctx.dojo.z));
-      const a = lerp(0.2, -0.2, e);
-      const bx = -u.x * Math.cos(a) + v.x * Math.sin(a);
-      const bz = -u.z * Math.cos(a) + v.z * Math.sin(a);
-      return { pos: v3(c.x + bx * 95, c.y + 70, c.z + bz * 95), look: v3(c.x, c.y, c.z), loc: 'sim' };
-    }
-    case 'simIsles': {
-      const c = sim(v3(ctx.dojo.x, ctx.dojo.y, ctx.dojo.z));
-      const isles = Object.values(ctx.isles ?? {}).filter((q) => q.key !== 'shadow' && q.key !== 'school');
-      // Swing round the hub from the islands on her left to those on her right.
-      const a = lerp(-0.9, 0.9, e);
-      const bx = -u.x * Math.cos(a) + v.x * Math.sin(a);
-      const bz = -u.z * Math.cos(a) + v.z * Math.sin(a);
-      const look = isles.length
-        ? sim(isles.reduce((s, q) => v3(s.x + q.x / isles.length, s.y + q.y / isles.length, s.z + q.z / isles.length), v3(0, 0, 0)))
-        : c;
-      return { pos: v3(c.x + bx * 150, c.y + 95, c.z + bz * 150), look: lerpP(c, look, 0.5), loc: 'sim' };
-    }
+    case 'simHub':
+    case 'simIsles':
+      // Cued on words: `t` is the clip's own clock; without one, `k` of it.
+      return panShot(name, ctx, t ?? k * PAN_LINE_T[name]);
     case 'simShadow': {
       const s = ctx.isles?.shadow ?? ctx.isles?.school;
-      const c = s ? sim(s) : sim(v3(ctx.dojo.x + u.x * 200, ctx.dojo.y, ctx.dojo.z + u.z * 200));
+      const st = ctx.shadowStage ?? s;
+      const c = st ? sim(st) : sim(v3(ctx.dojo.x + u.x * 200, ctx.dojo.y, ctx.dojo.z + u.z * 200));
       const f = s?.fwd ?? u;
-      const from = v3(c.x - f.x * 60 + v.x * 18, c.y + 34, c.z - f.z * 60 + v.z * 18);
-      const to = v3(c.x - f.x * 42 + v.x * 10, c.y + 24, c.z - f.z * 42 + v.z * 10);
-      return { pos: lerpP(from, to, e), look: v3(c.x, c.y + 4, c.z), loc: 'sim' };
+      const sd = { x: -f.z, z: f.x };
+      const fr = SHADOW_SHOT.from;
+      const to = SHADOW_SHOT.to;
+      const p = (q) => v3(c.x - f.x * q.back + sd.x * q.off, c.y + q.up, c.z - f.z * q.back + sd.z * q.off);
+      return { pos: lerpP(p(fr), p(to), e), look: v3(c.x, c.y + SHADOW_SHOT.aimUp, c.z), loc: 'sim' };
     }
     /* --- back with him --- */
     case 'lionHero':
@@ -298,13 +403,29 @@ export class StoryScene {
     return Math.max(3, row.text.split(/\s+/).length / WORDS_PER_S + 1.2);
   }
 
+  /** The actor a shot brings on (`ctx.actors[shot]`), started with the
+   *  line and stopped with it. */
+  _stopActor() {
+    this.actor?.stop?.();
+    this.actor = null;
+  }
+
   _next() {
     this.i += 1;
     this.t = 0;
     this.lineEndedAt = null;
     this.typed = 0;
+    this._stopActor();
     const row = this.rows[this.i];
     if (!row) { this.finish(); return; }
+    /* A SHOT MAY BRING ON AN ACTOR — the tour's Shadow Lionheart, who
+       otherwise exists only while a fight is live. Owned by the scene: on
+       with the line, off with the next one, off on a skip. */
+    const act = this.ctx?.actors?.[row.shot];
+    if (act) {
+      act.start?.(this.ctx, shotFor(row.shot, this.ctx, 0, 0).pos);
+      this.actor = act;
+    }
     const prev = this.rows[this.i - 1];
     const prevLoc = prev ? shotFor(prev.shot, this.ctx, 1).loc : null;
     this.dipAt = prev && prevLoc !== shotFor(row.shot, this.ctx, 0).loc ? 0 : -1;
@@ -351,6 +472,7 @@ export class StoryScene {
   finish() {
     if (!this.active) return;
     this.active = false;
+    this._stopActor();
     this.el?.classList.add('hidden');
     if (this.fadeEl) this.fadeEl.style.opacity = '0';
     this.game.audio?.stopSpeaking?.();
@@ -376,9 +498,16 @@ export class StoryScene {
     if (!row) { this.finish(); return false; }
 
     const k = Math.min(1, this.t / this.dur);
-    const s = shotFor(row.shot, this.ctx, k);
+    /* The pans are cued on WORDS, at seconds measured off the clip — so they
+       read the clip's own playhead when it is playing, not the line's clock,
+       which starts before a clip that is still buffering. */
+    const cue = this.voiceEl && this.voiceEl.currentTime > 0 ? this.voiceEl.currentTime : this.t;
+    const s = shotFor(row.shot, this.ctx, k, cue);
     this.camera.position.set(s.pos.x, s.pos.y, s.pos.z);
     this.camera.lookAt(s.look.x, s.look.y, s.look.z);
+    this.camera.updateMatrixWorld?.();
+    // On the same clock as the lens: the Shadow's Cross is cued on a word.
+    this.actor?.update?.(cue, this.camera);
     /* WHICH WORLD THIS LENS IS IN, for the renderer (`Game._renderView`).
        A pane is drawn with the simulator in it only when its kittens are in
        the simulator, and a scene's lens has no kittens — so the tour's three

@@ -31,6 +31,7 @@ import { Lecture } from './dream/lecture.js';
 import { GearRoom, GEAR_ITEMS } from './dream/gear.js';
 import { gateFrame, buildGate } from './dream/gate.js';
 import { TOUR, GEAR_LINES, GEAR_VOICE } from './dream/stories.js';
+import { TourShadow } from './dream/tourshadow.js';
 
 /** Her single-cell pose billboards, which the tube puppet mirrors. */
 const PUPPET_POSES = ['eatPose', 'blessPose', 'warpPose', 'breathPose', 'scaredPose', 'sweepPose'];
@@ -70,6 +71,58 @@ export const ARCADE = { x: -162, z: 2, r: 14, y: 33 };
 /** The dome that keeps animals out. A little larger than the pad so a dragon
  *  is turned away before its wing is over the deck. */
 export const DOME_R = 19;
+/** How far outside the dome's skin an animal is held — a wing's width. */
+export const ANIMAL_PAD = 1.5;
+
+/**
+ * WHERE THE DOME PUTS AN ANIMAL at `pos`, or null if it is clear: the
+ * corrected point and the outward normal. Pure, for `world-check`.
+ *
+ * THE DOME'S OWN SHAPE, NOT A TUBE. Richard: "Dragon outside of the Dream Dojo
+ * is getting stuck on the shell of the dojo island. Also, seems there is a
+ * barrier above the dream dojo preventing dragon from flying directly above
+ * it, let's remove that, we want the player and dragon to be able to fly next
+ * to the dome". It WAS a tube — every animal within DOME_R + 1.5 of the pad's
+ * axis, from 12 below the deck to 4 above the dome's crown, pushed straight
+ * out sideways. So at the dome's shoulder the wall stood 20.5 out where the
+ * glass is 7, a dragon could not pass over the crown at all, and a push that
+ * is only ever sideways has nothing in it to slide along: a dragon flying at
+ * the middle stopped dead against air.
+ *
+ * Now three pieces, each the thing that is drawn there:
+ *  · the DOME — a hemisphere on the mesh's own centre, pushed out along its
+ *    normal, so a dragon at the crown is lifted over it and one at the
+ *    shoulder rolls round it;
+ *  · its RIM — under the glass's edge, the deck's own depth, so nothing flies
+ *    in under the hem;
+ *  · the ROCK the pad sits on — the upside-down cone that is drawn there.
+ */
+export function animalContact(pos) {
+  const R = DOME_R + ANIMAL_PAD;
+  const cy = ARCADE.y - 0.5;
+  const dx = pos.x - ARCADE.x;
+  const dz = pos.z - ARCADE.z;
+  const h = Math.hypot(dx, dz);
+  const side = (r) => (h > 1e-3
+    ? { x: ARCADE.x + (dx / h) * r, y: pos.y, z: ARCADE.z + (dz / h) * r, n: { x: dx / h, y: 0, z: dz / h } }
+    : { x: ARCADE.x + r, y: pos.y, z: ARCADE.z, n: { x: 1, y: 0, z: 0 } });
+  if (pos.y >= cy) {
+    const dy = pos.y - cy;
+    const r = Math.hypot(h, dy);
+    if (r >= R) return null;
+    if (r < 1e-4) return { x: ARCADE.x, y: cy + R, z: ARCADE.z, n: { x: 0, y: 1, z: 0 } };
+    const n = { x: dx / r, y: dy / r, z: dz / r };
+    return { x: ARCADE.x + n.x * R, y: cy + n.y * R, z: ARCADE.z + n.z * R, n };
+  }
+  if (pos.y >= ARCADE.y - ROCK.rim) return h < R ? side(R) : null;
+  const top = ARCADE.y - ROCK.top;
+  if (pos.y < top - ROCK.h) return null;
+  const rr = ROCK.r * (pos.y - (top - ROCK.h)) / ROCK.h + ANIMAL_PAD;
+  return h < rr ? side(rr) : null;
+}
+/** The rock under the pad, as it is BUILT below: its top radius, its top's
+ *  depth under the deck, its height; and how deep the dome's rim reaches. */
+export const ROCK = { r: ARCADE.r * 0.95, top: 1.4, h: 16, rim: 2 };
 /** How tall Lionheart stands — Payne's height, he is a grown-up too. */
 export const LION_HEIGHT = 6.2;
 export const LION_TALK_R = 5.6;
@@ -625,9 +678,10 @@ export class DreamDojo {
     inset.translate(ARCADE.x, ARCADE.y + 0.01, ARCADE.z);
     // Not darker than this: at 0x1a1c26 the deck read as a hole in the world.
     parts.push(paint(inset, 0x323a52));
-    const rock = new THREE.ConeGeometry(ARCADE.r * 0.95, 16, 10, 2);
+    // ROCK is what `animalContact` keeps a dragon out of: the same numbers.
+    const rock = new THREE.ConeGeometry(ROCK.r, ROCK.h, 10, 2);
     rock.rotateX(Math.PI);
-    rock.translate(ARCADE.x, ARCADE.y - 1.4 - 8, ARCADE.z);
+    rock.translate(ARCADE.x, ARCADE.y - ROCK.top - ROCK.h / 2, ARCADE.z);
     parts.push(paint(rock, 0x5a4a52));
     for (const s of L.stones) {
       const top = new THREE.CylinderGeometry(s.r, s.r * 0.9, 0.6, 14);
@@ -1974,6 +2028,8 @@ export class DreamDojo {
       v: L?.v ?? { x: 0, z: 1 },
       dojo: { x: dc.x, y: dc.y, z: dc.z },
       isles: this.isles ?? {},
+      // The Shadow's ring, where the tour's Shadow Lionheart performs.
+      shadowStage: this.shadow?.centre ?? null,
       cast,
     };
   }
@@ -1989,9 +2045,16 @@ export class DreamDojo {
     if (!this.built || !g.storyScene) return 'not ready';
     if (this.busy) return 'busy';
     if (g.storyScene.active || g._sceneActive?.()) return 'scene';
-    // The simulator's islands are in two of the shots.
+    // The simulator's islands are in three of the shots...
     this._ensureSim();
-    return g.storyScene.start('tour', TOUR, this.storyCtx()) ? null : 'scene';
+    /* ...and Shadow Lionheart is in one of them, in his own sheet, which is
+       otherwise only fetched at the first tube. Forty-odd seconds of tour
+       come before his line; if it has not landed by then he is drawn from
+       Lionheart's tinted town drawing, which is how his fight degrades too. */
+    g.loadSimArt?.();
+    const ctx = this.storyCtx();
+    ctx.actors = { simShadow: (this.tourShadow ??= new TourShadow(this)) };
+    return g.storyScene.start('tour', TOUR, ctx) ? null : 'scene';
   }
 
   /**
@@ -2286,40 +2349,55 @@ export class DreamDojo {
     this.domeU.uTime.value = this.t;
     this.gateFx?.update(this.t);
     this._domeHit = Math.max(0, this._domeHit - dt * 1.5);
-    const R = DOME_R + 1.5;
     const push = (body, rider) => {
       const pos = body?.position;
       if (!pos) return;
-      if (pos.y > ARCADE.y + DOME_R + 4 || pos.y < ARCADE.y - 12) return;
-      const dx = pos.x - ARCADE.x;
-      const dz = pos.z - ARCADE.z;
-      const d = Math.hypot(dx, dz);
-      if (d >= R) return;
-      const k = d > 1e-3 ? R / d : 0;
-      const ox = pos.x;
-      const oz = pos.z;
-      pos.x = ARCADE.x + (k ? dx * k : R);
-      pos.z = ARCADE.z + (k ? dz * k : 0);
+      /* A DRAGON LEFT OVER THE DOME is sent to the foot of the stones. Her
+         dismount aims it at the ground under her (`landAt` / `flyTo` in
+         `Player._updateFlight`), and under a kitten who jumped off over the
+         dome that ground is the pad: it sat on the glass trying to land
+         through it, for good — the other half of "getting stuck on the
+         shell". Where it waits instead is where her panda waits
+         (`ownerFor`), the last ground before the jump. */
+      if (!rider && body.home && typeof body.flyTo === 'function' && body.state !== 'ridden' && this.layout
+        && Math.hypot(body.home.x - ARCADE.x, body.home.z - ARCADE.z) < DOME_R + ANIMAL_PAD + 2) {
+        body.flyTo(this.layout.launch.x, this.layout.launch.z);
+      }
+      const hit = animalContact(pos);
+      if (!hit) return;
+      const sx = hit.x - pos.x;
+      const sy = hit.y - pos.y;
+      const sz = hit.z - pos.z;
+      pos.set(hit.x, hit.y, hit.z);
       body.group?.position.copy?.(pos);
       /* THE KITTENS ON IT MOVE WITH IT. A dragon and Ryuuseki are hung off
          their pilot every frame (`Player._updateFlight`), so pushing only the
          animal put it straight back under her next frame and she flew on
          into the dome — Richard: "the dragon is not flying through, it is
          getting blocked, but the player is able to fly through still". Same
-         shift for every kitten whose seat is on this body. */
-      const sx = pos.x - ox;
-      const sz = pos.z - oz;
+         shift for every kitten whose seat is on this body, and only the part
+         of her speed that points INTO the glass is taken away: what is left
+         is the slide round it. */
+      const n = hit.n;
       for (const q of g.players ?? []) {
         if (!q || (q.mount !== body && q.rideAlong !== body)) continue;
         q.position.x += sx;
+        q.position.y += sy;
         q.position.z += sz;
-        const vn = (q.velocity?.x ?? 0) * dx + (q.velocity?.z ?? 0) * dz;
-        if (vn < 0 && d > 1e-3) { q.velocity.x -= (dx / d) * (vn / d); q.velocity.z -= (dz / d) * (vn / d); }
-        if (this.approach) this.approach.of(q).cheat = true;
+        const v = q.velocity;
+        if (!v) continue;
+        const vn = v.x * n.x + v.y * n.y + v.z * n.z;
+        if (vn < 0) { v.x -= n.x * vn; v.y -= n.y * vn; v.z -= n.z * vn; }
       }
       this._domeHit = 1;
+      /* A TOAST AND NOTHING ELSE. No yell, and no mark against her for the
+         HONOR talk: Richard, "If player on dragon or panda mount run into the
+         shell of the dojo, it should not trigger the apology from Lionheart
+         when player enters, that should only get triggered if Lionheart
+         executes his 'lion_yell_drop' voice." Brushing the glass on a dragon
+         is what flying next to the dome IS now; the drop is a kitten on
+         foot landing on top of it (dream/approach.js). */
       if (rider) {
-        this.yell('dragon', rider);
         const last = this._toastAt.get(rider) ?? -99;
         if (this.t - last > 4) {
           this._toastAt.set(rider, this.t);

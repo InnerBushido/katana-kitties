@@ -70,6 +70,48 @@ export const LEAP_DECK = 5.0;
    at 10 (tuning.json), where one Far Step reaches 15 and the spot was out of
    reach even with the orb. world-check caught it. One Far Step is 1 + farK
    (1.5) of it, so the ring sits between 1 and that whatever it is tuned to. */
+/** The pedestal's card: world units, and how high its bottom edge sits over
+ *  the floor. Sized for wrapped lines (`galleryCardLines`).
+ *
+ *  WIDE AND SHORT, AND OVER HER RATHER THAN OVER THE PEDESTAL, because her
+ *  camera is high and keeps one bearing. Measured by `world-check`, which
+ *  stands her at 16 points round each of the 13 pedestals with her own
+ *  camera settled and asks where the card's corners land (NDC):
+ *   - the first wrapped card, 8.2 x 6.4 from 4.5 up over the pedestal: its
+ *     top at 1.05 from the station — the top line was gone;
+ *   - 10 x 5.2 from 4.3, still over the pedestal: 1.08 with her on its far
+ *     side, because whatever is beyond her rides UP the frame toward the
+ *     horizon;
+ *   - hung 3-4 toward the lens instead: in the frame (0.87), but with her
+ *     behind the pedestal it lay across her by 0.22-0.33;
+ *   - halfway between her and the pedestal: 1.03.
+ *  Over the kitten reading it, the card is where her camera always is, so
+ *  every spot reads the same: top 0.90 at worst, lower edge 0.17 clear of
+ *  her head. It no longer sits over the orb, so it may come down past the
+ *  orb's name (3.75) to 3.8. 10 wide holds the 112-character Riposte blurb in
+ *  four rows at 0.44 units a letter — the size the tall card had.
+ *
+ *  The pedestals are 8 apart, which is why only her NEAREST card lights
+ *  (`update`): two cards for one kitten would be one on top of the other. */
+export const GALLERY_CARD = { w: 10, h: 5.2, bottom: 3.8 };
+
+/**
+ * What a pedestal's card says, in order. The blurb and the how-to WRAP, at
+ * sizes picked to be read from where she stands at the pedestal: the blurb
+ * and the how-to are 0.85 of a tenth of the card (0.44 units a line, against
+ * 0.32 nominal before — and far less once a long one was squeezed onto one
+ * row). Pure, for `world-check`.
+ */
+export function galleryCardLines(s, howTo, stars) {
+  return [
+    { text: `${s.kanji}  ${s.name}`, size: 1.2, color: s.color, glow: true, jp: true },
+    { text: s.label, size: 0.7, color: 0x9fefff },
+    { text: s.blurb, size: 0.85, wrap: true },
+    { text: howTo, size: 0.85, color: HOLO.gold, wrap: true },
+    { text: `${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}`, size: 0.75, color: HOLO.gold },
+  ];
+}
+
 /** 遠: a Flash Step only counts if it locked from outside this ring round the
  *  holo-kitten — past a bare Lock range, inside one Far Step's. */
 export const farRing = () => DODGE.range * 1.12;
@@ -134,8 +176,16 @@ export class Gallery {
       sim.root.add(orb.group);
       /* The card, over the orb and toward the floor's centre, so it is
          between the orb and the camera for a kitten walking up to it. */
-      const card = new HoloPanel({ w: 6.6, h: 3.4, px: 96, edge: spec.color });
-      card.position.set(x, isle.y + 6.2, z);
+      /* TALLER, SO THE WORDS CAN BE BIG. Richard: "The subtext on the
+         kotodama orbs in the simulator is too small and can't be read. It is
+         okay if the subtext is more than 1 line long and made bigger." The
+         card was 6.6 x 3.4 with every line squeezed onto one row; the blurb
+         and the how-to now wrap (`layoutLines`, dream/holo.js), and the card
+         is GALLERY_CARD to hold them — wider rather than taller, because her
+         camera is high and a tall card's top left the frame. */
+      // Its height only: it is put over whoever is reading it (`_placeCard`).
+      const card = new HoloPanel({ w: GALLERY_CARD.w, h: GALLERY_CARD.h, px: 96, edge: spec.color });
+      card.position.set(x, isle.y + GALLERY_CARD.bottom + GALLERY_CARD.h / 2, z);
       card.visible = false;
       sim.root.add(card);
       const ped = { spec, x, z, orb, card, pad, show: 0 };
@@ -158,32 +208,48 @@ export class Gallery {
     return (HOW_TO[id] ?? '').replace(/\{(\w+)\}/g, (_, a) => `[${this.key(p, a)}]`);
   }
 
+  /** Put the card over the kitten reading it (see GALLERY_CARD), eased so it
+   *  glides rather than jitters as she moves; on the frame it lights it is
+   *  simply there. */
+  _placeCard(ped, p, dt) {
+    const tx = p.position.x - SIM.dx;
+    const tz = p.position.z - SIM.dz;
+    const k = ped.show < 0.05 ? 1 : Math.min(1, dt * 8);
+    ped.card.position.x += (tx - ped.card.position.x) * k;
+    ped.card.position.z += (tz - ped.card.position.z) * k;
+  }
+
   /** The card for whichever kitten is nearest it. */
   _paintCard(ped, p) {
     const s = ped.spec;
     const stars = this.dream.progress.stars(p.style?.name ?? p.name, `gallery.${s.id}`);
-    ped.card.set([
-      { text: `${s.kanji}  ${s.name}`, size: 2.0, color: s.color, glow: true, jp: true },
-      { text: s.label, size: 1.15, color: 0x9fefff },
-      { text: s.blurb, size: 0.95 },
-      { text: this.howTo(p, s.id), size: 1.05, color: HOLO.gold },
-      { text: `${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}`, size: 1.2, color: HOLO.gold },
-    ], s.color);
+    ped.card.set(galleryCardLines(s, this.howTo(p, s.id), stars), s.color);
   }
 
   update(dt) {
     /* A kitten in a drill has the drill's card over her head; the pedestal's
        card is the same height over the same spot and lands on top of it. */
     const inside = this.dream.simKittens().filter((p) => !this.dream.drills[p.index]);
+    /* HER NEAREST CARD ONLY. Each card lit for any kitten within 9, and the
+       pedestals are 8 apart, so a kitten reading one had both neighbours'
+       cards up beside it — harmless at 6.6 wide, overlapping at 10. */
+    const lit = new Map();
+    for (const p of inside) {
+      let best = null;
+      let bd = 9;
+      for (const ped of this.pedestals) {
+        const d = Math.hypot(p.position.x - SIM.dx - ped.x, p.position.z - SIM.dz - ped.z);
+        if (d < bd) { bd = d; best = ped; }
+      }
+      if (best && !(lit.get(best)?.d <= bd)) lit.set(best, { p, d: bd });
+    }
     for (const ped of this.pedestals) {
       ped.orb.update(dt);
-      let near = null;
-      let nd = 9;
-      for (const p of inside) {
-        const d = Math.hypot(p.position.x - SIM.dx - ped.x, p.position.z - SIM.dz - ped.z);
-        if (d < nd) { nd = d; near = p; }
+      const near = lit.get(ped)?.p ?? null;
+      if (near) {
+        this._paintCard(ped, near);
+        this._placeCard(ped, near, dt);
       }
-      if (near) this._paintCard(ped, near);
       ped.show += ((near ? 1 : 0) - ped.show) * Math.min(1, dt * 6);
       ped.card.visible = ped.show > 0.03;
       ped.card.mat.opacity = ped.show;

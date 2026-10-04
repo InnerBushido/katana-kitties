@@ -277,7 +277,13 @@ Lionheart's new lines:
 - the tour, eleven lines (`lion_tour_*`);
 - HONOR, seven (`lion_honor_*`);
 - FALL, four (`lion_fall_*`);
-- the gear-up, three (`lion_gear_*`);
+- the gear-up, three (`lion_gear_*`). Two of them were re-rendered after
+  Richard said "lion_gear_suit ... is loud, aggressive, and doesn't sound like
+  Lionheart". It WAS Barrett (the job's voice id says so). The card read "SUIT
+  UP!", and on this preset capitals and "!" are the shout, so the line pitched
+  up to 128 Hz against his normal 86. The suit and again lines now end
+  "Face the front... and suit up." and measure 86 and 89 Hz. The rule worth
+  keeping: **a line he must not shout has no capitals and no "!"**;
 - ~~the yell at a kitten who goes over the wall (`lion_yell_wall`)~~ — cut.
   Richard: "It is not a good voice and is too loud and aggressive, so let's
   just not use it. We only need the 'dropping in' sound". The clip and its raw
