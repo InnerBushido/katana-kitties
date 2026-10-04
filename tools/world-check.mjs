@@ -22753,6 +22753,29 @@ console.log('\n--- one press is not enough, and one player drives ---');
         nav9.update(1);
         ok('...while a wheel afterwards still hands it to the middle of the page',
           rows2.indexOf(nav9.focusEl.get('panel-help')) === oldPick(900));
+
+        /* HELP OPENED STRAIGHT ONTO A TOPIC — Lionheart's READ ABOUT THE
+           DREAM DOJO. Measured in the browser: on the first open after a load
+           the topic was placed (scroll 1493) and two ticks later the page was
+           back at 0, because MenuNav's first frame on a `read` panel puts it
+           to the top. The control proves this check bites: the same placing
+           without `arrive` loses it. */
+        const navF = new MenuNav(navGame([fakePad()]));
+        box2.scrollTop = 1140 - GAP;
+        navF.keep(panel2, rows2[4]);
+        navF.update(1);
+        const lost = box2.scrollTop === 0;
+        const navA = new MenuNav(navGame([fakePad()]));
+        navA.arrive(panel2);
+        box2.scrollTop = 1140 - GAP;
+        navA.keep(panel2, rows2[4]);
+        navA.update(1);
+        navA.update(1);
+        ok('Help opened onto one topic stays on it through the first frames, ring on its header',
+          lost && box2.scrollTop === 1140 - GAP && rows2.indexOf(navA.focusEl.get('panel-help')) === 4,
+          `control lost=${lost}, scroll ${box2.scrollTop}, ring ${rows2.indexOf(navA.focusEl.get('panel-help'))}`);
+        ok('...because openHelpAt marks the panel arrived before it places the topic',
+          /openHelpAt\(id, slot = null\) \{[\s\S]{0,400}this\.menuNav\?\.arrive\(help\);\s*this\._helpToTop\(card\);/.test(MS));
         ok('...and it happens on the toggle, which sees both accordion cards settled',
           /addEventListener\('toggle', \(\) => \{\s*this\._helpToggled\(card\);/.test(MS)
             && /_helpToggled\(card\) \{\s*if \(card\.open\) \{ this\._helpToTop\(card\); return; \}/.test(MS));
@@ -38101,6 +38124,59 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         && /g\.world\.simSite = this\.simSite\(\);/.test(ddSrc));
       ok('...and its names are clamped onto the canvas, which a phone\'s half-size map needs',
         /x = Math\.min\(Math\.max\(x, half\), this\.canvas\.width - half\);/.test(mm));
+
+      /* THE HELP PAGE. Richard: "We need to add a new item in the Help Menu
+         for the new Dream Dojo VR Arcade ... All the activities can be laid
+         out like the Clan Leaders page." Its card sentences are ISLE_ABOUT's,
+         word for word, so the page and the game say one thing. */
+      const html = read('../index.html');
+      const sec = helpTopic(html, 'The Dream Dojo — VR arcade');
+      const unesc = (t) => t.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+      const cardOf = (k) => {
+        const at = sec.indexOf(`data-isle="${k}"`);
+        return at < 0 ? '' : sec.slice(at, sec.indexOf('</li>', at));
+      };
+      ok('🥽 Help has a Dream Dojo topic, with a card for every island in the clan cards\' layout',
+        !!sec && KEYS.every((k) => /class="clan-card dd-card"/.test(sec) && cardOf(k).includes(`src="/help/dojo/isle-${k}.jpg"`))
+        && (sec.match(/data-isle="/g) ?? []).length === KEYS.length,
+        KEYS.filter((k) => !cardOf(k)).join());
+      const drift = KEYS.filter((k) => {
+        const m = /<span class="dd-about">([\s\S]*?)<\/span>/.exec(cardOf(k));
+        return !m || unesc(m[1]) !== ISL.ISLE_ABOUT[k].about;
+      });
+      ok('...and every card says exactly what ISLE_ABOUT says, which is what the game says',
+        drift.length === 0, drift.join());
+      ok('...each headed by its own kanji and name',
+        KEYS.every((k) => cardOf(k).includes(`>${ISL.ISLANDS[k].kanji}</span>`)));
+      ok('...with Lionheart, the arcade and the map legend, and the 凶 explained',
+        ['/help/dojo/lionheart.png', '/help/dojo/arcade.jpg', '/help/dojo/map.jpg'].every((f) => sec.includes(f))
+        && /凶[\s\S]{0,200}EASY,\s*MEDIUM and HARD[\s\S]{0,200}1\.25×/.test(sec));
+      const imgDims = (f) => {
+        const buf = readFileSync(new URL(`../public${f}`, import.meta.url));
+        if (buf[0] === 0x89) return [buf.readUInt32BE(16), buf.readUInt32BE(20)];
+        for (let i = 2; i < buf.length - 9;) {
+          const mk = buf[i + 1];
+          const len = buf.readUInt16BE(i + 2);
+          if (mk >= 0xc0 && mk <= 0xc3) return [buf.readUInt16BE(i + 7), buf.readUInt16BE(i + 5)];
+          i += 2 + len;
+        }
+        return [0, 0];
+      };
+      const wrong = [...sec.matchAll(/src="(\/help\/dojo\/[^"]+)"[^>]*?width="(\d+)" height="(\d+)"/g)]
+        .filter((m) => { const [w, h] = imgDims(m[1]); return w !== +m[2] || h !== +m[3]; })
+        .map((m) => `${m[1]} says ${m[2]}x${m[3]}, is ${imgDims(m[1]).join('x')}`);
+      ok('...every picture states its real size, so the panel does not jump as it loads',
+        wrong.length === 0, wrong.join(' | '));
+      ok('...filmed by a shot script that is checked in, the only thing that can re-film them',
+        /window\.__ddStills = async function/.test(read('../tools/capture/shots/dreamdojo.js')));
+
+      /* AND LIONHEART POINTS AT IT: "can just have any guide in there point
+         to the Help page". */
+      ok('...and Lionheart\'s card has a row that opens Help on that topic, paused, with her holding the menu',
+        D.guide.rows(her).some((r) => r.key === 'help')
+        && /if \(key === 'help'\) \{\s*this\.closeAll\(\);\s*this\.game\.openHelpAt\?\.\('help-dream', index\);/.test(read('../src/systems/inspector.js'))
+        && /id="help-dream"/.test(html)
+        && /openHelpAt\(id, slot = null\) \{[\s\S]{0,300}this\.setPaused\(true\);\s*this\._claimMenu\(slot\);/.test(read('../src/main.js')));
     }
 
     // And it is the GATE that refuses, for every trial in the hall, not the panda's.

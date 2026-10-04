@@ -542,6 +542,23 @@ export class MenuNav {
    * does not know) still records the position, so the ring stays where it
    * was rather than jumping.
    */
+  /**
+   * A PANEL THAT OPENS ALREADY PLACED — Help opened straight onto one topic
+   * from Lionheart's card (`Game.openHelpAt`). `update`'s first frame on a
+   * panel treats it as just opened, and a `read` panel just opened is put back
+   * to the top before its cursor is read: right for every other way in, and
+   * it threw the Dream Dojo topic away on the FIRST open after a load (scroll
+   * set to 1493, back to 0 two ticks later; a second open kept it, because by
+   * then nothing had closed the panel in between). Marking it arrived here
+   * runs the just-opened reset now instead, and the caller places it after.
+   */
+  arrive(panel) {
+    if (!panel) return;
+    this.lastPanel = panel.id;
+    this.holdY = 0;
+    this.holdX = 0;
+  }
+
   keep(panel, el) {
     const box = panel?.querySelector('.panel');
     if (!box) return;

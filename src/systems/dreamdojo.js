@@ -2291,7 +2291,6 @@ export class DreamDojo {
     this.drills[p.index] = new Drill(this, p, spec, at);
   }
 
-  /** Write a result down — returns what changed, for the card. */
   /**
    * WHERE SHE HAS BEEN, AND IS SHE LOST. Every frame she is in the simulator.
    *
@@ -2327,6 +2326,7 @@ export class DreamDojo {
     this.holoSay(`${p.name} — ${this.guide.next(p).short}\nTalk to me any time for more.`, 7);
   }
 
+  /** Write a result down — returns what changed, for the card. */
   award(p, id, stars, score, lowerIsBetter) {
     const s0 = this.st[p.index];
     if (s0) s0.lostT = 0;

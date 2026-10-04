@@ -476,6 +476,11 @@ export class Inspector {
       this.game.profile.open('holo', { backTo: { index, row, state: 'lion' } });
       return;
     }
+    if (key === 'help') {
+      this.closeAll();
+      this.game.openHelpAt?.('help-dream', index);
+      return;
+    }
     const next = L.choose(p, key);
     this.game.audio?.play('menu');
     if (!next) { this.closeOne(index); return; }

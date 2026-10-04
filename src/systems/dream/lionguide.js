@@ -258,6 +258,11 @@ export class LionGuide {
         locked: !worn,
       },
       { key: 'holo', title: '(HOLO) PLAYER PROFILE', blurb: 'Wear and stow the orbs you have in here. Everybody stops and gets their own cursor.' },
+      /* THE GUIDE POINTS AT THE HELP PAGE. Richard: "can just have any guide
+         in there point to the Help page, can just be a link just to that page
+         with all the information." The Inspector does the hand-over, like the
+         holo profile: it pauses the game, which is what Help is a page of. */
+      { key: 'help', title: 'READ ABOUT THE DREAM DOJO', blurb: 'The Help page: every island, what it teaches, and the map. The game pauses.' },
       {
         /* LIKE PAYNE'S GOBLIN SWEEP ROW. Richard: "If player has unlocked this
            special cross-slash ability, we can show it in the dialog with

@@ -2476,6 +2476,25 @@ class Game {
     this.menuNav?.keep(document.getElementById('panel-help'), head);
   }
 
+  /**
+   * HELP, OPEN AT ONE TOPIC — Lionheart's READ ABOUT THE DREAM DOJO row.
+   * Help is a page of the pause menu, so the game pauses first, with the menu
+   * handed to whoever asked (one player drives a menu); BACK on Help lands on
+   * the pause menu, as it does from anywhere else.
+   */
+  openHelpAt(id, slot = null) {
+    const card = document.getElementById(id);
+    if (!card) return;
+    if (this.state === 'play' && !this.paused) this.setPaused(true);
+    this._claimMenu(slot);
+    const help = document.getElementById('panel-help');
+    help.classList.remove('hidden');
+    this._warmHelpClips();
+    card.open = true;
+    this.menuNav?.arrive(help);
+    this._helpToTop(card);
+  }
+
   _helpToTop(card) {
     const box = card.closest('.panel');
     if (!box || box.scrollHeight <= box.clientHeight) return;

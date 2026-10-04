@@ -2400,6 +2400,52 @@ details.help-card.help-sub[open] > summary.help-topic { border-bottom-width: 2px
 .clan-who { font-size: 12px; opacity: 0.8; }
 .clan-motto { font-size: 12.5px; font-style: italic; opacity: 0.75; line-height: 1.4; }
 
+/* THE DREAM DOJO'S ISLANDS, on the clan cards' bones. Richard: "All the
+   activities can be laid out like the Clan Leaders page." The leader's
+   portrait slot holds the island's engine still instead (480x300, so 16:10 at
+   128 wide), and the round symbol holds its kanji. */
+/* A PILL, NOT THE CLAN SYMBOL'S CIRCLE: seven of the ten names are two
+   kanji, measured at 26px of ink, and a 30px circle round that drew them edge
+   to edge as two little boxes. min-width keeps a one-kanji name round. */
+.dd-kanji {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 7px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 15px;
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  color: var(--clan, var(--ink));
+  font-family: 'Yu Gothic', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 1px;
+  box-sizing: border-box;
+}
+.dd-shot {
+  flex: none;
+  width: 128px;
+  height: 80px;
+  border: 2px solid var(--ink);
+  border-radius: 6px;
+  object-fit: cover;
+}
+.dd-about { font-size: 12.5px; line-height: 1.4; opacity: 0.85; }
+/* Lionheart beside his own words: his drawing is cut to its ink by the shot
+   script, so a height is all it needs. */
+.dd-lion { display: flex; gap: 12px; align-items: flex-start; margin-top: 12px; }
+.dd-lion-art { flex: none; width: 114px; height: 180px; }
+.dd-lion-text { min-width: 0; }
+.dd-lion-text .ht-note:first-child { margin-top: 0; }
+@media (max-width: 640px) {
+  .dd-shot { width: 100%; height: auto; aspect-ratio: 16 / 10; }
+}
+/* A LANDSCAPE PHONE IS SHORT: he gives up height before the words beside
+   him do. */
+body.touch-ui .dd-lion-art { width: 76px; height: 120px; }
+
 /* The screenshots. Natural 16:9 (the width/height attributes hold the box
    before the lazy image loads, so the panel does not jump), bordered like the
    rest of the paper furniture. */
