@@ -177,13 +177,19 @@ export function bubbleTexture(text, color, { tail = 'down' } = {}) {
   const w = Math.max(...lines.map((l) => g0.measureText(l).width));
   const PAD = 34;
   const TAIL = 30;
-  const side = tail === 'left';
-  const X0 = side ? TAIL : 0;
-  cv.width = Math.ceil(w + PAD * 2 + X0);
+  /* 'left' or 'right': a tail out of that side, pointing at whoever is
+     talking. 'right' is the same bubble for a speaker on its right — the
+     Dream Dojo's Lionheart, whose bubble goes to his LEFT when his tubes are
+     on his right (DreamDojo `lionBubbleSide`). */
+  const side = tail === 'left' || tail === 'right';
+  const right = tail === 'right';
+  const X0 = tail === 'left' ? TAIL : 0;
+  const XR = right ? TAIL : 0;
+  cv.width = Math.ceil(w + PAD * 2 + X0 + XR);
   cv.height = Math.ceil(lines.length * LINE * 1.28 + PAD * 2 + (side ? 0 : TAIL));
 
   const g = cv.getContext('2d');
-  const W = cv.width;
+  const W = cv.width - XR;
   const H = side ? cv.height : cv.height - TAIL;
   const r = 26;
   /* The side tail's point, near the TOP of the box, so the bubble hangs DOWN
@@ -199,6 +205,11 @@ export function bubbleTexture(text, color, { tail = 'down' } = {}) {
   g.moveTo(X0 + r, 0);
   g.lineTo(W - r, 0);
   g.quadraticCurveTo(W, 0, W, r);
+  if (right) {
+    g.lineTo(W, TY - 14);
+    g.lineTo(W + XR - 3, TY + 4);
+    g.lineTo(W, TY + 16);
+  }
   g.lineTo(W, H - r);
   g.quadraticCurveTo(W, H, W - r, H);
   if (!side) {
@@ -208,7 +219,7 @@ export function bubbleTexture(text, color, { tail = 'down' } = {}) {
   }
   g.lineTo(X0 + r, H);
   g.quadraticCurveTo(X0, H, X0, H - r);
-  if (side) {
+  if (tail === 'left') {
     g.lineTo(X0, TY + 16);
     g.lineTo(3, TY + 4);
     g.lineTo(X0, TY - 14);
@@ -231,7 +242,7 @@ export function bubbleTexture(text, color, { tail = 'down' } = {}) {
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
-  const tip = side ? { u: 0, v: (TY + 4) / cv.height } : { u: 0.40, v: 1 };
+  const tip = side ? { u: right ? 1 : 0, v: (TY + 4) / cv.height } : { u: 0.40, v: 1 };
   return { texture: tex, aspect: cv.width / cv.height, tip };
 }
 

@@ -608,6 +608,38 @@ function signTexture() {
   });
 }
 
+/** Each seat's colour when nobody has dressed it yet — the HUD's own four. */
+export const TUBE_COLOURS = [0xff8a3d, 0xff6fae, 0x35d7f0, 0xa96bff];
+
+/** How near the holo-Lionheart a kitten in the sim must be to read his bubble
+ *  (and to get his pitch at all). Further than this, his words go on the
+ *  screen's own card instead — see `_captionHolo`. */
+export const LION_NEAR = 20;
+/** Who the caption card says is talking. */
+export const LION_WHO = { name: 'LIONHEART', sub: 'Dream Dojo', colour: '#ff3b3b' };
+
+/**
+ * Which side of Lionheart his bubble goes, for a lens whose screen-right is
+ * `right` (flat, unit): +1 his right, -1 his left.
+ *
+ * AWAY FROM THE TUBES. Richard: "Lionhearts text in the simulation is
+ * blocking the 4 VR floating tubes both on the Dream Dojo island and in the
+ * simulation." The bubble always went to his screen-right, and it is drawn
+ * over everything (depthTest off, so it reads through the dome) — and from
+ * the walking camera his four tubes ARE on his screen-right: he stands at
+ * (-2, -9) on the pad, the tubes at (6, -7.5..7.5). A kitten reading him
+ * could not see the tube she had been told to step into. The side is decided
+ * per LENS (each pane turns its own bubbles), from where the tubes' middle is
+ * against him; the sim's holo-Lionheart stands on the same spot relative to
+ * the same tubes, so one answer serves both. Exported for world-check.
+ */
+export function lionBubbleSide(L, right) {
+  let cx = 0; let cz = 0;
+  for (const t of L.tubes) { cx += t.x / L.tubes.length; cz += t.z / L.tubes.length; }
+  const d = (cx - L.lion.x) * right.x + (cz - L.lion.z) * right.z;
+  return d > 0 ? -1 : 1;
+}
+
 function numberTexture(n, colour) {
   return canvasTexture(128, 128, (g, w, h) => {
     g.clearRect(0, 0, w, h);
@@ -783,7 +815,7 @@ export class DreamDojo {
       glass.position.set(t.x, ARCADE.y + 2.8, t.z);
       glass.renderOrder = 5;
       this.group.add(glass);
-      const col = g.players?.[i]?.style?.colour ?? [0xff8a3d, 0xff6fae, 0x35d7f0, 0xa96bff][i];
+      const col = g.players?.[i]?.style?.colour ?? TUBE_COLOURS[i];
       const num = new THREE.Mesh(
         new THREE.PlaneGeometry(1.3, 1.3),
         new THREE.MeshBasicMaterial({ map: numberTexture(i + 1, css(col)), transparent: true, depthWrite: false, toneMapped: false })
@@ -870,23 +902,44 @@ export class DreamDojo {
     this.bubbleShow = 0;
   }
 
+  /** His bubble for `text`: a PAIR, one to hang on each side of him, since
+   *  the side is chosen per lens (`lionBubbleSide`). `on` is whether it is
+   *  showing at all; `faceCamera` shows the half for the lens it is drawing. */
   _bubble(text, holo = false) {
     const map = holo ? this.holoBubbles : this.bubbles;
     let m = map.get(text);
     if (m) return m;
-    const { texture, aspect, tip } = bubbleTexture(text, '#ff3b3b', { tail: 'left' });
-    const BH = 3.0;
-    m = new THREE.Mesh(new THREE.PlaneGeometry(BH * aspect, BH), new THREE.MeshBasicMaterial({
-      map: texture, transparent: true, opacity: 0, depthWrite: false, depthTest: false,
-      toneMapped: false, side: THREE.DoubleSide,
-    }));
-    m.userData.w = BH * aspect;
-    m.userData.tipY = BH * (0.5 - tip.v);
-    m.renderOrder = 24;
-    m.visible = false;
-    (holo ? this.holoLion : this.lion).add(m);
+    const make = (tail) => {
+      const { texture, aspect, tip } = bubbleTexture(text, '#ff3b3b', { tail });
+      const BH = 3.0;
+      const b = new THREE.Mesh(new THREE.PlaneGeometry(BH * aspect, BH), new THREE.MeshBasicMaterial({
+        map: texture, transparent: true, opacity: 0, depthWrite: false, depthTest: false,
+        toneMapped: false, side: THREE.DoubleSide,
+      }));
+      b.userData.w = BH * aspect;
+      b.userData.tipY = BH * (0.5 - tip.v);
+      b.renderOrder = 24;
+      b.visible = false;
+      (holo ? this.holoLion : this.lion).add(b);
+      return b;
+    };
+    // `r` hangs on his right with its tail pointing left at him; `l` the mirror.
+    m = { r: make('left'), l: make('right'), on: false };
     map.set(text, m);
     return m;
+  }
+
+  /** One bubble pair, shown for this lens on the side away from the tubes. */
+  _turnBubble(m, camera) {
+    const s = lionBubbleSide(this.layout, _right);
+    const b = s > 0 ? m.r : m.l;
+    m.r.visible = m.on && s > 0;
+    m.l.visible = m.on && s < 0;
+    if (!m.on) return;
+    b.quaternion.copy(camera.quaternion);
+    const off = s * (1.4 + (b.userData.w ?? 4) * 0.5);
+    b.position.x = _right.x * off;
+    b.position.z = _right.z * off;
   }
 
   /** Have the HOLOGRAM say something — the one a kitten in the sim can see.
@@ -1279,6 +1332,7 @@ export class DreamDojo {
       }
     });
     this._buildHoloLion();
+    this._buildSimTubes();
     this.shards = new Shards(this.sim.root);
     this.simHud = makeSimHud(g, this);
     /* THE TRAINING ISLANDS, raised with the layer — under the rain, on the
@@ -1358,6 +1412,76 @@ export class DreamDojo {
     this.holoShow = 0;
     this.game.scene.add(this.holoLion);
     this.sim.solids.push({ x: L.lion.x, z: L.lion.z, r: 1.25 });
+  }
+
+  /**
+   * THE TUBES, IN HERE TOO. Richard: "We have VR tubes in the main world but
+   * not in the Dream Dojo simulation, let's have it there as well with the
+   * players color, so the player knows which tube to step into to leave the
+   * simulation." The way out was a cyan ring on the floor, the same for all
+   * four, and a DISCONNECT prompt that only appeared once she was already
+   * standing in the right one.
+   *
+   * The same glass as the real ones (TUBE_VERT/FRAG), on the same four spots
+   * (the port rings, which `onPort` already measures), each in ITS kitten's
+   * colour with her number over it — but light all the way down: rings of
+   * light for the base and cap, nothing solid, because nothing in here is.
+   * A seat whose kitten is not in the sim is a dim grey ghost of a tube; hers
+   * glows in her colour, and brightest while she stands in it.
+   */
+  _buildSimTubes() {
+    const L = this.layout;
+    const g = this.game;
+    this.simTubes = L.tubes.map((t, i) => {
+      const col = g.players?.[i]?.style?.colour ?? TUBE_COLOURS[i];
+      const u = { uTime: { value: 0 }, uGlow: { value: 0.2 }, uColor: { value: new THREE.Color(col) } };
+      const glass = new THREE.Mesh(
+        new THREE.CylinderGeometry(TUBE_R, TUBE_R, 5.0, 32, 1, true),
+        new THREE.ShaderMaterial({
+          vertexShader: TUBE_VERT, fragmentShader: TUBE_FRAG, uniforms: u,
+          transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+        })
+      );
+      glass.position.set(t.x, ARCADE.y + 2.8, t.z);
+      glass.renderOrder = 5;
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: col, transparent: true, opacity: 0.85, toneMapped: false, depthWrite: false, blending: THREE.AdditiveBlending,
+      });
+      const rings = [0.14, 5.35].map((y) => {
+        const r = new THREE.Mesh(new THREE.TorusGeometry(TUBE_R + 0.3, 0.09, 6, 48), ringMat);
+        r.rotation.x = Math.PI / 2;
+        r.position.set(t.x, ARCADE.y + y, t.z);
+        return r;
+      });
+      const num = new THREE.Mesh(
+        new THREE.PlaneGeometry(1.3, 1.3),
+        new THREE.MeshBasicMaterial({ map: numberTexture(i + 1, css(col)), transparent: true, depthWrite: false, toneMapped: false })
+      );
+      num.position.set(t.x, ARCADE.y + 6.5, t.z);
+      num.renderOrder = 7;
+      this.sim.root.add(glass, ...rings, num);
+      return { u, glass, rings, ringMat, num, col: new THREE.Color(col) };
+    });
+  }
+
+  /** Hers lit in her colour while she is in here, brightest when she stands in it. */
+  _updateSimTubes() {
+    if (!this.simTubes) return;
+    const grey = _grey.set(0x5a6070);
+    this.simTubes.forEach((T, i) => {
+      const p = this.game.players?.[i];
+      if (p?.style?.colour != null) T.col.set(p.style.colour);
+      const here = !!p && this.realmOf(p) === 'sim';
+      const glow = here ? (this.onPort(p) ? 1 : 0.55) : 0.08;
+      T.u.uTime.value = this.t;
+      T.u.uGlow.value += (glow - T.u.uGlow.value) * 0.08;
+      T.u.uColor.value.copy(here ? T.col : grey);
+      T.ringMat.color.copy(here ? T.col : grey);
+      T.ringMat.opacity = here ? 0.85 : 0.25;
+      T.num.material.opacity = here ? 1 : 0.3;
+      const ring = this.sim.portRings?.[i];
+      if (ring) ring.material.color.copy(here ? T.col : grey);
+    });
   }
 
   /** Move her (and her camera) across the boundary, by exactly the offset. */
@@ -1646,6 +1770,7 @@ export class DreamDojo {
     this._updateRez(dt);
     this._updatePuppets(dt);
     this._updateTubes(dt);
+    this._updateSimTubes();
     this._updateDome(dt);
     this.approach?.update(dt);
     this._dt = dt;
@@ -2519,9 +2644,12 @@ export class DreamDojo {
     this.bubbleShow += ((want ? 1 : 0) - this.bubbleShow) * Math.min(1, dt * 5);
     for (const [, m] of this.bubbles) {
       const on = m === want || (m === this._lastBubble && !want);
-      m.visible = on && this.bubbleShow > 0.02;
-      m.material.opacity = this.bubbleShow;
-      m.position.y = LION_HEIGHT * 0.9 - (m.userData.tipY ?? 0) + Math.sin(this.t * 1.5) * 0.15;
+      m.on = on && this.bubbleShow > 0.02;
+      for (const b of [m.r, m.l]) {
+        b.material.opacity = this.bubbleShow;
+        b.position.y = LION_HEIGHT * 0.9 - (b.userData.tipY ?? 0) + Math.sin(this.t * 1.5) * 0.15;
+        if (!m.on) b.visible = false;
+      }
     }
     if (want) this._lastBubble = want;
 
@@ -2531,7 +2659,7 @@ export class DreamDojo {
       let nearSim = false;
       for (const p of this.simKittens()) {
         const q = this._flatPos(p);
-        if (Math.hypot(q.x - this.layout.lion.x, q.z - this.layout.lion.z) < 20) nearSim = true;
+        if (Math.hypot(q.x - this.layout.lion.x, q.z - this.layout.lion.z) < LION_NEAR) nearSim = true;
       }
       let ht = null;
       if (this.holoText && (this.t < this.holoUntil || this.voice.saying(this.holoText))) ht = this.holoText;
@@ -2545,12 +2673,47 @@ export class DreamDojo {
       this.holoShow += ((hw ? 1 : 0) - this.holoShow) * Math.min(1, dt * 5);
       for (const [, m] of this.holoBubbles) {
         const on = m === hw || (m === this._lastHolo && !hw);
-        m.visible = on && this.holoShow > 0.02;
-        m.material.opacity = this.holoShow * 0.92;
-        m.position.y = LION_HEIGHT * 0.9 - (m.userData.tipY ?? 0) + Math.sin(this.t * 1.5) * 0.15;
+        m.on = on && this.holoShow > 0.02;
+        for (const b of [m.r, m.l]) {
+          b.material.opacity = this.holoShow * 0.92;
+          b.position.y = LION_HEIGHT * 0.9 - (b.userData.tipY ?? 0) + Math.sin(this.t * 1.5) * 0.15;
+          if (!m.on) b.visible = false;
+        }
       }
       if (hw) this._lastHolo = hw;
+      this._captionHolo();
     }
+  }
+
+  /**
+   * HIS WORDS ON THE SCREEN, FOR WHOEVER CANNOT SEE HIM. Richard: "While
+   * Lionheart is talking in the simulation, if player is not near him and
+   * can't see his text bubble, then we should display his text on the screen,
+   * like we do for Payne. Since his text is long, we can display it as it is
+   * being said and maybe have it on the bottom of the screen for all the
+   * players, like it is for Mr. Satan's voice text in the arena."
+   *
+   * His voice is one speaker for the whole machine, so a kitten on the Kata
+   * floor hears him pitching the islands to her sister at the port, and had
+   * nothing to read. Now, while the hologram is SAYING a line aloud and any
+   * kitten in the sim is further than LION_NEAR from him, the line goes on
+   * Mr Satan's own card (`Announcer.follow`), word by word on his playhead —
+   * one card for the whole screen, as Richard asked, and the same card for
+   * the same reason Patchfur borrows it: one speaker, one corner. Asked every
+   * frame, so a kitten who walks away mid-sentence gets the rest of it.
+   */
+  _captionHolo() {
+    const a = this.game.announcer;
+    const text = this.holoText;
+    if (!a?.follow || !text || !this.voice.saying(text)) return;
+    const el = this.voice.elOf(text);
+    if (a.following(el)) return;
+    const far = this.simKittens().some((p) => {
+      const q = this._flatPos(p);
+      return Math.hypot(q.x - this.layout.lion.x, q.z - this.layout.lion.z) >= LION_NEAR;
+    });
+    if (!far) return;
+    a.follow(el, this.voice.secs(this.voice.idOf(text)), text.replace(/\n/g, ' '), { ...LION_WHO, art: this.lionArt });
   }
 
   /* ------------------------------ rendering ------------------------------- */
@@ -2563,13 +2726,7 @@ export class DreamDojo {
     _right.set(1, 0, 0).applyQuaternion(camera.quaternion);
     _right.y = 0;
     if (_right.lengthSq() > 1e-6) _right.normalize();
-    for (const [, b] of this.bubbles ?? []) {
-      if (!b.visible) continue;
-      b.quaternion.copy(camera.quaternion);
-      const off = 1.4 + (b.userData.w ?? 4) * 0.5;
-      b.position.x = _right.x * off;
-      b.position.z = _right.z * off;
-    }
+    for (const [, m] of this.bubbles ?? []) this._turnBubble(m, camera);
     this.sign?.quaternion.copy(camera.quaternion);
     if (this.sign) {
       // Only ever turn about Y — a sign that tips back is a sign on a hinge.
@@ -2604,13 +2761,8 @@ export class DreamDojo {
       for (const d of this.drills) d?.faceCamera(camera);
       for (const r of this.rundowns) r?.faceCamera(camera);
       for (const s of this.st) s?.bar?.faceCamera(camera);
-      for (const [, m] of this.holoBubbles ?? []) {
-        if (!m.visible) continue;
-        m.quaternion.copy(camera.quaternion);
-        const off = 1.4 + (m.userData.w ?? 4) * 0.5;
-        m.position.x = _right.x * off;
-        m.position.z = _right.z * off;
-      }
+      for (const [, m] of this.holoBubbles ?? []) this._turnBubble(m, camera);
+      for (const t of this.simTubes ?? []) t.num.quaternion.copy(camera.quaternion);
     }
   }
 
@@ -2647,4 +2799,5 @@ export class DreamDojo {
 }
 
 const _right = new THREE.Vector3();
+const _grey = new THREE.Color();
 const _e = new THREE.Euler();

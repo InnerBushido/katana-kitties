@@ -26607,6 +26607,43 @@ console.log('\n--- one press is not enough, and one player drives ---');
       const o = run({ touch: true, text: long, lineWidth: 900 });
       ok('a phone line wider than the card fades its older end, and a line that fits does not',
         o.over && !p.over);
+
+      /* FOLLOWING SOMEBODY ELSE'S VOICE. Richard: "if player is not near him
+         and can't see his text bubble, then we should display his text on the
+         screen ... as it is being said ... on the bottom of the screen for all
+         the players, like it is for Mr. Satan's voice text in the arena." */
+      {
+        for (const k of Object.keys(els)) delete els[k];
+        const lion = { currentTime: 0, ended: false, paused: false };
+        const audio = { _speaking: lion, speak: () => null, stopSpeaking() { audio._speaking = null; }, play() {} };
+        const A = new Announcer({ audio, touch: () => false });
+        const who = { name: 'LIONHEART', sub: 'Dream Dojo', colour: '#ff3b3b' };
+        const took = A.follow(lion, 6, long, who);
+        A.update(0);
+        const shown = () => (A._spans ?? []).filter((s) => s.className !== 'un').length;
+        const first = shown();
+        lion.currentTime = 3; A.update(1 / 30);
+        const mid = shown();
+        const named = (els['an-name'].children ?? []).some((c) => c.textContent === 'LIONHEART');
+        ok('言 the card can follow a voice it did not start: his words go up on HIS playhead, under his name',
+          took && first < mid && mid < A._plan.length && named, `${first} -> ${mid} of ${A._plan.length}`);
+        const busy = A.follow({}, 3, 'another', who);
+        ok('...and it never queues one: a card that is busy refuses, since a late subtitle is a transcript', busy === false);
+        lion.currentTime = 6; lion.ended = true;
+        for (let k = 0; k < 10; k++) A.update(1 / 30);
+        const all = shown() === A._plan.length;
+        for (let k = 0; k < 30 * 8; k++) A.update(1 / 30);
+        ok('...and when he finishes, every word is up, and the card goes after its tail', all && !A.active);
+        // Stopped mid-line (she left the simulator, and his voice was hushed): gone at once.
+        lion.currentTime = 0; lion.ended = false;
+        audio._speaking = lion;
+        A.follow(lion, 19, long, who);
+        A.update(0);
+        lion.currentTime = 2; A.update(0.5);
+        audio.stopSpeaking();
+        A.update(1 / 30);
+        ok('...and a voice somebody stopped takes its caption with it, not nineteen seconds later', !A.active);
+      }
     } finally {
       globalThis.document = docWas;
     }
@@ -34154,6 +34191,31 @@ console.log('\n--- the arena doors, the carpet and the way back out ---');
     ok('a kitten who never met her is invited, twice at most',
       said(N).filter((id) => id === 'payne_invite').length >= 1 && N._s(n).invites === 2);
     ok('...and gets no hint she never asked for', !said(N).some((id) => /_h_|_t_/.test(id)));
+
+    /* NOT IN THE HEADSET. Richard: "Payne's voice should not appear in the VR
+       dojo simulation, even if she is calling for the player to come and
+       visit her". Her clocks stop in there; the invitation owed is said after. */
+    const was = g.dream;
+    const H = new PN.Payne(g);
+    const h = kid();
+    let inside = true;
+    g.dream = { stateOf: (i) => (inside && i === h.index ? { phase: 'sim' } : null) };
+    ok('a kitten in the Dream Dojo headset is in it, as far as Payne can tell', PN.inHeadset(g, h));
+    run(H, h, PN.INVITE_AT[1] + 30);
+    ok('...and however long she is in there, Payne invites her to nothing', said(H).length === 0 && H._s(h).invites === 0,
+      said(H).join(' '));
+    inside = false;
+    run(H, h, PN.INVITE_AT[0] + 1);
+    ok('...and the invitation she was owed comes after she is back, not the moment she steps out',
+      said(H).includes('payne_invite') && H._s(h).invites === 1, said(H).join(' '));
+    // Queued for her as she went in: dropped, never saved for later.
+    H.queue = [];
+    H.say(h, ['payne_invite'], 'hey');
+    inside = true;
+    H._voice(1 / 60, false);
+    ok('...and a line already waiting for her when she goes in is dropped, not said in there',
+      H.queue.length === 0 && !H.current, `${H.queue.length} ${!!H.current}`);
+    g.dream = was;
   }
   {
     /* THE TRIPLE-JUMP TEASE: hopping at the sky star with two jumps. */
@@ -35636,6 +35698,83 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
   her.realm = 'sim';
   D.st[0] = { phase: 'sim', t: 0 };
   D.st[1] = null;
+
+  /* --- the way out is a tube in her colour, and Lionheart's words never cover it --- */
+  {
+    const put0 = (p, q) => { p.position.set(q.x + SW.SIM.dx, DD.ARCADE.y, q.z + SW.SIM.dz); };
+    globalThis.document ??= domStub();
+    her.style = { colour: 0xff8a3d, name: 'Ember' };
+    sis.style = { colour: 0x35d7f0, name: 'Frost' };
+    D._buildSimTubes();
+    D._updateSimTubes();
+    const T = D.simTubes;
+    const placed = T.every((t, i) => Math.hypot(t.glass.position.x - L.tubes[i].x, t.glass.position.z - L.tubes[i].z) < 1e-6
+      && sim.root.children.includes(t.glass));
+    ok('出 the simulator has four tubes, standing on the four port rings that let a kitten out',
+      T.length === 4 && placed);
+    ok('...hers in her colour while she is in here, her sister\'s grey while she is not',
+      T[0].u.uColor.value.getHex() === 0xff8a3d && T[0].ringMat.color.getHex() === 0xff8a3d
+      && T[1].u.uColor.value.getHex() !== 0x35d7f0 && T[1].ringMat.opacity < 0.5
+      && sim.portRings[0].material.color.getHex() === 0xff8a3d,
+      `${T[0].u.uColor.value.getHexString()} ${T[1].u.uColor.value.getHexString()}`);
+    const t0 = L.tubes[0];
+    her.position.set(t0.x + SW.SIM.dx, DD.ARCADE.y, t0.z + SW.SIM.dz);
+    for (let k = 0; k < 120; k++) D._updateSimTubes();
+    const inIt = T[0].u.uGlow.value;
+    const wasOn = D.onPort(her);
+    her.position.set(t0.x + 8 + SW.SIM.dx, DD.ARCADE.y, t0.z + SW.SIM.dz);
+    for (let k = 0; k < 120; k++) D._updateSimTubes();
+    ok('...and brightest while she stands in it, which is where DISCONNECT is offered',
+      wasOn && inIt > 0.95 && T[0].u.uGlow.value < 0.6, `${wasOn} ${inIt.toFixed(2)} vs ${T[0].u.uGlow.value.toFixed(2)}`);
+
+    /* Richard: "Lionhearts text in the simulation is blocking the 4 VR floating
+       tubes both on the Dream Dojo island and in the simulation." Through the
+       game's own camera heading: the bubble starts 1.4 out from him on the side
+       it is put, and every tube (its full width) must be on the other side. */
+    const k0 = Number(/const CAM_YAW = -Math\.PI \* ([\d.]+);/.exec(readFileSync(new URL('../src/entities/player.js', import.meta.url), 'utf8'))?.[1]);
+    const yaw = -Math.PI * k0;
+    const right = { x: Math.cos(yaw), z: -Math.sin(yaw) };
+    const proj = L.tubes.map((t) => (t.x - L.lion.x) * right.x + (t.z - L.lion.z) * right.z);
+    const s = DD.lionBubbleSide(L, right);
+    const clear = proj.every((d) => s * d + DD.TUBE_R < 1.4);
+    const wasClear = proj.every((d) => d + DD.TUBE_R < 1.4);
+    ok('言 Lionheart\'s bubble hangs on the side of him away from all four tubes, from the game\'s camera',
+      Number.isFinite(k0) && clear && !wasClear, `side ${s}, tubes at ${proj.map((d) => d.toFixed(1)).join(' ')}`);
+    // ...and from any heading a lens could have, it is never on the tubes' side.
+    let worst = Infinity;
+    for (let k = 0; k < 72; k++) {
+      const a = (k / 72) * Math.PI * 2;
+      const r = { x: Math.cos(a), z: -Math.sin(a) };
+      const ss = DD.lionBubbleSide(L, r);
+      const cx = L.tubes.reduce((q, t) => q + (t.x - L.lion.x) * r.x + (t.z - L.lion.z) * r.z, 0) / 4;
+      worst = Math.min(worst, -ss * cx);
+    }
+    ok('...and from any heading at all, it goes to the side the tubes are not on', worst >= 0, worst.toFixed(2));
+    const dd = readFileSync(new URL('../src/systems/dreamdojo.js', import.meta.url), 'utf8');
+    ok('...for the real Lionheart and the hologram alike', (dd.match(/this\._turnBubble\(m, camera\)/g) ?? []).length === 2);
+
+    // His words on the screen card when she is too far to read his bubble.
+    const voiceWas = D.voice;
+    const el = { id: 'lion' };
+    const followed = [];
+    fakeGame.announcer = { follow: (e, d, text, who) => { followed.push({ e, d, text, who }); return true; }, following: () => false };
+    D.voice = { saying: () => true, elOf: () => el, secs: () => 5, idOf: () => 'x' };
+    D.holoText = DD.LION_LINES.islands;
+    put0(her, { x: L.lion.x + 4, z: L.lion.z });
+    D._captionHolo();
+    const nearN = followed.length;
+    put0(her, { x: L.lion.x + DD.LION_NEAR + 6, z: L.lion.z });
+    D._captionHolo();
+    ok('言 a kitten in the sim too far from him to read his bubble gets his line on the screen\'s card, under his name — one beside him does not',
+      nearN === 0 && followed.length === 1 && followed[0].e === el && followed[0].who.name === 'LIONHEART'
+      && !/\n/.test(followed[0].text), `${nearN} ${followed.length}`);
+    D.voice = { ...D.voice, saying: () => false };
+    D._captionHolo();
+    ok('...and only while he is actually saying it', followed.length === 1);
+    D.voice = voiceWas;
+    delete fakeGame.announcer;
+    D.holoText = null;
+  }
 
   /* --- the blade in here finds holograms and nothing else --- */
   {

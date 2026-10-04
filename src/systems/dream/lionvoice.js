@@ -67,6 +67,13 @@ export class LionVoice {
   /** The voice id recorded for exactly this text, or null. */
   idOf(text) { return this.ids.get(text) ?? null; }
 
+  /** The element that says exactly this text, or null — for a caption that
+   *  follows it (`Announcer.follow`). */
+  elOf(text) {
+    const id = this.idOf(text);
+    return id ? this.els.get(id) ?? null : null;
+  }
+
   /** How long a clip runs, once its metadata is in; 0 until then. */
   secs(id) {
     const d = this.els.get(id)?.duration;
