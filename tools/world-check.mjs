@@ -37386,27 +37386,101 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     held[0] = true;
     for (let t = 0; t < CR.EAT_TIME - 0.2; t += 1 / 60) d.update(1 / 60);
     const midway = rat.live && rat.chew > 0;
+    /* SHE EATS THE WAY SHE EATS IN THE RING. Richard: "Player should play the
+       eating animation while eating. When animal is being eaten, they should
+       act shocked". `eatT` is what puts her in the eating pose (player.js),
+       the critter's `shock` drawing is the ring's own, and the dead pad is
+       `Menagerie.eating`'s. */
+    const deadPad = { dead: true };
+    const rooted = D.padFor(0, { live: true }, deadPad) === deadPad;
+    const posed = her.eatT > 0 && rat.state === 'pinned' && rat.critter.sprite === rat.critter.poses[1];
     held[0] = false;
     d.update(1 / 60);
-    const reset = rat.chew === 0;
-    held[0] = true;
-    let eatenAt = null;
-    for (let t = 0; t < CR.EAT_TIME + 0.2 && rat.live; t += 1 / 60) { d.update(1 / 60); if (!rat.live) eatenAt = t; }
-    held[0] = false;
-    ok('食 hold for the ring\'s two seconds and it is eaten; let go part-way and the swallow starts over',
-      midway && reset && eatenAt != null && Math.abs(eatenAt - CR.EAT_TIME) < 0.05, `${midway} ${reset} ${eatenAt?.toFixed(2)}`);
+    /* LET GO AND IT GETS AWAY — the ring's rule (`Menagerie._drop`), not the
+       pen's old one, which left it lying there stunned to be picked up again. */
+    const reset = rat.chew === 0 && rat.state === 'run' && her.eatT === 0 && D.padFor(0, { live: true }, deadPad) !== deadPad;
+    ok('食 while she eats she is rooted and in her eating pose, and the animal is in its startled drawing; let go and it bolts',
+      midway && rooted && posed && reset, `${midway} ${rooted} ${posed} ${reset} ${rat.state}`);
+    const meal = (c) => {
+      put(her, d.spot(0, 0));
+      her.onGround = true;
+      c.group.position.set(her.position.x - SW.SIM.dx + 1, IS.y, her.position.z - SW.SIM.dz);
+      c.stun();
+      held[0] = true;
+      let at = null;
+      for (let t = 0; t < CR.EAT_TIME + 0.3 && c.live; t += 1 / 60) { d.update(1 / 60); if (!c.live) at = t; }
+      held[0] = false;
+      return at;
+    };
+    const eatenAt = meal(rat);
+    ok('食 hold for the ring\'s two seconds and it is eaten', eatenAt != null && Math.abs(eatenAt - CR.EAT_TIME) < 0.05, String(eatenAt?.toFixed(2)));
     ok('...and it heals exactly what a rat heals in the ring', Math.abs(D.st[0].simHp - (hp0 + CR.CRITTER_BY_ID.rat.heal)) < 1e-9
       && d.count === 1, `${hp0} -> ${D.st[0].simHp}`);
-    // A critter never leaves the pen, however it is chased.
-    let out = 0;
+    /* THE RING'S ANIMALS, SLOWER, AND JUST AS HIGH. Richard: "move around
+       similarly as they do in the arena, but maybe at a slower movement rate,
+       but the flying and jumping height should be the same." */
+    const HOP_G = Number(/const HOP_G = ([\d.]+);/.exec(read('../src/entities/critter.js'))?.[1]);
+    const chase = (c, secs) => {
+      const hold = { position: new THREE.Vector3(), camYaw: 0, height: 2.9, facing: 0, eatT: 0, index: 0 };
+      let top = 0; let out = 0; let ys = [];
+      for (let f = 0; f < secs * 60; f++) {
+        const g = c.group.position;
+        hold.position.set(g.x + Math.sin(f / 40) * 2, IS.y, g.z + Math.cos(f / 40) * 2);
+        c.steer(1 / 60, hold);
+        top = Math.max(top, g.y - IS.y);
+        if (f > 120) ys.push(g.y - IS.y);
+        if (Math.hypot(g.x - S.pen.x, g.z - S.pen.z) > SC.PEN_R) out++;
+      }
+      return { top, out, mean: ys.reduce((a, y) => a + y, 0) / Math.max(1, ys.length) };
+    };
     const bun = d.critters.find((c) => c.kind.id === 'rabbit');
-    for (let f = 0; f < 600; f++) {
-      put(her, { x: bun.group.position.x + Math.sin(f) * 2, z: bun.group.position.z + Math.cos(f) * 2, y: IS.y });
-      bun.steer(1 / 60, her);
-      if (Math.hypot(bun.group.position.x - S.pen.x, bun.group.position.z - S.pen.z) > SC.PEN_R) out++;
-    }
-    ok('...and a chased critter never leaves the pen', out === 0, String(out));
-    end(d);
+    const RB = CR.CRITTER_BY_ID.rabbit;
+    const hop = chase(bun, 30);
+    const hopTop = (RB.hopV * RB.hopV) / (2 * HOP_G);
+    ok('食 a holo-rabbit is the ring\'s rabbit, slowed: its speed is PEN_SLOW of the ring\'s and its hop reaches the ring\'s height',
+      bun.critter.spec.speed === RB.speed * SC.PEN_SLOW && bun.critter.spec.hopV === RB.hopV && SC.PEN_SLOW < 1
+      && hop.top > hopTop * 0.93 && hop.top < hopTop * 1.02, `top ${hop.top.toFixed(2)} vs ${hopTop.toFixed(2)}`);
+    ok('...and a chased one never leaves the pen', hop.out === 0, String(hop.out));
+    /* THREE ROUNDS. "1. Is just ground and jumping animals, 2. Jumping and
+       flying animals, 3. Flying and grasshopper." */
+    ok('食 three rounds: a runner and a hopper, a hopper and a flier, a flier and the mantis',
+      SC.FEAST_ROUNDS.map((r) => r.kinds.map((k) => CR.CRITTER_BY_ID[k].kind).join('+')).join(' / ') === 'ground+hopper / hopper+flier / flier+hopper'
+      && SC.FEAST_ROUNDS[2].kinds.includes('mantis') && CR.CRITTER_BY_ID.mantis.canFly && d.spec.goal === 6,
+      SC.FEAST_ROUNDS.map((r) => r.kinds.join('+')).join(' / '));
+    meal(bun);
+    const r2 = d.critters.filter((c) => c.live).map((c) => c.kind.id).sort().join();
+    ok('...and the next round comes in only when the last one is eaten', d.round === 1 && r2 === 'bird,rabbit' && d.count === 2, `${d.round} ${r2}`);
+    const bird = d.critters.find((c) => c.live && c.kind.id === 'bird');
+    const fly = chase(bird, 6);
+    ok('食 the holo-bird FLIES at the ring\'s cruising height — out of a standing kitten\'s reach, as in the ring',
+      Math.abs(fly.mean - CR.CRITTER_BY_ID.bird.cruise) < 0.6 && fly.mean > SC.PEN_REACH.up && bird.airborne,
+      `${fly.mean.toFixed(2)} vs ${CR.CRITTER_BY_ID.bird.cruise}`);
+    // Struck out of the air: in her mouth, and a stand-still swallow — the ring's rule.
+    put(her, d.spot(0, 0));
+    her.onGround = true;
+    bird.hit(blow);
+    const mouthed = bird.state === 'mouthed' && d.held === bird;
+    const free = D.padFor(0, { live: true }, deadPad) !== deadPad;
+    held[0] = true;
+    let swallowed = null;
+    for (let t = 0; t < CR.EAT_TIME + 0.3 && bird.live; t += 1 / 60) { d.update(1 / 60); if (!bird.live) swallowed = t; }
+    held[0] = false;
+    ok('食 a bird struck in the air goes in her mouth, she may carry it, and standing still holding ATTACK swallows it',
+      mouthed && free && swallowed != null && Math.abs(swallowed - CR.EAT_TIME) < 0.05, `${mouthed} ${free} ${swallowed}`);
+    // ...and five seconds of doing nothing with it, it is gone.
+    const bun2 = d.critters.find((c) => c.live && c.kind.id === 'rabbit');
+    meal(bun2);
+    const r3 = d.critters.filter((c) => c.live).map((c) => c.kind.id).sort().join();
+    const b3 = d.critters.find((c) => c.live && c.kind.id === 'bird');
+    b3.hit(blow);
+    fakeGame.toasts.length = 0;
+    for (let t = 0; t < CR.MOUTH_TIME + 0.2; t += 1 / 60) d.update(1 / 60);
+    ok('...round three is the bird and the mantis, and a bird she only carries wriggles free after the ring\'s five seconds',
+      r3 === 'bird,mantis' && b3.live && b3.state !== 'mouthed' && !d.held && her.eatT === 0, `${r3} ${b3.state}`);
+    for (const c of d.critters.filter((q) => q.live)) meal(c);
+    d.update(1 / 60);
+    ok('...and the sixth is the last: the feast is won', d.count === 6 && d.state === 'won', `${d.count} ${d.state}`);
+    ok('...and leaving lets go of her eating pose', (end(d), her.eatT === 0));
   }
 
   /* --- 剣士 ranks, the card, and the training of the day --- */

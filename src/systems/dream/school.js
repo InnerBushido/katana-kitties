@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { SIM, HOLO } from '../../world/simworld.js';
-import { CRITTER_BY_ID, EAT_TIME, CATCH_RADIUS, STUN_TIME } from '../../entities/critter.js';
+import { CRITTER_BY_ID, EAT_TIME, CATCH_RADIUS, STUN_TIME, Critter } from '../../entities/critter.js';
 import {
   MODES, handicapFor, decideOnTime, purseSplit, TEAM_COLOURS, TEAM_NAMES,
   ROUND_LIMIT, WINS_NEEDED,
@@ -8,6 +8,7 @@ import {
 import { Kiosk, idleIn, isleSpot, stars3 } from './kiosk.js';
 import { HoloPanel } from './holo.js';
 import { Target, HoloKitten, holoSolid, holoMat } from './targets.js';
+import { holoFlicker } from './holo.js';
 
 /* ---------------------------------------------------------------------------
    THE ARENA SCHOOL — 闘技. The tournament, taught before it is fought.
@@ -79,15 +80,45 @@ export const FEAST_KIOSK = [-10, -13];
 export const BOARD_AT = [17, 12];
 /** How long the board keeps a decided round up after its drill has gone. */
 export const BOARD_HOLD = 12;
-/** The three she eats in the pen — the ring's three common animals. The
- *  mantis (+40, at 18.9 u/s) is a story the card tells, not a lesson. */
-export const PEN_KINDS = ['rat', 'rabbit', 'bird'];
-/** In a pen of radius eight a rabbit at its ring speed (11.6) outruns her
- *  walk forever; the holo-critters flee at this fraction of their real speed.
- *  The stun, the hold and the heal are the real numbers. */
+/**
+ * THREE ROUNDS, EACH A STEP UP THE LADDER. Richard: "there is no bird or
+ * cricket in the simulation, or if there is, the bird does not fly or
+ * interact like a real bird or cricket acts in the game. We can have 3
+ * different rounds here; 1. Is just ground and jumping animals, 2. Jumping
+ * and flying animals, 3. Flying and grasshopper."
+ *
+ * It was one rat, one rabbit and one bird at once, and the "bird" was a ball
+ * with two flat wings that ran along the floor with the others and bobbed
+ * a third of a unit — catchable standing still, which is exactly the thing
+ * the ring's bird is tuned (7.8 up) never to be. The mantis is the ring's
+ * hopper that takes off when cornered, which is the grasshopper he means.
+ */
+export const FEAST_ROUNDS = [
+  { kinds: ['rat', 'rabbit'], name: 'ON THE GROUND', tell: 'a runner and a jumper' },
+  { kinds: ['rabbit', 'bird'], name: 'UP IN THE AIR', tell: 'a jumper and a flier — JUMP to swing at the bird' },
+  { kinds: ['bird', 'mantis'], name: 'THE FLIERS', tell: 'a flier and a grasshopper that takes off when you chase it' },
+];
+/** Every kind the feast uses, in the order it meets them. */
+export const PEN_KINDS = [...new Set(FEAST_ROUNDS.flatMap((r) => r.kinds))];
+/**
+ * "Lets have the animals move around similarly as they do in the arena, but
+ * maybe at a slower movement rate, but the flying and jumping height should
+ * be the same." So the pen's animals ARE the ring's: `Critter` from
+ * entities/critter.js, its roaming, hopping, flying and startled pose, with
+ * only `speed` scaled by this. `hopV`, `cruise` and the mantis's take-off are
+ * the ring's numbers untouched — `world-check` measures a hop's top and the
+ * bird's height against the ring's own formulas.
+ */
 export const PEN_SLOW = 0.55;
 export const FEAST_START = 0.4;
-export const FEAST_BANDS = [90, 36, 24];
+/** Seconds, lower is better. Six animals now, against three; the bands
+ *  were 90/36/24 for three and scale with the count, with a 150s clock. NOT
+ *  MEASURED ON A REAL KITTEN — a first guess for Richard to tune. */
+export const FEAST_BANDS = [150, 72, 48];
+/** How high a swing can take an animal (from her feet) — the ring's own
+ *  window (`Menagerie._findTarget`: -1.5 to 6.5), made from the gate's
+ *  `strikeHeight` (3.4) by the target's `hitUp` and `hitDown`. */
+export const PEN_REACH = { up: 6.5, down: 1.5 };
 
 /** How far she can be moving and still be eating — `STILL_SPEED` in
  *  menagerie.js, which does not export it. world-check reads it off the file
@@ -157,17 +188,56 @@ export function boardLines(view) {
 
 /* ------------------------------ the critters ----------------------------- */
 
-/** A holo-rat (or rabbit, or bird). A blade STUNS it — it never breaks. */
+/**
+ * A holo-animal: the ring's own `Critter`, drawn in light, behind a target
+ * the gate can find. A blade STUNS it, or takes a flier into her mouth — it
+ * never breaks it; only eating does.
+ *
+ * THE CRITTER DOES THE MOVING. Its position is in the layer's coordinates,
+ * and it is handed the layer's floors, a deck the size of the pen, her
+ * position in the layer and her camera's yaw — everything the ring hands it,
+ * in this world's terms. Its drawing hangs in this target's `group`, which
+ * stands where the animal is, so the gate's position, the shards and the
+ * tour's scripted pen (dream/tourcast.js, which moves `group` itself) all
+ * keep working.
+ *
+ * NO ART (a check, a stripped build), NO SPRITES: the old wire-and-glow
+ * shape is drawn instead, moved by the same `Critter` — a rule that degrades
+ * rather than an animal that vanishes.
+ */
 export class HoloCritter extends Target {
   constructor(o) {
-    super({ hits: 1, centre: 0.5, pad: 0.9, hitUp: 1, hitDown: 2.5, name: `the holo-${o.kind.name}`, ...o });
+    super({
+      hits: 1, centre: 0, pad: 0.9, name: `the holo-${o.kind.name}`,
+      hitUp: PEN_REACH.up - 3.4, hitDown: PEN_REACH.down - 3.4, ...o,
+    });
     this.kind = o.kind;
     this.home = o.home;
-    this.state = 'run';
-    this.stunT = 0;
+    this.world = o.world ?? null;
     this.chew = 0;
-    this.heading = Math.random() * Math.PI * 2;
-    this.wanderT = 0;
+    const art = o.art?.calm?.texture ? o.art : null;
+    const spec = { ...o.kind, speed: o.kind.speed * PEN_SLOW };
+    this.critter = new Critter(spec, art ?? { calm: { texture: new THREE.Texture(), contentScale: 1 } });
+    this.critter.position.set(o.x, o.y, o.z);
+    this.critter.onGround = true;
+    this.sprites = !!art;
+    if (art) {
+      for (const pose of this.critter.poses) {
+        pose.mat.color.set(0x9fffe6);
+        pose.mat.transparent = true;
+        pose.mat.depthWrite = false;
+      }
+      this.critter.shadow.material.color.set(HOLO.cyan);
+      this.critter.ring.material.color.set(HOLO.gold);
+      this.body.add(this.critter.group);
+    } else {
+      this.body.add(this._wire());
+    }
+    this.seed = Math.random() * 6;
+  }
+
+  /** The shape it was before it had the ring's drawings — the fallback. */
+  _wire() {
     const s = this.kind.size;
     const c = this.colour;
     const parts = [];
@@ -175,7 +245,7 @@ export class HoloCritter extends Target {
       parts.push(holoSolid(new THREE.BoxGeometry(0.5 * s, 0.38 * s, 0.85 * s).translate(0, 0.25 * s, 0), c));
       parts.push(holoSolid(new THREE.ConeGeometry(0.18 * s, 0.4 * s, 6).rotateX(Math.PI / 2).translate(0, 0.25 * s, 0.6 * s), c));
       parts.push(holoSolid(new THREE.CylinderGeometry(0.03 * s, 0.05 * s, 0.9 * s, 4).rotateX(Math.PI / 2).translate(0, 0.15 * s, -0.85 * s), c));
-    } else if (this.kind.id === 'rabbit') {
+    } else if (this.kind.kind === 'hopper') {
       parts.push(holoSolid(new THREE.SphereGeometry(0.42 * s, 10, 8).scale(1, 0.9, 1.15).translate(0, 0.4 * s, 0), c));
       for (const x of [-0.12, 0.12]) {
         parts.push(holoSolid(new THREE.BoxGeometry(0.1 * s, 0.5 * s, 0.06 * s).translate(x * s, 0.95 * s, 0.2 * s), c));
@@ -186,53 +256,71 @@ export class HoloCritter extends Target {
         parts.push(holoSolid(new THREE.BoxGeometry(0.5 * s, 0.04 * s, 0.3 * s).translate(x * 0.38 * s, 0.5 * s, 0), c));
       }
     }
-    for (const m of parts) this.body.add(m);
+    const g = new THREE.Group();
+    for (const m of parts) g.add(m);
     this.body.userData.mats = parts.flatMap((m) => m.userData.mats ?? []);
+    this.wire = g;
+    return g;
   }
 
+  /** 'run', 'stunned', 'pinned' or 'mouthed' — the critter's, in the pen's words. */
+  get state() {
+    const s = this.critter.state;
+    return s === 'roam' ? 'run' : s;
+  }
+
+  get airborne() { return this.critter.airborne && this.critter.state === 'roam'; }
+
   stun() {
-    this.state = 'stunned';
-    this.stunT = STUN_TIME;
+    this.critter.stun();
     this.flash = 1;
   }
 
-  /** Run about the pen; flee her when she is close; lie still when stunned. */
-  steer(dt, her) {
-    const g = this.group.position;
-    if (this.state === 'stunned') {
-      this.stunT -= dt;
-      this.body.rotation.z = Math.PI * 0.5;   // on its side, legs to the camera
-      if (this.stunT <= 0 && this.chew <= 0) { this.state = 'run'; this.body.rotation.z = 0; }
-    } else {
-      const hx = her.position.x - SIM.dx - g.x;
-      const hz = her.position.z - SIM.dz - g.z;
-      const d = Math.hypot(hx, hz) || 1;
-      let speed = 2.0;
-      if (d < 4.5) {
-        this.heading = Math.atan2(-hx / d, -hz / d);
-        speed = this.kind.speed * PEN_SLOW;
-      } else {
-        this.wanderT -= dt;
-        if (this.wanderT <= 0) { this.wanderT = 1 + Math.random() * 1.5; this.heading += (Math.random() - 0.5) * 2.2; }
-      }
-      let nx = g.x + Math.sin(this.heading) * speed * dt;
-      let nz = g.z + Math.cos(this.heading) * speed * dt;
-      // The pen's fence: back inside, and turned along it, never through it.
-      const ox = nx - this.home.x; const oz = nz - this.home.z;
-      const od = Math.hypot(ox, oz);
-      if (od > this.home.r - 1) {
-        nx = this.home.x + (ox / od) * (this.home.r - 1);
-        nz = this.home.z + (oz / od) * (this.home.r - 1);
-        this.heading = Math.atan2(-oz, ox);
-      }
-      g.x = nx; g.z = nz;
-      this.body.rotation.y = this.heading;
-      // A hop, so a rabbit and a bird read as what they are.
-      this.body.position.y = this.kind.kind === 'ground' ? 0 : Math.abs(Math.sin(this.t * 7)) * 0.35;
+  /**
+   * One frame of the ring's animal in the pen. `holder` is her, in the
+   * layer: { position, camYaw, height, facing, eatT, index }.
+   */
+  steer(dt, holder, world = this.world) {
+    const c = this.critter;
+    /* `group` IS WHERE IT IS. The tour (dream/tourcast.js) and the checks
+       put an animal somewhere by moving its group, as they always have; the
+       critter starts each frame from there, so a group moved from outside is
+       honoured rather than snapped back to where the critter thought it was. */
+    c.position.copy(this.group.position);
+    const deck = { x: this.home.x, z: this.home.z, y: this.home.y, half: this.home.r };
+    c.update(dt, world, [holder], deck, holder.camYaw ?? -Math.PI * 0.25);
+    /* THE PEN IS ROUND AND THE RING'S DECK IS SQUARE: `Critter` keeps to a
+       square `half` wide, so anything in a corner of it is put back on the
+       circle, and turned along the fence rather than into it. Not one she is
+       HOLDING: a bird in her mouth goes where her mouth goes. */
+    const ox = c.position.x - this.home.x;
+    const oz = c.position.z - this.home.z;
+    const od = Math.hypot(ox, oz);
+    const lim = this.home.r - 1.2;
+    if (od > lim && (c.state === 'roam' || c.state === 'stunned')) {
+      c.position.x = this.home.x + (ox / od) * lim;
+      c.position.z = this.home.z + (oz / od) * lim;
+      const vn = (c.velocity.x * ox + c.velocity.z * oz) / od;
+      if (vn > 0) { c.velocity.x -= (ox / od) * vn; c.velocity.z -= (oz / od) * vn; }
+      if (c.state === 'roam') c.wish.set(-ox / od, -oz / od);
     }
-    const k = 1 - 0.55 * Math.min(1, this.chew / EAT_TIME);
-    this.body.scale.setScalar(k);
-    this.position.set(g.x + SIM.dx, g.y + this.o.centre, g.z + SIM.dz);
+    this.group.position.copy(c.position);
+    c.group.position.set(0, 0, 0);
+    this.local.copy(c.position);
+    this.position.set(c.position.x + SIM.dx, c.position.y, c.position.z + SIM.dz);
+    if (this.sprites) {
+      const op = holoFlicker(this.t, this.seed, 0.92, 0.18) + this.flash * 0.08;
+      for (const pose of c.poses) pose.mat.opacity = op;
+    } else if (this.wire) {
+      // Startled, it lies on its side, legs to the camera — the old shape's tell.
+      this.wire.rotation.z = c.state === 'roam' ? 0 : Math.PI * 0.5;
+      this.wire.rotation.y = Math.atan2(c.velocity.x, c.velocity.z);
+    }
+  }
+
+  faceCamera(camera) {
+    super.faceCamera(camera);
+    if (this.sprites) this.critter.faceCamera(camera);
   }
 }
 
@@ -286,7 +374,7 @@ export class ArenaSchool {
           { text: '食 THE FEAST', size: 1.9, color: HOLO.green, glow: true, jp: true },
           { text: 'Between rounds, animals run into the ring. Eat to heal!', size: 1.05 },
           { text: `Swing to STUN one — then stand still and HOLD [${dream.key(p, 'attack')}] for ${EAT_TIME} seconds`, size: 0.95, color: 0x9fefff },
-          { text: `rat +${h('rat')} · rabbit +${h('rabbit')} · bird +${h('bird')} · mantis +${h('mantis')}`, size: 0.95, color: 0x9fefff },
+          { text: `3 rounds: rat +${h('rat')} & rabbit +${h('rabbit')} · rabbit & bird +${h('bird')} · bird & mantis +${h('mantis')}`, size: 0.9, color: 0x9fefff },
           { text: `best ${best != null ? `${best.toFixed(1)}s` : '—'}   ${stars3(dream.progress.stars(name, 'school.feast'))}`, size: 1.15, color: HOLO.gold },
         ];
       },
@@ -411,80 +499,194 @@ function feastPin(d) {
   return near;
 }
 
+/** Her, in the layer, as the ring's `Critter` reads a holder. */
+function holderOf(d) {
+  const p = d.p;
+  const h = (d.holder ??= { position: new THREE.Vector3(), index: p.index });
+  h.position.set(p.position.x - SIM.dx, p.position.y, p.position.z - SIM.dz);
+  h.camYaw = p.camYaw;
+  h.height = p.height ?? 2.9;
+  h.facing = p.facing;
+  h.eatT = p.eatT;
+  h.angel = false;
+  return h;
+}
+
+/** The layer's floors, as the ring's `Critter` asks for them. */
+function penWorld(d) {
+  const sim = d.dream.sim;
+  return (d.world ??= {
+    heightAt: (x, z, y) => sim.heightAt(x + SIM.dx, z + SIM.dz, y ?? d.at.y + 12),
+  });
+}
+
+/** Put a round's animals in the pen, spread round its middle. */
+function feastRound(d, school, n) {
+  const R = FEAST_ROUNDS[n];
+  d.round = n;
+  d.roundLeft = R.kinds.length;
+  for (const [k, id] of R.kinds.entries()) {
+    const a = (k / R.kinds.length) * Math.PI * 2 + n;
+    const q = d.spot(Math.cos(a) * 4, Math.sin(a) * 4);
+    const c = d.target(HoloCritter, {
+      x: q.x, y: q.y, z: q.z, kind: CRITTER_BY_ID[id], home: school.pen, colour: HOLO.green,
+      art: d.dream.game.critterArt?.[id], world: penWorld(d),
+      accept: (info, c2) => { feastSwat(d, c2); return false; },
+    });
+    d.critters.push(c);
+  }
+}
+
+/** A swing reached one: the ring's three answers (`Menagerie.strike`). */
+function feastSwat(d, c) {
+  const st = c.state;
+  if (st === 'pinned' || st === 'mouthed') return;
+  d.dream.game.sfx?.('squeak');
+  if (st === 'stunned') { c.stun(); return; }
+  /* IN THE AIR IS IN THE AIR: a flier — or a mantis that has just taken off —
+     struck out of the sky goes in her mouth, the ring's rule, and she has the
+     ring's five seconds to stand still and swallow it. */
+  if (c.airborne) {
+    c.critter.mouth(holderOf(d));
+    d.held = c;
+    c.chew = 0;
+    d.dream.hint(d.p, `It's in your mouth! STAND STILL and HOLD [${d.dream.key(d.p, 'attack')}]`);
+    return;
+  }
+  c.stun();
+  d.dream.hint(d.p, `Stunned! Walk up to it and HOLD [${d.dream.key(d.p, 'attack')}] to eat it`);
+}
+
+/** She let go: it bolts, as it does in the ring (`Menagerie._drop`). */
+function feastDrop(d) {
+  const c = d.held;
+  d.held = null;
+  d.p.eatT = 0;
+  if (!c) return;
+  c.chew = 0;
+  c.critter.release();
+  d.dream.game.sfx?.('squeak');
+}
+
 function FEAST(school) {
+  const goal = FEAST_ROUNDS.reduce((n, r) => n + r.kinds.length, 0);
   return {
-    id: 'school.feast', title: 'THE FEAST', kanji: '食', goal: PEN_KINDS.length, time: 90,
+    id: 'school.feast', title: 'THE FEAST', kanji: '食', goal, time: FEAST_BANDS[0],
     goalText: 'Stun one, then stand still and HOLD attack to eat it', countLabel: 'eaten ',
     /* THE FLOOR REACHES HER PAD. It was PEN_R + 3, and the pad is 13 from the
        pen's middle — so the drill started, went live, and stopped her for
        leaving the floor she was standing on. */
     bands: FEAST_BANDS, leaveR: Math.hypot(FEAST_KIOSK[0] - PEN_AT[0], FEAST_KIOSK[1] - PEN_AT[1]) + 2,
     setup(d) {
-      d.critters = PEN_KINDS.map((id, k) => {
-        const a = (k / PEN_KINDS.length) * Math.PI * 2;
-        const q = d.spot(Math.cos(a) * 4, Math.sin(a) * 4);
-        return d.target(HoloCritter, {
-          x: q.x, y: q.y, z: q.z, kind: CRITTER_BY_ID[id], home: school.pen, colour: HOLO.green,
-          accept: (info, c) => {
-            if (c.state !== 'stunned') d.dream.game.sfx?.('squeak');
-            c.stun();
-            d.dream.hint(d.p, `stunned! Stand still and HOLD [${d.dream.key(d.p, 'attack')}] to eat it`);
-            return false;
-          },
-        });
-      });
-      d.eating = null;
+      d.critters = [];
+      d.held = null;
+      feastRound(d, school, 0);
     },
     start(d) {
       // She comes in hungry: the feast is for filling a bar that is NOT full.
       const s = d.dream.st[d.p.index];
       if (s) s.simHp = d.dream.simMax(d.p) * FEAST_START;
+      d.dream.hint(d.p, `ROUND 1 of ${FEAST_ROUNDS.length} — ${FEAST_ROUNDS[0].tell}`);
     },
     /* IS THIS PRESS THE EAT GESTURE — `Menagerie.wouldHold`'s rule, asked by
-       the Cross Slash through `DreamDojo.critterHold`. Already chewing one, or
+       the Cross Slash through `DreamDojo.critterHold`. Already holding one, or
        standing still on top of a stunned one inside the FIXED `CATCH_RADIUS`.
-       The same two functions `tick` decides the chew with, so the button and
+       The same two functions `tick` decides the meal with, so the button and
        the meal cannot disagree about which animal is under her paw. */
     holds(d) {
-      if (d.eating) return true;
+      if (d.held) return true;
       return feastStill(d.p) && !!feastPin(d);
+    },
+    /* ROOTED WHILE SHE SWALLOWS, the ring's rule (`Menagerie.eating`): the
+       pin, or a bird she has started chewing. A bird merely IN her mouth
+       does not root her — she may carry it somewhere quiet. */
+    roots(d) {
+      const c = d.held;
+      return !!c && (c.state === 'pinned' || c.chew > 0);
     },
     tick(d, dt) {
       const p = d.p;
-      for (const c of d.critters) if (c.live) c.steer(dt, p);
+      const holder = holderOf(d);
+      for (const c of d.critters) if (c.live) c.steer(dt, holder);
       const pad = d.dream.game.input?.players?.[p.index];
       const holding = !!pad?.down?.('attack');
       const still = feastStill(p);
-      const near = feastPin(d);
-      for (const c of d.critters) {
-        if (c !== near || !holding || !still) { c.chew = 0; continue; }
-        // Held down: it does not wake up under her paw.
-        c.chew += dt;
-        c.stunT = Math.max(c.stunT, 0.2);
-        if (c.chew >= EAT_TIME) {
-          const s = d.dream.st[p.index];
-          if (s) s.simHp = Math.min(d.dream.simMax(p), (s.simHp ?? 0) + c.kind.heal);
-          d.dream.game.sfx?.('chomp');
-          d.dream.game.toast?.(`${p.name} ate the holo-${c.kind.name}: +${c.kind.heal}!`, p.index);
-          c.chew = 0;
-          c.breakNow();
-          d.progress();
+      // A paw on a stunned one: the pin, and her eating pose (`Menagerie._grab`).
+      if (!d.held && holding && still) {
+        const c = feastPin(d);
+        if (c) {
+          c.critter.pin(holder);
+          d.held = c;
+          p.eatT = EAT_TIME;
         }
       }
-      d.eating = near && holding && still ? near : null;
+      const c = d.held;
+      if (c) {
+        if (!c.live || (c.state !== 'pinned' && c.state !== 'mouthed')) {
+          d.held = null;
+          p.eatT = 0;
+        } else if (c.state === 'pinned') {
+          if (!holding || !still) feastDrop(d);
+          else {
+            c.chew = c.critter.t;
+            p.eatT = Math.max(0, EAT_TIME - c.chew);
+            if (c.chew >= EAT_TIME) feastEat(d, c, school);
+          }
+        } else if (c.critter.t <= 0) {
+          // Five seconds in her mouth and it is gone (`Menagerie._escape`).
+          d.held = null;
+          p.eatT = 0;
+          c.chew = 0;
+          c.critter.release();
+          d.dream.hint(d.p, `The ${c.kind.name} wriggled free!`);
+        } else if (holding && still) {
+          c.chew += dt;
+          p.eatT = Math.max(0, EAT_TIME - c.chew);
+          if (c.chew >= EAT_TIME) feastEat(d, c, school);
+        } else if (c.chew > 0) {
+          // The swallow starts over rather than pausing: the ring's rule.
+          c.chew = 0;
+          p.eatT = 0;
+        }
+      }
     },
     paint(d) {
-      if (d.state !== 'live' || !d.eating) return null;
-      const k = Math.min(1, d.eating.chew / EAT_TIME);
+      if (d.state !== 'live') return null;
+      const c = d.held;
+      if (!c || !(c.chew > 0)) return null;
+      const k = Math.min(1, c.chew / EAT_TIME);
       const bar = '▮'.repeat(Math.round(k * 10)) + '▯'.repeat(10 - Math.round(k * 10));
       return [
         { text: '食 EATING…', size: 2.0, color: HOLO.green, glow: true, jp: true },
         { text: bar, size: 1.6, color: HOLO.green },
-        { text: 'keep holding — let go and it starts again', size: 1.2 },
+        { text: 'keep holding — let go and it gets away', size: 1.2 },
       ];
+    },
+    dispose(d) {
+      if (d.p) d.p.eatT = 0;
     },
     doneText: () => 'In the ring, food past full turns GREEN — extra health!',
   };
+}
+
+/** Swallowed: the ring's heal, a poof, and the next round when this one is empty. */
+function feastEat(d, c, school) {
+  const p = d.p;
+  const s = d.dream.st[p.index];
+  if (s) s.simHp = Math.min(d.dream.simMax(p), (s.simHp ?? 0) + c.kind.heal);
+  d.dream.game.sfx?.('chomp');
+  d.dream.game.toast?.(`${p.name} ate the holo-${c.kind.name}: +${c.kind.heal}!`, p.index);
+  c.chew = 0;
+  d.held = null;
+  p.eatT = 0;
+  c.breakNow();
+  d.progress();
+  d.roundLeft -= 1;
+  if (d.roundLeft <= 0 && d.round + 1 < FEAST_ROUNDS.length && d.state === 'live') {
+    feastRound(d, school, d.round + 1);
+    const R = FEAST_ROUNDS[d.round];
+    d.dream.hint(p, `ROUND ${d.round + 1} of ${FEAST_ROUNDS.length}: ${R.name} — ${R.tell}`);
+  }
 }
 
 function LEAGUE(school, mode) {

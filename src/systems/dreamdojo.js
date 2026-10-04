@@ -1074,6 +1074,9 @@ export class DreamDojo {
          only: `pressed` is a pure edge test, and this never consumes one. */
       const d = this.drills[i];
       if (d?.state === 'live') d.spec.pad?.(d, pad);
+      /* ROOTED WHILE SHE SWALLOWS — the Feast's `roots`, which is the ring's
+         `Menagerie.eating`, and the ring hands her the dead pad for it too. */
+      if (d?.state === 'live' && d.spec.roots?.(d)) return dead;
       return pad;
     }
     return dead;
