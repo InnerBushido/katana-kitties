@@ -611,6 +611,33 @@ quoted.
     by speeding the voices. ~~All new Payne lines are pending her approval.~~
     Approved: "Payne approved the lines and her voice, so we are good there."
 
+- **Richard's "Improvements" list: the stones, the preload, the tour recut**
+  (branch `mixed/dojo-stones-preload-tour-recut`).
+  [dreamdojo.md](docs/notes/dreamdojo.md#the-stones-the-preload-and-the-tour-recut)
+  has each note quoted:
+  - **The three stones lie on one arc** into the gate. The turns on the stones
+    are 20° and 17° (were +62° and +61°). Along the way they stand at
+    0.18/0.49/0.80 (were 0.29/0.51/0.90). The hops are still 3.2.
+  - **The simulator is on the GPU before the tour cuts into it**
+    (`Game.primeSim`). The first sim frame went from 1304 → 17 ms. The four
+    kitten-sheet uploads sit under the fade from black. Payne's dojo menu
+    starts the headset drawings loading. `atlasClone` no longer re-sends a
+    whole sheet for every billboard: three's own `clone()` was bumping it.
+  - **The tour's two simulator lines are recut and PLAYED**
+    (`dream/tourcast.js`):
+    - map → Gallery is a push, not a 180;
+    - canes cut on the range;
+    - four fighters, critters and Lionheart's card at the school, which now
+      holds where the Sentries were;
+    - an outskirts pan;
+    - fruit cut on the Storm, which holds where Bamboo was;
+    - his kata on a Kata floor with the lens walking round until the Sine
+      Gauntlet is behind it;
+    - a fade to his card on "climb the ranks", and a fade out and in to the
+      Shadow.
+  - **Open:** not watched at real speed with audio. Two in-between swings
+    show a moment of sky. The swing onto the range is quick (~280°/s peak).
+
 - **Richard's list after the rare orbs** (branch
   `mixed/dojo-gear-voice-riposte-vr-tour-orbtext-dome`).
   [dreamdojo.md](docs/notes/dreamdojo.md#the-gear-voice-the-headset-riposte-the-tours-islands-the-cards-and-the-dome)

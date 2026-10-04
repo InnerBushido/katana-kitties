@@ -1540,6 +1540,13 @@ export class Payne {
       }
       case 'dojo':
         this.say(p, ['payne_dd_intro'], null, { card: false, now: true });
+        /* THE HEADSET DRAWINGS START LOADING HERE, one menu before VIEW THE
+           DREAM DOJO is offered, behind a card where a decode cannot be seen.
+           Fetched at the tour's start instead, they landed ~4.5s into it and
+           four 3840- and 3072-wide sheets went up mid-shot, ~100ms a frame in
+           the pane; landed already, they go up under its fade from black.
+           See `Game.primeSim`. */
+        g.loadSimArt?.();
         return 'payneDojo';
       case 'view': {
         /* VIEW THE DREAM DOJO — Richard: "there can be an option to 'view' the
