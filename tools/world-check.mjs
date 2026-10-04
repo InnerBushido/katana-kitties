@@ -35838,7 +35838,12 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const code = readdirSync(new URL('../src/systems/dream/', import.meta.url)).filter((f) => f.endsWith('.js'))
       .map((f) => readFileSync(new URL(`../src/systems/dream/${f}`, import.meta.url), 'utf8'))
       .join('\n').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
-    ok('nothing in the simulator can call hurt()', !/\.hurt\(/.test(code));
+    /* ONE EXCEPTION, BY NAME: the Pandapaw trial's REAL panda (pandatrial.js)
+       has a bar of its own, and `panda.hurt` spends the animal's and nobody's
+       else. Any other `.hurt(` — a kitten's — still fails. */
+    const hurts = code.match(/[\w$.]*\.hurt\(/g) ?? [];
+    ok('nothing in the simulator can call hurt() — on a kitten; the trial\'s panda has its own bar',
+      hurts.every((h) => h === 'panda.hurt(') && hurts.length <= 1, hurts.join(' '));
     ok('...and the hud it hands her maps strikePlayers to the training gate and nowhere else',
       /strikePlayers: \(attacker, kind, reach, dir, spent = null\) => \{\s*dream\.onStrike\(/.test(code));
     D.gate = gate;
@@ -37580,9 +37585,127 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       && fakeGame.toasts.some((t) => /wait for GO/.test(t)), `${d.state} ${early} ${fakeGame.toasts.join(' | ')}`);
     d.update(1.3);
     for (const c of canes) c.hit(cut);
-    ok('...and once it is live, ten cuts are ten canes and the trial is won', d.state === 'won' && d.count === 10,
-      `${d.state} ${d.count}/${d.goal}`);
+    ok('...and once it is live, every cane she cuts is one off the count',
+      d.state === 'live' && d.cut === canes.length && canes.length <= 10, `${d.state} ${d.cut}/${canes.length}`);
     d.dispose(); D.drills[0] = null;
+
+    /* 熊 THE PANDA'S WHOLE LIFE IN THE RING. Richard: "first you cut down some
+       bamboo, no more than 10, then you get baby panda ... combat with
+       multiple opponents, and start with below 35% health ... the panda heals
+       them back up ... a bigger panda is spawned ... twice as many opponents
+       ... have 3 or 4 enemies spawn, hit the panda until it turns into a baby
+       panda ... once they are about to leave the island and enter the bridge,
+       the panda poofs away". Walked end to end, with the REAL Panda. */
+    {
+      const PT = await import('../src/systems/dream/pandatrial.js');
+      const PDA = await import('../src/entities/panda.js');
+      const T = PT.PANDA_TRIAL;
+      const deadPad = { dead: true };
+      const rooted = () => D.padFor(0, { live: true }, deadPad) === deadPad;
+      const frac = () => D.simFrac(her);
+      const step = (dd, secs) => { for (let f = 0; f < Math.round(secs * 60) && dd.state === 'live'; f++) dd.update(1 / 60); };
+      const until = (dd, stage, cap = 30) => { for (let f = 0; f < cap * 60 && dd.state === 'live' && dd.stage !== stage; f++) dd.update(1 / 60); return dd.stage === stage; };
+      const fell = (dd) => { for (const f of dd.foes) while (f.live) f.hit(cut); };
+      put(her, IHall);
+      D.t += 10;
+      fakeGame.toasts.length = 0;
+      H.start(her, shrine('panda'));
+      d = D.drills[0];
+      d.update(1.3);
+      const g1 = d.grove.length;
+      for (const c of d.grove) c.hit(cut);
+      d.update(1 / 60);
+      const pa = d.panda;
+      ok('熊 the first grove is at most ten canes, and cutting it brings a baby panda — the REAL Panda, a cub',
+        g1 <= 10 && d.stage === 'cub' && pa instanceof PDA.Panda && pa.tier === 0 && !pa.fighter, `${g1} canes, ${d.stage}`);
+      until(d, 'fight1', T.cubT + 1);
+      ok('...then, after a moment, a fight: more than one holo-kitten, and her SIM bar starts under the cub\'s own line',
+        d.stage === 'fight1' && d.foes.length === T.foes[0] && d.foes.length > 1
+        && Math.abs(frac() - PT.startFrac()) < 0.01 && PT.startFrac() < PDA.PANDA.lickBelow, `${d.stage} ${d.foes.length} at ${frac().toFixed(2)}`);
+      fell(d);
+      d.update(1 / 60);
+      ok('...and when they are down she is ROOTED while the cub comes to lick her', d.stage === 'heal1' && rooted(), d.stage);
+      let licked = false;
+      const h0 = d.t;
+      for (let f = 0; f < 60 * 20 && d.stage === 'heal1'; f++) { d.update(1 / 60); licked ||= pa.licking; }
+      const took = d.t - h0;
+      ok('...by the REAL lick — up to PANDA.lickBelow and no further, and sooner than the safety cap',
+        d.stage === 'read1' && licked && Math.abs(frac() - PDA.PANDA.lickBelow) < 0.01 && took < T.healCap - 0.5,
+        `${d.stage} ${frac().toFixed(3)} in ${took.toFixed(2)}s, licked ${licked}`);
+      ok('...then the card says what that was, and she has her legs back to read it',
+        d.note === PT.HEAL_TEXT && d.card.visible && !rooted() && fakeGame.toasts.some((t) => t.includes('power of a baby panda')));
+      /* THE SPEED-UP IS ONLY WHAT THE GAP NEEDS, AND ONLY THEN ADMITTED. 30% to
+         the tuned 35% at the real 1%/s is the real pace; 6% to 35% is not. */
+      ok('...healed at the REAL pace from Richard\'s 30%, and only a deep hole is sped up',
+        PT.healK(PDA.PANDA.lickBelow - PT.startFrac()) === 1 && PT.healK(PDA.PANDA.lickBelow - 0.06) > 4
+        && PT.healK(0.29) * PDA.PANDA.lickRate * T.healSecs >= 0.29 - 1e-9 && d.fast === false,
+        `x${PT.healK(PDA.PANDA.lickBelow - 0.06).toFixed(1)} from 6%`);
+      until(d, 'cut2', T.readT + 1);
+      const g2 = d.grove.length;
+      for (const c of d.grove) c.hit(cut);
+      d.update(1 / 60);
+      ok('...a second grove (at most ten), and the cub GROWS into a panda that fights',
+        g2 <= 10 && d.stage === 'meet' && pa.tier === 1 && pa.fighter && pa.maxHp > 0, `${g2} canes, ${d.stage}, tier ${pa.tier}`);
+      until(d, 'fight2', T.meetT + 1);
+      ok('...then twice as many opponents, and she starts hurt again',
+        d.stage === 'fight2' && d.foes.length === 2 * T.foes[0] && Math.abs(frac() - PT.startFrac()) < 0.01,
+        `${d.foes.length} at ${frac().toFixed(2)}`);
+      // The panda claws them: a holo-kitten hurt that she never touched.
+      put(her, { x: IHall.x, z: IHall.z, y: IHall.y });
+      pa.position.set(IHall.x + 2, IHall.y, IHall.z);
+      for (const f of d.foes) { f.group.position.set(IHall.x + 4, IHall.y, IHall.z + 1); f.state = 'rest'; f.restT = 99; }
+      step(d, T.clawEvery + 0.2);
+      ok('...the grown panda CLAWS them beside her (the real swipe)', d.foes.some((f) => f.hp < f.maxHits),
+        d.foes.map((f) => f.hp).join(','));
+      // Standing panda at the end of the fight: the lesson knocks it down.
+      pa.hp = pa.maxHp;
+      fell(d);
+      d.update(1 / 60);
+      const lf = d.foes;
+      const refused = lf.map((f) => f.hit(cut));
+      ok('...then she is rooted, and three or four come for the PANDA — not hers to fight',
+        d.stage === 'lesson' && rooted() && lf.length >= 3 && lf.length <= 4 && lf.every((f) => f.onlyPanda) && refused.every((x) => !x),
+        `${d.stage} ${lf.length}`);
+      until(d, 'lesson2', 20);
+      ok('...they hit it until it is a cub again, the real `collapse`, and poof',
+        d.stage === 'lesson2' && pa.tier === 0 && pa.knockedDown && lf.every((f) => !f.live), `${d.stage} tier ${pa.tier}`);
+      ok('...and the card says what that means out there, in Richard\'s words',
+        d.note === PT.LESSON_TEXT && /baby panda/.test(d.note) && /visit Pandapaw again/.test(d.note) && rooted());
+      until(d, '-', 30);
+      ok('...the cub licks her back up, and the trial is won', d.state === 'won' && frac() >= PDA.PANDA.lickBelow - 0.01,
+        `${d.state} ${frac().toFixed(3)}`);
+      while (d.update(1 / 60));
+      d.dispose(); D.drills[0] = null;
+      ok('...and the cub is HERS afterwards, a real Panda in the layer', D.simPandas[0]?.panda === pa && !!pa.group.parent);
+      PT.tickKeptPandas(D, 1 / 60);
+      ok('...while she stays on the island, sworn to Pandapaw', D.simPandas[0]?.panda === pa);
+      her.peekAt = { w: 1 };
+      PT.tickKeptPandas(D, 1 / 60);
+      ok('...and it poofs the moment she is about to take a bridge', !D.simPandas[0] && !pa.group.parent);
+      her.peekAt = null;
+
+      // A panda already knocked down in the fight: the same card, no lesson fight.
+      H.start(her, shrine('panda'));
+      d = D.drills[0];
+      d.update(1.3);
+      for (const c of d.grove) c.hit(cut);
+      d.update(1 / 60); until(d, 'fight1', 5); fell(d); until(d, 'read1', 20); until(d, 'cut2', 8);
+      for (const c of d.grove) c.hit(cut);
+      d.update(1 / 60); until(d, 'fight2', 8);
+      d.panda.collapse();
+      fell(d);
+      d.update(1 / 60);
+      ok('...and a panda already a cub when the fight ends gets the same card, with no fight over it',
+        d.stage === 'lesson2' && d.note === PT.LESSON_TEXT, d.stage);
+      // Walking off the floor ends it, and the cub goes with it.
+      const pb = d.panda;
+      put(her, { x: IHall.x + IHall.r + 6, z: IHall.z, y: IHall.y });
+      d.update(1 / 60);
+      while (d.update(1 / 60));
+      d.dispose(); D.drills[0] = null;
+      ok('...and a trial that does not end won takes its panda with it', d.state === 'failed' && !pb.group.parent && !D.simPandas[0]);
+      put(her, IHall);
+    }
 
     // And it is the GATE that refuses, for every trial in the hall, not the panda's.
     const leaky = [];

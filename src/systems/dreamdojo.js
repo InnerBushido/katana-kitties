@@ -35,6 +35,7 @@ import { TourShadow } from './dream/tourshadow.js';
 import { TourCast } from './dream/tourcast.js';
 import { holoDojo } from './dream/holodojo.js';
 import { peekWeight } from './dream/peek.js';
+import { tickKeptPandas, dropKept } from './dream/pandatrial.js';
 
 /** Her single-cell pose billboards, which the tube puppet mirrors. */
 const PUPPET_POSES = ['eatPose', 'blessPose', 'warpPose', 'breathPose', 'scaredPose', 'sweepPose'];
@@ -699,6 +700,8 @@ export class DreamDojo {
     this.progress = new DreamProgress(store);
     /** Player index -> her live drill, or nothing. */
     this.drills = [];
+    /** The cub each kitten keeps after the Pandapaw trial (dream/pandatrial.js). */
+    this.simPandas = [];
     /** Player index -> her open rundown, or nothing. */
     this.rundowns = [];
     /** Every pad in the simulator that answers INTERACT (pedestals, shrines). */
@@ -1884,6 +1887,7 @@ export class DreamDojo {
     this._updateGear(dt);
     this._updateSign();
     this._updateTraining(dt);
+    tickKeptPandas(this, dt);
     this._updateRez(dt);
     this._updatePuppets(dt);
     this._updateTubes(dt);
@@ -2079,6 +2083,7 @@ export class DreamDojo {
     this.highway?.stop(p);
     const d = this.drills[p.index];
     if (d) { d.dispose(); this.drills[p.index] = null; }
+    this.dropSimPanda(p);
     this._closeRundown(p);
     if (s) { s.loans = []; s.kitSig = null; }
     p.power = aggregate(p.powerOrbs ?? []);
@@ -2093,6 +2098,15 @@ export class DreamDojo {
     if (p.stealTarget && !this.game.players?.includes(p.stealTarget)) p._endMark?.(null);
     s?.bar?.removeFromParent();
   }
+
+  /** The Pandapaw trial was won: the cub is hers while she stays on the
+   *  hall's island, sworn to Pandapaw (`keptPandaGone` says when it goes). */
+  keepSimPanda(p, panda, owner) {
+    this.dropSimPanda(p);
+    this.simPandas[p.index] = { p, panda, owner, isle: this.isles?.hall ?? null };
+  }
+
+  dropSimPanda(p) { dropKept(this, p.index); }
 
   startDrill(p, spec, at) {
     this._closeRundown(p);
@@ -2863,6 +2877,7 @@ export class DreamDojo {
     }
     this.simDojo?.faceCamera?.(camera);
     if (this.sim && camera.position.x > SIM.dx * 0.5) {
+      for (const k of this.simPandas) k?.panda.faceCamera(camera);
       this.sim.faceCamera(camera);
       this.gallery?.faceCamera(camera);
       this.hall?.faceCamera(camera);

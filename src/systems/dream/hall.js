@@ -4,7 +4,8 @@ import { Billboard } from '../../core/gfx.js';
 import { SIM, HOLO } from '../../world/simworld.js';
 import { STEAL, DBREATH } from '../../entities/clanpower.js';
 import { HoloPanel, holoFlicker } from './holo.js';
-import { Post, Cane, HoloKitten, BLADE_KINDS } from './targets.js';
+import { Post, HoloKitten, BLADE_KINDS } from './targets.js';
+import { PANDA_SPEC } from './pandatrial.js';
 
 /* ---------------------------------------------------------------------------
    THE CLAN TRIAL HALL — all six oaths, sworn for a minute, tried for real.
@@ -385,26 +386,10 @@ export const TRIALS = {
     },
   }),
 
-  /* 熊 PANDAPAW. The patient clan's job is bamboo — the real oath pays a cub
-     for it, and the cub grows into a panda that fights beside you in the
-     ring. Ten canes; only the blade cuts them, as in the real grove. */
-  panda: (h, p) => ({
-    title: 'PANDAPAW TRIAL', kanji: '熊', goal: 10, time: 30, bands: [30, 16, 10],
-    goalText: 'Cut ten canes — only the katana cuts bamboo', countLabel: 'canes ',
-    doneText: () => 'Out there, that earns a panda cub',
-    setup(d) {
-      for (let i = 0; i < 10; i++) {
-        const a = (i / 10) * Math.PI * 2;
-        const rr = 4 + (i % 2) * 3.5;
-        const q = d.spot(Math.cos(a) * rr, Math.sin(a) * rr);
-        d.target(Cane, {
-          x: q.x, y: q.y, z: q.z,
-          onRefuse: () => d.dream.hint(d.p, 'Bamboo only answers to the katana'),
-          onBreak: () => d.progress(),
-        });
-      }
-    },
-  }),
+  /* 熊 PANDAPAW. It was ten canes against a clock, which taught the oath's
+     job and nothing about what the job buys. Now it is the panda's whole
+     life in the ring, with the real animal — dream/pandatrial.js. */
+  panda: () => PANDA_SPEC(),
 };
 
 export { BLADE_KINDS, STEAL };
