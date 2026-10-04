@@ -36,6 +36,7 @@ import { TourCast } from './dream/tourcast.js';
 import { holoDojo } from './dream/holodojo.js';
 import { peekWeight } from './dream/peek.js';
 import { tickKeptPandas, dropKept } from './dream/pandatrial.js';
+import { enterHolo, grantHolo, holoLeft, HoloChoice, HOLO_MAX_EACH } from './dream/holokit.js';
 
 /** Her single-cell pose billboards, which the tube puppet mirrors. */
 const PUPPET_POSES = ['eatPose', 'blessPose', 'warpPose', 'breathPose', 'scaredPose', 'sweepPose'];
@@ -704,6 +705,8 @@ export class DreamDojo {
     this.simPandas = [];
     /** Player index -> her open rundown, or nothing. */
     this.rundowns = [];
+    /** A pedestal's question over her head, one per kitten (dream/holokit.js). */
+    this.choices = [];
     /** Every pad in the simulator that answers INTERACT (pedestals, shrines). */
     this.stations = [];
     this._hintAt = new Map();
@@ -1075,6 +1078,11 @@ export class DreamDojo {
       // On a light cycle she is cargo: a stick still pushed must not steer
       // her off the highway (highway.js).
       if (this.highway?.riding(i)) return dead;
+      /* A QUESTION OVER HER HEAD HAS HER STICK, and she stands still while it
+         is up — the push that moves its cursor must not walk her off the
+         pedestal she is answering about. */
+      const c = this.choices[i];
+      if (c) { c.update(pad); return dead; }
       /* A DRILL MAY WATCH HER BUTTONS — Kata Trace has to know the moment
          she pressed jump, not the moment her feet left the floor. Watching
          only: `pressed` is a pure edge test, and this never consumes one. */
@@ -1142,7 +1150,7 @@ export class DreamDojo {
       if (this.onPort(p)) return `[${key}]  DISCONNECT`;
       // The card says which button turns it; a callout under it is the same
       // words a second time, drawn on top of its last line.
-      if (this.rundowns[p.index]) return null;
+      if (this.rundowns[p.index] || this.choices[p.index]) return null;
       if (this.canTalk(p)) {
         return p.powerOrbs?.length ? `[${key}]  RUNDOWN OF YOUR KOTODAMA` : `[${key}]  TALK TO LIONHEART`;
       }
@@ -1182,6 +1190,8 @@ export class DreamDojo {
       // Swallowed, not refused: a press mid-ride is her hand still on the
       // button she rode off with, and it must not reach anything else.
       if (this.highway?.riding(p.index)) return true;
+      const ch = this.choices[p.index];
+      if (ch) { ch.pick(); return true; }
       if (this.onPort(p)) { this._begin(p, 'derez'); return true; }
       const rd = this.rundowns[p.index];
       if (rd) {
@@ -1627,6 +1637,10 @@ export class DreamDojo {
     p.dreamAnchor = toSimNow ? s.anchor.clone() : null;
     s.proxy = null;
     if (toSimNow) {
+      /* HER HOLO KIT: a copy of what she wears, and no clan (dream/holokit.js).
+         Before `refillSim`, which sizes her bar off the kit she has in here. */
+      enterHolo(this, p);
+      this._applyKit(p, true);
       this.refillSim(p);
       /* THE INVITATION, ONCE A VISIT. A kitten wearing orbs is told there is
          a rundown; she is never put through one she did not ask for. */
@@ -2023,7 +2037,7 @@ export class DreamDojo {
     const fresh = [];
     for (const id of new Set(ids)) {
       const want = ids.filter((x) => x === id).length;
-      const own = (p.powerOrbs ?? []).filter((x) => x === id).length;
+      const own = (s.holoWorn ?? p.powerOrbs ?? []).filter((x) => x === id).length;
       let have = own + s.loans.filter((x) => x === id).length;
       while (have < want) { s.loans.push(id); have++; fresh.push(id); }
     }
@@ -2035,10 +2049,11 @@ export class DreamDojo {
     }
   }
 
-  /** `p.power` and the worn ring, from her real orbs plus her loans. */
+  /** `p.power` and the worn ring, from her HOLO kit plus her loans — her real
+   *  orbs only stand in for a kitten with no holo kit yet. */
   _applyKit(p, force = false) {
     const s = this.st[p.index];
-    const ids = [...(p.powerOrbs ?? []), ...(s?.loans ?? [])];
+    const ids = [...(s?.holoWorn ?? p.powerOrbs ?? []), ...(s?.loans ?? [])];
     const sig = ids.join(',');
     if (!force && s?.kitSig === sig) return;
     if (s) s.kitSig = sig;
@@ -2072,6 +2087,7 @@ export class DreamDojo {
       p.clanRing?.material.color.set(clan.color);
       this.game.toast?.(`${p.name} swore to ${clan.name} — only in the simulator`, p.index);
       this.game.sfx?.('clan');
+      this.game._updateClanBadge?.(p);
     }
   }
 
@@ -2084,8 +2100,9 @@ export class DreamDojo {
     const d = this.drills[p.index];
     if (d) { d.dispose(); this.drills[p.index] = null; }
     this.dropSimPanda(p);
+    this.closeChoice(p);
     this._closeRundown(p);
-    if (s) { s.loans = []; s.kitSig = null; }
+    if (s) { s.loans = []; s.kitSig = null; s.holoWorn = null; s.holoCopies = null; }
     p.power = aggregate(p.powerOrbs ?? []);
     if (this.game.syncOrbMeshes) this.game.syncOrbMeshes(p);
     else this._syncMeshes(p, p.powerOrbs ?? []);
@@ -2094,6 +2111,7 @@ export class DreamDojo {
       p.dreamOath = null;
       p.clanRing?.material.color.set(p.clan?.color ?? p.style?.colour ?? 0xffffff);
     }
+    this.game._updateClanBadge?.(p);
     // A mark on a hologram means nothing out there.
     if (p.stealTarget && !this.game.players?.includes(p.stealTarget)) p._endMark?.(null);
     s?.bar?.removeFromParent();
@@ -2108,8 +2126,70 @@ export class DreamDojo {
 
   dropSimPanda(p) { dropKept(this, p.index); }
 
+  /** Put a question over her head (dream/holokit.js `HoloChoice`). */
+  openChoice(p, o) {
+    this.closeChoice(p);
+    this._closeRundown(p);
+    this.choices[p.index] = new HoloChoice(this, p, o);
+  }
+
+  closeChoice(p) {
+    const c = this.choices[p.index];
+    if (!c) return;
+    c.dispose();
+    this.choices[p.index] = null;
+  }
+
+  /**
+   * A Gallery pedestal, pressed. Under three stars it is the trial, as it
+   * always was; at three, "they will get a UI option that lets them either
+   * start the trial or add an extra kotodama orb to their inventory".
+   */
+  pedestal(p, id, start) {
+    const stars = this.progress.stars(p.style?.name ?? p.name, `gallery.${id}`);
+    if (stars < 3) { start(); return; }
+    const spec = ORB_BY_ID[id];
+    const left = holoLeft(p, id);
+    const have = HOLO_MAX_EACH - left;
+    this.openChoice(p, {
+      title: `${spec?.kanji ?? ''} ${spec?.name ?? id}  ★★★`,
+      rows: [
+        { text: 'START THE TRIAL', act: () => { this.closeChoice(p); start(); } },
+        {
+          text: left ? `TAKE ANOTHER ${spec?.name ?? id} — you have ${have} of ${HOLO_MAX_EACH}`
+            : `ALL ${HOLO_MAX_EACH} TAKEN — ${HOLO_MAX_EACH} is the most`,
+          dim: !left,
+          act: () => {
+            this.closeChoice(p);
+            const r = grantHolo(this, p, id);
+            if (!r.ok) {
+              this.game.sfx?.('deny');
+              this.game.toast?.(`${p.name} — ${r.why}`, p.index);
+            }
+          },
+        },
+        { text: 'NEVER MIND — keep exploring', act: () => this.closeChoice(p) },
+      ],
+    });
+  }
+
+  /**
+   * Any drill ended. A Gallery trial WON for the first time pays its orb into
+   * her holo kit — "When they gather kotodama in the simulator, it will
+   * automatically equip them" — and only the first time: the extras are the
+   * pedestal's to give, after three stars.
+   */
+  onDrillEnd(d, how) {
+    if (how !== 'won') return;
+    const m = /^gallery\.(\w+)$/.exec(d.spec.id ?? '');
+    if (!m || !ORB_BY_ID[m[1]]) return;
+    if ((d.p.holoOrbs ?? []).includes(m[1])) return;
+    grantHolo(this, d.p, m[1]);
+  }
+
   startDrill(p, spec, at) {
     this._closeRundown(p);
+    this.closeChoice(p);
     const old = this.drills[p.index];
     if (old) old.dispose();
     this.drills[p.index] = new Drill(this, p, spec, at);
@@ -2878,6 +2958,7 @@ export class DreamDojo {
     this.simDojo?.faceCamera?.(camera);
     if (this.sim && camera.position.x > SIM.dx * 0.5) {
       for (const k of this.simPandas) k?.panda.faceCamera(camera);
+      for (const c of this.choices) c?.faceCamera(camera);
       this.sim.faceCamera(camera);
       this.gallery?.faceCamera(camera);
       this.hall?.faceCamera(camera);

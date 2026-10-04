@@ -364,6 +364,22 @@ export const SHOP_ONLY_IDS = POWER_ORBS.filter((o) => o.shopOnly).map((o) => o.i
 export const ORB_BY_ID = Object.fromEntries(POWER_ORBS.map((o) => [o.id, o]));
 export const ORB_IDS = POWER_ORBS.map((o) => o.id);
 
+/** The simulator's holo Kotodama: "a max of 4 of the same kotodama orbs to
+ *  each player". Here and not in dream/holokit.js so the save can read it
+ *  without loading the simulator. */
+export const HOLO_MAX_EACH = 4;
+
+/** The holo orbs a save row may hold: real ids, at most `HOLO_MAX_EACH` of
+ *  each. A rule that degrades — an older or hand-edited row is trimmed, not
+ *  refused, and a row with none is a kitten who has earned none. */
+export function cleanHoloOrbs(list) {
+  const out = [];
+  for (const id of Array.isArray(list) ? list : []) {
+    if (ORB_BY_ID[id] && out.filter((x) => x === id).length < HOLO_MAX_EACH) out.push(id);
+  }
+  return out;
+}
+
 /**
  * A free orb, drawn at random.
  *

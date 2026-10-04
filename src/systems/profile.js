@@ -1,6 +1,7 @@
 import { POWER_ORBS, ORB_BY_ID, ORB_IDS, MAX_EQUIPPED, MAX_BAG, countsOf } from '../entities/powerorb.js';
 import { MAX_PLAYERS, cssFor } from '../core/palette.js';
 import { dragGuard } from '../core/tap.js';
+import { holoBag, holoStow, holoWear, HOLO_MAX_EACH } from './dream/holokit.js';
 
 /* ---------------------------------------------------------------------------
    THE CHARACTER PROFILE — inventory, trading, and the dealer's counter.
@@ -142,9 +143,9 @@ class Side {
  * out of' the inventory screen"), so the edges are walls, and a row wraps
  * because a wall at its end would be a corner a kid pushes into for nothing.
  */
-export function invStep(at, dx, dy) {
+export function invStep(at, dx, dy, bag = MAX_BAG) {
   const cols = MAX_EQUIPPED;
-  const rows = 1 + Math.ceil(MAX_BAG / cols);
+  const rows = 1 + Math.ceil(bag / cols);
   const r = Math.max(0, Math.min(rows - 1, Math.floor(at / cols) + dy));
   const c = ((at % cols) + dx + cols) % cols;
   return r * cols + c;
@@ -291,6 +292,15 @@ export class ProfileScreen {
         return;
       }
       const inv = e.target.closest('[data-inv]');
+      if (inv && this.mode === 'holo') {
+        const index = Number(inv.dataset.side);
+        if (!this.sides[index]) return;
+        this.sides[index].inv = Number(inv.dataset.inv);
+        this._holoHere(index);
+        this._sig = '';
+        this._paint();
+        return;
+      }
       if (inv) {
         const index = Number(inv.dataset.side);
         const side = this.sides[index];
@@ -376,6 +386,12 @@ export class ProfileScreen {
       s.i = Math.min(s.i, Math.max(0, this._rowCount(i) - 1));
     });
     this._sig = '';
+    /* THE HOLO PROFILE WEARS THE SIMULATOR'S LOOK — "we can change it's look
+       to match the Dream Dojo's holographic look" — off one class on the
+       panel (style.css `.kd-holo`), so every rule the real card has for a
+       phone is the holo card's too. */
+    this.el.classList.toggle('kd-holo', mode === 'holo');
+    if (mode === 'holo') for (const s of this.sides) s.inv = 0;
     this.el.classList.remove('hidden');
     this.game.audio?.play('menu');
     this._paint();
@@ -397,6 +413,7 @@ export class ProfileScreen {
     this.shopper = null;
     this.joined.clear();
     this.el.classList.add('hidden');
+    this.el.classList.remove('kd-holo');
     this.game.audio?.play('menu');
     /* Opened from the world, closing has to hand the frame back or the first
        tick after the shop is however long the girl spent in it — every kitten
@@ -481,6 +498,7 @@ export class ProfileScreen {
     }
 
     if (pad.pressed('start')) { this.close({ back: false }); return; }
+    if (this.mode === 'holo') { this._driveHolo(index, pad, dt); return; }
     if (side.pending) {
       if (pad.pressed('jump')) this._answerHere(index, true);
       else if (pad.pressed('attack') || pad.pressed('interact')) this._answerHere(index, false);
@@ -603,6 +621,65 @@ export class ProfileScreen {
       }
     }
     if (pad.pressed('jump')) this._invHere(index);
+  }
+
+  /**
+   * THE (HOLO) PLAYER PROFILE: one grid, and she is in it from the start.
+   *
+   * Richard: "Player can manage these kotodama orbs in the '(Holo) Player
+   * Profile' page." That is the whole job, so there are no tabs to step into
+   * and nothing to trade: the stick walks her worn row and her holo bag, JUMP
+   * moves the orb under it to the other row (the real INVENTORY tab's rule —
+   * neither way is irreversible, so neither asks), and INTERACT is the way
+   * out, as it is out of a tab on the real card.
+   */
+  _driveHolo(index, pad, dt) {
+    const side = this.sides[index];
+    if (pad.pressed('interact')) { this.close(); return; }
+    const p = this.game.players[index];
+    const D = this.game.dream;
+    if (!p || !D?.st[index]?.holoWorn) {
+      if (pad.pressed('jump')) {
+        this._say(`${p?.name ?? 'She'} is not in the simulator — her holo kit is only in there`);
+        this.game.audio?.play('deny');
+      }
+      return;
+    }
+    const code = Math.abs(pad.mx) > NAV_DEAD && Math.abs(pad.mx) >= Math.abs(pad.my)
+      ? 2 * Math.sign(pad.mx)
+      : Math.abs(pad.my) > NAV_DEAD ? Math.sign(pad.my) : 0;
+    const step = this._repeat(side, code, dt);
+    if (step) {
+      const was = side.inv;
+      side.inv = invStep(side.inv, Math.abs(step) === 2 ? Math.sign(step) : 0,
+        Math.abs(step) === 1 ? step : 0, this._holoBagSlots(index));
+      if (side.inv !== was) { this._moved = index; this.game.audio?.play('menu'); }
+    }
+    if (pad.pressed('jump')) this._holoHere(index);
+  }
+
+  /** Her holo bag's cells: two rows at least, as many as it needs. */
+  _holoBagSlots(index) {
+    const p = this.game.players[index];
+    const n = holoBag(p, this.game.dream?.st[index]).length;
+    return Math.max(MAX_BAG, Math.ceil(n / MAX_EQUIPPED) * MAX_EQUIPPED);
+  }
+
+  /** JUMP (or a tap) on a holo cell: worn goes in the bag, bagged goes on. */
+  _holoHere(index) {
+    const p = this.game.players[index];
+    const D = this.game.dream;
+    const side = this.sides[index];
+    const s = D?.st[index];
+    if (!p || !s?.holoWorn) return;
+    const k = side.inv;
+    const worn = k < MAX_EQUIPPED;
+    const id = worn ? s.holoWorn[k] : holoBag(p, s)[k - MAX_EQUIPPED];
+    const why = worn ? holoStow(D, p, k) : holoWear(D, p, k - MAX_EQUIPPED);
+    if (why) { this._say(why); this.game.audio?.play('deny'); return; }
+    const name = ORB_BY_ID[id]?.name ?? 'it';
+    this._say(worn ? `${p.name} put her holo ${name} in the holo bag` : `${p.name} is wearing a holo ${name}`);
+    this.game.audio?.play('menu');
   }
 
   /** Step INTO a tab: JUMP on its header, or a tap on it. */
@@ -1256,8 +1333,12 @@ export class ProfileScreen {
         : keys ?? 'JUMP <b>buy</b> · ATTACK <b>sell</b> · INTERACT <b>leave</b>'
           + (this.game.players.length > 1 ? ' · MOUNT <b>join in</b>' : '');
     } else {
-      this.title.textContent = 'CHARACTER PROFILE';
-      this.body.innerHTML = this.game.players.map((p, i) => this._cardMarkup(p, i)).join('');
+      /* THE HOLO PROFILE IS THIS SCREEN WITH ANOTHER CARD — same width rule,
+         same footer, its own words (dream/holokit.js). */
+      const holo = this.mode === 'holo';
+      this.title.textContent = holo ? '(HOLO) PLAYER PROFILE' : 'CHARACTER PROFILE';
+      this.body.innerHTML = this.game.players
+        .map((p, i) => (holo ? this._holoCardMarkup(p, i) : this._cardMarkup(p, i))).join('');
       /* THE PANEL IS AS WIDE AS ITS CARDS HAVE EARNED — see `.kd-cards` in
          style.css. Set from the cards just laid out rather than from
          `partySize`, because the thing the width has to fit is the markup on
@@ -1275,9 +1356,13 @@ export class ProfileScreen {
         : inQ.length
           ? `${inQ.join(' and ')}: ▲ ▼ <b>read the quests</b> · INTERACT <b>step back out</b>`
           : null;
+      const holoKeys = holo
+        ? 'stick <b>pick an orb</b> · JUMP <b>wear it / put it in the holo bag</b>'
+          + ' · INTERACT <b>close</b> — only in the simulator; your real orbs are waiting outside'
+        : null;
       this.help.innerHTML = this._flashT > 0
         ? `<em>${this._flash}</em>`
-        : keys ?? tabKeys ?? 'JUMP <b>offer this orb</b> (as many as you like)'
+        : holoKeys ?? keys ?? tabKeys ?? 'JUMP <b>offer this orb</b> (as many as you like)'
           + ' · ATTACK <b>confirm</b> · SPRINT <b>drop them</b>'
           + ' · INTERACT <b>take them all back</b>'
           + ' — <b>both</b> must confirm';
@@ -1496,7 +1581,7 @@ export class ProfileScreen {
    */
   _paintActions() {
     if (!this.actions) return;
-    if (!this.game.device?.touchPrimary) { this.actions.innerHTML = ''; return; }
+    if (!this.game.device?.touchPrimary || this.mode === 'holo') { this.actions.innerHTML = ''; this._actionSig = ''; return; }
     const i = this._touchSide();
     /* THE PILE IS IN THE SIGNATURE because DROP appears and disappears with
        it. Without this the button is drawn once, from whatever the offers were
@@ -1553,6 +1638,10 @@ export class ProfileScreen {
     return [
       this.mode,
       this.game.players.map((p) => `${p.powerOrbs.join(',')}|${(p.orbBag ?? []).join(',')}|${p.score}|${p.clan?.id ?? ''}`).join(';'),
+      this.mode === 'holo' ? this.game.players.map((p) => {
+        const s = this.game.dream?.st[p.index];
+        return `${(s?.holoWorn ?? ['-']).join(',')}|${(p.holoOrbs ?? []).join(',')}`;
+      }).join(';') : '',
       /* The offers are a SET, so they are spelled out rather than stringified
          — `${set}` is "[object Set]" for every possible pile, and the screen
          would have stopped repainting the moment the second orb was picked. */
@@ -1695,6 +1784,61 @@ export class ProfileScreen {
       </div>
       ${this._tabsMarkup(player, quests, index)}
     </div>`;
+  }
+
+  /**
+   * One kitten's HOLO card: her name with (HOLO), her holo-clan, what she
+   * wears in the simulator and her holo bag — the real INVENTORY tab's grid,
+   * fed from dream/holokit.js instead of `powerOrbs` / `orbBag`.
+   *
+   * A KITTEN WHO IS NOT IN THERE GETS A CARD THAT SAYS SO, rather than no
+   * card: four cards on a four-player screen is the layout everybody knows,
+   * and a missing one reads as a sister who has dropped out.
+   */
+  _holoCardMarkup(player, index) {
+    const me = `style="--me:${cssFor(player.style)}"`;
+    const D = this.game.dream;
+    const s = D?.st[index];
+    const head = `<div class="kd-name">${player.name} <span class="kd-holo-tag">(HOLO)</span></div>`;
+    if (!s?.holoWorn) {
+      return `<div class="kd-card kd-p${index}" ${me}>${head}`
+        + '<div class="kd-clan kd-clan-none">Not in the simulator — step into your VR tube to use your holo kit.</div>'
+        + `<div class="kd-meta">${(player.holoOrbs ?? []).length} holo orbs earned, waiting in there</div></div>`;
+    }
+    const clan = player.clan;
+    const clanRow = clan
+      ? `<div class="kd-clan" style="--clan:#${clan.color.toString(16).padStart(6, '0')}"><b>${clan.name} (Holo)</b><span>${clan.buff.label}</span></div>`
+      : '<div class="kd-clan kd-clan-none">No clan in here (Holo) — swear one in the Trial Hall.</div>';
+    const side = this.sides[index];
+    const worn = s.holoWorn;
+    const bag = holoBag(player, s);
+    const slots = this._holoBagSlots(index);
+    const cell = (id, k) => {
+      const spec = id ? ORB_BY_ID[id] : null;
+      const cls = ['kd-slot', 'kd-inv-slot', spec ? 'full' : 'empty', side.inv === k ? 'cursor' : ''].filter(Boolean).join(' ');
+      const style = spec ? ` style="--orb:#${spec.color.toString(16).padStart(6, '0')}"` : '';
+      return `<div class="${cls}"${style} data-side="${index}" data-inv="${k}"><span>${spec ? spec.kanji : ''}</span></div>`;
+    };
+    const wornCells = [];
+    for (let k = 0; k < MAX_EQUIPPED; k++) wornCells.push(cell(worn[k], k));
+    const bagCells = [];
+    for (let k = 0; k < slots; k++) bagCells.push(cell(bag[k], MAX_EQUIPPED + k));
+    const k = side.inv;
+    const id = k < MAX_EQUIPPED ? worn[k] : bag[k - MAX_EQUIPPED];
+    const spec = id ? ORB_BY_ID[id] : null;
+    const earned = (player.holoOrbs ?? []).filter((x) => x === id).length;
+    const detail = spec
+      ? `<b>${spec.name}</b> · ${spec.label} — JUMP <b>${k < MAX_EQUIPPED ? 'put it in the holo bag' : 'wear it'}</b>`
+        + `<br><span class="kd-dim">${earned} of ${HOLO_MAX_EACH} earned in here · three stars on its pedestal earns another</span>`
+      : '<span class="kd-dim">Empty slot — win a Gallery trial to earn its orb</span>';
+    return `<div class="kd-card kd-p${index}" ${me}>${head}${clanRow}`
+      + `<div class="kd-meta">${worn.length}/${MAX_EQUIPPED} worn · ${bag.length} in the holo bag · ${(player.holoOrbs ?? []).length} earned</div>`
+      + '<div class="kd-inv cursor" data-inv-box>'
+      + `<div class="kd-inv-head">WEARING IN HERE ${worn.length}/${MAX_EQUIPPED}</div>`
+      + `<div class="kd-inv-grid">${wornCells.join('')}</div>`
+      + `<div class="kd-inv-head">HOLO BAG ${bag.length}</div>`
+      + `<div class="kd-inv-grid">${bagCells.join('')}</div>`
+      + `<div class="kd-inv-detail">${detail}</div></div></div>`;
   }
 
   /**

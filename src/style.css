@@ -4181,6 +4181,62 @@ body.touch-ui .kd-row .kd-dim {
 .kd-p3 { --me: var(--blossom); }
 .kd-card { box-shadow: inset 0 0 0 3px var(--me); }
 
+/* THE (HOLO) PLAYER PROFILE — the same panel and cards, in the simulator's
+   light (dream/holokit.js). Richard: "we can change it's look to match the
+   Dream Dojo's holographic look, and can even have the button be that
+   color". One class on the panel, so every phone rule above and below for
+   `.kd-card` holds for the holo card too; only colour and glass change. */
+.kd-panel { --holo: #53e2ff; --holo-deep: rgba(4, 22, 34, 0.92); }
+#panel-profile.kd-holo .kd-panel {
+  background: var(--holo-deep);
+  border-color: var(--holo);
+  box-shadow: 0 0 24px rgba(83, 226, 255, 0.45), inset 0 0 40px rgba(83, 226, 255, 0.12);
+  color: #d8fdff;
+}
+#panel-profile.kd-holo .kd-panel > h2 { color: var(--holo); text-shadow: 0 0 12px rgba(83, 226, 255, 0.8); }
+#panel-profile.kd-holo .kd-card {
+  background: rgba(83, 226, 255, 0.08);
+  border-color: var(--holo);
+  /* Scan lines, faint: the one texture every hologram in the simulator has. */
+  background-image: repeating-linear-gradient(0deg, rgba(83, 226, 255, 0.07) 0 1px, transparent 1px 4px);
+}
+#panel-profile.kd-holo :is(.kd-meta, .kd-dim, .kd-help, .kd-inv-head) { color: #9fefff; }
+#panel-profile.kd-holo .kd-slot { background: rgba(4, 22, 34, 0.6); }
+.kd-holo-tag { color: var(--holo, #53e2ff); font-size: 0.7em; letter-spacing: 1px; text-shadow: 0 0 8px rgba(83, 226, 255, 0.8); }
+/* THE HOLO CARD ON A PHONE IS A STACK, NOT THE RACK'S GRID. The real card's
+   one-or-two rule below lays `.kd-slots` beside its text in a `max-content`
+   column; the holo card has no rack, so its inventory was auto-placed into
+   that column and shrink-wrapped — measured at 844x390, one kitten: eight
+   worn cells 22px across in the top-left corner of a 760px card, with the
+   rest of it empty. A column, with the grid the part that gives and scrolls
+   (`.kd-cards .kd-inv` already is one), and the cells at their phone size. */
+body.touch-ui #panel-profile.kd-holo .kd-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+body.touch-ui #panel-profile.kd-holo .kd-card > :not(.kd-inv) { flex-shrink: 0; }
+/* AND AT ONE OR TWO, NOT HALF SIZE. The half-size zoom is there to get four
+   real cards and their quest lists on one screen; a holo card has no rack
+   and no quests, and at half size its type was 6.5px on screen and its card
+   half empty. Measured at 844x390, one kitten, zoom against the bag's scroll:
+   0.6 → cells 43px, grid 319 in a 309 box; 0.72 → 51px, 318 in 242; 0.8 →
+   57px, 321 in 204. 0.6, with the count line gone (the two grid headings
+   carry both its numbers), is the largest that shows every cell with no
+   scrolling. At three and four the cards keep the half size the real ones
+   have, because that is what fits four across. */
+body.touch-ui #panel-profile.kd-holo .kd-panel.kd-cards:is([data-cards="1"], [data-cards="2"]) > #kd-body { zoom: 0.6; }
+body.touch-ui #panel-profile.kd-holo .kd-card > .kd-meta { display: none; }
+/* The kanji are what she reads an orb by; 14px under that zoom was 8px. */
+body.touch-ui #panel-profile.kd-holo .kd-inv-slot { font-size: 28px; }
+.pause-menu .menu-btn.holo-btn {
+  background: #0b3140;
+  color: #9ff6ff;
+  border-color: #53e2ff;
+  box-shadow: 0 0 14px rgba(83, 226, 255, 0.55);
+  text-shadow: 0 0 8px rgba(83, 226, 255, 0.9);
+}
+
 /* The points row on a trade card. A ROW, not a ninth slot: points are not one
    of the eight she can wear, and drawing them in the grid would say they are. */
 .kd-points {

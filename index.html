@@ -2009,6 +2009,11 @@
         <h2>KITTENS &amp; SCORES</h2>
         <div class="pause-menu">
           <button class="menu-btn" data-action="profile">CHARACTER PROFILE</button>
+          <!-- Only while somebody is in the Dream Dojo's simulator (Game.setPaused
+               shows it): her holo kit, in the simulator's colour. Richard: "add
+               a 2nd Players Profile in the menu and call it '(Holo) Player
+               Profile' ... can even have the button be that color". -->
+          <button id="btn-holo-profile" class="menu-btn holo-btn hidden" data-action="holo-profile">(HOLO) PLAYER PROFILE</button>
           <button class="menu-btn" data-action="board">RECORD BOARD</button>
           <!-- One DROP OUT per extra player, built by Game._buildLeaveButtons
                and absent entirely in a solo game: a button offering to remove

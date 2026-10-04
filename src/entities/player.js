@@ -556,6 +556,10 @@ export class Player {
      *  saved in her row like her gear (savegame.js `castRow`). All three is
      *  `kyo`: his 凶 Cross Slash, at `KYO.dmgK`. See dream/shadow.js. */
     this.shadowBeat = { easy: false, medium: false, hard: false };
+    /** The Kotodama she has EARNED in the simulator — the Gallery's first
+     *  wins and a 3★ pedestal's extras, at most four of a kind. Hers only in
+     *  there, and saved in her row. See dream/holokit.js. */
+    this.holoOrbs = [];
     /** Folded buff totals. Never null: an empty list aggregates to the
      *  identity, so every read site is `this.power.speed` with no `?? 1`. */
     this.power = aggregate([]);

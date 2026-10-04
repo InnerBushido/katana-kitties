@@ -2586,6 +2586,7 @@ class Game {
         if (a === 'ending') show('panel-ending');
         if (a === 'ending-again') this.replayEnding();
         if (a === 'profile') this.profile.open('profile', { fromPause: true });
+        if (a === 'holo-profile') this.profile.open('holo', { fromPause: true });
         if (a === 'resume') this.setPaused(false);
         /* EVERY IRREVERSIBLE BUTTON IN THIS MENU ASKS FIRST, and each of them
            asks in words that say what happens rather than "are you sure?" —
@@ -3309,6 +3310,11 @@ class Game {
        would have reached for. */
     document.getElementById('btn-quit-match')
       ?.classList.toggle('hidden', !(on && this.inMatch && !this.travel));
+    /* THE HOLO PROFILE ONLY EXISTS WHILE SOMEBODY IS IN THE SIMULATOR — a
+       button for a kit nobody is wearing is a button that opens four cards
+       saying "not in here". Rebuilt on the way in, like the rows above. */
+    document.getElementById('btn-holo-profile')
+      ?.classList.toggle('hidden', !(on && this.dream?.built && this.players.some((p) => this.dream.st[p.index]?.holoWorn)));
     document.getElementById('panel-pause').classList.toggle('hidden', !on);
     /* THE PAUSE MENU TAKES EVERY PERSONAL CARD DOWN WITH IT. It is a global
        modal over a frozen world, and a card is the opposite of that — hers,
@@ -3429,6 +3435,8 @@ class Game {
       p.dreamGeared = false;
       // His Shadow's three levels, and so 凶, are earned in a game too.
       p.shadowBeat = { easy: false, medium: false, hard: false };
+      // ...and so are the orbs she earned in the simulator (dream/holokit.js).
+      p.holoOrbs = [];
       /* AND THE ONES BELONGING TO KITTENS NOBODY IS PLAYING, which live in
          `_parkedPandas` and are in the scene exactly like these. Missed, a
          restart would leave a grown panda standing in a town that has just
@@ -4598,6 +4606,18 @@ class Game {
     const el = document.getElementById(`clan-${player.index}`);
     if (!el) return;
     const clan = player.clan;
+    /* IN THE SIMULATOR, THE BADGE IS HER HOLO-CLAN AND SAYS SO. Richard: "The
+       Clans they join in the simulator will also be shown ... next to their
+       name with (Holo) next to it, with that being returned to the players
+       actual Clan pledge when they leave". `dreamOath` is the costume
+       (dream/holokit.js); `_leaveSim` takes it off and repaints this. The
+       bamboo counter is about her REAL panda and is not shown over a holo
+       oath — it would be counting toward an animal she cannot have in here. */
+    if (player.dreamOath) {
+      el.textContent = clan ? `${clan.name} (Holo) · ${clan.buff.label}` : 'No clan (Holo)';
+      el.style.background = clan ? `#${clan.color.toString(16).padStart(6, '0')}` : '#2a7f9a';
+      return;
+    }
     if (!clan) { el.textContent = ''; el.style.background = ''; return; }
     let text = `${clan.name} · ${clan.buff.label}`;
     if (clan.buff.panda) {

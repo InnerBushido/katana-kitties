@@ -37707,6 +37707,141 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       put(her, IHall);
     }
 
+    /* 幻 HER HOLO KIT. Richard: "When a player enters the simulator, they
+       appear there with no kotodama orbs or Clan abilities ... When they
+       gather kotodama in the simulator, it will automatically equip them in
+       the first 8 slots ... if they get a duplicate, it will go to their
+       inventory ... a max of 4 of the same", and, asked which list wins on
+       the way in: "Copy every entry". */
+    {
+      const HK = await import('../src/systems/dream/holokit.js');
+      const PO = await import('../src/entities/powerorb.js');
+      const keep = { orbs: [...her.powerOrbs], bag: [...(her.orbBag ?? [])], clan: her.clan, oath: her.dreamOath, holo: her.holoOrbs };
+      const S0 = D.st[0];
+      const real = CLANS.find((c) => c.id === 'river');
+      const bagOf = () => HK.holoBag(her, S0);
+      const same = (a, b2) => JSON.stringify([...a].sort()) === JSON.stringify([...b2].sort());
+      const deadPad = { dead: true };
+      her.powerOrbs = ['swift', 'reach'];
+      her.orbBag = ['leap'];
+      her.clan = real; her.dreamOath = null; her.holoOrbs = [];
+      HK.enterHolo(D, her);
+      D._applyKit(her, true);
+      ok('幻 on the way in she wears a COPY of what she wears outside, and has no clan in here',
+        same(S0.holoWorn, ['swift', 'reach']) && her.clan === null && her.dreamOath?.was === real
+        && same(her.powerOrbs, ['swift', 'reach']) && same(her.orbBag, ['leap']),
+        `${S0.holoWorn} clan ${her.clan?.id}`);
+      HK.holoStow(D, her, 1);
+      ok('...taking one off in here changes what she can do in here, and nothing she owns',
+        same(S0.holoWorn, ['swift']) && same(bagOf(), ['reach']) && her.powerOrbs.includes('reach')
+        && JSON.stringify(her.power) === JSON.stringify(PO.aggregate(['swift'])), `${S0.holoWorn} / ${bagOf()}`);
+      const g1 = HK.grantHolo(D, her, 'leap');
+      const g2 = HK.grantHolo(D, her, 'leap');
+      ok('...an earned orb she is not wearing goes ON; a second of the same goes in the holo bag',
+        g1.ok && g1.worn && g2.ok && !g2.worn && S0.holoWorn.filter((x) => x === 'leap').length === 1
+        && bagOf().includes('leap'), `${S0.holoWorn} / ${bagOf()}`);
+      HK.grantHolo(D, her, 'leap'); HK.grantHolo(D, her, 'leap');
+      fakeGame.toasts.length = 0;
+      const g5 = HK.grantHolo(D, her, 'leap');
+      ok('...and the fifth of a kind is refused, in words — four is the most',
+        !g5.ok && /4/.test(g5.why) && her.holoOrbs.filter((x) => x === 'leap').length === PO.HOLO_MAX_EACH, g5.why);
+      // swift + leap + six more is eight: a full ring.
+      for (const id of ['vigor', 'ward', 'dive', 'tri', 'charge', 'aegis']) HK.grantHolo(D, her, id);
+      const g9 = HK.grantHolo(D, her, 'blink');
+      ok('...eight on her ring is the most: a new kind past that goes in the bag',
+        S0.holoWorn.length === PO.MAX_EQUIPPED && !g9.worn && bagOf().includes('blink'), `${S0.holoWorn.length} worn`);
+      const full = HK.holoWear(D, her, 0);
+      ok('...and wearing a ninth is refused in words', /Eight is the most/.test(full ?? ''), full);
+      // Shuffle a while: nothing is lost and nothing is made between the two rows.
+      for (let k = 0; k < 12; k++) { HK.holoStow(D, her, k % 5); HK.holoWear(D, her, (k * 3) % Math.max(1, bagOf().length)); }
+      ok('...wear and stow as she likes: worn + bag is always what was copied in plus what she earned',
+        same([...S0.holoWorn, ...bagOf()], [...S0.holoCopies, ...her.holoOrbs]),
+        `${S0.holoWorn.length} + ${bagOf().length} vs ${S0.holoCopies.length} + ${her.holoOrbs.length}`);
+
+      // The first Gallery win of a drill pays its orb; a second does not; nothing else does.
+      her.holoOrbs = [];
+      HK.enterHolo(D, her);
+      D.onDrillEnd({ spec: { id: 'gallery.dive' }, p: her }, 'won');
+      D.onDrillEnd({ spec: { id: 'gallery.dive' }, p: her }, 'won');
+      D.onDrillEnd({ spec: { id: 'gallery.far' }, p: her }, 'failed');
+      D.onDrillEnd({ spec: { id: 'hall.panda' }, p: her }, 'won');
+      ok('...winning a Gallery trial the first time earns its orb, and only the first time',
+        same(her.holoOrbs, ['dive']) && S0.holoWorn.includes('dive'), `${her.holoOrbs}`);
+
+      // The pedestal at three stars.
+      let started = 0;
+      D.closeChoice(her);
+      D.pedestal(her, 'blink', () => { started += 1; });
+      ok('...a pedestal under three stars is the trial, as it always was', started === 1 && !D.choices[0]);
+      D.progress.award(nameOf(her), 'gallery.leap', 3, 5);
+      her.holoOrbs = ['leap'];
+      D.pedestal(her, 'leap', () => { started += 1; });
+      const c = D.choices[0];
+      ok('...at three stars it ASKS: start, take another, never mind — opening on START, and she stands still',
+        !!c && c.rows.length === 3 && c.i === 0 && started === 1 && /TAKE ANOTHER .* 1 of 4/.test(c.rows[1].text)
+        && D.padFor(0, { mx: 0, my: 1 }, deadPad) === deadPad, c?.rows.map((r) => r.text).join(' | '));
+      c.update({ mx: 0, my: 1 });
+      const held = c.i;
+      c.update({ mx: 0, my: 0 }); c.update({ mx: 0, my: 1 });
+      ok('...a stick still pushed from walking on is not a choice; a fresh push is', held === 0 && c.i === 1, `${held} -> ${c.i}`);
+      {
+        // Beside her and at her height, in whichever camera is drawing it —
+        // over her head it was under the HUD's top band (dream/holokit.js).
+        // The follow camera as measured in the pane: ~33 back, 38 degrees.
+        const cam = new THREE.PerspectiveCamera(38, 16 / 9, 0.1, 500);
+        cam.position.copy(her.position).add(new THREE.Vector3(0, 12, 31));
+        cam.lookAt(her.position);
+        cam.updateMatrixWorld();
+        her.group.position.copy(her.position); // the frame loop's job; nothing here runs it
+        her.group.updateMatrixWorld(true);
+        c.faceCamera(cam);
+        c.panel.updateMatrixWorld(true);
+        const ndc = (x, y) => new THREE.Vector3(x, y, 0).applyMatrix4(c.panel.matrixWorld).project(cam);
+        const top = ndc(0, 1.7), left = ndc(-3.7, 0), feet = her.position.clone().project(cam);
+        ok('...and the card stands beside her, clear of her and of the HUD band over the top of the pane',
+          left.x > feet.x && top.y < 0.6, `left ${left.x.toFixed(2)} vs her ${feet.x.toFixed(2)}, top ${top.y.toFixed(2)}`);
+      }
+      D.interact(her);
+      ok('...INTERACT takes the row: another holo orb, and the question is gone',
+        !D.choices[0] && her.holoOrbs.filter((x) => x === 'leap').length === 2 && started === 1);
+      her.holoOrbs = ['leap', 'leap', 'leap', 'leap'];
+      fakeGame.toasts.length = 0;
+      D.pedestal(her, 'leap', () => { started += 1; });
+      const c2 = D.choices[0];
+      c2.update({ mx: 0, my: 0 }); c2.update({ mx: 0, my: 1 });
+      D.interact(her);
+      ok('...and at four the row says so, and pressing it is refused in words',
+        /ALL 4 TAKEN/.test(c2.rows[1].text) && her.holoOrbs.length === 4 && fakeGame.toasts.some((t) => /most the simulator gives/.test(t)),
+        fakeGame.toasts.join(' | '));
+      D.pedestal(her, 'leap', () => { started += 1; });
+      D.interact(her);
+      ok('...and START THE TRIAL starts it', started === 2 && !D.choices[0]);
+
+      // Leaving puts everything back; the earned orbs stay hers.
+      D.swearFor(her, CLANS.find((cl) => cl.id === 'panda'));
+      D._leaveSim(her);
+      ok('...on the way out her real clan and her real ring come back, and what she EARNED stays',
+        her.clan === real && !her.dreamOath && S0.holoWorn === null && same(her.powerOrbs, ['swift', 'reach'])
+        && JSON.stringify(her.power) === JSON.stringify(PO.aggregate(['swift', 'reach'])) && her.holoOrbs.length === 4,
+        `${her.clan?.id} ${S0.holoWorn}`);
+      ok('...and it is saved in her row, trimmed to four a kind when read back',
+        same(castRow(her).holo, her.holoOrbs)
+        && same(PO.cleanHoloOrbs(['leap', 'leap', 'leap', 'leap', 'leap', 'nope', 'ward']), ['leap', 'leap', 'leap', 'leap', 'ward'])
+        && /p\.holoOrbs = cleanHoloOrbs\(row\.holo\)/.test(read('../src/systems/savegame.js')));
+      const html = read('../index.html');
+      const mainSrc = read('../src/main.js');
+      ok('...the pause menu has a (HOLO) PLAYER PROFILE, shown only while somebody wears a holo kit',
+        /id="btn-holo-profile" class="menu-btn holo-btn hidden" data-action="holo-profile"/.test(html)
+        && /btn-holo-profile'\)\s*\?\.classList\.toggle\('hidden', !\(on && this\.dream\?\.built && this\.players\.some\(\(p\) => this\.dream\.st\[p\.index\]\?\.holoWorn\)\)\)/.test(mainSrc)
+        && /if \(a === 'holo-profile'\) this\.profile\.open\('holo'/.test(mainSrc));
+      ok('...and the clan badge says (Holo) in there',
+        /\$\{clan\.name\} \(Holo\)/.test(mainSrc) && /No clan \(Holo\)/.test(mainSrc));
+
+      her.powerOrbs = keep.orbs; her.orbBag = keep.bag; her.clan = keep.clan; her.dreamOath = keep.oath; her.holoOrbs = keep.holo ?? [];
+      S0.holoWorn = null; S0.holoCopies = null;
+      D._applyKit(her, true);
+    }
+
     // And it is the GATE that refuses, for every trial in the hall, not the panda's.
     const leaky = [];
     for (const sh of H.shrines) {
