@@ -35699,6 +35699,46 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
   D.st[0] = { phase: 'sim', t: 0 };
   D.st[1] = null;
 
+  /* --- the Turning Circle in here is drawn in light, and its maths is the town's --- */
+  {
+    globalThis.document ??= domStub();
+    const MD = await import('../src/systems/mathdojo.js');
+    const HD = await import('../src/systems/dream/holodojo.js');
+    const c0 = new THREE.Vector3(0, 0, 0);
+    const town = new MD.MathDojo(new THREE.Scene(), c0);
+    const holo = new MD.MathDojo(new THREE.Scene(), c0);
+    const fx = HD.holoDojo(holo);
+    /* Richard: "the Dojo of the Turning Circle in the middle looks like
+       holograms as well ... Right now the sphere is a solid blue color". */
+    const solid = [];
+    holo.group.traverse((o) => {
+      const m = o.material;
+      // The readouts are words, not light: they stay crisp (holo.labels).
+      if (!m || m.isSpriteMaterial || o.isSprite || holo.labels.includes(o) || holo.labels.includes(o.parent)) return;
+      if ((o.isMesh || o.isLine) && !(m.transparent && (m.blending === THREE.AdditiveBlending || m.opacity < 0.9))) {
+        solid.push(`${o.type}:${o.geometry?.type}`);
+      }
+    });
+    ok('円 the simulator\'s Turning Circle has nothing solid left in it — the point is a wire globe, everything glows',
+      solid.length === 0 && holo.point.material.blending === THREE.AdditiveBlending
+      && holo.point.children.some((c) => c.isLineSegments), solid.slice(0, 6).join(' '));
+    // THE MATHS IS THE TOWN'S: drive both from the same reading, frame for frame.
+    const walker = { position: new THREE.Vector3(), onGround: true, index: 0, name: 'Ember', style: { name: 'Ember' } };
+    let worst = 0;
+    for (let k = 0; k < 24; k++) {
+      const a = (k / 24) * Math.PI * 2;
+      walker.position.set(Math.cos(a) * 24, 0.2, -Math.sin(a) * 24);
+      town.update(1 / 60, [walker]);
+      holo.update(1 / 60, [walker]);
+      fx.update(k / 7);
+      worst = Math.max(worst, town.point.position.distanceTo(holo.point.position), Math.abs(town.theta - holo.theta));
+    }
+    ok('...and its point, its angle and its legs move exactly as the town\'s do, from the same kitten', worst < 1e-9
+      && town.point.visible === holo.point.visible, worst.toExponential(1));
+    const townSolid = town.point.material.blending !== THREE.AdditiveBlending;
+    ok('...and the town\'s own Dojo is not dressed by it', townSolid);
+  }
+
   /* --- the way out is a tube in her colour, and Lionheart's words never cover it --- */
   {
     const put0 = (p, q) => { p.position.set(q.x + SW.SIM.dx, DD.ARCADE.y, q.z + SW.SIM.dz); };

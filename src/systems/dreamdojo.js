@@ -33,6 +33,7 @@ import { gateFrame, buildGate } from './dream/gate.js';
 import { TOUR, GEAR_LINES, GEAR_VOICE } from './dream/stories.js';
 import { TourShadow } from './dream/tourshadow.js';
 import { TourCast } from './dream/tourcast.js';
+import { holoDojo } from './dream/holodojo.js';
 
 /** Her single-cell pose billboards, which the tube puppet mirrors. */
 const PUPPET_POSES = ['eatPose', 'blessPose', 'warpPose', 'breathPose', 'scaredPose', 'sweepPose'];
@@ -1331,6 +1332,8 @@ export class DreamDojo {
         o.material.opacity = 0.55;
       }
     });
+    // ...and the rest of it in light: see dream/holodojo.js.
+    this.simDojoFx = holoDojo(this.simDojo);
     this._buildHoloLion();
     this._buildSimTubes();
     this.shards = new Shards(this.sim.root);
@@ -1780,6 +1783,7 @@ export class DreamDojo {
       this.sim.update(dt);
       const inside = (g.players ?? []).filter((p) => p && this.realmOf(p) === 'sim');
       this.simDojo?.update(dt, inside);
+      this.simDojoFx?.update(this.t);
       this.sim.steerBridges(dt, inside);
     }
   }
