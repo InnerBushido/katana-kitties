@@ -25,8 +25,10 @@ import { mergeParts } from '../../world/build.js';
    So: three glowing racks — HEADSET, GLOVES, TRACKING SUIT — that a kitten on
    her first visit is sent round by Lionheart, picking each up by walking into
    it. The last one starts the suit-up on the spot (DreamDojo, phase 'suit').
-   Whether she has done it is `geared` in the Dream Dojo's own progress store,
-   so it is remembered across days like her stars are.
+   Whether she has done it is `p.dreamGeared`, saved in her row like her
+   orbs are — a fact about THIS game. It was once in the Dream Dojo's own
+   store beside her stars, which outlives every game, and a brand-new game
+   then suited her up at a word (see DreamDojo.interact).
 
    EVERYTHING HERE IS GEOMETRY (ninth non-negotiable). No lights: the game is
    fill-bound (docs/notes/performance.md), so the "lasers and coloured lights"
@@ -65,7 +67,10 @@ export function gearLayout(at) {
        directional treadmills on the floor, and a full-body tracking frame. */
     swords: at(2.4, 11.9),
     rifles: at(-5.9, 11.4),
-    treadmills: [at(-3.4, 3.6), at(-4.6, -3.2)],
+    /* The second treadmill was at (-4.6, -3.2) — 1.9 off the gate's axis
+       (dream/gate.js), with its waist hoop across the lane a kitten walks in
+       by. It stands beside the lane now, 6 off it. */
+    treadmills: [at(-3.4, 3.6), at(-6.3, 1.4)],
     tracker: at(-11.2, -2.6),
   };
 }

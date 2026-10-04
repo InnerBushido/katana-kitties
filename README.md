@@ -309,9 +309,10 @@ Finish her quests, win some fights in the arena, and she'll teach you a
 Out past the **Dojo of the Turning Circle** there's a round pad floating on its
 own, under a glowing dome. Dragons and pandas can't get in, and neither can
 anybody who tries to drop in over the top: you slide right off. The front door
-is **four floating stones in a half-circle**. Fall off and you pop back on the
-Dojo after a couple of seconds, so just try again! The music gets louder the
-closer you get.
+is a big red **gate**, and you get to it across **three floating stones**.
+There's a railing all the way round, so the gate is the only way in. Fall off
+and you pop back on the Dojo after a couple of seconds, so just try again! The
+music gets louder the closer you get, and it's on your minimap.
 
 That's **Lionheart's VR arcade**. He's the red samurai cat with the giant
 sword, and the sword is called **Honor**. The first time you talk to him,

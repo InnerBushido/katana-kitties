@@ -8418,8 +8418,26 @@ console.log('\n--- half a second of not being there ---');
       `sign top ${sign.max.y.toFixed(2)}, prompt bottom ${prompt.min.y.toFixed(2)}`);
     /* NOR THROUGH THE ROOF BEAM, which tops out at 3.35 in the stall's own
        space and is what the sign used to clear by 0.3. */
-    ok('...nor through the stall\'s own roof beam', sign.min.y > 3.4,
-      sign.min.y.toFixed(2));
+    const STALLM = await import('../src/entities/stall.js');
+    ok('...nor through the stall\'s own roof beam', sign.min.y > st.position.y + STALLM.STALL_ROOF + 0.05,
+      `${(sign.min.y - st.position.y).toFixed(2)} over a beam at ${STALLM.STALL_ROOF.toFixed(2)}`);
+    /* 1.5x. Richard: "Let's make the Kotodama Dealer booth 1.5x's bigger, as
+       currently it's a bit small and hard to notice." Measured on the drawn
+       booth, not read off the constant: the booth's width in world units
+       (4.8 at the old size), and the solid and the prompt radius grown with
+       it so nobody walks into the counter or out of range of the prompt. */
+    {
+      st.body.updateMatrixWorld(true);
+      const bb = new THREE.Box3().setFromObject(st.body);
+      const wide = Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z);
+      const solid = world.solids.find((s) => Math.hypot(s.x - st.position.x, s.z - st.position.z) < 0.01);
+      ok('the dealer\'s booth is drawn half again as big as it was',
+        STALLM.STALL_SCALE === 1.5 && st.body.scale.x === 1.5 && wide > 4.8 * 1.4,
+        `${wide.toFixed(2)} across its world box`);
+      ok('...with its solid and its prompt grown with it, and the prompt still well outside the solid',
+        solid && Math.abs(solid.r - 1.9 * 1.5) < 1e-9 && st.radius >= solid.r + 4,
+        `solid ${solid?.r.toFixed(2)}, prompt ${st.radius}`);
+    }
 
     /* IT ALREADY FACED THE CAMERA AND STILL DOES. Half the report was "make the
        text always face the camera" — it always has, per pane, through
@@ -22456,6 +22474,42 @@ console.log('\n--- one press is not enough, and one player drives ---');
     label ? `${label[1].toFixed(1)},${label[2].toFixed(1)}` : 'not drawn');
   ok('...and not at world zoom', !said(a.ops, 'Mr. Satan'));
 
+  /* --- AND THE DREAM DOJO ---
+     "The Dream Dojo is not currently appearing in the minimap. We should show
+     it as it is a location players can go to." It is not one of
+     `world.islands`, so the island loop could never draw it. Read back off
+     the recorded canvas: its name at its own place, the dome's ring at its
+     radius, and a dot for every stone. */
+  {
+    const DDm = await import('../src/systems/dreamdojo.js');
+    const had = world.dreamDojo;
+    world.dreamDojo = DDm.dreamSite(DDm.arcadeLayout(world.dojoCentre));
+    const e = rec();
+    const mapE = new Minimap(e.cv, world, 0, { zoom: ZOOMS[1] });
+    mapE.draw([kitten], [], null, null);
+    const ddL = said(e.ops, 'Dream Dojo');
+    const site = world.dreamDojo;
+    const domeRing = e.ops.find((op) => op.length === 5 && Math.abs(op[0] - mapE._px(site.x)) < 0.5
+      && Math.abs(op[1] - mapE._py(site.z)) < 0.5 && Math.abs(op[2] - site.dome * mapE.scale) < 0.5);
+    const stoneDots = site.stones.filter((s) => e.ops.some((op) => op.length === 5
+      && Math.abs(op[0] - mapE._px(s.x)) < 0.5 && Math.abs(op[1] - mapE._py(s.z)) < 0.5));
+    ok('the Dream Dojo is on the minimap, named, at its own place on it',
+      !!ddL && Math.abs(ddL[1] - mapE._px(site.x)) < 1.5 && ddL[2] < mapE._py(site.z),
+      ddL ? `${ddL[1].toFixed(1)},${ddL[2].toFixed(1)}` : 'not drawn');
+    ok('...with the dome\'s ring round it and all three stones', !!domeRing && stoneDots.length === 3,
+      `${stoneDots.length} stones`);
+    const f2 = rec();
+    new Minimap(f2.cv, world, 0).draw([kitten], [], null, null);
+    /* ...and clear of the Dojo's name: the first cut put it under the pad,
+       and at world zoom the two words were drawn over each other. */
+    const lab = (ops, t) => ops.find((a) => a[0] === t && a.length === 3);
+    const dLab = lab(f2.ops, 'Dream Dojo');
+    const oLab = lab(f2.ops, 'Dojo');
+    ok('...and named at world zoom too, like the Dojo, without the two names on top of each other',
+      !!dLab && !!oLab && Math.abs(dLab[2] - oLab[2]) > 12, dLab && oLab ? `${(dLab[2] - oLab[2]).toFixed(1)}px apart` : 'missing');
+    world.dreamDojo = had;
+  }
+
   /* --- AND RYUUSEKI, WHO WAS ON NO MAP AT ALL ---
      Reported as "Ryuuseki doesn't appear on Minimap at all", and it was true
      for a reason no amount of reading `minimap.js` would have found: he is not
@@ -28679,6 +28733,17 @@ console.log('\n--- quests: earned before the end, paid one at a time after it --
     FEATS.filter((f) => f.late).map((f) => f.id).join() === 'shadow');
   ok('...and the plain-orb prize is one of them, and special like the rest of them',
     !!FEAT_BY_ID.orbs && isSpecial('orbs'));
+  /* THE PROFILE ASKS THE SAME QUESTION. Richard: "In the Character Profile,
+     the Lionhearts Honor quest does not appear as a Special Kotodama quest."
+     `status` carried its own `who !== 'each'`, so the row the profile tags
+     "special · could be rare" disagreed with the draw that actually pays. */
+  {
+    const g = mkGame();
+    const rows = g.feats.status(g.players[0]);
+    const off = rows.filter((r) => r.special !== isSpecial(r.feat.id)).map((r) => r.feat.id);
+    ok('...and the profile’s quest list tags exactly the special ones, Lionheart’s Honor included',
+      off.length === 0 && rows.find((r) => r.feat.id === 'shadow')?.special === true, off.join(' ') || 'all agree');
+  }
   /* NOTHING IS PAID OUTSIDE THE CEREMONY. The plain-orb prize used to carry a
      `paidByAwaken` flag and be handed over on the Awakening frame, which is
      what made it the one quest with no token and no turn. */
@@ -34318,9 +34383,17 @@ console.log('\n--- mobile: nothing behind the main menu ---');
     /this\._applyQuality\(\); this\._worldReady = true; \}/.test(mc));
   ok('back to the main menu on a phone is a real reload',
     /toTitle\(\) \{ if \(this\._lazyWorld\) \{ window\.location\.reload\(\); return; \} this\.restart\(\);/.test(mc));
-  ok('...which does not replay the intro: "once per session" is carried in sessionStorage',
-    (m.match(/sessionStorage\.setItem\(INTRO_SEEN_KEY, '1'\)/g) || []).length === 2
-    && /if \(sessionStorage\.getItem\(INTRO_SEEN_KEY\)\) this\.introPlayed = true;/.test(m));
+  /* WAS "which does not replay the intro: once per session is carried in
+     sessionStorage". A refresh keeps sessionStorage, so a refreshed tab never
+     saw the story again — Richard: "Refreshing the browser isn't playing the
+     intro cutscene". Now: PLAY is a new game and opens on the intro; LOAD is
+     not and does not, because it goes through `_enterPlay` and never
+     `startPlay`. */
+  ok('...and PLAY after it is a new game, which opens on the intro: nothing outside the game remembers it played',
+    !/INTRO_SEEN_KEY|sessionStorage/.test(stripComments(m))
+    && /if \(this\.cutscene\) \{ this\.cutscene\.play\(\);/.test(mc));
+  ok('...and LOAD never plays it: the saved-game door is `_enterPlay`, not `startPlay`',
+    /if \(this\.state !== 'play'\) \{ this\._enterPlay\(\);/.test(mc));
   ok('the title draws no fly-over with no world under it',
     /_renderTitleIdle\(dt\) \{ if \(!this\._worldReady\) return;/.test(mc));
   ok('...and on a phone its background is black, with the blurred fill not drawn',
@@ -34774,11 +34847,15 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     world.heightAt(ARCADE.x, ARCADE.z, 200) == null
     && L.tubes.every((t) => world.heightAt(t.x, t.z, 200) == null));
 
-  /* THE WAY ACROSS IS A JUMP, AND ONLY A JUMP — and since Richard's "too
-     easy to fall ... 3 or 4 platforms ... in a half circle pattern", four
-     short ones. The Dojo's rim is measured along the line from its centre to
-     the first stone; each gap is edge to edge, wider than a step (so she has
-     to jump) and short (the old straight line was 2.7, 2.5 and 3.8). */
+  /* THE WAY ACROSS IS A JUMP, AND ONLY A JUMP. Four short hops on a half
+     circle came first ("too easy to fall ... 3 or 4 platforms"), then
+     Richard: "Too many jumping platforms on the way to the Dream Dojo, let's
+     just make it 3 platforms to make it a bit more challenging". So three
+     stones and four hops, the last onto the gate's landing. The Dojo's rim is
+     measured along the line from its centre to the first stone; each gap is
+     edge to edge, longer than the four-stone way's ~1.9 (the "more
+     challenging") and well inside a single jump's reach of ~9 (11.2 up at
+     gravity 26 is 0.86s of air, at 10.5 a second). */
   const flatD = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
   const s0 = L.stones[0];
   const toS0 = { x: (s0.x - dc.x) / flatD(s0, dc), z: (s0.z - dc.z) / flatD(s0, dc) };
@@ -34791,26 +34868,59 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
   const hops = [
     { gap: flatD(s0, dc) - s0.r - rim, rise: s0.y - rimY },
     ...L.stones.slice(1).map((s, k) => ({ gap: flatD(s, L.stones[k]) - s.r - L.stones[k].r, rise: s.y - L.stones[k].y })),
-    { gap: flatD(last, ARCADE) - last.r - ARCADE.r, rise: ARCADE.y - last.y },
+    { gap: flatD(last, ARCADE) - last.r - L.gate.tip, rise: ARCADE.y - last.y },
   ];
-  ok('four stones, five hops from the Dojo to the pad, every one a jump and none longer than 2.5',
-    L.stones.length === 4 && hops.every((h) => h.gap > 1.2 && h.gap < 2.5), hops.map((h) => h.gap.toFixed(2)).join(' '));
+  ok('three stones, four hops from the Dojo to the gate\'s landing, every one a jump between 2.5 and 4',
+    L.stones.length === 3 && hops.length === 4 && hops.every((h) => h.gap > 2.5 && h.gap < 4), hops.map((h) => h.gap.toFixed(2)).join(' '));
   ok('...and no step up is more than a unit, and every one is UP',
     hops.every((h) => h.rise <= 1.01 && h.rise > 0), hops.map((h) => h.rise.toFixed(2)).join(' '));
   ok('...and the stones stay off the Dojo itself',
     L.stones.every((s) => world.heightAt(s.x, s.z, 200) == null));
   /* "a half circle pattern towards the island rather than just a straight
-     line": every stone is off the straight line to one side, and the hops
-     turn as they go — the first hop between stones and the last differ by 44°
-     (measured), against 0° for the old straight line. */
+     line" still holds with three: every stone is off the straight line to one
+     side, and the two hops between them turn by ~55° (measured). */
   const side = L.stones.map((s) => (s.x - dc.x) * L.v.x + (s.z - dc.z) * L.v.z);
-  const turn = Math.abs(Math.atan2(L.stones[3].z - L.stones[2].z, L.stones[3].x - L.stones[2].x)
+  const turn = Math.abs(Math.atan2(L.stones[2].z - L.stones[1].z, L.stones[2].x - L.stones[1].x)
     - Math.atan2(L.stones[1].z - L.stones[0].z, L.stones[1].x - L.stones[0].x));
-  ok('...and they curve: all four to one side of the straight line, by more than a stone’s width, turning > 40°',
+  ok('...and they curve: all three to one side of the straight line, by more than a stone’s width, turning > 40°',
     side.every((w) => w < -4) && turn > (40 * Math.PI) / 180, `${side.map((w) => w.toFixed(1)).join(' ')} · ${(turn * 180 / Math.PI).toFixed(0)}°`);
   ok('...and a kitten who falls is put back ON the Dojo, short of the rim, facing the way across',
     !!world.heightAt(L.launch.x, L.launch.z, 200) && flatD(L.launch, dc) < rim - 1.5 && flatD(L.launch, s0) < 12,
     `${flatD(L.launch, dc).toFixed(1)} of rim ${rim}`);
+
+  /* --- the gate: "placed in front of the last floating platform" --- */
+  {
+    const G = L.gate;
+    const q = (s) => ({ along: (s.x - ARCADE.x) * G.dir.x + (s.z - ARCADE.z) * G.dir.z, side: (s.x - ARCADE.x) * G.lat.x + (s.z - ARCADE.z) * G.lat.z });
+    const l3 = q(last);
+    ok('the last stone stands on the gate\'s axis, one hop out past its landing, so the gate is straight in front of her',
+      Math.abs(l3.side) < 1e-6 && l3.along > G.tip + 2.5, `along ${l3.along.toFixed(2)} · tip ${G.tip.toFixed(2)} · side ${l3.side.toExponential(1)}`);
+    ok('...and the gate stands AT the dome\'s skin, on the deck, which runs from the pad out past the dome',
+      G.ring === DOME_R && flatD(G.decks[0], ARCADE) - G.decks[0].r < ARCADE.r && G.tip > DOME_R + 2,
+      `deck ${(flatD(G.decks[0], ARCADE) - G.decks[0].r).toFixed(1)} → ${G.tip.toFixed(1)}, dome ${DOME_R}`);
+    // The deck's discs leave no hole along its axis, and none narrower than `half`.
+    let narrow = Infinity;
+    for (let a = flatD(G.decks[0], ARCADE); a <= flatD(G.decks.at(-1), ARCADE); a += 0.1) {
+      const reach = Math.max(...G.decks.map((d) => {
+        const da = a - flatD(d, ARCADE);
+        return d.r * d.r - da * da > 0 ? Math.sqrt(d.r * d.r - da * da) : 0;
+      }));
+      narrow = Math.min(narrow, reach);
+    }
+    const GT = await import('../src/systems/dream/gate.js');
+    ok('...and the deck is walkable the whole way, at least the railing\'s width everywhere',
+      narrow >= GT.GATE.half - 1e-3, `narrowest ${narrow.toFixed(3)} against ${GT.GATE.half}`);
+    // Nothing on the pad stands in the way in.
+    const gl = (await import('../src/systems/dream/gear.js')).gearLayout((a, b) => ({ x: ARCADE.x + L.u.x * a + L.v.x * b, z: ARCADE.z + L.u.z * a + L.v.z * b }));
+    /* Each with its reach: a treadmill is a 1.85 disc with a hoop at waist
+       height, and the first one was laid out 1.9 off this axis. */
+    const props = [L.lion, ...L.tubes, ...Object.values(gl.racks), gl.swords, gl.rifles, gl.tracker].map((pp) => ({ ...pp, r: 0.5 }))
+      .concat(gl.treadmills.map((pp) => ({ ...pp, r: 1.85 })));
+    const lane = Math.min(...props.map((pp) => { const k = q(pp); return k.along > 0 ? Math.abs(k.side) - pp.r : Infinity; }));
+    ok('...and no prop on the pad reaches into the lane the gate opens onto', lane > GT.GATE.half, `${lane.toFixed(2)} clear of the axis`);
+    const inside = props.every((pp) => flatD(pp, ARCADE) < GT.GATE.rail - 0.6);
+    ok('...and every prop on the pad is inside the railing', inside);
+  }
 
   /* --- the pad --- */
   const onPad = (q, pad = 0) => Math.hypot(q.x - ARCADE.x, q.z - ARCADE.z) + pad < ARCADE.r;
@@ -36944,6 +37054,8 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
   ];
   ok('every recorded line of his is a line he actually has',
     Object.keys(DD.LION_VOICE).every((k) => typeof DD.LION_LINES[k] === 'string'));
+  ok('...and the wall yell is a bubble only — "too loud and aggressive" — while the drop-in yell keeps its voice',
+    !DD.LION_VOICE.yellWall && typeof DD.LION_LINES.yellWall === 'string' && DD.LION_VOICE.yellDrop === 'lion_yell_drop');
   ok('...and the two that name a kitten are not recorded, because no recording can',
     !DD.LION_VOICE.send && !DD.LION_VOICE.rundown && /%n/.test(DD.LION_LINES.send) && /%n/.test(DD.LION_LINES.rundown));
   ok('...and the audio router sends him to his own folder',
@@ -37456,13 +37568,11 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const lionClear = Math.min(...racks.map((r) => hyp(r.at, L.lion)));
     ok('...clear of every tube and of Lionheart', tubeClear > TUBE_R + GR.GRAB_R && lionClear > 3,
       `tubes ${tubeClear.toFixed(2)} · Lionheart ${lionClear.toFixed(2)}`);
-    /* THE WAY IN AND THE WAY OUT STAY OPEN. The last stone lands her on the
-       pad's edge, and the walk out of a tube ends 3.2 toward the middle: a
-       kitten (radius ~0.6) stands at every one of those without a prop's
-       collider under her. */
-    const last = L.stones.at(-1);
-    const k = (ARCADE.r - 0.8) / hyp(last, ARCADE);
-    const entry = { x: ARCADE.x + (last.x - ARCADE.x) * k, z: ARCADE.z + (last.z - ARCADE.z) * k };
+    /* THE WAY IN AND THE WAY OUT STAY OPEN. The gate's deck meets the pad's
+       edge, and the walk out of a tube ends 3.2 toward the middle: a kitten
+       (radius ~0.6) stands at every one of those without a prop's collider
+       under her. */
+    const entry = L.gate.at(ARCADE.r - 0.8);
     const outs = L.tubes.map((t) => {
       const d = hyp(t, ARCADE);
       return { x: t.x + ((ARCADE.x - t.x) / d) * 3.2, z: t.z + ((ARCADE.z - t.z) / d) * 3.2 };
@@ -37470,7 +37580,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const spots = [entry, ...outs, ...racks.map((r) => r.at)];
     const blocked = spots.filter((q, i) => solidsD.some((s) => hyp(q, s) < s.r + 0.6 - (i > outs.length ? 9 : 0)));
     const entryClear = Math.min(...solidsD.map((s) => hyp(entry, s) - s.r));
-    ok('...and no prop stands where she steps off the stones or walks out of a tube',
+    ok('...and no prop stands where she walks in from the gate or out of a tube',
       solidsD.length >= 6 && blocked.length === 0, `${solidsD.length} props · entry clear by ${entryClear.toFixed(2)}`);
   }
 
@@ -37497,7 +37607,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       if (i < 2) stand(her, lion.x + 2, lion.z);
     });
     ok('...every rack she reaches is ticked off, and the last one suits her up and remembers it',
-      D.st[0].gather === null && D.st[0].phase === 'suit' && D.progress.flag(nameD(her), 'geared')
+      D.st[0].gather === null && D.st[0].phase === 'suit' && her.dreamGeared === true
       && toastsD.filter((x) => /✓ \(\d of 3\)/.test(x)).length === 3);
     let dressedAt = null;
     for (let f = 0; f < 240 && D.st[0].phase === 'suit'; f++) {
@@ -37520,6 +37630,22 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     D.st[0].phase = null;
     D.interact(her);
     ok('a kitten who has geared before poofs straight into it at a word', D.st[0].phase === 'suit' && !D.st[0].gather);
+    /* ...BUT ONLY THIS GAME. Richard: "he just suits you up right away rather
+       than making you grab the gear, even on a brand new game." It was a flag
+       in the Dream Dojo's own store, which outlives every game. Now it is on
+       her, rides her save row, and a new game is a kitten who has not. */
+    {
+      const SGD = await import('../src/systems/savegame.js');
+      const row = SGD.castRow(her, true);
+      const fresh = mkD(0);
+      SGD.applyCast(gD, fresh, row);
+      ok('...and that is a fact about THIS game: in her save row, back on a load, and not in the Dream Dojo\'s own store',
+        row.geared === true && fresh.dreamGeared === true
+        && !D.progress.flag(nameD(her), 'geared') && SGD.castRow(mkD(1), true).geared === false);
+      const mm = readD('../src/main.js');
+      ok('...and a new game (restart) takes it off every kitten',
+        /p\.raisedPanda = false;\s*\/\/[^\n]*\n\s*p\.dreamGeared = false;/.test(mm.replace(/\r/g, '')));
+    }
     D.st[0].phase = null;
     her.setSimLook(true);
     stand(her, ARCADE.x + ARCADE.r + 4, ARCADE.z);
@@ -37545,7 +37671,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     ap.update(1 / 60);
     const h1 = hyp(her.position, A);
     ok('the dome is a wall to a kitten jumping at its side: put back outside it, and told where the door is',
-      h1 > DOME_R && ap.of(her).cheat && toastsD.some((t) => /only opens at the stones/.test(t)), `${h1.toFixed(2)} of ${DOME_R}`);
+      h1 > DOME_R && ap.of(her).cheat && toastsD.some((t) => /only opens at the gate/.test(t)), `${h1.toFixed(2)} of ${DOME_R}`);
     // Dropped on top, as if off a dragon: she slides off and lands outside.
     ap.st.length = 0;
     her.position.set(A.x + 0.3, A.y + DOME_R + 3, A.z + 0.2);
@@ -37561,17 +37687,107 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const hOut = hyp(her.position, A);
     ok('...and a kitten dropped on its top slides off the side and down, never onto the pad',
       !inside && hOut > DOME_R - 1 && ap.of(her).cheat, `${hOut.toFixed(1)} from the middle, y ${(her.position.y - A.y).toFixed(1)}`);
-    // Through the door, low, on foot: nothing stops her.
+    // Through the gate, on foot, off its landing: nothing stops her...
     ap.st.length = 0;
-    const s2 = L.stones[2];
-    const s3 = L.stones[3];
-    her.position.set((s2.x + s3.x) / 2, A.y - 0.6, (s2.z + s3.z) / 2);
+    const GT = await import('../src/systems/dream/gate.js');
+    const G = L.gate;
+    const walkIn = (side) => {
+      ap.st.length = 0;
+      const p0 = G.at(G.tip - 0.8, side);
+      her.position.set(p0.x, A.y, p0.z);
+      her.onGround = true;
+      let hit = false;
+      for (let f = 0; f < 150; f++) {
+        her.velocity.set(-G.dir.x * 10.5, 0, -G.dir.z * 10.5);
+        her.position.addScaledVector(her.velocity, 1 / 60);
+        ap.update(1 / 60);
+        if (ap.of(her).cheat) hit = true;
+      }
+      return { hit, h: hyp(her.position, A) };
+    };
+    const straight = walkIn(0);
+    const edgeOf = walkIn(GT.GATE.half - 0.3);
+    ok('...but a kitten walking in off the gate\'s landing goes straight through, between the pillars, onto the pad',
+      !straight.hit && straight.h < 6 && !edgeOf.hit && edgeOf.h < 6, `${straight.h.toFixed(1)} · ${edgeOf.h.toFixed(1)} from the middle`);
+    // ...and the door is the gate: a step outside its pillars is the wall.
+    ap.st.length = 0;
+    const beside = G.at(DOME_R - 0.6, GT.GATE.pillar + 1.2);
+    her.position.set(beside.x, A.y + 0.5, beside.z);
     her.velocity.set(0, 0, 0);
     her.onGround = false;
-    const before = her.position.clone();
     ap.update(1 / 60);
-    ok('...but the hop from the third stone to the fourth goes through the door untouched',
-      her.position.distanceTo(before) < 1e-9 && !ap.of(her).cheat && AP.inDoor(Math.atan2(before.z - A.z, before.x - A.x), L.door));
+    ok('...and just outside the pillars the dome is a wall again — the door is exactly the gate',
+      ap.of(her).cheat && hyp(her.position, A) > DOME_R, hyp(her.position, A).toFixed(2));
+    /* THE RAILING: "a railing all around the dojo that ends at the entrance
+       to force players to enter from the entrance". Run at it from the pad
+       on every bearing, ten degrees apart, for two seconds: she ends outside
+       only where she ran up the deck and out through the gate. */
+    const runOut = (bearing, frames = 120) => {
+      ap.st.length = 0;
+      her.position.set(A.x + Math.cos(bearing) * 4, A.y, A.z + Math.sin(bearing) * 4);
+      her.onGround = true;
+      ap.update(1 / 60);
+      for (let f = 0; f < frames; f++) {
+        her.velocity.set(Math.cos(bearing) * 10.5, 0, Math.sin(bearing) * 10.5);
+        her.position.addScaledVector(her.velocity, 1 / 60);
+        ap.update(1 / 60);
+      }
+      return hyp(her.position, A);
+    };
+    const escaped = [];
+    let worst = 0;
+    for (let k = 0; k < 36; k++) {
+      const b = (k * Math.PI) / 18;
+      const h = runOut(b);
+      if (h > GT.GATE.rail) escaped.push(Math.round((b * 180) / Math.PI));
+      else worst = Math.max(worst, h);
+    }
+    const gateDeg = ((G.bearing * 180) / Math.PI + 360) % 360;
+    const offGate = escaped.filter((d) => { let x = Math.abs(d - gateDeg) % 360; if (x > 180) x = 360 - x; return x > (Math.asin(GT.GATE.half / GT.GATE.rail) * 180) / Math.PI + 5; });
+    const outGate = runOut(G.bearing, 150);
+    ok('the railing holds her on the pad on every bearing but the gate\'s — and out through the gate is open',
+      offGate.length === 0 && worst <= GT.GATE.rail + 1e-6 && outGate > DOME_R + 1,
+      `escaped at ${escaped.join(',') || 'none'}° (gate ${gateDeg.toFixed(0)}°) · held at ≤ ${worst.toFixed(2)} · out the gate to ${outGate.toFixed(1)}`);
+    // Sideways off the deck: the deck's own rails.
+    ap.st.length = 0;
+    const onDeck = G.at(16.5, 0);
+    her.position.set(onDeck.x, A.y, onDeck.z);
+    her.onGround = true;
+    ap.update(1 / 60);
+    for (let f = 0; f < 90; f++) {
+      her.velocity.set(G.lat.x * 10.5, 0, G.lat.z * 10.5);
+      her.position.addScaledVector(her.velocity, 1 / 60);
+      ap.update(1 / 60);
+    }
+    const sideOff = (her.position.x - A.x) * G.lat.x + (her.position.z - A.z) * G.lat.z;
+    ok('...and running sideways on the deck, its rails keep her on it', Math.abs(sideOff) < GT.GATE.half, sideOff.toFixed(2));
+    // Picked up and put somewhere else is not walking through a rail.
+    ap.st.length = 0;
+    her.position.set(A.x + 2, A.y, A.z);
+    her.onGround = true;
+    ap.update(1 / 60);
+    her.position.set(A.x + 60, A.y, A.z + 5);
+    ap.update(1 / 60);
+    ok('...but a kitten carried off the pad (a fall, a scene, a summons) is not dragged back to the rail', hyp(her.position, A) > 59);
+    // The rail is DRAWN where it holds: no vertex of the ring over the deck.
+    const rr = D.gateFx?.ringRail;
+    let overDeck = 0;
+    let verts = 0;
+    if (rr) {
+      rr.updateMatrixWorld(true);
+      const pa = rr.geometry.attributes.position;
+      const vv = new THREE.Vector3();
+      for (let i = 0; i < pa.count; i++) {
+        vv.fromBufferAttribute(pa, i).applyMatrix4(rr.matrixWorld);
+        verts++;
+        const side = (vv.x - A.x) * G.lat.x + (vv.z - A.z) * G.lat.z;
+        const along = (vv.x - A.x) * G.dir.x + (vv.z - A.z) * G.dir.z;
+        if (along > 0 && Math.abs(side) < GT.GATE.half) overDeck++;
+      }
+    }
+    ok('...and the railing is drawn where it holds: the ring\'s gap is over the deck, and nowhere else',
+      verts > 500 && overDeck === 0, `${overDeck} of ${verts} vertices over the deck`);
+    park(her);
     // A dragon, and her on it: both pushed, by the same amount.
     ap.st.length = 0;
     const drake = { position: new THREE.Vector3(A.x + 4, A.y + 6, A.z + 1), group: new THREE.Group() };
@@ -37666,6 +37882,43 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       pts.every((v) => inF(v, 0.98)), `worst ${worst.toFixed(2)} NDC`);
     const herV = ndc(her, { x: her.position.x, y: her.position.y + 1.4, z: her.position.z });
     ok('...and she is still in it', inF(herV, 0.9), `${herV.x.toFixed(2)}, ${herV.y.toFixed(2)}`);
+    /* AND IT LETS GO OF HER AT THE CROSSING. Richard: "when player is
+       entering the simulation, the camera is in the wrong placement." The
+       dome's weight was eased out AFTER she crossed, so its centre (the real
+       pad, 12,000 units away) dragged her lens back across the void. Crossed
+       here the way `_cross` does it — her, her target and her camera moved
+       together — and her lens must stay on her from the first frame. Before
+       the fix the target ended 8,000+ units off her. */
+    {
+      const { SIM } = await import('../src/world/simworld.js');
+      const dx = SIM.dx;
+      const dz = SIM.dz;
+      her.position.x += dx; her.position.z += dz;
+      her.camTarget.x += dx; her.camTarget.z += dz;
+      her.camera.position.x += dx; her.camera.position.z += dz;
+      her.realm = 'sim';
+      const first = D.cameraFocus(her);
+      let worstOff = 0;
+      for (let f = 0; f < 120; f++) {
+        D._dt = 1 / 60;
+        her.setFocus(D.cameraFocus(her));
+        her._updateCamera(1 / 60);
+        worstOff = Math.max(worstOff, Math.hypot(her.camTarget.x - her.position.x, her.camTarget.z - her.position.z));
+      }
+      ok('...and across the crossing it lets go at once: her own camera, on her, in the simulator',
+        first === null && worstOff < 6, `focus ${first ? 'still held' : 'null'}, target up to ${worstOff.toFixed(1)} off her`);
+      her.realm = null;
+      // ...and in the tube on the way there, it is easing back to hers.
+      stand(her, ARCADE.x + 2, ARCADE.z + 1);
+      D._cam = [];
+      settle(her, 3);
+      D.st[her.index] = { phase: 'rise' };
+      const dWas = D._cam[her.index].d;
+      for (let f = 0; f < 60; f++) { D._dt = 1 / 60; D.cameraFocus(her); }
+      ok('...and in the tube the dome\'s weight eases out toward her own camera',
+        D._cam[her.index].d < dWas * 0.5, `${dWas.toFixed(2)} → ${D._cam[her.index].d.toFixed(2)} in 1s`);
+      D.st[her.index] = null;
+    }
     /* ON THE STONES: "the camera should follow the player as they get closer
        to the dream dojo, but shouldn't move around too dynamically while they
        are jumping on the platforms." One bearing for the whole crossing, her
@@ -37676,13 +37929,14 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       stand(her, s.x, s.z, s.y);
       settle(her, 3);
       yaws.push(her.focus?.yaw);
-      const next = L.stones[i + 1] ?? { x: ARCADE.x, y: ARCADE.y, z: ARCADE.z };
+      // After the last stone, what she jumps to is the gate's landing.
+      const next = L.stones[i + 1] ?? { ...L.gate.at(L.gate.tip - 1.5), y: ARCADE.y };
       frames.push([ndc(her, { x: s.x, y: s.y, z: s.z }), ndc(her, { x: next.x, y: next.y ?? ARCADE.y, z: next.z })]);
     });
-    /* The stones OUTSIDE the dome: the last one is inside it (the door is
-       the gap before it), where the dome's camera takes over at CAM_BLEND.
-       The 0.003 left between the first stone and the others is the blend
-       still finishing after three seconds, not a turn. */
+    /* The stones OUTSIDE the dome — all three, now the gate's landing is the
+       part of the way across that pokes out of it. The 0.003 left between the
+       first stone and the others is the blend still finishing after three
+       seconds, not a turn. */
     const outside = yaws.filter((_, i) => hyp(L.stones[i], ARCADE) > DOME_R);
     const spreadYaw = Math.max(...outside) - Math.min(...outside);
     ok('on the stones the camera keeps ONE bearing the whole way across',
@@ -37902,6 +38156,61 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         yes === 'scene' && started.at(-1)?.kind === 'tour' && toastedYes === 0 && stub.queue.length === 0,
         `${yes} · ${toastedYes} toast(s)`);
       ok('...and when it cannot, she keeps her card up and says so', no === 'payneDojo' && toastsD.length === 1);
+      /* MARK IT ON MY MAP, and then GETTING THERE takes it off. Richard:
+         "When talking to Payne and marking the Dream Dojo on the minimap,
+         once the player gets there, the mark should be removed from the
+         minimap and placement." It waited for her to stand on the pad, so
+         the beam stood on the Dojo's rim behind her all the way across. */
+      const sts = [];
+      const stub2 = { ...stub, _s: (q) => (sts[q.index] ??= {}) };
+      D.approach.st.length = 0;
+      park(her);
+      const marked = PNd.Payne.prototype.choose.call(stub2, her, 'ddmark');
+      const ov = sts[her.index]?.override;
+      const L2 = D.layout;
+      const away = !!ov && !ov.until(her);
+      stand(her, L2.launch.x + 3, L2.launch.z + 2, world.heightAt(L2.launch.x + 3, L2.launch.z + 2, 200)?.y ?? 30);
+      const atMark = !!ov && ov.until(her);
+      const s1 = L2.stones[1];
+      stand(her, s1.x, s1.z, s1.y);
+      const onStone = !!ov && ov.until(her);
+      ok('MARK IT ON MY MAP marks the way in, and it comes off when she gets there — at the mark, or on a stone',
+        marked === 'payneDojo' && !!ov && Math.hypot(ov.x - L2.launch.x, ov.z - L2.launch.z) < 1e-6 && away && atMark && onStone,
+        `away ${away} · at the mark ${atMark} · on a stone ${onStone}`);
+      park(her);
+    }
+    /* THE TOUR'S SIM SHOTS DRAW THE SIMULATOR. Richard: "when the cutscene
+       transitions to the 'simulation' world part of the cutscene, I can only
+       see the dojo of the turning circle parts of the cutscene and everything
+       else is not being shown". The renderer draws the layer only for a pane
+       whose kittens are in it, and a scene's lens has none — so the scene now
+       says which world each frame of its lens is in, and the renderer takes
+       its word. Played through for real here: every frame's `loc` is its
+       shot's, and the sim shots are some of them. */
+    {
+      const live = new SS.StoryScene({ audio: null });
+      D._ensureSim();
+      live.start('tour', ST.TOUR, D.storyCtx());
+      let frames = 0;
+      let simFrames = 0;
+      let wrong = 0;
+      while (live.active && frames < 4000) {
+        const row = live.rows[live.i];
+        live.update(0.25);
+        frames++;
+        if (!live.active || !row) break;
+        // The lens was placed from the row this frame STARTED on; a line that
+        // ended during it moves `i` on afterwards.
+        const want = SS.shotFor(row.shot, live.ctx, 0).loc;
+        if (live.loc !== want) wrong++;
+        if (live.loc === 'sim') simFrames++;
+      }
+      const main = readD('../src/main.js').replace(/\r/g, '');
+      ok('the tour\'s lens says which world it is in, every frame, and the simulator shots say SIM',
+        frames > 20 && wrong === 0 && simFrames > 0 && !live.active, `${simFrames} of ${frames} frames in the sim, ${wrong} wrong`);
+      ok('...and the renderer draws the simulator for a scene lens that says so, not only for a pane with kittens in it',
+        /storyScene\.camera, 0, 0,\s*\.\.\.this\.renderer\.getSize\(new THREE\.Vector2\(\)\)\.toArray\(\), null, true, this\.storyScene\.loc\)/.test(main)
+        && /realm \? realm === 'sim' : members && D\.paneIsSim\(members\)/.test(main));
     }
     ok('the inspector routes the Dream Dojo card back to its own row, and the tour closes the menu',
       /payneDojo: 'dojo'/.test(readD('../src/systems/inspector.js')) && /next === 'scene'/.test(readD('../src/systems/inspector.js')));

@@ -1,3 +1,5 @@
+import { GATE, inRail, inGateway, throughGate, railCorrect } from './gate.js';
+
 /* ---------------------------------------------------------------------------
    THE WAY IN — the stones, the fall, and the dome's front door.
 
@@ -19,18 +21,21 @@
      Turning Circle as if they fell while jumping."
 
    So the dome is a WALL for a kitten on foot, everywhere except one DOOR: the
-   sector, low down, that the third stone's hop onto the fourth passes through.
-   A kitten who touches the dome anywhere else is laid on its surface and slid
+   torii on the deck (dream/gate.js), low down, exactly the deck's width. A
+   kitten who touches the dome anywhere else is laid on its surface and slid
    off it. Once she has stood on the pad she is IN and the dome lets her be —
-   she may jump off the edge if she likes, and the fall puts her back.
+   and the RAILING keeps her on the pad and the deck, so the only way out is
+   back through the gate. Richard: "that it is the only way to enter the
+   dojo, so we can put a railing all around the dojo that ends at the
+   entrance to force players to enter from the entrance." 
 
    WHAT IT REMEMBERS is two flags per kitten — `cheat` (she tried the wall or a
    dragon) and `fell` (she fell off the stones) — which are the two things
    Lionheart has something to say about (dream/lecture.js). Nothing here
    decides a story; it only notices.
 
-   Pure where a check needs it to be: `inDoor`, `domeContact` and `fallZone`
-   take numbers and return numbers.
+   Pure where a check needs it to be: `domeContact` and `fallZone` take
+   numbers and return numbers, and so do the gate's own tests (dream/gate.js).
 --------------------------------------------------------------------------- */
 
 /** "let them fall for 2 - 3 seconds". Counted from the moment she is below
@@ -39,23 +44,13 @@ export const FALL_HOLD = 2.2;
 /** How far below the lowest stone counts as having fallen. A missed hop that
  *  catches the stone's edge on the way down is not a fall. */
 export const FALL_DROP = 1.5;
-/** The door's half-width, as an angle seen from the pad's centre. The hop it
- *  lets through spans ±11° of `layout.door`; 20 is room for a wobbly one. */
-export const DOOR_HALF = (20 * Math.PI) / 180;
-/** ...and how high above the deck the door goes. A triple jump off the third
- *  stone peaks about 6 above the pad; a dragon's dismount is far above it. */
-export const DOOR_TOP = 8;
+/** ...and how high above the deck the door goes: the torii's tie beam. A
+ *  double jump off the last stone peaks about 4 above the deck; a dragon's
+ *  dismount is far above it. */
+export const DOOR_TOP = GATE.nuki;
 /** How hard the dome slides a kitten outward, units/s². At the top of the
  *  sphere she would otherwise balance there forever. */
 export const SLIDE = 22;
-
-/** Is a bearing (radians, atan2(z, x) from the pad's centre) inside the door? */
-export function inDoor(bearing, door) {
-  let d = bearing - door;
-  while (d > Math.PI) d -= 2 * Math.PI;
-  while (d < -Math.PI) d += 2 * Math.PI;
-  return Math.abs(d) < DOOR_HALF;
-}
 
 /**
  * Where the dome's surface puts a kitten at `pos`, or null if she is clear of
@@ -136,9 +131,17 @@ export class Approach {
       if (h > this.domeR + 2) s.inside = false;
 
       /* --- the dome is a wall, except at the door --- */
-      if (!s.inside && pos.y > A.y - 2) {
-        const bearing = Math.atan2(pos.z - A.z, pos.x - A.x);
-        const door = inDoor(bearing, L.door) && pos.y < A.y + DOOR_TOP;
+      /* ...and not for a kitten inside the railing: on the deck short of the
+         gate she is already in, and the rail is what holds her there. With
+         both, the dome slid her outward off the deck's side while the rail
+         pulled her back onto it, and the dome won. */
+      if (!s.inside && !s.railIn && pos.y > A.y - 2) {
+        /* THE DOOR IS THE DECK'S STRIP, not a wedge. It was an angle seen from
+           the pad's centre (±20° round a hop between two stones), and an
+           angle narrows as she walks in: a kitten 2.45 off the axis was in
+           the door at the dome's skin and in the WALL three units further
+           on, and was slid back out of a gate she had just walked through. */
+        const door = inGateway(pos.x, pos.z, A, L.gate) && pos.y < A.y + DOOR_TOP;
         const hit = door ? null : domeContact(pos, { x: A.x, y: A.y, z: A.z }, this.domeR + 0.4);
         if (hit) {
           pos.set(hit.x, hit.y, hit.z);
@@ -158,6 +161,29 @@ export class Approach {
           s.cheat = true;
           this._yell(p, s, hit.n.y > 0.5 ? 'drop' : 'wall');
         }
+      }
+
+      /* --- the railing: in through the gate, and out only through it --- */
+      if (pos.y > A.y - 1.5 && pos.y < A.y + DOOR_TOP) {
+        const f = L.gate;
+        const isIn = inRail(pos.x, pos.z, A, f);
+        /* Only a kitten who WALKED out from inside it: one picked up and put
+           somewhere (a fall, a scene, a summons) has jumped further in a
+           frame than any kitten can run. */
+        if (s.railIn && !isIn && s.railAt && Math.hypot(pos.x - s.railAt.x, pos.z - s.railAt.z) < 3
+          && !throughGate(pos.x, pos.z, A, f)) {
+          const c = railCorrect(pos.x, pos.z, A, f);
+          pos.x = c.x;
+          pos.z = c.z;
+          const v = p.velocity;
+          const vn = v.x * c.nx + v.z * c.nz;
+          if (vn > 0) { v.x -= c.nx * vn; v.z -= c.nz * vn; }
+        }
+        s.railIn = inRail(pos.x, pos.z, A, f);
+        (s.railAt ??= { x: 0, z: 0 }).x = pos.x;
+        s.railAt.z = pos.z;
+      } else {
+        s.railIn = false;
       }
 
       /* --- the fall --- */
@@ -210,7 +236,7 @@ export class Approach {
     const g = D.game;
     D.yell?.(kind, p);
     g.sfx?.('deny');
-    g.toast?.(`${p.name} — the dome only opens at the stones! Go round to the front door.`, p.index);
+    g.toast?.(`${p.name} — the dome only opens at the gate! Go round to the front door.`, p.index);
   }
 
   /** Forget everything — a new game. */

@@ -3,7 +3,7 @@ import {
   PowerOrb, PowerOrbPickup,
   orbPrice, orbSellPrice, orbPriceFor, orbSellPriceFor, stockFor,
 } from '../entities/powerorb.js';
-import { KotodamaStall } from '../entities/stall.js';
+import { KotodamaStall, STALL_SCALE, STALL_SOLID } from '../entities/stall.js';
 import { STEAL } from '../entities/clanpower.js';
 
 /* ---------------------------------------------------------------------------
@@ -351,15 +351,17 @@ export class Kotodama {
    * the market's own four stalls (solids at r 2.0) both.
    */
   raiseStall() {
-    const spot = this.world.findOpenSpot(0, 60, 8) ?? { x: 0, z: 60 };
+    /* 8 for the old booth; it is STALL_SCALE bigger now, and the canopy
+       argument above is about its roof, which grew with it. */
+    const spot = this.world.findOpenSpot(0, 60, 8 * STALL_SCALE) ?? { x: 0, z: 60 };
     const g = this.world.heightAt(spot.x, spot.z);
     this.stall = new KotodamaStall(spot.x, g ? g.y : 0, spot.z);
     this.scene.add(this.stall.group);
     /* A solid, so nobody walks through the counter — and small, well inside
        the prompt radius, so you can never be shoved out of the range of the
        thing you are standing at. */
-    this.world.solids.push({ x: spot.x, z: spot.z, r: 1.9 });
-    this.world.keepClear.push({ x: spot.x, z: spot.z, r: 8 });
+    this.world.solids.push({ x: spot.x, z: spot.z, r: STALL_SOLID });
+    this.world.keepClear.push({ x: spot.x, z: spot.z, r: 8 * STALL_SCALE });
   }
 
   /* ----------------------------- inventory ------------------------------- */

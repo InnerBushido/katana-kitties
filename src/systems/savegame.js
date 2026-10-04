@@ -406,6 +406,9 @@ export function castRow(p, here = true) {
     /* Her history with Payne — met, hints on, the trick, rounds fought. See
        systems/payne.js. Copied for the same reason `feats` is. */
     payne: p.payne ? { ...p.payne } : null,
+    /* Whether she has been round Lionheart's racks THIS GAME — see
+       DreamDojo.interact. An old row has none and is a kitten who has not. */
+    geared: !!p.dreamGeared,
   };
 }
 
@@ -490,6 +493,7 @@ export function applyCast(game, p, row) {
   /* An old row has no `payne` and comes back as a kitten who has not met her
      — which is true of every save taken before she existed. */
   p.payne = cleanPayne(row.payne);
+  p.dreamGeared = !!row.geared;
   return true;
 }
 

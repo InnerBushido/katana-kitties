@@ -319,6 +319,23 @@ export const CLAN_ISLE = {
 /** One kitten's history with her. Every field survives a save and a drop-out.
  *  `told` and `teased` are the two once-only announcements, so a load does
  *  not make her say them again. */
+/** How near the Dream Dojo mark counts as having got there (see `ddMarkReached`). */
+export const DD_MARK_NEAR = 7;
+
+/**
+ * Has she got to where Payne's Dream Dojo mark points — the spot in front of
+ * the first stone, any of the stones, or the pad itself? Pure on the Dream
+ * Dojo's layout and approach state, so world-check can ask it.
+ */
+export function ddMarkReached(D, q) {
+  const L = D?.layout;
+  if (!L || !q?.position) return false;
+  const pos = q.position;
+  if (Math.hypot(pos.x - L.launch.x, pos.z - L.launch.z) < DD_MARK_NEAR) return true;
+  if (L.stones.some((s) => Math.hypot(pos.x - s.x, pos.z - s.z) < s.r + 1)) return true;
+  return !!D.approach?.of(q).inside;
+}
+
 export const blankPayne = () => ({
   met: false, hints: false, sweep: false, rounds: 0, told: false, teased: false,
   /* The Very Last One's conversation, which has a memory — `askLast`. How many
@@ -1559,12 +1576,18 @@ export class Payne {
         }
         /* THE FIRST STONE, NOT THE DOME: the way in is the thing she needs
            to find, and a mark on the dome would send a kitten on a dragon
-           straight at the wall Lionheart shouts about. Gone once she is in. */
+           straight at the wall Lionheart shouts about.
+           GONE ONCE SHE IS THERE — on the spot it marks, on the stones, or in.
+           It used to wait for her to stand on the pad, so the beam stood at
+           the Dojo's edge the whole way across and on, and Richard: "once the
+           player gets there, the mark should be removed from the minimap and
+           placement." The spot is the Dojo's rim in front of the first stone;
+           DD_MARK_NEAR is about two kitten-lengths of it. */
         const s = this._s(p);
         s.mark = null;
         s.override = {
           x: at.x, z: at.z, y: g.world?.dojoCentre?.y, t: Infinity,
-          until: (q) => !!D.approach?.of(q).inside,
+          until: (q) => ddMarkReached(D, q),
         };
         this.say(p, ['payne_dd_mark'], null, { card: false, now: true });
         g.toast?.(`Payne marked the way to the Dream Dojo on ${p.name}'s map`, p.index);
