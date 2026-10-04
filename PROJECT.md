@@ -369,6 +369,7 @@ mark is derived too: it means the number was read out of a `tune()` table, so a
 | **air** ✎ | dmg 14 · knock 13 · lift 7.5 · reach 3.7 | slash in the air |
 | **tri / dive / charge** ✎ | the three power-orb moves | entries in the same table, so they cannot leak out of the ring |
 | **sweep** ✎ | dmg 8 · knock 8 · lift 7.5 · reach 4.4 | Payne's Goblin Sweep: sprint held, stick still, attack. A full circle |
+| **riposte** ✎ | dmg 12 · knock 16 · lift 5 · reach 4.6 | 返 Riposte's answer: a parry that catches a blow from in front throws this back at once |
 <!-- /doc-sync:numbers -->
 
 **MISCHIEF is the spine**: 80% opens the tournament, 100% wakes the Powerup
@@ -512,7 +513,7 @@ to lock it on.** → [mobile.md](docs/notes/mobile.md)
 | **Steam shelf art & icons** | `tools/steam-art.mjs` crops and composites `docs/art-masters/title_art.png` — the **master**, because every crop is a pixel coordinate measured on that 2752x1536 file and the shipped copy is WebP. **Nothing here is a new drawing** — a prompt to an image model would put art on the box that is nowhere inside the game. | `node tools/steam-art.mjs` → `out/steam/` |
 | **Steam store capsules** | `tools/steam-capsules.sh` | → [trailer.md](docs/notes/trailer.md) |
 | **Clan leader portraits (Help)** | `tools/help-portraits.mjs` | |
-| **A Help picture that isn't filmed yet** | `tools/help-blink-placeholder.mjs` draws the still that holds 瞬 Flash Step's cell in the abilities grid until its clip is shot. It reads the jade out of the orb roster and the kitten out of `PLAYER_STYLE`, so it cannot drift from the game, and it stamps **PLACEHOLDER** in its own corner — everything else on that page is an engine capture and a drawing must not pass for one. Swapping in the clip is one attribute in `index.html`. | `node tools/help-blink-placeholder.mjs` |
+| **A Help picture that isn't filmed yet** | `tools/help-blink-placeholder.mjs` and `tools/help-riposte-placeholder.mjs` draw the stills that hold 瞬 Flash Step's and 返 Riposte's cells in the abilities grid until their clips are shot. They read the orb's colour out of the roster and the kittens out of `PLAYER_STYLE`, so they cannot drift from the game, and each stamps **PLACEHOLDER** in its own corner — everything else on that page is an engine capture and a drawing must not pass for one. Both draw with `tools/placeholder-raster.mjs` (a dependency-free rasteriser, a pixel font and a kitten silhouette); lifting it out left `blink.png` byte-identical. Swapping in a clip is one attribute in `index.html`. | `node tools/help-blink-placeholder.mjs`, `node tools/help-riposte-placeholder.mjs` |
 | **README screenshots** | Rendered to a canvas and POSTed to a throwaway local HTTP server — browser downloads don't reach disk from a preview pane. | → [hosting.md](docs/notes/hosting.md) |
 
 **Where a finished asset lives.** `public/` is filed by subject, not flat:
