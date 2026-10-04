@@ -36124,6 +36124,8 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
   const RG = await import('../src/systems/dream/range.js');
   const KT = await import('../src/systems/dream/kata.js');
   const PL = await import('../src/entities/player.js');
+  const KI = await import('../src/systems/dream/kiosk.js');
+  const PAL = await import('../src/core/palette.js');
   const dc = world.dojoCentre;
   const L = DD.arcadeLayout(dc);
   const scene = new THREE.Scene();
@@ -36377,16 +36379,50 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const bad = run(false);
     ok('a kata stood through is a refusal that says the score and what earns a star',
       bad.d.state === 'failed' && /\d+%/.test(bad.d.why ?? ''), bad.d.why);
-    // Somebody else's floor, mid-kata, says so.
+    /* ONE FLOOR EACH. Richard: "Let's section each area off with the players
+       color and symbolism, so they know which area is for them, if the other
+       players are not active and not in the simulation, then their area
+       should be disabled or grayed out ... The player can only use the area
+       that is designated to them with their colors." */
     D.drills[0] = null;
-    D.kata.begin(her, 'daily', fl);
-    D.drills[0].update(2);
+    D.t += 100;
     fakeGame.toasts.length = 0;
     const took = D.kata.begin(sis, 'daily', fl);
-    ok("a floor somebody is dancing on refuses her sister in words, and sends her to another",
-      took === false && !D.drills[1] && fakeGame.toasts.some((t) => /another/.test(t)), fakeGame.toasts.join(' | '));
-    D.drills[0].dispose();
-    D.drills[0] = null;
+    ok('型 her floor refuses her sister, in words that say which floor is hers',
+      took === false && !D.drills[1] && fakeGame.toasts.some((t) => /yours is the pink 氷 one/.test(t)), fakeGame.toasts.join(' | '));
+    D.kata.begin(sis, 'daily', D.kata.floors[1]);
+    D.drills[1].update(2);
+    D.t += 100;
+    const mine = D.kata.begin(her, 'daily', fl);
+    ok('...and her sister dancing on her own floor never stops her using hers', mine === true && !!D.drills[0] && !!D.drills[1]);
+    D.drills[0].dispose(); D.drills[0] = null;
+    D.drills[1].dispose(); D.drills[1] = null;
+    D.kata.update(0);
+    const F = D.kata.floors;
+    const hex = (m) => m.material.color.getHex();
+    ok('...each floor of a kitten in here is in HER colour, kiosks lit, under a plate with her element',
+      hex(F[0].edge) === her.style.colour && hex(F[1].edge) === sis.style.colour
+      && F[0].lit && F[1].lit && F[0].kiosks.every((k) => k.lit) && /炎/.test(F[0].plate._key) && /氷/.test(F[1].plate._key),
+      `${hex(F[0].edge).toString(16)} ${hex(F[1].edge).toString(16)}`);
+    ok('...and the floors of seats nobody is in here for are grey, their kiosks greyed, and say so',
+      [2, 3].every((k) => !F[k].lit && hex(F[k].edge) === KI.KIOSK_OFF && F[k].kiosks.every((q) => q.lit === false)
+        && /nobody in this seat|opens when she comes in/.test(F[k].plate._key)));
+    // She steps out: her floor goes grey with her, and comes back when she does.
+    sis.realm = null;
+    D.kata.update(0);
+    D.t += 100;
+    fakeGame.toasts.length = 0;
+    const greyed = !F[1].lit && hex(F[1].edge) === KI.KIOSK_OFF;
+    const onHers = D.kata.begin(her, 'daily', F[1]);
+    ok('...a sister who leaves the simulator takes her floor\'s colour with her, and it still will not take anybody else',
+      greyed && onHers === false && !D.drills[0] && fakeGame.toasts.some((t) => /Frost's floor — yours is the orange 炎 one/.test(t)),
+      fakeGame.toasts.join(' | '));
+    sis.realm = 'sim';
+    D.kata.update(0);
+    ok('...and lights again the moment she is back', F[1].lit && hex(F[1].edge) === sis.style.colour);
+    ok('...and the colour is said the way a nine-year-old says it',
+      [0, 1, 2, 3].map((i) => KT.colourWord(PAL.styleFor(i).colour)).join() === 'orange,pink,teal,purple',
+      [0, 1, 2, 3].map((i) => KT.colourWord(PAL.styleFor(i).colour)).join());
   }
 
   /* --- four floors, all on the island, none on another --- */
@@ -36428,6 +36464,8 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
   const RG = await import('../src/systems/dream/range.js');
   const KT = await import('../src/systems/dream/kata.js');
   const PL = await import('../src/entities/player.js');
+  const KI = await import('../src/systems/dream/kiosk.js');
+  const PAL = await import('../src/core/palette.js');
   const { isleSpot } = await import('../src/systems/dream/kiosk.js');
   const dc = world.dojoCentre;
   const L = DD.arcadeLayout(dc);
