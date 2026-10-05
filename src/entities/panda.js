@@ -1287,10 +1287,14 @@ export class Panda {
    */
   carry(rider) {
     const seat = this.seatOffset();
+    /* `carryOff` is the simulator's: a panda living in the Dream Dojo's layer
+       has its position in the layer's coordinates and its rider in the
+       world's (dream/pandatrial.js). Unset everywhere else, so 0. */
+    const off = this.carryOff;
     this.position.set(
-      rider.position.x - seat.x,
+      rider.position.x - seat.x - (off?.x ?? 0),
       rider.position.y,
-      rider.position.z - seat.z
+      rider.position.z - seat.z - (off?.z ?? 0)
     );
     this.velocity.copy(rider.velocity);
     this._aim(rider.camYaw ?? 0);

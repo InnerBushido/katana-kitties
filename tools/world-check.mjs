@@ -30525,6 +30525,25 @@ console.log('\n=== NINE NOTES FROM A PHONE ===');
      "Let's make it so that it shows a maximum of 4 of the last messages." */
   ok('the toast strip shows at most four at once, which the note asked for',
     /while \(wrap\.children\.length > 4\) wrap\.firstChild\.remove\(\);/.test(M));
+  /* A TOAST TO A KITTEN READING A CARD IS IN FRONT OF THE CARD. Richard: "a
+     message appears under the players names but that message is blocked by
+     the UI screen ... We have this issue with Payne and her UI as well."
+     `#toasts` is inside `#hud` (a stacking context at 5) and a card is 8, so
+     the fix has to be a second strip OUTSIDE the HUD, above 8 and below the
+     menus' 20, chosen for her while `inspector.busy` says her card is up. */
+  {
+    const IH = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+    const CS = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+    const zOf = (sel) => Number(new RegExp(`${sel.replace(/[#.()-]/g, (c) => `\\${c}`)} \\{[^}]*?z-index: (\\d+)`).exec(CS)?.[1]);
+    const zFront = zOf('#toasts-front'), zCard = zOf('#pane-cards:not(.hidden)'), zHud = zOf('#hud');
+    const hudAt = IH.indexOf('<div id="hud"'), frontAt = IH.indexOf('<div id="toasts-front">');
+    ok('a toast to a kitten whose Lionheart or Payne card is up goes in a strip over the cards, not under them',
+      /const front = this\.inspector\?\.busy\?\.\(playerIndex\) \? document\.getElementById\('toasts-front'\) : null;/.test(M)
+      && /const wrap = front \?\? under;/.test(M) && frontAt > 0 && frontAt < hudAt
+      && zFront > zCard && zCard > zHud && zFront < 20, `front ${zFront} card ${zCard} hud ${zHud}`);
+    ok('...at the strip\'s own height, copied from it, so the offsets stay in one place',
+      /front\.style\.top = getComputedStyle\(under\)\.top;/.test(M));
+  }
   ok('a repeat of the same news folds into the line already on screen',
     /toast\(text, playerIndex = 0, combo = null\)/.test(M)
     && /this\._combos \|\|= new Map\(\);/.test(M));
@@ -35785,6 +35804,106 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       && town.point.visible === holo.point.visible, worst.toExponential(1));
     const townSolid = town.point.material.blending !== THREE.AdditiveBlending;
     ok('...and the town\'s own Dojo is not dressed by it', townSolid);
+
+    /* A VIDEO GAME'S VIEW OF IT. Richard: "Let's have the hologram orb
+       rotating in place with the gimbals around it ... put the player inside
+       some sort of sphere ... vectors pointing at a point to find the position
+       of the sphere on the unit circle. Can color the cone with X-axis red,
+       Y-axis green, and Z-axis blue ... hologram bars going to the cylinders
+       ... show the vectors and normals and everything." */
+    const X = fx.parts;
+    const hex = (m) => m.material.color.getHex();
+    const up = X.cones.z.position.y - X.cones.x.position.y;
+    const barEnds = ['x', 'y', 'z'].every((k) => {
+      const B = X.bars[k];
+      const end = B.bar.position.clone().addScaledVector(B.dir, B.len);
+      return end.distanceTo(X.cones[k].position) < 1e-9;
+    });
+    // Right-handed: x cross y comes out of the floor, which is where z points.
+    const handed = new THREE.Vector3().crossVectors(X.bars.x.dir, X.bars.y.dir).dot(X.bars.z.dir);
+    ok('軸 the arrowheads are an axis: x RED, y GREEN, and a BLUE z one unit straight up, each with a bar of light out to its cone',
+      hex(X.cones.x) === HD.AXIS_C.x && hex(X.cones.y) === HD.AXIS_C.y && hex(X.cones.z) === HD.AXIS_C.z
+      && Math.abs(up - HD.Z_LEN) < 1e-9 && barEnds && handed > 0.999
+      && X.cones.x.position.x > 0 && X.cones.y.position.z < 0 && holo.labels.includes(fx.zLabel),
+      `up ${up.toFixed(2)}, x×y·z ${handed.toFixed(3)}, bars ${barEnds}`);
+    const g0 = X.gimbal.map((g) => g.rotation.clone());
+    const pt0 = holo.point.position.clone();
+    fx.update(3.7, []);
+    const turned = X.gimbal.every((g, i) => !g.rotation.equals(g0[i]));
+    const pivots = X.gimbal[0].rotation.y !== 0 && X.gimbal[1].rotation.x !== 0 && X.gimbal[2].rotation.z !== 0
+      && X.gimbal[0].children.includes(X.gimbal[1]) && X.gimbal[1].children.includes(X.gimbal[2]);
+    ok('...the orb turns inside a GIMBAL: three rings, blue about up, red about x inside it, green inside that, and the orb has not moved',
+      turned && pivots && X.rings.map(hex).join() === [HD.AXIS_C.z, HD.AXIS_C.x, HD.AXIS_C.y].join()
+      && holo.point.children.includes(X.gimbal[0]) && holo.point.children.includes(X.triad)
+      && holo.point.position.equals(pt0));
+    // Her, walking the circle at 1.3x, then a hair further round.
+    const tip = (a) => a.tip.position;
+    const flat = (v) => new THREE.Vector2(v.x, v.z);
+    const at = (a, rr) => walker.position.set(Math.cos(a) * 24 * rr, 0.2, -Math.sin(a) * 24 * rr);
+    at(0.8, 1.3);
+    holo.update(1 / 60, [walker]);
+    fx.update(4, [walker]);
+    const P0 = holo.point.position.clone();
+    const n0 = flat(tip(X.normal)).sub(flat(P0)).normalize();
+    const t0 = flat(tip(X.tangent)).sub(flat(P0)).normalize();
+    const radial = flat(P0).normalize();
+    at(0.85, 1.3);
+    holo.update(1 / 60, [walker]);
+    const moved = flat(holo.point.position).sub(flat(P0)).normalize();
+    ok('...the NORMAL at the point is straight out of the circle and the TANGENT along it, the way theta grows',
+      n0.distanceTo(radial) < 1e-9 && Math.abs(n0.dot(t0)) < 1e-9 && moved.dot(t0) > 0.99
+      && X.normal.group.visible && X.tangent.group.visible,
+      `n·r ${n0.dot(radial).toFixed(4)}, n·t ${n0.dot(t0).toExponential(1)}, step·t ${moved.dot(t0).toFixed(3)}`);
+    at(0.8, 1.3);
+    holo.update(1 / 60, [walker]);
+    const far = { position: new THREE.Vector3(60, 0.2, 0), name: 'far' };
+    const flying = { position: new THREE.Vector3(5, 0.2, 5), mount: {}, name: 'up' };
+    fx.update(4, [walker, far, flying]);
+    const S = X.spheres.filter((s) => s.group.visible);
+    const sp = S[0]?.group.position;
+    const sphereOK = S.length === 1 && S[0].who === walker
+      && Math.abs(sp.x - walker.position.x) < 1e-9 && Math.abs(sp.z - walker.position.z) < 1e-9
+      && Math.abs(sp.y - (walker.position.y - holo.group.position.y + HD.SPHERE_UP)) < 1e-9;
+    const v = flat(tip(X.toHer));
+    const pp = flat(holo.point.position);
+    const cross = v.x * pp.y - v.y * pp.x;
+    ok('...SHE walks inside a sphere (nobody off the floor or in the air does), and a VECTOR runs from the origin out under her, through the point on the circle',
+      sphereOK && X.toHer.group.visible && v.distanceTo(flat(walker.position)) < 1e-9
+      && Math.abs(cross) / (v.length() * pp.length()) < 1e-9 && v.dot(pp) > 0 && v.length() > pp.length()
+      && Math.abs(tip(X.toHer).y - holo.point.position.y) < 1e-9,
+      `${S.length} spheres, tip ${v.x.toFixed(2)},${v.y.toFixed(2)} her ${walker.position.x.toFixed(2)},${walker.position.z.toFixed(2)}, sin of the angle between ${(cross / (v.length() * pp.length())).toExponential(1)}`);
+    fx.update(4, []);
+    ok('...and when she steps off the floor her sphere and her vector go with her', X.spheres.every((s) => !s.group.visible) && !X.toHer.group.visible);
+    // THE MATHS STILL THE TOWN'S, all of that drawn: drive both again.
+    let worst2 = 0;
+    for (let k = 0; k < 24; k++) {
+      at((k / 24) * Math.PI * 2, 0.7 + (k % 5) * 0.15);
+      town.update(1 / 60, [walker]);
+      holo.update(1 / 60, [walker]);
+      fx.update(k / 7, [walker]);
+      worst2 = Math.max(worst2, town.point.position.distanceTo(holo.point.position), Math.abs(town.theta - holo.theta),
+        Math.abs(town.playerRadius - holo.playerRadius));
+    }
+    ok('...and with all of it drawn, the point, the angle and her radius are still exactly the town\'s', worst2 < 1e-9, worst2.toExponential(1));
+
+    /* AND THE CAMERA: "Camera should zoom out when player is walking in the
+       Dojo of the Turning Circle in the simulator." */
+    const keepSD = D.simDojo;
+    D.simDojo = holo;
+    her.position.set(holo.centre.x + 20, 0, holo.centre.z - 6);
+    const inSim = D.simDojoAt(her);
+    her.position.set(holo.centre.x + MD.DOJO_VIEW_R + 1, 0, holo.centre.z);
+    const outside = D.simDojoAt(her);
+    sis.position.set(holo.centre.x + 5, 0, holo.centre.z);
+    const notSim = D.simDojoAt(sis);
+    D.simDojo = keepSD;
+    const mn = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    ok('...and walking it pulls the camera out over the whole diagram, the town Dojo\'s own shot, alone or as a pair',
+      inSim === holo.centre && outside === null && notSim === null
+      && /const simDojoC = near \|\| p\.mount \? null : this\.dream\?\.simDojoAt\?\.\(p\)/.test(mn)
+      && /else if \(near \|\| simDojoC\) \{\s*p\.setFocus\(\{\s*centre: simDojoC \?\? dc,[\s\S]{0,400}DOJO_DIST\.touch : DOJO_DIST\.desktop,\s*pitch: DOJO_PITCH,/.test(mn)
+      && /simIn \?\?= this\.dream\?\.simDojoAt\?\.\(p\)/.test(mn) && /want\.lerp\(rig\.dojoC \?\? dc, ft \* bias\)/.test(mn),
+      `in ${!!inSim} outside ${outside} sister-in-town ${notSim}`);
   }
 
   /* --- the way out is a tube in her colour, and Lionheart's words never cover it --- */
@@ -37030,6 +37149,40 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     G.reset();
     D.drills[0]?.dispose(); D.drills[0] = null;
     ok('...and a reset (a scene, the tournament) drops the session and unracks everybody', !G.session && !D.st[0].benched);
+    /* NOBODY IS STUCK. Richard: "it is possible to jump into The Stands area
+       when the trial hasn't started and then the player gets stuck there
+       because the Leave area isn't working ... It is also possible to get
+       into the course and get stuck in it". Both with NO session open. */
+    const deckQ = isleSpot(I, PLZ().a + 1, PLZ().b);
+    put(sis, { x: deckQ.x, z: deckQ.z, y: I.y + PLZ().lift });
+    const deckOn = G.onDeck(sis);
+    put(sis, { x: ex.x, z: ex.z, y: ex.y });
+    const exPrompt = G.exitKiosk.station.prompt(sis, 'E');
+    fakeGame.toasts.length = 0;
+    D.stationAt(sis)?.interact(sis);
+    const sq2 = lc(sis.position.x - SW.SIM.dx, sis.position.z - SW.SIM.dz);
+    ok('出口 with no session, a kitten up in the stands has a LEAVE pad that works and says so',
+      !G.session && deckOn && /LEAVE THE STANDS/.test(exPrompt) && !G.onDeck(sis) && sq2.a < -17
+      && Math.abs(sis.position.y - I.y) < 0.2 && fakeGame.toasts.some((t) => /climbed down/.test(t)),
+      `${exPrompt} | ${fakeGame.toasts.join(' | ')}`);
+    const inQ = isleSpot(I, CO.LANES[1], 0);
+    put(sis, { x: inQ.x, z: inQ.z, y: I.y });
+    fakeGame.toasts.length = 0;
+    for (let t = 0; t < SN.STRAY_T * 0.6; t += 1 / 30) G.update(1 / 30);
+    const stillIn = G.inCourse(sis);
+    for (let t = 0; t < SN.STRAY_T; t += 1 / 30) G.update(1 / 30);
+    const sq3 = lc(sis.position.x - SW.SIM.dx, sis.position.z - SW.SIM.dz);
+    ok('...and a kitten who got into the course with nobody running it is walked out to the plaza after STRAY_T, in words',
+      stillIn && !G.inCourse(sis) && sq3.a < -17 && fakeGame.toasts.some((t) => /THE COURSE/.test(t)), fakeGame.toasts.join(' | '));
+    put(her, kioskQ); D.stationAt(her)?.interact(her);
+    const runQ = isleSpot(I, CO.START.a, CO.START.b);
+    put(her, { x: runQ.x, z: runQ.z, y: I.y });
+    for (let t = 0; t < SN.STRAY_T * 2; t += 1 / 30) G.update(1 / 30);
+    const rq = lc(her.position.x - SW.SIM.dx, her.position.z - SW.SIM.dz);
+    ok('...but the RUNNER is never walked out of her own course', G.session?.runner === 0 && G.inCourse(her)
+      && Math.abs(rq.b - CO.START.b) < 0.01);
+    G.reset();
+    D.drills[0]?.dispose(); D.drills[0] = null;
     her.clan = null;
 
     /* THE HOOKS, so the pieces above are actually called. */
@@ -37899,6 +38052,24 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       d.update(1 / 60);
       ok('...a second grove (at most ten), and the cub GROWS into a panda that fights',
         g2 <= 10 && d.stage === 'meet' && pa.tier === 1 && pa.fighter && pa.maxHp > 0, `${g2} canes, ${d.stage}, tier ${pa.tier}`);
+      /* AND SHE CAN RIDE IT. Richard: "After panda in the simulation turns
+         into a big panda, I am unable to ride it. I should be able to ride it
+         while doing the Pandapaw trial." */
+      {
+        const hq = { x: her.position.x - SW.SIM.dx, z: her.position.z - SW.SIM.dz };
+        const farOff = her._simRideNear();
+        pa.position.set(hq.x + 0.8, pa.position.y, hq.z);
+        const near = her._simRideNear();
+        her.pandaMount = pa; pa.rider = her; // what Player's MOUNT branch does
+        pa.carry(her);
+        const seat = pa.seatOffset();
+        const carried = Math.hypot(pa.position.x + seat.x + SW.SIM.dx - her.position.x, pa.position.z + seat.z + SW.SIM.dz - her.position.z);
+        const pl = read('../src/entities/player.js');
+        ok('熊 the grown panda is hers to RIDE: offered while it is grown, climbed on in reach, and carried under her across the layer',
+          her.simRide?.panda === pa && near && carried < 1e-6
+          && /\} else if \(this\._simRideNear\(\)\) \{[\s\S]{0,800}this\.pandaMount = pa;\s*pa\.rider = this;/.test(pl),
+          `offered ${her.simRide?.panda === pa}, near ${near} (from afar ${farOff}), carried ${carried.toExponential(1)}`);
+      }
       until(d, 'fight2', T.meetT + 1);
       ok('...then twice as many opponents, and she starts hurt again',
         d.stage === 'fight2' && d.foes.length === 2 * T.foes[0] && Math.abs(frac() - PT.startFrac()) < 0.01,
@@ -37919,9 +38090,32 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       ok('...then she is rooted, and three or four come for the PANDA — not hers to fight',
         d.stage === 'lesson' && rooted() && lf.length >= 3 && lf.length <= 4 && lf.every((f) => f.onlyPanda) && refused.every((x) => !x),
         `${d.stage} ${lf.length}`);
-      until(d, 'lesson2', 20);
-      ok('...they hit it until it is a cub again, the real `collapse`, and poof',
-        d.stage === 'lesson2' && pa.tier === 0 && pa.knockedDown && lf.every((f) => !f.live), `${d.stage} tier ${pa.tier}`);
+      ok('...and the ride is over: no longer offered once the lesson is on', !her.simRide);
+      /* "it is taking too long for the panda to turn into a baby panda after
+         the player loses input control, so make it that, the first time big
+         panda gets hit, it turns into a baby panda and heals the player." And
+         "The enemies should also draw a slashing attack animation when
+         attacking". Counted, frame by frame. */
+      const hurts = [];
+      const realHurt = pa.hurt.bind(pa);
+      pa.hurt = (...a) => { hurts.push(d.stage); return realHurt(...a); };
+      let windArc = false; let slashArc = false;
+      const SC_SLASH = (await import('../src/systems/dream/school.js')).SLASH_T;
+      const l0 = d.t;
+      for (let f = 0; f < 60 * 20 && d.state === 'live' && d.stage === 'lesson'; f++) {
+        d.update(1 / 60);
+        for (const ff of lf) {
+          if (ff.state === 'wind' && ff.arc.visible && ff.arc.material.opacity < 0.4) windArc = true;
+          if (ff.slashT < 0.05 && ff.arc.material.opacity > 0.6) slashArc = true;
+        }
+      }
+      pa.hurt = realHurt;
+      step(d, SC_SLASH + 0.2);
+      ok('...the FIRST blow on it knocks it down — the real `collapse`, a cub again — and they poof',
+        d.stage === 'lesson2' && pa.tier === 0 && pa.knockedDown && lf.every((f) => !f.live) && hurts.length === 1 && !her.pandaMount,
+        `${d.stage} tier ${pa.tier}, ${hurts.length} blows, ${(d.t - l0).toFixed(1)}s, riding ${!!her.pandaMount}`);
+      ok('...and every holo-kitten DRAWS its swing: a sliver while it winds up, a bright sweep when the blow lands',
+        windArc && slashArc, `wind ${windArc} slash ${slashArc}`);
       ok('...and the card says what that means out there, in Richard\'s words',
         d.note === PT.LESSON_TEXT && /baby panda/.test(d.note) && /visit Pandapaw again/.test(d.note) && rooted());
       until(d, '-', 30);
@@ -37969,7 +38163,8 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     {
       const HK = await import('../src/systems/dream/holokit.js');
       const PO = await import('../src/entities/powerorb.js');
-      const keep = { orbs: [...her.powerOrbs], bag: [...(her.orbBag ?? [])], clan: her.clan, oath: her.dreamOath, holo: her.holoOrbs };
+      const keep = { orbs: [...her.powerOrbs], bag: [...(her.orbBag ?? [])], clan: her.clan, oath: her.dreamOath, holo: her.holoOrbs,
+        hClan: her.holoClan, hLast: her.holoLastWorn };
       const S0 = D.st[0];
       const real = CLANS.find((c) => c.id === 'river');
       const bagOf = () => HK.holoBag(her, S0);
@@ -37978,6 +38173,8 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       her.powerOrbs = ['swift', 'reach'];
       her.orbBag = ['leap'];
       her.clan = real; her.dreamOath = null; her.holoOrbs = [];
+      // A first visit: the hall's trials above swore her to things.
+      her.holoClan = null; her.holoLastWorn = [];
       HK.enterHolo(D, her);
       D._applyKit(her, true);
       ok('幻 on the way in she wears a COPY of what she wears outside, and has no clan in here',
@@ -38081,6 +38278,48 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         same(castRow(her).holo, her.holoOrbs)
         && same(PO.cleanHoloOrbs(['leap', 'leap', 'leap', 'leap', 'leap', 'nope', 'ward']), ['leap', 'leap', 'leap', 'leap', 'ward'])
         && /p\.holoOrbs = cleanHoloOrbs\(row\.holo\)/.test(read('../src/systems/savegame.js')));
+
+      /* AND IT REMEMBERS HER NEXT TIME. Richard: "If a player pledges to a
+         Clan in the simulator, that pledge should persist when returning to
+         the simulator. Also, if they have no kotodama outside of the
+         simulator when entering, then they should have their previously
+         equipped kotodama automatically equipped from their previous
+         simulation playthrough." */
+      ok('幻 leaving remembers the holo-clan she swore and what she was wearing in there',
+        her.holoClan === 'panda' && Array.isArray(her.holoLastWorn) && her.holoLastWorn.length > 0, `${her.holoClan} ${her.holoLastWorn}`);
+      fakeGame.toasts.length = 0;
+      HK.enterHolo(D, her);
+      D._applyKit(her, true);
+      ok('...so back in, she is sworn to Pandapaw (Holo) again, and her real clan is still the one kept',
+        her.clan?.id === 'panda' && her.dreamOath?.was === real && fakeGame.toasts.some((t) => /Pandapaw \(Holo\) oath from last time/.test(t)),
+        fakeGame.toasts.join(' | '));
+      ok('...but wearing orbs out there, she still goes in wearing a copy of THOSE ("Copy every entry")',
+        same(S0.holoWorn, ['swift', 'reach']));
+      D._leaveSim(her);
+      her.powerOrbs = [];
+      her.holoLastWorn = ['leap', 'swift', 'leap', 'nope'];
+      her.holoOrbs = ['leap', 'leap', 'leap', 'leap', 'ward'];
+      fakeGame.toasts.length = 0;
+      HK.enterHolo(D, her);
+      D._applyKit(her, true);
+      ok('...and wearing NONE out there, she goes in wearing what she wore last time, as far as she earned it',
+        same(S0.holoWorn, ['leap', 'leap']) && fakeGame.toasts.some((t) => /2 holo orbs/.test(t)) && same(HK.lastWorn(her), ['leap', 'leap']),
+        `${S0.holoWorn} | ${fakeGame.toasts.join(' | ')}`);
+      ok('...which makes nothing: worn + bag is still exactly what she earned',
+        same([...S0.holoWorn, ...bagOf()], [...S0.holoCopies, ...her.holoOrbs]) && S0.holoCopies.length === 0);
+      D._leaveSim(her);
+      const row = castRow(her);
+      const back = { style: her.style, name: 'B', clanRing: null, setPowerOrbs() {} };
+      applyCast({ ...fakeGame, feats: null, _giveOrb() {}, _updateClanBadge() {}, onScoreChanged() {} }, back,
+        { ...row, holoClan: row.holoClan, holoWorn: [...row.holoWorn, 'nope'] });
+      const rowOld = { ...row }; delete rowOld.holoClan; delete rowOld.holoWorn;
+      const old = { style: her.style, name: 'O', clanRing: null, setPowerOrbs() {} };
+      applyCast({ ...fakeGame, feats: null, _giveOrb() {}, _updateClanBadge() {}, onScoreChanged() {} }, old, rowOld);
+      ok('...both saved in her row and read back, an unknown orb dropped; an old row is a kitten who swore and wore nothing',
+        row.holoClan === 'panda' && same(back.holoLastWorn, her.holoLastWorn) && back.holoClan === 'panda'
+        && old.holoClan === null && same(old.holoLastWorn, []), `${JSON.stringify(row.holoWorn)} -> ${back.holoLastWorn}`);
+      ok('...and a restart forgets both, like the orbs she earned',
+        /p\.holoOrbs = \[\];\s*p\.holoClan = null;\s*p\.holoLastWorn = \[\];/.test(read('../src/main.js')));
       const html = read('../index.html');
       const mainSrc = read('../src/main.js');
       ok('...the pause menu has a (HOLO) PLAYER PROFILE, shown only while somebody wears a holo kit',
@@ -38091,6 +38330,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         /\$\{clan\.name\} \(Holo\)/.test(mainSrc) && /No clan \(Holo\)/.test(mainSrc));
 
       her.powerOrbs = keep.orbs; her.orbBag = keep.bag; her.clan = keep.clan; her.dreamOath = keep.oath; her.holoOrbs = keep.holo ?? [];
+      her.holoClan = keep.hClan ?? null; her.holoLastWorn = keep.hLast ?? [];
       S0.holoWorn = null; S0.holoCopies = null;
       D._applyKit(her, true);
     }
@@ -39427,33 +39667,64 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const at = (k) => ({ x: E.mouth.x - E.toward.x * k, z: E.mouth.z - E.toward.z * k });
     her.onGround = true; her.snakeRide = null; her.onCycle = false; her.pinnedAt = null;
     D.st[0].peek = null;
-    const walk = (k, vx, vz) => {
+    const F = 1 / 60;
+    D._dt = F;
+    /* `frames` of her at distance `k` going (vx, vz): the last answer. */
+    const walk = (k, vx, vz, frames = 1) => {
       const q = at(k);
-      her.position.set(q.x, E.mouth.y, q.z);
-      her.velocity.set(vx, 0, vz);
-      return D._peekFor(her);
+      let r = null;
+      for (let n = 0; n < frames; n++) {
+        her.position.set(q.x, E.mouth.y, q.z);
+        her.velocity.set(vx, 0, vz);
+        r = D._peekFor(her);
+      }
+      return r;
     };
     const run = 6;
-    const far20 = walk(20, E.toward.x * run, E.toward.z * run);
-    const at9 = walk(9, E.toward.x * run, E.toward.z * run);
-    const at4 = walk(4, E.toward.x * run, E.toward.z * run);
-    ok('...from about ten of her heights out it starts, and over the rim it is all the way in — not from the deck, as the ride camera was',
-      fromHub && !far20 && at9?.w > 0 && at9.w < 1 && at4?.w === 1 && at4.far === E.far,
-      `${far20?.w ?? 0} / ${at9?.w?.toFixed(2)} / ${at4?.w}, mouth ${E ? Math.hypot(E.mouth.x - dcW.x, E.mouth.z - dcW.z).toFixed(1) : '-'} from the hub`);
-    const still = walk(4, 0, 0);
-    const away = walk(5, -E.toward.x * run, -E.toward.z * run);
-    const stillAfter = walk(5, 0, 0);
-    // Along the rim, square to the way the bridge runs: passing it, not choosing it.
-    const past = walk(7, -E.toward.z * run, E.toward.x * run);
+    const tw = (k, n = 1) => walk(k, E.toward.x * run, E.toward.z * run, n);
+    /* Richard: "the radius for this transition camera is too big, lets make
+       it half as big and it should not be 'incrementally' based on the
+       position of the player moving into place, it should just move into
+       place when triggered. Maybe add some buffer zone so that it doesn't
+       transition until the player is 'definitely' in the zone area, either
+       by moving close enough quickly or by getting close enough within an
+       area." */
+    const far9 = tw(9, 60);
+    const at7 = tw(7, 60);
     D.st[0].peek = null;
-    const arrived = walk(4, 0, 0);
-    ok('...a kitten who stops to look keeps it; one walking away, or running round the rim past the mouth, never gets it',
-      still?.w === 1 && !away && !stillAfter && !past && !arrived);
+    const at5once = tw(5);
+    const dwellN = Math.ceil(PK.PEEK.dwell / F) + 1;
+    const at5dwell = tw(5, dwellN);
+    ok('望 HALF the radius it was (5.5, not 11), and ON or OFF — never a dial on her distance',
+      fromHub && PK.PEEK.start === 5.5 && !far9 && !at7 && !at5once && at5dwell?.w === 1 && at5dwell.far === E.far,
+      `9: ${far9?.w ?? 0}, 7: ${at7?.w ?? 0}, 5 once: ${at5once?.w ?? 0}, 5 after ${dwellN} frames: ${at5dwell?.w ?? 0}`);
+    D.st[0].peek = null;
+    const deep = tw(2);
+    ok('...on after walking into it for a moment, or at once deep inside it going toward the mouth', deep?.w === 1);
+    const hold6 = tw(6.5, 30);
+    const still = walk(6.5, 0, 0, 120);
+    const out8 = walk(8, 0, 0);
+    ok('...and the BUFFER: once on, it stays on out past where it started, standing still included, and only goes past the exit',
+      hold6?.w === 1 && still?.w === 1 && !out8 && PK.PEEK.exit > PK.PEEK.start);
+    D.st[0].peek = null;
+    tw(4, dwellN);
+    const blip = walk(4, -E.toward.x * run, -E.toward.z * run, 6);
+    const back4 = tw(4);
+    const away = walk(5, -E.toward.x * run, -E.toward.z * run, Math.ceil(PK.PEEK.awayT / F) + 1);
+    ok('...a step back is not leaving it; walking away for awayT is', blip?.w === 1 && back4?.w === 1 && !away);
+    D.st[0].peek = null;
+    // Along the rim, square to the way the bridge runs: passing it, not choosing it.
+    const past = walk(4, -E.toward.z * run, E.toward.x * run, 120);
+    D.st[0].peek = null;
+    const arrived = walk(3, 0, 0, 120);
+    ok('...running round the rim past the mouth never turns it on, and nor does standing near it',
+      !past && !arrived);
     // From the island end it looks back at the hub.
     const back = ends.find((e) => e.road === E.road && e !== E);
     ok('...and from the island end of the same bridge it looks back at the hub',
       !!back && Math.hypot(back.far.x - dcW.x, back.far.z - dcW.z) < 1);
     // THE SHOT, measured through a lens: the island in the middle, her upper body in frame, below and beside it.
+    const at4 = tw(4, dwellN);
     const cam = new THREE.PerspectiveCamera(38, 16 / 9, 0.1, 2000);
     const pose = PK.peekPose({ x: at4.x, y: at4.y, z: at4.z, far: at4.far });
     cam.position.set(pose.x, pose.y, pose.z);
@@ -39471,24 +39742,64 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       Math.abs(isle.x) < 0.05 && Math.abs(isle.y) < 0.05 && inF(rim) && inF(mouth) && inF(head) && inF(mid) && inF(paws)
       && head.y < -0.1 && Math.abs(head.x) > 0.15,
       `isle ${isle.x.toFixed(2)},${isle.y.toFixed(2)} rim ${rim.x.toFixed(2)},${rim.y.toFixed(2)} head ${head.x.toFixed(2)},${head.y.toFixed(2)} paws ${paws.y.toFixed(2)} mouth ${mouth.x.toFixed(2)},${mouth.y.toFixed(2)}`);
-    // THE LAYER: comes in, and when she leaves it goes, back to exactly the ordinary pose.
+    /* THE LAYER, ON ITS OWN CLOCK: "sweeping in an arc from where it is to
+       where it needs to be and then lerping smoothly to face the direction it
+       should be facing". Sampled at 60 Hz in, held, and out. */
     const L0 = new THREE.PerspectiveCamera(38, 16 / 9, 0.1, 2000);
     const look = new THREE.Vector3(at4.x, at4.y + 1.4, at4.z);
     const ord = new THREE.Vector3(look.x + 17, look.y + 14, look.z + 17);
     const BP = new PK.BridgePeek();
-    let maxStep = 0;
-    let prev = null;
-    for (let k = 0; k < 120; k++) {
+    const P0 = new THREE.Vector3(pose.x, pose.y, pose.z);
+    const aimOff = () => { // degrees between where the lens looks and her
+      const dv = new THREE.Vector3(); L0.getWorldDirection(dv);
+      return THREE.MathUtils.radToDeg(dv.angleTo(look.clone().sub(L0.position).normalize()));
+    };
+    let maxStep = 0; let prev = null; let atTurn = null; let inPose = null; let gapMin = Infinity;
+    const nIn = Math.ceil(PK.PEEK.sweepIn / F);
+    for (let k = 0; k < nIn + 30; k++) {
       L0.position.copy(ord); L0.lookAt(look);
-      BP.apply(1 / 60, k < 60 ? at4 : null, L0, look);
+      BP.apply(F, at4, L0, look);
       if (prev) maxStep = Math.max(maxStep, prev.distanceTo(L0.position));
       prev = L0.position.clone();
-      if (k === 59) var inPose = L0.position.distanceTo(new THREE.Vector3(pose.x, pose.y, pose.z));
+      // On the arc: the lens stays the same distance from her, give or take the dolly between the two.
+      gapMin = Math.min(gapMin, L0.position.distanceTo(look));
+      if (atTurn == null && BP.w >= PK.PEEK.turn) atTurn = { moved: 1 - L0.position.distanceTo(P0) / ord.distanceTo(P0), aim: aimOff() };
+      if (k === nIn) inPose = L0.position.distanceTo(P0);
     }
-    for (let k = 0; k < 120; k++) { L0.position.copy(ord); L0.lookAt(look); BP.apply(1 / 60, null, L0, look); }
-    ok('...laid on as a layer: in over a second, out again to exactly the ordinary pose, never a jump',
-      inPose < 0.5 && L0.position.distanceTo(ord) < 1e-9 && !BP.live && maxStep < 3,
-      `in ${inPose.toFixed(2)} from the pose, biggest frame step ${maxStep.toFixed(2)}`);
+    for (let k = 0; k < 120; k++) { L0.position.copy(ord); L0.lookAt(look); BP.apply(F, null, L0, look); }
+    ok('...the lens swings round her FIRST, still looking at her, and the aim pans out to the island AFTER',
+      atTurn && atTurn.moved > 0.15 && atTurn.aim < 2,
+      `at turn the lens is ${(atTurn?.moved * 100).toFixed(0)}% of the way, aim ${atTurn?.aim.toFixed(2)} deg off her`);
+    ok('...in over sweepIn whatever her feet do, out again to exactly the ordinary pose, never a jump, never through her',
+      inPose < 0.5 && L0.position.distanceTo(ord) < 1e-9 && !BP.live && maxStep < 1.5 && gapMin > 6,
+      `in ${inPose.toFixed(2)} from the pose, biggest frame step ${maxStep.toFixed(2)}, nearest her ${gapMin.toFixed(1)}`);
+    /* AND THE STICK: "when the camera changes, it should use the movement
+       system for the bridge at this point". */
+    {
+      const keepVY = her.viewYaw; const keepCY = her.camYaw;
+      her._peekHold = null; her.bridgePeek.w = 0;
+      her.camYaw = 0.3; her.viewYaw = 2.1;
+      const up = { mx: 0, my: -1 };
+      const offB = her._moveBasis(up);
+      const offOK = Math.abs(offB.fwd.x + Math.sin(0.3)) < 1e-9 && Math.abs(offB.fwd.z + Math.cos(0.3)) < 1e-9;
+      her.bridgePeek.w = 0.5;
+      const a = her._moveBasis(up).fwd.clone();
+      her.viewYaw = 2.9; // the lens swings while she holds the stick
+      const held = her._moveBasis(up).fwd.clone();
+      her._moveBasis({ mx: 0, my: 0 }); // let go
+      const next = her._moveBasis(up).fwd.clone();
+      her.bridgePeek.w = 0; // the look across ends while she holds it
+      const after = her._moveBasis(up).fwd.clone();
+      her._moveBasis({ mx: 0, my: 0 });
+      const home = her._moveBasis(up).fwd.clone();
+      const yawOf = (v) => Math.atan2(-v.x, -v.z);
+      ok('...the stick is read through the lens that drew her while it is up, and a held push keeps its heading as it swings',
+        offOK && Math.abs(yawOf(a) - 2.1) < 1e-9 && Math.abs(yawOf(held) - 2.1) < 1e-9 && Math.abs(yawOf(next) - 2.9) < 1e-9,
+        `${yawOf(a).toFixed(2)} ${yawOf(held).toFixed(2)} ${yawOf(next).toFixed(2)}`);
+      ok('...and once it is down and she lets go, it is her own camYaw again, exactly',
+        Math.abs(yawOf(after) - 2.9) < 1e-9 && Math.abs(yawOf(home) - 0.3) < 1e-9 && her._peekHold === null);
+      her.viewYaw = keepVY; her.camYaw = keepCY;
+    }
     const pl = read('../src/entities/player.js');
     const mn = read('../src/main.js');
     ok('...on her own camera and on a group\'s, and BEFORE the ride camera, which starts from wherever it left the lens',
@@ -40535,6 +40846,63 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       ok('...and the renderer draws the simulator for a scene lens that says so, not only for a pane with kittens in it',
         /storyScene\.camera, 0, 0,\s*\.\.\.this\.renderer\.getSize\(new THREE\.Vector2\(\)\)\.toArray\(\), null, true, this\.storyScene\.loc\)/.test(main)
         && /realm \? realm === 'sim' : members && D\.paneIsSim\(members\)/.test(main));
+    }
+    /* AND IT IS SCORED. Richard: "Let's add music to the Dream Dojo cutscene
+       with Payne. Could be the simulator music or something else. Could also
+       orchestrate some music to match the scenes of the cutscene, like we did
+       previously with the ending cutscene." Played through for real: what the
+       scene asks for on every row, and nothing once it is skipped. */
+    {
+      const sc = new SS.StoryScene({ audio: null });
+      D._ensureSim();
+      sc.start('tour', ST.TOUR, D.storyCtx());
+      const heard = [];
+      let unscored = 0;
+      let simNotVr = 0;
+      let frames = 0;
+      while (sc.active && frames < 4000) {
+        const row = sc.rows[sc.i];
+        if (row) {
+          if (!sc.musicTrack) unscored++;
+          if (SS.shotFor(row.shot, sc.ctx, 0).loc === 'sim' && sc.musicTrack !== 'vr') simNotVr++;
+          if (heard.at(-1) !== sc.musicTrack) heard.push(sc.musicTrack);
+        }
+        sc.update(0.25);
+        frames++;
+      }
+      const after = sc.musicTrack;
+      const shots = new Set(ST.TOUR.map((r) => r.shot));
+      const cues = Object.entries(SS.TOUR_MUSIC);
+      ok('楽 Payne\'s tour is SCORED: a piece from its first line to its last, the simulator\'s own `vr` over every simulator shot, Payne\'s piece at both ends',
+        unscored === 0 && simNotVr === 0 && heard[0] === 'tourPayne' && heard.at(-1) === 'tourPayne'
+        && heard.includes('tourLion') && heard.includes('vr') && heard.includes('tourCreed') && after === null,
+        heard.join(' > '));
+      ok('...every cue is a shot the tour really cuts to, and every piece one the synth can play',
+        cues.every(([shot, piece]) => shots.has(shot) && !!MUSIC[piece]), cues.map(([s, p]) => `${s}:${p}`).join(' '));
+      sc.start('tour', ST.TOUR, D.storyCtx());
+      sc.update(0.25);
+      const mid = sc.musicTrack;
+      sc.skip();
+      const talk = new SS.StoryScene({ audio: null });
+      talk.start('honor', ST.HONOR, D.storyCtx());
+      const talkTrack = talk.musicTrack;
+      talk.skip();
+      ok('...skipped, it lets go at once, and Lionheart\'s talks in his arcade leave his `vr` alone',
+        mid === 'tourPayne' && sc.musicTrack === null && talkTrack === null);
+      const mainSrc = readD('../src/main.js').replace(/\r/g, '');
+      const wt = mainSrc.slice(mainSrc.indexOf('  _wantedTrack(dt = 0) {'));
+      const iTour = wt.indexOf('const tour = this.storyScene?.musicTrack;');
+      ok('...and `_wantedTrack` asks the scene before anything about where the kittens stand, the simulator piece at full level',
+        iTour > 0 && iTour < wt.indexOf('if (this.travel)') && iTour < wt.indexOf('this._vrLevel = this.dream?.musicLevel')
+        && /if \(tour\) \{ this\._vrLevel = 1; return tour; \}/.test(wt));
+      const mine = ['tourPayne', 'tourLion', 'tourCreed'];
+      const sig = (m) => [MUSIC[m].scale.join(','), MUSIC[m].root ?? 146.83, MUSIC[m].beat].join('|');
+      const others = Object.keys(MUSIC).filter((m) => !mine.includes(m));
+      ok('...its three new pieces are playable, in the family\'s keys, and not any other piece in the game',
+        mine.every((m) => MUSIC[m].beat >= 0.2 && MUSIC[m].beat <= 1 && MUSIC[m].root >= 80 && MUSIC[m].root <= 260
+          && MUSIC[m].rest <= 0.9 && MUSIC[m].rest > MUSIC.griffin.rest && !MUSIC[m].bass)
+        && new Set(mine.map(sig)).size === 3 && mine.every((m) => others.every((o) => !MUSIC[o].scale || sig(o) !== sig(m))),
+        mine.map(sig).join('  '));
     }
     /* THE TOUR PANS THE ISLANDS, ON THE WORDS THAT NAME THEM. Richard, first:
        "during this entire cutscene segment in the simulator, we focus a lot

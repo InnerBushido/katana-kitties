@@ -34,6 +34,22 @@ import { STAGE, isleAt, kataFloorAt } from './tourcast.js';
      (ninth non-negotiable).
 --------------------------------------------------------------------------- */
 
+/**
+ * PAYNE'S TOUR, SCORED — the shot a row opens on, and the piece that starts
+ * with it (core/audio.js `tourPayne` and the rest, for why each). A row whose
+ * shot is not here keeps the piece already playing. Read by `Game._wantedTrack`
+ * through `musicTrack`, which is null for every other scene and outside one.
+ * Only the tour: Lionheart's two talks happen in his arcade, under its own
+ * `vr`, and are his voice in his room.
+ */
+export const TOUR_MUSIC = {
+  isleWide: 'tourPayne',
+  lionClose: 'tourLion',
+  simHub: 'vr',
+  lionHero: 'tourCreed',
+  isleEnd: 'tourPayne',
+};
+
 const FADE = 0.5;
 /** A black dip at a change of place — the real world to the simulator — and
  *  only there: a cut between two shots of the same island is a cut. */
@@ -491,6 +507,8 @@ export class StoryScene {
     this.portraitEl = $('cs-portrait');
     this.fadeEl = $('cs-fade');
     this.barEl = $('cs-progress');
+    /** What the scene wants playing (`TOUR_MUSIC`), or null. */
+    this.musicTrack = null;
   }
 
   /** Buffer every clip of a script, once. */
@@ -522,6 +540,7 @@ export class StoryScene {
     this.total = 0;
     this.fadeIn = FADE;
     this.ending = false;
+    this.musicTrack = null;
     this.el?.classList.remove('hidden');
     this.game.audio?.sfx?.('menu');
     this._next();
@@ -549,6 +568,8 @@ export class StoryScene {
     this._stopActor();
     const row = this.rows[this.i];
     if (!row) { this.finish(); return; }
+    // The music turns with the picture: on the row's own shot (TOUR_MUSIC).
+    if (this.kind === 'tour' && TOUR_MUSIC[row.shot]) this.musicTrack = TOUR_MUSIC[row.shot];
     /* A SHOT MAY BRING ON AN ACTOR — the tour's Shadow Lionheart, who
        otherwise exists only while a fight is live. Owned by the scene: on
        with the line, off with the next one, off on a skip. */
@@ -615,6 +636,8 @@ export class StoryScene {
     this.rows = [];
     this.cast = [];
     this.kind = null;
+    // Skipped or played out, the islands have their own themes back.
+    this.musicTrack = null;
   }
 
   _lineFinished() {

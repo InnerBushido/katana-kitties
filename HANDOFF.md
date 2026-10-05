@@ -578,6 +578,35 @@ quoted.
   - [voices.md](docs/notes/voices.md#lionheart-is-barrett-and-the-wording-is-half-the-casting)
     has the casting, the rule and the gating.
 
+- **Richard's first playthrough fixes** (branch `mixed/dojo-playthrough-fixes`).
+  [dreamdojo.md](docs/notes/dreamdojo.md#richards-first-playthrough-fixes)
+  has each note quoted:
+  - **The Help topic's pictures** are now full-width, with the text under
+    them, two cards across. All the blurbs were cut short.
+  - **A toast over a card:** a seat with a card up gets its toasts in a
+    strip above the cards.
+  - **The look across a bridge** turns on or off, with half the radius and a
+    buffer. The lens swings round her first, then aims at the island. The
+    stick is read through the lens.
+  - **The sim's Turning Circle as a video game:** the camera zooms out, and
+    the orb turns in a gimbal. The axes are coloured x red, y green and z
+    blue, with bars of light. Each kitten has a sphere, and there is a vector
+    to the one steering, plus a normal and a tangent at the point. The maths
+    is still checked equal to the town's.
+  - **The Pandapaw trial:** the grown panda is rideable, the lesson's first
+    blow knocks it down, and the holo-fighters draw their slashes.
+  - **The holo kit remembered:** her holo oath and her last worn orbs come
+    back next visit, and they are saved.
+  - **The Sine Gauntlet:** nobody can get stuck. The stands' LEAVE pad always
+    works, and a stray in the course is walked out.
+  - **Payne's tour is scored** in four pieces, cut on its own shots. The
+    middle one is the simulator's own `vr`.
+  - **Open:**
+    - nobody has played it;
+    - the tour's pieces have not been heard by a person;
+    - the holo overlay has not been looked at on a phone;
+    - **Payne's `payne_q_shadow` still needs her new take.**
+
 - **Richard's list after stage 5: the holo kit, Lionheart's quests, the
   levels and the course** (branch `mixed/dojo-holo-profile-quests-courses`).
   [dreamdojo.md](docs/notes/dreamdojo.md#the-holo-kit-lionhearts-quests-the-levels-and-the-course)

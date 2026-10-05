@@ -1614,6 +1614,157 @@ section](#正弦-the-sine-gauntlet-dreamcoursejs-dreamsinejs), above.
 guesses, not measured on a kitten: the Feast's bands (150/72/48) and the
 Pandapaw trial's (80/50/36). MEDIUM's and HARD's knobs are also first numbers.
 
+## Richard's first playthrough fixes
+
+Branch `mixed/dojo-playthrough-fixes`. These are Richard's notes from his
+first playthrough of the holo kit, quests and course pass. Each note is
+quoted in the code, beside the change it caused.
+
+**The Help topic's pictures** (`index.html`, `style.css`, `islands.js`
+`ISLE_ABOUT`):
+- His note: "the images are too small to see anything, you should have the
+  image on the top and the text on the bottom ... keep them side by side ...
+  remove some of the extra long text".
+- Each card is now a column. The still is the card's full width at 16:10, and
+  the text sits under it.
+- The grid stays two across. A card is 316 px wide on desktop. On a
+  landscape phone it is 306×315, so one card fits in the 390 px height.
+- Every island blurb was cut to one or two plain sentences. The Sine
+  Gauntlet lost its equations.
+- The intro paragraphs became three short notes.
+
+**A toast over a card** (`#toasts-front`, `Game.toast`):
+- His note: the "My Cross Slash" message "is blocked by the UI screen ... We
+  have this issue with Payne and her UI as well."
+- `#toasts` lives inside `#hud` (z 5). Its stacking context sits under
+  `#pane-cards` (z 8), so no z-index *inside* the HUD could ever climb over a
+  card.
+- A toast for a seat with a card up (`inspector.busy`) now goes to a second
+  strip outside the HUD at z 9. It copies the HUD strip's `top`.
+
+**The look across a bridge, take two** (`peek.js` `PeekTrigger`,
+`BridgePeek.apply`, `Player._moveBasis`):
+- His notes asked for four things:
+  - the camera "should use the movement system for the bridge";
+  - the transition should be "sweeping in an arc ... and then lerping
+    smoothly to face the direction";
+  - the radius should be "half as big";
+  - it "should not be 'incrementally' based on the position of the player
+    ... add some buffer zone".
+- It was a dial on her distance. Now it is a trigger:
+  - **On:** within 5.5 (half of 11) of a mouth, heading toward it, for
+    0.35 s. Or at once inside 2.75.
+  - **Off:** past 7.5, or after walking away for 0.25 s.
+  - Standing still in the zone keeps it on.
+- The lens rides its own 1.5 s clock. It swings round her on the arc first,
+  still looking at her, and only pans its aim out to the island after 30% of
+  the swing.
+- **What failed:** the first clock was 1.2 s in and 0.9 s out. That made a
+  1.49-unit frame step, against a bar of 1.5. At 1.5 s in and 1.1 s out the
+  step measures 1.19.
+- While it is up, the stick is read through the lens she sees. It uses Snake
+  Way's rule: a push held through the swing keeps its heading until she lets
+  go.
+
+**The sim's Turning Circle as a video game** (`holodojo.js`, `main.js`
+`simDojoC`, `DreamDojo.simDojoAt`):
+- His note: "Camera should zoom out ... the hologram orb rotating in place
+  with the gimbals ... the player inside some sort of sphere ... vectors
+  pointing at a point ... X-axis red, Y-axis green, and Z-axis blue ...
+  hologram bars going to the cylinders ... show the vectors and normals and
+  everything."
+- **The camera:** the sim's Dojo is 12,000 units east of the town's, so
+  `inDojoView(p, dc)` never saw it, and she walked it on the follow camera.
+  Now it gets the town Dojo's own shot (78 / 44 on a phone, pitch 1.0,
+  yaw 0), alone or as a pair. The pair rig keeps `rig.dojoC`, so the ease
+  out leaves from the Dojo she was in.
+- **The gimbal:** the orb spins inside three nested rings. Blue turns about
+  up, red about x inside it, and green about y inside that.
+- **The axes:** x is red, y is green, and a new blue z stands one unit tall.
+  Each axis has a 0.45 bar from the origin to its cone, with a pulse running
+  out along it.
+  - The frame is right-handed because maths y is world −z here.
+  - Green for y is also the sine leg's green.
+  - **What failed:** the bars were 0.2 at first. From 78 units back that is
+    two pixels, under a cream line.
+- **The vectors:**
+  - an RGB triad on the orb;
+  - the normal (magenta) and the tangent (white) at the point, read off its
+    own position;
+  - a wire globe around every kitten on the floor;
+  - a white vector from the origin out under the one steering, at the
+    point's height, so it runs through the point on its way to her.
+- **The maths is untouched.** The point, the angle and her radius are
+  checked equal to the town's, frame for frame, with all of this drawn.
+
+**The Pandapaw trial** (`pandatrial.js`, `school.js` `HoloFighter`,
+`Player._simRideNear`, `Panda.carry`):
+- His notes:
+  - "After panda in the simulation turns into a big panda, I am unable to
+    ride it";
+  - "it is taking too long for the panda to turn into a baby panda";
+  - "The enemies should also draw a slashing attack animation".
+- **Riding:** the grown panda is offered as `p.simRide` from `meet` to the
+  end of `fight2`, and MOUNT climbs on.
+  - It is not `p.panda`, which is her real one, so Player needed a second
+    branch.
+  - It lives in the layer, so `Panda.carry` learned a `carryOff`.
+- **The lesson:** the first blow is the knock-down. The four used to take its
+  whole bar, five blows.
+  - The foes' poof waits for their slash to be seen. `breakNow` hides the
+    group, and that was eating the blow.
+- **The slashes:** every holo-fighter draws a faint sliver while it winds up
+  and a bright sweep when the blow lands.
+
+**The holo kit remembered** (`holokit.js` `lastWorn`/`leaveHolo`,
+`p.holoClan`, `p.holoLastWorn`, `castRow`):
+- His note: "If a player pledges to a Clan in the simulator, that pledge
+  should persist ... if they have no kotodama outside ... their previously
+  equipped kotodama automatically equipped".
+- Her holo oath and her last worn set are kept on the kitten and in the save
+  row.
+- Coming back in, she wears her real orbs if she has any. Otherwise she
+  wears what she wore last time, up to what she has earned.
+- `restart` clears both.
+
+**No way to get stuck at the Sine Gauntlet** (`sine.js` `onDeck`,
+`inCourse`, `_strays`, `STRAY_T`):
+- His notes: "it is possible to jump into The Stands area when the trial
+  hasn't started and then the player gets stuck there" and "possible to get
+  into the course and get stuck in it".
+- The walls are posts pushed out one at a time, and a dash can leak between
+  them. So the way OUT is what is guaranteed:
+  - the stands' LEAVE pad works with no session;
+  - anybody who is not the runner and has been in the course for 1.5 s is
+    walked back to the stands, or to the plaza, with a toast saying why;
+  - the runner is never moved.
+
+**Payne's tour is scored** (`TOUR_MUSIC` in `storyscene.js`, `tourPayne` /
+`tourLion` / `tourCreed` in `audio.js`, `Game._wantedTrack`):
+- His note: "Let's add music to the Dream Dojo cutscene with Payne. Could be
+  the simulator music or something else. Could also orchestrate some music
+  to match the scenes".
+- It played the market's theme, because that is where the kittens stand. The
+  ending had the same bug, and this uses the ending's answer: a piece per
+  subject, switched on the tour's own shots.
+- The pieces run in this order:
+  - Payne's piece, bright YO in E;
+  - Lionheart's, low INSEN with a heartbeat taiko and fifths;
+  - the simulator's own `vr`, at full level;
+  - his creed under the sky pull, the slowest piece, with fifths and the
+    Dojo's bell;
+  - Payne's piece again at the end.
+- It was checked live: the synth's mode followed every row, and went back to
+  the island theme after.
+- Lionheart's two talks keep his arcade's `vr`.
+
+**Open:**
+- Nobody has played this pass.
+- The tour's three pieces are first numbers. They were checked for tempo,
+  key and difference, not by ear.
+- The holo axis bars and the triad are tuned at the desktop shot. They have
+  not been looked at on a phone's 44-unit shot.
+
 ## Voice
 
 Lionheart is **Barrett** (`d603a8cd-3fe1-55e0-9245-617a2589131e`), nine clips

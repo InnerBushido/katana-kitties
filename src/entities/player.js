@@ -560,6 +560,10 @@ export class Player {
      *  wins and a 3★ pedestal's extras, at most four of a kind. Hers only in
      *  there, and saved in her row. See dream/holokit.js. */
     this.holoOrbs = [];
+    /** What the simulator puts back on her next visit: the last holo-clan
+     *  she swore in there (an id) and what she last wore. dream/holokit.js. */
+    this.holoClan = null;
+    this.holoLastWorn = [];
     /** Folded buff totals. Never null: an empty list aggregates to the
      *  identity, so every read site is `this.power.speed` with no `?? 1`. */
     this.power = aggregate([]);
@@ -1956,6 +1960,35 @@ export class Player {
     return this._basis(Number.isFinite(this.viewYaw) ? this.viewYaw : this.camYaw);
   }
 
+  /**
+   * THE BASIS HER WALKING STICK IS READ THROUGH. `camYaw`'s, the same as it
+   * always was — except while the look across a sim bridge is up
+   * (dream/peek.js). Richard: "when the camera changes, it should use the
+   * movement system for the bridge at this point". The look across swings
+   * the lens round behind her to face the island, so a stick read through
+   * `camYaw` there was read through a camera she could no longer see.
+   *
+   * THE BRIDGE'S RULE, so the two feel like one thing: a push is read
+   * through the lens that drew her (`viewYaw`) when it STARTS, and keeps
+   * that world heading for as long as she holds it, however the camera
+   * swings meanwhile — a held stick walking her at the mouth does not curve
+   * off as the lens arcs round. Let go, and the next push is read through
+   * the screen she sees now. A push still held when the look across ends
+   * keeps its heading until she lets go, for the same reason.
+   *
+   * Outside the simulator `bridgePeek` is never live and `_peekHold` never
+   * set, so this IS `_basis()` — non-negotiable 5.
+   */
+  _moveBasis(pad) {
+    const pushed = (pad?.mx ?? 0) ** 2 + (pad?.my ?? 0) ** 2 > 1e-4;
+    const H = this._peekHold;
+    if (!this.bridgePeek?.live && !(H && pushed)) { this._peekHold = null; return this._basis(); }
+    const view = Number.isFinite(this.viewYaw) ? this.viewYaw : this.camYaw;
+    if (!H) this._peekHold = { yaw: view };
+    else if (!pushed) H.yaw = view;
+    return this._basis(this._peekHold.yaw);
+  }
+
   _basis(yaw = this.camYaw) {
     const y = yaw;
     const fwd = new THREE.Vector3(-Math.sin(y), 0, -Math.cos(y)).normalize();
@@ -2835,7 +2868,7 @@ export class Player {
        the kind of thing that makes a control scheme feel soft. */
     this._stepSpecials(dt, pad, world, hud);
 
-    const { fwd, right } = this._basis();
+    const { fwd, right } = this._moveBasis(pad);
     const wish = new THREE.Vector3()
       .addScaledVector(right, pad.mx)
       .addScaledVector(fwd, -pad.my);
@@ -3366,6 +3399,19 @@ export class Player {
           this.velocity.set(0, 0, 0);
           hud?.sfx('mount');
           hud?.toast(`${this.name} climbed onto ${this.pandaName}!`, this.index);
+        } else if (this._simRideNear()) {
+          /* THE PANDAPAW TRIAL'S GROWN PANDA, which is not `this.panda` (that
+             is her real one, out in the world) and lives in the simulator's
+             layer. Richard: "After panda in the simulation turns into a big
+             panda, I am unable to ride it. I should be able to ride it while
+             doing the Pandapaw trial." Once on, it is an ordinary
+             `pandaMount`: the same speed, jump, claw and hop-off. */
+          const pa = this.simRide.panda;
+          this.pandaMount = pa;
+          pa.rider = this;
+          this.velocity.set(0, 0, 0);
+          hud?.sfx('mount');
+          hud?.toast(`${this.name} climbed onto ${this.pandaName}!`, this.index);
         } else {
           /* NOTHING TO CLIMB ON — so this is the ward. The animal wins the
              button outright and always will: a kitten standing beside a storm
@@ -3500,6 +3546,17 @@ export class Player {
    *  shouting about "the panda". */
   get pandaName() {
     return this.style.panda;
+  }
+
+  /** Is the simulator offering her a panda to climb on (`simRide`, set by
+   *  dream/pandatrial.js), and is she close enough? Measured in its layer. */
+  _simRideNear() {
+    const R = this.simRide;
+    const pa = R?.panda;
+    if (!pa?.rideable || pa.mounted) return false;
+    const dx = this.position.x - (R.off?.x ?? 0) - pa.position.x;
+    const dz = this.position.z - (R.off?.z ?? 0) - pa.position.z;
+    return Math.hypot(dx, dz) < pa.mountRadius;
   }
 
   /* ------------------------- the power moves ---------------------------- */

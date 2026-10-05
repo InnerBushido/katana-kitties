@@ -2,7 +2,7 @@ import { PLAYER_STYLE } from '../core/palette.js';
 import { CLANS } from '../world/world.js';
 import { MILESTONES } from './arenaquest.js';
 import { cleanPayne } from './payne.js';
-import { ORB_BY_ID, MAX_BAG, cleanHoloOrbs } from '../entities/powerorb.js';
+import { ORB_BY_ID, MAX_BAG, MAX_EQUIPPED, cleanHoloOrbs } from '../entities/powerorb.js';
 
 /* ---------------------------------------------------------------------------
    SAVED GAMES — the afternoon, written down every half minute.
@@ -416,6 +416,11 @@ export function castRow(p, here = true) {
        persists across visits (dream/holokit.js). Never what she wears in
        there: that is a copy of `orbs`, made fresh on every way in. */
     holo: [...(p.holoOrbs ?? [])],
+    /* And what the simulator puts back on her next time: the holo-clan she
+       last swore in there, and what she last wore (dream/holokit.js). An old
+       row has neither and is a kitten who has sworn and worn nothing. */
+    holoClan: p.holoClan ?? null,
+    holoWorn: [...(p.holoLastWorn ?? [])],
   };
 }
 
@@ -503,6 +508,8 @@ export function applyCast(game, p, row) {
   p.dreamGeared = !!row.geared;
   p.shadowBeat = { easy: !!row.shadow?.easy, medium: !!row.shadow?.medium, hard: !!row.shadow?.hard };
   p.holoOrbs = cleanHoloOrbs(row.holo);
+  p.holoClan = CLANS.some((c) => c.id === row.holoClan) ? row.holoClan : null;
+  p.holoLastWorn = cleanHoloOrbs(row.holoWorn).slice(0, MAX_EQUIPPED);
   return true;
 }
 

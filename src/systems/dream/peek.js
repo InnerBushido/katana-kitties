@@ -18,15 +18,41 @@ import * as THREE from 'three';
    same idea moved to the approach, and it hands over to the ride camera with
    no cut, because `SnakeCam` starts from wherever the lens already is.
 
-   THE DISTANCE: a kitten is about two units tall, so "15 - 30ft" is roughly
-   five to ten of her heights. It starts easing in at `start` and is all the
-   way over her shoulder by `full`, and the deck mouth is three units inside
-   the hub's rim, so `full` is about where the rim is under her paws.
-
    ONLY WALKING UP TO IT. A kitten running round the hub's rim passes a mouth
    every thirty units, and a camera that swung out over the void at each one
    would be a carousel. So it asks whether she is heading for the mouth; a
    kitten standing still keeps the answer she had — she stopped to look.
+
+   A TRIGGER, NOT A DIAL — RICHARD'S SECOND PASS. "The transition of the
+   camera, especially when at the entrance with Lionheart is jarring, it needs
+   to transition more smoothly, maybe by sweeping in an arc from where it is to
+   where it needs to be and then lerping smoothly to face the direction it
+   should be facing. Also, the radius for this transition camera is too big,
+   lets make it half as big and it should not be 'incrementally' based on the
+   position of the player moving into place, it should just move into place
+   when triggered. Maybe add some buffer zone so that it doesn't transition
+   until the player is 'definitely' in the zone area, either by moving close
+   enough quickly or by getting close enough within an area."
+     · The weight WAS a smoothstep of her distance, 11 out to 5: every step
+       she took moved the lens, so a kitten pacing about by Lionheart (whose
+       port mouth is a few strides off) drove it in and out like a dial.
+     · Now `PeekTrigger` says ON or OFF. ON when she walks into `start` (5.5,
+       half the 11) and keeps heading for the mouth for `dwell`, or gets
+       inside `inner` going toward it — "moving close enough quickly". OFF
+       only past `exit`, which is wider than `start` (the buffer), or after
+       walking away for `awayT`. Standing still never turns it on, and never
+       turns it off.
+     · `BridgePeek` then runs the move on its own CLOCK, `sweepIn` seconds,
+       in two parts: the lens swings round her in an arc first (`arc`), still
+       looking at her, and the aim pans out to the island after (`turn`).
+       Out again it runs backwards: the aim comes home, then the lens.
+
+   AND THE STICK IS READ THROUGH IT. "when the camera changes, it should use
+   the movement system for the bridge at this point": with the look across
+   up, the screen faces the island, and a stick read through her ordinary
+   `camYaw` pointed somewhere she could not see. `Player._moveBasis` reads it
+   the way a Snake Way bridge does — through the lens that drew her, and a
+   push held while the camera swings keeps going the way it started.
 
    A LAYER, like `SnakeCam`: laid over whichever pose is already drawing.
    THE LENS IS BLENDED ROUND HER and the aim is blended separately, out to
@@ -36,10 +62,26 @@ import * as THREE from 'three';
 --------------------------------------------------------------------------- */
 
 export const PEEK = {
-  /** Eases in from here (units from the mouth)... */
-  start: 11,
-  /** ...and is all the way over her shoulder by here. */
-  full: 5,
+  /** Walking toward the mouth inside this (units from it) for `dwell`
+   *  seconds turns it on. Half the 11 it was. */
+  start: 5.5,
+  dwell: 0.35,
+  /** Inside this, going toward it, turns it on at once. */
+  inner: 2.75,
+  /** The buffer: once on, it stays on out to here... */
+  exit: 7.5,
+  /** ...unless she walks away from the mouth for this long. */
+  awayT: 0.25,
+  /** The move's own clock, in seconds, in and out. At 1.2 the arc from the
+   *  ordinary pose round behind her peaked at 1.49 units a frame (60 Hz), most
+   *  of a half-turn in 0.84 s; 1.5 brings that to about 1.2. */
+  sweepIn: 1.5,
+  sweepOut: 1.1,
+  /** Of that clock, the lens's arc round her is the first `arc`, and the
+   *  aim's pan out to the island starts at `turn` — they overlap a little so
+   *  neither one stops dead before the other starts. */
+  arc: 0.7,
+  turn: 0.3,
   /** Behind her, along the line to the island; up off her paws; across.
    *  Measured through a 38-degree lens: 8.5 back and 3.4 up put her middle
    *  at -0.97 of the frame and the mouth at -0.94, i.e. off the bottom —
@@ -54,9 +96,6 @@ export const PEEK = {
    *  much toward the mouth (a cosine) for it to count as walking up to it. */
   moving: 1.5,
   toward: 0.35,
-  /** How fast the layer comes and goes. */
-  rateIn: 3.2,
-  rateOut: 3.2,
 };
 
 const ss = (x) => x * x * (3 - 2 * x);
@@ -88,23 +127,65 @@ export function peekPose(S) {
 }
 
 /**
- * How much of the look across a kitten at `pos` going at `vel` wants, from
- * one bridge end `E` = { mouth, toward, far }. Returns 0..1, or -1 for "no
- * opinion" (standing still: keep what she had). Pure.
+ * Where a kitten at `pos` going at `vel` stands to one bridge end `E` =
+ * { mouth, toward, far }: null when she is out of its reach (past `exit`, off
+ * its deck's height, or already past the mouth onto the bridge), else her
+ * distance and whether she is heading for it, away from it, or neither. Pure.
  */
-export function peekWeight(pos, vel, E) {
+export function peekZone(pos, vel, E) {
   const dx = pos.x - E.mouth.x;
   const dz = pos.z - E.mouth.z;
-  if (Math.abs(pos.y - E.mouth.y) > 3) return 0;
+  if (Math.abs(pos.y - E.mouth.y) > 3) return null;
   // Behind the mouth: on the deck it opens from, not already on the bridge.
-  if (dx * E.toward.x + dz * E.toward.z > 0.5) return 0;
+  if (dx * E.toward.x + dz * E.toward.z > 0.5) return null;
   const d = Math.hypot(dx, dz);
-  if (d > PEEK.start) return 0;
-  const w = ss(Math.min(1, Math.max(0, (PEEK.start - d) / (PEEK.start - PEEK.full))));
+  if (d > PEEK.exit) return null;
   const sp = Math.hypot(vel.x, vel.z);
-  if (sp < PEEK.moving) return -w;
-  const cos = d > 0.3 ? -(dx * vel.x + dz * vel.z) / (d * sp) : 1;
-  return cos >= PEEK.toward ? w : 0;
+  const moving = sp >= PEEK.moving;
+  const cos = !moving ? 0 : d > 0.3 ? -(dx * vel.x + dz * vel.z) / (d * sp) : 1;
+  return { d, moving, toward: moving && cos >= PEEK.toward, away: moving && cos <= -PEEK.toward };
+}
+
+/**
+ * ON or OFF, with a buffer — see the head of this file. One per kitten.
+ * `step` returns the end she is looking across from, or null.
+ */
+export class PeekTrigger {
+  constructor() { this.reset(); }
+
+  reset() {
+    this.end = null;     // ON: the end she is looking across from
+    this.cand = null;    // OFF: the end she is walking into
+    this.dwell = 0;
+    this.away = 0;
+  }
+
+  step(dt, pos, vel, ends) {
+    if (this.end) {
+      const z = peekZone(pos, vel, this.end);
+      if (!z) { this.reset(); return null; }
+      this.away = z.away ? this.away + dt : 0;
+      if (this.away >= PEEK.awayT) { this.reset(); return null; }
+      return this.end;
+    }
+    let best = null;
+    let bz = null;
+    for (const E of ends) {
+      const z = peekZone(pos, vel, E);
+      if (!z || z.d > PEEK.start || !z.toward) continue;
+      if (!bz || z.d < bz.d) { best = E; bz = z; }
+    }
+    if (!best) { this.cand = null; this.dwell = 0; return null; }
+    if (best !== this.cand) { this.cand = best; this.dwell = 0; }
+    this.dwell += dt;
+    if (bz.d <= PEEK.inner || this.dwell >= PEEK.dwell) {
+      this.end = best;
+      this.cand = null;
+      this.away = 0;
+      return best;
+    }
+    return null;
+  }
 }
 
 export class BridgePeek {
@@ -123,8 +204,10 @@ export class BridgePeek {
    */
   apply(dt, subject, camera, look) {
     const want = subject ? subject.w : 0;
-    const rate = want > this.w ? PEEK.rateIn : PEEK.rateOut;
-    this.w += (want - this.w) * Math.min(1, dt * rate);
+    // ITS OWN CLOCK: once triggered it runs to the end at one speed, whatever
+    // her feet do — "it should just move into place when triggered".
+    if (want > this.w) this.w = Math.min(want, this.w + dt / PEEK.sweepIn);
+    else this.w = Math.max(want, this.w - dt / PEEK.sweepOut);
     if (subject) this.last = subject;
     if (!subject && this.w < 0.002) {
       this.w = 0;
@@ -138,7 +221,9 @@ export class BridgePeek {
     };
     const O = polar(camera.position.x - look.x, camera.position.y - look.y, camera.position.z - look.z);
     const Q = polar(P.x - look.x, P.y - look.y, P.z - look.z);
-    const w = ss(Math.min(1, this.w));
+    // The lens's arc first, the aim's pan after (see the head of this file).
+    const w = ss(Math.min(1, Math.max(0, this.w / PEEK.arc)));
+    const wa = ss(Math.min(1, Math.max(0, (this.w - PEEK.turn) / (1 - PEEK.turn))));
     const b = O.b + wrap(Q.b - O.b) * w;
     const p = O.p + (Q.p - O.p) * w;
     const d = O.d + (Q.d - O.d) * w;
@@ -148,7 +233,7 @@ export class BridgePeek {
       look.z + Math.cos(b) * Math.cos(p) * d,
     );
     // ...and the aim on its own, from her out to the island.
-    camera.lookAt(this._L.copy(look).lerp(this._aim.set(P.lx, P.ly, P.lz), w));
+    camera.lookAt(this._L.copy(look).lerp(this._aim.set(P.lx, P.ly, P.lz), wa));
     return true;
   }
 }

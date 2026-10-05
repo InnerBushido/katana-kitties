@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { HOLO } from '../../world/simworld.js';
+import { CLANS } from '../../world/world.js';
 import { ORB_BY_ID, ORB_IDS, MAX_EQUIPPED, HOLO_MAX_EACH, cleanHoloOrbs } from '../../entities/powerorb.js';
 import { HoloPanel } from './holo.js';
 
@@ -47,23 +48,74 @@ import { HoloPanel } from './holo.js';
    `swearFor` already wears: her real clan is kept on `dreamOath.was`, and
    `_leaveSim` puts it back however she leaves. She swears a holo-clan in the
    Trial Hall, and the badge and the holo profile call it "(Holo)".
+
+   AND THE SIMULATOR REMEMBERS HER NEXT TIME. Richard, after playing it: "If a
+   player pledges to a Clan in the simulator, that pledge should persist when
+   returning to the simulator. Also, if they have no kotodama outside of the
+   simulator when entering, then they should have their previously equipped
+   kotodama automatically equipped from their previous simulation playthrough."
+     `p.holoClan`      the id of the last holo-clan she swore (`swearFor`).
+                       Worn again on the way in, as the same costume.
+     `p.holoLastWorn`  what she was wearing in here when she left. Worn
+                       again on the way in ONLY when she wears nothing out
+                       there — a copy of her real ring still wins when she
+                       has one, which is "Copy every entry" — and only as far
+                       as `holoOrbs` still holds them (`lastWorn`): the copies
+                       of her real orbs she wore last time are not hers in
+                       here, and an orb cannot come back twice.
+   Both are saved in her row and cleared on a restart, like `holoOrbs`.
 --------------------------------------------------------------------------- */
 
 export { HOLO_MAX_EACH, cleanHoloOrbs };
 
 const count = (list, id) => (list ?? []).filter((x) => x === id).length;
 
-/** On the way in: wear a copy of what she wears outside, and no clan. */
+/** What she wore in here last time that she still has in here: the
+ *  multiset of `holoLastWorn` that `holoOrbs` can pay for, eight at most. */
+export function lastWorn(p) {
+  const pool = [...(p.holoOrbs ?? [])];
+  const out = [];
+  for (const id of p.holoLastWorn ?? []) {
+    const k = pool.indexOf(id);
+    if (k < 0 || out.length >= MAX_EQUIPPED) continue;
+    pool.splice(k, 1);
+    out.push(id);
+  }
+  return out;
+}
+
+/** The clan object for a saved holo-clan id, or null. */
+export function holoClanOf(p) {
+  return CLANS.find((c) => c.id === p.holoClan) ?? null;
+}
+
+/** On the way in: wear a copy of what she wears outside — or, wearing
+ *  nothing out there, what she wore in here last time — and the holo-clan she
+ *  last swore in here, or none. */
 export function enterHolo(dream, p) {
   const s = dream.st[p.index];
   if (!s) return;
-  s.holoWorn = (p.powerOrbs ?? []).slice(0, MAX_EQUIPPED);
-  s.holoCopies = [...s.holoWorn];
+  const real = (p.powerOrbs ?? []).slice(0, MAX_EQUIPPED);
+  s.holoCopies = [...real];
   p.holoOrbs ??= [];
+  s.holoWorn = real.length ? [...real] : lastWorn(p);
   if (!p.dreamOath) p.dreamOath = { was: p.clan ?? null };
-  p.clan = null;
-  p.clanRing?.material.color.set(p.style?.colour ?? 0xffffff);
+  const clan = holoClanOf(p);
+  p.clan = clan;
+  p.clanRing?.material.color.set(clan?.color ?? p.style?.colour ?? 0xffffff);
   dream.game._updateClanBadge?.(p);
+  const back = [
+    !real.length && s.holoWorn.length ? `your ${s.holoWorn.length} holo orb${s.holoWorn.length === 1 ? '' : 's'}` : '',
+    clan ? `your ${clan.name} (Holo) oath` : '',
+  ].filter(Boolean);
+  if (back.length) dream.game.toast?.(`${p.name} — ${back.join(' and ')} from last time, back on`, p.index);
+}
+
+/** On the way out: what to put back on her next time. Called by
+ *  `DreamDojo._leaveSim` while `holoWorn` is still hers (the rack is off). */
+export function leaveHolo(dream, p) {
+  const s = dream.st[p.index];
+  if (s?.holoWorn) p.holoLastWorn = [...s.holoWorn];
 }
 
 /** Everything she has in here that she is not wearing. A multiset

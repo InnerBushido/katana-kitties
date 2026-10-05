@@ -50,17 +50,23 @@ export const ISLANDS = {
  * Each `about` is checked against its island's own header comment, which is
  * where what the island does is written down: re-read that before rewording.
  */
+/* SHORT, ON PURPOSE. Richard, reading the Help page: "remove some of the
+   extra long text that is unneeded, like all the math equation stuff in the
+   Sine Gauntlet as no one understands the math equations anyways, just be
+   specific and to the point". The equations are still on the islands, where
+   the thing they describe is moving in front of her; a sentence is for
+   choosing where to go. */
 export const ISLE_ABOUT = {
-  gallery: { short: 'GALLERY', about: 'Every Kotodama orb on its own pedestal. Borrow one and try the drill that shows what it does — win it, and that orb is yours in here.' },
-  hall: { short: 'TRIAL HALL', about: 'All six clans. Swear an oath and try its power in a trial you can only pass with it — Steal Mischief and Dragon Breath included.' },
-  range: { short: 'RANGE', about: 'Test cutting with the blade alone: ONE SWING, COMBO 60, and CLEAN CUT, where the cut is drawn at (cos θ, sin θ).' },
-  kata: { short: 'KATA', about: "Lionheart's ghost dances a kata on nine marks — step, cut, jump, guard — and you do it back on the beat. A new one every day and every week." },
-  storm: { short: 'STORM', about: 'Holo-fruit lobbed at you from the rim. Cut it out of the air before it lands — and leave the purple viruses alone.' },
-  sine: { short: 'SINE', about: 'One course, one kitten at a time, and the fastest time wins. Laser bars rise and fall as y = C + A·sin(ωt + φ): duck the crest, jump the trough, ride the stones and time the sweeper, while the rest cheer from the stands.' },
-  sentries: { short: 'SENTRIES', about: 'The first thing in here that shoots back. Every shot is warned first: step aside or raise your Ward, then bring the core down.' },
-  bamboo: { short: 'BAMBOO', about: 'Sneak through a holo-bamboo forest past watchers whose gaze swings like a sine wave. Hide behind the bamboo and move on the slack.' },
-  school: { short: 'SCHOOL', about: "The tournament, taught before it's fought: the Feast's animals to stun and eat, a practice round of every league, and the scoreboard explained." },
-  shadow: { short: 'SHADOW', about: "Lionheart's own Shadow, on three levels. Beat MEDIUM for a special Kotodama; beat all three to inherit his 凶 Cross Slash." },
+  gallery: { short: 'GALLERY', about: 'Every Kotodama orb on a pedestal. Try its drill — win it, and that orb is yours in here.' },
+  hall: { short: 'TRIAL HALL', about: 'All six clans. Swear an oath, then pass the trial that needs its power.' },
+  range: { short: 'RANGE', about: 'Three sword drills: ONE SWING, COMBO 60 and CLEAN CUT.' },
+  kata: { short: 'KATA', about: 'Lionheart dances a kata on nine marks. Copy it back on the beat — a new one every day.' },
+  storm: { short: 'STORM', about: 'Cut the holo-fruit out of the air before it lands. Leave the purple viruses alone.' },
+  sine: { short: 'SINE', about: 'An obstacle course of laser bars, one kitten at a time. Duck, jump and dodge — the fastest time wins.' },
+  sentries: { short: 'SENTRIES', about: 'Sentries that shoot back, always with a warning. Dodge or raise your Ward, then hit the core.' },
+  bamboo: { short: 'BAMBOO', about: 'Sneak through the bamboo past the watchers. Hide while they look, move when they look away.' },
+  school: { short: 'SCHOOL', about: "The tournament, practised: the Feast's animals, a round of every league, and the scoreboard." },
+  shadow: { short: 'SHADOW', about: "Lionheart's Shadow, on three levels. Beat MEDIUM for a special orb; beat all three for his 凶 Cross Slash." },
 };
 
 /**
