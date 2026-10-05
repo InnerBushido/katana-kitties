@@ -351,9 +351,15 @@ export class Kotodama {
    * the market's own four stalls (solids at r 2.0) both.
    */
   raiseStall() {
-    /* 8 for the old booth; it is STALL_SCALE bigger now, and the canopy
-       argument above is about its roof, which grew with it. */
-    const spot = this.world.findOpenSpot(0, 60, 8 * STALL_SCALE) ?? { x: 0, z: 60 };
+    /* SEARCHED AT THE OLD BOOTH'S 8, NOT 8 x STALL_SCALE. Scaling the search
+       with the booth sent it from the market (2.6, 45.2) out to (-1.5, 79.9),
+       35 units away on the grass, because 12 clear fits nowhere in the
+       street. Richard: "its placement moved, we should move it back to where
+       it used to be in the center of the town, near the torii gate". The
+       bigger booth's counter is 3.3 from its middle and the nearest market
+       stall's solid edge is 8.7 away, so it still stands clear there, and
+       the canopy check in world-check still passes at 4. */
+    const spot = this.world.findOpenSpot(0, 60, 8) ?? { x: 0, z: 60 };
     const g = this.world.heightAt(spot.x, spot.z);
     this.stall = new KotodamaStall(spot.x, g ? g.y : 0, spot.z);
     this.scene.add(this.stall.group);

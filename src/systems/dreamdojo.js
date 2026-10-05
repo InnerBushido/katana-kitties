@@ -2510,8 +2510,11 @@ export class DreamDojo {
         if (!show && s.bar.parent) s.bar.removeFromParent();
         s.bar.setFrac(s.simHp / max, dt);
       }
-      // A slow refill when nothing is trying to hit her.
-      if (!this.drills[p.index] && s.simHp < max) s.simHp = Math.min(max, s.simHp + dt * 12);
+      /* A slow refill when nothing is trying to hit her — and Shadow
+         Lionheart is, though his fight is not a drill. Richard: "players
+         shouldn't be healing overtime, makes it hard for them to die". */
+      const vsShadow = !!this.shadow?.who?.has(p.index) && this.shadow.state !== 'waiting';
+      if (!this.drills[p.index] && !vsShadow && s.simHp < max) s.simHp = Math.min(max, s.simHp + dt * 12);
     }
   }
 
