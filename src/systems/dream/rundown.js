@@ -41,7 +41,8 @@ export class Rundown {
   _pages() {
     const p = this.p;
     const k = (a) => `[${this.dream.key(p, a)}]`;
-    const ids = p.powerOrbs ?? [];
+    // What she wears IN HERE — on the way in, a copy of what she wears outside.
+    const ids = this.dream.st[p.index]?.holoWorn ?? p.powerOrbs ?? [];
     const counts = countsOf(ids);
     const kinds = [...new Set(ids)];
     const pages = [[

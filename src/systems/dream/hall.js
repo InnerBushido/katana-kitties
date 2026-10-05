@@ -3,8 +3,9 @@ import { CLANS } from '../../world/world.js';
 import { Billboard } from '../../core/gfx.js';
 import { SIM, HOLO } from '../../world/simworld.js';
 import { STEAL, DBREATH } from '../../entities/clanpower.js';
-import { HoloPanel } from './holo.js';
-import { Post, Cane, HoloKitten, BLADE_KINDS } from './targets.js';
+import { HoloPanel, holoFlicker } from './holo.js';
+import { Post, HoloKitten, BLADE_KINDS } from './targets.js';
+import { PANDA_SPEC } from './pandatrial.js';
 
 /* ---------------------------------------------------------------------------
    THE CLAN TRIAL HALL — all six oaths, sworn for a minute, tried for real.
@@ -158,7 +159,8 @@ export class TrialHall {
       sh.card.visible = sh.show > 0.03;
       sh.card.mat.opacity = sh.show;
       sh.pad.material.opacity = 0.45 + 0.25 * Math.sin(this.dream.t * 2.6 + sh.z);
-      if (sh.holo) sh.holo.mat.opacity = Math.sin(this.dream.t * 29 + sh.x) > 0.94 ? 0.35 : 0.8;
+      // Richard: "flickering too fast and hurts to look at" — see `holoFlicker`.
+      if (sh.holo) sh.holo.mat.opacity = holoFlicker(this.dream.t, sh.x * 0.13 + sh.z * 0.07);
     }
   }
 
@@ -181,6 +183,14 @@ export class TrialHall {
 }
 
 /* ------------------------------- the trials ------------------------------ */
+
+/* The Icewhisker race (see TRIALS.ice). She reels for ICE_REEL after the
+   blow, edges in at ICE_EDGE to wait ICE_HOVER off the locked orb, and dashes
+   at ICE_DASH when it opens. Exported for world-check, which runs the race. */
+export const ICE_REEL = 1.4;
+export const ICE_HOVER = 4;
+export const ICE_EDGE = 2.5;
+export const ICE_DASH = 7;
 
 /** In a trial the two arena powers come back in a second, not forty. */
 function quickPowers(p) {
@@ -283,7 +293,20 @@ export const TRIALS = {
 
   /* 盗 ICEWHISKER. A holo-kitten wearing a holo-orb, pacing. MARK her
      (interact, facing her, within STEAL.range), then hit her inside
-     STEAL.window seconds: the orb comes off and rolls away. Pick it up. */
+     STEAL.window seconds: the orb comes off and rolls away. Pick it up.
+
+     AND THEN IT IS A RACE. Richard: "after knocking kotodama out of opponent,
+     the player can pick it up right away, we should make it wait the certain
+     amount of seconds that player normally needs to wait before being able to
+     pick it up, and make the opponent also try to pick it up once it is
+     possible to pickup again". So the orb is thrown off her AWAY from the
+     thief by STEAL.toss and refuses everybody for STEAL.lock — the real
+     ring's own numbers, `kotodama.dropAt`, not copies of them. She reels for
+     1.4 s, then edges in and waits ICE_HOVER off it; when the lock opens she
+     dashes at ICE_DASH. A kitten within ~5 of the orb at that moment beats
+     her (she needs (4 - 1.5) / 7 = 0.36 s, and a kitten walks 10.5 u/s); a
+     kitten who wandered off does not. If she wins it she WEARS it again and
+     the trial goes on — mark her again — rather than failing on the spot. */
   ice: (h, p) => ({
     title: 'ICEWHISKER TRIAL', kanji: '盗', goal: 1, time: 35, bands: [35, 16, 10], showCount: false,
     goalText: `Mark her with [${h.dream.key(p, 'interact')}], then HIT her`,
@@ -295,12 +318,30 @@ export const TRIALS = {
         onHit: (t, info) => {
           const a = info.attacker;
           if (a.stealMarked && a.stealTarget === t) {
+            if (!t.powerOrbs.length) return;
             a._endMark(null);
             t.powerOrbs = [];
             d.dream.game.sfx?.('orb');
-            const q = { x: t.group.position.x + 2, y: c.y, z: t.group.position.z };
-            d.star({ x: q.x, y: q.y, z: q.z, colour: 0x53e2ff, onTake: () => d.progress() });
-            d.dream.hint(d.p, 'Knocked loose! Grab the orb before it fades');
+            // Thrown off her AWAY from the thief, as `kotodama.dropAt` does.
+            const tp = t.group.position;
+            let dx = tp.x - (a.position.x - SIM.dx);
+            let dz = tp.z - (a.position.z - SIM.dz);
+            const len = Math.hypot(dx, dz) || 1;
+            dx /= len; dz /= len;
+            const q = { x: tp.x + dx * STEAL.toss, y: c.y, z: tp.z + dz * STEAL.toss };
+            d.loose = d.star({
+              x: q.x, y: q.y, z: q.z, colour: 0x53e2ff, lock: STEAL.lock, rivals: [t],
+              onTake: (who) => {
+                d.loose = null;
+                if (who === d.p) { d.progress(); return; }
+                // She got there first: she wears it again, and the trial goes on.
+                t.powerOrbs = ['swift'];
+                d.dream.game.sfx?.('deny');
+                d.dream.hint(d.p, 'She grabbed it back! Mark her and knock it loose again');
+              },
+            });
+            d.reel = ICE_REEL;
+            d.dream.hint(d.p, `Knocked loose! It is locked for ${STEAL.lock} seconds — be there when it opens, she will race you for it`);
           } else if (!a.stealMarked) {
             d.dream.hint(d.p, `Mark her first — face her and press [${h.dream.key(d.p, 'interact')}]`);
           }
@@ -312,35 +353,43 @@ export const TRIALS = {
     },
     tick(d, dt) {
       quickPowers(d.p);
-      // She paces a slow circle, so marking is aiming and not just pressing.
-      d.pace += dt * 0.5;
       const m = d.mark;
-      if (m?.live) {
-        m.group.position.set(d.c.x + Math.cos(d.pace) * 3, d.c.y, d.c.z + Math.sin(d.pace) * 3);
+      if (!m?.live) return;
+      const s = d.loose;
+      if (s && !s.taken) {
+        /* THE RACE: reel, settle at ICE_HOVER from it — in OR out: the toss
+           lands it 2.4 from her, and waiting there she would beat a kitten
+           who had done everything right by 0.2 s — then dash once it opens. */
+        d.reel = Math.max(0, (d.reel ?? 0) - dt);
+        if (d.reel > 0) return;
+        const mp = m.group.position;
+        const dx = s.local.x - mp.x;
+        const dz = s.local.z - mp.z;
+        const dist = Math.hypot(dx, dz) || 1;
+        const want = s.locked ? ICE_HOVER : 0;
+        const lim = (s.locked ? ICE_EDGE : ICE_DASH) * dt;
+        const step = Math.max(-lim, Math.min(lim, dist - want));
+        mp.x += (dx / dist) * step;
+        mp.z += (dz / dist) * step;
+        // Pick her pacing back up from wherever the race left her.
+        d.pace = Math.atan2(mp.z - d.c.z, mp.x - d.c.x);
+        return;
       }
+      // She paces a slow circle, so marking is aiming and not just pressing.
+      // (From wherever she is: a race that ended off the circle eases back on.)
+      d.pace += dt * 0.5;
+      const mp = m.group.position;
+      const tx = d.c.x + Math.cos(d.pace) * 3;
+      const tz = d.c.z + Math.sin(d.pace) * 3;
+      const k = Math.min(1, dt * 3);
+      mp.set(mp.x + (tx - mp.x) * k, d.c.y, mp.z + (tz - mp.z) * k);
     },
   }),
 
-  /* 熊 PANDAPAW. The patient clan's job is bamboo — the real oath pays a cub
-     for it, and the cub grows into a panda that fights beside you in the
-     ring. Ten canes; only the blade cuts them, as in the real grove. */
-  panda: (h, p) => ({
-    title: 'PANDAPAW TRIAL', kanji: '熊', goal: 10, time: 30, bands: [30, 16, 10],
-    goalText: 'Cut ten canes — only the katana cuts bamboo', countLabel: 'canes ',
-    doneText: () => 'Out there, that earns a panda cub',
-    setup(d) {
-      for (let i = 0; i < 10; i++) {
-        const a = (i / 10) * Math.PI * 2;
-        const rr = 4 + (i % 2) * 3.5;
-        const q = d.spot(Math.cos(a) * rr, Math.sin(a) * rr);
-        d.target(Cane, {
-          x: q.x, y: q.y, z: q.z,
-          onRefuse: () => d.dream.hint(d.p, 'Bamboo only answers to the katana'),
-          onBreak: () => d.progress(),
-        });
-      }
-    },
-  }),
+  /* 熊 PANDAPAW. It was ten canes against a clock, which taught the oath's
+     job and nothing about what the job buys. Now it is the panda's whole
+     life in the ring, with the real animal — dream/pandatrial.js. */
+  panda: () => PANDA_SPEC(),
 };
 
 export { BLADE_KINDS, STEAL };

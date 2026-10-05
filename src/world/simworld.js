@@ -869,10 +869,10 @@ export class SimWorld {
    * Every island has one, because in a void every island looks like every
    * other until something says which this is.
    */
-  addSign(x, y, z, kanji, name, colour = HOLO.cyan) {
+  addSign(x, y, z, kanji, name, colour = HOLO.cyan, { scale = 1, sub = '' } = {}) {
     const cv = document.createElement('canvas');
     cv.width = 1024;
-    cv.height = 320;
+    cv.height = sub ? 400 : 320;
     const g = cv.getContext('2d');
     g.textAlign = 'center';
     g.textBaseline = 'middle';
@@ -885,13 +885,20 @@ export class SimWorld {
     g.shadowColor = `#${new THREE.Color(colour).getHexString()}`;
     g.fillStyle = '#d6feff';
     g.fillText(name, 512, 258);
+    if (sub) {
+      g.font = '800 46px Nunito, sans-serif';
+      g.fillStyle = '#9fefff';
+      g.fillText(sub, 512, 350);
+    }
     const tex = new THREE.CanvasTexture(cv);
     tex.colorSpace = THREE.SRGBColorSpace;
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(13, 13 * 320 / 1024), new THREE.MeshBasicMaterial({
+    const w = 13 * scale;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, w * cv.height / 1024), new THREE.MeshBasicMaterial({
       map: tex, transparent: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide,
     }));
     m.position.set(x, y, z);
     m.renderOrder = 8;
+    m.userData.sign = { kanji, name, sub };
     this.root.add(m);
     (this.signs ??= []).push(m);
     return m;

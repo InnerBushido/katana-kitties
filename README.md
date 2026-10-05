@@ -326,18 +326,35 @@ see you.
 Back in the real world, a hologram of you hangs in your tube copying everything
 you do. Stand on your ring and press **interact** to disconnect.
 
+You go in wearing a **holo copy** of your Kotodama, with no clan. Anything you win
+in there is yours **in there**. Sort it in the pause menu's **(HOLO) PLAYER
+PROFILE**, which only shows up while somebody is in the simulator. Your real
+orbs and your real clan are never touched, and they're back on you the second
+you disconnect.
+
+Lost? Lionheart's hologram stands on the glowing Dojo. Talk to him for **WHERE
+NEXT** (he always has an answer), a **MAP** of every island, and the **READ
+ABOUT THE DREAM DOJO** page in Help. There's a 地図 map kiosk by the bridge you
+came in on, and your minimap draws the simulator while you're inside. Wander
+for a couple of minutes without winning anything and he'll call out a
+suggestion.
+
 Inside, bridges lead off the glowing Dojo to floating islands:
 
 - **The Kotodama Gallery.** All thirteen orbs stand on pedestals, even the three rare ones only the dealer sells. Step up to one
   and press **interact** to borrow it and try a little drill made for it:
   run the Gale gates, cut posts from outside a red ring with Long Cut, jump
-  three times to a ledge with Leap, and so on. Whatever you borrow vanishes
-  when you disconnect, and your real orbs are never touched.
+  three times to a ledge with Leap, and so on. Win a drill for the first time
+  and that orb is yours **in the simulator**: it goes straight on your holo
+  ring, or in your holo bag if the ring is full. Get three stars and the
+  pedestal offers you **another one**, up to four of each.
 - **The Clan Trial Hall.** Six glowing gates, one per clan, each with its
   leader standing in light. Swear to any clan **just for now** and try what it
   does, including the two powers you can normally only use in the arena:
   **breathing fire** and **stealing an orb**. Your real clan comes back when
-  you leave.
+  you leave. Pandapaw's trial is a baby panda's whole life in the arena:
+  cut canes, meet your cub, let it lick you better, and watch what happens
+  when somebody comes for it.
 - **The Tameshigiri Range.** Three ways to show off your sword:
   - **One Swing**: how many bamboo canes can you cut with a single swing?
     Where you stand is the whole trick.
@@ -345,16 +362,22 @@ Inside, bridges lead off the glowing Dojo to floating islands:
   - **Clean Cut**: a white line goes round a circle. Swing when it lies on
     the gold line, and your cut is drawn at that angle, with its cos and sin.
 - **Kata Trace.** Lionheart's ghost dances a little routine on nine marks:
-  step here, cut, jump, guard. Then **you** do it back, on the beat. There's a
+  step here, cut, jump, guard. Then **you** do it back, on the beat, on **your
+  own floor** in your own colour. There's a
   new one **every day** and a longer one **every week**. Everybody gets the same
   one, so you can compare. Get two stars and it speeds up.
 - **Kudamono Storm.** Fruit flies at you from the edge. A ring on the floor
   shows where it'll land, so cut it before it gets there. Leave the purple ones
   alone: they're viruses!
-- **The Sine Gauntlet.** Laser bars go up and down, and your card shows the sum
-  that says how high each one is. A high bar you walk under, a low one you
-  jump, and one in the middle you wait for. On level 2 the wave travels, so
-  ride it.
+- **The Sine Gauntlet.** One obstacle course, one kitten at a time, and the
+  fastest time wins. Laser bars bob up and down on a sine wave (your card shows
+  the sum for each one), so duck the high ones and jump the low ones. Then
+  hop across floating stones, jump the sweeping arm, and dash through a gap in
+  a wall of lasers. Get hit and you're **zapped** back to the last checkpoint,
+  and the clock keeps running. Everybody waiting their turn cheers from the
+  **stands** (press attack!), and everybody watches the runner on one big
+  screen. Your orbs and clan go on the rack while you're in the course, so
+  it's just you.
 
 The two islands furthest out have **light cycles**. Stand on the 光 pad, press
 **interact**, and zoom down the highway leaving a trail of light. You can walk
@@ -382,9 +405,10 @@ Straight across from the start is the **Arena School**:
   watch for it. The big **scoreboard** shows who's ahead and *why*: the most
   health LEFT wins when time runs out, and if that's level, whoever landed
   more.
-- **The Feast.** Practise eating in the arena. Bonk a hologram rat (or rabbit,
-  or bird) to stun it, stand still, and **hold** attack to eat it. Let go and
-  you have to start chewing again!
+- **The Feast.** Practise eating in the arena, against the arena's own animals,
+  in three rounds: rats and rabbits, then rabbits and birds, then birds and
+  mantises. Bonk one to stun it (hit a bird while it's flying), stand still,
+  and **hold** attack to eat it. Let go and it gets away!
 - **Your Fighter Card.** Stand at the 札 kiosk and a shiny card floats up with
   your picture, your **rank**, your best move and your stars. Ranks go
   **KENSHI 3rd Class → 2nd Class → 1st Class** as your stars add up.
@@ -393,7 +417,8 @@ Straight across from the start is the **Arena School**:
 
 Ride the light cycle off the far side of the school to fight **Shadow
 Lionheart**, a purple copy of Lionheart. **Anyone can try**, and everyone on
-his floor fights together. Beat him for **Lionheart's Honor**, which pays a
+his floor fights together. He comes in three levels, **EASY**, **MEDIUM** and
+**HARD**. Beat him on MEDIUM or HARD for **Lionheart's Honor**, which pays a
 **special** Kotodama orb (it could be a rare one!):
 
 - Red on the floor shows where he's about to hit. A **red line** means step out
@@ -403,8 +428,11 @@ his floor fights together. Beat him for **Lionheart's Honor**, which pays a
   standing. Get out of it, then hit him while he glows gold, because every
   hit counts twice!
 
-Beat him and everybody in the fight earns **Lionheart's Honor**, a free
-Powerup Kotodama. That's the only way to reach **1st Class**.
+Beat him on MEDIUM or HARD and everybody in the fight earns **Lionheart's
+Honor**, a free Powerup Kotodama. That's the only way to reach **1st Class**.
+On MEDIUM and HARD he does a Cross Slash of his own, three Xs in a row, and a
+red 凶 fills up in front of him. Beat **all three** levels and your own Cross
+Slash draws **凶** instead of 十, and hits harder.
 
 ## Collect the seven dragon balls
 
@@ -740,7 +768,7 @@ ceremony**: one kitten at a time, all of her gold orbs turn into real ones at
 once, she holds the blessing pose with her own camera pushed in on her, and a
 card names every orb she won in its own colour. Nobody flies to the arena until
 the last kitten has had her turn. Anything done after 100% doesn't count, except
-beating Shadow Lionheart in the Dream Dojo, which counts **any time**. A
+beating Shadow Lionheart on MEDIUM or HARD in the Dream Dojo, which counts **any time**. A
 kitten already wearing eight gets hers in her **bag**; only one whose bag is
 full as well is told on her card that there was no room.
 
@@ -750,7 +778,7 @@ full as well is told on her card that there was no room.
 | Student of the circle | everybody | 45 seconds in the Dojo of the Turning Circle |
 | Panda keeper | everybody | raise a panda to fully grown |
 | Dragon pilot | everybody | fly Ryuuseki from the front seat |
-| Lionheart's Honor | everybody | beat Shadow Lionheart in the Dream Dojo (counts any time) |
+| Lionheart's Honor | everybody | beat Shadow Lionheart on MEDIUM or HARD in the Dream Dojo (counts any time) |
 | Beam gunner | the **first** | 45 seconds in Ryuuseki's second seat |
 | The very last one | one | knock over the last piece of mischief |
 | Most mischief | the leader | knock over the most things |

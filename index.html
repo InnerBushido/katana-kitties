@@ -1528,7 +1528,7 @@
               <li><b>📐 Student of the circle</b> — spend 45 seconds in the Dojo of the Turning Circle.</li>
               <li><b>🐼 Panda keeper</b> — raise a panda until it is fully grown.</li>
               <li><b>🐉 Dragon pilot</b> — fly Ryuuseki from the front seat.</li>
-              <li><b>🦁 Lionheart's Honor</b> — beat Shadow Lionheart in the Dream Dojo. This one counts <b>any time</b>, even after 100%.</li>
+              <li><b>🦁 Lionheart's Honor</b> — beat Shadow Lionheart on MEDIUM or HARD in the Dream Dojo. This one counts <b>any time</b>, even after 100%.</li>
             </ul>
             <p class="ht-note"><b>Only one of you gets these — and they're special:</b></p>
             <ul class="ability-list">
@@ -1619,6 +1619,236 @@
               — even geometry and trig — isn't scary. It's fun, and it's real: the
               orbs draw their own sin/cos as they circle you.
               <span class="ht-sign">— Uncle Rich</span>
+            </p>
+          </div>
+        </details>
+
+        <!-- THE DREAM DOJO. Richard: "We need to add a new item in the Help
+             Menu for the new Dream Dojo VR Arcade, describing the new dojo
+             feature, Lionheart, and why it exists, what it is supposed to teach
+             and list the different activities as sub-categories ... We should
+             provide pictures of Lionheart, the Dream Dojo island, and a photo of
+             the islands in the simulation with the islands names next to them
+             as a Map Legend ... All the activities can be laid out like the Clan
+             Leaders page."
+
+             EVERY PICTURE IS THE ENGINE'S OWN FRAME, filmed by
+             tools/capture/shots/dreamdojo.js — the islands a few seconds into
+             their own drills, the legend straight down with each name projected
+             through the camera that took it. Re-film there, never by hand.
+
+             THE CARDS' SENTENCES ARE `ISLE_ABOUT` (src/systems/dream/islands.js),
+             word for word: the same words Lionheart's card, his map and the
+             minimap use. world-check fails if they drift. Lionheart's card opens
+             this topic by its id (`Game.openHelpAt('help-dream')`). -->
+        <details class="help-card" name="help" id="help-dream">
+          <summary class="help-topic">
+            <span class="ht-ico" aria-hidden="true">🥽</span>
+            <span class="ht-title">The Dream Dojo — VR arcade</span>
+            <span class="ht-chev" aria-hidden="true">▸</span>
+          </summary>
+          <div class="ht-body">
+            <figure class="help-shot">
+              <img src="/help/dojo/arcade.jpg" loading="lazy" width="1096" height="616"
+                alt="The Dream Dojo: a round pad under a hexagon dome, four glass VR tubes on it, Lionheart standing beside them and a red torii gate at its edge">
+              <figcaption>Northeast of the Dojo of the Turning Circle: four tubes, one in each kitten's colour.</figcaption>
+            </figure>
+            <div class="dd-lion">
+              <img class="dd-lion-art" src="/help/dojo/lionheart.png" loading="lazy" width="228" height="360"
+                alt="Lionheart: a calico samurai kitten in black with a red scarf, a VR visor on his brow and a big sword on his back">
+              <div class="dd-lion-text">
+                <p class="ht-note">
+                  <b>Lionheart</b> runs it — a samurai kitten with a VR visor and
+                  a sword called <b>Honor</b>. Step into the tube in <b>your
+                  colour</b>, the visor comes down, and you wake up in his
+                  <b>simulator</b>: ten floating training islands joined by
+                  bridges and light-cycle highways.
+                </p>
+                <p class="ht-note">
+                  <b>Why it's here:</b> it's a practice room. Out in the world a
+                  mistake costs you; in here you can try a power, a clan or a
+                  fight as many times as you like. Lionheart <b>shows you a move
+                  and you copy it</b>, a little faster and cleaner each time —
+                  that's what every island is for.
+                </p>
+              </div>
+            </div>
+            <p class="ht-note">
+              <b>You go in with a holo kit.</b> A copy of the orbs you wear, no
+              clan, and nothing you own is touched. Win orbs in here and they
+              go on automatically; manage them in the <b>(HOLO) PLAYER
+              PROFILE</b>. Done? <b>Stand on your ring</b> and you come back
+              exactly as you were.
+            </p>
+            <p class="ht-note">
+              <b>Lost?</b> <b>Talk to Lionheart</b> — he keeps track of where
+              you've been and what you've won, and tells you what to try next.
+              The <b>地図 MAP</b> kiosk on the hub and the corner map show where
+              everything is.
+            </p>
+            <figure class="help-shot">
+              <img src="/help/dojo/map.jpg" loading="lazy" width="1096" height="760"
+                alt="The simulator from straight above: the Dojo of the Turning Circle in the middle, ten round islands around it on bridges, each labelled with its name and kanji, and your tubes beside the hub">
+              <figcaption>The simulator from above. The Dojo of the Turning Circle is in the middle — every island's name is on a sign at its bridge.</figcaption>
+            </figure>
+
+            <ul class="clan-grid dd-grid">
+              <li class="clan-card dd-card" style="--clan: #2a4d8f" data-isle="gallery">
+                <h4 class="clan-name">
+                  <span class="dd-kanji" lang="ja" aria-hidden="true">言霊</span>
+                  Kotodama Gallery
+                </h4>
+                <div class="clan-body">
+                  <img class="dd-shot" src="/help/dojo/isle-gallery.jpg" loading="lazy" width="480" height="300"
+                    alt="The Kotodama Gallery: thirteen pedestals round the rim, each holding an orb in a beam of its own colour">
+                  <div class="clan-text">
+                    <b class="clan-power">Learn what every orb does</b>
+                    <span class="dd-about">Every Kotodama orb on its own pedestal. Borrow one and try the drill that shows what it does — win it, and that orb is yours in here.</span>
+                  </div>
+                </div>
+              </li>
+
+              <li class="clan-card dd-card" style="--clan: #6b2f5e" data-isle="hall">
+                <h4 class="clan-name">
+                  <span class="dd-kanji" lang="ja" aria-hidden="true">一族</span>
+                  Clan Trial Hall
+                </h4>
+                <div class="clan-body">
+                  <img class="dd-shot" src="/help/dojo/isle-hall.jpg" loading="lazy" width="480" height="300"
+                    alt="The Clan Trial Hall: six gates round the rim, a holo clan leader beside each">
+                  <div class="clan-text">
+                    <b class="clan-power">Learn what every clan does</b>
+                    <span class="dd-about">All six clans. Swear an oath and try its power in a trial you can only pass with it — Steal Mischief and Dragon Breath included.</span>
+                  </div>
+                </div>
+              </li>
+
+              <li class="clan-card dd-card" style="--clan: #8a4a12" data-isle="range">
+                <h4 class="clan-name">
+                  <span class="dd-kanji" lang="ja" aria-hidden="true">試斬</span>
+                  Tameshigiri Range
+                </h4>
+                <div class="clan-body">
+                  <img class="dd-shot" src="/help/dojo/isle-range.jpg" loading="lazy" width="480" height="300"
+                    alt="The Tameshigiri Range: a kitten at her mark with a row of orange practice posts across the floor">
+                  <div class="clan-text">
+                    <b class="clan-power">Sword control: timing and aim</b>
+                    <span class="dd-about">Test cutting with the blade alone: ONE SWING, COMBO 60, and CLEAN CUT, where the cut is drawn at (cos θ, sin θ).</span>
+                  </div>
+                </div>
+              </li>
+
+              <li class="clan-card dd-card" style="--clan: #7a2f1d" data-isle="kata">
+                <h4 class="clan-name">
+                  <span class="dd-kanji" lang="ja" aria-hidden="true">型</span>
+                  Kata Trace
+                </h4>
+                <div class="clan-body">
+                  <img class="dd-shot" src="/help/dojo/isle-kata.jpg" loading="lazy" width="480" height="300"
+                    alt="The Kata Trace: a kitten on her own floor of nine marks while Lionheart demonstrates the kata">
+                  <div class="clan-text">
+                    <b class="clan-power">Watch, remember, copy</b>
+                    <span class="dd-about">Lionheart's ghost dances a kata on nine marks — step, cut, jump, guard — and you do it back on the beat. A new one every day and every week.</span>
+                  </div>
+                </div>
+              </li>
+
+              <li class="clan-card dd-card" style="--clan: #5d6b14" data-isle="storm">
+                <h4 class="clan-name">
+                  <span class="dd-kanji" lang="ja" aria-hidden="true">果物</span>
+                  Kudamono Storm
+                </h4>
+                <div class="clan-body">
+                  <img class="dd-shot" src="/help/dojo/isle-storm.jpg" loading="lazy" width="480" height="300"
+                    alt="Kudamono Storm: holo-fruit baskets round the rim and a kitten in the middle, ready to cut">
+                  <div class="clan-text">
+                    <b class="clan-power">Read where it will land</b>
+                    <span class="dd-about">Holo-fruit lobbed at you from the rim. Cut it out of the air before it lands — and leave the purple viruses alone.</span>
+                  </div>
+                </div>
+              </li>
+
+              <li class="clan-card dd-card" style="--clan: #1f6b6b" data-isle="sine">
+                <h4 class="clan-name">
+                  <span class="dd-kanji" lang="ja" aria-hidden="true">正弦</span>
+                  Sine Gauntlet
+                </h4>
+                <div class="clan-body">
+                  <img class="dd-shot" src="/help/dojo/isle-sine.jpg" loading="lazy" width="480" height="300"
+                    alt="The Sine Gauntlet: one course snaking across the island, laser bars rising and falling over it, and the cheering stands beside it">
+                  <div class="clan-text">
+                    <b class="clan-power">Read the wave, beat the clock</b>
+                    <span class="dd-about">One course, one kitten at a time, and the fastest time wins. Laser bars rise and fall as y = C + A·sin(ωt + φ): duck the crest, jump the trough, ride the stones and time the sweeper, while the rest cheer from the stands.</span>
+                  </div>
+                </div>
+              </li>
+
+              <li class="clan-card dd-card" style="--clan: #7a1f3d" data-isle="sentries">
+                <h4 class="clan-name">
+                  <span class="dd-kanji" lang="ja" aria-hidden="true">番兵</span>
+                  Holo-Sentries
+                </h4>
+                <div class="clan-body">
+                  <img class="dd-shot" src="/help/dojo/isle-sentries.jpg" loading="lazy" width="480" height="300"
+                    alt="The Holo-Sentries: a glowing sentry core across the floor and a kitten at her mark">
+                  <div class="clan-text">
+                    <b class="clan-power">Dodge, guard, strike back</b>
+                    <span class="dd-about">The first thing in here that shoots back. Every shot is warned first: step aside or raise your Ward, then bring the core down.</span>
+                  </div>
+                </div>
+              </li>
+
+              <li class="clan-card dd-card" style="--clan: #2f5d2a" data-isle="bamboo">
+                <h4 class="clan-name">
+                  <span class="dd-kanji" lang="ja" aria-hidden="true">忍</span>
+                  Bamboo Infiltration
+                </h4>
+                <div class="clan-body">
+                  <img class="dd-shot" src="/help/dojo/isle-bamboo.jpg" loading="lazy" width="480" height="300"
+                    alt="Bamboo Infiltration: a forest of glowing holo-bamboo with a path through it">
+                  <div class="clan-text">
+                    <b class="clan-power">Patience and timing</b>
+                    <span class="dd-about">Sneak through a holo-bamboo forest past watchers whose gaze swings like a sine wave. Hide behind the bamboo and move on the slack.</span>
+                  </div>
+                </div>
+              </li>
+
+              <li class="clan-card dd-card" style="--clan: #5b3d8a" data-isle="school">
+                <h4 class="clan-name">
+                  <span class="dd-kanji" lang="ja" aria-hidden="true">闘技</span>
+                  Arena School
+                </h4>
+                <div class="clan-body">
+                  <img class="dd-shot" src="/help/dojo/isle-school.jpg" loading="lazy" width="480" height="300"
+                    alt="The Arena School: two practice rings and the board that explains how a round is won">
+                  <div class="clan-text">
+                    <b class="clan-power">The rules of the arena</b>
+                    <span class="dd-about">The tournament, taught before it's fought: the Feast's animals to stun and eat, a practice round of every league, and the scoreboard explained.</span>
+                  </div>
+                </div>
+              </li>
+
+              <li class="clan-card dd-card" style="--clan: #3a1f2e" data-isle="shadow">
+                <h4 class="clan-name">
+                  <span class="dd-kanji" lang="ja" aria-hidden="true">影</span>
+                  Shadow Lionheart
+                </h4>
+                <div class="clan-body">
+                  <img class="dd-shot" src="/help/dojo/isle-shadow.jpg" loading="lazy" width="480" height="300"
+                    alt="Shadow Lionheart waiting in his ring, and a kitten facing him">
+                  <div class="clan-text">
+                    <b class="clan-power">Everything at once</b>
+                    <span class="dd-about">Lionheart's own Shadow, on three levels. Beat MEDIUM for a special Kotodama; beat all three to inherit his 凶 Cross Slash.</span>
+                  </div>
+                </div>
+              </li>
+            </ul>
+
+            <p class="ht-note">
+              <b>凶 Lionheart's own Cross Slash.</b> Beat his Shadow on <b>EASY,
+              MEDIUM and HARD</b> and you inherit it: the same move, the same
+              buttons, but it strikes with <b>凶</b> instead of 十 and hits
+              <b>1.25×</b> as hard. It shows on Lionheart's card once it's yours.
             </p>
           </div>
         </details>
@@ -2009,6 +2239,11 @@
         <h2>KITTENS &amp; SCORES</h2>
         <div class="pause-menu">
           <button class="menu-btn" data-action="profile">CHARACTER PROFILE</button>
+          <!-- Only while somebody is in the Dream Dojo's simulator (Game.setPaused
+               shows it): her holo kit, in the simulator's colour. Richard: "add
+               a 2nd Players Profile in the menu and call it '(Holo) Player
+               Profile' ... can even have the button be that color". -->
+          <button id="btn-holo-profile" class="menu-btn holo-btn hidden" data-action="holo-profile">(HOLO) PLAYER PROFILE</button>
           <button class="menu-btn" data-action="board">RECORD BOARD</button>
           <!-- One DROP OUT per extra player, built by Game._buildLeaveButtons
                and absent entirely in a solo game: a button offering to remove

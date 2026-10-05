@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Billboard } from '../../core/gfx.js';
 import { holoMat } from './targets.js';
+import { holoFlicker } from './holo.js';
 import { isleSpot } from './kiosk.js';
 import { ARENA_AT, SHADOW_H, POSE, SLAM, SWEEP, CROSS, crossBars } from './shadow.js';
 
@@ -165,7 +166,7 @@ export class TourShadow {
       if (camera) this.sprite.faceCamera(camera);
       if (this.posed) this.sprite._setCell(act.pose, 0, false);
       // His fight's flicker, held steady while a blow is landing.
-      this.sprite.mat.opacity = !act.tell?.landed && Math.sin(t * 23) > 0.96 ? 0.55 : 0.9;
+      this.sprite.mat.opacity = act.tell?.landed ? 0.9 : holoFlicker(t, 3, 0.9, 0.3);
     }
     this.aura.position.set(at.x, at.y + 0.04, at.z);
     for (const [what, m] of Object.entries(this.tells)) {

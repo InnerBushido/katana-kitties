@@ -1008,6 +1008,14 @@ git push origin alpha</code></pre>
         <td><code>tools/capture/</code><br><span style="font-size:12.5px;opacity:.7">its README is the director's guide</span></td>
       </tr>
       <tr>
+        <td><b>The Dream Dojo's help stills</b></td>
+        <td>The arcade, the simulator's map legend, Lionheart and a card per island. Each is the
+          engine's own frame, rendered through its own camera at the still's exact size. The
+          legend's names are projected through the camera that took it, so a label cannot drift off
+          its island. Re-film there, never by hand.</td>
+        <td><code>capture/shots/dreamdojo.js</code></td>
+      </tr>
+      <tr>
         <td><b>GIF encoding</b></td>
         <td>Dependency-free GIF89a: median-cut palette, interframe differencing.
           <code>dither: false</code> is required, or the diff finds noise everywhere and bites on
@@ -1060,7 +1068,7 @@ git push origin alpha</code></pre>
       </tr>
       <tr>
         <td><b>Lionheart's lines</b></td>
-        <td>Cuts his 34 clips out of the raw takes. Same rule as the countdown: shortened by
+        <td>Cuts his 37 clips out of the raw takes. Same rule as the countdown: shortened by
           closing dead air, <em>never</em> by speeding him up — every pause is capped at 0.45s,
           which took the islands line from 22.2s to 18.9s. Each take is a render of its card's
           text exactly; change a card and its clip is stale.</td>
@@ -1325,7 +1333,7 @@ git push origin alpha</code></pre>
     <div><code>audio.md</code><span>The synthesised sound set, and a piece of music per island</span></div>
     <div><code>voices.md</code><span>The voice registry — which preset is which character, with ids</span></div>
     <div><code>payne.md</code><span>Payne, the quest-giver: her quest chain, opt-in hints, the Goblin Sweep, her script — a real person's likeness; her lines and voice approved</span></div>
-    <div><code>dreamdojo.md</code><span>The Dream Dojo, Lionheart's VR arcade: the simulator as a second reality in the same place, the tubes, the training gate that lets a blade in there find holograms only, the Gallery and Trial Hall (orbs and oaths lent, never given), the Tameshigiri Range and Kata Trace (a daily and a weekly kata seeded by the date, so every machine gets the same one), the far islands (light-cycle highways, Kudamono Storm, the Sine Gauntlet, Holo-Sentries and Bamboo Infiltration, every star band measured by a search), the Arena School (a practice round per tournament mode, under the tournament's own rules), KENSHI ranks, the foil Fighter Card, the daily and weekly training, and Shadow Lionheart, the co-op boss whose win is the tenth quest and the only one that counts after the Awakening; and what is still to build (the VR kitten sheets, his voice). Lionheart is Richard, likeness approved</span></div>
+    <div><code>dreamdojo.md</code><span>The Dream Dojo, Lionheart's VR arcade: the simulator as a second reality in the same place, the tubes, the training gate that lets a blade in there find holograms only, the Gallery and Trial Hall, the holo kit (she goes in with a copy of her ring and no clan, earns orbs in there, and her real kit is never touched) and its (HOLO) PLAYER PROFILE, Lionheart as the simulator's quest-giver (WHERE NEXT, a map, the sim on the minimap), the Tameshigiri Range and Kata Trace (a daily and a weekly kata seeded by the date, so every machine gets the same one), the far islands (light-cycle highways, Kudamono Storm, the Sine Gauntlet (one obstacle course run one kitten at a time against the clock, the queue in cheering stands, one shared pane), Holo-Sentries and Bamboo Infiltration, every star band measured by a search), the Arena School (a practice round per tournament mode, under the tournament's own rules), KENSHI ranks, the foil Fighter Card, the daily and weekly training, and Shadow Lionheart on three levels, the co-op boss whose MEDIUM or HARD win is the tenth quest and the only one that counts after the Awakening, and all three her 凶; and what is still to build. Lionheart is Richard, likeness approved</span></div>
     <div><code>consent.md</code><span>Why nothing irreversible happens on one press</span></div>
     <div><code>rules.md</code><span>The gameplay invariants in full, with the measurements behind them</span></div>
     <div><code>gotchas.md</code><span>The traps that cost real time and are not obvious from the code</span></div>

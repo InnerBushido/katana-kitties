@@ -1076,7 +1076,7 @@ looks exactly like one arriving on time once the ceremony has finished.
 | `mischief` | most | her own `onMischief` tally, settled in `onAwaken` |
 | `balls` | most | settled by the seventh star (cheered after the summoning scene), or in `onAwaken` if it never came |
 | `orbs` | most | the plain-orb prize — whoever collected the most, settled from `awaken`'s `winners` |
-| `shadow` | each | beat Shadow Lionheart in the Dream Dojo — the TENTH, and the only one marked `late` |
+| `shadow` | each | beat Shadow Lionheart on MEDIUM or HARD in the Dream Dojo — the TENTH, and the only one marked `late` |
 
 **EARNED BEFORE THE END, PAID AT IT.** No Powerup Kotodama exists before 100%,
 so what a kitten gets on the spot is a promise she can see: a smaller, gold copy

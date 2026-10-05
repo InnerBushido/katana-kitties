@@ -259,6 +259,34 @@ export class Announcer {
   }
 
   /**
+   * Put somebody else's line on the card, FOLLOWING a voice that is already
+   * playing — Lionheart's, in the Dream Dojo, whose clips are his own
+   * (`LionVoice`) and not this card's. The words go up on that element's
+   * playhead exactly as Mr Satan's go up on his, and the card goes when the
+   * line does.
+   *
+   * ONLY ONTO AN EMPTY CARD. Everything `say` queues waits for its turn; this
+   * cannot, because the voice it captions is already being said — a caption
+   * that arrived after the line would be a transcript, not a subtitle. So it is
+   * refused (false) when anybody has the card, and the caller's own bubble is
+   * all there is for that line.
+   *
+   * @param {HTMLAudioElement} el  the voice, already playing
+   * @param {number} dur           its length in seconds (0 if unknown)
+   * @param {string} text
+   * @param {object} who           the speaker, as for `say`
+   * @returns {boolean} whether the card took it
+   */
+  follow(el, dur, text, who) {
+    if (this.hushed || this.current || this.queue.length || !el) return false;
+    this._start({ id: null, text, who, ext: { el, dur: dur > 0 ? dur : SILENT_DUR } });
+    return true;
+  }
+
+  /** Is the card showing a line that follows `el`? */
+  following(el) { return !!el && this.current?.ext?.el === el; }
+
+  /**
    * Stop him NOW: the voice, the card and everything queued behind it.
    *
    * THE ONE PLACE A LINE IS CUT OFF ON PURPOSE, apart from `hush`. `say`
@@ -405,6 +433,25 @@ export class Announcer {
        and not three rules that have to be kept in step. */
     this.el.style.setProperty('--an-accent', who.colour ?? 'var(--gold)');
 
+    /* A FOLLOWED VOICE (`follow`): somebody else's clip, already playing. It
+       is not this card's to start, chain or stop — only to read the playhead
+       of — so it stands in for a one-piece line and skips the rest. */
+    if (item.ext) {
+      this.tail = item.tail ?? HOLD_TAIL;
+      this.dur = item.ext.dur + this.tail;
+      this.pieceDur = item.ext.dur;
+      this.voiceEl = item.ext.el;
+      this.seq = [];
+      this._gapT = 0;
+      this._voiceTotal = item.ext.dur;
+      this._spokenBefore = 0;
+      this._piece = 0;
+      this._pieces = null;
+      this._reveal = !!this._spans && this._voiceTotal > 0 && (this._touch || this._plan.length > REVEAL_WORDS);
+      this._shown = -1;
+      this._showWords(this._reveal ? this._revealNow() : this._plan.length);
+      return;
+    }
     const ids = Array.isArray(item.id) ? item.id : [item.id];
     const clips = ids.map((id) => this.clips.get(id));
     const whole = clips.length > 0 && clips.every(Boolean);
@@ -608,6 +655,13 @@ export class Announcer {
       this._showWords(spoken ? this._plan.length : this._revealNow());
     }
     const over = this.t >= this.dur && (spoken || !playing);
-    if (over || this.t > this.dur + 6) this._end();
+    /* A followed voice that somebody STOPPED (she left the simulator, and
+       `_hushHolo` cut him off) or talked over is over now — not when its
+       clock runs out, which for his islands line is nineteen seconds of
+       caption for a man who has stopped talking. A tail's grace for one that
+       simply finished. */
+    const gone = this.current?.ext && this.t > 0.3 && this.audio && this.audio._speaking !== el
+      && !(el?.ended && this.t < this.dur);
+    if (over || gone || this.t > this.dur + 6) this._end();
   }
 }

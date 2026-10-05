@@ -92,7 +92,7 @@ import {
   DOJO_NEED, RIDER_NEED, CELEBRATE_AFTER, TOKEN_COLOR,
   CEREMONY_LEAD, CEREMONY_BLESS, CEREMONY_GAP, CARD_EXTRA,
 } from '../src/systems/feats.js';
-import { drawOrb } from '../src/entities/powerorb.js';
+import { drawOrb, triDmgK } from '../src/entities/powerorb.js';
 import { CrossFx, sealStage, SIDES_BY_CUT } from '../src/systems/crossfx.js';
 import { DodgeFx, ringTexture } from '../src/systems/dodgefx.js';
 import { ClanFx } from '../src/systems/clanfx.js';
@@ -2779,8 +2779,8 @@ console.log('\n--- the panda in the ring ---');
     const from = msrc.indexOf('{', at + 1) + 1;
     const body = msrc.slice(from, msrc.indexOf('\n  }\n', from));
     // eslint-disable-next-line no-new-func
-    return new Function('ATTACKS', 'COMBAT', 'PANDA', 'BASE_REACH', 'Panda', 'tierFor', 'SWEEP_UP',
-      `return function (${args}) {${body}\n};`)(ATTACKS, COMBAT, PANDA, BASE_REACH, Panda, tierFor, SWEEP_UP);
+    return new Function('ATTACKS', 'COMBAT', 'PANDA', 'BASE_REACH', 'Panda', 'tierFor', 'SWEEP_UP', 'triDmgK',
+      `return function (${args}) {${body}\n};`)(ATTACKS, COMBAT, PANDA, BASE_REACH, Panda, tierFor, SWEEP_UP, triDmgK);
   };
   const strikePlayers = lift('strikePlayers(attacker, kind, reach, dir, spent = null)',
     'attacker, kind, reach, dir, spent = null');
@@ -5002,7 +5002,7 @@ console.log('\n--- the simulator\'s drawings ---');
     ok('...the walk to a tube starts the load, crossing in puts it on, and every way out takes it off',
       /_begin\(p, phase\) \{ this\.game\.loadSimArt\?\.\(\);/.test(dd)
       && /if \(toSimNow\) p\.setSimLook\?\.\(true\);/.test(dd)
-      && /_leaveSim\(p, keepSuit = false\) \{ const s = this\.st\[p\.index\]; this\._hushHolo\(p\); if \(!keepSuit\) p\.setSimLook\?\.\(false\);/.test(dd)
+      && /_leaveSim\(p, keepSuit = false\) \{ const s = this\.st\[p\.index\]; this\.sine\?\.forget\(p\); this\._hushHolo\(p\); if \(!keepSuit\) p\.setSimLook\?\.\(false\);/.test(dd)
       && /if \(!toSimNow\) this\._leaveSim\(p, keepSuit\);/.test(dd));
     /* THE SUIT: "When exiting the VR, they should automatically walk out of
        the tube, and poof with special effects to put their regular clothes
@@ -22753,6 +22753,29 @@ console.log('\n--- one press is not enough, and one player drives ---');
         nav9.update(1);
         ok('...while a wheel afterwards still hands it to the middle of the page',
           rows2.indexOf(nav9.focusEl.get('panel-help')) === oldPick(900));
+
+        /* HELP OPENED STRAIGHT ONTO A TOPIC — Lionheart's READ ABOUT THE
+           DREAM DOJO. Measured in the browser: on the first open after a load
+           the topic was placed (scroll 1493) and two ticks later the page was
+           back at 0, because MenuNav's first frame on a `read` panel puts it
+           to the top. The control proves this check bites: the same placing
+           without `arrive` loses it. */
+        const navF = new MenuNav(navGame([fakePad()]));
+        box2.scrollTop = 1140 - GAP;
+        navF.keep(panel2, rows2[4]);
+        navF.update(1);
+        const lost = box2.scrollTop === 0;
+        const navA = new MenuNav(navGame([fakePad()]));
+        navA.arrive(panel2);
+        box2.scrollTop = 1140 - GAP;
+        navA.keep(panel2, rows2[4]);
+        navA.update(1);
+        navA.update(1);
+        ok('Help opened onto one topic stays on it through the first frames, ring on its header',
+          lost && box2.scrollTop === 1140 - GAP && rows2.indexOf(navA.focusEl.get('panel-help')) === 4,
+          `control lost=${lost}, scroll ${box2.scrollTop}, ring ${rows2.indexOf(navA.focusEl.get('panel-help'))}`);
+        ok('...because openHelpAt marks the panel arrived before it places the topic',
+          /openHelpAt\(id, slot = null\) \{[\s\S]{0,400}this\.menuNav\?\.arrive\(help\);\s*this\._helpToTop\(card\);/.test(MS));
         ok('...and it happens on the toggle, which sees both accordion cards settled',
           /addEventListener\('toggle', \(\) => \{\s*this\._helpToggled\(card\);/.test(MS)
             && /_helpToggled\(card\) \{\s*if \(card\.open\) \{ this\._helpToTop\(card\); return; \}/.test(MS));
@@ -26607,6 +26630,43 @@ console.log('\n--- one press is not enough, and one player drives ---');
       const o = run({ touch: true, text: long, lineWidth: 900 });
       ok('a phone line wider than the card fades its older end, and a line that fits does not',
         o.over && !p.over);
+
+      /* FOLLOWING SOMEBODY ELSE'S VOICE. Richard: "if player is not near him
+         and can't see his text bubble, then we should display his text on the
+         screen ... as it is being said ... on the bottom of the screen for all
+         the players, like it is for Mr. Satan's voice text in the arena." */
+      {
+        for (const k of Object.keys(els)) delete els[k];
+        const lion = { currentTime: 0, ended: false, paused: false };
+        const audio = { _speaking: lion, speak: () => null, stopSpeaking() { audio._speaking = null; }, play() {} };
+        const A = new Announcer({ audio, touch: () => false });
+        const who = { name: 'LIONHEART', sub: 'Dream Dojo', colour: '#ff3b3b' };
+        const took = A.follow(lion, 6, long, who);
+        A.update(0);
+        const shown = () => (A._spans ?? []).filter((s) => s.className !== 'un').length;
+        const first = shown();
+        lion.currentTime = 3; A.update(1 / 30);
+        const mid = shown();
+        const named = (els['an-name'].children ?? []).some((c) => c.textContent === 'LIONHEART');
+        ok('言 the card can follow a voice it did not start: his words go up on HIS playhead, under his name',
+          took && first < mid && mid < A._plan.length && named, `${first} -> ${mid} of ${A._plan.length}`);
+        const busy = A.follow({}, 3, 'another', who);
+        ok('...and it never queues one: a card that is busy refuses, since a late subtitle is a transcript', busy === false);
+        lion.currentTime = 6; lion.ended = true;
+        for (let k = 0; k < 10; k++) A.update(1 / 30);
+        const all = shown() === A._plan.length;
+        for (let k = 0; k < 30 * 8; k++) A.update(1 / 30);
+        ok('...and when he finishes, every word is up, and the card goes after its tail', all && !A.active);
+        // Stopped mid-line (she left the simulator, and his voice was hushed): gone at once.
+        lion.currentTime = 0; lion.ended = false;
+        audio._speaking = lion;
+        A.follow(lion, 19, long, who);
+        A.update(0);
+        lion.currentTime = 2; A.update(0.5);
+        audio.stopSpeaking();
+        A.update(1 / 30);
+        ok('...and a voice somebody stopped takes its caption with it, not nineteen seconds later', !A.active);
+      }
     } finally {
       globalThis.document = docWas;
     }
@@ -31019,7 +31079,10 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
       const I = src('../src/systems/inspector.js');
       const from = I.indexOf('  _back(index) {');
       const body = I.slice(from + 2, I.indexOf('\n  }', from) + 4);
-      const back = new Function(`return function ${body};`)();
+      /* `isLion` is the file's own set, read out of it, so the harness asks
+         the same question the card does. */
+      const lionSet = new Set(eval(I.match(/const LION_STATES = new Set\((\[[^\]]*\])\)/)[1]));
+      const back = new Function('isLion', `return function ${body};`)((s) => lionSet.has(s));
       const self = { cards: [{ state: 'look', i: 4, _sig: 'x' }], game: {}, closed: 0,
         closeOne() { this.closed++; this.cards[0].state = null; } };
       back.call(self, 0);
@@ -31027,6 +31090,28 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
         self.cards[0].state === 'choose' && self.cards[0].i === 1 && self.closed === 0);
       back.call(self, 0);
       ok('...and LEAVE on the chooser closes the card', self.closed === 1);
+
+      /* LIONHEART'S card, the same way out (dream/lionguide.js). A sub-card
+         steps up to his rows on the row that opened it; a card the MAP KIOSK
+         opened straight onto his map closes, because she never saw the menu
+         above it; and BACK on his rows is goodbye. */
+      const said = [];
+      const rows = [{ key: 'next' }, { key: 'map' }, { key: 'orbs' }, { key: 'holo' }, { key: 'kyo' }];
+      const lion = { cards: [{ state: 'lionMap', i: 0, _sig: 'x' }], closed: 0,
+        game: { players: [{ index: 0 }], dream: { guide: { rows: () => rows, choose: (p, k) => said.push(k) } } },
+        closeOne() { this.closed++; this.cards[0].state = null; } };
+      back.call(lion, 0);
+      ok("BACK on Lionheart's map steps up to his rows, on SHOW ME THE MAP",
+        lion.cards[0].state === 'lion' && lion.cards[0].i === 1 && lion.closed === 0);
+      lion.cards[0].state = 'lionKyo';
+      back.call(lion, 0);
+      ok('...and from the 凶 card, on the 凶 row', lion.cards[0].state === 'lion' && lion.cards[0].i === 4);
+      back.call(lion, 0);
+      ok('...and BACK on his rows is goodbye, said to him', lion.closed === 1 && said.join() === 'bye');
+      lion.cards[0] = { state: 'lionMap', i: 0, direct: true };
+      back.call(lion, 0);
+      ok('...but the map kiosk\'s card closes on BACK — she never saw his menu',
+        lion.closed === 2 && said.length === 1);
     }
     ok('...and on a phone it is a target a thumb can find',
       (px(rule('body.touch-ui .pc-back'), 'min-height') ?? 0) >= 32);
@@ -34154,6 +34239,31 @@ console.log('\n--- the arena doors, the carpet and the way back out ---');
     ok('a kitten who never met her is invited, twice at most',
       said(N).filter((id) => id === 'payne_invite').length >= 1 && N._s(n).invites === 2);
     ok('...and gets no hint she never asked for', !said(N).some((id) => /_h_|_t_/.test(id)));
+
+    /* NOT IN THE HEADSET. Richard: "Payne's voice should not appear in the VR
+       dojo simulation, even if she is calling for the player to come and
+       visit her". Her clocks stop in there; the invitation owed is said after. */
+    const was = g.dream;
+    const H = new PN.Payne(g);
+    const h = kid();
+    let inside = true;
+    g.dream = { stateOf: (i) => (inside && i === h.index ? { phase: 'sim' } : null) };
+    ok('a kitten in the Dream Dojo headset is in it, as far as Payne can tell', PN.inHeadset(g, h));
+    run(H, h, PN.INVITE_AT[1] + 30);
+    ok('...and however long she is in there, Payne invites her to nothing', said(H).length === 0 && H._s(h).invites === 0,
+      said(H).join(' '));
+    inside = false;
+    run(H, h, PN.INVITE_AT[0] + 1);
+    ok('...and the invitation she was owed comes after she is back, not the moment she steps out',
+      said(H).includes('payne_invite') && H._s(h).invites === 1, said(H).join(' '));
+    // Queued for her as she went in: dropped, never saved for later.
+    H.queue = [];
+    H.say(h, ['payne_invite'], 'hey');
+    inside = true;
+    H._voice(1 / 60, false);
+    ok('...and a line already waiting for her when she goes in is dropped, not said in there',
+      H.queue.length === 0 && !H.current, `${H.queue.length} ${!!H.current}`);
+    g.dream = was;
   }
   {
     /* THE TRIPLE-JUMP TEASE: hopping at the sky star with two jumps. */
@@ -35532,8 +35642,8 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
   ok('a new afternoon resets the arcade', /this\.dream\?\.reset\(\);/.test(mm));
   ok('two realities never share a pane',
     /const mixed = realms\.some\(\(r\) => r !== realms\[0\]\);/.test(mm) && /if \(!mixed && \(onRyu/.test(mm));
-  ok('...and a pane in the simulator has no map of the archipelago',
-    /&& !this\.dream\?\.paneIsSim\(groups\[pane\]\);/.test(mm));
+  ok('...and a pane in the simulator has a map only once the simulator\'s own exists, never the archipelago\'s',
+    /&& \(!this\.dream\?\.paneIsSim\(groups\[pane\]\) \|\| !!this\.world\.simSite\);/.test(mm));
   ok('...and its camera crosses with it instead of panning the void',
     /rig\.target\.x \+= SIM\.dx \* k;/.test(mm));
   const au = readFileSync(new URL('../src/core/audio.js', import.meta.url), 'utf8');
@@ -35637,6 +35747,123 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
   D.st[0] = { phase: 'sim', t: 0 };
   D.st[1] = null;
 
+  /* --- the Turning Circle in here is drawn in light, and its maths is the town's --- */
+  {
+    globalThis.document ??= domStub();
+    const MD = await import('../src/systems/mathdojo.js');
+    const HD = await import('../src/systems/dream/holodojo.js');
+    const c0 = new THREE.Vector3(0, 0, 0);
+    const town = new MD.MathDojo(new THREE.Scene(), c0);
+    const holo = new MD.MathDojo(new THREE.Scene(), c0);
+    const fx = HD.holoDojo(holo);
+    /* Richard: "the Dojo of the Turning Circle in the middle looks like
+       holograms as well ... Right now the sphere is a solid blue color". */
+    const solid = [];
+    holo.group.traverse((o) => {
+      const m = o.material;
+      // The readouts are words, not light: they stay crisp (holo.labels).
+      if (!m || m.isSpriteMaterial || o.isSprite || holo.labels.includes(o) || holo.labels.includes(o.parent)) return;
+      if ((o.isMesh || o.isLine) && !(m.transparent && (m.blending === THREE.AdditiveBlending || m.opacity < 0.9))) {
+        solid.push(`${o.type}:${o.geometry?.type}`);
+      }
+    });
+    ok('円 the simulator\'s Turning Circle has nothing solid left in it — the point is a wire globe, everything glows',
+      solid.length === 0 && holo.point.material.blending === THREE.AdditiveBlending
+      && holo.point.children.some((c) => c.isLineSegments), solid.slice(0, 6).join(' '));
+    // THE MATHS IS THE TOWN'S: drive both from the same reading, frame for frame.
+    const walker = { position: new THREE.Vector3(), onGround: true, index: 0, name: 'Ember', style: { name: 'Ember' } };
+    let worst = 0;
+    for (let k = 0; k < 24; k++) {
+      const a = (k / 24) * Math.PI * 2;
+      walker.position.set(Math.cos(a) * 24, 0.2, -Math.sin(a) * 24);
+      town.update(1 / 60, [walker]);
+      holo.update(1 / 60, [walker]);
+      fx.update(k / 7);
+      worst = Math.max(worst, town.point.position.distanceTo(holo.point.position), Math.abs(town.theta - holo.theta));
+    }
+    ok('...and its point, its angle and its legs move exactly as the town\'s do, from the same kitten', worst < 1e-9
+      && town.point.visible === holo.point.visible, worst.toExponential(1));
+    const townSolid = town.point.material.blending !== THREE.AdditiveBlending;
+    ok('...and the town\'s own Dojo is not dressed by it', townSolid);
+  }
+
+  /* --- the way out is a tube in her colour, and Lionheart's words never cover it --- */
+  {
+    const put0 = (p, q) => { p.position.set(q.x + SW.SIM.dx, DD.ARCADE.y, q.z + SW.SIM.dz); };
+    globalThis.document ??= domStub();
+    her.style = { colour: 0xff8a3d, name: 'Ember' };
+    sis.style = { colour: 0x35d7f0, name: 'Frost' };
+    D._buildSimTubes();
+    D._updateSimTubes();
+    const T = D.simTubes;
+    const placed = T.every((t, i) => Math.hypot(t.glass.position.x - L.tubes[i].x, t.glass.position.z - L.tubes[i].z) < 1e-6
+      && sim.root.children.includes(t.glass));
+    ok('出 the simulator has four tubes, standing on the four port rings that let a kitten out',
+      T.length === 4 && placed);
+    ok('...hers in her colour while she is in here, her sister\'s grey while she is not',
+      T[0].u.uColor.value.getHex() === 0xff8a3d && T[0].ringMat.color.getHex() === 0xff8a3d
+      && T[1].u.uColor.value.getHex() !== 0x35d7f0 && T[1].ringMat.opacity < 0.5
+      && sim.portRings[0].material.color.getHex() === 0xff8a3d,
+      `${T[0].u.uColor.value.getHexString()} ${T[1].u.uColor.value.getHexString()}`);
+    const t0 = L.tubes[0];
+    her.position.set(t0.x + SW.SIM.dx, DD.ARCADE.y, t0.z + SW.SIM.dz);
+    for (let k = 0; k < 120; k++) D._updateSimTubes();
+    const inIt = T[0].u.uGlow.value;
+    const wasOn = D.onPort(her);
+    her.position.set(t0.x + 8 + SW.SIM.dx, DD.ARCADE.y, t0.z + SW.SIM.dz);
+    for (let k = 0; k < 120; k++) D._updateSimTubes();
+    ok('...and brightest while she stands in it, which is where DISCONNECT is offered',
+      wasOn && inIt > 0.95 && T[0].u.uGlow.value < 0.6, `${wasOn} ${inIt.toFixed(2)} vs ${T[0].u.uGlow.value.toFixed(2)}`);
+
+    /* Richard: "Lionhearts text in the simulation is blocking the 4 VR floating
+       tubes both on the Dream Dojo island and in the simulation." Through the
+       game's own camera heading: the bubble starts 1.4 out from him on the side
+       it is put, and every tube (its full width) must be on the other side. */
+    const k0 = Number(/const CAM_YAW = -Math\.PI \* ([\d.]+);/.exec(readFileSync(new URL('../src/entities/player.js', import.meta.url), 'utf8'))?.[1]);
+    const yaw = -Math.PI * k0;
+    const right = { x: Math.cos(yaw), z: -Math.sin(yaw) };
+    const proj = L.tubes.map((t) => (t.x - L.lion.x) * right.x + (t.z - L.lion.z) * right.z);
+    const s = DD.lionBubbleSide(L, right);
+    const clear = proj.every((d) => s * d + DD.TUBE_R < 1.4);
+    const wasClear = proj.every((d) => d + DD.TUBE_R < 1.4);
+    ok('言 Lionheart\'s bubble hangs on the side of him away from all four tubes, from the game\'s camera',
+      Number.isFinite(k0) && clear && !wasClear, `side ${s}, tubes at ${proj.map((d) => d.toFixed(1)).join(' ')}`);
+    // ...and from any heading a lens could have, it is never on the tubes' side.
+    let worst = Infinity;
+    for (let k = 0; k < 72; k++) {
+      const a = (k / 72) * Math.PI * 2;
+      const r = { x: Math.cos(a), z: -Math.sin(a) };
+      const ss = DD.lionBubbleSide(L, r);
+      const cx = L.tubes.reduce((q, t) => q + (t.x - L.lion.x) * r.x + (t.z - L.lion.z) * r.z, 0) / 4;
+      worst = Math.min(worst, -ss * cx);
+    }
+    ok('...and from any heading at all, it goes to the side the tubes are not on', worst >= 0, worst.toFixed(2));
+    const dd = readFileSync(new URL('../src/systems/dreamdojo.js', import.meta.url), 'utf8');
+    ok('...for the real Lionheart and the hologram alike', (dd.match(/this\._turnBubble\(m, camera\)/g) ?? []).length === 2);
+
+    // His words on the screen card when she is too far to read his bubble.
+    const voiceWas = D.voice;
+    const el = { id: 'lion' };
+    const followed = [];
+    fakeGame.announcer = { follow: (e, d, text, who) => { followed.push({ e, d, text, who }); return true; }, following: () => false };
+    D.voice = { saying: () => true, elOf: () => el, secs: () => 5, idOf: () => 'x' };
+    D.holoText = DD.LION_LINES.islands;
+    put0(her, { x: L.lion.x + 4, z: L.lion.z });
+    D._captionHolo();
+    const nearN = followed.length;
+    put0(her, { x: L.lion.x + DD.LION_NEAR + 6, z: L.lion.z });
+    D._captionHolo();
+    ok('言 a kitten in the sim too far from him to read his bubble gets his line on the screen\'s card, under his name — one beside him does not',
+      nearN === 0 && followed.length === 1 && followed[0].e === el && followed[0].who.name === 'LIONHEART'
+      && !/\n/.test(followed[0].text), `${nearN} ${followed.length}`);
+    D.voice = { ...D.voice, saying: () => false };
+    D._captionHolo();
+    ok('...and only while he is actually saying it', followed.length === 1);
+    D.voice = voiceWas;
+    delete fakeGame.announcer;
+    D.holoText = null;
+  }
+
   /* --- the blade in here finds holograms and nothing else --- */
   {
     const gate = new TG.TrainingGate();
@@ -35659,7 +35886,12 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const code = readdirSync(new URL('../src/systems/dream/', import.meta.url)).filter((f) => f.endsWith('.js'))
       .map((f) => readFileSync(new URL(`../src/systems/dream/${f}`, import.meta.url), 'utf8'))
       .join('\n').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
-    ok('nothing in the simulator can call hurt()', !/\.hurt\(/.test(code));
+    /* ONE EXCEPTION, BY NAME: the Pandapaw trial's REAL panda (pandatrial.js)
+       has a bar of its own, and `panda.hurt` spends the animal's and nobody's
+       else. Any other `.hurt(` — a kitten's — still fails. */
+    const hurts = code.match(/[\w$.]*\.hurt\(/g) ?? [];
+    ok('nothing in the simulator can call hurt() — on a kitten; the trial\'s panda has its own bar',
+      hurts.every((h) => h === 'panda.hurt(') && hurts.length <= 1, hurts.join(' '));
     ok('...and the hud it hands her maps strikePlayers to the training gate and nowhere else',
       /strikePlayers: \(attacker, kind, reach, dir, spent = null\) => \{\s*dream\.onStrike\(/.test(code));
     D.gate = gate;
@@ -35945,6 +36177,8 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
   const RG = await import('../src/systems/dream/range.js');
   const KT = await import('../src/systems/dream/kata.js');
   const PL = await import('../src/entities/player.js');
+  const KI = await import('../src/systems/dream/kiosk.js');
+  const PAL = await import('../src/core/palette.js');
   const dc = world.dojoCentre;
   const L = DD.arcadeLayout(dc);
   const scene = new THREE.Scene();
@@ -36198,16 +36432,50 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const bad = run(false);
     ok('a kata stood through is a refusal that says the score and what earns a star',
       bad.d.state === 'failed' && /\d+%/.test(bad.d.why ?? ''), bad.d.why);
-    // Somebody else's floor, mid-kata, says so.
+    /* ONE FLOOR EACH. Richard: "Let's section each area off with the players
+       color and symbolism, so they know which area is for them, if the other
+       players are not active and not in the simulation, then their area
+       should be disabled or grayed out ... The player can only use the area
+       that is designated to them with their colors." */
     D.drills[0] = null;
-    D.kata.begin(her, 'daily', fl);
-    D.drills[0].update(2);
+    D.t += 100;
     fakeGame.toasts.length = 0;
     const took = D.kata.begin(sis, 'daily', fl);
-    ok("a floor somebody is dancing on refuses her sister in words, and sends her to another",
-      took === false && !D.drills[1] && fakeGame.toasts.some((t) => /another/.test(t)), fakeGame.toasts.join(' | '));
-    D.drills[0].dispose();
-    D.drills[0] = null;
+    ok('型 her floor refuses her sister, in words that say which floor is hers',
+      took === false && !D.drills[1] && fakeGame.toasts.some((t) => /yours is the pink 氷 one/.test(t)), fakeGame.toasts.join(' | '));
+    D.kata.begin(sis, 'daily', D.kata.floors[1]);
+    D.drills[1].update(2);
+    D.t += 100;
+    const mine = D.kata.begin(her, 'daily', fl);
+    ok('...and her sister dancing on her own floor never stops her using hers', mine === true && !!D.drills[0] && !!D.drills[1]);
+    D.drills[0].dispose(); D.drills[0] = null;
+    D.drills[1].dispose(); D.drills[1] = null;
+    D.kata.update(0);
+    const F = D.kata.floors;
+    const hex = (m) => m.material.color.getHex();
+    ok('...each floor of a kitten in here is in HER colour, kiosks lit, under a plate with her element',
+      hex(F[0].edge) === her.style.colour && hex(F[1].edge) === sis.style.colour
+      && F[0].lit && F[1].lit && F[0].kiosks.every((k) => k.lit) && /炎/.test(F[0].plate._key) && /氷/.test(F[1].plate._key),
+      `${hex(F[0].edge).toString(16)} ${hex(F[1].edge).toString(16)}`);
+    ok('...and the floors of seats nobody is in here for are grey, their kiosks greyed, and say so',
+      [2, 3].every((k) => !F[k].lit && hex(F[k].edge) === KI.KIOSK_OFF && F[k].kiosks.every((q) => q.lit === false)
+        && /nobody in this seat|opens when she comes in/.test(F[k].plate._key)));
+    // She steps out: her floor goes grey with her, and comes back when she does.
+    sis.realm = null;
+    D.kata.update(0);
+    D.t += 100;
+    fakeGame.toasts.length = 0;
+    const greyed = !F[1].lit && hex(F[1].edge) === KI.KIOSK_OFF;
+    const onHers = D.kata.begin(her, 'daily', F[1]);
+    ok('...a sister who leaves the simulator takes her floor\'s colour with her, and it still will not take anybody else',
+      greyed && onHers === false && !D.drills[0] && fakeGame.toasts.some((t) => /Frost's floor — yours is the orange 炎 one/.test(t)),
+      fakeGame.toasts.join(' | '));
+    sis.realm = 'sim';
+    D.kata.update(0);
+    ok('...and lights again the moment she is back', F[1].lit && hex(F[1].edge) === sis.style.colour);
+    ok('...and the colour is said the way a nine-year-old says it',
+      [0, 1, 2, 3].map((i) => KT.colourWord(PAL.styleFor(i).colour)).join() === 'orange,pink,teal,purple',
+      [0, 1, 2, 3].map((i) => KT.colourWord(PAL.styleFor(i).colour)).join());
   }
 
   /* --- four floors, all on the island, none on another --- */
@@ -36249,6 +36517,8 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
   const RG = await import('../src/systems/dream/range.js');
   const KT = await import('../src/systems/dream/kata.js');
   const PL = await import('../src/entities/player.js');
+  const KI = await import('../src/systems/dream/kiosk.js');
+  const PAL = await import('../src/core/palette.js');
   const { isleSpot } = await import('../src/systems/dream/kiosk.js');
   const dc = world.dojoCentre;
   const L = DD.arcadeLayout(dc);
@@ -36316,7 +36586,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         for (const other of KEYS) {
           if (other === key) continue;
           const O = D.isles[other];
-          const gap = Math.hypot(x - O.x, z - O.z) - O.r - 3.2;
+          const gap = Math.hypot(x - O.x, z - O.z) - O.r - HW.HIGHWAY.halfW;
           if (gap < worst) { worst = gap; where = `${key} over ${other}`; }
         }
       }
@@ -36375,13 +36645,15 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         else if (D.highway.riding(0)) fell = Math.max(fell, Math.abs(h.y + HW.SEAT - q.y));
         if (t >= cutAt) D._leaveSim(her);
       }
-      const end = way > 0 ? road.B : road.A;
+      const path = way > 0 ? road.path : [...road.path].reverse();
+      const cum = way > 0 ? road.cum : road.cum.map((c) => road.length - c).reverse();
+      const end = HW.laneAt(path, cum, road.length);
       return { t, offDeck, nan, fell, dead, swallowed,
         miss: Math.hypot(her.position.x - SW.SIM.dx - end.x, her.position.z - SW.SIM.dz - end.z),
         cycleGone: !sim.root.getObjectByName('light-cycle') };
     };
     const out = run(1);
-    ok('光 a light-cycle ride never leaves the deck, never NaNs, and stops at the far pad',
+    ok('光 a light-cycle ride never leaves the deck, never NaNs, and stops beside the far pad, in its lane',
       out.offDeck === 0 && !out.nan && out.fell < 0.05 && out.miss < 0.05 && out.cycleGone,
       `off ${out.offDeck} nan ${out.nan} fell ${out.fell.toFixed(2)} miss ${out.miss.toFixed(2)}`);
     ok('...in about the time its card promises, and well under the walk',
@@ -36389,7 +36661,42 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       `${out.t.toFixed(2)}s vs walk ${(road.length / 10.5).toFixed(1)}s`);
     ok('...while she rides her stick is dead, INTERACT is swallowed and no prompt shows', out.dead && out.swallowed);
     const back = run(-1);
-    ok('...and back again lands on the hub pad', back.miss < 0.05 && back.offDeck === 0, back.miss.toFixed(2));
+    ok('...and back again lands beside the hub pad', back.miss < 0.05 && back.offDeck === 0, back.miss.toFixed(2));
+    /* TWO-WAY TRAFFIC. Richard: "allowing for 2 way traffic, so that players
+       don't crash into each other ... have the motorcycle ride in the proper
+       lane". Two cycles on the same highway, opposite ways, the second leaving
+       at every moment of the first's ride: never closer than a cycle's width
+       plus a margin, at the crossing OR at a pad one is leaving as the other
+       arrives. On the old centre line they met head-on at 0. */
+    {
+      const T = HW.rideTime(road.length);
+      const rev = [...road.path].reverse();
+      const rcum = road.cum.map((c) => road.length - c).reverse();
+      let closest = Infinity; let when = '';
+      for (let lag = -T; lag <= T; lag += 0.1) {
+        for (let t = Math.max(0, lag); t <= Math.min(T, T + lag); t += 1 / 60) {
+          const a = HW.laneAt(road.path, road.cum, HW.rideDistance(t, T, road.length));
+          const c = HW.laneAt(rev, rcum, HW.rideDistance(t - lag, T, road.length));
+          const d = Math.hypot(a.x - c.x, a.z - c.z);
+          if (d < closest) { closest = d; when = `lag ${lag.toFixed(1)}s at ${t.toFixed(2)}s`; }
+        }
+      }
+      // Before and after either ride: the parked cycle beside a pad vs the one leaving it.
+      const parkedA = HW.laneAt(rev, rcum, road.length);
+      for (let t = 0; t <= T; t += 1 / 60) {
+        const a = HW.laneAt(road.path, road.cum, HW.rideDistance(t, T, road.length));
+        closest = Math.min(closest, Math.hypot(a.x - parkedA.x, a.z - parkedA.z));
+      }
+      const mid = HW.laneAt(road.path, road.cum, road.length / 2);
+      ok('光 two cycles going opposite ways never meet: each keeps right of the centre line, and arrives beside a pad, not on it',
+        closest > 2.4 && Math.abs(mid.lane - HW.HIGHWAY.lane) < 1e-9 && HW.HIGHWAY.lane + 1.1 / 2 < HW.HIGHWAY.halfW - 1,
+        `closest ${closest.toFixed(2)} (${when}); lane ${HW.HIGHWAY.lane} of a ${HW.HIGHWAY.halfW} half-width`);
+      // Right of travel, on screen: a kitten facing down the road sees her lane on her right.
+      const q = HW.laneAt(road.path, road.cum, road.length / 2);
+      const c0 = HW.pointAt(road.path, road.cum, road.length / 2);
+      const right = (q.x - c0.x) * -c0.dz + (q.z - c0.z) * c0.dx;
+      ok('...and right is right: the lane is on the rider\'s right hand, both ways', right > 0);
+    }
     D.st[0] = { phase: 'sim', t: 0 };
     const cut = run(1, 1.5);
     D.st[0] = { phase: 'sim', t: 0 };
@@ -36457,98 +36764,290 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     d.dispose(); D.drills[0] = null;
   }
 
-  /* --- 正弦 the printed y is the beam and the trace --- */
+  /* --- 正弦 THE COURSE. Richard: "rather than making 4 separate lanes for
+     each player, it may be better to turn this into more of a Ninja Warrior
+     type course ... just have 1 course lane and have the 4 players queue up
+     in competition, going one by one and competing for the best time".
+     Everything below is a claim that would look fine broken: a wall with a
+     gap in it, a beam drawn somewhere its hit test is not, a kit that does
+     not come back, a camera that frames the wrong kitten. --- */
   {
+    const CO = await import('../src/systems/dream/course.js');
     const I = D.isles.sine;
-    const lane = D.sine.lanes[0];
-    put(her, D.sine.kiosks[0]);
-    D.sine.kiosks[0].station.interact(her);
-    const d = D.drills[0];
-    let worst = 0; let cardOk = true;
-    for (let f = 0; f < 600; f++) {
-      d.update(1 / 60);
-      if (d.state !== 'live') continue;
-      for (let n = 0; n < SN.GATES.length; n++) {
-        const w = SN.gateWorking(d.spec.level, d.t, n);
-        const printed = Number(/= ([-\d.]+)$/.exec(w.text)?.[1]);
-        worst = Math.max(worst, Math.abs(printed - (d.bars[n].a.y - I.y)), Math.abs(d.bars[n].a.y - d.bars[n].b.y),
-          Math.abs(d.traces[n].dot.position.y - d.bars[n].a.y));
-      }
-      const lines = d.spec.paint(d).map((x) => x.text);
-      if (!lines.includes(SN.gateWorking(d.spec.level, d.t, 0).text)) cardOk = false;
+    const G = D.sine;
+    const lc = (x, z) => {
+      const f = I.fwd; const dx = x - I.x; const dz = z - I.z;
+      return { a: dx * f.x + dz * f.z, b: -dx * f.z + dz * f.x };
+    };
+
+    /* The walls: on the island, and closed. */
+    const off = G.posts.filter((q) => Math.hypot(q.x - I.x, q.z - I.z) > I.r - 0.2);
+    ok('正弦 every wall of the course stands on the island', off.length === 0, `${off.length} posts off the edge`);
+    let gapMax = 0;
+    for (let i = 1; i < G.posts.length; i++) {
+      const d = Math.hypot(G.posts[i].x - G.posts[i - 1].x, G.posts[i].z - G.posts[i - 1].z);
+      if (d < 1.5) gapMax = Math.max(gapMax, d - 0.8);
     }
-    ok('正弦 every bar\'s printed y, its beam and its oscilloscope dot are the same number', worst < 0.006, worst.toFixed(4));
-    ok('...and her card shows the working for the next bar, as of this frame', cardOk);
-    // Somebody else's lane says so.
-    D.t += 10;
-    fakeGame.toasts.length = 0;
-    put(sis, D.sine.kiosks[0]);
-    const took = D.sine.begin(sis, lane);
-    ok('正弦 a lane somebody is running refuses her sister in words', took === false && !D.drills[1]
-      && fakeGame.toasts.some((t) => /another/.test(t)), fakeGame.toasts.join(' | '));
-    // High bar: walk under. Low bar at the top of a jump: clear. Middle: hit.
-    const B = d.bars[0];
-    const g = SN.GATES[0];
-    const at = (y) => { B.a.y = I.y + y; B.b.y = I.y + y; };
-    const q = isleSpot(I, g, lane.c);
-    put(her, { x: q.x, z: q.z, y: I.y });
-    at(SN.UNDER);
-    const under = B.distTo(her) >= B.thick + 0.45;
-    at(2.0);
-    const mid = B.distTo(her) < B.thick + 0.45;
+    ok('...with no gap between posts a kitten (radius 0.75) fits through', gapMax < 1.2, gapMax.toFixed(2));
+    ok('...and the turns are the only ways from lane to lane: each middle wall stops short at one end only',
+      CO.WALLS[1][1][1] < CO.END_B && CO.WALLS[1][0][1] === -CO.END_B
+      && CO.WALLS[2][0][1] > -CO.END_B && CO.WALLS[2][1][1] === CO.END_B);
+    const ins = (a) => a > -17 && a < 13;
+    const plaza = [
+      lc(G.kiosk.x, G.kiosk.z), lc(G.board.position.x, G.board.position.z), lc(G.standDeck.x, G.standDeck.z),
+    ];
+    ok('...and the kiosk, the board and the stands are on the plaza, outside the course and on the island',
+      plaza.every((q) => !ins(q.a) && Math.hypot(q.a, q.b) < I.r), plaza.map((q) => `${q.a.toFixed(1)},${q.b.toFixed(1)}`).join(' '));
+    const land = isleSpot(I, -23, 0);
+    ok('...and nothing solid stands where the bridge lands',
+      sim.solids.every((s) => Math.hypot(s.x - land.x, s.z - land.z) > s.r + 0.9));
+    let sgap = 0;
+    for (let i = 0; i < G.standPosts.length; i++) {
+      const a = G.standPosts[i]; const c = G.standPosts[(i + 1) % G.standPosts.length];
+      sgap = Math.max(sgap, Math.hypot(a.x - c.x, a.z - c.z) - 0.7);
+    }
+    ok('応援 the stands are walled all the way round: nobody falls or walks out of them', sgap < 1.2, sgap.toFixed(2));
+
+    /* NON-NEGOTIABLE 1: what is drawn is `beams` / `stones`, to the hundredth. */
+    let worst = 0;
+    for (const [li, L] of CO.LEVELS.entries()) {
+      for (const t of [0, 1.3, 4.7, 9.1]) {
+        G._paintCourse(L, t);
+        const list = CO.beams(L, t);
+        list.forEach((q, k) => {
+          const e = G.beamFx[k].ends;
+          const a = isleSpot(I, q.a0, q.b0); const c = isleSpot(I, q.a1, q.b1);
+          worst = Math.max(worst, Math.hypot(e[0].position.x - a.x, e[0].position.y - (I.y + q.y0), e[0].position.z - a.z),
+            Math.hypot(e[1].position.x - c.x, e[1].position.y - (I.y + q.y1), e[1].position.z - c.z));
+        });
+        CO.stones(L, t).forEach((s, n) => { worst = Math.max(worst, Math.abs(G.stoneDecks[n].y - (I.y + s.y))); });
+        const e = CO.sweepEnds(CO.SECTION.sweep, t, L.speed);
+        const cq = lc(G.cosDot.position.x, G.cosDot.position.z);
+        worst = Math.max(worst, Math.abs(cq.a - CO.LANES[1] - CO.SECTION.sweep.arm.R * Math.cos(e.th)));
+        const sq = lc(G.sinDot.position.x, G.sinDot.position.z);
+        worst = Math.max(worst, Math.abs(sq.b - CO.SECTION.sweep.pivot - CO.SECTION.sweep.arm.R * Math.sin(e.th)));
+        void li;
+      }
+    }
+    ok('正弦 every beam, stone and the sweeper\'s cos and sin dots are drawn exactly where course.js says', worst < 0.01, worst.toFixed(4));
+
+    /* "lack of shadows on the lasers": a black shadow at 0.36 on this floor
+       was there and invisible in the browser. So every beam has a footprint of
+       its own colour under it, and every bar and the sweeper stand on drop
+       lines as tall as the beam is high. Asked of the DRAWING at several
+       moments, and of the cue's direction: lower must read stronger. */
+    {
+      let dropWorst = 0; let footWorst = 0; let order = true; let drops = 0;
+      for (const t of [0.4, 2.2, 5.9]) {
+        G._paintCourse(CO.LEVELS[1], t);
+        const list = CO.beams(CO.LEVELS[1], t);
+        list.forEach((q, k) => {
+          const fx = G.beamFx[k];
+          const mid = isleSpot(I, (q.a0 + q.a1) / 2, (q.b0 + q.b1) / 2);
+          footWorst = Math.max(footWorst, Math.hypot(fx.foot.position.x - mid.x, fx.foot.position.z - mid.z), Math.abs(fx.foot.position.y - I.y - 0.04));
+          fx.drops.forEach((m, n) => {
+            drops++;
+            const end = n ? isleSpot(I, q.a1, q.b1) : isleSpot(I, q.a0, q.b0);
+            dropWorst = Math.max(dropWorst, Math.hypot(m.position.x - end.x, m.position.z - end.z), Math.abs(m.position.y - I.y),
+              Math.abs(m.scale.y - (n ? q.y1 : q.y0)));
+          });
+        });
+        // Among the bars and the sweeper, the lowest has the strongest cue.
+        const bars = list.map((q, k) => ({ h: (q.y0 + q.y1) / 2, fx: G.beamFx[k], sec: q.sec })).filter((x) => x.sec !== 'gaps');
+        const lo = bars.reduce((m, x) => (x.h < m.h ? x : m)); const hi = bars.reduce((m, x) => (x.h > m.h ? x : m));
+        if (hi.h - lo.h > 0.5) {
+          order &&= lo.fx.foot.material.opacity > hi.fx.foot.material.opacity
+            && lo.fx.shadow.material.opacity > hi.fx.shadow.material.opacity
+            && lo.fx.foot.scale.x < hi.fx.foot.scale.x;
+        }
+      }
+      const withDrops = G.beamFx.filter((f) => f.drops.length).length;
+      ok('正弦 every beam has a footprint on the floor straight under it', footWorst < 0.01, footWorst.toFixed(4));
+      ok('...every bar and the sweeper stand on two drop lines exactly as tall as the beam is high, and the curtains on none',
+        dropWorst < 0.01 && drops === 3 * 2 * withDrops
+          && withDrops === CO.beams(CO.LEVELS[0], 0).filter((q) => q.sec !== 'gaps').length,
+        `${dropWorst.toFixed(4)} ${drops} ${withDrops}`);
+      ok('...and a LOW beam reads stronger than a high one: brighter, narrower footprint and a darker shadow', order);
+    }
+    ok('...and the stones are real floors: standing on one stands her at its height',
+      (() => {
+        CO.stones(CO.LEVELS[0], 2).forEach(() => {});
+        G._paintCourse(CO.LEVELS[0], 2);
+        const s = CO.stones(CO.LEVELS[0], 2)[1];
+        const q = isleSpot(I, s.a, s.b);
+        const h = floorAt(q.x, q.z, I.y + s.y + 0.1);
+        return h && Math.abs(h.y - (I.y + s.y)) < 1e-6;
+      })());
+    const wv = CO.SECTION.stand.wave;
+    ok('...and a bar\'s printed working is the bar: barWorking(y) is the beam\'s y',
+      [0.4, 2.2, 5.9].every((t) => Math.abs(CO.barWorking(wv, t, 1, 1).y - CO.beams(CO.LEVELS[1], t).find((q) => q.sec === 'stand' && q.n === 1).y0) < 1e-9));
+    ok('...and every wave swings across all three answers: under, wait, jump',
+      CO.SECTIONS.filter((s) => s.wave).every((s) => s.wave.C + s.wave.A >= CO.UNDER && s.wave.C - s.wave.A <= CO.JUMPABLE));
+
+    /* The hit test is the laser's own, and the thresholds mean what they say. */
     const src = readFileSync(new URL('../src/entities/player.js', import.meta.url), 'utf8');
     const jv = Number(/const JUMP_V = ([\d.]+)/.exec(src)?.[1]);
     const gr = Number(/const GRAVITY = ([\d.]+)/.exec(src)?.[1]);
+    const walk = Number(/const WALK_SPEED = ([\d.]+)/.exec(src)?.[1]);
+    const sprint = Number(/const SPRINT_SPEED = ([\d.]+)/.exec(src)?.[1]);
     const apex = jv ** 2 / (2 * gr);
-    put(her, { x: q.x, z: q.z, y: I.y + apex });
-    at(SN.JUMPABLE);
-    const jump = B.distTo(her) >= B.thick + 0.45;
-    ok('正弦 a bar at UNDER is walked under, one at JUMPABLE is jumped at the top of a hop, one at the middle hits',
-      under && jump && mid, `${under} ${jump} ${mid} apex ${apex.toFixed(2)}`);
-    ok('...and every level swings across all three, so all three answers come up',
-      SN.LEVELS.every((Lv) => Lv.C + Lv.A >= SN.UNDER && Lv.C - Lv.A <= SN.JUMPABLE));
-    d.dispose(); D.drills[0] = null;
-    // The walls: a kitten (radius 0.75) cannot pass between two posts.
-    const posts = SN.laneWallPosts(I);
-    let gapMax = 0;
-    for (let i = 1; i < posts.length; i++) {
-      if (posts[i].b !== posts[i - 1].b) continue;
-      gapMax = Math.max(gapMax, Math.hypot(posts[i].x - posts[i - 1].x, posts[i].z - posts[i - 1].z) - 2 * posts[i].r);
-    }
-    ok('正弦 the lane walls have no gap a kitten fits through', gapMax < 1.2, gapMax.toFixed(2));
-    ok('...and run the length of every bar, so no bar can be walked round', SN.GATES.every((a) => a > SN.LANE.from && a < SN.LANE.to));
-  }
+    const bar = (y) => [{ sec: 'x', a0: -15, b0: 0, y0: y, a1: -9, b1: 0, y1: y, thick: CO.BAR_THICK }];
+    ok('正弦 a bar at UNDER is walked under, one at JUMPABLE is cleared at the top of a hop, one at 2.0 hits',
+      !CO.hitAt(CO.LEVELS[0], -12, 0, 0, 0, { list: bar(CO.UNDER) })
+      && !CO.hitAt(CO.LEVELS[0], -12, 0, apex, 0, { list: bar(CO.JUMPABLE) })
+      && !!CO.hitAt(CO.LEVELS[0], -12, 0, 0, 0, { list: bar(2.0) }), `apex ${apex.toFixed(2)}`);
+    const zl = CO.SECTION.stones;
+    ok('...and the red floor zaps a kitten standing on it, and not one standing on a stone',
+      CO.hitAt(CO.LEVELS[0], CO.LANES[1], 12.8, 0, 0, { list: [] }) === 'stones'
+      && !CO.hitAt(CO.LEVELS[0], CO.LANES[1], zl.stones[0], CO.stoneHeight(zl, 0, 0), 0, { list: [] }));
+    const cpClear = CO.SECTIONS.every((sec) => [0, 0.7, 1.9, 3.3, 5.1, 7.7].every((t) =>
+      CO.LEVELS.every((L) => !CO.hitAt(L, CO.LANES[sec.lane], sec.cp, 0, t))));
+    ok('...and no checkpoint is ever inside a hazard, so a zap never lands her in another one', cpClear);
 
-  /* --- 正弦 the stars are measured: a patient walker who never jumps --- */
-  {
-    const v = 7; const dt = 1 / 60; const ds = v * dt;
-    const A0 = -16; const A1 = SN.LANE.to + 0.6;
-    const N = Math.ceil((A1 - A0) / ds) + 1;
-    const BODY = 0.85 * 2.6; const REACH = 0.3 + 0.45;
-    const hit = (Lv, t, a) => SN.GATES.some((gt, n) => {
-      const y = SN.barHeight(Lv, t, n);
-      const dy = y > BODY ? y - BODY : (y < 0.2 ? 0.2 - y : 0);
-      return Math.hypot(a - gt, dy) < REACH;
-    });
-    const out = [];
-    SN.LEVELS.forEach((Lv, li) => {
-      let reach = new Uint8Array(N); reach[0] = 1; let T = null;
-      for (let k = 1; k < 90 / dt && T == null; k++) {
-        const t = k * dt; const nx = new Uint8Array(N);
-        for (let i = 0; i < N; i++) if (reach[i]) for (const j of [i - 1, i, i + 1]) if (j >= 0 && j < N) nx[j] = 1;
-        for (let i = 0; i < N; i++) if (nx[i] && hit(Lv, t, A0 + i * ds)) nx[i] = 0;
-        reach = nx;
-        if (reach[N - 1]) T = t;
-      }
-      out.push({ li, T, b3: SN.SINE_BANDS[li][2] });
-    });
-    ok('正弦 every level can be walked untouched without ever jumping', out.every((o) => o.T != null),
-      out.map((o) => `L${o.li + 1} ${o.T?.toFixed(1)}s`).join(' '));
-    ok('...and three stars sits 1.15-1.5x above that walker, so it takes the wave AND a jump',
-      out.every((o) => o.T && o.b3 >= o.T * 1.15 && o.b3 <= o.T * 1.5),
-      out.map((o) => `L${o.li + 1} ${o.b3}/${o.T?.toFixed(1)}`).join(' '));
-    ok('...and the travelling crest of L2 is faster to ride than L1\'s standing wave is to wait out', out[1].T < out[0].T,
-      `${out[1].T?.toFixed(1)} vs ${out[0].T?.toFixed(1)}`);
+    /* THE STARS ARE MEASURED: the search, re-run, and the bands held to it. */
+    const runs = CO.LEVELS.map((L) => ({
+      walk: CO.fastestRun(L, { v: walk, jumpV: jv, gravity: gr }),
+      sprint: CO.fastestRun(L, { v: sprint, jumpV: jv, gravity: gr }),
+      noHop: CO.fastestRun(L, { v: walk, jumpV: 0.001, gravity: gr, tMax: 40 }),
+    }));
+    ok('正弦 every level can be run clean by a kitten who walks and hops', runs.every((r) => r.walk != null),
+      runs.map((r, i) => `L${i + 1} walk ${r.walk}s sprint ${r.sprint}s`).join(' | '));
+    ok('...and NOBODY gets through without hopping: the stones ask for a different move', runs.every((r) => r.noHop == null));
+    ok('...and three stars is 1.4-1.6x that walker, two at 2.5x or more, one is just finishing',
+      runs.every((r, i) => r.walk && CO.COURSE_BANDS[i][2] >= r.walk * 1.4 && CO.COURSE_BANDS[i][2] <= r.walk * 1.6
+        && CO.COURSE_BANDS[i][1] >= r.walk * 2.5 && CO.COURSE_BANDS[i][0] === CO.COURSE_TIME),
+      runs.map((r, i) => `L${i + 1} ${CO.COURSE_BANDS[i].join('/')} vs ${r.walk}`).join(' | '));
+    ok('...and sprinting beats walking on every level, so the button is worth knowing', runs.every((r) => r.sprint < r.walk));
+
+    /* THE SESSION. Two kittens: she runs, her sister waits in the stands. */
+    her.name = her.name ?? 'HER'; sis.name = sis.name ?? 'SIS';
+    const clanA = { id: 'emberclaw', name: 'Emberclaw', color: 0xff5500, buff: {} };
+    const { ORB_IDS: OI } = await import('../src/entities/powerorb.js');
+    D.st[0].holoWorn = [OI[0], OI[1]]; D.st[0].holoCopies = [OI[0], OI[1]];
+    D.st[1].holoWorn = [OI[2]]; D.st[1].holoCopies = [OI[2]];
+    her.clan = clanA;
+    D._applyKit(her, true); D._applyKit(sis, true);
+    const kioskQ = { x: G.kiosk.x, z: G.kiosk.z, y: I.y };
+    put(her, kioskQ);
+    fakeGame.toasts.length = 0;
+    D.stationAt(her)?.interact(her);
+    const d0 = D.drills[0];
+    ok('正弦 the kiosk opens a session and puts her on the start, at her level', !!G.session && G.session.runner === 0
+      && d0?.spec.id === 'sine.L1' && Math.abs(lc(her.position.x - SW.SIM.dx, her.position.z - SW.SIM.dz).b - CO.START.b) < 0.01);
+    ok('...with her kit on the rack: no holo orbs worn, no holo clan, and the toast says so',
+      her.clan === null && (her.wornOrbs?.length ?? 0) === 0 && D.st[0].holoWorn.join() === `${OI[0]},${OI[1]}`
+      && fakeGame.toasts.some((t) => /rack/.test(t)), fakeGame.toasts.join(' | '));
+    put(sis, kioskQ);
+    D.stationAt(sis)?.interact(sis);
+    const sq = lc(sis.position.x - SW.SIM.dx, sis.position.z - SW.SIM.dz);
+    ok('...and her sister joins the queue and is put in the stands, kit racked too',
+      G.session.queue.join() === '1' && G.inStands(sis) && Math.hypot(sq.a - PLZ().a, sq.b - PLZ().b) < CO.LANE_HALF
+      && Math.abs(sis.position.y - (I.y + SN.PLAZA.stands.lift)) < 0.2 && D.st[1].benched);
+    ok('...and the two of them share ONE pane: neither is solo, both are anchored on the runner',
+      !D.wantsSolo(her) && !D.wantsSolo(sis) && G.paneAnchor(sis).distanceTo(G.paneAnchor(her)) < 1e-9
+      && !!G.groupShot([0, 1]) && G.groupShot([0]) && G.paneAnchor({ index: 3 }) == null);
+    const f0 = G.cameraFocus(her); const fc = f0.centre.clone();
+    const f1 = G.cameraFocus(sis);
+    ok('...and her sister\'s camera is the runner\'s: same centre, side-on, aimed',
+      f1.aim === true && f1.centre.distanceTo(fc) < 1e-9 && Math.abs(Math.sin(f1.yaw) - I.fwd.x) < 1e-6 && Math.abs(Math.cos(f1.yaw) - I.fwd.z) < 1e-6);
+    // Before GO she cannot cross the line.
+    const over = isleSpot(I, CO.LANES[0], 0);
+    put(her, { x: over.x, z: over.z, y: I.y });
+    G.update(1 / 60);
+    ok('...and she is held behind the start line until GO', lc(her.position.x - SW.SIM.dx, her.position.z - SW.SIM.dz).b <= CO.START_LINE - 0.39);
+    // Cheering.
+    const before = fakeGame.sounds.length;
+    G.cheerPad(sis, { pressed: (a) => a === 'attack' });
+    G.cheerPad(sis, { pressed: (a) => a === 'attack' });
+    ok('応援 ATTACK in the stands cheers — once per half second, however hard she mashes', fakeGame.sounds.length === before + 1);
+    // GO, then a zap: back to the checkpoint, clock running.
+    for (let k = 0; k < 200 && d0.state === 'ready'; k++) d0.update(1 / 60);
+    ok('正弦 GO after the count-in', d0.state === 'live', d0.state);
+    const sb = CO.SECTION.stand;
+    const zq = isleSpot(I, CO.LANES[0], sb.bars[0]);
+    let found = null;
+    for (let t = d0.t; t < d0.t + 6 && !found; t += 0.05) {
+      if (CO.hitAt(CO.LEVELS[0], CO.LANES[0], sb.bars[0], 0, t)) found = t;
+    }
+    d0.t = found ?? d0.t;
+    put(her, { x: zq.x, z: zq.z, y: I.y });
+    G.run.sMax = CO.pathS(CO.LANES[0], sb.bars[0] - 0.5);
+    /* Against what they WERE, not against 100: the SIM bar's ceiling is her
+       kit's hp, and her kit is on the rack, so 100 was never the number. */
+    const simWas = D.st[0].simHp, hpWas = her.hp;
+    G._tick(d0, 1 / 60);
+    const back = lc(her.position.x - SW.SIM.dx, her.position.z - SW.SIM.dz);
+    ok('...and a bar that would hit her is a ZAP: back to the checkpoint, the run still live',
+      found != null && G.run.zaps === 1 && Math.abs(back.b - sb.cp) < 0.01 && d0.state === 'live', `${G.run.zaps} ${back.b.toFixed(2)}`);
+    ok('...and a zap touches neither her SIM bar nor her health', D.st[0].simHp === simWas && her.hp === hpWas,
+      `sim ${simWas} -> ${D.st[0].simHp}, hp ${hpWas} -> ${her.hp}`);
+    // One press of INTERACT does not stop her; holding it does.
+    G.watchPad(d0, { down: (a) => a === 'interact' });
+    G._tick(d0, 0.1);
+    ok('正弦 one press of INTERACT does not stop a run', d0.state === 'live');
+    for (let k = 0; k < 20; k++) { G.run.safeT = 0; G.watchPad(d0, { down: (a) => a === 'interact' }); put(her, isleSpot(I, CO.START.a, CO.START.b)); G._tick(d0, 0.1); }
+    ok('...but holding it for STOP_HOLD does, and says so', d0.state === 'failed' && /stopped/.test(d0.why ?? ''), d0.why);
+    // Her drill ends: she is written down, she goes to the stands, her sister runs.
+    for (let k = 0; k < 400 && D.drills[0] === d0; k++) { if (!d0.update(1 / 60)) { d0.dispose(); D.drills[0] = null; } }
+    G.update(1 / 60);
+    const d1 = D.drills[1];
+    ok('...and when her run is over her sister is next, at the same level, and she watches from the stands',
+      G.session?.runner === 1 && d1?.spec.id === 'sine.L1' && G.inStands(her) && G.session.results.length === 1);
+    // Her sister finishes: a time.
+    for (let k = 0; k < 200 && d1.state === 'ready'; k++) d1.update(1 / 60);
+    const fin = isleSpot(I, CO.LANES[2], CO.FINISH_B + 0.5);
+    G.run.sMax = CO.FINISH_S;
+    put(sis, { x: fin.x, z: fin.z, y: I.y });
+    d1.t = 18;
+    G.run.safeT = 1;
+    G._tick(d1, 1 / 60);
+    ok('正弦 the gold line wins it, scored by time, with the measured bands', d1.state === 'won' && d1.stars_ === 3, `${d1.state} ${d1.stars_}`);
+    for (let k = 0; k < 400 && D.drills[1] === d1; k++) { if (!d1.update(1 / 60)) { d1.dispose(); D.drills[1] = null; } }
+    fakeGame.toasts.length = 0;
+    G.update(1 / 60);
+    const ranked = SN.rank(G.last?.results ?? []);
+    ok('...and with nobody left the session closes: the board ranks a finisher above a stopped run',
+      !G.session && ranked[0]?.i === 1 && ranked[0].time === 18 && ranked[1]?.time === null);
+    ok('...and both are let out of the stands with their kits back exactly as they were, pointed at the holo profile',
+      !G.inStands(her) && !D.st[0].benched && !D.st[1].benched && her.clan === clanA
+      && D.st[0].holoWorn.join() === `${OI[0]},${OI[1]}` && D.st[1].holoWorn.join() === OI[2]
+      && (her.wornOrbs?.length ?? 0) === 2 && fakeGame.toasts.some((t) => /\(HOLO\) PLAYER PROFILE/.test(t)), fakeGame.toasts.join(' | '));
+    const hq = lc(her.position.x - SW.SIM.dx, her.position.z - SW.SIM.dz);
+    ok('...onto the plaza, outside the course walls', hq.a < -17 && Math.hypot(hq.a, hq.b) < I.r, `${hq.a.toFixed(1)},${hq.b.toFixed(1)}`);
+    // Leaving the stands gives up the place; leaving the sim takes her out of it.
+    put(her, kioskQ); D.stationAt(her)?.interact(her);
+    put(sis, kioskQ); D.stationAt(sis)?.interact(sis);
+    const ex = G.exitKiosk;
+    put(sis, { x: ex.x, z: ex.z, y: ex.y });
+    D.stationAt(sis)?.interact(sis);
+    ok('出口 the stands\' exit pad lets her out, gives up her place and gives her kit back',
+      !G.inSession(sis) && G.session?.queue.length === 0 && !D.st[1].benched);
+    G.forget(her);
+    D.drills[0]?.dispose(); D.drills[0] = null;
+    ok('...and a runner who leaves the simulator ends the session cleanly, kit back on', !G.session && !D.st[0].benched && her.clan === clanA);
+    // A scene pulls everybody out: no session survives it.
+    put(her, kioskQ); D.stationAt(her)?.interact(her);
+    G.reset();
+    D.drills[0]?.dispose(); D.drills[0] = null;
+    ok('...and a reset (a scene, the tournament) drops the session and unracks everybody', !G.session && !D.st[0].benched);
+    her.clan = null;
+
+    /* THE HOOKS, so the pieces above are actually called. */
+    const MS2 = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    const DS2 = readFileSync(new URL('../src/systems/dreamdojo.js', import.meta.url), 'utf8');
+    ok('正弦 main.js frames a session member with the course\'s focus, anchors her on the runner, and the shared rig takes its shot',
+      /this\.dream\?\.sine\?\.cameraFocus\?\.\(p\)/.test(MS2)
+      && /pts: this\.players\.map\(\(p\) => this\.dream\?\.sine\?\.paneAnchor\?\.\(p\) \?\? p\.position\)/.test(MS2)
+      && /const course = this\.dream\?\.sine\?\.groupShot\?\.\(members\)/.test(MS2)
+      && /if \(rig\.courseT > 0 && rig\.courseShot\) \{/.test(MS2));
+    ok('...and the Dream Dojo racks the kit in _applyKit, forgets her on the way out before the kit comes apart, and drops the session on exitAll',
+      /const ids = s\?\.benched \? \[\] :/.test(DS2)
+      && /_leaveSim\(p, keepSuit = false\) \{[\s\S]{0,300}this\.sine\?\.forget\(p\);\s*this\._hushHolo\(p\);/.test(DS2)
+      && /exitAll\(\) \{\s*this\.sine\?\.reset\(\);/.test(DS2)
+      && /this\.sine\?\.cheerPad\?\./.test(DS2));
+    ok('...and nothing in the course calls hurt()', !/hurt\(/.test(readFileSync(new URL('../src/systems/dream/sine.js', import.meta.url), 'utf8'))
+      && !/hurt\(/.test(readFileSync(new URL('../src/systems/dream/course.js', import.meta.url), 'utf8')));
+    function PLZ() { return SN.PLAZA.stands; }
   }
 
   /* --- 番兵 sentries: bars only where Richard's rule says, a tell, a shield --- */
@@ -36850,7 +37349,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       for (const k of KEYS) {
         if (k === 'school' || k === 'shadow') continue;
         const O = D.isles[k];
-        const g = Math.hypot(q.x - O.x, q.z - O.z) - O.r - 3.2;
+        const g = Math.hypot(q.x - O.x, q.z - O.z) - O.r - HW.HIGHWAY.halfW;
         if (g < worst) { worst = g; where = k; }
       }
     }
@@ -37132,27 +37631,101 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     held[0] = true;
     for (let t = 0; t < CR.EAT_TIME - 0.2; t += 1 / 60) d.update(1 / 60);
     const midway = rat.live && rat.chew > 0;
+    /* SHE EATS THE WAY SHE EATS IN THE RING. Richard: "Player should play the
+       eating animation while eating. When animal is being eaten, they should
+       act shocked". `eatT` is what puts her in the eating pose (player.js),
+       the critter's `shock` drawing is the ring's own, and the dead pad is
+       `Menagerie.eating`'s. */
+    const deadPad = { dead: true };
+    const rooted = D.padFor(0, { live: true }, deadPad) === deadPad;
+    const posed = her.eatT > 0 && rat.state === 'pinned' && rat.critter.sprite === rat.critter.poses[1];
     held[0] = false;
     d.update(1 / 60);
-    const reset = rat.chew === 0;
-    held[0] = true;
-    let eatenAt = null;
-    for (let t = 0; t < CR.EAT_TIME + 0.2 && rat.live; t += 1 / 60) { d.update(1 / 60); if (!rat.live) eatenAt = t; }
-    held[0] = false;
-    ok('食 hold for the ring\'s two seconds and it is eaten; let go part-way and the swallow starts over',
-      midway && reset && eatenAt != null && Math.abs(eatenAt - CR.EAT_TIME) < 0.05, `${midway} ${reset} ${eatenAt?.toFixed(2)}`);
+    /* LET GO AND IT GETS AWAY — the ring's rule (`Menagerie._drop`), not the
+       pen's old one, which left it lying there stunned to be picked up again. */
+    const reset = rat.chew === 0 && rat.state === 'run' && her.eatT === 0 && D.padFor(0, { live: true }, deadPad) !== deadPad;
+    ok('食 while she eats she is rooted and in her eating pose, and the animal is in its startled drawing; let go and it bolts',
+      midway && rooted && posed && reset, `${midway} ${rooted} ${posed} ${reset} ${rat.state}`);
+    const meal = (c) => {
+      put(her, d.spot(0, 0));
+      her.onGround = true;
+      c.group.position.set(her.position.x - SW.SIM.dx + 1, IS.y, her.position.z - SW.SIM.dz);
+      c.stun();
+      held[0] = true;
+      let at = null;
+      for (let t = 0; t < CR.EAT_TIME + 0.3 && c.live; t += 1 / 60) { d.update(1 / 60); if (!c.live) at = t; }
+      held[0] = false;
+      return at;
+    };
+    const eatenAt = meal(rat);
+    ok('食 hold for the ring\'s two seconds and it is eaten', eatenAt != null && Math.abs(eatenAt - CR.EAT_TIME) < 0.05, String(eatenAt?.toFixed(2)));
     ok('...and it heals exactly what a rat heals in the ring', Math.abs(D.st[0].simHp - (hp0 + CR.CRITTER_BY_ID.rat.heal)) < 1e-9
       && d.count === 1, `${hp0} -> ${D.st[0].simHp}`);
-    // A critter never leaves the pen, however it is chased.
-    let out = 0;
+    /* THE RING'S ANIMALS, SLOWER, AND JUST AS HIGH. Richard: "move around
+       similarly as they do in the arena, but maybe at a slower movement rate,
+       but the flying and jumping height should be the same." */
+    const HOP_G = Number(/const HOP_G = ([\d.]+);/.exec(read('../src/entities/critter.js'))?.[1]);
+    const chase = (c, secs) => {
+      const hold = { position: new THREE.Vector3(), camYaw: 0, height: 2.9, facing: 0, eatT: 0, index: 0 };
+      let top = 0; let out = 0; let ys = [];
+      for (let f = 0; f < secs * 60; f++) {
+        const g = c.group.position;
+        hold.position.set(g.x + Math.sin(f / 40) * 2, IS.y, g.z + Math.cos(f / 40) * 2);
+        c.steer(1 / 60, hold);
+        top = Math.max(top, g.y - IS.y);
+        if (f > 120) ys.push(g.y - IS.y);
+        if (Math.hypot(g.x - S.pen.x, g.z - S.pen.z) > SC.PEN_R) out++;
+      }
+      return { top, out, mean: ys.reduce((a, y) => a + y, 0) / Math.max(1, ys.length) };
+    };
     const bun = d.critters.find((c) => c.kind.id === 'rabbit');
-    for (let f = 0; f < 600; f++) {
-      put(her, { x: bun.group.position.x + Math.sin(f) * 2, z: bun.group.position.z + Math.cos(f) * 2, y: IS.y });
-      bun.steer(1 / 60, her);
-      if (Math.hypot(bun.group.position.x - S.pen.x, bun.group.position.z - S.pen.z) > SC.PEN_R) out++;
-    }
-    ok('...and a chased critter never leaves the pen', out === 0, String(out));
-    end(d);
+    const RB = CR.CRITTER_BY_ID.rabbit;
+    const hop = chase(bun, 30);
+    const hopTop = (RB.hopV * RB.hopV) / (2 * HOP_G);
+    ok('食 a holo-rabbit is the ring\'s rabbit, slowed: its speed is PEN_SLOW of the ring\'s and its hop reaches the ring\'s height',
+      bun.critter.spec.speed === RB.speed * SC.PEN_SLOW && bun.critter.spec.hopV === RB.hopV && SC.PEN_SLOW < 1
+      && hop.top > hopTop * 0.93 && hop.top < hopTop * 1.02, `top ${hop.top.toFixed(2)} vs ${hopTop.toFixed(2)}`);
+    ok('...and a chased one never leaves the pen', hop.out === 0, String(hop.out));
+    /* THREE ROUNDS. "1. Is just ground and jumping animals, 2. Jumping and
+       flying animals, 3. Flying and grasshopper." */
+    ok('食 three rounds: a runner and a hopper, a hopper and a flier, a flier and the mantis',
+      SC.FEAST_ROUNDS.map((r) => r.kinds.map((k) => CR.CRITTER_BY_ID[k].kind).join('+')).join(' / ') === 'ground+hopper / hopper+flier / flier+hopper'
+      && SC.FEAST_ROUNDS[2].kinds.includes('mantis') && CR.CRITTER_BY_ID.mantis.canFly && d.spec.goal === 6,
+      SC.FEAST_ROUNDS.map((r) => r.kinds.join('+')).join(' / '));
+    meal(bun);
+    const r2 = d.critters.filter((c) => c.live).map((c) => c.kind.id).sort().join();
+    ok('...and the next round comes in only when the last one is eaten', d.round === 1 && r2 === 'bird,rabbit' && d.count === 2, `${d.round} ${r2}`);
+    const bird = d.critters.find((c) => c.live && c.kind.id === 'bird');
+    const fly = chase(bird, 6);
+    ok('食 the holo-bird FLIES at the ring\'s cruising height — out of a standing kitten\'s reach, as in the ring',
+      Math.abs(fly.mean - CR.CRITTER_BY_ID.bird.cruise) < 0.6 && fly.mean > SC.PEN_REACH.up && bird.airborne,
+      `${fly.mean.toFixed(2)} vs ${CR.CRITTER_BY_ID.bird.cruise}`);
+    // Struck out of the air: in her mouth, and a stand-still swallow — the ring's rule.
+    put(her, d.spot(0, 0));
+    her.onGround = true;
+    bird.hit(blow);
+    const mouthed = bird.state === 'mouthed' && d.held === bird;
+    const free = D.padFor(0, { live: true }, deadPad) !== deadPad;
+    held[0] = true;
+    let swallowed = null;
+    for (let t = 0; t < CR.EAT_TIME + 0.3 && bird.live; t += 1 / 60) { d.update(1 / 60); if (!bird.live) swallowed = t; }
+    held[0] = false;
+    ok('食 a bird struck in the air goes in her mouth, she may carry it, and standing still holding ATTACK swallows it',
+      mouthed && free && swallowed != null && Math.abs(swallowed - CR.EAT_TIME) < 0.05, `${mouthed} ${free} ${swallowed}`);
+    // ...and five seconds of doing nothing with it, it is gone.
+    const bun2 = d.critters.find((c) => c.live && c.kind.id === 'rabbit');
+    meal(bun2);
+    const r3 = d.critters.filter((c) => c.live).map((c) => c.kind.id).sort().join();
+    const b3 = d.critters.find((c) => c.live && c.kind.id === 'bird');
+    b3.hit(blow);
+    fakeGame.toasts.length = 0;
+    for (let t = 0; t < CR.MOUTH_TIME + 0.2; t += 1 / 60) d.update(1 / 60);
+    ok('...round three is the bird and the mantis, and a bird she only carries wriggles free after the ring\'s five seconds',
+      r3 === 'bird,mantis' && b3.live && b3.state !== 'mouthed' && !d.held && her.eatT === 0, `${r3} ${b3.state}`);
+    for (const c of d.critters.filter((q) => q.live)) meal(c);
+    d.update(1 / 60);
+    ok('...and the sixth is the last: the feast is won', d.count === 6 && d.state === 'won', `${d.count} ${d.state}`);
+    ok('...and leaving lets go of her eating pose', (end(d), her.eatT === 0));
   }
 
   /* --- 剣士 ranks, the card, and the training of the day --- */
@@ -37177,8 +37750,21 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     P.setFlag('Tester', 'shadow');
     const d = RK.rankOf(P, 'Tester');
     ok('剣士 23★ is 3rd Class, 24★ is 2nd; 70★ is still 2nd until the Shadow falls, then 1st',
-      a === 'k3' && b === 'k2' && c.rank.id === 'k2' && c.toNext === 'beat Shadow Lionheart' && d.rank.id === 'k1' && !d.next,
+      a === 'k3' && b === 'k2' && c.rank.id === 'k2' && c.toNext === 'beat Shadow Lionheart on MEDIUM' && d.rank.id === 'k1' && !d.next,
       `${a} ${b} ${c.rank.id} "${c.toNext}" ${d.rank.id}`);
+    /* THE WORDS SAY WHICH FIGHT PAYS. Since the three levels EASY pays stars
+       and nothing else (`shadowPrize`), and the quest still read "Beat Shadow
+       Lionheart" - so a kitten who beat EASY was told, on the Help card and
+       her checklist, that she had done a quest she had not. Asked of the pay
+       table itself, so a change to who pays changes what must be said. */
+    {
+      const how = FT.FEAT_BY_ID.shadow.how;
+      const rankLevel = SH.SHADOW_LEVELS.find((L, k) => SH.shadowPrize(k).rank);
+      ok('獅 the quest names every Shadow level that pays it, and none that does not',
+        SH.SHADOW_LEVELS.every((L, k) => how.includes(L.name) === SH.shadowPrize(k).quest), how);
+      ok('...and 1st Class names the easiest level whose win carries the flag',
+        !!rankLevel && c.toNext.endsWith(`on ${rankLevel.name}`), `${c.toNext} | ${rankLevel?.name}`);
+    }
     P.award('Tester', 'gallery.tri', 3); P.award('Tester', 'gallery.swift', 2);
     ok('剣士 her signature move is the Gallery drill she has the most stars in', RK.signatureOf(P, 'Tester').id === 'tri'
       && RK.signatureOf(P, 'Nobody').text === '刀 Katana', RK.signatureOf(P, 'Tester').text);
@@ -37224,6 +37810,694 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     ok('...and a drill cleared through the Dream Dojo pays today\'s box and says so',
       D.progress.stars(nameOf(her), `daily.${pk.day}`) === 1 && fakeGame.toasts.some((t) => /TODAY'S TRAINING/.test(t)),
       fakeGame.toasts.join(' | '));
+  }
+
+  /* --- the trial hall: nothing before GO, a gentle flicker, the Icewhisker race --- */
+  {
+    const HAL2 = await import('../src/systems/dream/hall.js');
+    const HO = await import('../src/systems/dream/holo.js');
+    const CP = await import('../src/entities/clanpower.js');
+    const H = new HAL2.TrialHall(D, D.isles.hall);
+    const shrine = (id) => H.shrines.find((s) => s.clan.id === id);
+    const cut = { kind: 'stand', dir: { x: 0, z: 1 }, dmg: 10, attacker: her };
+    const IHall = D.isles.hall;
+
+    /* PANDAPAW. Richard: "sometimes you cut all the bamboo, but it shows there
+       is still 1 or more left ... the player can hit the bamboo before the
+       trial has started". A cane cut in the count-in broke and was never
+       counted, so the goal could not be reached. */
+    put(her, IHall);
+    D.t += 10;
+    fakeGame.toasts.length = 0;
+    H.start(her, shrine('panda'));
+    let d = D.drills[0];
+    const canes = d.targets.slice();
+    const early = canes.map((c) => c.hit(cut));
+    ok('熊 a cane struck before GO does not break, and she is told to wait',
+      d.state === 'ready' && early.every((x) => x === false) && canes.every((c) => c.live)
+      && fakeGame.toasts.some((t) => /wait for GO/.test(t)), `${d.state} ${early} ${fakeGame.toasts.join(' | ')}`);
+    d.update(1.3);
+    for (const c of canes) c.hit(cut);
+    ok('...and once it is live, every cane she cuts is one off the count',
+      d.state === 'live' && d.cut === canes.length && canes.length <= 10, `${d.state} ${d.cut}/${canes.length}`);
+    d.dispose(); D.drills[0] = null;
+
+    /* 熊 THE PANDA'S WHOLE LIFE IN THE RING. Richard: "first you cut down some
+       bamboo, no more than 10, then you get baby panda ... combat with
+       multiple opponents, and start with below 35% health ... the panda heals
+       them back up ... a bigger panda is spawned ... twice as many opponents
+       ... have 3 or 4 enemies spawn, hit the panda until it turns into a baby
+       panda ... once they are about to leave the island and enter the bridge,
+       the panda poofs away". Walked end to end, with the REAL Panda. */
+    {
+      const PT = await import('../src/systems/dream/pandatrial.js');
+      const PDA = await import('../src/entities/panda.js');
+      const T = PT.PANDA_TRIAL;
+      const deadPad = { dead: true };
+      const rooted = () => D.padFor(0, { live: true }, deadPad) === deadPad;
+      const frac = () => D.simFrac(her);
+      const step = (dd, secs) => { for (let f = 0; f < Math.round(secs * 60) && dd.state === 'live'; f++) dd.update(1 / 60); };
+      const until = (dd, stage, cap = 30) => { for (let f = 0; f < cap * 60 && dd.state === 'live' && dd.stage !== stage; f++) dd.update(1 / 60); return dd.stage === stage; };
+      const fell = (dd) => { for (const f of dd.foes) while (f.live) f.hit(cut); };
+      put(her, IHall);
+      D.t += 10;
+      fakeGame.toasts.length = 0;
+      H.start(her, shrine('panda'));
+      d = D.drills[0];
+      d.update(1.3);
+      const g1 = d.grove.length;
+      for (const c of d.grove) c.hit(cut);
+      d.update(1 / 60);
+      const pa = d.panda;
+      ok('熊 the first grove is at most ten canes, and cutting it brings a baby panda — the REAL Panda, a cub',
+        g1 <= 10 && d.stage === 'cub' && pa instanceof PDA.Panda && pa.tier === 0 && !pa.fighter, `${g1} canes, ${d.stage}`);
+      until(d, 'fight1', T.cubT + 1);
+      ok('...then, after a moment, a fight: more than one holo-kitten, and her SIM bar starts under the cub\'s own line',
+        d.stage === 'fight1' && d.foes.length === T.foes[0] && d.foes.length > 1
+        && Math.abs(frac() - PT.startFrac()) < 0.01 && PT.startFrac() < PDA.PANDA.lickBelow, `${d.stage} ${d.foes.length} at ${frac().toFixed(2)}`);
+      fell(d);
+      d.update(1 / 60);
+      ok('...and when they are down she is ROOTED while the cub comes to lick her', d.stage === 'heal1' && rooted(), d.stage);
+      let licked = false;
+      const h0 = d.t;
+      for (let f = 0; f < 60 * 20 && d.stage === 'heal1'; f++) { d.update(1 / 60); licked ||= pa.licking; }
+      const took = d.t - h0;
+      ok('...by the REAL lick — up to PANDA.lickBelow and no further, and sooner than the safety cap',
+        d.stage === 'read1' && licked && Math.abs(frac() - PDA.PANDA.lickBelow) < 0.01 && took < T.healCap - 0.5,
+        `${d.stage} ${frac().toFixed(3)} in ${took.toFixed(2)}s, licked ${licked}`);
+      ok('...then the card says what that was, and she has her legs back to read it',
+        d.note === PT.HEAL_TEXT && d.card.visible && !rooted() && fakeGame.toasts.some((t) => t.includes('power of a baby panda')));
+      /* THE SPEED-UP IS ONLY WHAT THE GAP NEEDS, AND ONLY THEN ADMITTED. 30% to
+         the tuned 35% at the real 1%/s is the real pace; 6% to 35% is not. */
+      ok('...healed at the REAL pace from Richard\'s 30%, and only a deep hole is sped up',
+        PT.healK(PDA.PANDA.lickBelow - PT.startFrac()) === 1 && PT.healK(PDA.PANDA.lickBelow - 0.06) > 4
+        && PT.healK(0.29) * PDA.PANDA.lickRate * T.healSecs >= 0.29 - 1e-9 && d.fast === false,
+        `x${PT.healK(PDA.PANDA.lickBelow - 0.06).toFixed(1)} from 6%`);
+      until(d, 'cut2', T.readT + 1);
+      const g2 = d.grove.length;
+      for (const c of d.grove) c.hit(cut);
+      d.update(1 / 60);
+      ok('...a second grove (at most ten), and the cub GROWS into a panda that fights',
+        g2 <= 10 && d.stage === 'meet' && pa.tier === 1 && pa.fighter && pa.maxHp > 0, `${g2} canes, ${d.stage}, tier ${pa.tier}`);
+      until(d, 'fight2', T.meetT + 1);
+      ok('...then twice as many opponents, and she starts hurt again',
+        d.stage === 'fight2' && d.foes.length === 2 * T.foes[0] && Math.abs(frac() - PT.startFrac()) < 0.01,
+        `${d.foes.length} at ${frac().toFixed(2)}`);
+      // The panda claws them: a holo-kitten hurt that she never touched.
+      put(her, { x: IHall.x, z: IHall.z, y: IHall.y });
+      pa.position.set(IHall.x + 2, IHall.y, IHall.z);
+      for (const f of d.foes) { f.group.position.set(IHall.x + 4, IHall.y, IHall.z + 1); f.state = 'rest'; f.restT = 99; }
+      step(d, T.clawEvery + 0.2);
+      ok('...the grown panda CLAWS them beside her (the real swipe)', d.foes.some((f) => f.hp < f.maxHits),
+        d.foes.map((f) => f.hp).join(','));
+      // Standing panda at the end of the fight: the lesson knocks it down.
+      pa.hp = pa.maxHp;
+      fell(d);
+      d.update(1 / 60);
+      const lf = d.foes;
+      const refused = lf.map((f) => f.hit(cut));
+      ok('...then she is rooted, and three or four come for the PANDA — not hers to fight',
+        d.stage === 'lesson' && rooted() && lf.length >= 3 && lf.length <= 4 && lf.every((f) => f.onlyPanda) && refused.every((x) => !x),
+        `${d.stage} ${lf.length}`);
+      until(d, 'lesson2', 20);
+      ok('...they hit it until it is a cub again, the real `collapse`, and poof',
+        d.stage === 'lesson2' && pa.tier === 0 && pa.knockedDown && lf.every((f) => !f.live), `${d.stage} tier ${pa.tier}`);
+      ok('...and the card says what that means out there, in Richard\'s words',
+        d.note === PT.LESSON_TEXT && /baby panda/.test(d.note) && /visit Pandapaw again/.test(d.note) && rooted());
+      until(d, '-', 30);
+      ok('...the cub licks her back up, and the trial is won', d.state === 'won' && frac() >= PDA.PANDA.lickBelow - 0.01,
+        `${d.state} ${frac().toFixed(3)}`);
+      while (d.update(1 / 60));
+      d.dispose(); D.drills[0] = null;
+      ok('...and the cub is HERS afterwards, a real Panda in the layer', D.simPandas[0]?.panda === pa && !!pa.group.parent);
+      PT.tickKeptPandas(D, 1 / 60);
+      ok('...while she stays on the island, sworn to Pandapaw', D.simPandas[0]?.panda === pa);
+      her.peekAt = { w: 1 };
+      PT.tickKeptPandas(D, 1 / 60);
+      ok('...and it poofs the moment she is about to take a bridge', !D.simPandas[0] && !pa.group.parent);
+      her.peekAt = null;
+
+      // A panda already knocked down in the fight: the same card, no lesson fight.
+      H.start(her, shrine('panda'));
+      d = D.drills[0];
+      d.update(1.3);
+      for (const c of d.grove) c.hit(cut);
+      d.update(1 / 60); until(d, 'fight1', 5); fell(d); until(d, 'read1', 20); until(d, 'cut2', 8);
+      for (const c of d.grove) c.hit(cut);
+      d.update(1 / 60); until(d, 'fight2', 8);
+      d.panda.collapse();
+      fell(d);
+      d.update(1 / 60);
+      ok('...and a panda already a cub when the fight ends gets the same card, with no fight over it',
+        d.stage === 'lesson2' && d.note === PT.LESSON_TEXT, d.stage);
+      // Walking off the floor ends it, and the cub goes with it.
+      const pb = d.panda;
+      put(her, { x: IHall.x + IHall.r + 6, z: IHall.z, y: IHall.y });
+      d.update(1 / 60);
+      while (d.update(1 / 60));
+      d.dispose(); D.drills[0] = null;
+      ok('...and a trial that does not end won takes its panda with it', d.state === 'failed' && !pb.group.parent && !D.simPandas[0]);
+      put(her, IHall);
+    }
+
+    /* 幻 HER HOLO KIT. Richard: "When a player enters the simulator, they
+       appear there with no kotodama orbs or Clan abilities ... When they
+       gather kotodama in the simulator, it will automatically equip them in
+       the first 8 slots ... if they get a duplicate, it will go to their
+       inventory ... a max of 4 of the same", and, asked which list wins on
+       the way in: "Copy every entry". */
+    {
+      const HK = await import('../src/systems/dream/holokit.js');
+      const PO = await import('../src/entities/powerorb.js');
+      const keep = { orbs: [...her.powerOrbs], bag: [...(her.orbBag ?? [])], clan: her.clan, oath: her.dreamOath, holo: her.holoOrbs };
+      const S0 = D.st[0];
+      const real = CLANS.find((c) => c.id === 'river');
+      const bagOf = () => HK.holoBag(her, S0);
+      const same = (a, b2) => JSON.stringify([...a].sort()) === JSON.stringify([...b2].sort());
+      const deadPad = { dead: true };
+      her.powerOrbs = ['swift', 'reach'];
+      her.orbBag = ['leap'];
+      her.clan = real; her.dreamOath = null; her.holoOrbs = [];
+      HK.enterHolo(D, her);
+      D._applyKit(her, true);
+      ok('幻 on the way in she wears a COPY of what she wears outside, and has no clan in here',
+        same(S0.holoWorn, ['swift', 'reach']) && her.clan === null && her.dreamOath?.was === real
+        && same(her.powerOrbs, ['swift', 'reach']) && same(her.orbBag, ['leap']),
+        `${S0.holoWorn} clan ${her.clan?.id}`);
+      HK.holoStow(D, her, 1);
+      ok('...taking one off in here changes what she can do in here, and nothing she owns',
+        same(S0.holoWorn, ['swift']) && same(bagOf(), ['reach']) && her.powerOrbs.includes('reach')
+        && JSON.stringify(her.power) === JSON.stringify(PO.aggregate(['swift'])), `${S0.holoWorn} / ${bagOf()}`);
+      const g1 = HK.grantHolo(D, her, 'leap');
+      const g2 = HK.grantHolo(D, her, 'leap');
+      ok('...an earned orb she is not wearing goes ON; a second of the same goes in the holo bag',
+        g1.ok && g1.worn && g2.ok && !g2.worn && S0.holoWorn.filter((x) => x === 'leap').length === 1
+        && bagOf().includes('leap'), `${S0.holoWorn} / ${bagOf()}`);
+      HK.grantHolo(D, her, 'leap'); HK.grantHolo(D, her, 'leap');
+      fakeGame.toasts.length = 0;
+      const g5 = HK.grantHolo(D, her, 'leap');
+      ok('...and the fifth of a kind is refused, in words — four is the most',
+        !g5.ok && /4/.test(g5.why) && her.holoOrbs.filter((x) => x === 'leap').length === PO.HOLO_MAX_EACH, g5.why);
+      // swift + leap + six more is eight: a full ring.
+      for (const id of ['vigor', 'ward', 'dive', 'tri', 'charge', 'aegis']) HK.grantHolo(D, her, id);
+      const g9 = HK.grantHolo(D, her, 'blink');
+      ok('...eight on her ring is the most: a new kind past that goes in the bag',
+        S0.holoWorn.length === PO.MAX_EQUIPPED && !g9.worn && bagOf().includes('blink'), `${S0.holoWorn.length} worn`);
+      const full = HK.holoWear(D, her, 0);
+      ok('...and wearing a ninth is refused in words', /Eight is the most/.test(full ?? ''), full);
+      // Shuffle a while: nothing is lost and nothing is made between the two rows.
+      for (let k = 0; k < 12; k++) { HK.holoStow(D, her, k % 5); HK.holoWear(D, her, (k * 3) % Math.max(1, bagOf().length)); }
+      ok('...wear and stow as she likes: worn + bag is always what was copied in plus what she earned',
+        same([...S0.holoWorn, ...bagOf()], [...S0.holoCopies, ...her.holoOrbs]),
+        `${S0.holoWorn.length} + ${bagOf().length} vs ${S0.holoCopies.length} + ${her.holoOrbs.length}`);
+
+      // The first Gallery win of a drill pays its orb; a second does not; nothing else does.
+      her.holoOrbs = [];
+      HK.enterHolo(D, her);
+      D.onDrillEnd({ spec: { id: 'gallery.dive' }, p: her }, 'won');
+      D.onDrillEnd({ spec: { id: 'gallery.dive' }, p: her }, 'won');
+      D.onDrillEnd({ spec: { id: 'gallery.far' }, p: her }, 'failed');
+      D.onDrillEnd({ spec: { id: 'hall.panda' }, p: her }, 'won');
+      ok('...winning a Gallery trial the first time earns its orb, and only the first time',
+        same(her.holoOrbs, ['dive']) && S0.holoWorn.includes('dive'), `${her.holoOrbs}`);
+
+      // The pedestal at three stars.
+      let started = 0;
+      D.closeChoice(her);
+      D.pedestal(her, 'blink', () => { started += 1; });
+      ok('...a pedestal under three stars is the trial, as it always was', started === 1 && !D.choices[0]);
+      D.progress.award(nameOf(her), 'gallery.leap', 3, 5);
+      her.holoOrbs = ['leap'];
+      D.pedestal(her, 'leap', () => { started += 1; });
+      const c = D.choices[0];
+      ok('...at three stars it ASKS: start, take another, never mind — opening on START, and she stands still',
+        !!c && c.rows.length === 3 && c.i === 0 && started === 1 && /TAKE ANOTHER .* 1 of 4/.test(c.rows[1].text)
+        && D.padFor(0, { mx: 0, my: 1 }, deadPad) === deadPad, c?.rows.map((r) => r.text).join(' | '));
+      c.update({ mx: 0, my: 1 });
+      const held = c.i;
+      c.update({ mx: 0, my: 0 }); c.update({ mx: 0, my: 1 });
+      ok('...a stick still pushed from walking on is not a choice; a fresh push is', held === 0 && c.i === 1, `${held} -> ${c.i}`);
+      {
+        // Beside her and at her height, in whichever camera is drawing it —
+        // over her head it was under the HUD's top band (dream/holokit.js).
+        // The follow camera as measured in the pane: ~33 back, 38 degrees.
+        const cam = new THREE.PerspectiveCamera(38, 16 / 9, 0.1, 500);
+        cam.position.copy(her.position).add(new THREE.Vector3(0, 12, 31));
+        cam.lookAt(her.position);
+        cam.updateMatrixWorld();
+        her.group.position.copy(her.position); // the frame loop's job; nothing here runs it
+        her.group.updateMatrixWorld(true);
+        c.faceCamera(cam);
+        c.panel.updateMatrixWorld(true);
+        const ndc = (x, y) => new THREE.Vector3(x, y, 0).applyMatrix4(c.panel.matrixWorld).project(cam);
+        const top = ndc(0, 1.7), left = ndc(-3.7, 0), feet = her.position.clone().project(cam);
+        ok('...and the card stands beside her, clear of her and of the HUD band over the top of the pane',
+          left.x > feet.x && top.y < 0.6, `left ${left.x.toFixed(2)} vs her ${feet.x.toFixed(2)}, top ${top.y.toFixed(2)}`);
+      }
+      D.interact(her);
+      ok('...INTERACT takes the row: another holo orb, and the question is gone',
+        !D.choices[0] && her.holoOrbs.filter((x) => x === 'leap').length === 2 && started === 1);
+      her.holoOrbs = ['leap', 'leap', 'leap', 'leap'];
+      fakeGame.toasts.length = 0;
+      D.pedestal(her, 'leap', () => { started += 1; });
+      const c2 = D.choices[0];
+      c2.update({ mx: 0, my: 0 }); c2.update({ mx: 0, my: 1 });
+      D.interact(her);
+      ok('...and at four the row says so, and pressing it is refused in words',
+        /ALL 4 TAKEN/.test(c2.rows[1].text) && her.holoOrbs.length === 4 && fakeGame.toasts.some((t) => /most the simulator gives/.test(t)),
+        fakeGame.toasts.join(' | '));
+      D.pedestal(her, 'leap', () => { started += 1; });
+      D.interact(her);
+      ok('...and START THE TRIAL starts it', started === 2 && !D.choices[0]);
+
+      // Leaving puts everything back; the earned orbs stay hers.
+      D.swearFor(her, CLANS.find((cl) => cl.id === 'panda'));
+      D._leaveSim(her);
+      ok('...on the way out her real clan and her real ring come back, and what she EARNED stays',
+        her.clan === real && !her.dreamOath && S0.holoWorn === null && same(her.powerOrbs, ['swift', 'reach'])
+        && JSON.stringify(her.power) === JSON.stringify(PO.aggregate(['swift', 'reach'])) && her.holoOrbs.length === 4,
+        `${her.clan?.id} ${S0.holoWorn}`);
+      ok('...and it is saved in her row, trimmed to four a kind when read back',
+        same(castRow(her).holo, her.holoOrbs)
+        && same(PO.cleanHoloOrbs(['leap', 'leap', 'leap', 'leap', 'leap', 'nope', 'ward']), ['leap', 'leap', 'leap', 'leap', 'ward'])
+        && /p\.holoOrbs = cleanHoloOrbs\(row\.holo\)/.test(read('../src/systems/savegame.js')));
+      const html = read('../index.html');
+      const mainSrc = read('../src/main.js');
+      ok('...the pause menu has a (HOLO) PLAYER PROFILE, shown only while somebody wears a holo kit',
+        /id="btn-holo-profile" class="menu-btn holo-btn hidden" data-action="holo-profile"/.test(html)
+        && /btn-holo-profile'\)\s*\?\.classList\.toggle\('hidden', !\(on && this\.dream\?\.built && this\.players\.some\(\(p\) => this\.dream\.st\[p\.index\]\?\.holoWorn\)\)\)/.test(mainSrc)
+        && /if \(a === 'holo-profile'\) this\.profile\.open\('holo'/.test(mainSrc));
+      ok('...and the clan badge says (Holo) in there',
+        /\$\{clan\.name\} \(Holo\)/.test(mainSrc) && /No clan \(Holo\)/.test(mainSrc));
+
+      her.powerOrbs = keep.orbs; her.orbBag = keep.bag; her.clan = keep.clan; her.dreamOath = keep.oath; her.holoOrbs = keep.holo ?? [];
+      S0.holoWorn = null; S0.holoCopies = null;
+      D._applyKit(her, true);
+    }
+
+    /* 獅 LIONHEART, THE QUEST-GIVER. Richard: "Lionheart should act as a
+       Quest giver like how Payne is a quest giver, to keep track of where the
+       player has visited and what they have achieved, so that the player
+       knows where they should go next or what they should do", and "There
+       should be a minimap of some sort in the simulator, could just be a
+       kiosk or map legend the player can view in the main island". */
+    {
+      const LG = await import('../src/systems/dream/lionguide.js');
+      const ddSrc = read('../src/systems/dreamdojo.js');
+
+      // Every island has a short name and a sentence, which the Help page,
+      // the map and the minimap all print.
+      ok('獅 every island has a short name and a sentence about it (ISLE_ABOUT)',
+        KEYS.every((k) => ISL.ISLE_ABOUT[k]?.short && ISL.ISLE_ABOUT[k]?.about?.length > 30)
+        && LG.GUIDE_ORDER.length === KEYS.length && KEYS.every((k) => LG.GUIDE_ORDER.includes(k)),
+        KEYS.filter((k) => !ISL.ISLE_ABOUT[k]).join());
+
+      /* LEFT AND RIGHT ARE MEASURED, off where the islands actually stand, as
+         she walks in off the port bridge — the side his `islands` line has
+         always named them on, and now his directions name them on too. */
+      const inward = { x: -L.u.x, z: -L.u.z };
+      const leftOf = { x: inward.z, z: -inward.x };
+      const sideOf = (k) => Math.sign((D.isles[k].x - dc.x) * leftOf.x + (D.isles[k].z - dc.z) * leftOf.z);
+      const sayLeft = KEYS.filter((k) => /on your LEFT/.test(LG.wayTo(k)));
+      const sayRight = KEYS.filter((k) => /on your RIGHT/.test(LG.wayTo(k)));
+      ok('...his directions say LEFT and RIGHT for the side each bridge really is on, walking in from the tubes',
+        sayLeft.length >= 3 && sayRight.length >= 3
+        && sayLeft.every((k) => sideOf(k) > 0) && sayRight.every((k) => sideOf(k) < 0),
+        `left ${sayLeft} right ${sayRight}`);
+      const byNear = (ks) => [...ks].sort((a, c) => Math.hypot(D.isles[a].x - dc.x - L.u.x * 50, D.isles[a].z - dc.z - L.u.z * 50)
+        - Math.hypot(D.isles[c].x - dc.x - L.u.x * 50, D.isles[c].z - dc.z - L.u.z * 50));
+      ok('...and counts them first, second, third from the door, the way she meets them',
+        byNear(sayLeft).every((k, i) => LG.wayTo(k).includes(`the ${['first', 'second', 'third', 'fourth'][i]} bridge`)),
+        byNear(sayLeft).map((k) => `${k}: ${LG.wayTo(k)}`).join(' | '));
+      ok('...and agrees with the line he has always said about them',
+        /Left: GALLERY, RANGE, then KUDAMONO STORM/.test(ddSrc) && ['gallery', 'range', 'storm'].every((k) => sayLeft.includes(k))
+        && /Right: TRIAL HALL, KATA, then the SINE GAUNTLET/.test(ddSrc) && ['hall', 'kata', 'sine'].every((k) => sayRight.includes(k))
+        && /straight across/.test(LG.wayTo('school')) && /past the ARENA SCHOOL/.test(LG.wayTo('shadow')));
+
+      /* WHAT NEXT walks an afternoon in order, and always has an answer. */
+      const pr = new PR.DreamProgress(null);
+      const kid = { index: 0, name: 'Testy', shadowBeat: {} };
+      const steps = [];
+      const step = () => { const n = LG.lionNext(pr, 'Testy', kid); steps.push(`${n.kind}:${n.key}`); return n; };
+      let n = step();
+      ok('...a kitten fresh in is sent to the first island she meets, by its way there',
+        n.kind === 'visit' && n.key === 'gallery' && n.text.includes(LG.wayTo('gallery')) && n.short.length < n.text.length, n.text);
+      for (const k of KEYS) pr.setFlag('Testy', `visit.${k}`);
+      n = step();
+      ok('...seen everywhere and won nothing: go back and try one', n.kind === 'try' && n.key === 'gallery', n.text);
+      for (const k of KEYS) {
+        if (k === 'shadow') continue;
+        if (k === 'kata') pr.award('Testy', 'kata.daily.test.L1', 1, 1);
+        else pr.award('Testy', LG.drillsOf(k)[0], 1, 1);
+      }
+      ok('...every island but the kata floor and the Shadow is made of the training-of-the-day\'s own drills',
+        KEYS.filter((k) => k !== 'kata' && k !== 'shadow').every((k) => LG.drillsOf(k).length > 0),
+        KEYS.filter((k) => k !== 'kata' && k !== 'shadow' && !LG.drillsOf(k).length).join());
+      n = step();
+      ok('...a star everywhere: his SHADOW, on MEDIUM', n.kind === 'shadow' && /MEDIUM/.test(n.text), n.text);
+      kid.shadowBeat = { medium: true };
+      n = step();
+      const thin = LG.isleReport(pr, 'Testy', n.key, kid);
+      ok('...then three stars, on whichever island she has the least of', n.kind === 'stars'
+        && KEYS.filter((k) => k !== 'kata' && k !== 'shadow').every((k) => {
+          const r = LG.isleReport(pr, 'Testy', k, kid);
+          return r.got / r.max >= thin.got / thin.max;
+        }), n.text);
+      for (const k of KEYS) for (const id of LG.drillsOf(k)) pr.award('Testy', id, 3, 1);
+      n = step();
+      ok('...all of it at three stars: the 凶, naming the levels still to beat',
+        n.kind === 'kyo' && /EASY and HARD/.test(n.text) && !/MEDIUM/.test(n.text), n.text);
+      kid.shadowBeat = { easy: true, medium: true, hard: true };
+      n = step();
+      ok('...and with nothing left, come back tomorrow — never nothing to say', n.kind === 'daily' && n.text.length > 20, steps.join(' > '));
+      ok('...and the kata floor has no "all of it" — its katas are new every day',
+        LG.isleReport(pr, 'Testy', 'kata', kid).max === null && !LG.isleReport(pr, 'Testy', 'kata', kid).done);
+
+      /* HIS ROWS. The 凶 row is Payne's trick row: locked until it is hers,
+         and saying what it wants when it is chosen. */
+      const G = D.guide;
+      const nm = nameOf(her);
+      const keepBeat = her.shadowBeat;
+      her.shadowBeat = { easy: true };
+      fakeGame.toasts.length = 0;
+      const kyoRow = () => G.rows(her).find((r) => r.key === 'kyo');
+      ok('...his 凶 row is locked until all three of his levels are beaten, and says which are',
+        kyoRow().locked && /EASY ✔/.test(kyoRow().blurb) && /HARD ·/.test(kyoRow().blurb));
+      ok('...and choosing it locked is refused in words, on her card', G.choose(her, 'kyo') === 'lion'
+        && fakeGame.toasts.some((t) => /^Not yet!/.test(t)), fakeGame.toasts.join(' | '));
+      her.shadowBeat = { easy: true, medium: true, hard: true };
+      ok('...and once it is hers it opens the card that shows it', !kyoRow().locked && G.choose(her, 'kyo') === 'lionKyo'
+        && /凶/.test(G.markup(0, 'lionKyo', 0, () => '')));
+      her.shadowBeat = keepBeat;
+      D.st[0].holoWorn = [];
+      fakeGame.toasts.length = 0;
+      ok('...WHAT DO MY ORBS DO with none on is refused in words too, not a blank rundown',
+        G.choose(her, 'orbs') === 'lion' && fakeGame.toasts.some((t) => /Gallery/.test(t)));
+      D.st[0].holoWorn = null;
+      ok('...a sub-card has the rows the Inspector counts, and its last one is BACK',
+        G.rowCount(her, 'lionQuests') === 2 && G.subAct('lionQuests', 0) === 'map' && G.subAct('lionQuests', 1) === 'back'
+        && G.rowCount(her, 'lionMap') === 1 && G.subAct('lionMap', 0) === 'back');
+
+      /* THE MAP: one circle and one name per island, in the same short names
+         the minimap uses, the suggestion ringed, and her dot. */
+      put(her, IS);
+      const svg = G.mapSvg(her, { next: 'storm' });
+      ok('...his map draws every island with its short name, rings the one he suggests, and marks her',
+        (svg.match(/class="ln-isle/g) ?? []).length === KEYS.length
+        && KEYS.every((k) => svg.includes(`>${ISL.ISLE_ABOUT[k].short}<`))
+        && (svg.match(/class="ln-ring"/g) ?? []).length === 1 && /class="ln-isle[^"]*next/.test(svg)
+        && /class="ln-me"/.test(svg) && (svg.match(/class="ln-hw"/g) ?? []).length === KEYS.filter((k) => ISL.ISLANDS[k].cycle).length);
+      ok('...in WORLD orientation like the town\'s map: the Arena School is drawn where it stands',
+        new RegExp(`<circle cx="${D.isles.school.x}" cy="${D.isles.school.z}"`).test(svg));
+      const css = read('../src/style.css');
+      ok('...its strokes are screen pixels, not world units, and the labels keep their own sizes',
+        /\.ln-map \* \{ vector-effect: non-scaling-stroke; \}/.test(css) && !/\.ln-map \.ln-lbl \{[^}]*font-size/.test(css)
+        && /body\.touch-ui \.ln-map-box \{ max-height: 38vh; \}/.test(css));
+
+      /* A VISIT IS STANDING ON IT, and it is written into her row. */
+      const flagged = () => KEYS.filter((k) => D.progress.flag(nm, `visit.${k}`));
+      const before = flagged();
+      const fresh = KEYS.find((k) => !before.includes(k) && k !== 'school');
+      put(her, D.isles[fresh]);
+      D._noteVisits(her, D.st[0], 1 / 60);
+      ok('...standing on an island marks it visited, in her row of the progress store',
+        D.progress.flag(nm, `visit.${fresh}`) && flagged().length === before.length + 1, fresh);
+
+      /* LOST: he calls her over by name, waits longer each time, and gives
+         up after LOST_MAX in one visit. */
+      const sayings = [];
+      const realSay = D.holoSay;
+      D.holoSay = (t) => sayings.push(t);
+      D.st[0].lostT = 0; D.st[0].lostN = 0;
+      put(her, { x: dc.x + 20, y: dc.y, z: dc.z });
+      for (let t = 0; t < LG.LOST_AFTER - 1; t += 1) D._noteVisits(her, D.st[0], 1);
+      const early = sayings.length;
+      D._noteVisits(her, D.st[0], 2);
+      const first = sayings.length;
+      for (let t = 0; t < 4000; t += 1) D._noteVisits(her, D.st[0], 1);
+      ok(`...a kitten who has won nothing for ${LG.LOST_AFTER}s is called over by name, with his one suggestion`,
+        early === 0 && first === 1 && sayings[0].startsWith(her.name) && sayings[0].includes(G.next(her).short), sayings[0]);
+      ok(`...and at most ${LG.LOST_MAX} times in one visit, however long she wanders`,
+        sayings.length === LG.LOST_MAX, `${sayings.length}`);
+      D.st[0].lostT = 0; D.st[0].lostN = 0;
+      D.drills[0] = { state: 'live' };
+      for (let t = 0; t < 400; t += 1) D._noteVisits(her, D.st[0], 1);
+      ok('...and never while she is in a drill', sayings.length === LG.LOST_MAX && D.st[0].lostT === 0);
+      D.drills[0] = null;
+      D.holoSay = realSay;
+      ok('...and the count starts again on the way in, and a win or a drill resets the wait',
+        /s\.lostT = 0;\s*s\.lostN = 0;/.test(ddSrc) && /award\(p, id, stars, score, lowerIsBetter\) \{\s*const s0 = this\.st\[p\.index\];\s*if \(s0\) s0\.lostT = 0;/.test(ddSrc)
+        && /startDrill\(p, spec, at\) \{\s*const s0 = this\.st\[p\.index\];\s*if \(s0\) s0\.lostT = 0;/.test(ddSrc));
+
+      /* THE MAP KIOSK on the hub. Measured clear of everything else on it. */
+      D._buildMapKiosk();
+      const K = D.mapKiosk;
+      const kd = Math.hypot(K.x - dc.x, K.z - dc.z);
+      ok('地図 the map kiosk stands on the hub, off the Dojo of the Turning Circle\'s floor and inside the rim',
+        kd - K.r > 38 && kd + K.r < 50, `at ${kd.toFixed(1)} r ${K.r}`);
+      const segD = (q, A, B) => {
+        const ax = B.x - A.x; const az = B.z - A.z;
+        const t = Math.max(0, Math.min(1, ((q.x - A.x) * ax + (q.z - A.z) * az) / (ax * ax + az * az || 1)));
+        return Math.hypot(q.x - A.x - ax * t, q.z - A.z - az * t);
+      };
+      let deckGap = Infinity;
+      /* The gate signs, where `_gateSign` puts them: one per island the hub
+         reaches, from the same `islandCentre` and `gateSignSpot`. The port
+         bridge has none — the kiosk stands where its sign would be. */
+      let signGap = Infinity;
+      for (const k of KEYS.filter((k2) => !ISL.ISLANDS[k2].from)) {
+        const c = ISL.islandCentre(dc, L.u, ISL.ISLANDS[k]);
+        const sg = DD.gateSignSpot(dc, c.dir, ISL.ISLANDS[k].cycle ? HW.HIGHWAY.halfW : 2.2);
+        signGap = Math.min(signGap, Math.hypot(sg.x - K.x, sg.z - K.z));
+      }
+      for (const B of sim.bridges) {
+        // The road is a Snake Way road, in WORLD coordinates; the kiosk is the layer's.
+        const pts = (B.road?.pts ?? []).map((q) => ({ x: q.x - SW.SIM.dx, z: q.z - SW.SIM.dz }));
+        for (let i = 1; i < pts.length; i++) deckGap = Math.min(deckGap, segD(K, pts[i - 1], pts[i]) - B.deck.halfW - K.r);
+      }
+      ok('...off every bridge and highway deck, by a clear stride', deckGap > 1.5, `${deckGap.toFixed(2)}`);
+      ok('...and clear of every gate sign\'s post', signGap > 6, `${signGap.toFixed(2)}`);
+      const otherSt = D.stations.filter((s) => s !== K.station);
+      const stGap = Math.min(...otherSt.map((s) => Math.hypot(s.x - K.x, s.z - K.z) - s.r - K.r));
+      ok('...and from every other station, so one press can only mean one of them', stGap > 2, `${stGap.toFixed(2)}`);
+      const towardPort = ((K.x - dc.x) * L.u.x + (K.z - dc.z) * L.u.z) / kd;
+      ok('...on the side of the hub she arrives on, the first thing she passes', towardPort > 0.95, towardPort.toFixed(3));
+      put(her, { x: K.x, y: K.y, z: K.z });
+      ok('...and standing on it, INTERACT is the kiosk\'s', D.stationAt(her) === K.station
+        && /OPEN THE MAP/.test(K.station.prompt(her, 'E')));
+      const opened = [];
+      fakeGame.inspector = { openLion: (i, s) => opened.push(`${i}:${s}`) };
+      K.station.interact(her);
+      delete fakeGame.inspector;
+      ok('...which opens Lionheart\'s card straight onto his map', opened.join() === '0:lionMap', opened.join());
+      put(her, IS);
+
+      /* THE CORNER MINIMAP in the simulator: read off the decks and bridges
+         the layer actually has, in world coordinates, so a kitten's own
+         position lands on it. */
+      const site = D.simSite();
+      const decks = sim.decks.filter((d) => d.name && Number.isFinite(d.r));
+      ok('地図 the simulator\'s minimap is drawn from the layer\'s own decks and bridges',
+        site.discs.length === decks.length && KEYS.every((k) => site.discs.some((d) => d.key === k))
+        && site.discs.some((d) => d.key === 'dojo') && site.discs.some((d) => d.key === 'port')
+        && site.roads.length === sim.bridges.length,
+        `${site.discs.length} discs, ${site.roads.length} roads`);
+      const sd = site.discs.find((d) => d.key === 'school');
+      ok('...in world coordinates: the Arena School sits where a kitten standing on it is',
+        Math.abs(sd.x - her.position.x) < 0.01 && Math.abs(sd.z - her.position.z) < 0.01);
+      /* EVERY ROAD ENDS ON A DISC. A deck and a road are in different frames
+         (a road is world already), and the first version offset both — every
+         road drawn 12000 units off its islands, passing every count above. */
+      const onDisc = (q) => site.discs.some((d) => Math.hypot(q.x - d.x, q.z - d.z) < d.r + 3);
+      const stray = site.roads.filter((r) => !onDisc(r.pts[0]) || !onDisc(r.pts[r.pts.length - 1]));
+      ok('...and every road on it runs from one island\'s disc to another\'s, in the same frame as them',
+        stray.length === 0, `${stray.length} of ${site.roads.length} stray`);
+      ok('...with the light-cycle highways told apart from the bridges',
+        site.roads.filter((r) => r.wide).length === KEYS.filter((k) => ISL.ISLANDS[k].cycle).length);
+      /* ...with room round the edge for the names written OUTBOARD of the
+         islands: fitted to the discs alone, GALLERY and RANGE were cut to
+         "GALL" and "RANGI" on screen. A tenth of the map's span at least. */
+      const span = Math.max(site.bounds.maxX - site.bounds.minX, site.bounds.maxZ - site.bounds.minZ);
+      const room = Math.min(...site.discs.map((d) => Math.min(d.x - d.r - site.bounds.minX, site.bounds.maxX - d.x - d.r,
+        d.z - d.r - site.bounds.minZ, site.bounds.maxZ - d.z - d.r)));
+      ok('...and a fit that holds every disc, with room round it for the names written outboard',
+        room >= 0.1 * span, `${(room / span).toFixed(3)} of the span`);
+      const mm = read('../src/systems/minimap.js');
+      ok('...and the minimap switches to it only when EVERY kitten it is drawn for is in the simulator',
+        /if \(site && mine\.length && mine\.every\(\(p\) => p\.realm === 'sim'\)\)/.test(mm)
+        && /this\._drawSim\(site, players\.filter\(\(p\) => p\.realm === 'sim'\), mine\)/.test(mm)
+        && /g\.world\.simSite = this\.simSite\(\);/.test(ddSrc));
+      ok('...and its names are clamped onto the canvas, which a phone\'s half-size map needs',
+        /x = Math\.min\(Math\.max\(x, half\), this\.canvas\.width - half\);/.test(mm));
+
+      /* THE HELP PAGE. Richard: "We need to add a new item in the Help Menu
+         for the new Dream Dojo VR Arcade ... All the activities can be laid
+         out like the Clan Leaders page." Its card sentences are ISLE_ABOUT's,
+         word for word, so the page and the game say one thing. */
+      const html = read('../index.html');
+      const sec = helpTopic(html, 'The Dream Dojo — VR arcade');
+      const unesc = (t) => t.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+      const cardOf = (k) => {
+        const at = sec.indexOf(`data-isle="${k}"`);
+        return at < 0 ? '' : sec.slice(at, sec.indexOf('</li>', at));
+      };
+      ok('🥽 Help has a Dream Dojo topic, with a card for every island in the clan cards\' layout',
+        !!sec && KEYS.every((k) => /class="clan-card dd-card"/.test(sec) && cardOf(k).includes(`src="/help/dojo/isle-${k}.jpg"`))
+        && (sec.match(/data-isle="/g) ?? []).length === KEYS.length,
+        KEYS.filter((k) => !cardOf(k)).join());
+      const drift = KEYS.filter((k) => {
+        const m = /<span class="dd-about">([\s\S]*?)<\/span>/.exec(cardOf(k));
+        return !m || unesc(m[1]) !== ISL.ISLE_ABOUT[k].about;
+      });
+      ok('...and every card says exactly what ISLE_ABOUT says, which is what the game says',
+        drift.length === 0, drift.join());
+      ok('...each headed by its own kanji and name',
+        KEYS.every((k) => cardOf(k).includes(`>${ISL.ISLANDS[k].kanji}</span>`)));
+      ok('...with Lionheart, the arcade and the map legend, and the 凶 explained',
+        ['/help/dojo/lionheart.png', '/help/dojo/arcade.jpg', '/help/dojo/map.jpg'].every((f) => sec.includes(f))
+        && /凶[\s\S]{0,200}EASY,\s*MEDIUM and HARD[\s\S]{0,200}1\.25×/.test(sec));
+      const imgDims = (f) => {
+        const buf = readFileSync(new URL(`../public${f}`, import.meta.url));
+        if (buf[0] === 0x89) return [buf.readUInt32BE(16), buf.readUInt32BE(20)];
+        for (let i = 2; i < buf.length - 9;) {
+          const mk = buf[i + 1];
+          const len = buf.readUInt16BE(i + 2);
+          if (mk >= 0xc0 && mk <= 0xc3) return [buf.readUInt16BE(i + 7), buf.readUInt16BE(i + 5)];
+          i += 2 + len;
+        }
+        return [0, 0];
+      };
+      const wrong = [...sec.matchAll(/src="(\/help\/dojo\/[^"]+)"[^>]*?width="(\d+)" height="(\d+)"/g)]
+        .filter((m) => { const [w, h] = imgDims(m[1]); return w !== +m[2] || h !== +m[3]; })
+        .map((m) => `${m[1]} says ${m[2]}x${m[3]}, is ${imgDims(m[1]).join('x')}`);
+      ok('...every picture states its real size, so the panel does not jump as it loads',
+        wrong.length === 0, wrong.join(' | '));
+      ok('...filmed by a shot script that is checked in, the only thing that can re-film them',
+        /window\.__ddStills = async function/.test(read('../tools/capture/shots/dreamdojo.js')));
+
+      /* AND LIONHEART POINTS AT IT: "can just have any guide in there point
+         to the Help page". */
+      ok('...and Lionheart\'s card has a row that opens Help on that topic, paused, with her holding the menu',
+        D.guide.rows(her).some((r) => r.key === 'help')
+        && /if \(key === 'help'\) \{\s*this\.closeAll\(\);\s*this\.game\.openHelpAt\?\.\('help-dream', index\);/.test(read('../src/systems/inspector.js'))
+        && /id="help-dream"/.test(html)
+        && /openHelpAt\(id, slot = null\) \{[\s\S]{0,300}this\.setPaused\(true\);\s*this\._claimMenu\(slot\);/.test(read('../src/main.js')));
+    }
+
+    // And it is the GATE that refuses, for every trial in the hall, not the panda's.
+    const leaky = [];
+    for (const sh of H.shrines) {
+      put(her, IHall);
+      H.start(her, sh);
+      const dd = D.drills[0];
+      for (const t of dd.targets) {
+        if (t.hit(cut) || !t.live) leaky.push(`${sh.clan.id}:${t.name}`);
+      }
+      dd.dispose(); D.drills[0] = null;
+    }
+    ok('...and no target in any clan trial can be struck before its GO', leaky.length === 0, leaky.join(' '));
+
+    /* THE FLICKER. Richard: "flickering too fast and hurts to look at". It was
+       a hard blink, 0.45 of opacity in one frame, ~4.6 times a second. Sampled
+       at 240 Hz over a minute on six phases (the six leaders). */
+    let slew = 0; let dips = 0; let lo = 1; let hi = 0;
+    for (let s = 0; s < 6; s++) {
+      const seed = s * 1.37;
+      let prev = HO.holoFlicker(0, seed); let prevD = 0;
+      for (let k = 1; k <= 240 * 60; k++) {
+        const v = HO.holoFlicker(k / 240, seed);
+        slew = Math.max(slew, Math.abs(v - prev) * 240);
+        const dv = v - prev;
+        if (prevD < 0 && dv >= 0 && v < 0.82 - 0.2 * 0.5) dips++;
+        prevD = dv; prev = v;
+        lo = Math.min(lo, v); hi = Math.max(hi, v);
+      }
+    }
+    const perSec = dips / 6 / 60;
+    ok('幻 a hologram never steps: its brightness changes by at most 1.5 a second (the blink was 27)',
+      slew < 1.5, `${slew.toFixed(2)}/s`);
+    ok('...and dips at most once every three seconds, staying visible throughout',
+      perSec <= 1 / 3 && lo >= 0.6 && hi <= 0.82 + 1e-9, `${perSec.toFixed(3)} dips/s, ${lo.toFixed(2)}..${hi.toFixed(2)}`);
+    const blink = /Math\.sin\([^)]*\*\s*\d{2}(\.\d+)?[^)]*\)\s*>\s*0\.9/;
+    const files = ['dream/hall.js', 'dream/targets.js', 'dream/shadow.js', 'dream/tourshadow.js', 'dreamdojo.js'];
+    const still = files.filter((f) => {
+      const src = read(`../src/systems/${f}`).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+      return blink.test(src) || !/holoFlicker\(/.test(src);
+    });
+    ok('...and every holo-figure in the simulator uses it — the leaders, the holo-kittens, both Shadows, the Lionheart',
+      still.length === 0, still.join(' '));
+
+    /* ICEWHISKER. Richard: "make it wait the certain amount of seconds that
+       player normally needs to wait before being able to pick it up, and make
+       the opponent also try to pick it up ... so it's a race". */
+    const knock = () => {
+      put(her, IHall);
+      D.t += 10;
+      fakeGame.toasts.length = 0;
+      H.start(her, shrine('ice'));
+      const dd = D.drills[0];
+      dd.update(1.3);
+      const m = dd.mark;
+      put(her, { x: m.group.position.x - 2.5, z: m.group.position.z, y: IHall.y });
+      her.stealMarkT = 5; her.stealTarget = m;
+      m.hit({ ...cut, dir: { x: 1, z: 0 } });
+      return dd;
+    };
+    d = knock();
+    const s0 = d.loose;
+    const away = s0 ? Math.hypot(s0.local.x - (her.position.x - SW.SIM.dx), s0.local.z - (her.position.z - SW.SIM.dz))
+      - Math.hypot(d.mark.group.position.x - (her.position.x - SW.SIM.dx), d.mark.group.position.z - (her.position.z - SW.SIM.dz)) : 0;
+    ok('盗 a knocked-loose orb is thrown off her AWAY from the thief, by the ring\'s own toss',
+      !!s0 && s0.locked && Math.abs(away - CP.STEAL.toss) < 0.05 && d.mark.powerOrbs.length === 0, `${away.toFixed(2)}`);
+    put(her, s0.local);
+    let openAt = null;
+    for (let f = 0; f < 60 * 6 && d.state === 'live'; f++) {
+      d.update(1 / 60);
+      if (!s0.locked && openAt == null) openAt = d.t;
+    }
+    ok('...and nobody may take it for STEAL.lock seconds, not even her standing on it — then it is hers',
+      d.state === 'won' && openAt != null && Math.abs(openAt - CP.STEAL.lock) < 0.05,
+      `${d.state} open at ${openAt?.toFixed(2)}`);
+    d.dispose(); D.drills[0] = null;
+
+    // She wanders off: the holo-kitten races in and wins it, and wears it again.
+    d = knock();
+    const s1 = d.loose;
+    // As far from it as the floor allows (the floor's edge would end the trial).
+    const ox = IHall.x - s1.local.x; const oz = IHall.z - s1.local.z; const on = Math.hypot(ox, oz) || 1;
+    put(her, { x: IHall.x + (ox / on) * (IHall.r - 4), z: IHall.z + (oz / on) * (IHall.r - 4), y: IHall.y });
+    let theirs = null;
+    D.t += 10;   // the dream's clock moves on, as it does in four seconds of play (the hint throttle)
+    for (let f = 0; f < 60 * 8 && !s1.taken; f++) { d.update(1 / 60); if (s1.taken) theirs = d.t; }
+    ok('...and the holo-kitten races for it once it opens: away from it, she loses it — and the trial goes on',
+      s1.taken && d.state === 'live' && d.mark.powerOrbs.length === 1 && theirs >= 0.1 + CP.STEAL.lock - 1e-6
+      && fakeGame.toasts.some((t) => /grabbed it back/.test(t)), `${s1.taken} ${d.state} ${theirs?.toFixed(2)}`);
+    d.dispose(); D.drills[0] = null;
+
+    // Near it when it opens (5 away) and running at a walk: she wins the race.
+    d = knock();
+    const s2 = d.loose;
+    for (let f = 0; f < 60 * 3; f++) d.update(1 / 60);
+    const hx = d.mark.group.position.x - s2.local.x; const hz = d.mark.group.position.z - s2.local.z;
+    const hn = Math.hypot(hx, hz) || 1;
+    const hover = Math.hypot(hx, hz);
+    // Stand her 5 off on the far side from the holo-kitten, then run in when it opens.
+    let at = { x: s2.local.x - (hx / hn) * 5, z: s2.local.z - (hz / hn) * 5 };
+    put(her, { ...at, y: IHall.y });
+    const WALK = 10.5;
+    for (let f = 0; f < 60 * 4 && d.state === 'live'; f++) {
+      if (!s2.locked) {
+        const dx = s2.local.x - at.x; const dz = s2.local.z - at.z; const n = Math.hypot(dx, dz);
+        if (n > 1e-3) { const st = Math.min(n, WALK / 60); at = { x: at.x + (dx / n) * st, z: at.z + (dz / n) * st }; }
+        put(her, { ...at, y: IHall.y });
+      }
+      d.update(1 / 60);
+    }
+    ok('...and a kitten 5 away when it opens, running at a walk, beats the holo-kitten waiting at its hover',
+      d.state === 'won' && Math.abs(hover - HAL2.ICE_HOVER) < 0.05, `${d.state} hover ${hover.toFixed(2)}`);
+    d.dispose(); D.drills[0] = null;
+    her.stealMarkT = 0; her.stealTarget = null;
+    D.refillSim(her);
   }
 
   /* --- 影 Shadow Lionheart --- */
@@ -37558,36 +38832,210 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       posed.dispose?.(); town.dispose?.();
     }
 
-    // The win: the hand-over line FIRST, then the stars — but everything is decided at once.
+    /* THREE LEVELS. Richard: "The current timing and difficulty should be
+       easy" — so the fight above, run off the one kiosk there always was,
+       is EASY, and easy is the shipped numbers exactly. */
+    const LV = SH.SHADOW_LEVELS;
+    ok('影 easy is the fight that shipped, number for number: every multiplier 1, the old bar, the single X, the old rotation',
+      F.level === 0 && LV[0].speed === 1 && LV[0].tellK === 1 && LV[0].restK === 1 && LV[0].dmgK === 1
+      && LV[0].hits === SH.SHADOW_HITS && LV[0].per === SH.SHADOW_PER && LV[0].crossDmg === SH.CROSS.dmg
+      && LV[0].phase2 === SH.PHASE2 && !LV[0].triple && LV[0].order.join() === 'slam,cross,sweep,slam,cross');
+    ok('...and each level up is faster, quicker to swing, more often, tougher and harder-hitting, and hard\'s 凶 is "about 80"',
+      [1, 2].every((k) => ['speed', 'hits', 'per', 'dmgK', 'phase2'].every((f) => LV[k][f] > LV[k - 1][f])
+        && LV[k].tellK < LV[k - 1].tellK && LV[k].restK < LV[k - 1].restK && LV[k].triple)
+      && Math.abs(3 * LV[2].crossDmg - 80) <= 2,
+      `hard 凶 ${3 * LV[2].crossDmg}, medium ${3 * LV[1].crossDmg}`);
+    /* A FASTER FIGHT IS STILL A FAIR ONE. Every telegraph on every level is
+       longer than a reaction (0.2s) plus walking out of its shape at her walk
+       (10.5): half a slam's width, or the X's arm from its middle. */
+    {
+      const WALK = Number(/const WALK_SPEED = ([\d.]+);/.exec(read('../src/entities/player.js'))?.[1]);
+      const outX = SH.CROSS.half / Math.SQRT1_2;
+      const worst = Math.min(...LV.map((L) => Math.min(
+        SH.SLAM.tell * 0.85 * L.tellK - (0.2 + SH.SLAM.half / WALK),
+        SH.CROSS.tell * L.tellK * (L.triple ? SH.CROSS.chain : 1) - (0.2 + outX / WALK))));
+      ok('影 on every level every red shape is up long enough to react to and walk out of', worst > 0.05, `${worst.toFixed(3)}s spare`);
+      const ifr = DD.SIM_IFRAMES;
+      const chain = Math.min(...LV.filter((L) => L.triple).map((L) => SH.CROSS.tell * L.tellK * SH.CROSS.chain));
+      ok('...and each X of the 凶 comes after the last hit\'s i-frames are over, so all three CAN land', chain > ifr + 0.02,
+        `${chain.toFixed(2)}s vs ${ifr}s`);
+    }
+    const kioskOk = F.kiosks.length === 3 && F.kiosks.every((k, i) =>
+      Math.hypot(k.x - F.centre.x, k.z - F.centre.z) > SH.ARENA_R + k.r
+      && !!sim.heightAt(k.x + SW.SIM.dx, k.z + SW.SIM.dz, IH.y + 2)
+      && F.kiosks.every((q, j) => j === i || Math.hypot(k.x - q.x, k.z - q.z) > 4));
+    ok('影 one kiosk per level, each outside his ring, on his island, and apart', kioskOk);
+
+    // EASY WON: stars and its own line, and nothing else — "They only need to
+    // defeat him on medium to get the regular 'kotodama' prize."
     fakeGame.feats.earned.length = 0;
     fakeGame.feats.delays.length = 0;
     fakeGame.toasts.length = 0;
+    her.shadowBeat = { easy: false, medium: false, hard: false };
+    sis.shadowBeat = { easy: false, medium: false, hard: false };
     F.t = 120;
     B.hp = 1;
     B.hit(blow);
     const st = D.progress.stars(nameOf(her), 'shadow');
-    ok('影 beating him decides everything on the spot: stars, the flag their rank needs, and the tenth quest',
-      F.state === 'won' && st >= 1 && D.progress.flag(nameOf(her), 'shadow') && D.progress.flag(nameOf(sis), 'shadow')
-      && [...fakeGame.feats.earned].sort().join() === '0:shadow,1:shadow',
-      `${F.state} ${st} ${fakeGame.feats.earned.join()}`);
-    /* "Have Lionheart say 'My honor, my dreams... they're yours now.' after
-       defeating him and before receiving his reward" — Richard. Said on the
-       frame he breaks; nobody is told what they won until it is over. */
-    ok('...and the first thing anybody hears is his hand-over line, with nobody told their prize over it',
-      F.say === SH.HANDOVER.line && /yours now/.test(F.say)
-      && fakeGame.toasts.filter((t) => /beat Shadow Lionheart/.test(t)).length === 0
-      && fakeGame.feats.delays.every((dl) => dl === SH.HANDOVER.secs), `${F.say} | ${fakeGame.toasts.join(' / ')}`);
-    for (let f = 0; f < Math.floor(60 * SH.HANDOVER.secs) - 6; f++) F.update(1 / 60);
-    const quietDuring = fakeGame.toasts.filter((t) => /beat Shadow Lionheart/.test(t)).length === 0 && F.say === SH.HANDOVER.line;
-    for (let f = 0; f < 12; f++) F.update(1 / 60);
-    ok('...then the stars, the quest news and "a share of my HONOR", once his line has had its time',
-      quietDuring && fakeGame.toasts.filter((t) => /Powerup Kotodama/.test(t)).length === 2 && /HONOR/.test(F.say),
-      `${quietDuring} ${fakeGame.toasts.length}`);
+    ok('影 beaten on EASY: stars and the tick, in his EASY line — and not the quest, nor the rank\'s flag',
+      F.state === 'won' && st >= 1 && F.say === SH.SHADOW_LINES.easy.line && her.shadowBeat.easy && sis.shadowBeat.easy
+      && !her.shadowBeat.medium && fakeGame.feats.earned.length === 0 && !D.progress.flag(nameOf(her), 'shadow'),
+      `${F.state} ${st} ${F.say} ${fakeGame.feats.earned.join()}`);
+    for (let f = 0; f < 60 * (SH.HANDOVER.secs + 0.2); f++) F.update(1 / 60);
+    ok('...and the toast says what is still to win; he promises no HONOR he is not paying',
+      !/HONOR/.test(F.say ?? '') && fakeGame.toasts.some((t) => /on EASY.*MEDIUM and HARD too/.test(t)),
+      fakeGame.toasts.join(' / '));
     ok('...and her catch cost her time on her score', D.progress.best(nameOf(her), 'shadow') === 120 + SH.CATCH_COST
       && D.progress.best(nameOf(sis), 'shadow') === 120, `${D.progress.best(nameOf(her), 'shadow')} ${D.progress.best(nameOf(sis), 'shadow')}`);
     for (let f = 0; f < 60 * 8; f++) F.update(1 / 60);
     ok('...and the floor clears itself afterwards: no boss, nothing left in the gate', F.state === 'waiting' && !F.boss
       && ![...D.gate.targets].some((t) => t instanceof SH.ShadowBoss));
+
+    // MEDIUM: his bar is medium's, and the win pays the tenth quest.
+    put(her, F.kiosks[1]);
+    put(sis, inside);
+    F.kiosks[1].station.interact(her);
+    const BM = F.boss;
+    ok('影 the MEDIUM kiosk opens a MEDIUM fight: his bar is medium\'s, sized for two',
+      F.level === 1 && BM.maxHits === LV[1].hits + LV[1].per, `${F.level} ${BM.maxHits}`);
+    fakeGame.toasts.length = 0;
+    F.t = 100;
+    BM.hp = 1;
+    BM.hit(blow);
+    ok('影 beaten on MEDIUM: his MEDIUM line, the flag their rank needs, and the tenth quest',
+      F.say === SH.SHADOW_LINES.medium.line && D.progress.flag(nameOf(her), 'shadow') && D.progress.flag(nameOf(sis), 'shadow')
+      && [...fakeGame.feats.earned].sort().join() === '0:shadow,1:shadow'
+      && fakeGame.feats.delays.every((dl) => dl === SH.HANDOVER.secs)
+      && fakeGame.toasts.filter((t) => /beat Shadow Lionheart/.test(t)).length === 0,
+      `${F.say} ${fakeGame.feats.earned.join()}`);
+    for (let f = 0; f < 60 * (SH.HANDOVER.secs + 0.2); f++) F.update(1 / 60);
+    ok('...then the stars, the quest news and "a share of my HONOR", once his line has had its time',
+      fakeGame.toasts.filter((t) => /Powerup Kotodama/.test(t)).length === 2 && /HONOR/.test(F.say) && !her.kyo,
+      fakeGame.toasts.join(' / '));
+    for (let f = 0; f < 60 * 12; f++) F.update(1 / 60);
+
+    // HARD: the hand-over line, the HONOR, and then 凶 — to the kitten with all three.
+    put(her, F.kiosks[2]);
+    put(sis, inside);
+    sis.shadowBeat = { easy: false, medium: false, hard: false };
+    F.kiosks[2].station.interact(her);
+    const BH = F.boss;
+    fakeGame.toasts.length = 0;
+    F.t = 100;
+    BH.hp = 1;
+    BH.hit(blow);
+    /* "Have Lionheart say 'My honor, my dreams... they're yours now.' after
+       defeating him and before receiving his reward" — and now "keep the
+       current ending voice line for when he is defeated on hardest". */
+    ok('影 beaten on HARD: the first thing anybody hears is his hand-over line, with nobody told their prize over it',
+      F.level === 2 && F.say === SH.HANDOVER.line && fakeGame.toasts.filter((t) => /beat Shadow Lionheart/.test(t)).length === 0
+      && her.kyo && !sis.kyo && sis.shadowBeat.hard, `${F.say}`);
+    for (let f = 0; f < 60 * (SH.HANDOVER.secs + 0.2); f++) F.update(1 / 60);
+    const honorFirst = /HONOR/.test(F.say);
+    const told = fakeGame.toasts.some((t) => /Ember|inherit his 凶/.test(t)) && fakeGame.toasts.some((t) => /EASY and MEDIUM too/.test(t));
+    let kyoAt = null;
+    for (let f = 0; f < 60 * 12 && kyoAt == null; f++) { F.update(1 / 60); if (F.say === SH.SHADOW_LINES.kyo.line) kyoAt = f / 60; }
+    ok('...then "a share of my HONOR", and only AFTER it, 凶 explained — told to her, and her sister told what she is missing',
+      honorFirst && told && kyoAt != null && kyoAt + 0.2 >= 6.95, `${honorFirst} ${told} ${kyoAt}`);
+    ok('...and the fight still clears itself, however long he talked', (() => {
+      for (let f = 0; f < 60 * 15; f++) F.update(1 / 60);
+      return F.state === 'waiting' && !F.boss;
+    })());
+
+    /* 凶 IN HIS HANDS: "When he does cross-slash, it should be three attacks
+       and show some special cross slash symbols in front of him". Three Xs,
+       each drawn on where she is when it is drawn, the 凶 in front of him
+       filling as they come. Standing still she takes all three; stepping off
+       after each warning she takes none. */
+    {
+      put(her, F.kiosks[2]);
+      F.kiosks[2].station.interact(her);
+      const BX = F.boss;
+      put(sis, isleSpot(IH, -40, 0));
+      for (let f = 0; f < 5; f++) F.update(1 / 60);
+      const run = (dodge) => {
+        D.refillSim(her);
+        const at = isleSpot(IH, SH.ARENA_AT[0] - 4, 2);
+        put(her, at);
+        BX.local.x = at.x + 6; BX.local.z = at.z; BX.group.position.x = BX.local.x; BX.group.position.z = BX.local.z;
+        // Facing her, so a step across his line is a step between the X's arms.
+        BX.facing = { x: -1, z: 0 };
+        F._choose(her, 6, 'cross');
+        const before = D.st[0].simHp;
+        const centres = []; let lit = 0; let emblem = false;
+        for (let f = 0; f < 60 * 5 && !(F.act.kind === 'recover'); f++) {
+          const a = F.act;
+          if (a.kind === 'tell' && a.what === 'cross' && !centres.includes(a.c)) {
+            centres.push(a.c);
+            if (dodge && centres.length > 1) put(her, { x: her.position.x - SW.SIM.dx, z: her.position.z - SW.SIM.dz + 3.2, y: IH.y });
+          }
+          F._think(1 / 60);
+          D.st[0].iframes = Math.max(0, (D.st[0].iframes ?? 0) - 1 / 60);
+          F._emblem && F.act.kind === 'tell' && F.act.cuts && F._emblem(F.act, 1 - F.act.t / F.act.tell);
+          emblem ||= F.emblem.visible;
+          lit = Math.max(lit, F.emblem.material.opacity);
+          her.dodgeT = 0;
+        }
+        return { took: before - D.st[0].simHp, n: centres.length, emblem, lit, open: BX.open > 0, after: F.emblem.visible };
+      };
+      const still = run(false);
+      ok('影 on HARD his Cross Slash is THREE Xs: a kitten who stands still takes all three, about 80, and then he is OPEN',
+        still.n === 3 && still.took === 3 * LV[2].crossDmg && still.open, `${still.n} Xs, took ${still.took}`);
+      ok('...with 凶 in front of him while it runs, fully lit by the last, and gone after', still.emblem && still.lit > 0.95 && !still.after,
+        `${still.lit.toFixed(2)} ${still.after}`);
+      BX.open = 0;
+      F.act = { kind: 'idle', t: 99 };
+      const moved = run(true);
+      ok('...and each X is aimed where she is NOW: stepping off after each warning, only the first one lands',
+        moved.n === 3 && moved.took === LV[2].crossDmg, `${moved.n} Xs, took ${moved.took}`);
+      // His walk, on hard against easy, measured over a second with her far away.
+      const walk = (lv) => {
+        F.level = lv;
+        F.act = { kind: 'idle', t: 99 };
+        put(her, isleSpot(IH, SH.ARENA_AT[0] - 16, 0));
+        const x0 = BX.local.x; const z0 = BX.local.z;
+        BX.local.x = F.centre.x + 10; BX.local.z = F.centre.z; BX.group.position.x = BX.local.x; BX.group.position.z = BX.local.z;
+        const s0 = { x: BX.local.x, z: BX.local.z };
+        for (let f = 0; f < 30; f++) F._think(1 / 60);
+        const dist = Math.hypot(BX.local.x - s0.x, BX.local.z - s0.z);
+        BX.local.x = x0; BX.local.z = z0;
+        return dist;
+      };
+      const wE = walk(0); const wH = walk(2);
+      F.level = 2;
+      ok('影 on HARD he walks LV.speed times as fast as on easy', Math.abs(wH / wE - LV[2].speed) < 0.02, `${wE.toFixed(2)} ${wH.toFixed(2)}`);
+      F.dispose();
+      put(sis, inside);
+    }
+
+    /* 凶 IN HER HANDS. "if the player defeats Shadow Lionheart on the hardest,
+       they also inherit his cross-slash technique, which instead of juji
+       symbol, now when players do cross-slash, they do the jyo symbol and deal
+       1.25x's as much damage". One formula (`triDmgK`), asked by the ring's
+       gate and the simulator's; and a fact about THIS game, in her row. */
+    {
+      const PO = await import('../src/entities/powerorb.js');
+      const k0 = PO.triDmgK({ power: { tri: { dmgK: 1.15 } }, kyo: false });
+      const k1 = PO.triDmgK({ power: { tri: { dmgK: 1.15 } }, kyo: true });
+      const mSrc = read('../src/main.js'); const tSrc = read('../src/systems/dream/targets.js');
+      ok('凶 her inherited Cross Slash hits 1.25× as hard, on top of her Juuji stack — in the ring and in the simulator alike',
+        Math.abs(k1 / k0 - 1.25) < 1e-12 && PO.KYO.dmgK === 1.25
+        && /kind === 'tri' \? triDmgK\(attacker\)/.test(mSrc) && /kind === 'tri' \? triDmgK\(attacker\)/.test(tSrc)
+        && !/power\?\.tri\?\.dmgK/.test(stripComments(mSrc) + stripComments(tSrc)));
+      const fresh = new Player({ texture: new THREE.Texture(), index: 0, cols: 8, rows: 4, mirror: false, spawn: new THREE.Vector3(), name: 'Ember' });
+      const half = { ...fresh.shadowBeat, easy: true, hard: true };
+      fresh.shadowBeat = half;
+      const notYet = fresh.kyo;
+      fresh.shadowBeat = { ...half, medium: true };
+      const SG = await import('../src/systems/savegame.js');
+      const row = SG.castRow ? SG.castRow(fresh, fakeGame) : null;
+      ok('凶 is all three levels, not the hardest alone; and it is saved in her row',
+        !notYet && fresh.kyo && (row ? row.shadow?.hard === true && row.shadow?.medium === true : /shadow: \{ easy: !!p\.shadowBeat/.test(read('../src/systems/savegame.js'))));
+      const CF = read('../src/systems/crossfx.js');
+      ok('凶 her seal draws 凶 instead of 十, brushed like it, chosen per technique',
+        /const glyph = p\.kyo \? kyoTexture\(\) : kanjiTexture\(\);/.test(CF) && /export function kyoTexture\(\) \{ return glyphTexture\('凶', KYO_STROKES\); \}/.test(CF)
+        && /p\.shadowBeat = \{ easy: false, medium: false, hard: false \};/.test(read('../src/main.js')));
+    }
 
     // Everybody walks off: it is lost, and says so.
     put(her, inside);
@@ -37596,6 +39044,48 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     for (let f = 0; f < 10; f++) F.update(1 / 60);
     ok('影 a fight everybody walks away from ends, in words', F.state === 'lost' && /Everybody left/.test(F.say), F.say);
     F.dispose();
+
+    /* ONE CHARGE, ONE BLOW. Richard: "using the charge ability quickly kills
+       him, it should just do 1 hit amount of damage to him and not keep
+       recursively hitting him". `_chargeStrike` asks the gate every frame it
+       is live; 20 frames of one charge must cost him one blow. */
+    {
+      put(her, inside);
+      F.begin(her);
+      const B2 = F.boss;
+      B2.open = 0;
+      B2.group.position.set(her.position.x - SW.SIM.dx + 2, IH.y, her.position.z - SW.SIM.dz);
+      B2.local.copy(B2.group.position);
+      B2.update(0);
+      const hp0 = B2.hp;
+      const dir = new THREE.Vector2(1, 0);
+      her._chargeHit = new Set();
+      for (let f = 0; f < 20; f++) D.onStrike(her, 'charge', PL.BASE_REACH, dir);
+      const one = hp0 - B2.hp;
+      her._chargeHit = new Set();
+      for (let f = 0; f < 20; f++) D.onStrike(her, 'charge', PL.BASE_REACH, dir);
+      const two = hp0 - B2.hp;
+      for (let f = 0; f < 3; f++) D.onStrike(her, 'stand', PL.BASE_REACH, dir);
+      const swings = hp0 - B2.hp - two;
+      ok('影 a charge through Shadow Lionheart costs him ONE blow, however many frames it touches him — and the next charge one more',
+        one === 1 && two === 2, `${one} then ${two}`);
+      ok('...and ordinary swings still count one each', swings === 3, `${swings}`);
+      /* A HIT YOU CAN SEE. Richard: "Currently, he just turns white which is
+         hard to see or notice." */
+      fakeGame.sounds.length = 0;
+      D.onStrike(her, 'stand', PL.BASE_REACH, dir);
+      const sp = B2.sparks?.length ?? 0;
+      const sideOk = sp && (B2.sparks.at(-1).s.position.x < B2.local.x);
+      const knocked = B2.knock === 1;
+      B2.update(1 / 60);
+      const jolt = Math.hypot(B2.figure.position.x, B2.figure.position.z);
+      for (let f = 0; f < 30; f++) B2.update(1 / 60);
+      ok('...and every blow throws a starburst on the side she hit from, jolts him and sounds — then it all settles',
+        sp >= 1 && sideOk && knocked && jolt > 0.3 && fakeGame.sounds.includes('hit')
+        && (B2.sparks?.length ?? 0) === 0 && B2.knock === 0 && B2.figure.position.length() < 1e-6,
+        `${sp} ${sideOk} ${jolt.toFixed(2)} ${fakeGame.sounds.join(',')}`);
+      F.dispose();
+    }
 
     // The tenth quest counts after the Awakening, and only it does.
     const g = { players: [her], kotodama: { awakened: true } };
@@ -37867,6 +39357,150 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const slabs = sim.root.children.filter((m) => m.geometry?.parameters?.height === SW.DISC_T && m.geometry.parameters.openEnded);
     ok('...and every one of them is a slab of floor with an edge, not a floor with nothing under it',
       slabs.length >= discs.length, `${slabs.length} slabs for ${discs.length} discs`);
+  }
+
+  /* --- every island's sign is at the hub too, beside its bridge and not over it --- */
+  {
+    /* Richard: "Lets have every area's/islands signage and text in the
+       simulation also be at the entrance of the bridge in the main simulation
+       island ... as well as having it on the island it belongs to." */
+    const keys = Object.keys(ISL.ISLANDS);
+    const bad = [];
+    let nearDeck = Infinity; let deckWho = '';
+    for (const key of keys) {
+      const I = D.isles[key];
+      const s = I.gate?.userData.sign;
+      const own = I.sign?.userData.sign;
+      if (!s || !own || s.kanji !== own.kanji || s.name !== own.name) { bad.push(`${key}: not the same words`); continue; }
+      const g = I.gate.position;
+      const r = Math.hypot(g.x - dc.x, g.z - dc.z);
+      const hops = ISL.ISLANDS[key].from ? 1 : 0;
+      if (r > 47 || r < 38 || Math.abs(g.y - dc.y - DD.GATE_SIGN.up - hops * DD.GATE_SIGN.stack) > 1e-6) bad.push(`${key}: at r ${r.toFixed(1)} y ${(g.y - dc.y).toFixed(1)}`);
+      for (const B of sim.bridges) {
+        for (const q of B.deck.pts) {
+          const d = Math.hypot(g.x - q.x, g.z - q.z) - B.road.halfW;
+          if (d < nearDeck) { nearDeck = d; deckWho = `${key} by ${B.deck.name ?? '?'}`; }
+        }
+      }
+    }
+    ok('門 every island\'s name stands on the hub as well as over the island, in the same words', bad.length === 0, bad.join('; '));
+    // Half the sign is 13 * scale / 2 = 4.0 wide; it must not hang over a deck.
+    const half = 13 * DD.GATE_SIGN.scale / 2;
+    ok('...beside its bridge\'s mouth, never over a deck, where the bridge camera looks along it',
+      nearDeck > half, `${nearDeck.toFixed(2)} clear of ${deckWho}, sign half-width ${half.toFixed(2)}`);
+    // Two signs collide when they overlap across AND up: half-heights from the planes themselves.
+    const hh = (m) => m.geometry.parameters.height / 2;
+    let tight = Infinity; let pair = '';
+    for (let i = 0; i < keys.length; i++) for (let j = i + 1; j < keys.length; j++) {
+      const a = D.isles[keys[i]].gate; const c = D.isles[keys[j]].gate;
+      const across = Math.hypot(a.position.x - c.position.x, a.position.z - c.position.z) - 2 * half;
+      const up = Math.abs(a.position.y - c.position.y) - hh(a) - hh(c);
+      const d = Math.max(across, up);
+      if (d < tight) { tight = d; pair = `${keys[i]} / ${keys[j]}`; }
+    }
+    ok('...and no two of them stand on each other', tight > 0.3, `${tight.toFixed(2)} clear (${pair})`);
+    // The Shadow has no mouth on the hub: its name is on the School's post, over it, saying so.
+    const sh = D.isles.shadow.gate; const sc = D.isles.school.gate;
+    ok('...and the Shadow, reached through the Arena School, is named on the School\'s post, above it, saying so',
+      /ARENA SCHOOL/.test(sh.userData.sign.sub) && !sc.userData.sign.sub
+      && Math.hypot(sh.position.x - sc.position.x, sh.position.z - sc.position.z) < 1e-6 && sh.position.y > sc.position.y,
+      sh.userData.sign.sub);
+  }
+
+  /* --- 望 the look across: over her shoulder at the island, before she steps on --- */
+  {
+    /* Richard: "Before the player steps on a bridge in the simulation, we
+       should have the camera zoom in over the shoulder of the player and
+       looking towards the island they are about to travel to ... It kind of
+       does that currently, but should happen sooner, as soon as they are
+       within a decent area of the entrance of the bridge, 15 - 30ft". */
+    const PK = await import('../src/systems/dream/peek.js');
+    const ends = D._ends = D._peekEnds();
+    ok('望 every bridge in the layer has a look across from both of its mouths', ends.length === 2 * sim.bridges.length
+      && ends.every((E) => Number.isFinite(E.far.x + E.far.y + E.far.z)), `${ends.length} for ${sim.bridges.length}`);
+    const G = D.isles.gallery;
+    const gW = W(G);
+    const E = ends.find((e) => Math.hypot(e.far.x - gW.x, e.far.z - gW.z) < 1);
+    const dcW = W(dc);
+    const fromHub = !!E && Math.hypot(E.mouth.x - dcW.x, E.mouth.z - dcW.z) < 48;
+    // Walk her straight down the hub toward the gallery's mouth, at running pace.
+    const at = (k) => ({ x: E.mouth.x - E.toward.x * k, z: E.mouth.z - E.toward.z * k });
+    her.onGround = true; her.snakeRide = null; her.onCycle = false; her.pinnedAt = null;
+    D.st[0].peek = null;
+    const walk = (k, vx, vz) => {
+      const q = at(k);
+      her.position.set(q.x, E.mouth.y, q.z);
+      her.velocity.set(vx, 0, vz);
+      return D._peekFor(her);
+    };
+    const run = 6;
+    const far20 = walk(20, E.toward.x * run, E.toward.z * run);
+    const at9 = walk(9, E.toward.x * run, E.toward.z * run);
+    const at4 = walk(4, E.toward.x * run, E.toward.z * run);
+    ok('...from about ten of her heights out it starts, and over the rim it is all the way in — not from the deck, as the ride camera was',
+      fromHub && !far20 && at9?.w > 0 && at9.w < 1 && at4?.w === 1 && at4.far === E.far,
+      `${far20?.w ?? 0} / ${at9?.w?.toFixed(2)} / ${at4?.w}, mouth ${E ? Math.hypot(E.mouth.x - dcW.x, E.mouth.z - dcW.z).toFixed(1) : '-'} from the hub`);
+    const still = walk(4, 0, 0);
+    const away = walk(5, -E.toward.x * run, -E.toward.z * run);
+    const stillAfter = walk(5, 0, 0);
+    // Along the rim, square to the way the bridge runs: passing it, not choosing it.
+    const past = walk(7, -E.toward.z * run, E.toward.x * run);
+    D.st[0].peek = null;
+    const arrived = walk(4, 0, 0);
+    ok('...a kitten who stops to look keeps it; one walking away, or running round the rim past the mouth, never gets it',
+      still?.w === 1 && !away && !stillAfter && !past && !arrived);
+    // From the island end it looks back at the hub.
+    const back = ends.find((e) => e.road === E.road && e !== E);
+    ok('...and from the island end of the same bridge it looks back at the hub',
+      !!back && Math.hypot(back.far.x - dcW.x, back.far.z - dcW.z) < 1);
+    // THE SHOT, measured through a lens: the island in the middle, her upper body in frame, below and beside it.
+    const cam = new THREE.PerspectiveCamera(38, 16 / 9, 0.1, 2000);
+    const pose = PK.peekPose({ x: at4.x, y: at4.y, z: at4.z, far: at4.far });
+    cam.position.set(pose.x, pose.y, pose.z);
+    cam.lookAt(pose.lx, pose.ly, pose.lz);
+    cam.updateMatrixWorld(true);
+    const ndc = (x, y, z) => new THREE.Vector3(x, y, z).project(cam);
+    const isle = ndc(gW.x, G.y + PK.PEEK.aimUp, gW.z);
+    const rim = ndc(gW.x - G.fwd.x * G.r, G.y, gW.z - G.fwd.z * G.r);
+    const head = ndc(at4.x, at4.y + 1.8, at4.z);
+    const mid = ndc(at4.x, at4.y + 1, at4.z);
+    const paws = ndc(at4.x, at4.y, at4.z);
+    const mouth = ndc(E.mouth.x, E.mouth.y, E.mouth.z);
+    const inF = (v) => Math.abs(v.x) < 0.95 && Math.abs(v.y) < 0.95 && v.z < 1;
+    ok('...and the shot is the island in the middle of the frame, the near rim and the mouth in it, her head and back below and beside it',
+      Math.abs(isle.x) < 0.05 && Math.abs(isle.y) < 0.05 && inF(rim) && inF(mouth) && inF(head) && inF(mid) && inF(paws)
+      && head.y < -0.1 && Math.abs(head.x) > 0.15,
+      `isle ${isle.x.toFixed(2)},${isle.y.toFixed(2)} rim ${rim.x.toFixed(2)},${rim.y.toFixed(2)} head ${head.x.toFixed(2)},${head.y.toFixed(2)} paws ${paws.y.toFixed(2)} mouth ${mouth.x.toFixed(2)},${mouth.y.toFixed(2)}`);
+    // THE LAYER: comes in, and when she leaves it goes, back to exactly the ordinary pose.
+    const L0 = new THREE.PerspectiveCamera(38, 16 / 9, 0.1, 2000);
+    const look = new THREE.Vector3(at4.x, at4.y + 1.4, at4.z);
+    const ord = new THREE.Vector3(look.x + 17, look.y + 14, look.z + 17);
+    const BP = new PK.BridgePeek();
+    let maxStep = 0;
+    let prev = null;
+    for (let k = 0; k < 120; k++) {
+      L0.position.copy(ord); L0.lookAt(look);
+      BP.apply(1 / 60, k < 60 ? at4 : null, L0, look);
+      if (prev) maxStep = Math.max(maxStep, prev.distanceTo(L0.position));
+      prev = L0.position.clone();
+      if (k === 59) var inPose = L0.position.distanceTo(new THREE.Vector3(pose.x, pose.y, pose.z));
+    }
+    for (let k = 0; k < 120; k++) { L0.position.copy(ord); L0.lookAt(look); BP.apply(1 / 60, null, L0, look); }
+    ok('...laid on as a layer: in over a second, out again to exactly the ordinary pose, never a jump',
+      inPose < 0.5 && L0.position.distanceTo(ord) < 1e-9 && !BP.live && maxStep < 3,
+      `in ${inPose.toFixed(2)} from the pose, biggest frame step ${maxStep.toFixed(2)}`);
+    const pl = read('../src/entities/player.js');
+    const mn = read('../src/main.js');
+    ok('...on her own camera and on a group\'s, and BEFORE the ride camera, which starts from wherever it left the lens',
+      /this\.bridgePeek\.apply\([^\n]*\n\s*this\.snakeCam\.apply/.test(pl)
+      && /rig\.bridgePeek\.apply\([^\n]*\n\s*rig\.snakeCam\.apply/.test(mn));
+    // In a drill, the drill keeps the camera.
+    D.drills[0] = { state: 'live' };
+    const inDrill = walk(4, E.toward.x * run, E.toward.z * run);
+    D.drills[0] = null;
+    ok('...and never in the middle of a drill', !inDrill);
+    her.velocity.set(0, 0, 0);
+    D.st[0].peek = null;
   }
 
   /* --- the bridges are Snake Way roads, and she is boarded onto them --- */

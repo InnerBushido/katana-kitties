@@ -2,11 +2,12 @@ import * as THREE from 'three';
 import { Billboard } from '../../core/gfx.js';
 import { SIM, HOLO } from '../../world/simworld.js';
 import { Kiosk, idleIn, isleSpot } from './kiosk.js';
-import { HoloPanel } from './holo.js';
+import { HoloPanel, holoFlicker } from './holo.js';
 import { Target, holoSolid, holoMat } from './targets.js';
 import { starsFor } from './progress.js';
 import { rankOf } from './rank.js';
 import { VOICE_TAIL } from './lionvoice.js';
+import { kyoTexture } from '../crossfx.js';
 
 /* ---------------------------------------------------------------------------
    SHADOW LIONHEART — 影. The final exam, and the only one they sit together.
@@ -77,8 +78,77 @@ export const PHASE2 = 0.5;
 
 export const SLAM = { tell: 1.0, len: 11, half: 1.4, dmg: 18, recover: 0.8 };
 export const SWEEP = { tell: 1.1, r: 6.5, dmg: 14, clear: 0.6, recover: 0.7 };
-export const CROSS = { tell: 1.2, len: 14, half: 1.3, dmg: 22, open: 2.2 };
+/** `chain` is the tell of the 2nd and 3rd X of the 凶 Cross Slash, as a
+ *  fraction of the first's — they follow on, the first is the warning.
+ *  NOT SHORTER THAN A SIM HIT'S I-FRAMES (0.6s, `DreamDojo.simHit`): at 0.6
+ *  the hard chain was 0.49s, so the 2nd and 3rd X always found her immune
+ *  and the triple could only ever do 27 — measured, not the "about 80" it
+ *  was for. 0.8 makes hard's 0.65s; world-check pins chain > i-frames. */
+export const CROSS = { tell: 1.2, len: 14, half: 1.3, dmg: 22, open: 2.2, chain: 0.8 };
 
+/**
+ * THREE DIFFICULTIES. Richard: "Shadow Lionheart is too easy. Let's make it
+ * that there are 3 difficulties. The current timing and difficulty should be
+ * easy. We should increase his speed, attack speed, health, damage dealt and
+ * how often he does abilities as difficulty increases. On hardest difficulty,
+ * he should do about 80 damage if he lands with cross-slash".
+ *
+ * EASY IS THE FIGHT THAT SHIPPED, NUMBER FOR NUMBER — every multiplier 1, the
+ * single X — and `world-check` pins that, so "the current difficulty" is
+ * still there to be had. Above it, each row turns the five knobs he named:
+ *   speed   his walk (× BOSS_SPEED)
+ *   tellK   the wind-up before each blow, and so his attack speed
+ *   restK   the breath between blows — how OFTEN he does them
+ *   hits    his bar, and `per` sister who joins
+ *   dmgK    the slam and the sweep; `crossDmg` is EACH X of the 凶
+ *   phase2  the fraction of his bar where the Cross Slash starts
+ *   order   phase two's rotation: on hard every other blow is a Cross Slash
+ * and `triple` is the 凶 Cross Slash: "it should be three attacks and show
+ * some special cross slash symbols in front of him". Three Xs, each
+ * re-aimed at where she is when it is drawn: 3 × 27 = 81 on hard, "about 80",
+ * and 45 on medium. Every tell is still drawn on the floor first and still
+ * lands exactly on what it drew (`world-check` samples every level).
+ * NOT PLAYED BY A KITTEN YET — first numbers, for Richard to tune.
+ */
+export const SHADOW_LEVELS = [
+  {
+    id: 'easy', name: 'EASY', colour: 0x7be0a4, speed: 1, tellK: 1, restK: 1, hits: SHADOW_HITS, per: SHADOW_PER,
+    dmgK: 1, crossDmg: CROSS.dmg, phase2: PHASE2, triple: false, order: ['slam', 'cross', 'sweep', 'slam', 'cross'],
+  },
+  {
+    id: 'medium', name: 'MEDIUM', colour: 0xffc93c, speed: 1.35, tellK: 0.82, restK: 0.7, hits: 32, per: 16,
+    dmgK: 1.4, crossDmg: 15, phase2: 0.6, triple: true, order: ['slam', 'cross', 'sweep', 'slam', 'cross'],
+  },
+  {
+    id: 'hard', name: 'HARD', colour: 0xff4a6e, speed: 1.7, tellK: 0.68, restK: 0.45, hits: 40, per: 20,
+    dmgK: 1.8, crossDmg: 27, phase2: 0.75, triple: true, order: ['cross', 'slam', 'cross', 'sweep'],
+  },
+];
+export const LEVEL_BY_ID = Object.fromEntries(SHADOW_LEVELS.map((L, k) => [L.id, k]));
+/** Where the three kiosks stand, at the ring's edge, easy where the one
+ *  kiosk always stood. Fanned round the rim at the old one's radius so all
+ *  three are outside the ring and none is on the highway's pad. */
+export const KIOSKS_AT = [KIOSK_AT, [-16.8, 12.0], [-13.6, 16.4]];
+
+/**
+ * WHAT BEATING HIM ON EACH LEVEL PAYS. "They only need to defeat him on
+ * medium to get the regular 'kotodama' prize." And "the player has to defeat
+ * him on all 3 difficulties before he gives them the prize boosted
+ * cross-slash". So easy pays stars and nothing else; medium (or hard) pays
+ * the tenth quest and the rank's flag; all three, in any order, pay 凶.
+ * Hard counts for medium — a kitten who beat the harder fight has beaten the
+ * easier one's prize.
+ */
+export function shadowPrize(level) {
+  return { quest: level >= 1, rank: level >= 1 };
+}
+
+/** A FACT ABOUT THIS GAME, like her gear: `p.shadowBeat`, saved in her row
+ *  (savegame.js `castRow`). True once she has beaten all three. */
+export function inherited(p) {
+  const b = p?.shadowBeat;
+  return !!(b?.easy && b?.medium && b?.hard);
+}
 /**
  * HIS DRAWING, ONE CELL PER THING HE IS DOING — `lionheart/shadow.png`, one
  * row of four in this order. Wound up for the whole tell, so the pose IS the
@@ -119,7 +189,17 @@ export const SHADOW_LINES = {
   hello: { line: 'So you have come to fight my SHADOW.\nShow me what the Dojo taught you!', voice: 'lion_shadow_hello' },
   cross: { line: 'Not bad! Now… the CROSS SLASH.\nWatch for the X!', voice: 'lion_shadow_cross' },
   prize: { line: 'You beat my SHADOW!\nAs promised — a share of my HONOR.', voice: 'lion_prize' },
+  /* "We can give him a different voice line for when beaten on easy and on
+     medium difficulty and keep the current ending voice line for when he is
+     defeated on hardest." HANDOVER stays the hard one. */
+  easy: { line: 'Not bad, for a warm-up!\nNow face my shadow on MEDIUM.', voice: 'lion_shadow_easy' },
+  medium: { line: 'Well fought! That was no warm-up.\nYou have earned your prize.', voice: 'lion_shadow_medium' },
+  /* "maybe Lionheart can explain this after he says 'a share of my honor'".
+     Said only to a kitten who has now beaten all three. */
+  kyo: { line: 'And my CROSS SLASH is yours, too.\nStrike with KYO, a quarter harder!', voice: 'lion_shadow_kyo' },
 };
+/** What he says first, on the frame he breaks, by level. */
+export const BEATEN_LINE = [SHADOW_LINES.easy, SHADOW_LINES.medium, HANDOVER];
 
 /* ------------------------------ the shapes -------------------------------- */
 
@@ -225,6 +305,38 @@ function barMesh(cx, y, cz, w, l, d) {
 
 /* ------------------------------- the boss --------------------------------- */
 
+/** How long a hit's starburst lasts. */
+export const SPARK_T = 0.28;
+let _sparkTex = null;
+/** The starburst: drawn once, on a CPU canvas, and shared by every spark. A
+ *  material each, because each fades on its own clock. */
+function sparkMat() {
+  if (!_sparkTex && typeof document !== 'undefined') {
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.translate(64, 64);
+    const grad = g.createRadialGradient(0, 0, 0, 0, 0, 60);
+    grad.addColorStop(0, 'rgba(255,255,255,1)');
+    grad.addColorStop(0.35, 'rgba(255,236,150,0.95)');
+    grad.addColorStop(1, 'rgba(255,120,60,0)');
+    g.fillStyle = grad;
+    g.beginPath();
+    for (let i = 0; i < 20; i++) {
+      const a = (i / 20) * Math.PI * 2;
+      const r = i % 2 ? 22 : 60 - (i % 4) * 9;
+      g.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    g.closePath();
+    g.fill();
+    _sparkTex = new THREE.CanvasTexture(c);
+  }
+  return new THREE.SpriteMaterial({
+    map: _sparkTex, transparent: true, depthTest: false, depthWrite: false,
+    blending: THREE.AdditiveBlending, color: 0xffffff,
+  });
+}
+
 export class ShadowBoss extends Target {
   constructor(o) {
     /* The hit volume scales with him: it was centre 3.0 and 4 up for 9.3. */
@@ -305,15 +417,75 @@ export class ShadowBoss extends Target {
     if (this.bladeGrp) this.bladeGrp.visible = !this.posed;
   }
 
+  /**
+   * A BLOW HE CAN BE SEEN TO TAKE. Richard: "a 'hit' effect should be played
+   * on Shadow when he is hit so that the player knows they are damaging him.
+   * Currently, he just turns white which is hard to see or notice." A purple-
+   * black figure going white for a fifth of a second, 34 back, was the whole
+   * of it. Now each blow that counts throws:
+   *   · a starburst of light ON THE SIDE SHE HIT FROM, at his chest, drawn
+   *     over everything (it is a spark, not a thing in the room);
+   *   · a spray of shards in her colour;
+   *   · a knock — the figure jolts away from the blade and squashes, and
+   *     settles over a quarter of a second;
+   *   · the ring's own `hit` sound.
+   * His bar dropping was already there; it is no longer the only sign.
+   */
+  hit(info) {
+    const ok = super.hit(info);
+    if (ok) this._struck(info);
+    return ok;
+  }
+
+  _struck(info) {
+    const d = info.dir ?? { x: 0, z: 1 };
+    const y = this.local.y + SHADOW_H * 0.45;
+    const sx = this.local.x - d.x * 1.4;
+    const sz = this.local.z - d.z * 1.4;
+    const s = new THREE.Sprite(sparkMat());
+    s.position.set(sx, y, sz);
+    s.renderOrder = 30;
+    this.group.parent?.add(s);
+    (this.sparks ??= []).push({ s, t: 0 });
+    const colour = info.attacker?.style?.colour ?? HOLO.gold;
+    this.o.shards?.burst(sx, y, sz, colour, 34, 8, 5);
+    this.knock = 1;
+    this.knockDir = d;
+    this.o.sfx?.('hit');
+  }
+
   update(dt) {
     super.update(dt);
+    for (let i = (this.sparks?.length ?? 0) - 1; i >= 0; i--) {
+      const k = this.sparks[i];
+      k.t += dt;
+      const e = Math.min(1, k.t / SPARK_T);
+      k.s.scale.setScalar(1.5 + 3.5 * Math.sqrt(e));
+      k.s.material.opacity = 1 - e * e;
+      k.s.material.rotation = e * 0.6;
+      if (e >= 1) { k.s.removeFromParent(); k.s.material.dispose(); this.sparks.splice(i, 1); }
+    }
+    if (this.knock > 0) {
+      this.knock = Math.max(0, this.knock - dt / 0.25);
+      const kn = this.knock * this.knock;
+      const d = this.knockDir ?? { x: 0, z: 0 };
+      this.figure.position.set(d.x * 0.7 * kn, 0, d.z * 0.7 * kn);
+      this.figure.scale.set(1 + 0.08 * kn, 1 - 0.1 * kn, 1);
+    }
     if (this.sprite) {
       const gold = this.open > 0;
       this.sprite.mat.color.setHex(this.flash > 0.3 ? 0xffffff : gold ? 0xffc93c : this.tint);
-      this.baseOp = Math.sin(this.t * 23) > 0.96 ? 0.55 : 0.9;
+      // Soft, not a blink — see `holoFlicker` (it was 3.7 hard blinks a second).
+      this.baseOp = holoFlicker(this.t, 3, 0.9, 0.3);
       this.sprite.mat.opacity = this.baseOp;
     }
     this.position.set(this.group.position.x + SIM.dx, this.group.position.y + this.o.centre, this.group.position.z + SIM.dz);
+  }
+
+  dispose() {
+    for (const k of this.sparks ?? []) { k.s.removeFromParent(); k.s.material.dispose(); }
+    this.sparks = [];
+    super.dispose();
   }
 
   /** `veil` is per PANE: in the way of one kitten's lens is not in another's. */
@@ -348,14 +520,34 @@ export class ShadowFight {
     ring.position.set(this.centre.x, isle.y + 0.06, this.centre.z);
     dream.sim.root.add(ring);
 
-    const kq = isleSpot(isle, ...KIOSK_AT);
-    this.kiosk = new Kiosk(dream, {
-      x: kq.x, z: kq.z, y: isle.y, colour: 0x9b4dff, kanji: '影', title: 'SHADOW LIONHEART',
-      card: (p) => this.card(p),
-      prompt: (p, key) => (this.state === 'live' ? null : `[${key}]  FIGHT SHADOW LIONHEART`),
-      interact: (p) => this.begin(p),
+    /* ONE KIOSK PER DIFFICULTY, NOT A MENU. Four kittens on one island,
+       each walking to the one she wants, and the colour on the floor says
+       which is which from across the ring; a chooser would have been a menu
+       with an owner and a cursor, for a choice a kiosk already makes. */
+    this.level = 0;
+    this.kiosks = SHADOW_LEVELS.map((L, k) => {
+      const kq = isleSpot(isle, ...KIOSKS_AT[k]);
+      return new Kiosk(dream, {
+        x: kq.x, z: kq.z, y: isle.y, colour: k === 0 ? 0x9b4dff : L.colour, kanji: '影', title: `SHADOW · ${L.name}`,
+        card: (p) => this.card(p, k),
+        prompt: (p, key) => (this.state === 'live' ? null : `[${key}]  FIGHT SHADOW LIONHEART — ${L.name}`),
+        interact: (p) => this.begin(p, k),
+      });
     });
-    this.stations = [this.kiosk.station];
+    /** Easy's: the one kiosk there always was, where it always stood. */
+    this.kiosk = this.kiosks[0];
+    this.stations = this.kiosks.map((k) => k.station);
+
+    /* 凶 — "show some special cross slash symbols in front of him". The
+       kitten's own Cross Slash draws 十; his draws 凶, brushed the same way
+       (crossfx.js `kyoTexture`), and lights a third more with each X. */
+    const kyo = kyoTexture();
+    this.emblem = new THREE.Mesh(new THREE.PlaneGeometry(4.2, 4.2), new THREE.MeshBasicMaterial({
+      map: kyo, color: 0xff4a8a, transparent: true, opacity: 0, depthWrite: false, depthTest: false, toneMapped: false,
+    }));
+    this.emblem.renderOrder = 12;
+    this.emblem.visible = false;
+    dream.sim.root.add(this.emblem);
 
     // What he says, over his head, while he is up.
     this.panel = new HoloPanel({ w: 8, h: 2.4, px: 90, edge: 0x9b4dff });
@@ -368,26 +560,40 @@ export class ShadowFight {
     dream.sim.tickers.push((dt) => this.update(dt));
   }
 
-  card(p) {
+  card(p, k = 0) {
     const P = this.dream.progress;
     const n = p.style?.name ?? p.name;
     const r = rankOf(P, n);
     const best = P.best(n, 'shadow');
-    return [
-      { text: '影 SHADOW LIONHEART', size: 1.8, color: 0xc89bff, glow: true, jp: true },
+    const L = SHADOW_LEVELS[k];
+    const beat = p.shadowBeat ?? {};
+    const tick = SHADOW_LEVELS.map((q) => `${beat[q.id] ? '✔' : '·'} ${q.name}`).join('   ');
+    const lines = [
+      { text: `影 SHADOW LIONHEART — ${L.name}`, size: 1.8, color: k === 0 ? 0xc89bff : L.colour, glow: true, jp: true },
       { text: 'The final exam. Fight him TOGETHER — everyone on the island joins in', size: 1.0 },
       { text: 'Red on the floor = where he will hit. SWEEP? JUMP! After the CROSS he is OPEN', size: 0.9, color: 0x9fefff },
-      { text: r.shadow ? `beaten! best ${best != null ? `${Math.round(best)}s` : '—'}` : 'Anyone may try! Beat him for a SPECIAL Kotodama!', size: 1.1, color: HOLO.gold },
     ];
+    if (k === 0) {
+      lines.push({ text: r.shadow ? `beaten! best ${best != null ? `${Math.round(best)}s` : '—'}` : 'Anyone may try! A warm-up — beat him on MEDIUM for a SPECIAL Kotodama!', size: 1.1, color: HOLO.gold });
+    } else if (k === 1) {
+      lines.push({ text: 'Faster, tougher, and his CROSS SLASH strikes THREE times', size: 0.95, color: 0xffc0d8 });
+      lines.push({ text: r.shadow ? `beaten! best ${best != null ? `${Math.round(best)}s` : '—'}` : 'Anyone may try! Beat him for a SPECIAL Kotodama!', size: 1.1, color: HOLO.gold });
+    } else {
+      lines.push({ text: 'His 凶 CROSS SLASH can take 80 — DODGE every X!', size: 0.95, color: 0xffc0d8 });
+      lines.push({ text: inherited(p) ? 'You have his 凶 CROSS SLASH!' : 'Beat him on all three to learn his 凶 CROSS SLASH', size: 1.1, color: HOLO.gold });
+    }
+    lines.push({ text: tick, size: 0.9, color: 0x9fefff });
+    return lines;
   }
 
   /** The kiosk's button. Refused in words, or the fight begins. */
-  begin(p) {
+  begin(p, k = 0) {
     if (this.state === 'live') {
       this.dream.hint(p, 'the fight is ON — step into the purple ring to join!');
       return;
     }
     if (this.state !== 'waiting') return;
+    this.level = Math.max(0, Math.min(SHADOW_LEVELS.length - 1, k | 0));
     this._spawn();
     for (const q of this._onFloor()) this._join(q, true);
     /* SHE IS STEPPED IN. The kiosk is outside the ring — 24.04 from its middle
@@ -404,7 +610,13 @@ export class ShadowFight {
     this._join(p, true);
     this._say(SHADOW_LINES.hello.line, 4);
     this.dream.game.sfx?.('gong');
+    if (this.level > 0) {
+      for (const { p: q } of this.who.values()) this.dream.hint(q, `SHADOW LIONHEART — ${SHADOW_LEVELS[this.level].name}!`);
+    }
   }
+
+  /** This fight's row of SHADOW_LEVELS. */
+  get L() { return SHADOW_LEVELS[this.level] ?? SHADOW_LEVELS[0]; }
 
   /** Where she walks on: the ring's DOWNSTAGE edge, so the whole floor he
    *  stages on is beyond her from the lens. ENTRY_AT was the hub side, which
@@ -434,15 +646,16 @@ export class ShadowFight {
     }
     this.boss = new ShadowBoss({
       parent: this.dream.sim.root, x: c.x, y: this.isle.y, z: c.z, owner: null,
-      art: this.dream.game?.shadowArt ?? this.dream.lionArt, shards: this.dream.shards, hits: SHADOW_HITS,
+      art: this.dream.game?.shadowArt ?? this.dream.lionArt, shards: this.dream.shards, hits: this.L.hits,
+      sfx: (n) => this.dream.game.sfx?.(n),
       onHit: (b) => {
         // OPEN: the blow counts twice — the punish window the Cross Slash leaves.
         if (b.open > 0 && b.hp > 0) b.hp -= 1;
       },
       onBreak: () => this._won(),
     });
-    this.boss.maxHits = SHADOW_HITS;
-    this.boss.hp = SHADOW_HITS;
+    this.boss.maxHits = this.L.hits;
+    this.boss.hp = this.L.hits;
     this.boss.facing = { x: -this.isle.fwd.x, z: -this.isle.fwd.z };
     this.dream.gate.add(this.boss);
     this.state = 'live';
@@ -458,8 +671,8 @@ export class ShadowFight {
     this.joined += 1;
     if (this.joined > 1 && this.joined <= 4) {
       // He grows to meet her: the bar is sized to the party.
-      this.boss.maxHits += SHADOW_PER;
-      this.boss.hp += SHADOW_PER;
+      this.boss.maxHits += this.L.per;
+      this.boss.hp += this.L.per;
     }
     this.dream.refillSim(p);
     if (!quiet) this.dream.game.toast?.(`${p.name} joined the fight against Shadow Lionheart!`, p.index);
@@ -494,7 +707,10 @@ export class ShadowFight {
     this._clearTells();
     const g = this.dream.game;
     g.sfx?.('victory');
-    this._say(HANDOVER.line, HANDOVER.secs);
+    const lv = this.level;
+    const L = this.L;
+    const pay = shadowPrize(lv);
+    this._say(BEATEN_LINE[lv].line, HANDOVER.secs);
     /* EVERYTHING IS DECIDED NOW; only the telling of it waits for his line.
        See HANDOVER. The quest is earned with the same delay, which is the
        payout queue's own — its card comes up after the line, not over it. */
@@ -506,10 +722,18 @@ export class ShadowFight {
       const score = this.t + CATCH_COST * catches;
       const stars = starsFor(score, SHADOW_BANDS, true);
       this.dream.award(p, 'shadow', stars, score, true);
-      this.dream.progress.setFlag(n, 'shadow');
-      const earned = g.feats?.earn?.(p, 'shadow', { delay: HANDOVER.secs });
-      this.paid.push({ p, text: `${p.name} beat Shadow Lionheart! ${'★'.repeat(stars)}`
-        + (earned ? (g.feats.open ? ' A Powerup Kotodama waits for you at the award ceremony!' : ' A Powerup Kotodama is on its way!') : '') });
+      if (pay.rank) this.dream.progress.setFlag(n, 'shadow');
+      const had = inherited(p);
+      p.shadowBeat = { easy: false, medium: false, hard: false, ...p.shadowBeat, [L.id]: true };
+      // Hard counts for medium's prize, but not for medium's tick: 凶 asks for all three.
+      const earned = pay.quest ? g.feats?.earn?.(p, 'shadow', { delay: HANDOVER.secs }) : false;
+      const kyo = !had && inherited(p);
+      if (kyo) this.kyo = true;
+      const left = SHADOW_LEVELS.filter((q) => !p.shadowBeat[q.id]).map((q) => q.name);
+      this.paid.push({ p, text: `${p.name} beat Shadow Lionheart on ${L.name}! ${'★'.repeat(stars)}`
+        + (earned ? (g.feats.open ? ' A Powerup Kotodama waits for you at the award ceremony!' : ' A Powerup Kotodama is on its way!') : '')
+        + (kyo ? ' You inherit his 凶 CROSS SLASH!'
+          : !inherited(p) && left.length ? ` Beat him on ${left.join(' and ')} too, for his 凶 CROSS SLASH.` : '') });
     }
     this.dream.shards.burst(this.boss.local.x, this.boss.local.y + 4, this.boss.local.z, HOLO.gold, 160, 9, 10);
   }
@@ -517,9 +741,13 @@ export class ShadowFight {
   /** The stars, after the hand-over line. The facts were settled in `_won`. */
   _tellPrize() {
     const g = this.dream.game;
-    this._say(SHADOW_LINES.prize.line, 7);
+    // Easy pays no HONOR, so he does not promise one: its own line was the whole of it.
+    if (this.level >= 1) this._say(SHADOW_LINES.prize.line, 7);
     for (const { p, text } of this.paid) if (g.players?.includes(p)) g.toast?.(text, p.index);
     this.paid = [];
+    /* 凶 IS EXPLAINED AFTER "a share of my HONOR", as Richard asked: queued
+       behind the prize line, never over it. */
+    if (this.kyo) { this.kyoT = Math.max(7, this.sayT); this.endT = Math.max(this.endT, this.kyoT + 6); }
   }
 
   _lost(why) {
@@ -535,6 +763,8 @@ export class ShadowFight {
 
   _reset() {
     this._clearTells();
+    this.kyo = false;
+    this.kyoT = 0;
     if (this.boss) {
       this.dream.gate.remove(this.boss);
       this.boss.dispose();
@@ -547,12 +777,13 @@ export class ShadowFight {
   _clearTells() {
     for (const t of this.tells) t.mesh.removeFromParent();
     this.tells.length = 0;
+    if (this.emblem) this.emblem.visible = false;
   }
 
   /* ------------------------------ per frame ------------------------------- */
 
   update(dt) {
-    this.kiosk.update(dt, idleIn(this.dream));
+    for (const k of this.kiosks) k.update(dt, idleIn(this.dream));
     /* The island's own sign is drawn at renderOrder 8, over everything at any
        depth, and from the fight's camera it hangs straight across his body. */
     if (this.isle.sign) this.isle.sign.visible = this.state === 'waiting';
@@ -573,6 +804,7 @@ export class ShadowFight {
     b.pose = this.state === 'live' ? poseCell(this.act) : POSE.guard;
     this._paint();
     if (this.state === 'won' && this.paid?.length && (this.payT -= dt) <= 0) this._tellPrize();
+    if (this.kyoT > 0 && (this.kyoT -= dt) <= 0) { this.kyo = false; this._say(SHADOW_LINES.kyo.line, 6); }
     if (this.state === 'won' || this.state === 'lost') {
       this.endT -= dt;
       if (this.endT <= 0) this._reset();
@@ -593,7 +825,7 @@ export class ShadowFight {
     }
     if (!this.who.size) { this._lost('Everybody left the arena!'); return; }
     if (this.t >= SHADOW_T) { this._lost('Time!'); return; }
-    if (this.phase === 1 && b.hp / b.maxHits <= PHASE2) {
+    if (this.phase === 1 && b.hp / b.maxHits <= this.L.phase2) {
       this.phase = 2;
       this._say(SHADOW_LINES.cross.line, 3.5);
     }
@@ -614,6 +846,7 @@ export class ShadowFight {
   _think(dt) {
     const b = this.boss;
     const a = this.act;
+    const SPEED = BOSS_SPEED * this.L.speed;
     a.t -= dt;
     const { p: tgt, d } = this._target();
     if (!tgt) return;
@@ -637,8 +870,8 @@ export class ShadowFight {
         let dPhi = Math.atan2(goal.z - tz, goal.x - tx) - phi;
         dPhi = Math.atan2(Math.sin(dPhi), Math.cos(dPhi));
         const r = Math.max(d, 0.5);
-        const turn = Math.sign(dPhi) * Math.min(Math.abs(dPhi), (BOSS_SPEED * dt) / r);
-        const r2 = r + Math.max(-BOSS_SPEED * dt * 0.5, Math.min(BOSS_SPEED * dt * 0.5, Math.min(gr, BOSS_CLOSE) - r));
+        const turn = Math.sign(dPhi) * Math.min(Math.abs(dPhi), (SPEED * dt) / r);
+        const r2 = r + Math.max(-SPEED * dt * 0.5, Math.min(SPEED * dt * 0.5, Math.min(gr, BOSS_CLOSE) - r));
         nx = tx + Math.cos(phi + turn) * r2;
         nz = tz + Math.sin(phi + turn) * r2;
       } else {
@@ -647,7 +880,7 @@ export class ShadowFight {
         const gd = Math.hypot(gx - o.x, gz - o.z);
         const stop = staged ? 0 : BOSS_CLOSE;
         if (gd > stop + 1e-6) {
-          const step = Math.min(BOSS_SPEED * dt, gd - stop);
+          const step = Math.min(SPEED * dt, gd - stop);
           nx = o.x + ((gx - o.x) / gd) * step;
           nz = o.z + ((gz - o.z) / gd) * step;
         }
@@ -668,22 +901,24 @@ export class ShadowFight {
       for (const m of a.meshes) m.material.opacity = 0.18 + 0.45 * k + 0.1 * Math.sin(this.t * 30);
       // The blade, raised as the tell runs.
       b.blade.rotation.z = -0.25 - k * 2.2;
+      if (a.what === 'cross' && a.cuts) this._emblem(a, k);
       if (a.t <= 0) this._strike(a);
       return;
     }
     if (a.kind === 'recover' && a.t <= 0) {
       b.blade.rotation.z = -0.25;
-      this.act = { kind: 'idle', t: this.phase === 2 ? 0.7 : 1.1 };
+      this.act = { kind: 'idle', t: (this.phase === 2 ? 0.7 : 1.1) * this.L.restK };
     }
   }
 
   /** `force` names the attack — for world-check, which draws each shape on
    *  demand and measures it against its own hit test. */
-  _choose(tgt, d, force = null) {
+  _choose(tgt, d, force = null, chain = null) {
     const b = this.boss;
     const o = b.local;
     const y = this.isle.y;
-    const order = this.phase === 2 ? ['slam', 'cross', 'sweep', 'slam', 'cross'] : ['slam', 'sweep'];
+    const L = this.L;
+    const order = this.phase === 2 ? L.order : ['slam', 'sweep'];
     this.n = (this.n ?? -1) + 1;
     let kind = force ?? order[this.n % order.length];
     // A sweep with nobody near it is a wasted lesson: slam instead.
@@ -694,7 +929,7 @@ export class ShadowFight {
     if (kind === 'slam') {
       const f = { ...b.facing };
       meshes.push(barMesh(o.x + f.x * SLAM.len / 2, y, o.z + f.z * SLAM.len / 2, SLAM.half * 2, SLAM.len, f));
-      tell = SLAM.tell * (this.phase === 2 ? 0.85 : 1);
+      tell = SLAM.tell * (this.phase === 2 ? 0.85 : 1) * L.tellK;
       this.act = { kind: 'tell', what: 'slam', t: tell, tell, meshes, o: { x: o.x, z: o.z }, dir: f };
       say = 'SLAM! Get out of the red line!';
     } else if (kind === 'sweep') {
@@ -702,16 +937,22 @@ export class ShadowFight {
       m.position.set(o.x, y + 0.08, o.z);
       m.renderOrder = 5;
       meshes.push(m);
-      tell = SWEEP.tell;
+      tell = SWEEP.tell * L.tellK;
       this.act = { kind: 'tell', what: 'sweep', t: tell, tell, meshes, o: { x: o.x, z: o.z } };
       say = 'SWEEP! JUMP!';
     } else {
       const c = { x: tgt.position.x - SIM.dx, z: tgt.position.z - SIM.dz };
       const yaw = Math.atan2(b.facing.x, b.facing.z);
       for (const dir of crossBars(yaw)) meshes.push(barMesh(c.x, y, c.z, CROSS.half * 2, CROSS.len, dir));
-      tell = CROSS.tell;
-      this.act = { kind: 'tell', what: 'cross', t: tell, tell, meshes, c, yaw };
-      say = 'CROSS SLASH! Get out of the X!';
+      /* 凶: THREE Xs. `chain` is how many are still to come after this one;
+         the first is the full warning, the next two follow on, each aimed
+         at where she is NOW — so standing still after the first is what
+         the second catches. */
+      const cuts = L.triple ? (chain ?? 3) : 0;
+      tell = CROSS.tell * L.tellK * (cuts && cuts < 3 ? CROSS.chain : 1);
+      this.act = { kind: 'tell', what: 'cross', t: tell, tell, meshes, c, yaw, cuts };
+      say = !cuts ? 'CROSS SLASH! Get out of the X!'
+        : cuts === 3 ? '凶 CROSS SLASH — THREE strikes! Keep moving!' : `${4 - cuts} of 3 — MOVE!`;
     }
     for (const m of meshes) this.dream.sim.root.add(m);
     this.tells.push(...meshes.map((mesh) => ({ mesh })));
@@ -725,16 +966,16 @@ export class ShadowFight {
     for (const { p } of this.who.values()) {
       const x = p.position.x - SIM.dx; const z = p.position.z - SIM.dz;
       let hit = false;
-      let A = SLAM;
-      if (a.what === 'slam') hit = inSlam(a.o, a.dir, x, z);
-      else if (a.what === 'sweep') { A = SWEEP; hit = inSweep(a.o, x, z, p.position.y - y); }
-      else { A = CROSS; hit = inCross(a.c, a.yaw, x, z); }
+      let dmg = 0;
+      if (a.what === 'slam') { hit = inSlam(a.o, a.dir, x, z); dmg = SLAM.dmg * this.L.dmgK; }
+      else if (a.what === 'sweep') { hit = inSweep(a.o, x, z, p.position.y - y); dmg = SWEEP.dmg * this.L.dmgK; }
+      else { hit = inCross(a.c, a.yaw, x, z); dmg = this.L.crossDmg; }
       if (!hit) continue;
       const from = a.what === 'cross' ? a.c : a.o;
       const dx = x - from.x; const dz = z - from.z;
       const n = Math.hypot(dx, dz) || 1;
       // `from` and `foe`: a 返 Riposte guard toward him catches it and answers him.
-      this.dream.simHit(p, { dmg: A.dmg, push: { x: dx / n, z: dz / n }, src: 'shadow', from, foe: b });
+      this.dream.simHit(p, { dmg: Math.round(dmg), push: { x: dx / n, z: dz / n }, src: 'shadow', from, foe: b });
     }
     // The tell turns white for a blink, then goes: the blade came down HERE.
     for (const m of a.meshes) {
@@ -744,13 +985,43 @@ export class ShadowFight {
     this.tells = this.tells.filter((t) => !a.meshes.includes(t.mesh));
     this.dream.game.sfx?.(a.what === 'sweep' ? 'sweep' : 'smash');
     b.blade.rotation.z = -0.25;
+    if (a.what === 'cross' && a.cuts > 1) {
+      // The next X of the 凶, drawn on her NOW. No breath between them.
+      this.n -= 1;
+      const { p: tgt, d } = this._target();
+      if (tgt) { this._choose(tgt, d, 'cross', a.cuts - 1); return; }
+    }
     if (a.what === 'cross') {
+      if (this.emblem) this.emblem.visible = false;
       b.open = CROSS.open;
       this.act = { kind: 'recover', what: 'cross', t: CROSS.open };
       for (const { p } of this.who.values()) this.dream.hint(p, 'he is OPEN — hit him now, every blow counts TWICE!');
     } else {
       this.act = { kind: 'recover', what: a.what, t: a.what === 'slam' ? SLAM.recover : SWEEP.recover };
     }
+  }
+
+  /**
+   * The 凶 in front of him while the triple runs: a third of it lit per X
+   * thrown and the rest filling as the current tell runs, so the symbol is
+   * finished on the frame the third one lands. Between him and the kitten he
+   * is cutting, at chest height.
+   */
+  _emblem(a, k) {
+    const e = this.emblem;
+    const b = this.boss;
+    if (!e || !b) return;
+    e.visible = true;
+    const done = 3 - a.cuts;
+    const { p } = this._target();
+    let fx = b.facing.x; let fz = b.facing.z;
+    if (p) {
+      const dx = p.position.x - SIM.dx - b.local.x; const dz = p.position.z - SIM.dz - b.local.z;
+      const n = Math.hypot(dx, dz) || 1; fx = dx / n; fz = dz / n;
+    }
+    e.position.set(b.local.x + fx * 2.6, b.local.y + SHADOW_H * 0.55, b.local.z + fz * 2.6);
+    e.material.opacity = Math.min(1, 0.25 + 0.25 * done + 0.25 * k);
+    e.scale.setScalar(1 + 0.08 * Math.sin(this.t * 24) * k);
   }
 
   _paint() {
@@ -769,7 +1040,7 @@ export class ShadowFight {
       for (const l of this.say.split('\n')) lines.push({ text: l, size: 1.4 });
     } else if (this.state === 'live') {
       const left = Math.max(0, SHADOW_T - this.t);
-      lines.push({ text: `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}  ·  ${this.who.size} fighting${this.phase === 2 ? '  ·  PHASE 2' : ''}`, size: 1.4 });
+      lines.push({ text: `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}  ·  ${this.L.name}  ·  ${this.who.size} fighting${this.phase === 2 ? '  ·  PHASE 2' : ''}`, size: 1.4 });
       if (b.open > 0) lines.push({ text: 'OPEN! ×2', size: 1.5, color: HOLO.gold, glow: true });
     }
     this.panel.set(lines, b.open > 0 ? HOLO.gold : 0x9b4dff);
@@ -794,7 +1065,8 @@ export class ShadowFight {
   }
 
   faceCamera(camera) {
-    this.kiosk.faceCamera(camera);
+    for (const k of this.kiosks) k.faceCamera(camera);
+    if (this.emblem?.visible) this.emblem.quaternion.copy(camera.quaternion);
     camera.getWorldDirection(_v);
     const n = Math.hypot(_v.x, _v.z);
     if (n > 1e-6) this.view = { x: _v.x / n, z: _v.z / n };

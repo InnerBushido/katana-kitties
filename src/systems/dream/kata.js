@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { Billboard } from '../../core/gfx.js';
 import { SIM, HOLO } from '../../world/simworld.js';
-import { Kiosk, idleIn, stars3 } from './kiosk.js';
+import { Kiosk, idleIn, stars3, KIOSK_OFF } from './kiosk.js';
+import { HoloPanel } from './holo.js';
 import { dayKey, weekKey } from './progress.js';
 
 /* ---------------------------------------------------------------------------
@@ -168,6 +169,29 @@ const GRADE = [
 /* --------------------------------- the hall ------------------------------- */
 
 const FLOOR_R = 5.4;
+
+/* ONE FLOOR EACH, IN HER COLOUR. Richard: "For the daily/weekly kata, let's
+   only show the kata area for active players. Let's section each area off
+   with the players color and symbolism, so they know which area is for them,
+   if the other players are not active and not in the simulation, then their
+   area should be disabled or grayed out, and shouldn't become active until
+   they enter the simulation area. The player can only use the area that is
+   designated to them with their colors."
+
+   Floor k is SEAT k's — the same rule the tubes keep (tube k is player k's,
+   dreamdojo.js `TUBE_COLOURS`) — and it wears whoever sits there: her colour
+   from her style, because a seat is not a cat (palette.js, `cssFor`), and
+   her element as its kanji. The four cats already sit in the dragon-breath
+   set, fire, frost, lightning and blossom (palette.js), so that is the
+   symbolism: 炎 氷 雷 花. A cat this table does not know gets her seat's
+   number instead, which degrades to a floor that still says whose it is.
+
+   Before this, any kitten could take any floor and `_busy` sent a sister
+   who found hers taken "to another" — four floors, first come first served,
+   and nothing on them said which one was for whom. */
+export const FLOOR_KANJI = { Ember: '炎', Frost: '氷', Storm: '雷', Blossom: '花' };
+/** How far in from a floor's edge its name plate stands, toward the island's middle. */
+const PLATE_D = FLOOR_R + 1.3;
 /** How far a floor's two kiosks stand from its middle. */
 const KIOSK_D = 7.2;
 const LION_H = 6.2;   // dreamdojo.js's LION_HEIGHT; imported it would be a cycle
@@ -192,6 +216,7 @@ export class KataHall {
         y: isle.y,
       };
       fl.out = { x: (fl.x - isle.x) / 11, z: (fl.z - isle.z) / 11 };
+      fl.kiosks = [];
       this._buildFloor(fl);
       this.floors.push(fl);
       for (const [kind, side] of [['daily', -1], ['weekly', 1]]) {
@@ -204,29 +229,34 @@ export class KataHall {
           colour: kind === 'daily' ? HOLO.cyan : HOLO.magenta,
           kanji: '型', title: kind === 'daily' ? 'DAILY KATA' : 'WEEKLY KATA',
           near: 5,
-          card: (p) => this._card(p, kind),
+          card: (p) => (this.ownerOf(fl) === p ? this._card(p, kind) : this._notYours(p, fl)),
           prompt: (p, key) => {
-            const who = this._busy(fl, p);
-            if (who) return `${who.name.toUpperCase()} IS ON THIS FLOOR — TRY ANOTHER`;
+            if (this.ownerOf(fl) !== p) return this._yoursIs(p, fl).toUpperCase();
             const n = this.tier(p, kind);
             return `[${key}]  ${kind.toUpperCase()} KATA · ${TEMPI[n]} BPM`;
           },
           interact: (p) => this.begin(p, kind, fl),
         });
         this.kiosks.push(kiosk);
+        fl.kiosks.push(kiosk);
       }
     }
     this.stations = this.kiosks.map((k) => k.station);
     dream.sim.tickers.push((dt) => this.update(dt));
   }
 
-  /** The nine marks, the floor's edge, and the lines between the marks. */
+  /** The nine marks, the floor's edge, the lines between the marks, and
+   *  the floor's colour and name plate — painted for its owner by `_paint`. */
   _buildFloor(fl) {
     const g = new THREE.Group();
     g.position.set(fl.x, fl.y + 0.04, fl.z);
     const mat = (c, o) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: o, toneMapped: false, depthWrite: false });
-    const edge = new THREE.Mesh(new THREE.RingGeometry(FLOOR_R - 0.12, FLOOR_R, 64).rotateX(-Math.PI / 2), mat(HOLO.cyan, 0.5));
-    g.add(edge);
+    // A wash of her colour over the whole floor, and a wide edge: sectioned off.
+    fl.fill = new THREE.Mesh(new THREE.CircleGeometry(FLOOR_R, 64).rotateX(-Math.PI / 2), mat(HOLO.cyan, 0.1));
+    fl.fill.position.y = -0.01;
+    g.add(fl.fill);
+    fl.edge = new THREE.Mesh(new THREE.RingGeometry(FLOOR_R - 0.35, FLOOR_R, 64).rotateX(-Math.PI / 2), mat(HOLO.cyan, 0.75));
+    g.add(fl.edge);
     fl.marks = MARKS.map((m, i) => {
       const ring = new THREE.Mesh(new THREE.RingGeometry(0.72, 0.9, 32).rotateX(-Math.PI / 2), mat(i ? HOLO.cyan : HOLO.gold, 0.55));
       ring.position.set(m.x, 0.01, m.z);
@@ -237,25 +267,82 @@ export class KataHall {
     for (let i = 1; i <= 8; i++) {
       pts.push(new THREE.Vector3(0, 0, 0), new THREE.Vector3(MARKS[i].x * 0.74, 0, MARKS[i].z * 0.74));
     }
-    g.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts),
-      new THREE.LineBasicMaterial({ color: HOLO.cyan, transparent: true, opacity: 0.25, toneMapped: false })));
+    fl.spokes = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts),
+      new THREE.LineBasicMaterial({ color: HOLO.cyan, transparent: true, opacity: 0.25, toneMapped: false }));
+    g.add(fl.spokes);
     this.dream.sim.root.add(g);
     fl.group = g;
+    // The name plate, on the side toward the island's middle: the kiosks are on the outer side.
+    fl.plate = new HoloPanel({ w: 4.4, h: 1.7, px: 80 });
+    fl.plate.position.set(fl.x - fl.out.x * PLATE_D, fl.y + 2.1, fl.z - fl.out.z * PLATE_D);
+    this.dream.sim.root.add(fl.plate);
+    fl.paintKey = null;
+  }
+
+  /** Whose floor this is: the kitten in seat `fl.k`, if she is in the simulator. */
+  ownerOf(fl) {
+    const p = this.dream.game.players?.[fl.k];
+    return p && this.dream.realmOf(p) === 'sim' ? p : null;
+  }
+
+  /** Her floor's look, in words: "the orange 炎 one". */
+  _floorWords(p) {
+    const name = p.style?.name ?? p.name;
+    const kj = FLOOR_KANJI[name] ?? String(p.index + 1);
+    return `the ${colourWord(p.style?.colour)} ${kj} one`;
+  }
+
+  /** The refusal, as an instruction (non-negotiable 6). */
+  _yoursIs(p, fl) {
+    const seat = this.dream.game.players?.[fl.k];
+    const whose = seat ? `${seat.style?.name ?? seat.name}'s` : `player ${fl.k + 1}'s`;
+    return `This is ${whose} floor — yours is ${this._floorWords(p)}`;
+  }
+
+  _notYours(p, fl) {
+    const seat = this.dream.game.players?.[fl.k];
+    return [
+      { text: '型 KATA FLOOR', size: 1.8, color: KIOSK_OFF, jp: true },
+      { text: `${seat ? (seat.style?.name ?? seat.name) : `PLAYER ${fl.k + 1}`}'S`, size: 1.4 },
+      { text: `yours is ${this._floorWords(p)}`, size: 1.2, color: p.style?.colour ?? HOLO.cyan },
+    ];
+  }
+
+  /** Paint a floor for its owner, or grey it out. Only on a change. */
+  _paint(fl) {
+    const p = this.ownerOf(fl);
+    const seat = this.dream.game.players?.[fl.k];
+    const colour = p ? (p.style?.colour ?? HOLO.cyan) : KIOSK_OFF;
+    const name = seat ? (seat.style?.name ?? seat.name) : null;
+    const key = `${!!p}|${colour}|${name}`;
+    if (key === fl.paintKey) return;
+    fl.paintKey = key;
+    fl.lit = !!p;
+    fl.fill.material.color.set(colour);
+    fl.fill.material.opacity = p ? 0.12 : 0.05;
+    fl.edge.material.color.set(colour);
+    fl.edge.material.opacity = p ? 0.85 : 0.3;
+    fl.spokes.material.color.set(colour);
+    fl.spokes.material.opacity = p ? 0.3 : 0.12;
+    fl.marks.forEach((m, i) => {
+      m.material.color.set(p ? (i ? colour : HOLO.gold) : KIOSK_OFF);
+      m.material.opacity = p ? 0.6 : 0.2;
+    });
+    for (const k of fl.kiosks) k.setLit(!!p);
+    const kj = (name && FLOOR_KANJI[name]) ?? String(fl.k + 1);
+    fl.plate.set(p ? [
+      { text: `${kj}  ${name.toUpperCase()}`, size: 2.0, color: colour, glow: true, jp: true },
+      { text: `player ${fl.k + 1}'s kata floor`, size: 1.1 },
+    ] : [
+      { text: `${kj}  ${name ? name.toUpperCase() : `PLAYER ${fl.k + 1}`}`, size: 2.0, color: KIOSK_OFF, jp: true },
+      { text: name ? 'opens when she comes in' : 'nobody in this seat', size: 1.1, color: KIOSK_OFF },
+    ], colour);
+    fl.plate.mat.opacity = p ? 1 : 0.5;
   }
 
   /** A mark of a floor, in the layer. */
   markAt(fl, i) {
     return { x: fl.x + MARKS[i].x, y: fl.y, z: fl.z + MARKS[i].z };
-  }
-
-  /** Whoever else is mid-kata on this floor. */
-  _busy(fl, p) {
-    for (const q of this.dream.simKittens()) {
-      if (q === p) continue;
-      const d = this.dream.drills[q.index];
-      if (d && d.spec.kataFloor === fl && (d.state === 'ready' || d.state === 'live')) return q;
-    }
-    return null;
   }
 
   _key(kind) { return kind === 'weekly' ? weekKey() : dayKey(); }
@@ -286,10 +373,9 @@ export class KataHall {
   }
 
   begin(p, kind, fl) {
-    const who = this._busy(fl, p);
-    if (who) {
-      // Refused, and told where to go instead (non-negotiable 6).
-      this.dream.hint(p, `${who.name} is using this floor — there are four, try another`);
+    if (this.ownerOf(fl) !== p) {
+      // Refused, and told where hers is instead (non-negotiable 6).
+      this.dream.hint(p, this._yoursIs(p, fl));
       this.dream.game.sfx?.('deny');
       return false;
     }
@@ -306,13 +392,28 @@ export class KataHall {
   }
 
   update(dt) {
+    for (const fl of this.floors) this._paint(fl);
     const inside = idleIn(this.dream);
     for (const k of this.kiosks) k.update(dt, inside);
   }
 
   faceCamera(camera) {
     for (const k of this.kiosks) k.faceCamera(camera);
+    for (const fl of this.floors) fl.plate.faceCamera(camera);
   }
+}
+
+/** A colour, in a word a nine-year-old would use for it: the hue's nearest name. */
+export function colourWord(hex) {
+  if (hex == null) return 'blue';
+  const c = new THREE.Color(hex);
+  const hsl = {};
+  // In sRGB, the space the colour was picked in: the linear working space calls Ember red.
+  c.getHSL(hsl, THREE.SRGBColorSpace);
+  if (hsl.s < 0.15) return 'grey';
+  const h = hsl.h * 360;
+  const names = [[15, 'red'], [45, 'orange'], [70, 'yellow'], [160, 'green'], [200, 'teal'], [250, 'blue'], [290, 'purple'], [345, 'pink'], [360, 'red']];
+  return names.find(([top]) => h < top)[1];
 }
 
 /* --------------------------------- the drill ------------------------------ */

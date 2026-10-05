@@ -193,7 +193,8 @@ export class Gallery {
       this.stations.push({
         x, z, y: isle.y, r: 2.2,
         prompt: (p, key) => `[${key}]  TRY ${spec.label} — ${spec.kanji}`,
-        interact: (p) => this.start(p, ped),
+        // At three stars it asks first: the trial, or another holo orb.
+        interact: (p) => this.dream.pedestal(p, spec.id, () => this.start(p, ped)),
       });
     });
     sim.tickers.push((dt) => this.update(dt));

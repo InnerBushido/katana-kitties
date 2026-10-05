@@ -2,7 +2,7 @@ import { PLAYER_STYLE } from '../core/palette.js';
 import { CLANS } from '../world/world.js';
 import { MILESTONES } from './arenaquest.js';
 import { cleanPayne } from './payne.js';
-import { ORB_BY_ID, MAX_BAG } from '../entities/powerorb.js';
+import { ORB_BY_ID, MAX_BAG, cleanHoloOrbs } from '../entities/powerorb.js';
 
 /* ---------------------------------------------------------------------------
    SAVED GAMES — the afternoon, written down every half minute.
@@ -409,6 +409,13 @@ export function castRow(p, here = true) {
     /* Whether she has been round Lionheart's racks THIS GAME — see
        DreamDojo.interact. An old row has none and is a kitten who has not. */
     geared: !!p.dreamGeared,
+    /* Shadow Lionheart's three levels, beaten THIS GAME — all three is his 凶
+       Cross Slash. An old row has none and is a kitten who has beaten none. */
+    shadow: { easy: !!p.shadowBeat?.easy, medium: !!p.shadowBeat?.medium, hard: !!p.shadowBeat?.hard },
+    /* The orbs she EARNED in the simulator — her holo inventory, which
+       persists across visits (dream/holokit.js). Never what she wears in
+       there: that is a copy of `orbs`, made fresh on every way in. */
+    holo: [...(p.holoOrbs ?? [])],
   };
 }
 
@@ -494,6 +501,8 @@ export function applyCast(game, p, row) {
      — which is true of every save taken before she existed. */
   p.payne = cleanPayne(row.payne);
   p.dreamGeared = !!row.geared;
+  p.shadowBeat = { easy: !!row.shadow?.easy, medium: !!row.shadow?.medium, hard: !!row.shadow?.hard };
+  p.holoOrbs = cleanHoloOrbs(row.holo);
   return true;
 }
 

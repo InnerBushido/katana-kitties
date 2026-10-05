@@ -27,6 +27,7 @@ import { clusterPlayers, MERGE_IN, MERGE_OUT } from './core/cluster.js';
 import { SNAKE, COIN_CANES } from './world/snakeway.js';
 import { BAMBOO_POINTS } from './entities/prop.js';
 import { SnakeCam } from './systems/snakecam.js';
+import { BridgePeek } from './systems/dream/peek.js';
 import { Dragon, BREEDS } from './entities/dragon.js';
 import { Panda, PANDA, PANDA_TIERS, tierFor, toNextTier } from './entities/panda.js';
 import { ClanLeader, LEADERS } from './entities/leader.js';
@@ -69,7 +70,7 @@ import {
 } from './systems/savegame.js';
 import { POWER_ORBS } from './entities/powerorb.js';
 import { Kotodama, buildWornOrbs } from './systems/kotodama.js';
-import { ORB_IDS, CROSS } from './entities/powerorb.js';
+import { ORB_IDS, CROSS, triDmgK } from './entities/powerorb.js';
 import { ProfileScreen } from './systems/profile.js';
 import { Feats } from './systems/feats.js';
 import { Inspector } from './systems/inspector.js';
@@ -703,6 +704,9 @@ class Game {
       /** The ride camera, for when every kitten this rig frames is on the same
        *  road — see `_snakeGroup`. */
       snakeCam: new SnakeCam(),
+      /** The look across a sim bridge, for a group walking up to one
+       *  together — see `_peekGroup`. */
+      bridgePeek: new BridgePeek(),
     }));
     this.sharedCamera = this.rigs[0].camera;
     /** Player index -> her group's lowest member, last frame. The hysteresis
@@ -2472,6 +2476,25 @@ class Game {
     this.menuNav?.keep(document.getElementById('panel-help'), head);
   }
 
+  /**
+   * HELP, OPEN AT ONE TOPIC — Lionheart's READ ABOUT THE DREAM DOJO row.
+   * Help is a page of the pause menu, so the game pauses first, with the menu
+   * handed to whoever asked (one player drives a menu); BACK on Help lands on
+   * the pause menu, as it does from anywhere else.
+   */
+  openHelpAt(id, slot = null) {
+    const card = document.getElementById(id);
+    if (!card) return;
+    if (this.state === 'play' && !this.paused) this.setPaused(true);
+    this._claimMenu(slot);
+    const help = document.getElementById('panel-help');
+    help.classList.remove('hidden');
+    this._warmHelpClips();
+    card.open = true;
+    this.menuNav?.arrive(help);
+    this._helpToTop(card);
+  }
+
   _helpToTop(card) {
     const box = card.closest('.panel');
     if (!box || box.scrollHeight <= box.clientHeight) return;
@@ -2582,6 +2605,7 @@ class Game {
         if (a === 'ending') show('panel-ending');
         if (a === 'ending-again') this.replayEnding();
         if (a === 'profile') this.profile.open('profile', { fromPause: true });
+        if (a === 'holo-profile') this.profile.open('holo', { fromPause: true });
         if (a === 'resume') this.setPaused(false);
         /* EVERY IRREVERSIBLE BUTTON IN THIS MENU ASKS FIRST, and each of them
            asks in words that say what happens rather than "are you sure?" —
@@ -3305,6 +3329,11 @@ class Game {
        would have reached for. */
     document.getElementById('btn-quit-match')
       ?.classList.toggle('hidden', !(on && this.inMatch && !this.travel));
+    /* THE HOLO PROFILE ONLY EXISTS WHILE SOMEBODY IS IN THE SIMULATOR — a
+       button for a kit nobody is wearing is a button that opens four cards
+       saying "not in here". Rebuilt on the way in, like the rows above. */
+    document.getElementById('btn-holo-profile')
+      ?.classList.toggle('hidden', !(on && this.dream?.built && this.players.some((p) => this.dream.st[p.index]?.holoWorn)));
     document.getElementById('panel-pause').classList.toggle('hidden', !on);
     /* THE PAUSE MENU TAKES EVERY PERSONAL CARD DOWN WITH IT. It is a global
        modal over a frozen world, and a card is the opposite of that — hers,
@@ -3423,6 +3452,10 @@ class Game {
       p.raisedPanda = false;
       // Lionheart's racks are a first-visit thing, and this is a first visit.
       p.dreamGeared = false;
+      // His Shadow's three levels, and so 凶, are earned in a game too.
+      p.shadowBeat = { easy: false, medium: false, hard: false };
+      // ...and so are the orbs she earned in the simulator (dream/holokit.js).
+      p.holoOrbs = [];
       /* AND THE ONES BELONGING TO KITTENS NOBODY IS PLAYING, which live in
          `_parkedPandas` and are in the scene exactly like these. Missed, a
          restart would leave a grown panda standing in a town that has just
@@ -4592,6 +4625,18 @@ class Game {
     const el = document.getElementById(`clan-${player.index}`);
     if (!el) return;
     const clan = player.clan;
+    /* IN THE SIMULATOR, THE BADGE IS HER HOLO-CLAN AND SAYS SO. Richard: "The
+       Clans they join in the simulator will also be shown ... next to their
+       name with (Holo) next to it, with that being returned to the players
+       actual Clan pledge when they leave". `dreamOath` is the costume
+       (dream/holokit.js); `_leaveSim` takes it off and repaints this. The
+       bamboo counter is about her REAL panda and is not shown over a holo
+       oath — it would be counting toward an animal she cannot have in here. */
+    if (player.dreamOath) {
+      el.textContent = clan ? `${clan.name} (Holo) · ${clan.buff.label}` : 'No clan (Holo)';
+      el.style.background = clan ? `#${clan.color.toString(16).padStart(6, '0')}` : '#2a7f9a';
+      return;
+    }
     if (!clan) { el.textContent = ''; el.style.background = ''; return; }
     let text = `${clan.name} · ${clan.buff.label}`;
     if (clan.buff.panda) {
@@ -6408,7 +6453,7 @@ class Game {
        is the one place that can do that multiplication, because it is the one
        place holding both tables. */
     const base = kind === 'claw' ? ATTACKS.stand.dmg * PANDA.dmgK : A.dmg;
-    const dmg = base * (kind === 'tri' ? (attacker.power?.tri?.dmgK ?? 1) : 1);
+    const dmg = base * (kind === 'tri' ? triDmgK(attacker) : 1);
 
     /* --- DOES THIS SWING REACH THAT BODY? ---------------------------------
        Pulled out of the loop because there are now TWO bodies to ask it about
@@ -10260,7 +10305,10 @@ class Game {
       const cave = near ? null : this.world.grottoAt(p.position.x, p.position.z);
       // Shadow Lionheart's two-shot (dream/shadow.js): only in the sim, so it
       // can never meet the Dojo, the grotto or the big screen.
-      const shadowShot = near || p.mount ? null : this.dream?.shadow?.cameraFocus?.(p) ?? null;
+      const shadowShot = near || p.mount ? null
+        /* ...and the Sine Gauntlet's: runner and stands alike watch the
+           runner, side-on (dream/sine.js). Also sim-only. */
+        : this.dream?.shadow?.cameraFocus?.(p) ?? this.dream?.sine?.cameraFocus?.(p) ?? null;
       /* THE WAY ACROSS AND THE DOME (DreamDojo.cameraFocus): in close behind
          her for the stones, pulled back over the whole island inside the
          bubble. Never on the Dojo floor itself — `near` wins, so the maths
@@ -11221,11 +11269,16 @@ class Game {
       const tag = document.getElementById(`map-tag-${i}`);
       if (!box) continue;
       const pane = owner[i] ?? -1;
-      /* ...and NOT in a pane that is in the Dream Dojo's simulator: a map of
-         the archipelago, with her arrow twelve thousand units off its edge, is
-         a map of a place she is not in. The pane is all hers there anyway. */
+      /* ...and in a pane that is in the Dream Dojo's simulator, only once
+         the simulator's OWN map exists (`world.simSite`, which the minimap
+         draws instead of the archipelago when everybody it is for is in
+         there). It used to be hidden there outright — a map of the
+         archipelago, with her arrow twelve thousand units off its edge, is a
+         map of a place she is not in — and then Richard: "There should be a
+         minimap of some sort in the simulator". Two realities never share a
+         pane, so a sim pane's map is always the simulator's. */
       const shown = pane >= 0 && !!panes[pane] && !!groups[pane]?.length
-        && !this.dream?.paneIsSim(groups[pane]);
+        && (!this.dream?.paneIsSim(groups[pane]) || !!this.world.simSite);
       box.classList.toggle('hidden', !shown);
       /* A HIDDEN BOX HAS NO PLACE ON SCREEN, and leaving last frame's would
          let `nearestMap` measure to where a map used to be. It is cleared here
@@ -12163,7 +12216,14 @@ class Game {
        sisters still standing next to each other in the market who had not
        moved. */
     const { groups, of } = clusterPlayers({
-      pts: this.players.map((p) => p.position),
+      /* A KITTEN IN THE SINE GAUNTLET'S SESSION STANDS WHERE THE RUNNER IS,
+         for this question only: "non-competing players queued up can be in
+         a cheering section ... therefore camera does not need to be centered
+         on them or split screen and shared camera can focus on the player in
+         the obstacle course". So the session is one group, and the shared
+         rig takes the course's shot (`groupShot` in `_updateRig`). Null for
+         everybody else, always outside the simulator. */
+      pts: this.players.map((p) => this.dream?.sine?.paneAnchor?.(p) ?? p.position),
       /* A GIRL READING HER OWN CARD GETS HER OWN PANE, for the same reason a
          girl on a dragon does: she is not sharing a view with her sister right
          now, and a card drawn over a shared pane covers half of somebody
@@ -12220,6 +12280,26 @@ class Game {
       if (joins) lanes[i] = R.road.id;
     });
     return lanes;
+  }
+
+  /**
+   * What a group's look across a sim bridge frames: only when EVERY one of
+   * them is walking up to the same mouth (the same `far`), from their middle,
+   * as much as the least of them wants. Otherwise null — one sister at a
+   * mouth does not swing the camera the others are drawn by.
+   */
+  _peekGroup(members) {
+    let far = null;
+    let w = 1;
+    for (const i of members) {
+      const at = this.players[i]?.peekAt;
+      if (!at || (far && at.far !== far)) return null;
+      far = at.far;
+      w = Math.min(w, at.w);
+    }
+    if (!far) return null;
+    const mid = this._centroid(members);
+    return { x: mid.x, y: mid.y, z: mid.z, far, w, spread: this._spread(members) };
   }
 
   /**
@@ -12691,6 +12771,20 @@ class Game {
          bounds the damage of every way nobody has thought of yet. */
       wantDist = Math.min(wantDist, this._maxViewDist(rig.camera.fov, aspect));
 
+      /* THE SINE GAUNTLET'S SHARED SHOT — the session is one group by
+         `paneAnchor`, and this is the camera that draws it (the trap again:
+         a per-player focus does nothing while merged). Eased in and out on
+         its own weight; exactly 0 everywhere else, and nothing below changes
+         while it is, so the town's two-player camera is untouched. */
+      const course = this.dream?.sine?.groupShot?.(members) ?? null;
+      rig.courseT = (rig.courseT ?? 0) + ((course ? 1 : 0) - (rig.courseT ?? 0)) * Math.min(1, dt * 2.2);
+      if (rig.courseT < 0.001) rig.courseT = 0;
+      if (course) rig.courseShot = { yaw: course.yaw, pitch: course.pitch };
+      if (rig.courseT > 0 && course) {
+        want.lerp(course.centre, rig.courseT);
+        wantDist = THREE.MathUtils.lerp(wantDist, course.dist * widen, rig.courseT);
+      }
+
       if (!rig.seeded) {
         rig.target.copy(want);
         rig.dist = wantDist;
@@ -12715,6 +12809,10 @@ class Game {
       if (rig.boardT > 0) {
         yaw = THREE.MathUtils.lerp(yaw, BOARD_VIEW.yaw, rig.boardT);
         pitch = THREE.MathUtils.lerp(pitch, BOARD_VIEW.pitch, rig.boardT);
+      }
+      if (rig.courseT > 0 && rig.courseShot) {
+        yaw = THREE.MathUtils.lerp(yaw, rig.courseShot.yaw, rig.courseT);
+        pitch = THREE.MathUtils.lerp(pitch, rig.courseShot.pitch, rig.courseT);
       }
 
       /* THE GROTTO AGAIN, HERE, BECAUSE THIS IS THE CAMERA THAT DRAWS WHEN
@@ -12742,6 +12840,7 @@ class Game {
       /* THE RIDE CAMERA, when everybody this rig frames is on one road. A
          group of one draws with her own camera instead (`_cameraFor`), and
          hers carries the same layer — see `Player._updateCamera`. */
+      rig.bridgePeek.apply(dt, members.length > 1 ? this._peekGroup(members) : null, rig.camera, rig.target);
       rig.snakeCam.apply(dt, members.length > 1 ? this._snakeGroup(members) : null,
         rig.camera, rig.target, this.world.islands);
       /* AFTER `lookAt`, so the shake moves the camera without re-aiming it.

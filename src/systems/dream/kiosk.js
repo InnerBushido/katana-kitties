@@ -71,14 +71,33 @@ export class Kiosk {
     this.show += ((near ? 1 : 0) - this.show) * Math.min(1, dt * 6);
     this.card.visible = this.show > 0.03;
     this.card.mat.opacity = this.show;
-    this.pad.material.opacity = 0.45 + 0.25 * Math.sin(this.dream.t * 3 + this.x);
+    this.pad.material.opacity = this.lit === false ? 0.2 : 0.45 + 0.25 * Math.sin(this.dream.t * 3 + this.x);
   }
 
   faceCamera(camera) {
     this.sign.faceCamera(camera);
     if (this.card.visible) this.card.faceCamera(camera);
   }
+
+  /**
+   * Lit in `colour`, or greyed out (`lit` false): the pad and the sign both.
+   * For a kiosk that belongs to somebody (a kata floor's): repaints only on
+   * a change, because `HoloPanel.set` keys on its content anyway.
+   */
+  setLit(lit, colour = this.o.colour ?? HOLO.cyan) {
+    const c = lit ? colour : KIOSK_OFF;
+    this.pad.material.color.set(c);
+    this.lit = lit;
+    this.sign.set([
+      { text: this.o.kanji ?? '', size: 2.4, color: lit ? (this.o.colour ?? HOLO.cyan) : KIOSK_OFF, glow: lit, jp: true },
+      { text: this.o.title ?? '', size: 1.2, color: lit ? undefined : KIOSK_OFF },
+    ], c);
+    this.sign.mat.opacity = lit ? 1 : 0.45;
+  }
 }
+
+/** The grey of a station nobody can use yet. */
+export const KIOSK_OFF = 0x5a6070;
 
 /** Kittens in the sim who are not mid-drill — the ones a kiosk card is for. */
 export function idleIn(dream) {

@@ -417,6 +417,25 @@ export function trickReady(g, p) {
 
 const flat = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 
+/**
+ * Is this kitten in the Dream Dojo's headset — in the simulator, or in the
+ * tube on the way in or out?
+ *
+ * PAYNE IS NOT IN THE SIMULATOR, SO SHE DOES NOT TALK IN IT. Richard:
+ * "Payne's voice should not appear in the VR dojo simulation, even if she is
+ * calling for the player to come and visit her, since player hasn't visited
+ * her yet." Her invitation ran on a clock of seconds PLAYED, and seconds in
+ * the headset counted — so "Heyyy, Ember! Come and find me in the market!"
+ * arrived in a world with no market in it, over Lionheart. In here her clocks
+ * stop (an invitation owed is said after she is back, not the moment she
+ * steps out), nothing new is queued for her, and anything of hers already
+ * playing or waiting for that kitten is dropped rather than saved for later.
+ * Exported for world-check.
+ */
+export function inHeadset(g, p) {
+  return !!(p && g?.dream?.stateOf?.(p.index)?.phase);
+}
+
 function nearest(list, from) {
   let best = null;
   let bestD = Infinity;
@@ -851,7 +870,7 @@ export class Payne {
        hidden, so a save taken after the ending does not carry a switch that
        is on and can never be reached again. */
     if (L.hints && !currentQuest(g, p)) L.hints = false;
-    if (quiet || g.inspector?.busy?.(p.index)) return;
+    if (quiet || g.inspector?.busy?.(p.index) || inHeadset(g, p)) return;
 
     /* --- the two once-only lines, for anybody who has met her --- */
     if (L.met && !L.sweep && !L.told && trickReady(g, p)) {
@@ -1212,7 +1231,7 @@ export class Payne {
       /* THE KITTEN LEFT, OR A SCENE TOOK THE SCREEN: stop, and do not come
          back to it later — a hint about the bamboo after the ending is news
          from a different afternoon. */
-      if (!(g.players ?? []).includes(c.p) || (quiet && c.card)) { this._end(true); return; }
+      if (!(g.players ?? []).includes(c.p) || (quiet && c.card) || inHeadset(g, c.p)) { this._end(true); return; }
       c.t += dt;
       c.clipT += dt;
       const el = c.el;
@@ -1236,6 +1255,8 @@ export class Payne {
       }
       return;
     }
+    // Waiting for a kitten who has gone into the headset: dropped (see `inHeadset`).
+    this.queue = this.queue.filter((q) => !inHeadset(g, q.p));
     if (!this.queue.length) return;
     /* HE GOES FIRST. See the header. */
     if (g.announcer?.active || g.announcer?.queue?.length) return;

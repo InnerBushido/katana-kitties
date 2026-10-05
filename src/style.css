@@ -2400,6 +2400,52 @@ details.help-card.help-sub[open] > summary.help-topic { border-bottom-width: 2px
 .clan-who { font-size: 12px; opacity: 0.8; }
 .clan-motto { font-size: 12.5px; font-style: italic; opacity: 0.75; line-height: 1.4; }
 
+/* THE DREAM DOJO'S ISLANDS, on the clan cards' bones. Richard: "All the
+   activities can be laid out like the Clan Leaders page." The leader's
+   portrait slot holds the island's engine still instead (480x300, so 16:10 at
+   128 wide), and the round symbol holds its kanji. */
+/* A PILL, NOT THE CLAN SYMBOL'S CIRCLE: seven of the ten names are two
+   kanji, measured at 26px of ink, and a 30px circle round that drew them edge
+   to edge as two little boxes. min-width keeps a one-kanji name round. */
+.dd-kanji {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 7px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 15px;
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  color: var(--clan, var(--ink));
+  font-family: 'Yu Gothic', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 1px;
+  box-sizing: border-box;
+}
+.dd-shot {
+  flex: none;
+  width: 128px;
+  height: 80px;
+  border: 2px solid var(--ink);
+  border-radius: 6px;
+  object-fit: cover;
+}
+.dd-about { font-size: 12.5px; line-height: 1.4; opacity: 0.85; }
+/* Lionheart beside his own words: his drawing is cut to its ink by the shot
+   script, so a height is all it needs. */
+.dd-lion { display: flex; gap: 12px; align-items: flex-start; margin-top: 12px; }
+.dd-lion-art { flex: none; width: 114px; height: 180px; }
+.dd-lion-text { min-width: 0; }
+.dd-lion-text .ht-note:first-child { margin-top: 0; }
+@media (max-width: 640px) {
+  .dd-shot { width: 100%; height: auto; aspect-ratio: 16 / 10; }
+}
+/* A LANDSCAPE PHONE IS SHORT: he gives up height before the words beside
+   him do. */
+body.touch-ui .dd-lion-art { width: 76px; height: 120px; }
+
 /* The screenshots. Natural 16:9 (the width/height attributes hold the box
    before the lazy image loads, so the panel does not jump), bordered like the
    rest of the paper furniture. */
@@ -4180,6 +4226,62 @@ body.touch-ui .kd-row .kd-dim {
 .kd-p2 { --me: var(--storm); }
 .kd-p3 { --me: var(--blossom); }
 .kd-card { box-shadow: inset 0 0 0 3px var(--me); }
+
+/* THE (HOLO) PLAYER PROFILE — the same panel and cards, in the simulator's
+   light (dream/holokit.js). Richard: "we can change it's look to match the
+   Dream Dojo's holographic look, and can even have the button be that
+   color". One class on the panel, so every phone rule above and below for
+   `.kd-card` holds for the holo card too; only colour and glass change. */
+.kd-panel { --holo: #53e2ff; --holo-deep: rgba(4, 22, 34, 0.92); }
+#panel-profile.kd-holo .kd-panel {
+  background: var(--holo-deep);
+  border-color: var(--holo);
+  box-shadow: 0 0 24px rgba(83, 226, 255, 0.45), inset 0 0 40px rgba(83, 226, 255, 0.12);
+  color: #d8fdff;
+}
+#panel-profile.kd-holo .kd-panel > h2 { color: var(--holo); text-shadow: 0 0 12px rgba(83, 226, 255, 0.8); }
+#panel-profile.kd-holo .kd-card {
+  background: rgba(83, 226, 255, 0.08);
+  border-color: var(--holo);
+  /* Scan lines, faint: the one texture every hologram in the simulator has. */
+  background-image: repeating-linear-gradient(0deg, rgba(83, 226, 255, 0.07) 0 1px, transparent 1px 4px);
+}
+#panel-profile.kd-holo :is(.kd-meta, .kd-dim, .kd-help, .kd-inv-head) { color: #9fefff; }
+#panel-profile.kd-holo .kd-slot { background: rgba(4, 22, 34, 0.6); }
+.kd-holo-tag { color: var(--holo, #53e2ff); font-size: 0.7em; letter-spacing: 1px; text-shadow: 0 0 8px rgba(83, 226, 255, 0.8); }
+/* THE HOLO CARD ON A PHONE IS A STACK, NOT THE RACK'S GRID. The real card's
+   one-or-two rule below lays `.kd-slots` beside its text in a `max-content`
+   column; the holo card has no rack, so its inventory was auto-placed into
+   that column and shrink-wrapped — measured at 844x390, one kitten: eight
+   worn cells 22px across in the top-left corner of a 760px card, with the
+   rest of it empty. A column, with the grid the part that gives and scrolls
+   (`.kd-cards .kd-inv` already is one), and the cells at their phone size. */
+body.touch-ui #panel-profile.kd-holo .kd-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+body.touch-ui #panel-profile.kd-holo .kd-card > :not(.kd-inv) { flex-shrink: 0; }
+/* AND AT ONE OR TWO, NOT HALF SIZE. The half-size zoom is there to get four
+   real cards and their quest lists on one screen; a holo card has no rack
+   and no quests, and at half size its type was 6.5px on screen and its card
+   half empty. Measured at 844x390, one kitten, zoom against the bag's scroll:
+   0.6 → cells 43px, grid 319 in a 309 box; 0.72 → 51px, 318 in 242; 0.8 →
+   57px, 321 in 204. 0.6, with the count line gone (the two grid headings
+   carry both its numbers), is the largest that shows every cell with no
+   scrolling. At three and four the cards keep the half size the real ones
+   have, because that is what fits four across. */
+body.touch-ui #panel-profile.kd-holo .kd-panel.kd-cards:is([data-cards="1"], [data-cards="2"]) > #kd-body { zoom: 0.6; }
+body.touch-ui #panel-profile.kd-holo .kd-card > .kd-meta { display: none; }
+/* The kanji are what she reads an orb by; 14px under that zoom was 8px. */
+body.touch-ui #panel-profile.kd-holo .kd-inv-slot { font-size: 28px; }
+.pause-menu .menu-btn.holo-btn {
+  background: #0b3140;
+  color: #9ff6ff;
+  border-color: #53e2ff;
+  box-shadow: 0 0 14px rgba(83, 226, 255, 0.55);
+  text-shadow: 0 0 8px rgba(83, 226, 255, 0.9);
+}
 
 /* The points row on a trade card. A ROW, not a ninth slot: points are not one
    of the eight she can wear, and drawing them in the grid would say they are. */
@@ -6156,6 +6258,71 @@ body.touch-ui .pn-list { gap: 0; }
 /* A LANDSCAPE PHONE IS SHORT: the four lines go two-up, so the three buttons
    stay above the fold instead of under it. */
 body.touch-ui .pn-dd { display: grid; grid-template-columns: 1fr 1fr; gap: calc(0.2 * var(--u)) calc(0.8 * var(--u)); font-size: 0.86em; }
+
+/* --- LIONHEART'S card in the simulator (dream/lionguide.js): Payne's card
+   in the simulator's cyan, so a glance says which of the two is talking. --- */
+.ln-card { border-color: #5ff6ff; box-shadow: 0 0 calc(1.6 * var(--u)) rgba(95, 246, 255, 0.35); }
+.ln-card .pn-face, .ln-face { border-color: #5ff6ff; background: #0b3140; }
+.ln-card .pn-name, .ln-name { color: #9ff8ff; }
+.ln-card .pn-next { background: rgba(95, 246, 255, 0.12); border-left-color: #5ff6ff; }
+.ln-card .pn-next b { color: #9ff8ff; }
+.ln-card .pn-q.done i { color: #5ff6ff; }
+.ln-card .pn-trick-name { color: #ff6fa0; }
+/* THE MAP — the one drawing of the simulator, here and behind the hub kiosk.
+   It takes what height the card can spare and no more: an SVG keeps its
+   aspect, so capping the box caps the drawing. */
+.ln-map-box {
+  display: flex;
+  justify-content: center;
+  max-height: 46vh;
+  min-height: 0;
+  background: radial-gradient(circle, rgba(18, 72, 94, 0.55), rgba(4, 16, 24, 0.85));
+  border: 1px solid rgba(95, 246, 255, 0.35);
+  border-radius: calc(0.8 * var(--u));
+  padding: calc(0.4 * var(--u));
+}
+.ln-map { width: 100%; height: auto; max-height: 100%; display: block; }
+/* The drawing is in WORLD units (hundreds across), so a stroke in user units
+   would be a hair or a slab depending on the card. Non-scaling strokes are
+   screen pixels at any size. The font sizes are the SVG's own attributes — a
+   CSS font-size here would override them in px and shrink every label to dust. */
+.ln-map * { vector-effect: non-scaling-stroke; }
+.ln-map .ln-br { stroke: #5ff6ff; stroke-width: 2.2; fill: none; opacity: 0.8; stroke-linecap: round; }
+.ln-map .ln-hw { stroke: #ffd24a; stroke-width: 3.4; fill: none; opacity: 0.85; stroke-linecap: round; }
+.ln-map .ln-isle { fill: #0b3140; stroke: #5ff6ff; stroke-width: 1.6; }
+.ln-map .ln-isle.seen { fill: #17607a; }
+.ln-map .ln-isle.next { stroke: #ffd24a; stroke-width: 3; }
+.ln-map .ln-ring { fill: none; stroke: #ffd24a; stroke-width: 2; stroke-dasharray: 4 3; }
+.ln-map .ln-hub { fill: #12485e; stroke: #9ff8ff; stroke-width: 2; }
+.ln-map .ln-port { fill: #2a0b2e; stroke: #ff4fd8; stroke-width: 1.8; }
+.ln-map .ln-me { fill: var(--me, var(--gold)); stroke: #041018; stroke-width: 1.2; }
+.ln-map text {
+  font-family: 'Nunito', system-ui, sans-serif;
+  font-weight: 800;
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: rgba(4, 16, 24, 0.92);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+.ln-map .ln-lbl { fill: #c8fdff; }
+.ln-map .ln-lbl.next { fill: #ffd24a; }
+.ln-map .ln-st { fill: #ffd24a; }
+/* HIS 凶, where Payne's card has her trip drawing: a glyph, since the move
+   is hers already and the mark is the only thing that changed. */
+.ln-kyo-mark {
+  font-style: normal;
+  font-family: 'Noto Serif JP', serif;
+  font-size: calc(9 * var(--u));
+  line-height: 1;
+  color: #ff4a8a;
+  text-shadow: 0 0 calc(1.2 * var(--u)) rgba(255, 74, 138, 0.7);
+  flex: 0 0 auto;
+}
+/* A LANDSCAPE PHONE IS SHORT: the map gives up height before the buttons
+   under it fall off the card. */
+body.touch-ui .ln-map-box { max-height: 38vh; }
+body.touch-ui .ln-kyo-mark { font-size: calc(6 * var(--u)); }
 
 /* --- Payne in Help: her picture beside four short lines --------------------
    Her picture stands at the left like a clan leader's on the clan cards, at

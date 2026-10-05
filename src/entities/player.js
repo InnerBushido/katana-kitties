@@ -9,6 +9,7 @@ import { tune } from '../core/tuning.js';
 import { Label } from '../core/label.js';
 import { SNAKE } from '../world/snakeway.js';
 import { SnakeCam } from '../systems/snakecam.js';
+import { BridgePeek } from '../systems/dream/peek.js';
 
 /* ---------------------------------------------------------------------------
    A Katana Kitty and the camera that follows it.
@@ -551,6 +552,14 @@ export class Player {
      *  slots (`MAX_BAG`). Nothing reads a buff off it; it is replaced, never
      *  edited in place, by `Kotodama.give` / `wear` / `stow` and the save. */
     this.orbBag = [];
+    /** Which of Shadow Lionheart's three levels she has beaten THIS GAME —
+     *  saved in her row like her gear (savegame.js `castRow`). All three is
+     *  `kyo`: his 凶 Cross Slash, at `KYO.dmgK`. See dream/shadow.js. */
+    this.shadowBeat = { easy: false, medium: false, hard: false };
+    /** The Kotodama she has EARNED in the simulator — the Gallery's first
+     *  wins and a 3★ pedestal's extras, at most four of a kind. Hers only in
+     *  there, and saved in her row. See dream/holokit.js. */
+    this.holoOrbs = [];
     /** Folded buff totals. Never null: an empty list aggregates to the
      *  identity, so every read site is `this.power.speed` with no `?? 1`. */
     this.power = aggregate([]);
@@ -1232,6 +1241,11 @@ export class Player {
        at rest. See `_snakeWish`. */
     this.snakeRide = null;
     this.snakeCam = new SnakeCam();
+    /* THE LOOK ACROSS at a sim bridge's mouth, before she steps on: the
+       Dream Dojo sets `peekAt` every frame ({ x, y, z, far, w }, or null) and
+       this camera lays it on — see dream/peek.js. */
+    this.peekAt = null;
+    this.bridgePeek = new BridgePeek();
   }
 
   /** @param {{centre: THREE.Vector3, dist: number, pitch: number}|null} f */
@@ -1715,6 +1729,13 @@ export class Player {
    * Derived rather than stored, so it cannot fall out of step with `maxHp`
    * through either of the two lines above.
    */
+  /** 凶: she has beaten his Shadow on all three levels. Read by `triDmgK`
+   *  and by crossfx.js, which draws 凶 in her seal instead of 十. */
+  get kyo() {
+    const s = this.shadowBeat;
+    return !!(s?.easy && s?.medium && s?.hard);
+  }
+
   get baseMaxHp() { return Math.max(1, this.maxHp - this.bonusHp); }
 
   /**
@@ -6729,8 +6750,11 @@ export class Player {
 
     this.camera.position.copy(this.camTarget).add(this._offset);
     this.camera.lookAt(this.camTarget);
-    /* AND THE RIDE ON TOP, when she is on a road. It is a layer over the pose
-       above, not a replacement for it — see `SnakeCam`. */
+    /* THE LOOK ACROSS, walking up to a sim bridge, and THE RIDE ON TOP once
+       she is on it. Both are layers over the pose above, in that order, so
+       the ride starts from wherever the look across left the lens and there
+       is no cut between them — see dream/peek.js and `SnakeCam`. */
+    this.bridgePeek.apply(dt, this.peekAt, this.camera, this.camTarget);
     this.snakeCam.apply(dt, this.snakeSubject(), this.camera, this.camTarget);
   }
 }

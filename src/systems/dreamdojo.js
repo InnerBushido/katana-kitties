@@ -14,7 +14,7 @@ import { Gallery } from './dream/gallery.js';
 import { TrialHall } from './dream/hall.js';
 import { TameshigiriRange } from './dream/range.js';
 import { KataHall } from './dream/kata.js';
-import { DataHighway } from './dream/highway.js';
+import { DataHighway, HIGHWAY } from './dream/highway.js';
 import { KudamonoStorm } from './dream/storm.js';
 import { SineGauntlet } from './dream/sine.js';
 import { HoloSentries } from './dream/sentries.js';
@@ -25,7 +25,7 @@ import { ShadowFight, SHADOW_LINES, HANDOVER } from './dream/shadow.js';
 import { LionVoice, VOICE_TAIL } from './dream/lionvoice.js';
 import { Rundown } from './dream/rundown.js';
 import { ISLANDS, islandCentre } from './dream/islands.js';
-import { SimBar } from './dream/holo.js';
+import { SimBar, holoFlicker } from './dream/holo.js';
 import { Approach } from './dream/approach.js';
 import { Lecture } from './dream/lecture.js';
 import { GearRoom, GEAR_ITEMS } from './dream/gear.js';
@@ -33,6 +33,12 @@ import { gateFrame, buildGate } from './dream/gate.js';
 import { TOUR, GEAR_LINES, GEAR_VOICE } from './dream/stories.js';
 import { TourShadow } from './dream/tourshadow.js';
 import { TourCast } from './dream/tourcast.js';
+import { holoDojo } from './dream/holodojo.js';
+import { peekWeight } from './dream/peek.js';
+import { tickKeptPandas, dropKept } from './dream/pandatrial.js';
+import { enterHolo, grantHolo, holoLeft, HoloChoice, HOLO_MAX_EACH } from './dream/holokit.js';
+import { LionGuide, LOST_AFTER, LOST_AGAIN, LOST_MAX } from './dream/lionguide.js';
+import { Kiosk, idleIn } from './dream/kiosk.js';
 
 /** Her single-cell pose billboards, which the tube puppet mirrors. */
 const PUPPET_POSES = ['eatPose', 'blessPose', 'warpPose', 'breathPose', 'scaredPose', 'sweepPose'];
@@ -608,6 +614,61 @@ function signTexture() {
   });
 }
 
+/** Each seat's colour when nobody has dressed it yet — the HUD's own four. */
+export const TUBE_COLOURS = [0xff8a3d, 0xff6fae, 0x35d7f0, 0xa96bff];
+
+/** How near the holo-Lionheart a kitten in the sim must be to read his bubble
+ *  (and to get his pitch at all). Further than this, his words go on the
+ *  screen's own card instead — see `_captionHolo`. */
+export const LION_NEAR = 20;
+
+/** Seconds a sim hit leaves her untouchable. The 凶's chained Xs are timed
+ *  against it (dream/shadow.js `CROSS.chain`). */
+export const SIM_IFRAMES = 0.6;
+/** Where the map kiosk stands on the hub: `r` from the Dojo's centre toward
+ *  the port, `side` across the port bridge's line — the same side every gate
+ *  sign stands on, so the hub reads as one row of posts. */
+export const MAP_KIOSK = { r: 43, side: 7 };
+
+/** Where a bridge's gate sign stands on the hub: `back` in from the mouth
+ *  (at 47), `side` across from the deck's EDGE (a highway is wider than a
+ *  bridge), `up` off the floor; one
+ *  reached through another island is `stack` higher, on the same post. */
+export const GATE_SIGN = { back: 4, side: 5.3, up: 5.5, scale: 0.62, stack: 3.4 };
+export function gateSignSpot(dc, dir, halfW = 2.2) {
+  const r = 47 - GATE_SIGN.back;
+  const side = halfW + GATE_SIGN.side;
+  return {
+    x: dc.x + dir.x * r - dir.z * side,
+    y: dc.y + GATE_SIGN.up,
+    z: dc.z + dir.z * r + dir.x * side,
+  };
+}
+/** Who the caption card says is talking. */
+export const LION_WHO = { name: 'LIONHEART', sub: 'Dream Dojo', colour: '#ff3b3b' };
+
+/**
+ * Which side of Lionheart his bubble goes, for a lens whose screen-right is
+ * `right` (flat, unit): +1 his right, -1 his left.
+ *
+ * AWAY FROM THE TUBES. Richard: "Lionhearts text in the simulation is
+ * blocking the 4 VR floating tubes both on the Dream Dojo island and in the
+ * simulation." The bubble always went to his screen-right, and it is drawn
+ * over everything (depthTest off, so it reads through the dome) — and from
+ * the walking camera his four tubes ARE on his screen-right: he stands at
+ * (-2, -9) on the pad, the tubes at (6, -7.5..7.5). A kitten reading him
+ * could not see the tube she had been told to step into. The side is decided
+ * per LENS (each pane turns its own bubbles), from where the tubes' middle is
+ * against him; the sim's holo-Lionheart stands on the same spot relative to
+ * the same tubes, so one answer serves both. Exported for world-check.
+ */
+export function lionBubbleSide(L, right) {
+  let cx = 0; let cz = 0;
+  for (const t of L.tubes) { cx += t.x / L.tubes.length; cz += t.z / L.tubes.length; }
+  const d = (cx - L.lion.x) * right.x + (cz - L.lion.z) * right.z;
+  return d > 0 ? -1 : 1;
+}
+
 function numberTexture(n, colour) {
   return canvasTexture(128, 128, (g, w, h) => {
     g.clearRect(0, 0, w, h);
@@ -645,10 +706,17 @@ export class DreamDojo {
     let store = null;
     try { store = globalThis.localStorage ?? null; } catch { store = null; }
     this.progress = new DreamProgress(store);
+    /* LIONHEART'S CARD in the simulator — his rows, on the Inspector's card
+       (dream/lionguide.js). */
+    this.guide = new LionGuide(this);
     /** Player index -> her live drill, or nothing. */
     this.drills = [];
+    /** The cub each kitten keeps after the Pandapaw trial (dream/pandatrial.js). */
+    this.simPandas = [];
     /** Player index -> her open rundown, or nothing. */
     this.rundowns = [];
+    /** A pedestal's question over her head, one per kitten (dream/holokit.js). */
+    this.choices = [];
     /** Every pad in the simulator that answers INTERACT (pedestals, shrines). */
     this.stations = [];
     this._hintAt = new Map();
@@ -783,7 +851,7 @@ export class DreamDojo {
       glass.position.set(t.x, ARCADE.y + 2.8, t.z);
       glass.renderOrder = 5;
       this.group.add(glass);
-      const col = g.players?.[i]?.style?.colour ?? [0xff8a3d, 0xff6fae, 0x35d7f0, 0xa96bff][i];
+      const col = g.players?.[i]?.style?.colour ?? TUBE_COLOURS[i];
       const num = new THREE.Mesh(
         new THREE.PlaneGeometry(1.3, 1.3),
         new THREE.MeshBasicMaterial({ map: numberTexture(i + 1, css(col)), transparent: true, depthWrite: false, toneMapped: false })
@@ -870,23 +938,44 @@ export class DreamDojo {
     this.bubbleShow = 0;
   }
 
+  /** His bubble for `text`: a PAIR, one to hang on each side of him, since
+   *  the side is chosen per lens (`lionBubbleSide`). `on` is whether it is
+   *  showing at all; `faceCamera` shows the half for the lens it is drawing. */
   _bubble(text, holo = false) {
     const map = holo ? this.holoBubbles : this.bubbles;
     let m = map.get(text);
     if (m) return m;
-    const { texture, aspect, tip } = bubbleTexture(text, '#ff3b3b', { tail: 'left' });
-    const BH = 3.0;
-    m = new THREE.Mesh(new THREE.PlaneGeometry(BH * aspect, BH), new THREE.MeshBasicMaterial({
-      map: texture, transparent: true, opacity: 0, depthWrite: false, depthTest: false,
-      toneMapped: false, side: THREE.DoubleSide,
-    }));
-    m.userData.w = BH * aspect;
-    m.userData.tipY = BH * (0.5 - tip.v);
-    m.renderOrder = 24;
-    m.visible = false;
-    (holo ? this.holoLion : this.lion).add(m);
+    const make = (tail) => {
+      const { texture, aspect, tip } = bubbleTexture(text, '#ff3b3b', { tail });
+      const BH = 3.0;
+      const b = new THREE.Mesh(new THREE.PlaneGeometry(BH * aspect, BH), new THREE.MeshBasicMaterial({
+        map: texture, transparent: true, opacity: 0, depthWrite: false, depthTest: false,
+        toneMapped: false, side: THREE.DoubleSide,
+      }));
+      b.userData.w = BH * aspect;
+      b.userData.tipY = BH * (0.5 - tip.v);
+      b.renderOrder = 24;
+      b.visible = false;
+      (holo ? this.holoLion : this.lion).add(b);
+      return b;
+    };
+    // `r` hangs on his right with its tail pointing left at him; `l` the mirror.
+    m = { r: make('left'), l: make('right'), on: false };
     map.set(text, m);
     return m;
+  }
+
+  /** One bubble pair, shown for this lens on the side away from the tubes. */
+  _turnBubble(m, camera) {
+    const s = lionBubbleSide(this.layout, _right);
+    const b = s > 0 ? m.r : m.l;
+    m.r.visible = m.on && s > 0;
+    m.l.visible = m.on && s < 0;
+    if (!m.on) return;
+    b.quaternion.copy(camera.quaternion);
+    const off = s * (1.4 + (b.userData.w ?? 4) * 0.5);
+    b.position.x = _right.x * off;
+    b.position.z = _right.z * off;
   }
 
   /** Have the HOLOGRAM say something — the one a kitten in the sim can see.
@@ -957,6 +1046,10 @@ export class DreamDojo {
   /** Does she want a pane of her own? From the moment she sets off for her
    *  tube, so the phase never washes over a sister's view. */
   wantsSolo(p) {
+    /* EXCEPT THE SINE GAUNTLET'S SESSION, which is one pane on purpose:
+       "split screen and shared camera can focus on the player in the
+       obstacle course" (dream/sine.js `paneAnchor`). */
+    if (this.sine?.inSession?.(p)) return false;
     const s = this.st[p?.index];
     return !!(s && s.phase) || this.realmOf(p) === 'sim';
   }
@@ -999,11 +1092,21 @@ export class DreamDojo {
       // On a light cycle she is cargo: a stick still pushed must not steer
       // her off the highway (highway.js).
       if (this.highway?.riding(i)) return dead;
+      /* A QUESTION OVER HER HEAD HAS HER STICK, and she stands still while it
+         is up — the push that moves its cursor must not walk her off the
+         pedestal she is answering about. */
+      const c = this.choices[i];
+      if (c) { c.update(pad); return dead; }
       /* A DRILL MAY WATCH HER BUTTONS — Kata Trace has to know the moment
          she pressed jump, not the moment her feet left the floor. Watching
          only: `pressed` is a pure edge test, and this never consumes one. */
       const d = this.drills[i];
       if (d?.state === 'live') d.spec.pad?.(d, pad);
+      // In the Sine Gauntlet's stands, ATTACK cheers (watching only).
+      this.sine?.cheerPad?.(this.game.players?.[i], pad);
+      /* ROOTED WHILE SHE SWALLOWS — the Feast's `roots`, which is the ring's
+         `Menagerie.eating`, and the ring hands her the dead pad for it too. */
+      if (d?.state === 'live' && d.spec.roots?.(d)) return dead;
       return pad;
     }
     return dead;
@@ -1063,7 +1166,7 @@ export class DreamDojo {
       if (this.onPort(p)) return `[${key}]  DISCONNECT`;
       // The card says which button turns it; a callout under it is the same
       // words a second time, drawn on top of its last line.
-      if (this.rundowns[p.index]) return null;
+      if (this.rundowns[p.index] || this.choices[p.index]) return null;
       if (this.canTalk(p)) {
         return p.powerOrbs?.length ? `[${key}]  RUNDOWN OF YOUR KOTODAMA` : `[${key}]  TALK TO LIONHEART`;
       }
@@ -1103,14 +1206,21 @@ export class DreamDojo {
       // Swallowed, not refused: a press mid-ride is her hand still on the
       // button she rode off with, and it must not reach anything else.
       if (this.highway?.riding(p.index)) return true;
+      const ch = this.choices[p.index];
+      if (ch) { ch.pick(); return true; }
       if (this.onPort(p)) { this._begin(p, 'derez'); return true; }
       const rd = this.rundowns[p.index];
       if (rd) {
         if (!rd.next()) this._closeRundown(p);
         return true;
       }
+      /* HIS CARD, LIKE PAYNE'S: "Lionheart should act as a Quest giver like
+         how Payne is a quest giver" (dream/lionguide.js). The rundown and the
+         list of islands he used to answer with are rows on it now. A build
+         with no Inspector (world-check's) keeps the old answer. */
       if (this.canTalk(p)) {
-        if (p.powerOrbs?.length) this._openRundown(p);
+        if (g.inspector?.openLion) g.inspector.openLion(p.index);
+        else if (p.powerOrbs?.length) this._openRundown(p);
         else this.holoSay(LION_LINES.islands, 8);
         g.sfx?.('menu');
         return true;
@@ -1278,7 +1388,10 @@ export class DreamDojo {
         o.material.opacity = 0.55;
       }
     });
+    // ...and the rest of it in light: see dream/holodojo.js.
+    this.simDojoFx = holoDojo(this.simDojo);
     this._buildHoloLion();
+    this._buildSimTubes();
     this.shards = new Shards(this.sim.root);
     this.simHud = makeSimHud(g, this);
     /* THE TRAINING ISLANDS, raised with the layer — under the rain, on the
@@ -1305,6 +1418,81 @@ export class DreamDojo {
       ...this.sentries.stations, ...this.bamboo.stations,
       ...this.school.stations, ...this.ranks.stations, ...this.shadow.stations,
       ...this.highway.stations];
+    this._buildMapKiosk();
+    g.world.simSite = this.simSite();
+  }
+
+  /**
+   * THE MAP KIOSK, on the hub where everybody arrives. Richard: "There should
+   * be a minimap of some sort in the simulator, could just be a kiosk or map
+   * legend the player can view in the main island, to show the player where
+   * everything is." It opens Lionheart's card straight onto its map — the one
+   * map, drawn one way, wherever it is asked for (dream/lionguide.js
+   * `mapSvg`). The corner minimap draws the same layout (`simSite`).
+   *
+   * BESIDE THE PORT BRIDGE'S MOUTH, between the Dojo's floor (38) and the
+   * hub's rim (50), off the deck's line: the first thing she walks past, and
+   * nowhere a bridge or the turning circle needs. world-check measures its
+   * clearance from every other station and sign.
+   */
+  _buildMapKiosk() {
+    const dc = this.game.world.dojoCentre;
+    const u = this.layout.u;
+    const at = MAP_KIOSK;
+    this.mapKiosk = new Kiosk(this, {
+      x: dc.x + u.x * at.r - u.z * at.side, z: dc.z + u.z * at.r + u.x * at.side, y: dc.y,
+      r: 1.8, colour: HOLO.cyan, kanji: '地図', title: 'MAP', near: 7,
+      card: (p) => {
+        const n = this.guide.next(p);
+        return [
+          { text: '地図 MAP OF THE SIMULATOR', size: 1.7, color: HOLO.cyan, glow: true, jp: true },
+          { text: 'every island, and which ones you have been to', size: 1.1 },
+          { text: `next for ${p.name}: the ${ISLANDS[n.key]?.name ?? ''}`, size: 1.05, color: HOLO.gold },
+        ];
+      },
+      /* Three lines, not four: the station's own prompt floats just under the
+         card and says the key already — a fourth line here sat on top of it. */
+      cardH: 2.6,
+      prompt: (p, key) => `[${key}]  OPEN THE MAP`,
+      interact: (p) => {
+        if (this.game.inspector?.openLion) this.game.inspector.openLion(p.index, 'lionMap');
+        else this.game.toast?.('The map is on Lionheart\'s card — talk to him at your tubes', p.index);
+      },
+    });
+    this.stations.push(this.mapKiosk.station);
+  }
+
+  /**
+   * THE SIMULATOR, AS THE CORNER MINIMAP DRAWS IT — every disc and every road,
+   * in WORLD coordinates (the layer's plus `SIM`), so a kitten's own
+   * `position` lands on it with no conversion. Read off the decks and the
+   * bridges the layer actually has, never typed, so the map cannot show a
+   * bridge that is not there (systems/minimap.js `_drawSim`).
+   *
+   * THE TWO ARE IN DIFFERENT FRAMES. A deck is the layer's; a bridge's
+   * `road` is its Snake Way road, which is ALREADY world (simworld.js
+   * `addBridge` — the ride reads it against her real position). The first
+   * version offset both, and every road was drawn 12000 units east of its
+   * islands; world-check now asks that each road ends on a disc.
+   */
+  simSite() {
+    const off = (q) => ({ x: q.x + SIM.dx, z: q.z + SIM.dz });
+    const discs = (this.sim?.decks ?? []).filter((d) => Number.isFinite(d.r) && d.name)
+      .map((d) => ({ ...off(d), r: d.r, key: d.name }));
+    const roads = (this.sim?.bridges ?? []).map((B) => ({
+      pts: (B.road?.pts ?? []).filter((_, i, a) => i % 4 === 0 || i === a.length - 1).map((q) => ({ x: q.x, z: q.z })),
+      wide: (B.deck?.halfW ?? 0) > 3,
+    })).filter((r) => r.pts.length > 1);
+    let minX = Infinity; let maxX = -Infinity; let minZ = Infinity; let maxZ = -Infinity;
+    for (const d of discs) {
+      minX = Math.min(minX, d.x - d.r); maxX = Math.max(maxX, d.x + d.r);
+      minZ = Math.min(minZ, d.z - d.r); maxZ = Math.max(maxZ, d.z + d.r);
+    }
+    /* A MARGIN FOR THE NAMES, which the minimap writes outboard of each
+       island: fitted to the discs alone, GALLERY and RANGE were cut to
+       "GALL" and "RANGI" at the canvas edge. */
+    const m = 0.14 * Math.max(maxX - minX, maxZ - minZ);
+    return { discs, roads, bounds: { minX: minX - m, maxX: maxX + m, minZ: minZ - m, maxZ: maxZ + m } };
   }
 
   /**
@@ -1331,7 +1519,94 @@ export class DreamDojo {
     if (spec.cycle) this.highway.add(key, spec.name, from, to, prev ? ISLANDS[spec.from].name : undefined);
     else this.sim.addBridge(from, to, { wobble: 3, waves: 1, name: `${key} bridge` });
     const sign = this.sim.addSign(c.x + c.dir.x * (spec.r - 2), c.y + 12, c.z + c.dir.z * (spec.r - 2), spec.kanji, spec.name);
-    return { key, x: c.x, y: c.y, z: c.z, r: spec.r, fwd: c.dir, sign };
+    const gate = this._gateSign(key);
+    return { key, x: c.x, y: c.y, z: c.z, r: spec.r, fwd: c.dir, sign, gate };
+  }
+
+  /**
+   * THE SAME SIGN AT THE HUB END. Richard: "Lets have every area's/islands
+   * signage and text in the simulation also be at the entrance of the bridge
+   * in the main simulation island where the dojo of the turning circle is,
+   * as well as having it on the island it belongs to."
+   *
+   * Every island's own sign hangs over its far rim, 128 to 330 units out, so
+   * from the hub it was a smudge of pink over a disc — and the hub is where
+   * the choosing happens. So each bridge mouth on the hub carries its
+   * island's name too: beside the mouth, not over it, because the bridge
+   * camera looks down the bridge from behind her and a sign over the deck
+   * would be the first thing between her and the island it names. Smaller
+   * than the island's own, and low, at a kitten's eye line.
+   *
+   * An island reached THROUGH another (the Shadow, past the Arena School)
+   * has no mouth on the hub, so its sign is stacked over the sign of the
+   * mouth it is reached by, saying so — a signpost. Across the mouth was
+   * tried first and stood 7.8 from the Holo-Sentries' sign, the next spoke
+   * round: the far spokes are only 30 degrees apart.
+   */
+  _gateSign(key) {
+    const spec = ISLANDS[key];
+    let via = key;
+    let hops = 0;
+    while (ISLANDS[via].from) { via = ISLANDS[via].from; hops++; }
+    const dc = this.game.world.dojoCentre;
+    const c = islandCentre(dc, this.layout.u, ISLANDS[via]);
+    const at = gateSignSpot(dc, c.dir, ISLANDS[via].cycle ? HIGHWAY.halfW : 2.2);
+    return this.sim.addSign(at.x, at.y + hops * GATE_SIGN.stack, at.z, spec.kanji, spec.name, HOLO.cyan,
+      { scale: GATE_SIGN.scale, sub: hops ? `past the ${ISLANDS[via].name}` : '' });
+  }
+
+  /**
+   * Every mouth of every bridge in the layer, as the look across wants it:
+   * where the deck starts (world coordinates, as the roads are), which way
+   * it runs from there, and the floor of the island at the OTHER end.
+   */
+  _peekEnds() {
+    const ends = [];
+    for (const B of this.sim?.bridges ?? []) {
+      const pts = B.road.pts;
+      for (const [i, j, k] of [[0, pts.length - 1, 1], [pts.length - 1, 0, pts.length - 2]]) {
+        const m = pts[i];
+        const n = pts[i === 0 ? 1 : k];
+        const tl = Math.hypot(n.x - m.x, n.z - m.z) || 1;
+        const o = pts[j];
+        const disc = this.sim._discAt({ x: o.x - SIM.dx, y: o.y, z: o.z - SIM.dz });
+        const far = disc
+          ? { x: disc.x + SIM.dx, y: disc.y, z: disc.z + SIM.dz }
+          : { x: o.x, y: o.y, z: o.z };
+        ends.push({ road: B.road, mouth: m, toward: { x: (n.x - m.x) / tl, z: (n.z - m.z) / tl }, far });
+      }
+    }
+    return ends;
+  }
+
+  /**
+   * The look across for one kitten this frame, or null. Only a kitten in
+   * the layer, on her own paws, on a floor, and not in a drill — a drill
+   * near a rim (the Shadow's floor runs to its edge) must keep its camera.
+   * See dream/peek.js for the distances and the heading rule.
+   */
+  _peekFor(p) {
+    const s = this.st[p.index];
+    if (s?.phase !== 'sim' || !p.onGround || p.snakeRide || p.onCycle || p.mount || p.rideAlong
+      || p.pandaMount || p.pinnedAt) {
+      if (s) s.peek = null;
+      return null;
+    }
+    const dr = this.drills[p.index];
+    if (dr && (dr.state === 'ready' || dr.state === 'live')) { s.peek = null; return null; }
+    this._ends ??= this._peekEnds();
+    let best = null;
+    let bw = 0;
+    for (const E of this._ends) {
+      const w = peekWeight(p.position, p.velocity ?? { x: 0, z: 0 }, E);
+      /* STANDING STILL KEEPS THE ANSWER: she stopped to look, or she stopped
+         walking away. A negative weight is "no opinion" at that strength. */
+      const k = w < 0 ? (s.peek?.end === E ? -w : 0) : w;
+      if (k > bw) { bw = k; best = E; }
+    }
+    if (!best) { s.peek = null; return null; }
+    s.peek = { end: best };
+    return { x: p.position.x, y: p.position.y, z: p.position.z, far: best.far, w: bw };
   }
 
   /** Lionheart, in light, at his own spot on the port. */
@@ -1360,9 +1635,82 @@ export class DreamDojo {
     this.sim.solids.push({ x: L.lion.x, z: L.lion.z, r: 1.25 });
   }
 
+  /**
+   * THE TUBES, IN HERE TOO. Richard: "We have VR tubes in the main world but
+   * not in the Dream Dojo simulation, let's have it there as well with the
+   * players color, so the player knows which tube to step into to leave the
+   * simulation." The way out was a cyan ring on the floor, the same for all
+   * four, and a DISCONNECT prompt that only appeared once she was already
+   * standing in the right one.
+   *
+   * The same glass as the real ones (TUBE_VERT/FRAG), on the same four spots
+   * (the port rings, which `onPort` already measures), each in ITS kitten's
+   * colour with her number over it — but light all the way down: rings of
+   * light for the base and cap, nothing solid, because nothing in here is.
+   * A seat whose kitten is not in the sim is a dim grey ghost of a tube; hers
+   * glows in her colour, and brightest while she stands in it.
+   */
+  _buildSimTubes() {
+    const L = this.layout;
+    const g = this.game;
+    this.simTubes = L.tubes.map((t, i) => {
+      const col = g.players?.[i]?.style?.colour ?? TUBE_COLOURS[i];
+      const u = { uTime: { value: 0 }, uGlow: { value: 0.2 }, uColor: { value: new THREE.Color(col) } };
+      const glass = new THREE.Mesh(
+        new THREE.CylinderGeometry(TUBE_R, TUBE_R, 5.0, 32, 1, true),
+        new THREE.ShaderMaterial({
+          vertexShader: TUBE_VERT, fragmentShader: TUBE_FRAG, uniforms: u,
+          transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+        })
+      );
+      glass.position.set(t.x, ARCADE.y + 2.8, t.z);
+      glass.renderOrder = 5;
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: col, transparent: true, opacity: 0.85, toneMapped: false, depthWrite: false, blending: THREE.AdditiveBlending,
+      });
+      const rings = [0.14, 5.35].map((y) => {
+        const r = new THREE.Mesh(new THREE.TorusGeometry(TUBE_R + 0.3, 0.09, 6, 48), ringMat);
+        r.rotation.x = Math.PI / 2;
+        r.position.set(t.x, ARCADE.y + y, t.z);
+        return r;
+      });
+      const num = new THREE.Mesh(
+        new THREE.PlaneGeometry(1.3, 1.3),
+        new THREE.MeshBasicMaterial({ map: numberTexture(i + 1, css(col)), transparent: true, depthWrite: false, toneMapped: false })
+      );
+      num.position.set(t.x, ARCADE.y + 6.5, t.z);
+      num.renderOrder = 7;
+      this.sim.root.add(glass, ...rings, num);
+      return { u, glass, rings, ringMat, num, col: new THREE.Color(col) };
+    });
+  }
+
+  /** Hers lit in her colour while she is in here, brightest when she stands in it. */
+  _updateSimTubes() {
+    if (!this.simTubes) return;
+    const grey = _grey.set(0x5a6070);
+    this.simTubes.forEach((T, i) => {
+      const p = this.game.players?.[i];
+      if (p?.style?.colour != null) T.col.set(p.style.colour);
+      const here = !!p && this.realmOf(p) === 'sim';
+      const glow = here ? (this.onPort(p) ? 1 : 0.55) : 0.08;
+      T.u.uTime.value = this.t;
+      T.u.uGlow.value += (glow - T.u.uGlow.value) * 0.08;
+      T.u.uColor.value.copy(here ? T.col : grey);
+      T.ringMat.color.copy(here ? T.col : grey);
+      T.ringMat.opacity = here ? 0.85 : 0.25;
+      T.num.material.opacity = here ? 1 : 0.3;
+      const ring = this.sim.portRings?.[i];
+      if (ring) ring.material.color.copy(here ? T.col : grey);
+    });
+  }
+
   /** Move her (and her camera) across the boundary, by exactly the offset. */
   _cross(p, toSimNow, keepSuit = false) {
     if (!toSimNow) this._leaveSim(p, keepSuit);
+    // The look across is in the layer's coordinates: never carried over.
+    p.peekAt = null;
+    if (p.bridgePeek) p.bridgePeek.w = 0;
     const k = toSimNow ? 1 : -1;
     const dx = SIM.dx * k;
     const dz = SIM.dz * k;
@@ -1385,7 +1733,13 @@ export class DreamDojo {
     p.dreamAnchor = toSimNow ? s.anchor.clone() : null;
     s.proxy = null;
     if (toSimNow) {
+      /* HER HOLO KIT: a copy of what she wears, and no clan (dream/holokit.js).
+         Before `refillSim`, which sizes her bar off the kit she has in here. */
+      enterHolo(this, p);
+      this._applyKit(p, true);
       this.refillSim(p);
+      s.lostT = 0;
+      s.lostN = 0;
       /* THE INVITATION, ONCE A VISIT. A kitten wearing orbs is told there is
          a rundown; she is never put through one she did not ask for. */
       if (p.powerOrbs?.length) {
@@ -1405,6 +1759,7 @@ export class DreamDojo {
 
   /** Pull everybody out at once — a scene, the tournament, the ending. */
   exitAll() {
+    this.sine?.reset();
     for (const p of this.game.players ?? []) {
       if (!p) continue;
       const s = this.st[p.index];
@@ -1458,6 +1813,8 @@ export class DreamDojo {
     const g = this.game;
     this.t += dt;
     const ease = (x) => x * x * (3 - 2 * x);
+
+    for (const p of g.players ?? []) if (p) p.peekAt = this._peekFor(p);
 
     /* FIRST: is anything taking the whole screen? Then nobody stays inside —
        a scene that frames "the kittens" must find them in the real world,
@@ -1556,6 +1913,7 @@ export class DreamDojo {
         }
         case 'sim':
           s.fx = 0;
+          this._noteVisits(p, s, dt);
           break;
         case 'derez': {
           const k = ease(Math.min(1, s.t / 0.5));
@@ -1643,9 +2001,12 @@ export class DreamDojo {
     this._updateGear(dt);
     this._updateSign();
     this._updateTraining(dt);
+    tickKeptPandas(this, dt);
+    if (this.mapKiosk) this.mapKiosk.update(dt, idleIn(this));
     this._updateRez(dt);
     this._updatePuppets(dt);
     this._updateTubes(dt);
+    this._updateSimTubes();
     this._updateDome(dt);
     this.approach?.update(dt);
     this._dt = dt;
@@ -1655,6 +2016,7 @@ export class DreamDojo {
       this.sim.update(dt);
       const inside = (g.players ?? []).filter((p) => p && this.realmOf(p) === 'sim');
       this.simDojo?.update(dt, inside);
+      this.simDojoFx?.update(this.t);
       this.sim.steerBridges(dt, inside);
     }
   }
@@ -1678,6 +2040,17 @@ export class DreamDojo {
 
   /** `Game.strikePlayers`, for a kitten in the sim: holograms only. */
   onStrike(attacker, kind, reach, dir, spent = null) {
+    /* ONE CHARGE, ONE BLOW PER HOLOGRAM. Richard: "using the charge ability
+       quickly kills him, it should just do 1 hit amount of damage to him and
+       not keep recursively hitting him." `_chargeStrike` asks the gate on
+       EVERY frame the charge is live; in the ring it is `hurt`'s
+       invulnerability that makes that one blow, and a hologram has no such
+       window — so a charge through the Shadow landed about a blow a frame,
+       a dozen of his 24 in one press. The charge's own spent set
+       (`_chargeHit`, new each charge, which already stops a barrel or a rat
+       being hit forty times) is handed to the gate HERE, in the sim only, so
+       the ring's answer is untouched (non-negotiable 5). */
+    if (!spent && kind === 'charge') spent = attacker._chargeHit ?? null;
     const n = this.gate.strike(attacker, kind, reach, dir, spent);
     /* EVERY SWING, EVEN ONE THAT FOUND NOTHING — a kata's CUT is the swing
        on the beat, and the range's ONE SWING counts what one call reached. */
@@ -1765,7 +2138,7 @@ export class DreamDojo {
     const fresh = [];
     for (const id of new Set(ids)) {
       const want = ids.filter((x) => x === id).length;
-      const own = (p.powerOrbs ?? []).filter((x) => x === id).length;
+      const own = (s.holoWorn ?? p.powerOrbs ?? []).filter((x) => x === id).length;
       let have = own + s.loans.filter((x) => x === id).length;
       while (have < want) { s.loans.push(id); have++; fresh.push(id); }
     }
@@ -1777,15 +2150,52 @@ export class DreamDojo {
     }
   }
 
-  /** `p.power` and the worn ring, from her real orbs plus her loans. */
+  /** `p.power` and the worn ring, from her HOLO kit plus her loans — her real
+   *  orbs only stand in for a kitten with no holo kit yet. */
   _applyKit(p, force = false) {
     const s = this.st[p.index];
-    const ids = [...(p.powerOrbs ?? []), ...(s?.loans ?? [])];
+    const ids = s?.benched ? [] : [...(s?.holoWorn ?? p.powerOrbs ?? []), ...(s?.loans ?? [])];
     const sig = ids.join(',');
     if (!force && s?.kitSig === sig) return;
     if (s) s.kitSig = sig;
     p.power = aggregate(ids);
     this._syncMeshes(p, ids);
+  }
+
+  /**
+   * HER KIT ON THE RACK — the Sine Gauntlet's course. Richard: "We should
+   * likely consider stripping the player temporarily of their equipped
+   * kotodama orbs and clan abilities if they do join the course, so it will
+   * just be a course testing their raw skills, and return back to them in
+   * their Holographic Character Profile."
+   *
+   * NOTHING IS MOVED, so nothing can be lost (4): `holoWorn` stays exactly as
+   * it was and `_applyKit` simply wears none of it while `benched` is set; the
+   * holo clan is held on `benched.clan` and put back. Her REAL orbs and clan
+   * were already off — that is the holo kit — and are not touched here.
+   */
+  bench(p, why = 'the course') {
+    const s = this.st[p?.index];
+    if (!s || s.benched) return;
+    s.benched = { clan: p.clan ?? null, why };
+    p.clan = null;
+    p.clanRing?.material.color.set(p.style?.colour ?? 0xffffff);
+    this.game._updateClanBadge?.(p);
+    this._applyKit(p, true);
+    this.game.toast?.(`${p.name} — your holo kit is on the rack for ${why}: no orbs, no clan, just you`, p.index);
+  }
+
+  /** And back on, exactly as it was. `quiet` when something else is already
+   *  talking (she left the simulator, a scene pulled everybody out). */
+  unbench(p, quiet = false) {
+    const s = this.st[p?.index];
+    if (!s?.benched) return;
+    p.clan = s.benched.clan;
+    s.benched = null;
+    p.clanRing?.material.color.set(p.clan?.color ?? p.style?.colour ?? 0xffffff);
+    this.game._updateClanBadge?.(p);
+    this._applyKit(p, true);
+    if (!quiet) this.game.toast?.(`${p.name} — your holo kit is back on. It is all in your (HOLO) PLAYER PROFILE`, p.index);
   }
 
   /** `Game.syncOrbMeshes`, but for a list that is not `powerOrbs`. */
@@ -1814,19 +2224,25 @@ export class DreamDojo {
       p.clanRing?.material.color.set(clan.color);
       this.game.toast?.(`${p.name} swore to ${clan.name} — only in the simulator`, p.index);
       this.game.sfx?.('clan');
+      this.game._updateClanBadge?.(p);
     }
   }
 
   /** Everything sim-only comes off her: drill, rundown, loans, oath, bar. */
   _leaveSim(p, keepSuit = false) {
     const s = this.st[p.index];
+    /* FIRST: off the course and the rack, so the holo clan the rack was
+       holding is back on her for the lines below to undo with the rest. */
+    this.sine?.forget(p);
     this._hushHolo(p);
     if (!keepSuit) p.setSimLook?.(false);
     this.highway?.stop(p);
     const d = this.drills[p.index];
     if (d) { d.dispose(); this.drills[p.index] = null; }
+    this.dropSimPanda(p);
+    this.closeChoice(p);
     this._closeRundown(p);
-    if (s) { s.loans = []; s.kitSig = null; }
+    if (s) { s.loans = []; s.kitSig = null; s.holoWorn = null; s.holoCopies = null; }
     p.power = aggregate(p.powerOrbs ?? []);
     if (this.game.syncOrbMeshes) this.game.syncOrbMeshes(p);
     else this._syncMeshes(p, p.powerOrbs ?? []);
@@ -1835,20 +2251,135 @@ export class DreamDojo {
       p.dreamOath = null;
       p.clanRing?.material.color.set(p.clan?.color ?? p.style?.colour ?? 0xffffff);
     }
+    this.game._updateClanBadge?.(p);
     // A mark on a hologram means nothing out there.
     if (p.stealTarget && !this.game.players?.includes(p.stealTarget)) p._endMark?.(null);
     s?.bar?.removeFromParent();
   }
 
-  startDrill(p, spec, at) {
+  /** The Pandapaw trial was won: the cub is hers while she stays on the
+   *  hall's island, sworn to Pandapaw (`keptPandaGone` says when it goes). */
+  keepSimPanda(p, panda, owner) {
+    this.dropSimPanda(p);
+    this.simPandas[p.index] = { p, panda, owner, isle: this.isles?.hall ?? null };
+  }
+
+  dropSimPanda(p) { dropKept(this, p.index); }
+
+  /** Put a question over her head (dream/holokit.js `HoloChoice`). */
+  openChoice(p, o) {
+    this.closeChoice(p);
     this._closeRundown(p);
+    this.choices[p.index] = new HoloChoice(this, p, o);
+  }
+
+  closeChoice(p) {
+    const c = this.choices[p.index];
+    if (!c) return;
+    c.dispose();
+    this.choices[p.index] = null;
+  }
+
+  /**
+   * A Gallery pedestal, pressed. Under three stars it is the trial, as it
+   * always was; at three, "they will get a UI option that lets them either
+   * start the trial or add an extra kotodama orb to their inventory".
+   */
+  pedestal(p, id, start) {
+    const stars = this.progress.stars(p.style?.name ?? p.name, `gallery.${id}`);
+    if (stars < 3) { start(); return; }
+    const spec = ORB_BY_ID[id];
+    const left = holoLeft(p, id);
+    const have = HOLO_MAX_EACH - left;
+    this.openChoice(p, {
+      title: `${spec?.kanji ?? ''} ${spec?.name ?? id}  ★★★`,
+      rows: [
+        { text: 'START THE TRIAL', act: () => { this.closeChoice(p); start(); } },
+        {
+          text: left ? `TAKE ANOTHER ${spec?.name ?? id} — you have ${have} of ${HOLO_MAX_EACH}`
+            : `ALL ${HOLO_MAX_EACH} TAKEN — ${HOLO_MAX_EACH} is the most`,
+          dim: !left,
+          act: () => {
+            this.closeChoice(p);
+            const r = grantHolo(this, p, id);
+            if (!r.ok) {
+              this.game.sfx?.('deny');
+              this.game.toast?.(`${p.name} — ${r.why}`, p.index);
+            }
+          },
+        },
+        { text: 'NEVER MIND — keep exploring', act: () => this.closeChoice(p) },
+      ],
+    });
+  }
+
+  /**
+   * Any drill ended. A Gallery trial WON for the first time pays its orb into
+   * her holo kit — "When they gather kotodama in the simulator, it will
+   * automatically equip them" — and only the first time: the extras are the
+   * pedestal's to give, after three stars.
+   */
+  onDrillEnd(d, how) {
+    if (how !== 'won') return;
+    const m = /^gallery\.(\w+)$/.exec(d.spec.id ?? '');
+    if (!m || !ORB_BY_ID[m[1]]) return;
+    if ((d.p.holoOrbs ?? []).includes(m[1])) return;
+    grantHolo(this, d.p, m[1]);
+  }
+
+  startDrill(p, spec, at) {
+    const s0 = this.st[p.index];
+    if (s0) s0.lostT = 0;
+    this._closeRundown(p);
+    this.closeChoice(p);
     const old = this.drills[p.index];
     if (old) old.dispose();
     this.drills[p.index] = new Drill(this, p, spec, at);
   }
 
+  /**
+   * WHERE SHE HAS BEEN, AND IS SHE LOST. Every frame she is in the simulator.
+   *
+   * A VISIT IS STANDING ON THE ISLAND, written once per island into her row
+   * of the progress store (`visit.<key>`), where Lionheart's card reads it —
+   * so it outlives the tab the way her stars do. Crossing the bridge is not a
+   * visit; arriving is.
+   *
+   * LOST IS NOTHING WON FOR `LOST_AFTER` SECONDS, out of a drill. "Lionheart
+   * can give them suggestions of what to do next incase they are lost." He
+   * calls out the one suggestion his card would give (`lionNext`), by name,
+   * in his bubble and so in her caption when she is far from him — then waits
+   * longer, and stops after `LOST_MAX` in one visit: a voice that keeps
+   * telling her what to do is a voice she stops hearing.
+   */
+  _noteVisits(p, s, dt) {
+    if (!this.isles) return;
+    const at = this._flatPos(p);
+    const name = p.style?.name ?? p.name;
+    for (const [key, I] of Object.entries(this.isles)) {
+      if (Math.hypot(at.x - I.x, at.z - I.z) > I.r) continue;
+      if (!this.progress.flag(name, `visit.${key}`)) this.progress.setFlag(name, `visit.${key}`);
+      break;
+    }
+    const d = this.drills[p.index];
+    const busy = (d && (d.state === 'ready' || d.state === 'live')) || this.highway?.riding(p.index)
+      || this.choices[p.index] || this.rundowns[p.index] || this.game.inspector?.busy?.(p.index)
+      /* Waiting her turn in the Sine Gauntlet's stands is not being lost —
+         a four-kitten queue is minutes, and she cannot leave it to follow
+         his suggestion without giving up her place. */
+      || this.sine?.inSession?.(p);
+    if (busy) { s.lostT = 0; return; }
+    s.lostT = (s.lostT ?? 0) + dt;
+    if (s.lostT < LOST_AFTER || (s.lostN ?? 0) >= LOST_MAX) return;
+    s.lostN = (s.lostN ?? 0) + 1;
+    s.lostT = LOST_AFTER - LOST_AGAIN;
+    this.holoSay(`${p.name} — ${this.guide.next(p).short}\nTalk to me any time for more.`, 7);
+  }
+
   /** Write a result down — returns what changed, for the card. */
   award(p, id, stars, score, lowerIsBetter) {
+    const s0 = this.st[p.index];
+    if (s0) s0.lostT = 0;
     const r = this.progress.award(p.style?.name ?? p.name, id, stars, score, { lowerIsBetter });
     // The day's and the week's boxes (dream/rank.js) are paid off the same result.
     this.ranks?.onAward(p, id, stars);
@@ -1923,7 +2454,7 @@ export class DreamDojo {
     }
     if ((s.iframes ?? 0) > 0) return 'immune';
     s.simHp = (s.simHp ?? this.simMax(p)) - dmg;
-    s.iframes = 0.6;
+    s.iframes = SIM_IFRAMES;
     p.flashT = 0.3;
     /* A NUDGE, NOT A THROW. Six units a second and a hop: enough that walking
        into a wall of light reads as being stopped by it, and far short of
@@ -2479,7 +3010,8 @@ export class DreamDojo {
       s.mesh.scale.set(1 - Math.sin(this.t * 1.6) * 0.012, 1 + Math.sin(this.t * 1.6) * 0.016, 1);
     }
     if (this.holoLionSprite) {
-      const flick = Math.sin(this.t * 37) > 0.93 ? 0.4 : 0.85;
+      // Soft, not a blink — see `holoFlicker` (it was 5.9 hard blinks a second).
+      const flick = holoFlicker(this.t, 1, 0.85, 0.25);
       this.holoLionSprite.mat.opacity = flick;
       this.holoLionSprite.mesh.scale.copy(s?.mesh.scale ?? this.holoLionSprite.mesh.scale);
     }
@@ -2507,9 +3039,12 @@ export class DreamDojo {
     this.bubbleShow += ((want ? 1 : 0) - this.bubbleShow) * Math.min(1, dt * 5);
     for (const [, m] of this.bubbles) {
       const on = m === want || (m === this._lastBubble && !want);
-      m.visible = on && this.bubbleShow > 0.02;
-      m.material.opacity = this.bubbleShow;
-      m.position.y = LION_HEIGHT * 0.9 - (m.userData.tipY ?? 0) + Math.sin(this.t * 1.5) * 0.15;
+      m.on = on && this.bubbleShow > 0.02;
+      for (const b of [m.r, m.l]) {
+        b.material.opacity = this.bubbleShow;
+        b.position.y = LION_HEIGHT * 0.9 - (b.userData.tipY ?? 0) + Math.sin(this.t * 1.5) * 0.15;
+        if (!m.on) b.visible = false;
+      }
     }
     if (want) this._lastBubble = want;
 
@@ -2519,7 +3054,7 @@ export class DreamDojo {
       let nearSim = false;
       for (const p of this.simKittens()) {
         const q = this._flatPos(p);
-        if (Math.hypot(q.x - this.layout.lion.x, q.z - this.layout.lion.z) < 20) nearSim = true;
+        if (Math.hypot(q.x - this.layout.lion.x, q.z - this.layout.lion.z) < LION_NEAR) nearSim = true;
       }
       let ht = null;
       if (this.holoText && (this.t < this.holoUntil || this.voice.saying(this.holoText))) ht = this.holoText;
@@ -2533,12 +3068,47 @@ export class DreamDojo {
       this.holoShow += ((hw ? 1 : 0) - this.holoShow) * Math.min(1, dt * 5);
       for (const [, m] of this.holoBubbles) {
         const on = m === hw || (m === this._lastHolo && !hw);
-        m.visible = on && this.holoShow > 0.02;
-        m.material.opacity = this.holoShow * 0.92;
-        m.position.y = LION_HEIGHT * 0.9 - (m.userData.tipY ?? 0) + Math.sin(this.t * 1.5) * 0.15;
+        m.on = on && this.holoShow > 0.02;
+        for (const b of [m.r, m.l]) {
+          b.material.opacity = this.holoShow * 0.92;
+          b.position.y = LION_HEIGHT * 0.9 - (b.userData.tipY ?? 0) + Math.sin(this.t * 1.5) * 0.15;
+          if (!m.on) b.visible = false;
+        }
       }
       if (hw) this._lastHolo = hw;
+      this._captionHolo();
     }
+  }
+
+  /**
+   * HIS WORDS ON THE SCREEN, FOR WHOEVER CANNOT SEE HIM. Richard: "While
+   * Lionheart is talking in the simulation, if player is not near him and
+   * can't see his text bubble, then we should display his text on the screen,
+   * like we do for Payne. Since his text is long, we can display it as it is
+   * being said and maybe have it on the bottom of the screen for all the
+   * players, like it is for Mr. Satan's voice text in the arena."
+   *
+   * His voice is one speaker for the whole machine, so a kitten on the Kata
+   * floor hears him pitching the islands to her sister at the port, and had
+   * nothing to read. Now, while the hologram is SAYING a line aloud and any
+   * kitten in the sim is further than LION_NEAR from him, the line goes on
+   * Mr Satan's own card (`Announcer.follow`), word by word on his playhead —
+   * one card for the whole screen, as Richard asked, and the same card for
+   * the same reason Patchfur borrows it: one speaker, one corner. Asked every
+   * frame, so a kitten who walks away mid-sentence gets the rest of it.
+   */
+  _captionHolo() {
+    const a = this.game.announcer;
+    const text = this.holoText;
+    if (!a?.follow || !text || !this.voice.saying(text)) return;
+    const el = this.voice.elOf(text);
+    if (a.following(el)) return;
+    const far = this.simKittens().some((p) => {
+      const q = this._flatPos(p);
+      return Math.hypot(q.x - this.layout.lion.x, q.z - this.layout.lion.z) >= LION_NEAR;
+    });
+    if (!far) return;
+    a.follow(el, this.voice.secs(this.voice.idOf(text)), text.replace(/\n/g, ' '), { ...LION_WHO, art: this.lionArt });
   }
 
   /* ------------------------------ rendering ------------------------------- */
@@ -2551,13 +3121,7 @@ export class DreamDojo {
     _right.set(1, 0, 0).applyQuaternion(camera.quaternion);
     _right.y = 0;
     if (_right.lengthSq() > 1e-6) _right.normalize();
-    for (const [, b] of this.bubbles ?? []) {
-      if (!b.visible) continue;
-      b.quaternion.copy(camera.quaternion);
-      const off = 1.4 + (b.userData.w ?? 4) * 0.5;
-      b.position.x = _right.x * off;
-      b.position.z = _right.z * off;
-    }
+    for (const [, m] of this.bubbles ?? []) this._turnBubble(m, camera);
     this.sign?.quaternion.copy(camera.quaternion);
     if (this.sign) {
       // Only ever turn about Y — a sign that tips back is a sign on a hinge.
@@ -2576,6 +3140,9 @@ export class DreamDojo {
     }
     this.simDojo?.faceCamera?.(camera);
     if (this.sim && camera.position.x > SIM.dx * 0.5) {
+      for (const k of this.simPandas) k?.panda.faceCamera(camera);
+      for (const c of this.choices) c?.faceCamera(camera);
+      this.mapKiosk?.faceCamera(camera);
       this.sim.faceCamera(camera);
       this.gallery?.faceCamera(camera);
       this.hall?.faceCamera(camera);
@@ -2592,13 +3159,8 @@ export class DreamDojo {
       for (const d of this.drills) d?.faceCamera(camera);
       for (const r of this.rundowns) r?.faceCamera(camera);
       for (const s of this.st) s?.bar?.faceCamera(camera);
-      for (const [, m] of this.holoBubbles ?? []) {
-        if (!m.visible) continue;
-        m.quaternion.copy(camera.quaternion);
-        const off = 1.4 + (m.userData.w ?? 4) * 0.5;
-        m.position.x = _right.x * off;
-        m.position.z = _right.z * off;
-      }
+      for (const [, m] of this.holoBubbles ?? []) this._turnBubble(m, camera);
+      for (const t of this.simTubes ?? []) t.num.quaternion.copy(camera.quaternion);
     }
   }
 
@@ -2635,4 +3197,5 @@ export class DreamDojo {
 }
 
 const _right = new THREE.Vector3();
+const _grey = new THREE.Color();
 const _e = new THREE.Euler();

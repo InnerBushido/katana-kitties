@@ -12,6 +12,7 @@
 --------------------------------------------------------------------------- */
 
 import { cssFor } from '../core/palette.js';
+import { ISLE_ABOUT } from './dream/islands.js';
 
 /* MARGIN ROUND THE ARCHIPELAGO AT WORLD ZOOM, AS A FRACTION OF THE BOX.
 
@@ -264,6 +265,18 @@ export class Minimap {
    */
   draw(players, dragons, kotodama = null, satan = null, ryu = null, seek = null,
     goal = null, payne = null) {
+    /* IN THE SIMULATOR, THE SIMULATOR'S MAP. Richard: "There should be a
+       minimap of some sort in the simulator". Every kitten this map is drawn
+       for is 12000 units east of the archipelago in there, so the town's map
+       had nobody on it at all. Only when ALL of them are in: a shared map
+       with one sister outside keeps the map she is on. */
+    const mine = this.focusIndex != null && players[this.focusIndex] ? [players[this.focusIndex]]
+      : (this.focusOn?.map((i) => players[i]).filter(Boolean) ?? players);
+    const site = this.world.simSite;
+    if (site && mine.length && mine.every((p) => p.realm === 'sim')) {
+      this._drawSim(site, players.filter((p) => p.realm === 'sim'), mine);
+      return;
+    }
     const focus = this.focusIndex != null && players[this.focusIndex]
       ? players[this.focusIndex].position
       : midpointOf(this.focusOn?.map((i) => players[i]).filter(Boolean) ?? players);
@@ -680,6 +693,84 @@ export class Minimap {
     }
 
     // --- the kitties, drawn last so they're never hidden ---
+    this._drawKittens(players);
+  }
+
+  /**
+   * THE SIMULATOR FROM ABOVE — `world.simSite`, which `DreamDojo.simSite`
+   * reads off the layer's own decks and bridges. Its own fit (the town's
+   * bounds would put it off the edge), the same zoom and the same pips, and
+   * the same orientation as the town's map and Lionheart's (map down is world
+   * +z). Highways in gold, bridges in cyan, every island's short name
+   * outboard of it so ten names fit a corner.
+   */
+  _drawSim(site, players, mine) {
+    const keep = this.bounds;
+    this.bounds = site.bounds;
+    this._resize(this.zoom > 1 ? midpointOf(mine) : null);
+    this.bounds = keep;
+    this._t = (this._t ?? 0) + 0.09;
+    const c = this.ctx;
+    const dpr = this.dpr;
+    c.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    c.lineCap = 'round';
+    for (const r of site.roads) {
+      c.beginPath();
+      r.pts.forEach((q, i) => (i ? c.lineTo(this._px(q.x), this._py(q.z)) : c.moveTo(this._px(q.x), this._py(q.z))));
+      c.strokeStyle = r.wide ? '#ffd24a' : '#5ff6ff';
+      c.globalAlpha = 0.85;
+      c.lineWidth = (r.wide ? 2.4 : 1.6) * dpr;
+      c.stroke();
+    }
+    c.globalAlpha = 1;
+    c.lineCap = 'butt';
+    const hub = site.discs.find((d) => d.key === 'dojo');
+    for (const d of site.discs) {
+      c.beginPath();
+      c.arc(this._px(d.x), this._py(d.z), Math.max(2.5 * dpr, d.r * this.scale), 0, Math.PI * 2);
+      c.fillStyle = d.key === 'dojo' ? '#12485e' : '#0b3140';
+      c.globalAlpha = 0.92;
+      c.fill();
+      c.globalAlpha = 1;
+      c.lineWidth = 1.4 * dpr;
+      c.strokeStyle = d.key === 'port' ? '#ff4fd8' : '#5ff6ff';
+      c.stroke();
+    }
+    c.font = `800 ${8.5 * dpr}px Nunito, sans-serif`;
+    c.textAlign = 'center';
+    c.lineJoin = 'round';
+    for (const d of site.discs) {
+      const word = d.key === 'dojo' ? 'DOJO' : d.key === 'port' ? 'TUBES' : ISLE_ABOUT[d.key]?.short;
+      if (!word) continue;
+      let x = this._px(d.x);
+      let y = this._py(d.z);
+      if (hub && d !== hub) {
+        const dx = d.x - hub.x;
+        const dz = d.z - hub.z;
+        const L = Math.hypot(dx, dz) || 1;
+        const out = d.r * this.scale + 6 * dpr;
+        x += (dx / L) * out;
+        y += (dz / L) * out;
+      }
+      y += 3 * dpr;
+      /* KEPT ON THE CANVAS. The names are a fixed pixel size and the map is
+         not — a phone's corner map is half a desktop's — so the bounds'
+         margin alone still cut GALLERY and BAMBOO at the edge there. */
+      const half = c.measureText(word).width / 2 + 2 * dpr;
+      x = Math.min(Math.max(x, half), this.canvas.width - half);
+      y = Math.min(Math.max(y, 10 * dpr), this.canvas.height - 3 * dpr);
+      c.lineWidth = 3 * dpr;
+      c.strokeStyle = 'rgba(4,16,24,0.92)';
+      c.strokeText(word, x, y);
+      c.fillStyle = d.key === 'port' ? '#ffb8f0' : '#c8fdff';
+      c.fillText(word, x, y);
+    }
+    this._drawKittens(players);
+  }
+
+  /** The kittens: a wedge each in her colour, pointing where she faces. */
+  _drawKittens(players) {
+    const c = this.ctx;
     players.forEach((p) => {
       const x = this._px(p.position.x);
       const y = this._py(p.position.z);
