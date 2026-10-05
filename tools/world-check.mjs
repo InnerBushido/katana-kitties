@@ -8824,6 +8824,13 @@ console.log('\n--- half a second of not being there ---');
     K.pickups.every((p) => clearOf(p.position.x, p.position.z, 0.01) >= 4));
   ok('the dealer is not either',
     K.stall && clearOf(K.stall.position.x, K.stall.position.z, 0.01) >= 4);
+  /* BACK IN THE MARKET. Searching at 8 x STALL_SCALE put the bigger booth
+     35 units out on the grass; Richard: "move it back to where it used to be
+     in the center of the town". (2.6, 45.2) is where clearance 8 has always
+     put it. */
+  ok('the dealer stands where it always stood, in the market street',
+    K.stall && Math.hypot(K.stall.position.x - 2.58, K.stall.position.z - 45.22) < 1,
+    K.stall && `${K.stall.position.x.toFixed(1)}, ${K.stall.position.z.toFixed(1)}`);
 
   /* --- AND YOU CAN READ IT FROM A QUARTER OF A SCREEN -------------------
      Reported from four-player play: "too hard to read the text above the
@@ -38986,11 +38993,12 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const ground = strikeAt('sweep', ahead(3));
     const jumped = strikeAt('sweep', { ...ahead(3), y: IH.y + 1.2 });
     ok('影 the slam hits her in its line and not beside it; a Flash Step dodges it; a jump clears the sweep',
-      inLine === SH.SLAM.dmg && beside === 0 && dodged === 0 && ground === SH.SWEEP.dmg && jumped === 0,
+      inLine === SH.shadowDmg(SH.SLAM.dmg, D.simMax(her)) && beside === 0 && dodged === 0
+      && ground === SH.shadowDmg(SH.SWEEP.dmg, D.simMax(her)) && jumped === 0,
       `${inLine} ${beside} ${dodged} ${ground} ${jumped}`);
     const crossOn = strikeAt('cross', ahead(6));
     F.act = { kind: 'idle', t: 1 };
-    ok('...and the Cross Slash lands on where she WAS, and leaves him OPEN', crossOn === SH.CROSS.dmg && B.open > 0,
+    ok('...and the Cross Slash lands on where she WAS, and leaves him OPEN', crossOn === SH.shadowDmg(SH.SHADOW_LEVELS[0].crossDmg, D.simMax(her)) && B.open > 0,
       `${crossOn} open ${B.open.toFixed(1)}`);
     const hp0 = B.hp;
     B.hit(blow);
@@ -39076,15 +39084,41 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
        easy" — so the fight above, run off the one kiosk there always was,
        is EASY, and easy is the shipped numbers exactly. */
     const LV = SH.SHADOW_LEVELS;
-    ok('影 easy is the fight that shipped, number for number: every multiplier 1, the old bar, the single X, the old rotation',
+    ok('影 easy is the fight that shipped, but for its X: every multiplier 1, the old bar, the single X at Richard’s 20, the old rotation',
       F.level === 0 && LV[0].speed === 1 && LV[0].tellK === 1 && LV[0].restK === 1 && LV[0].dmgK === 1
-      && LV[0].hits === SH.SHADOW_HITS && LV[0].per === SH.SHADOW_PER && LV[0].crossDmg === SH.CROSS.dmg
+      && LV[0].hits === SH.SHADOW_HITS && LV[0].per === SH.SHADOW_PER && LV[0].crossDmg === 20
       && LV[0].phase2 === SH.PHASE2 && !LV[0].triple && LV[0].order.join() === 'slam,cross,sweep,slam,cross');
     ok('...and each level up is faster, quicker to swing, more often, tougher and harder-hitting, and hard\'s 凶 is "about 80"',
       [1, 2].every((k) => ['speed', 'hits', 'per', 'dmgK', 'phase2'].every((f) => LV[k][f] > LV[k - 1][f])
         && LV[k].tellK < LV[k - 1].tellK && LV[k].restK < LV[k - 1].restK && LV[k].triple)
-      && Math.abs(3 * LV[2].crossDmg - 80) <= 2,
-      `hard 凶 ${3 * LV[2].crossDmg}, medium ${3 * LV[1].crossDmg}`);
+      && Math.abs(3 * LV[2].crossDmg - 80) <= 5,
+      `hard 凶 ${3 * LV[2].crossDmg + LV[2].crossBonus}, medium ${3 * LV[1].crossDmg}`);
+    /* Richard, after playing it: "On easy, they can take 20 damage (on 1
+       cross-slash), on medium they take 15 (on 1 hit from a triple
+       cross-slash attack), and on hard they take 25 ... if hit with all
+       three, they take 80 (an extra 5 damage taken)". "Assuming player has
+       100 health": a kitten in two 活 Vigor orbs (160) loses the same share. */
+    ok('影 his X takes 20 / 15 / 25 of a hundred, and hard’s third adds 5: all three is 80',
+      LV.map((L) => L.crossDmg).join() === '20,15,25' && LV.map((L) => L.crossBonus).join() === '0,0,5'
+      && 2 * LV[2].crossDmg + LV[2].crossDmg + LV[2].crossBonus === 80);
+    ok('...of a HUNDRED: a 160 bar loses the same share as a 100 one, so Vigor buys no extra blows here',
+      SH.shadowDmg(25, 100) === 25 && SH.shadowDmg(25, 160) === 40 && SH.shadowDmg(80, 160) / 160 === 0.8
+      && SH.shadowDmg(20, undefined) === 20);
+    /* NO HEALING WHILE HE IS FIGHTING HER. The SIM bar refills 12 a second
+       when no drill is running, and his fight is not a drill — which is
+       why "it's hard for them to die". */
+    {
+      const st = D.st[0];
+      st.simHp = 40;
+      const sh0 = D.shards;
+      D.shards = null;
+      D._updateTraining(1);
+      D.shards = sh0;
+      const inFight = st.simHp;
+      st.simHp = 100;
+      ok('影 her SIM bar does NOT refill while she is in his fight', F.who.has(her.index) && F.state !== 'waiting' && inFight === 40,
+        `${inFight}`);
+    }
     /* A FASTER FIGHT IS STILL A FAIR ONE. Every telegraph on every level is
        longer than a reaction (0.2s) plus walking out of its shape at her walk
        (10.5): half a slam's width, or the X's arm from its middle. */
@@ -39220,14 +39254,14 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       };
       const still = run(false);
       ok('影 on HARD his Cross Slash is THREE Xs: a kitten who stands still takes all three, about 80, and then he is OPEN',
-        still.n === 3 && still.took === 3 * LV[2].crossDmg && still.open, `${still.n} Xs, took ${still.took}`);
+        still.n === 3 && still.took === 80 && D.simMax(her) === 100 && still.open, `${still.n} Xs, took ${still.took}`);
       ok('...with 凶 in front of him while it runs, fully lit by the last, and gone after', still.emblem && still.lit > 0.95 && !still.after,
         `${still.lit.toFixed(2)} ${still.after}`);
       BX.open = 0;
       F.act = { kind: 'idle', t: 99 };
       const moved = run(true);
       ok('...and each X is aimed where she is NOW: stepping off after each warning, only the first one lands',
-        moved.n === 3 && moved.took === LV[2].crossDmg, `${moved.n} Xs, took ${moved.took}`);
+        moved.n === 3 && moved.took === SH.shadowDmg(LV[2].crossDmg, D.simMax(her)), `${moved.n} Xs, took ${moved.took}`);
       // His walk, on hard against easy, measured over a second with her far away.
       const walk = (lv) => {
         F.level = lv;

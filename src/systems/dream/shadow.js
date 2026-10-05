@@ -109,21 +109,45 @@ export const CROSS = { tell: 1.2, len: 14, half: 1.3, dmg: 22, open: 2.2, chain:
  * and 45 on medium. Every tell is still drawn on the floor first and still
  * lands exactly on what it drew (`world-check` samples every level).
  * NOT PLAYED BY A KITTEN YET — first numbers, for Richard to tune.
+ *
+ * TUNED, after his playthrough. Richard: "players shouldn't be healing
+ * overtime, makes it hard for them to die ... Players also seem to have too
+ * much health in this section ... Assuming player has 100 health ... On easy,
+ * they can take 20 damage (on 1 cross-slash), on medium they take 15 (on 1
+ * hit from a triple cross-slash attack), and on hard they take 25 ... if hit
+ * with all three, they take 80 (an extra 5 damage taken)."
+ *   · `crossDmg` is 20 / 15 / 25, and `crossBonus` is the hard 凶's extra 5,
+ *     paid by the third X to a kitten the first two ALSO hit: 25+25+30 = 80.
+ *   · "ASSUMING 100 HEALTH" IS MADE TRUE: every blow of his is scaled by her
+ *     SIM bar over 100 (`shadowDmg`), so a kitten in two 活 Vigor orbs (160)
+ *     loses the same SHARE of her bar a bare one does. That is the "too much
+ *     health" half — her orbs were buying her 60% more fight here.
+ *   · The healing was the SIM bar's idle refill, 12 a second whenever no
+ *     drill is running — and this fight is not a drill. It stops for anybody
+ *     in his fight (`DreamDojo._updateTraining`).
+ * Easy is no longer the fight that shipped number for number: its X is 20,
+ * not 22, because he named the number.
  */
 export const SHADOW_LEVELS = [
   {
     id: 'easy', name: 'EASY', colour: 0x7be0a4, speed: 1, tellK: 1, restK: 1, hits: SHADOW_HITS, per: SHADOW_PER,
-    dmgK: 1, crossDmg: CROSS.dmg, phase2: PHASE2, triple: false, order: ['slam', 'cross', 'sweep', 'slam', 'cross'],
+    dmgK: 1, crossDmg: 20, crossBonus: 0, phase2: PHASE2, triple: false, order: ['slam', 'cross', 'sweep', 'slam', 'cross'],
   },
   {
     id: 'medium', name: 'MEDIUM', colour: 0xffc93c, speed: 1.35, tellK: 0.82, restK: 0.7, hits: 32, per: 16,
-    dmgK: 1.4, crossDmg: 15, phase2: 0.6, triple: true, order: ['slam', 'cross', 'sweep', 'slam', 'cross'],
+    dmgK: 1.4, crossDmg: 15, crossBonus: 0, phase2: 0.6, triple: true, order: ['slam', 'cross', 'sweep', 'slam', 'cross'],
   },
   {
     id: 'hard', name: 'HARD', colour: 0xff4a6e, speed: 1.7, tellK: 0.68, restK: 0.45, hits: 40, per: 20,
-    dmgK: 1.8, crossDmg: 27, phase2: 0.75, triple: true, order: ['cross', 'slam', 'cross', 'sweep'],
+    dmgK: 1.8, crossDmg: 25, crossBonus: 5, phase2: 0.75, triple: true, order: ['cross', 'slam', 'cross', 'sweep'],
   },
 ];
+/** One of his blows against HER bar: authored against 100, scaled to her max
+ *  so the orbs that raise it do not raise how many of his blows she can eat. */
+export function shadowDmg(dmg, max) {
+  return Math.round(dmg * Math.max(1, max || 100) / 100);
+}
+
 export const LEVEL_BY_ID = Object.fromEntries(SHADOW_LEVELS.map((L, k) => [L.id, k]));
 /** Where the three kiosks stand, at the ring's edge, easy where the one
  *  kiosk always stood. Fanned round the rim at the old one's radius so all
@@ -512,6 +536,7 @@ export class ShadowFight {
     this.state = 'waiting';
     this.boss = null;
     this.who = new Map();     // index -> { p, catches }
+    this.chainHits = new Map(); // index -> Xs of this 凶 that hit her
     this.tells = [];
     this.flashes = [];
     this.t = 0;
@@ -969,13 +994,21 @@ export class ShadowFight {
       let dmg = 0;
       if (a.what === 'slam') { hit = inSlam(a.o, a.dir, x, z); dmg = SLAM.dmg * this.L.dmgK; }
       else if (a.what === 'sweep') { hit = inSweep(a.o, x, z, p.position.y - y); dmg = SWEEP.dmg * this.L.dmgK; }
-      else { hit = inCross(a.c, a.yaw, x, z); dmg = this.L.crossDmg; }
+      else {
+        hit = inCross(a.c, a.yaw, x, z);
+        dmg = this.L.crossDmg;
+        /* The hard 凶's extra 5: the THIRD X, on a kitten the first two hit. */
+        const n = this.chainHits?.get(p.index) ?? 0;
+        if (a.cuts === 1 && n >= 2) dmg += this.L.crossBonus ?? 0;
+      }
+      if (a.what === 'cross' && a.cuts === 3) this.chainHits?.delete(p.index);
       if (!hit) continue;
       const from = a.what === 'cross' ? a.c : a.o;
       const dx = x - from.x; const dz = z - from.z;
       const n = Math.hypot(dx, dz) || 1;
       // `from` and `foe`: a 返 Riposte guard toward him catches it and answers him.
-      this.dream.simHit(p, { dmg: Math.round(dmg), push: { x: dx / n, z: dz / n }, src: 'shadow', from, foe: b });
+      const r = this.dream.simHit(p, { dmg: shadowDmg(dmg, this.dream.simMax(p)), push: { x: dx / n, z: dz / n }, src: 'shadow', from, foe: b });
+      if (a.what === 'cross' && a.cuts && r === 'hit') this.chainHits.set(p.index, (this.chainHits.get(p.index) ?? 0) + 1);
     }
     // The tell turns white for a blink, then goes: the blade came down HERE.
     for (const m of a.meshes) {
