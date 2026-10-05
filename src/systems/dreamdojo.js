@@ -1046,6 +1046,10 @@ export class DreamDojo {
   /** Does she want a pane of her own? From the moment she sets off for her
    *  tube, so the phase never washes over a sister's view. */
   wantsSolo(p) {
+    /* EXCEPT THE SINE GAUNTLET'S SESSION, which is one pane on purpose:
+       "split screen and shared camera can focus on the player in the
+       obstacle course" (dream/sine.js `paneAnchor`). */
+    if (this.sine?.inSession?.(p)) return false;
     const s = this.st[p?.index];
     return !!(s && s.phase) || this.realmOf(p) === 'sim';
   }
@@ -1098,6 +1102,8 @@ export class DreamDojo {
          only: `pressed` is a pure edge test, and this never consumes one. */
       const d = this.drills[i];
       if (d?.state === 'live') d.spec.pad?.(d, pad);
+      // In the Sine Gauntlet's stands, ATTACK cheers (watching only).
+      this.sine?.cheerPad?.(this.game.players?.[i], pad);
       /* ROOTED WHILE SHE SWALLOWS — the Feast's `roots`, which is the ring's
          `Menagerie.eating`, and the ring hands her the dead pad for it too. */
       if (d?.state === 'live' && d.spec.roots?.(d)) return dead;
@@ -1753,6 +1759,7 @@ export class DreamDojo {
 
   /** Pull everybody out at once — a scene, the tournament, the ending. */
   exitAll() {
+    this.sine?.reset();
     for (const p of this.game.players ?? []) {
       if (!p) continue;
       const s = this.st[p.index];
@@ -2147,12 +2154,48 @@ export class DreamDojo {
    *  orbs only stand in for a kitten with no holo kit yet. */
   _applyKit(p, force = false) {
     const s = this.st[p.index];
-    const ids = [...(s?.holoWorn ?? p.powerOrbs ?? []), ...(s?.loans ?? [])];
+    const ids = s?.benched ? [] : [...(s?.holoWorn ?? p.powerOrbs ?? []), ...(s?.loans ?? [])];
     const sig = ids.join(',');
     if (!force && s?.kitSig === sig) return;
     if (s) s.kitSig = sig;
     p.power = aggregate(ids);
     this._syncMeshes(p, ids);
+  }
+
+  /**
+   * HER KIT ON THE RACK — the Sine Gauntlet's course. Richard: "We should
+   * likely consider stripping the player temporarily of their equipped
+   * kotodama orbs and clan abilities if they do join the course, so it will
+   * just be a course testing their raw skills, and return back to them in
+   * their Holographic Character Profile."
+   *
+   * NOTHING IS MOVED, so nothing can be lost (4): `holoWorn` stays exactly as
+   * it was and `_applyKit` simply wears none of it while `benched` is set; the
+   * holo clan is held on `benched.clan` and put back. Her REAL orbs and clan
+   * were already off — that is the holo kit — and are not touched here.
+   */
+  bench(p, why = 'the course') {
+    const s = this.st[p?.index];
+    if (!s || s.benched) return;
+    s.benched = { clan: p.clan ?? null, why };
+    p.clan = null;
+    p.clanRing?.material.color.set(p.style?.colour ?? 0xffffff);
+    this.game._updateClanBadge?.(p);
+    this._applyKit(p, true);
+    this.game.toast?.(`${p.name} — your holo kit is on the rack for ${why}: no orbs, no clan, just you`, p.index);
+  }
+
+  /** And back on, exactly as it was. `quiet` when something else is already
+   *  talking (she left the simulator, a scene pulled everybody out). */
+  unbench(p, quiet = false) {
+    const s = this.st[p?.index];
+    if (!s?.benched) return;
+    p.clan = s.benched.clan;
+    s.benched = null;
+    p.clanRing?.material.color.set(p.clan?.color ?? p.style?.colour ?? 0xffffff);
+    this.game._updateClanBadge?.(p);
+    this._applyKit(p, true);
+    if (!quiet) this.game.toast?.(`${p.name} — your holo kit is back on. It is all in your (HOLO) PLAYER PROFILE`, p.index);
   }
 
   /** `Game.syncOrbMeshes`, but for a list that is not `powerOrbs`. */
@@ -2188,6 +2231,9 @@ export class DreamDojo {
   /** Everything sim-only comes off her: drill, rundown, loans, oath, bar. */
   _leaveSim(p, keepSuit = false) {
     const s = this.st[p.index];
+    /* FIRST: off the course and the rack, so the holo clan the rack was
+       holding is back on her for the lines below to undo with the rest. */
+    this.sine?.forget(p);
     this._hushHolo(p);
     if (!keepSuit) p.setSimLook?.(false);
     this.highway?.stop(p);
@@ -2317,7 +2363,11 @@ export class DreamDojo {
     }
     const d = this.drills[p.index];
     const busy = (d && (d.state === 'ready' || d.state === 'live')) || this.highway?.riding(p.index)
-      || this.choices[p.index] || this.rundowns[p.index] || this.game.inspector?.busy?.(p.index);
+      || this.choices[p.index] || this.rundowns[p.index] || this.game.inspector?.busy?.(p.index)
+      /* Waiting her turn in the Sine Gauntlet's stands is not being lost —
+         a four-kitten queue is minutes, and she cannot leave it to follow
+         his suggestion without giving up her place. */
+      || this.sine?.inSession?.(p);
     if (busy) { s.lostT = 0; return; }
     s.lostT = (s.lostT ?? 0) + dt;
     if (s.lostT < LOST_AFTER || (s.lostN ?? 0) >= LOST_MAX) return;

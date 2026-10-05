@@ -56,7 +56,7 @@ export const ISLE_ABOUT = {
   range: { short: 'RANGE', about: 'Test cutting with the blade alone: ONE SWING, COMBO 60, and CLEAN CUT, where the cut is drawn at (cos θ, sin θ).' },
   kata: { short: 'KATA', about: "Lionheart's ghost dances a kata on nine marks — step, cut, jump, guard — and you do it back on the beat. A new one every day and every week." },
   storm: { short: 'STORM', about: 'Holo-fruit lobbed at you from the rim. Cut it out of the air before it lands — and leave the purple viruses alone.' },
-  sine: { short: 'SINE', about: 'Laser bars that rise and fall as y = A·sin(ωt + φ). Walk under the crest, jump the trough — and learn to ride the wave.' },
+  sine: { short: 'SINE', about: 'One course, one kitten at a time, and the fastest time wins. Laser bars rise and fall as y = C + A·sin(ωt + φ): duck the crest, jump the trough, ride the stones and time the sweeper, while the rest cheer from the stands.' },
   sentries: { short: 'SENTRIES', about: 'The first thing in here that shoots back. Every shot is warned first: step aside or raise your Ward, then bring the core down.' },
   bamboo: { short: 'BAMBOO', about: 'Sneak through a holo-bamboo forest past watchers whose gaze swings like a sine wave. Hide behind the bamboo and move on the slack.' },
   school: { short: 'SCHOOL', about: "The tournament, taught before it's fought: the Feast's animals to stun and eat, a practice round of every league, and the scoreboard explained." },

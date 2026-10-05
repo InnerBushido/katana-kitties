@@ -200,7 +200,12 @@ window.__ddStills = async function (opts = {}) {
          the island onto a floor of its own. --- */
   const LIVE = {
     gallery: null, hall: null, range: { on: /ONE SWING/, secs: 4 },
-    kata: { on: /DAILY/, secs: 5, her: true }, storm: { on: /STORM/, secs: 6 }, sine: { on: /SINE/, secs: 6 },
+    kata: { on: /DAILY/, secs: 5, her: true }, storm: { on: /STORM/, secs: 6 },
+    /* The course is not a station: she JOINS at its kiosk and the run is the
+       session's (dream/sine.js). And it is filmed WIDE, from the side its own
+       camera looks from, because the card's job is to show one course snaking
+       across the island — over her shoulder it was three bars and a wall. */
+    sine: { join: 'sine', secs: 5, wide: true },
     school: { on: /FEAST/, secs: 6 }, sentries: { on: /SENTRIES/, secs: 6 },
     bamboo: { on: /INFILTRATION/, secs: 4 }, shadow: { on: /EASY/, secs: 6 },
   };
@@ -215,8 +220,11 @@ window.__ddStills = async function (opts = {}) {
     for (const key of keys) {
       const I = D.isles[key];
       const live = LIVE[key];
-      const st = live && D.stations.find((x) => Math.hypot(x.x - I.x, x.z - I.z) < I.r + 2 && live.on.test(x.prompt(p, 'E')));
-      if (st) {
+      const st = live?.on && D.stations.find((x) => Math.hypot(x.x - I.x, x.z - I.z) < I.r + 2 && live.on.test(x.prompt(p, 'E')));
+      if (live?.join) {
+        D[live.join].join(p);
+        await until(live.secs);
+      } else if (st) {
         p.position.set(st.x + SIM.dx, st.y + 0.5, st.z + SIM.dz);
         p.velocity?.set(0, 0, 0);
         await step(6);
@@ -246,7 +254,15 @@ window.__ddStills = async function (opts = {}) {
          middle. */
       const herShot = live?.her && at;
       let cam;
-      if (herShot) {
+      if (live?.wide) {
+        const yaw = D[live.join]._yaw();
+        // 1.25 r back and 1.05 up was tried first: the whole course, under a
+        // third of a frame of empty sky.
+        const back = I.r * (opts.wideBack ?? 1.0);
+        cam = camAt(
+          { x: I.x + Math.sin(yaw) * back + SIM.dx, y: I.y + I.r * (opts.wideUp ?? 0.95), z: I.z + Math.cos(yaw) * back + SIM.dz },
+          { x: I.x + SIM.dx, y: I.y, z: I.z + SIM.dz }, 50);
+      } else if (herShot) {
         const hx = at.x - I.x;
         const hz = at.z - I.z;
         const hl = Math.hypot(hx, hz) || 1;
@@ -260,6 +276,7 @@ window.__ddStills = async function (opts = {}) {
       }
       const cv = frame(cam, 480, 300);
       done[`isle-${key}`] = await put(`${out}isle-${key}.jpg`, await jpeg(cv, 0.82));
+      if (live?.join) D[live.join].reset?.();
       const d = D.drills[0];
       if (d) { d.dispose(); D.drills[0] = null; }
       D.closeChoice?.(p);

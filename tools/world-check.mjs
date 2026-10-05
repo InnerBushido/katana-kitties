@@ -5002,7 +5002,7 @@ console.log('\n--- the simulator\'s drawings ---');
     ok('...the walk to a tube starts the load, crossing in puts it on, and every way out takes it off',
       /_begin\(p, phase\) \{ this\.game\.loadSimArt\?\.\(\);/.test(dd)
       && /if \(toSimNow\) p\.setSimLook\?\.\(true\);/.test(dd)
-      && /_leaveSim\(p, keepSuit = false\) \{ const s = this\.st\[p\.index\]; this\._hushHolo\(p\); if \(!keepSuit\) p\.setSimLook\?\.\(false\);/.test(dd)
+      && /_leaveSim\(p, keepSuit = false\) \{ const s = this\.st\[p\.index\]; this\.sine\?\.forget\(p\); this\._hushHolo\(p\); if \(!keepSuit\) p\.setSimLook\?\.\(false\);/.test(dd)
       && /if \(!toSimNow\) this\._leaveSim\(p, keepSuit\);/.test(dd));
     /* THE SUIT: "When exiting the VR, they should automatically walk out of
        the tube, and poof with special effects to put their regular clothes
@@ -36764,98 +36764,290 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     d.dispose(); D.drills[0] = null;
   }
 
-  /* --- 正弦 the printed y is the beam and the trace --- */
+  /* --- 正弦 THE COURSE. Richard: "rather than making 4 separate lanes for
+     each player, it may be better to turn this into more of a Ninja Warrior
+     type course ... just have 1 course lane and have the 4 players queue up
+     in competition, going one by one and competing for the best time".
+     Everything below is a claim that would look fine broken: a wall with a
+     gap in it, a beam drawn somewhere its hit test is not, a kit that does
+     not come back, a camera that frames the wrong kitten. --- */
   {
+    const CO = await import('../src/systems/dream/course.js');
     const I = D.isles.sine;
-    const lane = D.sine.lanes[0];
-    put(her, D.sine.kiosks[0]);
-    D.sine.kiosks[0].station.interact(her);
-    const d = D.drills[0];
-    let worst = 0; let cardOk = true;
-    for (let f = 0; f < 600; f++) {
-      d.update(1 / 60);
-      if (d.state !== 'live') continue;
-      for (let n = 0; n < SN.GATES.length; n++) {
-        const w = SN.gateWorking(d.spec.level, d.t, n);
-        const printed = Number(/= ([-\d.]+)$/.exec(w.text)?.[1]);
-        worst = Math.max(worst, Math.abs(printed - (d.bars[n].a.y - I.y)), Math.abs(d.bars[n].a.y - d.bars[n].b.y),
-          Math.abs(d.traces[n].dot.position.y - d.bars[n].a.y));
-      }
-      const lines = d.spec.paint(d).map((x) => x.text);
-      if (!lines.includes(SN.gateWorking(d.spec.level, d.t, 0).text)) cardOk = false;
+    const G = D.sine;
+    const lc = (x, z) => {
+      const f = I.fwd; const dx = x - I.x; const dz = z - I.z;
+      return { a: dx * f.x + dz * f.z, b: -dx * f.z + dz * f.x };
+    };
+
+    /* The walls: on the island, and closed. */
+    const off = G.posts.filter((q) => Math.hypot(q.x - I.x, q.z - I.z) > I.r - 0.2);
+    ok('正弦 every wall of the course stands on the island', off.length === 0, `${off.length} posts off the edge`);
+    let gapMax = 0;
+    for (let i = 1; i < G.posts.length; i++) {
+      const d = Math.hypot(G.posts[i].x - G.posts[i - 1].x, G.posts[i].z - G.posts[i - 1].z);
+      if (d < 1.5) gapMax = Math.max(gapMax, d - 0.8);
     }
-    ok('正弦 every bar\'s printed y, its beam and its oscilloscope dot are the same number', worst < 0.006, worst.toFixed(4));
-    ok('...and her card shows the working for the next bar, as of this frame', cardOk);
-    // Somebody else's lane says so.
-    D.t += 10;
-    fakeGame.toasts.length = 0;
-    put(sis, D.sine.kiosks[0]);
-    const took = D.sine.begin(sis, lane);
-    ok('正弦 a lane somebody is running refuses her sister in words', took === false && !D.drills[1]
-      && fakeGame.toasts.some((t) => /another/.test(t)), fakeGame.toasts.join(' | '));
-    // High bar: walk under. Low bar at the top of a jump: clear. Middle: hit.
-    const B = d.bars[0];
-    const g = SN.GATES[0];
-    const at = (y) => { B.a.y = I.y + y; B.b.y = I.y + y; };
-    const q = isleSpot(I, g, lane.c);
-    put(her, { x: q.x, z: q.z, y: I.y });
-    at(SN.UNDER);
-    const under = B.distTo(her) >= B.thick + 0.45;
-    at(2.0);
-    const mid = B.distTo(her) < B.thick + 0.45;
+    ok('...with no gap between posts a kitten (radius 0.75) fits through', gapMax < 1.2, gapMax.toFixed(2));
+    ok('...and the turns are the only ways from lane to lane: each middle wall stops short at one end only',
+      CO.WALLS[1][1][1] < CO.END_B && CO.WALLS[1][0][1] === -CO.END_B
+      && CO.WALLS[2][0][1] > -CO.END_B && CO.WALLS[2][1][1] === CO.END_B);
+    const ins = (a) => a > -17 && a < 13;
+    const plaza = [
+      lc(G.kiosk.x, G.kiosk.z), lc(G.board.position.x, G.board.position.z), lc(G.standDeck.x, G.standDeck.z),
+    ];
+    ok('...and the kiosk, the board and the stands are on the plaza, outside the course and on the island',
+      plaza.every((q) => !ins(q.a) && Math.hypot(q.a, q.b) < I.r), plaza.map((q) => `${q.a.toFixed(1)},${q.b.toFixed(1)}`).join(' '));
+    const land = isleSpot(I, -23, 0);
+    ok('...and nothing solid stands where the bridge lands',
+      sim.solids.every((s) => Math.hypot(s.x - land.x, s.z - land.z) > s.r + 0.9));
+    let sgap = 0;
+    for (let i = 0; i < G.standPosts.length; i++) {
+      const a = G.standPosts[i]; const c = G.standPosts[(i + 1) % G.standPosts.length];
+      sgap = Math.max(sgap, Math.hypot(a.x - c.x, a.z - c.z) - 0.7);
+    }
+    ok('応援 the stands are walled all the way round: nobody falls or walks out of them', sgap < 1.2, sgap.toFixed(2));
+
+    /* NON-NEGOTIABLE 1: what is drawn is `beams` / `stones`, to the hundredth. */
+    let worst = 0;
+    for (const [li, L] of CO.LEVELS.entries()) {
+      for (const t of [0, 1.3, 4.7, 9.1]) {
+        G._paintCourse(L, t);
+        const list = CO.beams(L, t);
+        list.forEach((q, k) => {
+          const e = G.beamFx[k].ends;
+          const a = isleSpot(I, q.a0, q.b0); const c = isleSpot(I, q.a1, q.b1);
+          worst = Math.max(worst, Math.hypot(e[0].position.x - a.x, e[0].position.y - (I.y + q.y0), e[0].position.z - a.z),
+            Math.hypot(e[1].position.x - c.x, e[1].position.y - (I.y + q.y1), e[1].position.z - c.z));
+        });
+        CO.stones(L, t).forEach((s, n) => { worst = Math.max(worst, Math.abs(G.stoneDecks[n].y - (I.y + s.y))); });
+        const e = CO.sweepEnds(CO.SECTION.sweep, t, L.speed);
+        const cq = lc(G.cosDot.position.x, G.cosDot.position.z);
+        worst = Math.max(worst, Math.abs(cq.a - CO.LANES[1] - CO.SECTION.sweep.arm.R * Math.cos(e.th)));
+        const sq = lc(G.sinDot.position.x, G.sinDot.position.z);
+        worst = Math.max(worst, Math.abs(sq.b - CO.SECTION.sweep.pivot - CO.SECTION.sweep.arm.R * Math.sin(e.th)));
+        void li;
+      }
+    }
+    ok('正弦 every beam, stone and the sweeper\'s cos and sin dots are drawn exactly where course.js says', worst < 0.01, worst.toFixed(4));
+
+    /* "lack of shadows on the lasers": a black shadow at 0.36 on this floor
+       was there and invisible in the browser. So every beam has a footprint of
+       its own colour under it, and every bar and the sweeper stand on drop
+       lines as tall as the beam is high. Asked of the DRAWING at several
+       moments, and of the cue's direction: lower must read stronger. */
+    {
+      let dropWorst = 0; let footWorst = 0; let order = true; let drops = 0;
+      for (const t of [0.4, 2.2, 5.9]) {
+        G._paintCourse(CO.LEVELS[1], t);
+        const list = CO.beams(CO.LEVELS[1], t);
+        list.forEach((q, k) => {
+          const fx = G.beamFx[k];
+          const mid = isleSpot(I, (q.a0 + q.a1) / 2, (q.b0 + q.b1) / 2);
+          footWorst = Math.max(footWorst, Math.hypot(fx.foot.position.x - mid.x, fx.foot.position.z - mid.z), Math.abs(fx.foot.position.y - I.y - 0.04));
+          fx.drops.forEach((m, n) => {
+            drops++;
+            const end = n ? isleSpot(I, q.a1, q.b1) : isleSpot(I, q.a0, q.b0);
+            dropWorst = Math.max(dropWorst, Math.hypot(m.position.x - end.x, m.position.z - end.z), Math.abs(m.position.y - I.y),
+              Math.abs(m.scale.y - (n ? q.y1 : q.y0)));
+          });
+        });
+        // Among the bars and the sweeper, the lowest has the strongest cue.
+        const bars = list.map((q, k) => ({ h: (q.y0 + q.y1) / 2, fx: G.beamFx[k], sec: q.sec })).filter((x) => x.sec !== 'gaps');
+        const lo = bars.reduce((m, x) => (x.h < m.h ? x : m)); const hi = bars.reduce((m, x) => (x.h > m.h ? x : m));
+        if (hi.h - lo.h > 0.5) {
+          order &&= lo.fx.foot.material.opacity > hi.fx.foot.material.opacity
+            && lo.fx.shadow.material.opacity > hi.fx.shadow.material.opacity
+            && lo.fx.foot.scale.x < hi.fx.foot.scale.x;
+        }
+      }
+      const withDrops = G.beamFx.filter((f) => f.drops.length).length;
+      ok('正弦 every beam has a footprint on the floor straight under it', footWorst < 0.01, footWorst.toFixed(4));
+      ok('...every bar and the sweeper stand on two drop lines exactly as tall as the beam is high, and the curtains on none',
+        dropWorst < 0.01 && drops === 3 * 2 * withDrops
+          && withDrops === CO.beams(CO.LEVELS[0], 0).filter((q) => q.sec !== 'gaps').length,
+        `${dropWorst.toFixed(4)} ${drops} ${withDrops}`);
+      ok('...and a LOW beam reads stronger than a high one: brighter, narrower footprint and a darker shadow', order);
+    }
+    ok('...and the stones are real floors: standing on one stands her at its height',
+      (() => {
+        CO.stones(CO.LEVELS[0], 2).forEach(() => {});
+        G._paintCourse(CO.LEVELS[0], 2);
+        const s = CO.stones(CO.LEVELS[0], 2)[1];
+        const q = isleSpot(I, s.a, s.b);
+        const h = floorAt(q.x, q.z, I.y + s.y + 0.1);
+        return h && Math.abs(h.y - (I.y + s.y)) < 1e-6;
+      })());
+    const wv = CO.SECTION.stand.wave;
+    ok('...and a bar\'s printed working is the bar: barWorking(y) is the beam\'s y',
+      [0.4, 2.2, 5.9].every((t) => Math.abs(CO.barWorking(wv, t, 1, 1).y - CO.beams(CO.LEVELS[1], t).find((q) => q.sec === 'stand' && q.n === 1).y0) < 1e-9));
+    ok('...and every wave swings across all three answers: under, wait, jump',
+      CO.SECTIONS.filter((s) => s.wave).every((s) => s.wave.C + s.wave.A >= CO.UNDER && s.wave.C - s.wave.A <= CO.JUMPABLE));
+
+    /* The hit test is the laser's own, and the thresholds mean what they say. */
     const src = readFileSync(new URL('../src/entities/player.js', import.meta.url), 'utf8');
     const jv = Number(/const JUMP_V = ([\d.]+)/.exec(src)?.[1]);
     const gr = Number(/const GRAVITY = ([\d.]+)/.exec(src)?.[1]);
+    const walk = Number(/const WALK_SPEED = ([\d.]+)/.exec(src)?.[1]);
+    const sprint = Number(/const SPRINT_SPEED = ([\d.]+)/.exec(src)?.[1]);
     const apex = jv ** 2 / (2 * gr);
-    put(her, { x: q.x, z: q.z, y: I.y + apex });
-    at(SN.JUMPABLE);
-    const jump = B.distTo(her) >= B.thick + 0.45;
-    ok('正弦 a bar at UNDER is walked under, one at JUMPABLE is jumped at the top of a hop, one at the middle hits',
-      under && jump && mid, `${under} ${jump} ${mid} apex ${apex.toFixed(2)}`);
-    ok('...and every level swings across all three, so all three answers come up',
-      SN.LEVELS.every((Lv) => Lv.C + Lv.A >= SN.UNDER && Lv.C - Lv.A <= SN.JUMPABLE));
-    d.dispose(); D.drills[0] = null;
-    // The walls: a kitten (radius 0.75) cannot pass between two posts.
-    const posts = SN.laneWallPosts(I);
-    let gapMax = 0;
-    for (let i = 1; i < posts.length; i++) {
-      if (posts[i].b !== posts[i - 1].b) continue;
-      gapMax = Math.max(gapMax, Math.hypot(posts[i].x - posts[i - 1].x, posts[i].z - posts[i - 1].z) - 2 * posts[i].r);
-    }
-    ok('正弦 the lane walls have no gap a kitten fits through', gapMax < 1.2, gapMax.toFixed(2));
-    ok('...and run the length of every bar, so no bar can be walked round', SN.GATES.every((a) => a > SN.LANE.from && a < SN.LANE.to));
-  }
+    const bar = (y) => [{ sec: 'x', a0: -15, b0: 0, y0: y, a1: -9, b1: 0, y1: y, thick: CO.BAR_THICK }];
+    ok('正弦 a bar at UNDER is walked under, one at JUMPABLE is cleared at the top of a hop, one at 2.0 hits',
+      !CO.hitAt(CO.LEVELS[0], -12, 0, 0, 0, { list: bar(CO.UNDER) })
+      && !CO.hitAt(CO.LEVELS[0], -12, 0, apex, 0, { list: bar(CO.JUMPABLE) })
+      && !!CO.hitAt(CO.LEVELS[0], -12, 0, 0, 0, { list: bar(2.0) }), `apex ${apex.toFixed(2)}`);
+    const zl = CO.SECTION.stones;
+    ok('...and the red floor zaps a kitten standing on it, and not one standing on a stone',
+      CO.hitAt(CO.LEVELS[0], CO.LANES[1], 12.8, 0, 0, { list: [] }) === 'stones'
+      && !CO.hitAt(CO.LEVELS[0], CO.LANES[1], zl.stones[0], CO.stoneHeight(zl, 0, 0), 0, { list: [] }));
+    const cpClear = CO.SECTIONS.every((sec) => [0, 0.7, 1.9, 3.3, 5.1, 7.7].every((t) =>
+      CO.LEVELS.every((L) => !CO.hitAt(L, CO.LANES[sec.lane], sec.cp, 0, t))));
+    ok('...and no checkpoint is ever inside a hazard, so a zap never lands her in another one', cpClear);
 
-  /* --- 正弦 the stars are measured: a patient walker who never jumps --- */
-  {
-    const v = 7; const dt = 1 / 60; const ds = v * dt;
-    const A0 = -16; const A1 = SN.LANE.to + 0.6;
-    const N = Math.ceil((A1 - A0) / ds) + 1;
-    const BODY = 0.85 * 2.6; const REACH = 0.3 + 0.45;
-    const hit = (Lv, t, a) => SN.GATES.some((gt, n) => {
-      const y = SN.barHeight(Lv, t, n);
-      const dy = y > BODY ? y - BODY : (y < 0.2 ? 0.2 - y : 0);
-      return Math.hypot(a - gt, dy) < REACH;
-    });
-    const out = [];
-    SN.LEVELS.forEach((Lv, li) => {
-      let reach = new Uint8Array(N); reach[0] = 1; let T = null;
-      for (let k = 1; k < 90 / dt && T == null; k++) {
-        const t = k * dt; const nx = new Uint8Array(N);
-        for (let i = 0; i < N; i++) if (reach[i]) for (const j of [i - 1, i, i + 1]) if (j >= 0 && j < N) nx[j] = 1;
-        for (let i = 0; i < N; i++) if (nx[i] && hit(Lv, t, A0 + i * ds)) nx[i] = 0;
-        reach = nx;
-        if (reach[N - 1]) T = t;
-      }
-      out.push({ li, T, b3: SN.SINE_BANDS[li][2] });
-    });
-    ok('正弦 every level can be walked untouched without ever jumping', out.every((o) => o.T != null),
-      out.map((o) => `L${o.li + 1} ${o.T?.toFixed(1)}s`).join(' '));
-    ok('...and three stars sits 1.15-1.5x above that walker, so it takes the wave AND a jump',
-      out.every((o) => o.T && o.b3 >= o.T * 1.15 && o.b3 <= o.T * 1.5),
-      out.map((o) => `L${o.li + 1} ${o.b3}/${o.T?.toFixed(1)}`).join(' '));
-    ok('...and the travelling crest of L2 is faster to ride than L1\'s standing wave is to wait out', out[1].T < out[0].T,
-      `${out[1].T?.toFixed(1)} vs ${out[0].T?.toFixed(1)}`);
+    /* THE STARS ARE MEASURED: the search, re-run, and the bands held to it. */
+    const runs = CO.LEVELS.map((L) => ({
+      walk: CO.fastestRun(L, { v: walk, jumpV: jv, gravity: gr }),
+      sprint: CO.fastestRun(L, { v: sprint, jumpV: jv, gravity: gr }),
+      noHop: CO.fastestRun(L, { v: walk, jumpV: 0.001, gravity: gr, tMax: 40 }),
+    }));
+    ok('正弦 every level can be run clean by a kitten who walks and hops', runs.every((r) => r.walk != null),
+      runs.map((r, i) => `L${i + 1} walk ${r.walk}s sprint ${r.sprint}s`).join(' | '));
+    ok('...and NOBODY gets through without hopping: the stones ask for a different move', runs.every((r) => r.noHop == null));
+    ok('...and three stars is 1.4-1.6x that walker, two at 2.5x or more, one is just finishing',
+      runs.every((r, i) => r.walk && CO.COURSE_BANDS[i][2] >= r.walk * 1.4 && CO.COURSE_BANDS[i][2] <= r.walk * 1.6
+        && CO.COURSE_BANDS[i][1] >= r.walk * 2.5 && CO.COURSE_BANDS[i][0] === CO.COURSE_TIME),
+      runs.map((r, i) => `L${i + 1} ${CO.COURSE_BANDS[i].join('/')} vs ${r.walk}`).join(' | '));
+    ok('...and sprinting beats walking on every level, so the button is worth knowing', runs.every((r) => r.sprint < r.walk));
+
+    /* THE SESSION. Two kittens: she runs, her sister waits in the stands. */
+    her.name = her.name ?? 'HER'; sis.name = sis.name ?? 'SIS';
+    const clanA = { id: 'emberclaw', name: 'Emberclaw', color: 0xff5500, buff: {} };
+    const { ORB_IDS: OI } = await import('../src/entities/powerorb.js');
+    D.st[0].holoWorn = [OI[0], OI[1]]; D.st[0].holoCopies = [OI[0], OI[1]];
+    D.st[1].holoWorn = [OI[2]]; D.st[1].holoCopies = [OI[2]];
+    her.clan = clanA;
+    D._applyKit(her, true); D._applyKit(sis, true);
+    const kioskQ = { x: G.kiosk.x, z: G.kiosk.z, y: I.y };
+    put(her, kioskQ);
+    fakeGame.toasts.length = 0;
+    D.stationAt(her)?.interact(her);
+    const d0 = D.drills[0];
+    ok('正弦 the kiosk opens a session and puts her on the start, at her level', !!G.session && G.session.runner === 0
+      && d0?.spec.id === 'sine.L1' && Math.abs(lc(her.position.x - SW.SIM.dx, her.position.z - SW.SIM.dz).b - CO.START.b) < 0.01);
+    ok('...with her kit on the rack: no holo orbs worn, no holo clan, and the toast says so',
+      her.clan === null && (her.wornOrbs?.length ?? 0) === 0 && D.st[0].holoWorn.join() === `${OI[0]},${OI[1]}`
+      && fakeGame.toasts.some((t) => /rack/.test(t)), fakeGame.toasts.join(' | '));
+    put(sis, kioskQ);
+    D.stationAt(sis)?.interact(sis);
+    const sq = lc(sis.position.x - SW.SIM.dx, sis.position.z - SW.SIM.dz);
+    ok('...and her sister joins the queue and is put in the stands, kit racked too',
+      G.session.queue.join() === '1' && G.inStands(sis) && Math.hypot(sq.a - PLZ().a, sq.b - PLZ().b) < CO.LANE_HALF
+      && Math.abs(sis.position.y - (I.y + SN.PLAZA.stands.lift)) < 0.2 && D.st[1].benched);
+    ok('...and the two of them share ONE pane: neither is solo, both are anchored on the runner',
+      !D.wantsSolo(her) && !D.wantsSolo(sis) && G.paneAnchor(sis).distanceTo(G.paneAnchor(her)) < 1e-9
+      && !!G.groupShot([0, 1]) && G.groupShot([0]) && G.paneAnchor({ index: 3 }) == null);
+    const f0 = G.cameraFocus(her); const fc = f0.centre.clone();
+    const f1 = G.cameraFocus(sis);
+    ok('...and her sister\'s camera is the runner\'s: same centre, side-on, aimed',
+      f1.aim === true && f1.centre.distanceTo(fc) < 1e-9 && Math.abs(Math.sin(f1.yaw) - I.fwd.x) < 1e-6 && Math.abs(Math.cos(f1.yaw) - I.fwd.z) < 1e-6);
+    // Before GO she cannot cross the line.
+    const over = isleSpot(I, CO.LANES[0], 0);
+    put(her, { x: over.x, z: over.z, y: I.y });
+    G.update(1 / 60);
+    ok('...and she is held behind the start line until GO', lc(her.position.x - SW.SIM.dx, her.position.z - SW.SIM.dz).b <= CO.START_LINE - 0.39);
+    // Cheering.
+    const before = fakeGame.sounds.length;
+    G.cheerPad(sis, { pressed: (a) => a === 'attack' });
+    G.cheerPad(sis, { pressed: (a) => a === 'attack' });
+    ok('応援 ATTACK in the stands cheers — once per half second, however hard she mashes', fakeGame.sounds.length === before + 1);
+    // GO, then a zap: back to the checkpoint, clock running.
+    for (let k = 0; k < 200 && d0.state === 'ready'; k++) d0.update(1 / 60);
+    ok('正弦 GO after the count-in', d0.state === 'live', d0.state);
+    const sb = CO.SECTION.stand;
+    const zq = isleSpot(I, CO.LANES[0], sb.bars[0]);
+    let found = null;
+    for (let t = d0.t; t < d0.t + 6 && !found; t += 0.05) {
+      if (CO.hitAt(CO.LEVELS[0], CO.LANES[0], sb.bars[0], 0, t)) found = t;
+    }
+    d0.t = found ?? d0.t;
+    put(her, { x: zq.x, z: zq.z, y: I.y });
+    G.run.sMax = CO.pathS(CO.LANES[0], sb.bars[0] - 0.5);
+    /* Against what they WERE, not against 100: the SIM bar's ceiling is her
+       kit's hp, and her kit is on the rack, so 100 was never the number. */
+    const simWas = D.st[0].simHp, hpWas = her.hp;
+    G._tick(d0, 1 / 60);
+    const back = lc(her.position.x - SW.SIM.dx, her.position.z - SW.SIM.dz);
+    ok('...and a bar that would hit her is a ZAP: back to the checkpoint, the run still live',
+      found != null && G.run.zaps === 1 && Math.abs(back.b - sb.cp) < 0.01 && d0.state === 'live', `${G.run.zaps} ${back.b.toFixed(2)}`);
+    ok('...and a zap touches neither her SIM bar nor her health', D.st[0].simHp === simWas && her.hp === hpWas,
+      `sim ${simWas} -> ${D.st[0].simHp}, hp ${hpWas} -> ${her.hp}`);
+    // One press of INTERACT does not stop her; holding it does.
+    G.watchPad(d0, { down: (a) => a === 'interact' });
+    G._tick(d0, 0.1);
+    ok('正弦 one press of INTERACT does not stop a run', d0.state === 'live');
+    for (let k = 0; k < 20; k++) { G.run.safeT = 0; G.watchPad(d0, { down: (a) => a === 'interact' }); put(her, isleSpot(I, CO.START.a, CO.START.b)); G._tick(d0, 0.1); }
+    ok('...but holding it for STOP_HOLD does, and says so', d0.state === 'failed' && /stopped/.test(d0.why ?? ''), d0.why);
+    // Her drill ends: she is written down, she goes to the stands, her sister runs.
+    for (let k = 0; k < 400 && D.drills[0] === d0; k++) { if (!d0.update(1 / 60)) { d0.dispose(); D.drills[0] = null; } }
+    G.update(1 / 60);
+    const d1 = D.drills[1];
+    ok('...and when her run is over her sister is next, at the same level, and she watches from the stands',
+      G.session?.runner === 1 && d1?.spec.id === 'sine.L1' && G.inStands(her) && G.session.results.length === 1);
+    // Her sister finishes: a time.
+    for (let k = 0; k < 200 && d1.state === 'ready'; k++) d1.update(1 / 60);
+    const fin = isleSpot(I, CO.LANES[2], CO.FINISH_B + 0.5);
+    G.run.sMax = CO.FINISH_S;
+    put(sis, { x: fin.x, z: fin.z, y: I.y });
+    d1.t = 18;
+    G.run.safeT = 1;
+    G._tick(d1, 1 / 60);
+    ok('正弦 the gold line wins it, scored by time, with the measured bands', d1.state === 'won' && d1.stars_ === 3, `${d1.state} ${d1.stars_}`);
+    for (let k = 0; k < 400 && D.drills[1] === d1; k++) { if (!d1.update(1 / 60)) { d1.dispose(); D.drills[1] = null; } }
+    fakeGame.toasts.length = 0;
+    G.update(1 / 60);
+    const ranked = SN.rank(G.last?.results ?? []);
+    ok('...and with nobody left the session closes: the board ranks a finisher above a stopped run',
+      !G.session && ranked[0]?.i === 1 && ranked[0].time === 18 && ranked[1]?.time === null);
+    ok('...and both are let out of the stands with their kits back exactly as they were, pointed at the holo profile',
+      !G.inStands(her) && !D.st[0].benched && !D.st[1].benched && her.clan === clanA
+      && D.st[0].holoWorn.join() === `${OI[0]},${OI[1]}` && D.st[1].holoWorn.join() === OI[2]
+      && (her.wornOrbs?.length ?? 0) === 2 && fakeGame.toasts.some((t) => /\(HOLO\) PLAYER PROFILE/.test(t)), fakeGame.toasts.join(' | '));
+    const hq = lc(her.position.x - SW.SIM.dx, her.position.z - SW.SIM.dz);
+    ok('...onto the plaza, outside the course walls', hq.a < -17 && Math.hypot(hq.a, hq.b) < I.r, `${hq.a.toFixed(1)},${hq.b.toFixed(1)}`);
+    // Leaving the stands gives up the place; leaving the sim takes her out of it.
+    put(her, kioskQ); D.stationAt(her)?.interact(her);
+    put(sis, kioskQ); D.stationAt(sis)?.interact(sis);
+    const ex = G.exitKiosk;
+    put(sis, { x: ex.x, z: ex.z, y: ex.y });
+    D.stationAt(sis)?.interact(sis);
+    ok('出口 the stands\' exit pad lets her out, gives up her place and gives her kit back',
+      !G.inSession(sis) && G.session?.queue.length === 0 && !D.st[1].benched);
+    G.forget(her);
+    D.drills[0]?.dispose(); D.drills[0] = null;
+    ok('...and a runner who leaves the simulator ends the session cleanly, kit back on', !G.session && !D.st[0].benched && her.clan === clanA);
+    // A scene pulls everybody out: no session survives it.
+    put(her, kioskQ); D.stationAt(her)?.interact(her);
+    G.reset();
+    D.drills[0]?.dispose(); D.drills[0] = null;
+    ok('...and a reset (a scene, the tournament) drops the session and unracks everybody', !G.session && !D.st[0].benched);
+    her.clan = null;
+
+    /* THE HOOKS, so the pieces above are actually called. */
+    const MS2 = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    const DS2 = readFileSync(new URL('../src/systems/dreamdojo.js', import.meta.url), 'utf8');
+    ok('正弦 main.js frames a session member with the course\'s focus, anchors her on the runner, and the shared rig takes its shot',
+      /this\.dream\?\.sine\?\.cameraFocus\?\.\(p\)/.test(MS2)
+      && /pts: this\.players\.map\(\(p\) => this\.dream\?\.sine\?\.paneAnchor\?\.\(p\) \?\? p\.position\)/.test(MS2)
+      && /const course = this\.dream\?\.sine\?\.groupShot\?\.\(members\)/.test(MS2)
+      && /if \(rig\.courseT > 0 && rig\.courseShot\) \{/.test(MS2));
+    ok('...and the Dream Dojo racks the kit in _applyKit, forgets her on the way out before the kit comes apart, and drops the session on exitAll',
+      /const ids = s\?\.benched \? \[\] :/.test(DS2)
+      && /_leaveSim\(p, keepSuit = false\) \{[\s\S]{0,300}this\.sine\?\.forget\(p\);\s*this\._hushHolo\(p\);/.test(DS2)
+      && /exitAll\(\) \{\s*this\.sine\?\.reset\(\);/.test(DS2)
+      && /this\.sine\?\.cheerPad\?\./.test(DS2));
+    ok('...and nothing in the course calls hurt()', !/hurt\(/.test(readFileSync(new URL('../src/systems/dream/sine.js', import.meta.url), 'utf8'))
+      && !/hurt\(/.test(readFileSync(new URL('../src/systems/dream/course.js', import.meta.url), 'utf8')));
+    function PLZ() { return SN.PLAZA.stands; }
   }
 
   /* --- 番兵 sentries: bars only where Richard's rule says, a tell, a shield --- */

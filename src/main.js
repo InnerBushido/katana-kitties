@@ -10305,7 +10305,10 @@ class Game {
       const cave = near ? null : this.world.grottoAt(p.position.x, p.position.z);
       // Shadow Lionheart's two-shot (dream/shadow.js): only in the sim, so it
       // can never meet the Dojo, the grotto or the big screen.
-      const shadowShot = near || p.mount ? null : this.dream?.shadow?.cameraFocus?.(p) ?? null;
+      const shadowShot = near || p.mount ? null
+        /* ...and the Sine Gauntlet's: runner and stands alike watch the
+           runner, side-on (dream/sine.js). Also sim-only. */
+        : this.dream?.shadow?.cameraFocus?.(p) ?? this.dream?.sine?.cameraFocus?.(p) ?? null;
       /* THE WAY ACROSS AND THE DOME (DreamDojo.cameraFocus): in close behind
          her for the stones, pulled back over the whole island inside the
          bubble. Never on the Dojo floor itself — `near` wins, so the maths
@@ -12213,7 +12216,14 @@ class Game {
        sisters still standing next to each other in the market who had not
        moved. */
     const { groups, of } = clusterPlayers({
-      pts: this.players.map((p) => p.position),
+      /* A KITTEN IN THE SINE GAUNTLET'S SESSION STANDS WHERE THE RUNNER IS,
+         for this question only: "non-competing players queued up can be in
+         a cheering section ... therefore camera does not need to be centered
+         on them or split screen and shared camera can focus on the player in
+         the obstacle course". So the session is one group, and the shared
+         rig takes the course's shot (`groupShot` in `_updateRig`). Null for
+         everybody else, always outside the simulator. */
+      pts: this.players.map((p) => this.dream?.sine?.paneAnchor?.(p) ?? p.position),
       /* A GIRL READING HER OWN CARD GETS HER OWN PANE, for the same reason a
          girl on a dragon does: she is not sharing a view with her sister right
          now, and a card drawn over a shared pane covers half of somebody
@@ -12761,6 +12771,20 @@ class Game {
          bounds the damage of every way nobody has thought of yet. */
       wantDist = Math.min(wantDist, this._maxViewDist(rig.camera.fov, aspect));
 
+      /* THE SINE GAUNTLET'S SHARED SHOT — the session is one group by
+         `paneAnchor`, and this is the camera that draws it (the trap again:
+         a per-player focus does nothing while merged). Eased in and out on
+         its own weight; exactly 0 everywhere else, and nothing below changes
+         while it is, so the town's two-player camera is untouched. */
+      const course = this.dream?.sine?.groupShot?.(members) ?? null;
+      rig.courseT = (rig.courseT ?? 0) + ((course ? 1 : 0) - (rig.courseT ?? 0)) * Math.min(1, dt * 2.2);
+      if (rig.courseT < 0.001) rig.courseT = 0;
+      if (course) rig.courseShot = { yaw: course.yaw, pitch: course.pitch };
+      if (rig.courseT > 0 && course) {
+        want.lerp(course.centre, rig.courseT);
+        wantDist = THREE.MathUtils.lerp(wantDist, course.dist * widen, rig.courseT);
+      }
+
       if (!rig.seeded) {
         rig.target.copy(want);
         rig.dist = wantDist;
@@ -12785,6 +12809,10 @@ class Game {
       if (rig.boardT > 0) {
         yaw = THREE.MathUtils.lerp(yaw, BOARD_VIEW.yaw, rig.boardT);
         pitch = THREE.MathUtils.lerp(pitch, BOARD_VIEW.pitch, rig.boardT);
+      }
+      if (rig.courseT > 0 && rig.courseShot) {
+        yaw = THREE.MathUtils.lerp(yaw, rig.courseShot.yaw, rig.courseT);
+        pitch = THREE.MathUtils.lerp(pitch, rig.courseShot.pitch, rig.courseT);
       }
 
       /* THE GROTTO AGAIN, HERE, BECAUSE THIS IS THE CAMERA THAT DRAWS WHEN
