@@ -56,9 +56,12 @@ export function rankOf(progress, name) {
   let toNext = null;
   if (next) {
     const more = Math.max(0, next.need - stars);
-    toNext = more > 0 && next.shadow && !beat ? `${more}★ more AND beat Shadow Lionheart`
+    /* "on MEDIUM": the flag is `shadowPrize(level).rank`, and EASY does not
+       pay it — the old "beat Shadow Lionheart" sent a kitten who had beaten
+       EASY back to a fight she had already won. */
+    toNext = more > 0 && next.shadow && !beat ? `${more}★ more AND beat Shadow Lionheart on MEDIUM`
       : more > 0 ? `${more}★ more`
-        : 'beat Shadow Lionheart';
+        : 'beat Shadow Lionheart on MEDIUM';
   }
   return { rank: RANKS[k], index: k, stars, next, toNext, shadow: beat };
 }

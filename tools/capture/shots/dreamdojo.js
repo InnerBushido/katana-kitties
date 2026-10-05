@@ -213,12 +213,17 @@ window.__ddStills = async function (opts = {}) {
     const t0 = performance.now();
     while (performance.now() - t0 < secs * 1000) await step(5);
   };
-  const keys = Object.keys(D.isles ?? {}).filter((k) => want(`isle-${k}`) || want('isles'));
+  /* The list is islands.js's, not `D.isles`: that only exists once a kitten
+     is in the simulator, so asking for one island before going in filmed
+     nothing and returned {}. */
+  const ISLES = (await import('/src/systems/dream/islands.js')).ISLANDS;
+  const keys = Object.keys(D.isles ?? ISLES).filter((k) => want(`isle-${k}`) || want('isles'));
   if (keys.length) {
     await inSim();
     const dc = g.world.dojoCentre;
     for (const key of keys) {
       const I = D.isles[key];
+      if (!I) continue;
       const live = LIVE[key];
       const st = live?.on && D.stations.find((x) => Math.hypot(x.x - I.x, x.z - I.z) < I.r + 2 && live.on.test(x.prompt(p, 'E')));
       if (live?.join) {

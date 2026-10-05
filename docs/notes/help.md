@@ -106,6 +106,38 @@ after the two captured clips replaced it.
 
 ---
 
+## The Dream Dojo topic — stills, not clips
+
+Richard: "We need to add a new item in the Help Menu for the new Dream Dojo
+VR Arcade ... pictures of Lionheart, the Dream Dojo island, and a photo of the
+islands in the simulation with the islands names next to them as a Map Legend
+... All the activities can be laid out like the Clan Leaders page."
+
+**Every picture is still the engine's own frame**, but they are stills, so
+they do not use the recorder.
+[tools/capture/shots/dreamdojo.js](../../tools/capture/shots/dreamdojo.js)
+(`__ddStills`) works like this:
+- It renders the real scene through its own camera at the still's exact size,
+  for one frame, and the game's resize handler puts the renderer back.
+- It is driven by `game._tick`, because the pane does not fire animation
+  frames while it is hidden.
+
+What each picture is:
+- `map.jpg` is the simulator from straight above. Each island's name is
+  projected through the same camera that took the frame, so a label cannot
+  drift off its island.
+- `isle-<key>.jpg` is taken a few seconds into that island's own drill, over
+  her shoulder. Idle, half of them were an empty dark disc.
+- The Sine Gauntlet is the exception, `join` + `wide`. She joins its kiosk
+  (it is a session, not a station), and the frame is wide, from the side the
+  course camera looks from, so the card shows one course snaking across the
+  island.
+- `lionheart.png` is cut to his measured ink.
+
+**Re-film there, never by hand.** Start the bridge, enter play, then:
+`await __ddStills({ only: ['isle-sine'] })`. Pass `out: 'tools/capture/.out/'`
+to take a proof without overwriting the shipped picture.
+
 ## One folder per subject
 
 `public/help/` is filed by what the picture is of:
@@ -115,7 +147,8 @@ help/
   ability/   ward  dive  cross  charge  blink.png (the one still)
   clan/      steal  breath  panda, and the six chiefs + six emblems
   move/      keys  pad  air  arena  phone
-  dojo/      world  sincos
+  dojo/      world  sincos   — the Turning Circle's two clips, and the Dream
+             Dojo topic's stills: arcade  map  lionheart.png  isle-<key> x10
   place/     arena.jpg  orbs.jpg  shrine.jpg   — the three topic stills
   world/     dealer  feast-eat  panda  ryuuseki
 ```

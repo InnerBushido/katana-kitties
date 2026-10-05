@@ -62,7 +62,7 @@ voice/
   ryuuseki/    2 — `summon1` `summon2`
   kittens/     4 — `cross0`-`cross3`, the Cross Slash's verdict
   payne/      45 — every `payne_*`: quests, hints, teases, the trick, the names, the Very Last One's temper
-  lionheart/   9 — every `lion_*`: the arcade, the hologram in the sim, and his Shadow
+  lionheart/  37 — every `lion_*`: the arcade, the hologram in the sim, and his Shadow
 ```
 
 Asked for after play: *"we have a lot of art, voices, sprites, help assets and
@@ -249,6 +249,14 @@ anywhere in `src/` or the README, comments aside.
 **The two lines with a kitten's name in them (`send`, `rundown`) are not
 recorded and cannot be** — one recording says one name. They stay bubbles. So
 does the Shadow's losing line, which says how much of his bar was left.
+
+**The Shadow's three levels added three takes**, made the same way:
+- `lion_shadow_easy` and `lion_shadow_medium` are said where the hand-over
+  was, on a win at those levels. HARD keeps the hand-over.
+- `lion_shadow_kyo` comes after "a share of my HONOR", to a kitten who has
+  just beaten all three, and explains her 凶.
+
+They measured 86 / 94 / 83 Hz, which is his normal register.
 
 ### How he speaks in the game
 

@@ -151,7 +151,7 @@ export const FEATS = [
      `_ceremony` pays it on her next turn like any other unpaid quest. Before
      the Awakening it is a gold token like the other nine. */
   { id: 'shadow', who: 'each', icon: '🦁', title: "Lionheart's Honor", late: true, special: true,
-    short: "Lionheart's Honor", how: 'Beat Shadow Lionheart in the Dream Dojo.' },
+    short: "Lionheart's Honor", how: 'Beat Shadow Lionheart on MEDIUM or HARD in the Dream Dojo.' },
   { id: 'rider', who: 'one', icon: '🎯', title: 'Beam gunner',
     short: 'Beam gunner',
     how: `Be the first to ride Ryuuseki's second seat for ${RIDER_NEED} seconds.` },

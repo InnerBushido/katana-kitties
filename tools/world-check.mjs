@@ -37750,8 +37750,21 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     P.setFlag('Tester', 'shadow');
     const d = RK.rankOf(P, 'Tester');
     ok('剣士 23★ is 3rd Class, 24★ is 2nd; 70★ is still 2nd until the Shadow falls, then 1st',
-      a === 'k3' && b === 'k2' && c.rank.id === 'k2' && c.toNext === 'beat Shadow Lionheart' && d.rank.id === 'k1' && !d.next,
+      a === 'k3' && b === 'k2' && c.rank.id === 'k2' && c.toNext === 'beat Shadow Lionheart on MEDIUM' && d.rank.id === 'k1' && !d.next,
       `${a} ${b} ${c.rank.id} "${c.toNext}" ${d.rank.id}`);
+    /* THE WORDS SAY WHICH FIGHT PAYS. Since the three levels EASY pays stars
+       and nothing else (`shadowPrize`), and the quest still read "Beat Shadow
+       Lionheart" - so a kitten who beat EASY was told, on the Help card and
+       her checklist, that she had done a quest she had not. Asked of the pay
+       table itself, so a change to who pays changes what must be said. */
+    {
+      const how = FT.FEAT_BY_ID.shadow.how;
+      const rankLevel = SH.SHADOW_LEVELS.find((L, k) => SH.shadowPrize(k).rank);
+      ok('獅 the quest names every Shadow level that pays it, and none that does not',
+        SH.SHADOW_LEVELS.every((L, k) => how.includes(L.name) === SH.shadowPrize(k).quest), how);
+      ok('...and 1st Class names the easiest level whose win carries the flag',
+        !!rankLevel && c.toNext.endsWith(`on ${rankLevel.name}`), `${c.toNext} | ${rankLevel?.name}`);
+    }
     P.award('Tester', 'gallery.tri', 3); P.award('Tester', 'gallery.swift', 2);
     ok('剣士 her signature move is the Gallery drill she has the most stars in', RK.signatureOf(P, 'Tester').id === 'tri'
       && RK.signatureOf(P, 'Nobody').text === '刀 Katana', RK.signatureOf(P, 'Tester').text);

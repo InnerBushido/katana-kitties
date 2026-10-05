@@ -578,6 +578,51 @@ quoted.
   - [voices.md](docs/notes/voices.md#lionheart-is-barrett-and-the-wording-is-half-the-casting)
     has the casting, the rule and the gating.
 
+- **Richard's list after stage 5: the holo kit, Lionheart's quests, the
+  levels and the course** (branch `mixed/dojo-holo-profile-quests-courses`).
+  [dreamdojo.md](docs/notes/dreamdojo.md#the-holo-kit-lionhearts-quests-the-levels-and-the-course)
+  has every item with its commit:
+  - **The bug list:** nothing struck before GO, a soft flicker, the Icewhisker
+    race, one charge one blow, and a hit on the Shadow you can see.
+  - **The holo kit and the (HOLO) PLAYER PROFILE.** She goes in with a copy of
+    her ring and no clan, earns orbs in the Gallery (four of a kind at most),
+    and the bag is computed, never stored. Her real kit is never touched.
+  - **Lionheart is the simulator's quest-giver:** WHERE NEXT, MAP, a 地図
+    kiosk, the sim on the minimap, and a nudge after 150 s with nothing won.
+  - **Shadow Lionheart on three levels**, with his own 凶 Cross Slash on
+    MEDIUM and HARD. Beat all three and hers draws 凶 and hits ×1.25.
+  - **The Pandapaw trial** is a panda's whole life in the ring, with the real
+    panda.
+  - **One kata floor each** in her colour; **the Feast** is the ring's
+    animals in three rounds; **two-way highways**; **the look across** at a
+    bridge; the island signs at the hub; the Turning Circle in light; Payne
+    silent in the headset.
+  - **A Help topic, "The Dream Dojo — VR arcade"**, with every picture filmed
+    out of the engine (`tools/capture/shots/dreamdojo.js`, see
+    [help.md](docs/notes/help.md)).
+  - **The Sine Gauntlet is one course**, run one kitten at a time against the
+    clock (`dream/course.js`, `dream/sine.js`):
+    - six obstacles, each a different piece of sine maths;
+    - a zap sends her back to the last checkpoint;
+    - the queue waits in walled cheering stands;
+    - one shared pane, side-on to the runner;
+    - her holo kit on a rack for the run;
+    - lasers with shadows, footprints and drop lines.
+
+    The stars are measured by a search, and the camera against the real
+    minimap.
+  - **Found while writing it up:** the tenth quest still said "Beat Shadow
+    Lionheart", but only MEDIUM or HARD pays it. Its words and 1st Class's
+    "to next" now say so, and world-check asks it of the pay table.
+  - **Open:**
+    - **Payne's voiced `payne_q_shadow` still says the old words.** Changing
+      it means a new take she approves, so it is left for Richard to ask her.
+    - Nobody has played any of this.
+    - The Feast's and Pandapaw's bands, and MEDIUM's and HARD's knobs, are
+      first numbers.
+    - The course was checked in the browser at one and two kittens, not
+      four.
+
 - **Richard's Dream Dojo improvements list** (branch
   `mixed/dojo-honor-payne-gear-platforms`).
   [dreamdojo.md](docs/notes/dreamdojo.md#the-front-door--richards-improvements-list)

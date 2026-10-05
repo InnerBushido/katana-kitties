@@ -457,47 +457,117 @@ pairs. Stars at 10 / 20 / 28 points.
   most. Measured: ≥ 0.87s in reach over 300 throws. 2.2–2.7s measured 0.80,
   right on the line, so the range was moved again rather than shaved.
 
-### 正弦 The Sine Gauntlet (`dream/sine.js`)
+### 正弦 The Sine Gauntlet (`dream/course.js`, `dream/sine.js`)
 
-Richard: "y = A·sin(ωt+φ) shown live". Four walled lanes, one kitten each.
-Each lane has six laser bars, and bar *n* stands at **y = C + A·sin(ωt − kn)**.
-At the top of its swing she walks under it. At the bottom she jumps it. In
-between, it hits her.
+**It was four lanes, one kitten each, and Richard took it apart:** "the
+camera angle, lack of shadows on the lasers, shape of the lasers, and small
+area to navigate, makes it hard to navigate through without getting hit and
+makes for a bad experience ... turn this into more of a Ninja Warrior type
+course, with obstacles and different patterns, requiring different movements
+and techniques ... have 1 course lane and have the 4 players queue up in
+competition, going one by one and competing for the best time."
 
-| level | wave | the idea |
+So it is now **one course, run one kitten at a time, against the clock**.
+
+**The course.** Three lanes snake across the island, with a turn at each end.
+There are six obstacles, and each one is different maths and asks for a
+different move:
+
+| section | maths | the move |
 | --- | --- | --- |
-| L1 | 2.0 + 1.6·sin(1.6t) | k = 0 — every bar together, a standing wave |
-| L2 | 2.0 + 1.6·sin(1.8t − 0.8n) | the crest travels down the lane slower than she walks: ride it |
-| L3 | 2.0 + 1.7·sin(2.4t + 0.9n) | the crest comes AT her, faster |
+| standing wave | three bars on y = 2 + 1.6·sin(1.6t) | duck the crest, hop the trough |
+| travelling wave | y = 2 + 1.6·sin(1.8t − 0.8n): the crest walks down the lane | ride the wave |
+| sine stones | four floating floors over a zap floor, each on its own sine | step across while they are level |
+| the sweeper | an arm turning about a pivot, with its **cos** and **sin** drawn as dots on the two axes | jump it as it comes round |
+| gap curtains | two walls of beams with a gap riding a sine | go through the gap where it is |
+| counter-wave | y = 2 + 1.7·sin(2.4t + 0.9n): the crest comes AT her | read it early |
 
-- **Non-negotiable 1, the third time.** `barHeight` is the one function that
-  does all three of these:
-  - places each beam;
-  - draws its oscilloscope on the wall (the newest point *is* the bar's end,
-    so the wave flows out of the laser);
-  - prints `bar n=0: 2.0 + 1.6·sin(128°) = 3.25 → WALK UNDER` on her card.
+L1, L2 and L3 are the same course at speed 0.8, 1.0 and 1.3. Two stars on a
+level opens the next. The session runs at the first joiner's level.
 
-  `world-check` reads all three back: 0.005 apart at most, which is the
-  printed rounding.
-- **The thresholds come from the laser's own hit test.** Her body is feet+0.2
-  to feet+0.85·h, and the beam reaches 0.75. So `UNDER` is 3.0, and `JUMPABLE`
-  is 1.6 against a single hop's apex of 2.41.
-- **The stars are measured.** A search over (place, time) finds the fastest a
-  kitten walking 7 u/s **who never jumps** gets from the kiosk to the far end
-  untouched:
+- **Non-negotiable 1, still.** `course.js` is pure, and it is the one place
+  each of these is decided:
+  - where every beam, stone and dot is;
+  - what her card prints (`bar 1: 2.0 + 1.6·sin(128°) = 3.25`);
+  - whether she was hit.
 
-  | level | fastest | 3★ |
-  | --- | --- | --- |
-  | L1 | 9.2s | 11.5s |
-  | L2 | 6.5s | 8.2s |
-  | L3 | 14.5s | 18s |
+  `_paintCourse` is the only writer of the drawing. `world-check` reads every
+  beam end, stone and dot back to within 0.01.
+- **A hit is a ZAP, not damage.** `hitAt` asks the same segments that are
+  drawn. A hit teleports her back to the last checkpoint, and the clock keeps
+  running. Nothing under `dream/` calls `hurt()` but the panda's, and the SIM
+  bar is never touched.
+- **Fair, because it is one clock.** Every hazard runs on the run's own clock
+  from GO, so every kitten in the queue faces exactly the same course.
+- **The stars are measured.** `fastestRun` is a search over (place, time) with
+  wait, step and hop moves. Fastest times, in seconds:
 
-  Riding the crest beats waiting for it, which is L2's lesson. Three stars is
-  about 1.25× the search, so it takes the wave *and* a jump. `world-check`
-  re-runs the search and holds the bands between 1.15× and 1.5×. Two stars on
-  a level opens the next.
-- A lane somebody is running refuses her sister in words and sends her to
-  another.
+  | level | sprint + hop | walk + hop | walk, never hop | ★ / ★★ / ★★★ |
+  | --- | --- | --- | --- | --- |
+  | L1 | 8.6 | 13.0 | never finishes | 150 / 39 / 19.5 |
+  | L2 | 10.3 | 13.6 | never finishes | 150 / 40 / 20 |
+  | L3 | 8.0 | 13.1 | never finishes | 150 / 39 / 19.5 |
+
+  Three stars is 1.5× a perfect walker and two stars is 3×. A nine-year-old
+  who walks it and gets zapped twice still earns two. Nobody gets through
+  without hopping, which is the stones doing their job. `world-check` re-runs
+  the search, so a change to the course that breaks the bands goes red.
+- **The geometry is measured too.** `END_B` is 19.3, not 19.5: at 19.5 the
+  outer corners stood 0.07 past the island's edge, and the every-post-on-the-
+  island check found it.
+
+**The lasers.** The old bar was a 0.3 tube with nothing under it. Each beam is
+now a thicker glowing core with an emitter at each end, and it has three
+height cues:
+- a **shadow** straight under it, dark and sharp when low, wide and faint
+  when high;
+- a **footprint** of its own colour on the floor, which is there because a
+  black shadow at 0.36 on this near-black floor was checked in the browser
+  and could not be seen;
+- **drop lines** from each emitter to the floor, so the height reads against
+  its own post. The curtains have none, because their posts already are.
+
+`world-check` holds all three to the beam, and holds the direction of the cue:
+a low beam reads stronger than a high one.
+
+**The queue.** One kiosk in the plaza by the bridge:
+- The first kitten to press it runs. Everybody after her goes into the
+  **cheering stands**, a walled deck by the plaza. Its posts are solids, so
+  nobody falls or walks out, and ATTACK cheers (once per half second, however
+  hard she mashes).
+- The board ranks the session: finished runs first, fastest first; then the
+  rest, furthest first.
+- **Holding INTERACT stops a run; one press never does** (non-negotiable 7).
+- Out of the stands by the 出口 exit pad. Her place in the queue goes and her
+  time stays on the board.
+
+**One pane.** "Spectating players can watch and have similar camera view of
+the active player ... camera does not need to be centered on them or split
+screen":
+- `paneAnchor` stands every kitten in the session where the runner is, for
+  `clusterPlayers` only, so the session is one group.
+- `groupShot` gives the shared rig the course's camera, side-on from the +a
+  side and centred on the runner.
+- Both are null outside the session, so two players in town are bit for bit
+  what they were.
+- **The shot is measured.** Every point of the path, with what is 2, 3 and 6
+  units ahead of her, was projected through the lens against the real 300px
+  minimap: 0 of 1944 off the frame or under the map, at 1920×1080 and
+  1280×720 full screen and at 1920×1080 half screen. Every lead tried was no
+  better anywhere, and worse in a small window. Centring on the middle lane
+  was worse again, because the lanes are the depth of this shot.
+
+**The rack.** "stripping the player temporarily of their equipped kotodama
+orbs and clan abilities if they do join the course ... and return back to
+them in their Holographic Character Profile":
+- `dream.bench(p)` sets `benched`, and `_applyKit` wears none of the holo kit
+  while it is set. `holoWorn` itself is never moved, so nothing can be lost.
+- The holo clan is held on `benched.clan`.
+- `unbench` puts it all back and says so: "your holo kit is back on. It is
+  all in your (HOLO) PLAYER PROFILE". That happens when she leaves the stands,
+  when the session closes, or when she leaves the simulator. `_leaveSim` calls
+  `sine.forget` first, so the clan is back on her before the lines that undo
+  the rest.
 
 ### 番兵 Holo-Sentries (`dream/sentries.js`)
 
@@ -1443,6 +1513,106 @@ lens every tenth of a second:
   Range → School at ~6.5 s.
 - The swing onto the range peaks near 280°/s. If it reads as a whip, lengthen
   its `swing` to 0.75 and push `RANGE_CUTS` back ~0.2 s to match.
+
+## The holo kit, Lionheart's quests, the levels and the course
+
+Branch `mixed/dojo-holo-profile-quests-courses`. These are Richard's notes
+after playing stage 5. Each item names its commit, which has the detail. The
+commit messages are the session log.
+
+**The bug list** (30f8e37):
+- Nothing can be struck before GO. `Drill.target` refuses and says "wait for
+  GO". The Pandapaw canes broke in the count-in and were never counted, so ten
+  could not be reached.
+- The hologram flicker is a slow breath and one soft dip every ~5 s
+  (`holoFlicker`). It replaced hard 4.6–5.9 Hz blinks.
+- Icewhisker's stolen orb is tossed away and locked behind a shrinking ring,
+  and the holo-kitten dashes for it when it opens.
+- One charge is one blow on the Shadow. A charge in the sim used to land about
+  once a frame.
+- The Shadow takes a hit you can see: a starburst, shards, a jolt and squash,
+  and the sound.
+
+**Small things** (e402d2d, 69026f1, 4ac6087, 7dd30b9):
+- Payne is silent while a kitten wears the headset. Her clocks stop and the
+  invitation she owes comes after.
+- The sim has four tubes in the seats' colours.
+- Lionheart's bubble stands on the side away from the tubes. His spoken lines
+  go on the screen card when she is 20 or more away (`Announcer.follow`, word
+  by word on his playhead).
+- The Turning Circle in the sim is drawn in light (`dream/holodojo.js`). Only
+  materials are swapped, and world-check drives both Dojos from one kitten and
+  holds point and θ equal.
+- Every island's sign stands beside its bridge mouth on the hub.
+- Walking toward a bridge, the camera eases over her shoulder onto the far
+  island (`dream/peek.js`).
+- The light-cycle highways are two-way roads, each cycle 2.5 right of centre.
+  Two cycles going opposite ways were measured never closer than 2.5; on the
+  centre line they met at 0.
+
+**One kata floor each** (5c17be4). Floor *k* is seat *k*'s, in her colour, with
+her element (炎 氷 雷 花) on its plate. It is grey until she comes in, and
+anybody else is told in words where her own floor is.
+
+**The Feast is the ring's** (6b41589): the arena's own `Critter`, the ring's
+eating, and three rounds (rat + rabbit, rabbit + bird, bird + mantis).
+
+**Shadow Lionheart on three levels** (10c70ba):
+- EASY is the shipped fight, number for number.
+- MEDIUM and HARD turn the five knobs Richard named: walk, wind-up, breath,
+  bar and damage.
+- On MEDIUM and HARD he does his own **凶 Cross Slash**: three Xs, each drawn
+  on where she is.
+- EASY pays stars only. MEDIUM or HARD pays the tenth quest and the 1st Class
+  flag (`shadowPrize`). Beating all three pays her own 凶: her Cross Slash
+  draws 凶 instead of 十 and hits ×1.25.
+- **The quest's words were left behind by this**, still "Beat Shadow
+  Lionheart", so a kitten who beat EASY was told she had done a quest she had
+  not. They say "on MEDIUM or HARD" now, and so does 1st Class's "to next".
+  world-check asks it of the pay table itself. **Payne's `payne_q_shadow` still
+  says the old words.** It is a voiced line she approved, so it is not changed
+  without asking.
+
+**The Pandapaw trial is a panda's whole life in the ring** (3c033af,
+`dream/pandatrial.js`):
+- Canes, then a cub. The REAL `entities/panda.js` licks her up from 30% while
+  she is rooted.
+- Then the cub grows, holo-kittens come for the panda, and it is knocked down.
+- Richard's card on what that means out there, and the cub licks her back up.
+- The no-`hurt()` guard names its one exception, `panda.hurt(`, which is the
+  animal's own bar.
+
+**The holo kit** (2c24f71, `dream/holokit.js`). "When a player enters the
+simulator, they appear there with no kotodama orbs or Clan abilities":
+- `s.holoWorn` is a copy of her real ring, made on the way in and thrown away
+  on the way out.
+- `p.holoOrbs` is what she has EARNED in here: the first Gallery win of each
+  drill, plus a 3-star pedestal's extra, at most four of a kind. It is saved
+  in her row.
+- The bag is not stored at all. It is (copies + earned) − worn, so nothing can
+  be lost or duplicated between the two.
+- Her real orbs and clan are never touched.
+- The pause menu's **(HOLO) PLAYER PROFILE** shows only while somebody is in
+  the simulator.
+
+**Lionheart is the simulator's quest-giver** (b8240c7, `dream/lionguide.js`).
+"Lionheart should act as a Quest giver like how Payne is a quest giver":
+- His card is Payne's card: WHERE NEXT, MAP, WHAT DO MY ORBS DO, (HOLO) PLAYER
+  PROFILE, and the 凶 row.
+- `lionNext` is pure and always answers. A visit is standing on an island.
+- After 150 s with nothing won he calls her by name with one suggestion.
+- There is a 地図 MAP kiosk on the hub, and the corner minimap draws the
+  simulator while every kitten it serves is in there.
+
+**The Help topic** (ec87a57): see [help.md](help.md). Lionheart's card opens it
+on READ ABOUT THE DREAM DOJO.
+
+**The Sine Gauntlet is one course** (8d323bd): see [its own
+section](#正弦-the-sine-gauntlet-dreamcoursejs-dreamsinejs), above.
+
+**Open:** nobody has played any of this list yet. Two sets of numbers are
+guesses, not measured on a kitten: the Feast's bands (150/72/48) and the
+Pandapaw trial's (80/50/36). MEDIUM's and HARD's knobs are also first numbers.
 
 ## Voice
 
