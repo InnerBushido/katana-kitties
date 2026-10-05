@@ -3456,6 +3456,8 @@ class Game {
       p.shadowBeat = { easy: false, medium: false, hard: false };
       // ...and so are the orbs she earned in the simulator (dream/holokit.js).
       p.holoOrbs = [];
+      p.holoClan = null;
+      p.holoLastWorn = [];
       /* AND THE ONES BELONGING TO KITTENS NOBODY IS PLAYING, which live in
          `_parkedPandas` and are in the scene exactly like these. Missed, a
          restart would leave a grown panda standing in a town that has just
@@ -8750,6 +8752,13 @@ class Game {
        the ending in a world that is being torn down around it. */
     const ending = this.summonScene?.musicTrack;
     if (ending) return ending;
+    /* PAYNE'S TOUR, for the ending's reason: its camera crosses the Dojo
+       island, the stones and the simulator while the kittens stand in the
+       market, so "which island is she on" answered the market's theme. Its
+       simulator shots play `vr` at FULL level — `_vrLevel` is the swell of a
+       kitten walking toward the dome, and here nobody is walking anywhere. */
+    const tour = this.storyScene?.musicTrack;
+    if (tour) { this._vrLevel = 1; return tour; }
     /* THE GRIFFIN OWNS THE MUSIC WHILE IT IS CARRYING THEM, and it outranks
        every rule below for the reason the ending does: the kittens are cargo,
        the animal is writing their positions, and "which island is she standing
@@ -8947,7 +8956,16 @@ class Game {
    *   this is the toast it always was.
    */
   toast(text, playerIndex = 0, combo = null) {
-    const wrap = document.getElementById('toasts');
+    /* IN FRONT OF HER CARD WHILE SHE HAS ONE UP. A refusal from Lionheart's
+       or Payne's card is a toast to the kitten reading that card, and the card
+       is drawn over the HUD the toasts live in - so the one sentence that said
+       why the row was locked was behind the row. `#toasts-front` sits over
+       the cards and takes the strip's own `top`, so the line lands where it
+       always does, only nearer. Everybody else's toasts stay where they were. */
+    const under = document.getElementById('toasts');
+    const front = this.inspector?.busy?.(playerIndex) ? document.getElementById('toasts-front') : null;
+    if (front && under) front.style.top = getComputedStyle(under).top;
+    const wrap = front ?? under;
     /* Lazy rather than a constructor field: `toast` is called from the very
        first frames of boot, before anything that would own a Map. */
     this._combos ||= new Map();
@@ -10303,9 +10321,17 @@ class Game {
          world x/z axes up with the screen, so the diagram reads exactly like
          the graph paper it's teaching. */
       const cave = near ? null : this.world.grottoAt(p.position.x, p.position.z);
+      /* THE SIMULATOR'S TURNING CIRCLE, framed exactly as the town's. Richard:
+         "Camera should zoom out when player is walking in the Dojo of the
+         Turning Circle in the simulator." It is the real MathDojo a second
+         time (dreamdojo.js `simDojo`), twelve thousand units east, so `near`
+         above never saw it and she walked it on the follow camera at 24 units,
+         one label at a time. The same distance, pitch and yaw as the town's —
+         one diagram, one shot. */
+      const simDojoC = near || p.mount ? null : this.dream?.simDojoAt?.(p) ?? null;
       // Shadow Lionheart's two-shot (dream/shadow.js): only in the sim, so it
       // can never meet the Dojo, the grotto or the big screen.
-      const shadowShot = near || p.mount ? null
+      const shadowShot = near || simDojoC || p.mount ? null
         /* ...and the Sine Gauntlet's: runner and stands alike watch the
            runner, side-on (dream/sine.js). Also sim-only. */
         : this.dream?.shadow?.cameraFocus?.(p) ?? this.dream?.sine?.cameraFocus?.(p) ?? null;
@@ -10313,12 +10339,12 @@ class Game {
          her for the stones, pulled back over the whole island inside the
          bubble. Never on the Dojo floor itself — `near` wins, so the maths
          camera is exactly what it was. */
-      const dreamShot = near || shadowShot ? null : this.dream?.cameraFocus?.(p) ?? null;
+      const dreamShot = near || simDojoC || shadowShot ? null : this.dream?.cameraFocus?.(p) ?? null;
       if (shadowShot) p.setFocus(shadowShot);
       else if (dreamShot) p.setFocus(dreamShot);
-      else if (near) {
+      else if (near || simDojoC) {
         p.setFocus({
-          centre: dc,
+          centre: simDojoC ?? dc,
           /* Was a hard-coded 104 while the merged rig read DOJO_DIST — so a
              solo kitten and a pair standing in the same room were framed by two
              different numbers, and changing "the Dojo distance" moved only one
@@ -12542,10 +12568,21 @@ class Game {
          her pane to the overhead framing and she would be flying by a view of
          the ground she is not on. The board still comes up in her pane (see
          `inDojoView`); it is only the camera that stays with the animal. */
+      /* AND THE SIMULATOR'S TURNING CIRCLE, for a pair walking it together
+         (see `simDojoC` in the per-player pass). `rig.dojoC` is the centre
+         it is easing toward, and it is KEPT when they leave, so the ease out
+         goes from the Dojo they were in rather than lurching to the town's
+         twelve thousand units away. Outside the simulator it is always `dc`,
+         so the town's rig is exactly what it was. */
+      let simIn = null;
       const inDojo = members.some((i) => {
         const p = this.players[i];
-        return !p?.mount && inDojoView(p, dc);
+        if (!p?.mount && inDojoView(p, dc)) return true;
+        if (!p || p.mount) return false;
+        simIn ??= this.dream?.simDojoAt?.(p) ?? null;
+        return !!simIn;
       });
+      if (inDojo) rig.dojoC = simIn ?? dc;
       rig.focusT += ((inDojo ? 1 : 0) - rig.focusT) * Math.min(1, dt * 2.2);
       const ft = rig.focusT;
 
@@ -12570,7 +12607,7 @@ class Game {
       /* Closer in on a phone, and still following her — see DOJO_CENTRE_BIAS. */
       const bias = this.device.touchPrimary
         ? DOJO_CENTRE_BIAS.touch : DOJO_CENTRE_BIAS.desktop;
-      if (ft > 0.001) want.lerp(dc, ft * bias);
+      if (ft > 0.001) want.lerp(rig.dojoC ?? dc, ft * bias);
 
       let wantDist = ryuMid
         ? onRyu.quad * RYU_VIEW

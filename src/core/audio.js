@@ -135,6 +135,35 @@ export const MUSIC = {
     taiko: 4, rest: 0.54, fifths: true,
   },
 
+  /* ---- PAYNE'S TOUR OF THE DREAM DOJO, IN FOUR PIECES -----------------------
+     Richard: "Let's add music to the Dream Dojo cutscene with Payne. Could be
+     the simulator music or something else. Could also orchestrate some music
+     to match the scenes of the cutscene, like we did previously with the
+     ending cutscene."
+
+     IT PLAYED WHATEVER ISLAND SHE WAS STANDING ON — the market's, because
+     that is where Payne is — under two minutes that cross the Dojo island,
+     the stones, the dome and the whole simulator. The ending's problem
+     exactly, and the ending's answer: a piece per subject, switched on the
+     scene's own shots (`TOUR_MUSIC` in dream/storyscene.js), so the music
+     turns when the picture does and a re-recorded line takes it along.
+
+     FOUR SUBJECTS, and the third one already had a piece:
+       · PAYNE showing them the island, and Payne sending them off at the end
+         — the bookend. Bright and quick, YO so nothing can come out sad, a
+         fourth under the Dojo's key so the island she is pointing at is not
+         playing its own tune at them. No bell: that is the Dojo's.
+       · LIONHEART, his welcome and his past: a heartbeat taiko and fifths, low
+         INSEN — the story scale, because this is his story.
+       · THE SIMULATOR is `vr`, the piece it plays when you are in it. Nothing
+         else could be right: these shots ARE the simulator.
+       · HIS CREED, as the camera pulls back past the islands into the sky:
+         the slowest, widest one, fifths AND the Dojo's glass bell over every
+         note, rising out of the drumless D the ending's act two sits near. */
+  tourPayne: { scale: YO, beat: 0.38, root: 164.81, oct: 1, drone: 0.12, taiko: 0, rest: 0.62 },
+  tourLion: { scale: INSEN, beat: 0.62, root: 130.81, oct: 1, drone: 0.24, taiko: 8, rest: 0.64, fifths: true },
+  tourCreed: { scale: YO, beat: 0.74, root: 146.83, oct: 1, drone: 0.22, taiko: 0, rest: 0.70, fifths: true, bell: true },
+
   /* ---- the islands ---- */
   /* HOME KEEPS THE TUNE THEY ALREADY KNOW. `play` is still the theme from
      before this existed, note for note, because the home island is where both

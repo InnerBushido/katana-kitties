@@ -3,7 +3,7 @@ import { SIM, HOLO } from '../../world/simworld.js';
 import { HoloPanel } from './holo.js';
 import { Kiosk, idleIn, isleSpot, stars3 } from './kiosk.js';
 import {
-  LEVELS, LANES, LANE_HALF, WALLS, START, START_LINE, SECTIONS, SECTION, FINISH_B,
+  LEVELS, LANES, LANE_HALF, WALLS, START, START_LINE, SECTIONS, SECTION, FINISH_B, END_B,
   beams, stones, groundAt, hitAt, pathS, CP_S, FINISH_S, checkpointFor,
   barWorking, waveText, sweepEnds, gapCentre, stoneHeight, COURSE_BANDS, COURSE_TIME,
 } from './course.js';
@@ -82,6 +82,15 @@ export const STOP_HOLD = 1.2;
 const SAFE_T = 0.9;
 /** Below the floor by this much is a fall. */
 const FALL = 3;
+/** A kitten inside the course's walls who is not its runner is walked back
+ *  out to the plaza after this long. Richard: "It is also possible to get
+ *  into the course and get stuck in it, we should have a way for the player
+ *  to get out if the trial hasn't started yet as a fail safe." The walls are
+ *  posts pushed out one at a time, and a dash can carry a kitten past a post's
+ *  middle before the push sees her, so the way in is not sealed; the way OUT
+ *  is what is guaranteed. Long enough that a hop over the rail and straight
+ *  back is not a teleport, short enough that she is never stuck. */
+export const STRAY_T = 1.5;
 
 const BAR_COL = 0xff3b6b;
 const ARM_COL = 0xffa23b;
@@ -303,9 +312,14 @@ export class SineGauntlet {
       x: eq.x, z: eq.z, y: eq.y, r: 0.9, colour: HOLO.gold, kanji: '出口', title: 'LEAVE', near: 1.6, cardH: 2.2,
       card: (p) => [
         { text: '出口 LEAVE THE STANDS', size: 1.5, color: HOLO.gold, jp: true },
-        { text: this._ran(p) ? 'your time stays on the board' : 'you give up your place in the queue', size: 1.0 },
+        { text: !this.inStands(p) ? 'back down to the plaza' : this._ran(p) ? 'your time stays on the board' : 'you give up your place in the queue', size: 1.0 },
       ],
-      prompt: (p, key) => (this.inStands(p) ? `[${key}]  LEAVE THE STANDS` : ''),
+      // ANYBODY ON THE DECK, not only the session's. Richard: "it is possible
+      // to jump into The Stands area when the trial hasn't started and then
+      // the player gets stuck there because the Leave area isn't working" -
+      // it asked `inStands`, which is false with no session, so a kitten who
+      // got up there any other way had a pad that said nothing.
+      prompt: (p, key) => (this.inStands(p) || this.onDeck(p) ? `[${key}]  LEAVE THE STANDS` : ''),
       interact: (p) => this.leave(p),
     });
     this.kiosks.push(this.exitKiosk);
@@ -334,6 +348,23 @@ export class SineGauntlet {
   }
 
   inStands(p) { return !!(this.session && p && this.session.stands.has(p.index)); }
+
+  /** Standing up on the stands' deck, whoever put her there. */
+  onDeck(p) {
+    if (!p) return false;
+    const S = PLAZA.stands;
+    const q = this.laneCoords(p);
+    const feet = p.position.y - this.isle.y;
+    return Math.hypot(q.a - S.a, q.b - S.b) < S.wall + 0.5 && feet > S.lift - 0.8;
+  }
+
+  /** Inside the course's outer walls (the plaza is everything behind them). */
+  inCourse(p) {
+    if (!p) return false;
+    const q = this.laneCoords(p);
+    const feet = p.position.y - this.isle.y;
+    return q.a > WALLS[0][0][0] && q.a < WALLS[3][0][0] && Math.abs(q.b) < END_B && feet > -FALL;
+  }
 
   runner() {
     const i = this.session?.runner;
@@ -426,7 +457,13 @@ export class SineGauntlet {
    *  (if she ran) stays on the board. */
   leave(p) {
     const S = this.session;
-    if (!S || !S.stands.has(p.index)) return false;
+    if (!S || !S.stands.has(p.index)) {
+      // Not in a session, and up there anyway: just down to the plaza.
+      if (!this.onDeck(p)) return false;
+      this._toPlaza(p);
+      this.dream.game.toast?.(`${p.name} climbed down from the stands`, p.index);
+      return true;
+    }
     S.stands.delete(p.index);
     S.queue = S.queue.filter((i) => i !== p.index);
     this._toPlaza(p);
@@ -567,6 +604,23 @@ export class SineGauntlet {
 
   /* -------------------------------- a frame ------------------------------- */
 
+  /** Anybody in the course who is not running it is put back on the plaza
+   *  after STRAY_T, and told why in words. The runner is never touched, and
+   *  neither is a kitten mid-drill somewhere else. */
+  _strays(dt) {
+    this._stray ??= new Map();
+    for (const p of idleIn(this.dream)) {
+      if (this.session?.runner === p.index || !this.inCourse(p)) { this._stray.delete(p.index); continue; }
+      const t = (this._stray.get(p.index) ?? 0) + dt;
+      if (t < STRAY_T) { this._stray.set(p.index, t); continue; }
+      this._stray.delete(p.index);
+      if (this.inStands(p)) this._toStands(p); else this._toPlaza(p);
+      this.dream.game.toast?.(this.session
+        ? `${p.name}: the course is ${this.runner()?.name ?? 'the runner'}'s now — back you go`
+        : `${p.name}: the course starts at 正弦 THE COURSE — step on it to run`, p.index);
+    }
+  }
+
   /** The run's own clock while one is live (so every runner faces the same
    *  course from GO), and the island's otherwise, so it moves from the bridge. */
   _clock() {
@@ -592,6 +646,7 @@ export class SineGauntlet {
       this._next();
       this._paintBoard();
     }
+    this._strays(dt);
     // Held at the start until GO — the line is a line.
     const d = this.run?.drill;
     if (d && d.state === 'ready') {

@@ -1619,6 +1619,26 @@ body.touch-ui .pc-back { min-height: 32px; min-width: 76px; }
 @media (min-width: 1001px) {
   #hud.has-balls #toasts { top: 112px; }
 }
+/* The same strip, over the cards. Richard: "a message appears under the
+   players names but that message is blocked by the UI screen, can we maybe
+   put it in front of the menu UI ... We have this issue with Payne and her UI
+   as well." 9: over a card (8), under the menu overlays (20). Its `top` is
+   copied from `#toasts` by `Game.toast` every time, so the has-balls and
+   touch offsets above are still the only place that number is decided. */
+#toasts-front {
+  position: fixed;
+  top: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  z-index: 9;
+  pointer-events: none;
+  font-weight: 900;
+}
+body.touch-ui #toasts-front { gap: 3px; }
 .toast {
   background: rgba(251, 238, 210, 0.96);
   border: 4px solid var(--ink);
@@ -2433,15 +2453,36 @@ details.help-card.help-sub[open] > summary.help-topic { border-bottom-width: 2px
   object-fit: cover;
 }
 .dd-about { font-size: 12.5px; line-height: 1.4; opacity: 0.85; }
+/* THE PICTURE ON TOP, THE WORDS UNDER IT, AND THE PICTURE AS BIG AS THE CARD.
+   Richard: "the images are too small to see anything, you should have the
+   image on the top and the text on the bottom, this may make the card bigger,
+   but that's fine ... we should keep them side by side, since there is a lot,
+   but make the images as big as possible". The 128x80 thumbnail beside the
+   words was a sixth of the card; edge to edge under the header it is the
+   card's whole width (about 370px of the 480 the still was filmed at, in the
+   780px panel), and the two columns stay. */
+.dd-card .clan-body {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 0 0 10px;
+}
+.dd-card .clan-text { padding: 0 10px; }
+.dd-card .dd-shot {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 10;
+  border: 0;
+  border-bottom: 3px solid var(--ink);
+  border-radius: 0;
+  display: block;
+}
 /* Lionheart beside his own words: his drawing is cut to its ink by the shot
    script, so a height is all it needs. */
 .dd-lion { display: flex; gap: 12px; align-items: flex-start; margin-top: 12px; }
 .dd-lion-art { flex: none; width: 114px; height: 180px; }
 .dd-lion-text { min-width: 0; }
 .dd-lion-text .ht-note:first-child { margin-top: 0; }
-@media (max-width: 640px) {
-  .dd-shot { width: 100%; height: auto; aspect-ratio: 16 / 10; }
-}
 /* A LANDSCAPE PHONE IS SHORT: he gives up height before the words beside
    him do. */
 body.touch-ui .dd-lion-art { width: 76px; height: 120px; }

@@ -327,6 +327,9 @@ export class HoloCritter extends Target {
 /* --------------------------- the practice fighters ------------------------ */
 
 /** A holo-kitten with a side, a blade and a wind-up you can see. */
+/** How long a holo-fighter's drawn swing lasts, from the moment it lands. */
+export const SLASH_T = 0.32;
+
 export class HoloFighter extends HoloKitten {
   constructor(o) {
     super({ hits: o.hits, tint: hexOf(TEAM_COLOURS[o.side]), colour: hexOf(TEAM_COLOURS[o.side]), barY: 3.6, ...o });
@@ -335,6 +338,51 @@ export class HoloFighter extends HoloKitten {
     this.windT = 0;
     this.restT = 0;
     this.foe = null;
+    /* ITS SWING, DRAWN. Richard, on the Pandapaw trial: "The enemies should
+       also draw a slashing attack animation when attacking so player knows
+       that the enemies are attacking them and the panda." The wind-up was a
+       white flash on the sprite and nothing else, and the blow itself was
+       invisible: a SIM bar that dropped, or a panda that flinched, with
+       nothing on screen that said who. Now the arc lies flat round it at
+       blade height, a faint sliver on the side it is about to swing at while
+       it winds up (`windYaw`), and a bright sweep across that side when the
+       blow comes (`slash`) — whether or not it reached anybody. The Kata
+       ghost's arc, the same shape (tourcast.js `slashArc`). */
+    this.arc = new THREE.Mesh(
+      new THREE.RingGeometry(1.2, 1.9, 28, 1, -Math.PI * 0.42, Math.PI * 0.84).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, toneMapped: false, depthWrite: false, side: THREE.DoubleSide }));
+    this.arc.position.y = 1.4;
+    this.arc.renderOrder = 6;
+    this.group.add(this.arc);
+    this.slashT = Infinity;
+    this.slashYaw = 0;
+    this.windYaw = null;
+  }
+
+  /** The blow lands now, toward `yaw` (atan2 of x over z). */
+  slash(yaw) {
+    this.slashT = 0;
+    this.slashYaw = yaw;
+    this.windYaw = null;
+  }
+
+  update(dt) {
+    super.update(dt);
+    this.slashT += dt;
+    // RingGeometry's arc is centred on +x; turned by (yaw - PI/2) it faces yaw.
+    if (this.slashT < SLASH_T) {
+      const u = this.slashT / SLASH_T;
+      this.arc.material.opacity = (1 - u) * 0.95;
+      this.arc.rotation.y = this.slashYaw - Math.PI / 2 + (0.5 - u) * 1.4;
+      this.arc.scale.setScalar(0.9 + u * 0.35);
+    } else if (this.live && this.state === 'wind' && this.windYaw != null) {
+      this.arc.material.opacity = 0.18 + 0.1 * Math.sin(this.t * 22);
+      this.arc.rotation.y = this.windYaw - Math.PI / 2 + 0.7;
+      this.arc.scale.setScalar(0.8);
+    } else {
+      this.arc.material.opacity = 0;
+    }
+    this.arc.visible = this.arc.material.opacity > 0.01;
   }
 
   get ko() { return !this.live; }
@@ -771,10 +819,12 @@ function LEAGUE(school, mode) {
         } else if (f.state === 'wind') {
           // THE TELL: white, and still. Then the blade, at whoever is in reach.
           f.flash = Math.max(f.flash, 0.5);
+          f.windYaw = Math.atan2(q.x - me.x, q.z - me.z);
           f.windT -= dt;
           if (f.windT <= 0) {
             f.state = 'rest';
             f.restT = HOLO_REST;
+            f.slash(f.windYaw);
             if (fd <= HOLO_REACH + 0.4) {
               if (foe.her) {
                 const k = 1 / (fd || 1);

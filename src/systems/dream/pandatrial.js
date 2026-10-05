@@ -3,7 +3,7 @@ import { SIM, HOLO } from '../../world/simworld.js';
 import { Panda, PANDA, CLAW } from '../../entities/panda.js';
 import { HoloPanel } from './holo.js';
 import { Cane } from './targets.js';
-import { HoloFighter, HOLO_CLOSE, HOLO_REACH, HOLO_WIND, HOLO_REST, HOLO_SPEED } from './school.js';
+import { HoloFighter, HOLO_CLOSE, HOLO_REACH, HOLO_WIND, HOLO_REST, HOLO_SPEED, SLASH_T } from './school.js';
 
 /* ---------------------------------------------------------------------------
    熊 THE PANDAPAW TRIAL — the whole life of a panda in the ring, in one go.
@@ -32,9 +32,25 @@ import { HoloFighter, HOLO_CLOSE, HOLO_REACH, HOLO_WIND, HOLO_REST, HOLO_SPEED }
      cut2   six more canes
      meet   the cub grows, in a poof       (a moment to look at it)
      fight2 six holo-kittens, at START again; the panda claws beside her
-     lesson ROOTED: four more come for the PANDA, knock it down, and poof;
-            the card says what that means out there, and the cub licks her
-            back up. Then the trial is won.
+     lesson ROOTED: four more come for the PANDA, and their FIRST blow
+            knocks it down, and they poof; the card says what that means out
+            there, and the cub licks her back up. Then the trial is won.
+
+   RICHARD'S PLAYTHROUGH (the second pass):
+     · "After panda in the simulation turns into a big panda, I am unable to
+       ride it. I should be able to ride it while doing the Pandapaw trial."
+       From `meet` through `fight2` the grown panda is offered as `p.simRide`,
+       and MOUNT climbs on (`Player._simRideNear`). It is then her ordinary
+       `pandaMount`; `carryOff` is the one thing the real panda needed to
+       learn, because it lives in the layer and she does not.
+     · "it is taking too long for the panda to turn into a baby panda after
+       the player loses input control, so make it that, the first time big
+       panda gets hit, it turns into a baby panda and heals the player." The
+       lesson's four had to take its whole bar off, five blows; now the first
+       blow is the knock-down (`knockDown`), and `lesson2` is the lick.
+     · "The enemies should also draw a slashing attack animation when
+       attacking" — `HoloFighter.slash` (school.js), at every blow, hit or
+       miss, and a sliver of it while they wind up.
 
    THE PANDA IS THE REAL ONE. `entities/panda.js` `Panda`, with its real lick
    (`PANDA.lickBelow` / `lickRate` / `lickWarm`), its real `hurt`, `collapse`
@@ -58,8 +74,9 @@ import { HoloFighter, HOLO_CLOSE, HOLO_REACH, HOLO_WIND, HOLO_REST, HOLO_SPEED }
        pace is sped up, and only THEN does the card say "faster in here": a
        lesson that hid the speed-up would be a kitten waiting in the ring
        for a heal that comes four times slower than she was shown.
-     · No mounting: a ridden panda is slaved to the rider by `Player`, which
-       knows nothing about the layer.
+     · The lesson's knock-down is ONE blow. In the ring it is a whole bar
+       ("it is taking too long", above); the card says what it means out
+       there, not how many blows it takes.
 --------------------------------------------------------------------------- */
 
 export const PANDA_TRIAL = {
@@ -173,6 +190,8 @@ function spawnPanda(dream, p, owner) {
   const g = dream.sim.heightAt(at.x + 1.8 + SIM.dx, at.z + SIM.dz);
   panda.position.set(at.x + 1.8, g?.y ?? at.y, at.z);
   panda.group.position.copy(panda.position);
+  // In the layer; she is in the world (`Panda.carry`).
+  panda.carryOff = { x: SIM.dx, z: SIM.dz };
   dream.sim.root.add(panda.group);
   return panda;
 }
@@ -272,17 +291,20 @@ function fightTick(d, dt) {
       if (f.restT <= 0) f.state = 'walk';
     } else if (f.state === 'wind') {
       f.flash = Math.max(f.flash, 0.5);
+      f.windYaw = Math.atan2(tgt.x - at.x, tgt.z - at.z);
       f.windT -= dt;
       if (f.windT <= 0) {
         f.state = 'rest';
         f.restT = HOLO_REST;
+        f.slash?.(f.windYaw);
         if (fd <= tgt.reach + 0.4) {
           if (tgt.who === 'her') {
             const kk = 1 / (fd || 1);
             d.dream.simHit(p, { dmg: T.foeDmg * k100, push: { x: (tgt.x - at.x) * kk, z: (tgt.z - at.z) * kk }, src: 'blade', drill: d, from: at, foe: f });
           } else if (panda.hurt(T.pandaDmg * k100, at)) {
             d.dream.game.sfx?.('hit');
-            if (pa.hp <= 0) knockDown(d);
+            // The lesson's first blow is the knock-down (see the header).
+            if (pa.hp <= 0 || d.stage === 'lesson') knockDown(d);
           }
         }
       }
@@ -324,8 +346,10 @@ function knockDown(d) {
   if (!pa?.collapse()) return;
   poof(d.dream, pa);
   if (d.stage === 'lesson') {
-    // Its job done, the four poof away too.
-    for (const f of d.foes) if (f.live) f.breakNow();
+    /* Its job done, the four poof away too — once the swing that did it has
+       been SEEN: poofed on the same frame, the blow that knocked the panda
+       down was the one slash nobody saw, because a broken target is hidden. */
+    d.poofT = SLASH_T + 0.1;
   } else {
     d.dream.game.toast?.(`${d.p.name} — your panda was knocked down! It is a baby panda again`, d.p.index);
   }
@@ -336,6 +360,29 @@ function go(d, stage, extra = {}) {
   d.stageT = 0;
   d.healK = null;
   Object.assign(d, extra);
+}
+
+/** The stages she may ride the grown panda in: from when it grows to the
+ *  end of the fight beside it. Not the lesson, which is watched. */
+const RIDES = new Set(['meet', 'fight2']);
+
+/** Offer the grown panda to ride, or take the offer back (and her off it). */
+function offerRide(d) {
+  const p = d.p;
+  const pa = d.panda;
+  const on = !!pa?.rideable && RIDES.has(d.stage) && d.state === 'live';
+  if (on) {
+    if (p.simRide?.panda !== pa) p.simRide = { panda: pa, off: { x: SIM.dx, z: SIM.dz } };
+    return;
+  }
+  if (p.simRide?.panda === pa) p.simRide = null;
+}
+
+/** Off its back, quietly — the trial is ending, or it is about to be a cub. */
+function dismount(d) {
+  const pa = d.panda;
+  if (pa && pa.rider) { pa.rider.pandaMount = null; pa.rider = null; }
+  if (d.p.simRide?.panda === pa) d.p.simRide = null;
 }
 
 function startFight(d, n) {
@@ -394,6 +441,10 @@ export function PANDA_SPEC() {
       }
       if (pa) stepPanda(d.dream, pa, d.owner, dt, healing ? (d.healK ?? 1) : 1);
       if (FIGHTS.has(d.stage)) fightTick(d, dt);
+      if (d.poofT != null && (d.poofT -= dt) <= 0) {
+        d.poofT = null;
+        for (const f of d.foes) if (f.live) f.breakNow();
+      }
       const line = d.dream.simMax(d.p) * PANDA.lickBelow;
       const healed = () => !s || s.simHp >= line - 0.01 || d.stageT > T.healCap;
       switch (d.stage) {
@@ -425,7 +476,7 @@ export function PANDA_SPEC() {
           if (d.grove.every((c) => !c.live)) {
             pa.setTier(1);
             poof(d.dream, pa);
-            say(d, 'Your panda is GROWN! In the ring it fights beside you');
+            say(d, `Your panda is GROWN! It fights beside you — press [${d.dream.key?.(d.p, 'mount') ?? 'MOUNT'}] to ride it`);
             go(d, 'meet');
           }
           break;
@@ -458,6 +509,8 @@ export function PANDA_SPEC() {
           break;
         default:
       }
+      // After the stage has moved, so the offer is never a frame behind it.
+      offerRide(d);
     },
     paint(d) {
       const note = d.state === 'live' ? d.note : null;
@@ -500,6 +553,7 @@ export function PANDA_SPEC() {
     dispose(d) {
       d.card?.removeFromParent();
       if (!d.panda) return;
+      dismount(d);
       // Won: the cub is hers while she stays (`keepSimPanda`). Anything else: poof.
       if (d.kept && d.state === 'won') d.dream.keepSimPanda?.(d.p, d.panda, d.owner);
       else { poof(d.dream, d.panda); d.panda.group.removeFromParent(); }
@@ -516,10 +570,11 @@ export function PANDA_SPEC() {
  * simulation, but once they are about to leave the island and enter the
  * bridge, the panda poofs away and no more panda."
  *
- * "ABOUT TO ENTER THE BRIDGE" IS THE LOOK ACROSS. `peekAt.w` is how far into
- * the bridge mouth's approach she is, walking toward it (dream/peek.js); at
- * `KEEP_PEEK` she is a step or two from the deck — the moment the camera has
- * swung round to show her where she is going, which is the moment a cub
+ * "ABOUT TO ENTER THE BRIDGE" IS THE LOOK ACROSS. `peekAt.w` is 1 once its
+ * trigger has decided she is walking into a bridge mouth (dream/peek.js
+ * `PeekTrigger` — it was a distance dial, and is on/off since Richard's
+ * second pass) — the moment the camera swings round to show her where she
+ * is going, which is the moment a cub
  * left behind on the island reads as a choice the game made rather than a
  * pet that got lost. Off the island's rim (a fall, a ride) counts too.
  */

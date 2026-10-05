@@ -3,7 +3,7 @@ import { Billboard, paint, toonVertexMat } from '../core/gfx.js';
 import { bubbleTexture } from '../entities/leader.js';
 import { mergeParts } from '../world/build.js';
 import { SimWorld, SIM, HOLO, toSim } from '../world/simworld.js';
-import { MathDojo } from './mathdojo.js';
+import { MathDojo, inDojoView } from './mathdojo.js';
 import { aggregate, ORB_BY_ID } from '../entities/powerorb.js';
 import { buildWornOrbs } from './kotodama.js';
 import { TrainingGate, Shards } from './dream/targets.js';
@@ -34,9 +34,9 @@ import { TOUR, GEAR_LINES, GEAR_VOICE } from './dream/stories.js';
 import { TourShadow } from './dream/tourshadow.js';
 import { TourCast } from './dream/tourcast.js';
 import { holoDojo } from './dream/holodojo.js';
-import { peekWeight } from './dream/peek.js';
+import { PeekTrigger } from './dream/peek.js';
 import { tickKeptPandas, dropKept } from './dream/pandatrial.js';
-import { enterHolo, grantHolo, holoLeft, HoloChoice, HOLO_MAX_EACH } from './dream/holokit.js';
+import { enterHolo, leaveHolo, grantHolo, holoLeft, HoloChoice, HOLO_MAX_EACH } from './dream/holokit.js';
 import { LionGuide, LOST_AFTER, LOST_AGAIN, LOST_MAX } from './dream/lionguide.js';
 import { Kiosk, idleIn } from './dream/kiosk.js';
 
@@ -1589,24 +1589,18 @@ export class DreamDojo {
     const s = this.st[p.index];
     if (s?.phase !== 'sim' || !p.onGround || p.snakeRide || p.onCycle || p.mount || p.rideAlong
       || p.pandaMount || p.pinnedAt) {
-      if (s) s.peek = null;
+      s?.peek?.reset();
       return null;
     }
     const dr = this.drills[p.index];
-    if (dr && (dr.state === 'ready' || dr.state === 'live')) { s.peek = null; return null; }
+    if (dr && (dr.state === 'ready' || dr.state === 'live')) { s.peek?.reset(); return null; }
     this._ends ??= this._peekEnds();
-    let best = null;
-    let bw = 0;
-    for (const E of this._ends) {
-      const w = peekWeight(p.position, p.velocity ?? { x: 0, z: 0 }, E);
-      /* STANDING STILL KEEPS THE ANSWER: she stopped to look, or she stopped
-         walking away. A negative weight is "no opinion" at that strength. */
-      const k = w < 0 ? (s.peek?.end === E ? -w : 0) : w;
-      if (k > bw) { bw = k; best = E; }
-    }
-    if (!best) { s.peek = null; return null; }
-    s.peek = { end: best };
-    return { x: p.position.x, y: p.position.y, z: p.position.z, far: best.far, w: bw };
+    /* ON OR OFF, with a buffer (dream/peek.js `PeekTrigger`). The lens's own
+       clock does the easing; this only says whether she is "definitely" there. */
+    s.peek ??= new PeekTrigger();
+    const E = s.peek.step(this._dt ?? 1 / 60, p.position, p.velocity ?? { x: 0, z: 0 }, this._ends);
+    if (!E) return null;
+    return { x: p.position.x, y: p.position.y, z: p.position.z, far: E.far, w: 1 };
   }
 
   /** Lionheart, in light, at his own spot on the port. */
@@ -1711,6 +1705,7 @@ export class DreamDojo {
     // The look across is in the layer's coordinates: never carried over.
     p.peekAt = null;
     if (p.bridgePeek) p.bridgePeek.w = 0;
+    this.st[p.index]?.peek?.reset?.();
     const k = toSimNow ? 1 : -1;
     const dx = SIM.dx * k;
     const dz = SIM.dz * k;
@@ -1814,6 +1809,7 @@ export class DreamDojo {
     this.t += dt;
     const ease = (x) => x * x * (3 - 2 * x);
 
+    this._dt = dt;
     for (const p of g.players ?? []) if (p) p.peekAt = this._peekFor(p);
 
     /* FIRST: is anything taking the whole screen? Then nobody stays inside —
@@ -2016,7 +2012,7 @@ export class DreamDojo {
       this.sim.update(dt);
       const inside = (g.players ?? []).filter((p) => p && this.realmOf(p) === 'sim');
       this.simDojo?.update(dt, inside);
-      this.simDojoFx?.update(this.t);
+      this.simDojoFx?.update(this.t, inside);
       this.sim.steerBridges(dt, inside);
     }
   }
@@ -2219,6 +2215,8 @@ export class DreamDojo {
    */
   swearFor(p, clan) {
     p.dreamOath ??= { was: p.clan ?? null };
+    // Remembered for her next visit (dream/holokit.js `holoClan`).
+    p.holoClan = clan.id;
     if (p.clan?.id !== clan.id) {
       p.clan = clan;
       p.clanRing?.material.color.set(clan.color);
@@ -2242,6 +2240,7 @@ export class DreamDojo {
     this.dropSimPanda(p);
     this.closeChoice(p);
     this._closeRundown(p);
+    leaveHolo(this, p);
     if (s) { s.loans = []; s.kitSig = null; s.holoWorn = null; s.holoCopies = null; }
     p.power = aggregate(p.powerOrbs ?? []);
     if (this.game.syncOrbMeshes) this.game.syncOrbMeshes(p);
@@ -2640,6 +2639,17 @@ export class DreamDojo {
        cut into it was a 1.3 second frame. See `Game.primeSim`. */
     if (ok) g.primeSim?.();
     return ok ? null : 'scene';
+  }
+
+  /**
+   * The centre of the simulator's Turning Circle if she is standing in it,
+   * else null: main.js frames it with the town Dojo's own shot. The same
+   * `inDojoView` the town's asks, so the two rooms start at the same edge.
+   */
+  simDojoAt(p) {
+    const D = this.simDojo;
+    if (!D || !p || this.realmOf(p) !== 'sim') return null;
+    return inDojoView(p, D.centre) ? D.centre : null;
   }
 
   /**
