@@ -408,7 +408,29 @@ export class Ranks {
     return paid;
   }
 
+  /**
+   * SHE JUST MADE KENSHI 1st CLASS: say what it opened. Richard: "Players
+   * should get a message about this being unlocked when they reach Kenshi 1st
+   * Class." POLLED, not hooked — 1st Class is reached either by a star (any
+   * drill's `award`) or by the Shadow's flag (`_won`), and a poll over
+   * `atLeast` cannot miss the next way somebody adds. The `secret` flag is
+   * the once, and is what feats.js reads to unveil the quest; it is in the
+   * save row with the rest of the ledger.
+   */
+  _watchFirstClass() {
+    const P = this.dream.progress;
+    for (const p of this.dream.simKittens()) {
+      const n = p.style?.name ?? p.name;
+      if (P.flag(n, 'secret') || !atLeast(P, n, 'k1')) continue;
+      P.setFlag(n, 'secret');
+      this.dream.game.sfx?.('victory');
+      this.dream.game.toast?.(`${p.name} is KENSHI 1st CLASS! A SECRET is open: 秘 EXTRA HARD Shadow Lionheart, on his island. Beat it for a SPECIAL Kotodama!`, p.index);
+      this.dream.holoSay?.(`${p.name} — KENSHI 1st CLASS!\nMy SHADOW has a secret for you now…`, 7);
+    }
+  }
+
   update(dt, t = 0) {
+    this._watchFirstClass();
     const idle = idleIn(this.dream);
     this.cardKiosk.update(dt, idle);
     this.todayKiosk.update(dt, idle);

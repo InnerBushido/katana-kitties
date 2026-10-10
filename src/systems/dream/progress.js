@@ -1,14 +1,20 @@
 /* ---------------------------------------------------------------------------
-   WHAT A KITTEN HAS EARNED IN THE DREAM DOJO — kept for good.
+   WHAT A KITTEN HAS EARNED IN THE DREAM DOJO — in THIS game.
 
-   PER KITTEN, IN THIS BROWSER, OUTLIVING ANY ONE AFTERNOON. Richard chose this
-   over keeping it in the save row, and the daily kata is why it had to be: a
-   streak that a new afternoon resets is not a streak. So this is the third
-   thing in the game that outlives the tab, beside the RECORD BOARD and the
-   SAVED GAMES, and it is treated the way they are — one key, read with a
-   try/catch that degrades to "nothing earned yet", and wiped only from a
-   keyless debug row that asks first with the count in its button
-   (non-negotiable 7).
+   IT TRAVELS WITH THE SAVE ROW, NOT THE BROWSER. It used to be one
+   localStorage key outliving every afternoon (`kk.dreamdojo.v1`), chosen when
+   the daily kata needed a streak a new game could not reset. Then Richard
+   played it: "when starting a new game or refreshing the browser, I still have
+   the player achievements, even if starting a new game. This should get saved
+   with the games save file and be dependent on each new game or save game
+   file, it shouldn't be shared with all the play sessions and all the new
+   games." The daily kata is gone (the Kata Trace is songs now), so the reason
+   went with it. `toSave` / `fromSave` are what savegame.js writes and reads; a
+   new game is an empty ledger because a new game is a fresh page. The old key
+   is removed once at boot (`LEGACY_KEY`), so the stars a tester earned before
+   this cannot come back into somebody's new game.
+
+   The `store` argument is kept for the checks only — the game passes null.
 
    KEYED BY HER NAME (`style.name`), not her seat. A seat is not a cat — see
    `cssFor` in core/palette.js for the afternoon that taught that — and the
@@ -21,6 +27,13 @@
 --------------------------------------------------------------------------- */
 
 export const PROGRESS_KEY = 'kk.dreamdojo.v1';
+/** The browser-wide key this used to live in, removed at boot. */
+export const LEGACY_KEY = PROGRESS_KEY;
+
+/** Drop the browser-wide ledger the old build kept. Never throws. */
+export function forgetLegacy(store) {
+  try { store?.removeItem(LEGACY_KEY); } catch { /* blocked */ }
+}
 
 /** A local date as YYYY-MM-DD — the day a daily kata belongs to. */
 export function dayKey(d = new Date()) {
@@ -106,7 +119,28 @@ export class DreamProgress {
     this.save();
   }
 
-  /** How many kittens have anything recorded — the debug row's count. */
+  /** A copy of the ledger for the save row. A copy, so a row taken now does
+   *  not change under the snapshot when she earns a star a second later. */
+  toSave() {
+    return JSON.parse(JSON.stringify(this.data));
+  }
+
+  /**
+   * Put a save row's ledger back. ANYTHING THAT IS NOT ONE IS AN EMPTY
+   * LEDGER — an older save that never carried this field, or junk — never a
+   * throw, and never the previous game's stars left standing: a load replaces
+   * whatever this page had.
+   */
+  fromSave(d) {
+    const ok = d && d.v === 1 && d.kittens && typeof d.kittens === 'object' && !Array.isArray(d.kittens);
+    this.data = ok ? JSON.parse(JSON.stringify(d)) : { v: 1, kittens: {} };
+    for (const name of Object.keys(this.data.kittens)) {
+      if (!this.data.kittens[name] || typeof this.data.kittens[name] !== 'object') delete this.data.kittens[name];
+      else this.of(name);
+    }
+  }
+
+  /** How many kittens have anything recorded. */
   count() { return Object.keys(this.data.kittens).length; }
 
   wipe() {

@@ -415,7 +415,7 @@ export function castRow(p, here = true) {
     geared: !!p.dreamGeared,
     /* Shadow Lionheart's three levels, beaten THIS GAME — all three is his 凶
        Cross Slash. An old row has none and is a kitten who has beaten none. */
-    shadow: { easy: !!p.shadowBeat?.easy, medium: !!p.shadowBeat?.medium, hard: !!p.shadowBeat?.hard },
+    shadow: { easy: !!p.shadowBeat?.easy, medium: !!p.shadowBeat?.medium, hard: !!p.shadowBeat?.hard, extra: !!p.shadowBeat?.extra },
     /* The orbs she EARNED in the simulator — her holo inventory, which
        persists across visits (dream/holokit.js). Never what she wears in
        there: that is a copy of `orbs`, made fresh on every way in. */
@@ -510,7 +510,7 @@ export function applyCast(game, p, row) {
      — which is true of every save taken before she existed. */
   p.payne = cleanPayne(row.payne);
   p.dreamGeared = !!row.geared;
-  p.shadowBeat = { easy: !!row.shadow?.easy, medium: !!row.shadow?.medium, hard: !!row.shadow?.hard };
+  p.shadowBeat = { easy: !!row.shadow?.easy, medium: !!row.shadow?.medium, hard: !!row.shadow?.hard, extra: !!row.shadow?.extra };
   p.holoOrbs = cleanHoloOrbs(row.holo);
   p.holoClan = CLANS.some((c) => c.id === row.holoClan) ? row.holoClan : null;
   p.holoLastWorn = cleanHoloOrbs(row.holoWorn).slice(0, MAX_EQUIPPED);
@@ -637,6 +637,9 @@ export function snapshot(game) {
     /** Who claimed the one-kitten quest, and whether the dragon-ball count is
      *  settled. Everything per kitten is in her row. */
     feats: game.feats?.save?.() ?? null,
+    /** The Dream Dojo's stars, bests and flags, per kitten — THIS game's, so a
+     *  new game starts the simulator from nothing (dream/progress.js). */
+    dream: game.dream?.progress?.toSave?.() ?? null,
     /** Which story scenes have been spent. A restore that forgot these would
      *  play the dragon's arrival a second time over a world that already has
      *  him in it. */
@@ -905,6 +908,9 @@ export function restore(game, snap) {
      and asks this for nothing — but a load that set the claims after would
      leave a window where the Beam gunner quest looked unclaimed. */
   game.feats?.load(snap.feats);
+  /* The simulator's ledger is the save's, and a save from before it was
+     carried is an empty one rather than whatever this page had. */
+  game.dream?.progress?.fromSave?.(snap.dream);
 
   /* --- and the kittens ------------------------------------------------- */
   /* --- BY KITTEN, AND ONLY BY KITTEN --------------------------------------

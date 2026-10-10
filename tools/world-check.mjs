@@ -20793,8 +20793,11 @@ console.log('\n--- Mr. Satan loses his temper ---');
        tools for the other half. */
     ok('...and how the saved games are, which arrived with the autosave',
       noKey.includes('SaveWipe'), noKey.join(', '));
-    ok("...and the Dream Dojo's stars, which are kept per kitten for good",
-      noKey.includes('DreamWipe'), noKey.join(', '));
+    /* NOT the Dream Dojo's stars any more: they are in the save row now
+       ("it shouldn't be shared with all the play sessions"), so wiping the
+       saved games wipes them, and a third row would be a wipe of nothing. */
+    ok("...and no row for the Dream Dojo's stars, which live in the save now",
+      !noKey.includes('DreamWipe') && !/DreamWipe|_debugClearDream/.test(msrc), noKey.join(', '));
     ok('...and the panel no longer claims the board is the only thing kept',
       !/the only thing that outlives the tab/.test(msrc));
   }
@@ -28411,6 +28414,44 @@ console.log('\n--- one press is not enough, and one player drives ---');
     ok('...while one from before the ending has none',
       G4.summonScene.bridges === 0 && !W2.snakeOpen && W2.bridgeT === 0);
   }
+  /* THE DREAM DOJO'S STARS ARE THE SAVE'S. Richard: "when starting a new game
+     or refreshing the browser, I still have the player achievements ... it
+     shouldn't be shared with all the play sessions and all the new games."
+     So: they ride in the snapshot, come back with it, and a load of a save
+     that has none EMPTIES the ledger rather than leaving this page's. */
+  {
+    const PR = await import('../src/systems/dream/progress.js');
+    const mem = new Map([['kk.dreamdojo.v1', '{"v":1,"kittens":{"Ember":{"stars":{"x":3}}}}']]);
+    const store = { getItem: (k) => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, String(v)), removeItem: (k) => mem.delete(k) };
+    PR.forgetLegacy(store);
+    ok("the old browser-wide Dream Dojo ledger is dropped, so it cannot leak into a new game", !mem.has('kk.dreamdojo.v1'));
+    PR.forgetLegacy({ removeItem: () => { throw new Error('blocked'); } });
+    const GA = fakeGame(W2, 1);
+    GA.dream = { progress: new PR.DreamProgress(null) };
+    GA.dream.progress.award('Ember', 'gallery.swift', 3, 9, { lowerIsBetter: true });
+    GA.dream.progress.setFlag('Ember', 'shadow');
+    const snapD = snapshot(GA);
+    GA.dream.progress.award('Ember', 'storm', 2, 40);
+    ok("...the save carries this game's Dream Dojo stars, as a copy taken when it was written",
+      snapD.dream?.kittens?.Ember?.stars?.['gallery.swift'] === 3 && !snapD.dream.kittens.Ember.stars.storm);
+    const GB = fakeGame(W2, 1);
+    GB.dream = { progress: new PR.DreamProgress(null) };
+    GB.dream.progress.award('Frost', 'storm', 1, 5);
+    restore(GB, JSON.parse(JSON.stringify(snapD)));
+    ok('...loading it puts them back — and takes away what this page had before',
+      GB.dream.progress.stars('Ember', 'gallery.swift') === 3 && GB.dream.progress.flag('Ember', 'shadow')
+      && GB.dream.progress.stars('Frost', 'storm') === 0);
+    const olderD = JSON.parse(JSON.stringify(snapD));
+    delete olderD.dream;
+    restore(GB, olderD);
+    ok("...and a save from before they were carried comes back with none, not the last game's",
+      GB.dream.progress.count() === 0);
+    GB.dream.progress.fromSave({ v: 1, kittens: { Ember: 7, Frost: { stars: { a: 2 } } } });
+    ok('...and a junk row in the ledger is dropped, the rest kept and made whole',
+      GB.dream.progress.count() === 1 && GB.dream.progress.stars('Frost', 'a') === 2 && !!GB.dream.progress.of('Frost').best);
+    const fresh = new PR.DreamProgress(null);
+    ok('...and a new game is an empty ledger', fresh.count() === 0);
+  }
 
   if (!hadDocS) delete globalThis.document;
 
@@ -29249,14 +29290,16 @@ console.log('\n--- quests: earned before the end, paid one at a time after it --
   /* SIX SPECIAL SINCE RICHARD: "Lionheart's Honor quest should give a Special
      Kotodama orb, but make it that anyone can do the quest." It stays one of
      the five everybody-quests and pays the special draw. */
-  ok('ten quests: five for everybody, six special — the five one-kitten ones and Lionheart’s Honor',
-    FEATS.length === 10 && FEATS.filter((f) => f.who === 'each').length === 5
-      && FEATS.filter((f) => isSpecial(f.id)).length === 6
-      && FEAT_BY_ID.shadow.who === 'each' && isSpecial('shadow')
-      && FEATS.filter((f) => f.who === 'each' && isSpecial(f.id)).map((f) => f.id).join() === 'shadow',
+  /* ELEVEN SINCE KENSHI 1st CLASS: the secret mission ("Shadow's Secret") is
+     a sixth everybody-quest, special and late like Lionheart's Honor. */
+  ok('eleven quests: six for everybody, seven special — the five one-kitten ones, Lionheart’s Honor and the secret',
+    FEATS.length === 11 && FEATS.filter((f) => f.who === 'each').length === 6
+      && FEATS.filter((f) => isSpecial(f.id)).length === 7
+      && FEAT_BY_ID.shadow.who === 'each' && isSpecial('shadow') && isSpecial('secret')
+      && FEATS.filter((f) => f.who === 'each' && isSpecial(f.id)).map((f) => f.id).join() === 'shadow,secret',
     FEATS.map((f) => `${f.id}:${f.who}`).join(' '));
-  ok('...and only the Shadow’s is earned after the Awakening',
-    FEATS.filter((f) => f.late).map((f) => f.id).join() === 'shadow');
+  ok('...and only the Shadow’s two are earned after the Awakening',
+    FEATS.filter((f) => f.late).map((f) => f.id).join() === 'shadow,secret');
   ok('...and the plain-orb prize is one of them, and special like the rest of them',
     !!FEAT_BY_ID.orbs && isSpecial('orbs'));
   /* THE PROFILE ASKS THE SAME QUESTION. Richard: "In the Character Profile,
@@ -29759,9 +29802,12 @@ console.log('\n--- quests: earned before the end, paid one at a time after it --
 
     const card = helpTopic(html, 'Quests &amp; achievements');
     ok('Help has a Quests & achievements card', card.length > 200, `${card.length} chars`);
-    ok('...listing every quest by its own title, in order',
-      FEATS.every((f) => card.includes(f.title))
-        && FEATS.map((f) => card.indexOf(f.title)).every((v, k, a) => !k || v > a[k - 1]));
+    /* The secret one by its VEILED title: Help is read before anybody is 1st
+       Class, and a secret named on the Help page is not one. */
+    const helpTitle = (f) => (f.secret ? f.veiled.title : f.title);
+    ok('...listing every quest by its own title, in order — the secret one veiled',
+      FEATS.every((f) => card.includes(helpTitle(f))) && !card.includes(FEAT_BY_ID.secret.title)
+        && FEATS.map((f) => card.indexOf(helpTitle(f))).every((v, k, a) => !k || v > a[k - 1]));
     ok('...with the real numbers',
       card.includes(`${DOJO_NEED} seconds`) && card.includes(`${RIDER_NEED} seconds`));
     ok('...and says what does not count, the cap, and the rare chance',
@@ -38813,39 +38859,57 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         /s\.lostT = 0;\s*s\.lostN = 0;/.test(ddSrc) && /award\(p, id, stars, score, lowerIsBetter\) \{\s*const s0 = this\.st\[p\.index\];\s*if \(s0\) s0\.lostT = 0;/.test(ddSrc)
         && /startDrill\(p, spec, at\) \{\s*const s0 = this\.st\[p\.index\];\s*if \(s0\) s0\.lostT = 0;/.test(ddSrc));
 
-      /* THE MAP KIOSK on the hub. Measured clear of everything else on it. */
+      /* THE MAP KIOSKS — four round the hub and one at the Arena School
+         ("place 4 in the corners ... of the Dojo of the Turning Circle and also
+         in the Arena School, can be near the Today's Training circle"). Every
+         one measured clear of everything else, the way the first one was. */
       D._buildMapKiosk();
       const K = D.mapKiosk;
-      const kd = Math.hypot(K.x - dc.x, K.z - dc.z);
-      ok('地図 the map kiosk stands on the hub, off the Dojo of the Turning Circle\'s floor and inside the rim',
-        kd - K.r > 38 && kd + K.r < 50, `at ${kd.toFixed(1)} r ${K.r}`);
       const segD = (q, A, B) => {
         const ax = B.x - A.x; const az = B.z - A.z;
         const t = Math.max(0, Math.min(1, ((q.x - A.x) * ax + (q.z - A.z) * az) / (ax * ax + az * az || 1)));
         return Math.hypot(q.x - A.x - ax * t, q.z - A.z - az * t);
       };
-      let deckGap = Infinity;
-      /* The gate signs, where `_gateSign` puts them: one per island the hub
-         reaches, from the same `islandCentre` and `gateSignSpot`. The port
-         bridge has none — the kiosk stands where its sign would be. */
-      let signGap = Infinity;
-      for (const k of KEYS.filter((k2) => !ISL.ISLANDS[k2].from)) {
-        const c = ISL.islandCentre(dc, L.u, ISL.ISLANDS[k]);
-        const sg = DD.gateSignSpot(dc, c.dir, ISL.ISLANDS[k].cycle ? HW.HIGHWAY.halfW : 2.2);
-        signGap = Math.min(signGap, Math.hypot(sg.x - K.x, sg.z - K.z));
-      }
-      for (const B of sim.bridges) {
-        // The road is a Snake Way road, in WORLD coordinates; the kiosk is the layer's.
-        const pts = (B.road?.pts ?? []).map((q) => ({ x: q.x - SW.SIM.dx, z: q.z - SW.SIM.dz }));
-        for (let i = 1; i < pts.length; i++) deckGap = Math.min(deckGap, segD(K, pts[i - 1], pts[i]) - B.deck.halfW - K.r);
-      }
-      ok('...off every bridge and highway deck, by a clear stride', deckGap > 1.5, `${deckGap.toFixed(2)}`);
-      ok('...and clear of every gate sign\'s post', signGap > 6, `${signGap.toFixed(2)}`);
-      const otherSt = D.stations.filter((s) => s !== K.station);
-      const stGap = Math.min(...otherSt.map((s) => Math.hypot(s.x - K.x, s.z - K.z) - s.r - K.r));
-      ok('...and from every other station, so one press can only mean one of them', stGap > 2, `${stGap.toFixed(2)}`);
+      const hubKs = D.mapKiosks.slice(0, DD.MAP_KIOSKS.length);
+      const schoolK = D.mapKiosks[DD.MAP_KIOSKS.length];
+      const kds = hubKs.map((k) => Math.hypot(k.x - dc.x, k.z - dc.z));
+      ok('地図 four map kiosks stand on the hub, off the Dojo of the Turning Circle\'s floor and inside the rim, a quarter-turn or so apart',
+        hubKs.length === 4 && kds.every((kd, i) => kd - hubKs[i].r > 38 && kd + hubKs[i].r < 50)
+        && hubKs.every((k, i) => hubKs.every((q, j) => i === j || Math.hypot(k.x - q.x, k.z - q.z) > 40)),
+        kds.map((x) => x.toFixed(1)).join(' '));
+      const gaps = D.mapKiosks.map((MK) => {
+        let deckGap = Infinity;
+        let signGap = Infinity;
+        /* The gate signs, where `_gateSign` puts them: one per island the hub
+           reaches, from the same `islandCentre` and `gateSignSpot`. */
+        for (const k of KEYS.filter((k2) => !ISL.ISLANDS[k2].from)) {
+          const c = ISL.islandCentre(dc, L.u, ISL.ISLANDS[k]);
+          const sg = DD.gateSignSpot(dc, c.dir, ISL.ISLANDS[k].cycle ? HW.HIGHWAY.halfW : 2.2);
+          signGap = Math.min(signGap, Math.hypot(sg.x - MK.x, sg.z - MK.z));
+        }
+        for (const B of sim.bridges) {
+          // The road is a Snake Way road, in WORLD coordinates; the kiosk is the layer's.
+          const pts = (B.road?.pts ?? []).map((q) => ({ x: q.x - SW.SIM.dx, z: q.z - SW.SIM.dz }));
+          for (let i = 1; i < pts.length; i++) deckGap = Math.min(deckGap, segD(MK, pts[i - 1], pts[i]) - B.deck.halfW - MK.r);
+        }
+        const otherSt = D.stations.filter((st) => st !== MK.station);
+        const stGap = Math.min(...otherSt.map((st) => Math.hypot(st.x - MK.x, st.z - MK.z) - st.r - MK.r));
+        return { deckGap, signGap, stGap };
+      });
+      ok('...every map kiosk off every bridge and highway deck, by a clear stride', gaps.every((g) => g.deckGap > 1.5),
+        gaps.map((g) => g.deckGap.toFixed(2)).join(' '));
+      ok('...and clear of every gate sign\'s post', gaps.every((g) => g.signGap > 6), gaps.map((g) => g.signGap.toFixed(2)).join(' '));
+      ok('...and from every other station, so one press can only mean one of them', gaps.every((g) => g.stGap > 2),
+        gaps.map((g) => g.stGap.toFixed(2)).join(' '));
+      const kd = kds[0];
       const towardPort = ((K.x - dc.x) * L.u.x + (K.z - dc.z) * L.u.z) / kd;
-      ok('...on the side of the hub she arrives on, the first thing she passes', towardPort > 0.95, towardPort.toFixed(3));
+      ok('...the first on the side of the hub she arrives on, the first thing she passes', towardPort > 0.95, towardPort.toFixed(3));
+      const IS2 = D.isles.school;
+      const tq = isleSpot(IS2, ...RK.TODAY_KIOSK);
+      ok('...and the fifth on the Arena School, beside TODAY\'S TRAINING, on the island\'s floor',
+        !!schoolK && Math.hypot(schoolK.x - tq.x, schoolK.z - tq.z) < 12
+        && Math.hypot(schoolK.x - IS2.x, schoolK.z - IS2.z) + schoolK.r < IS2.r, schoolK ? `${Math.hypot(schoolK.x - tq.x, schoolK.z - tq.z).toFixed(1)} from TODAY` : 'none');
+      D.mapKiosks.forEach((MK, i) => { if (i) MK.update(0.5, [her]); });
       put(her, { x: K.x, y: K.y, z: K.z });
       ok('...and standing on it, INTERACT is the kiosk\'s', D.stationAt(her) === K.station
         && /OPEN THE MAP/.test(K.station.prompt(her, 'E')));
@@ -38905,7 +38969,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         const at = sec.indexOf(`data-isle="${k}"`);
         return at < 0 ? '' : sec.slice(at, sec.indexOf('</li>', at));
       };
-      ok('🥽 Help has a Dream Dojo topic, with a card for every island in the clan cards\' layout',
+      ok('🎮 Help has a Dream Dojo topic, with a card for every island in the clan cards\' layout',
         !!sec && KEYS.every((k) => /class="clan-card dd-card"/.test(sec) && cardOf(k).includes(`src="/help/dojo/isle-${k}.jpg"`))
         && (sec.match(/data-isle="/g) ?? []).length === KEYS.length,
         KEYS.filter((k) => !cardOf(k)).join());
@@ -38946,6 +39010,18 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         && /if \(key === 'help'\) \{\s*this\.closeAll\(\);\s*this\.game\.openHelpAt\?\.\('help-dream', index\);/.test(read('../src/systems/inspector.js'))
         && /id="help-dream"/.test(html)
         && /openHelpAt\(id, slot = null\) \{[\s\S]{0,300}this\.setPaused\(true\);\s*this\._claimMenu\(slot\);/.test(read('../src/main.js')));
+
+      /* WHERE NEXT STAYS UP. "after a few seconds the text disappears and I
+         wasn't able to read it all" - it had a 14s clock. */
+      {
+        const t0 = D.t;
+        D.guide.choose(her, 'next');
+        const said = D.guide.speaking(her);
+        D.t = t0 + 600;
+        ok("...and what he says on WHERE SHOULD I GO NEXT stays on her card with no clock - ten minutes on, it is still there",
+          !!said && D.guide.speaking(her) === said && D.guide.markup(her.index, 'lionQuests', 0, () => '').includes('pn-said'));
+        D.t = t0;
+      }
     }
 
     // And it is the GATE that refuses, for every trial in the hall, not the panda's.
@@ -39266,8 +39342,12 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
           const dx = v.x - mid.x; const dz = v.z - mid.z; const r = Math.hypot(dx, dz);
           if (r < 1e-6) continue;   // the disc's own centre vertex
           const at = (k) => ({ x: v.x + (dx / r) * k, z: v.z + (dz / r) * k });
+          /* His blow, OR the split X under every other kitten standing in
+             the fight (`echoes`) — each is drawn red and each must land on
+             exactly what it drew. */
           const test = (q) => (kind === 'slam' ? SH.inSlam(a.o, a.dir, q.x, q.z)
-            : kind === 'sweep' ? SH.inSweep(a.o, q.x, q.z, 0) : SH.inCross(a.c, a.yaw, q.x, q.z));
+            : kind === 'sweep' ? SH.inSweep(a.o, q.x, q.z, 0) : SH.inCross(a.c, a.yaw, q.x, q.z))
+            || (a.echoes ?? []).some((e) => SH.inCross(e.c, e.yaw, q.x, q.z, { ...SH.CROSS, len: e.len }));
           n++;
           if (!test(at(-0.05))) lies++;
           if (test(at(0.12))) lies++;
@@ -39483,16 +39563,30 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     {
       const WALK = Number(/const WALK_SPEED = ([\d.]+);/.exec(read('../src/entities/player.js'))?.[1]);
       const outX = SH.CROSS.half / Math.SQRT1_2;
-      const worst = Math.min(...LV.map((L) => Math.min(
-        SH.SLAM.tell * 0.85 * L.tellK - (0.2 + SH.SLAM.half / WALK),
-        SH.CROSS.tell * L.tellK * (L.triple ? SH.CROSS.chain : 1) - (0.2 + outX / WALK))));
-      ok('影 on every level every red shape is up long enough to react to and walk out of', worst > 0.05, `${worst.toFixed(3)}s spare`);
+      /* EVERY level he can be fought on — the secret EXTRA HARD too — and at
+         the party size that makes him quickest: four kittens standing. */
+      const P4 = SH.partyK(4).tell;
+      const chainT = (L, k) => Math.max(SH.CHAIN_MIN, SH.CROSS.tell * L.tellK * k * SH.CROSS.chain);
+      const worst = Math.min(...SH.FIGHT_LEVELS.map((L) => Math.min(
+        SH.SLAM.tell * 0.85 * L.tellK * P4 - (0.2 + SH.SLAM.half / WALK),
+        (L.triple ? chainT(L, P4) : SH.CROSS.tell * L.tellK * P4) - (0.2 + outX / WALK))));
+      ok('影 on every level, EXTRA HARD and four kittens included, every red shape is up long enough to react to and walk out of',
+        worst > 0.05, `${worst.toFixed(3)}s spare`);
       const ifr = DD.SIM_IFRAMES;
-      const chain = Math.min(...LV.filter((L) => L.triple).map((L) => SH.CROSS.tell * L.tellK * SH.CROSS.chain));
+      const chain = Math.min(...SH.FIGHT_LEVELS.filter((L) => L.triple).map((L) => chainT(L, P4)));
       ok('...and each X of the 凶 comes after the last hit\'s i-frames are over, so all three CAN land', chain > ifr + 0.02,
         `${chain.toFixed(2)}s vs ${ifr}s`);
+      ok('...and the floor under the chain changes nothing that shipped: HARD alone is above it',
+        SH.CROSS.tell * LV[2].tellK * SH.CROSS.chain >= SH.CHAIN_MIN);
+      /* MORE OF YOU, MORE OF HIM — "he will attack fast and have more health".
+         Alone he is the fight he was, to the number. */
+      const k1 = SH.partyK(1); const k2 = SH.partyK(2); const k4 = SH.partyK(4);
+      ok('影 alone he is the fight he was; with more kittens standing he walks faster, winds up quicker and rests less',
+        k1.speed === 1 && k1.tell === 1 && k1.rest === 1 && k2.speed > 1 && k2.tell < 1 && k2.rest < 1
+        && k4.speed > k2.speed && k4.tell < k2.tell && k4.rest < k2.rest && SH.partyK(9).tell === k4.tell,
+        JSON.stringify([k2, k4]));
     }
-    const kioskOk = F.kiosks.length === 3 && F.kiosks.every((k, i) =>
+    const kioskOk = F.kiosks.length === SH.FIGHT_LEVELS.length && F.kiosks.every((k, i) =>
       Math.hypot(k.x - F.centre.x, k.z - F.centre.z) > SH.ARENA_R + k.r
       && !!sim.heightAt(k.x + SW.SIM.dx, k.z + SW.SIM.dz, IH.y + 2)
       && F.kiosks.every((q, j) => j === i || Math.hypot(k.x - q.x, k.z - q.z) > 4));
@@ -39573,6 +39667,90 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       for (let f = 0; f < 60 * 15; f++) F.update(1 / 60);
       return F.state === 'waiting' && !F.boss;
     })());
+
+    /* ONE CARD AT A TIME. "the text above easy/med/hard is showing up for all
+       of them at the same time and they are blocking each other". Standing
+       by MEDIUM's pad she gets MEDIUM's card, and no other kiosk shows one. */
+    {
+      put(her, F.kiosks[1]);
+      put(sis, inside);
+      for (let f = 0; f < 30; f++) F.update(1 / 60);
+      const lit = F.kiosks.map((k) => (k.card.visible ? 1 : 0));
+      ok('影 one difficulty card shows at a time — the one whose pad she is on — and it wraps instead of shrinking',
+        lit.join('') === '0100' && F.kiosks.every((k) => k.card.w >= 8)
+        && F.card(her, 1).some((l) => l.wrap), lit.join(''));
+    }
+
+    /* 秘 EXTRA HARD. "If player unlocks Kenshi 1st Class, let's have them
+       unlock a special/hidden 'Extra Hard' fight ... Players should get a
+       message about this being unlocked when they reach Kenshi 1st Class." */
+    {
+      const K = F.kiosks[SH.EXTRA];
+      put(her, K);
+      put(sis, inside);
+      fakeGame.toasts.length = 0;
+      for (let f = 0; f < 10; f++) F.update(1 / 60);
+      const hidden = !K.group.visible;
+      K.station.interact(her);
+      ok('秘 EXTRA HARD is hidden, and refused in words, until somebody is KENSHI 1st Class',
+        hidden && F.state === 'waiting' && K.station.prompt(her, 'E') === null && SH.SHADOW_LEVELS.every((L) => !L.secret),
+        `${hidden} ${F.state}`);
+      for (let i = 0; i < 20; i++) D.progress.award(nameOf(her), `wc.first.${i}`, 3);
+      D.progress.setFlag(nameOf(her), 'shadow');
+      D.ranks._watchFirstClass();
+      D.ranks._watchFirstClass();
+      for (let f = 0; f < 10; f++) F.update(1 / 60);
+      ok('秘 ...she makes 1st Class: told ONCE what it opened, and the secret kiosk stands',
+        D.progress.flag(nameOf(her), 'secret') && !D.progress.flag(nameOf(sis), 'secret') && K.group.visible
+        && fakeGame.toasts.filter((t) => /KENSHI 1st CLASS.*SECRET.*EXTRA HARD/.test(t)).length === 1,
+        fakeGame.toasts.join(' / '));
+      K.station.interact(her);
+      const BX = F.boss;
+      ok('秘 ...and it is TWICE hard: twice HARD\'s bar, sized for her and her sister',
+        F.level === SH.EXTRA && BX && BX.maxHits === SH.SHADOW_EXTRA.hits + SH.SHADOW_EXTRA.per
+        && SH.SHADOW_EXTRA.hits === 2 * LV[2].hits && SH.SHADOW_EXTRA.dmgK > LV[2].dmgK && SH.SHADOW_EXTRA.restK < LV[2].restK,
+        `${F.level} ${BX?.maxHits}`);
+
+      /* SPLIT: with two standing, his slam on her is an X under her sister
+         too, and the X lands on exactly her sister. */
+      F._clearTells();
+      F._choose(her, 3, 'slam');
+      const a = F.act;
+      const e = a.echoes?.[0];
+      const sx = sis.position.x - SW.SIM.dx; const sz = sis.position.z - SW.SIM.dz;
+      ok('影 two kittens standing: his blow on one is an X on the other, drawn under where she is',
+        a.echoes?.length === 1 && Math.hypot(e.c.x - sx, e.c.z - sz) < 1e-6
+        && a.meshes.length === 1 + SH.crossBars(0).length, `${a.echoes?.length} ${a.meshes.length}`);
+      const sst = D.st[sis.index];
+      const hp0 = sst ? (sst.simHp = D.simMax(sis)) : 0;
+      if (sst) sst.iframes = 0;
+      her.position.x += 40;   // out of everything he drew
+      F._strike(a);
+      her.position.x -= 40;
+      ok('...and it lands: she is hit for three-quarters of the blow, from where it was drawn',
+        !!sst && hp0 - sst.simHp === SH.shadowDmg(Math.round(SH.SLAM.dmg * SH.SHADOW_EXTRA.dmgK * SH.ECHO_K), D.simMax(sis)),
+        `${hp0} -> ${sst?.simHp}`);
+      F._clearTells();
+      F.act = { kind: 'idle', t: 99 };
+
+      fakeGame.feats.earned.length = 0;
+      F.t = 100;
+      BX.hp = 1;
+      BX.hit(blow);
+      ok('秘 beaten: the secret quest is paid to the 1st-Class kitten — her sister helped and gets the stars, not the secret',
+        F.state === 'won' && fakeGame.feats.earned.includes('0:secret') && !fakeGame.feats.earned.includes('1:secret')
+        && her.shadowBeat.extra && fakeGame.feats.earned.includes('0:shadow'), fakeGame.feats.earned.join());
+      for (let f = 0; f < 60 * 20; f++) F.update(1 / 60);
+      ok('...and it clears itself like the others', F.state === 'waiting' && !F.boss);
+
+      /* THE LIST: "should show up in the Quests list for players but only say
+         that they will receive it after reaching Kenshi 1st Class". */
+      const FT = new Feats({ players: [her, sis], dream: D, kotodama: { awakened: false } });
+      const rowOf = (p) => FT.status(p).find((r) => r.feat.id === 'secret');
+      ok('秘 the quest list shows the secret to a 1st-Class kitten, and to her sister only how to be given it',
+        rowOf(her).feat.title === FEAT_BY_ID.secret.title && rowOf(sis).feat.title === FEAT_BY_ID.secret.veiled.title
+        && /1st Class/.test(rowOf(sis).feat.how) && !/EXTRA/.test(rowOf(sis).feat.how), rowOf(sis).feat.title);
+    }
 
     /* 凶 IN HIS HANDS: "When he does cross-slash, it should be three attacks
        and show some special cross slash symbols in front of him". Three Xs,
@@ -39666,7 +39844,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       const CF = read('../src/systems/crossfx.js');
       ok('凶 her seal draws 凶 instead of 十, brushed like it, chosen per technique',
         /const glyph = p\.kyo \? kyoTexture\(\) : kanjiTexture\(\);/.test(CF) && /export function kyoTexture\(\) \{ return glyphTexture\('凶', KYO_STROKES\); \}/.test(CF)
-        && /p\.shadowBeat = \{ easy: false, medium: false, hard: false \};/.test(read('../src/main.js')));
+        && /p\.shadowBeat = \{ easy: false, medium: false, hard: false, extra: false \};/.test(read('../src/main.js')));
     }
 
     // Everybody walks off: it is lost, and says so.
@@ -41293,7 +41471,14 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const list = PNd.questList({ feats: shut }, kid);
     const row = list.find((x) => x.id === 'shadow');
     ok('Payne\'s quest list shows Lionheart\'s Honor, in a Dream Dojo section of its own',
-      row?.dojo === true && !list.filter((x) => x.dojo).some((x) => x.id !== 'shadow') && row.title === "Lionheart's Honor");
+      row?.dojo === true && list.filter((x) => x.dojo).map((x) => x.id).join() === 'shadow,secret' && row.title === "Lionheart's Honor");
+    {
+      const sec = list.find((x) => x.id === 'secret');
+      const open = PNd.questList({ feats: { ...shut, secretOpen: () => true } }, kid).find((x) => x.id === 'secret');
+      ok("...and below it the SECRET one, which says only how to be given it until she is KENSHI 1st Class",
+        sec?.title === FEAT_BY_ID.secret.veiled.title && /1st Class/.test(sec.how) && !/EXTRA HARD/.test(sec.how)
+        && open?.title === FEAT_BY_ID.secret.title && /EXTRA HARD/.test(open.how) && sec.state === 'open', `${sec?.title} / ${open?.title}`);
+    }
     ok('...and it says open after the ending too, because it is a LATE quest',
       row?.state === 'open' && PNd.questState({ feats: shut }, kid, 'rider') === 'closed');
     ok('her card has a DREAM DOJO row, and its buttons say what they do',
