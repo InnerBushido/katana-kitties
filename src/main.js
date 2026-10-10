@@ -13302,8 +13302,11 @@ class Game {
     s.z = this.satan.position.z;
   }
 
-  /** Everything billboarded must be turned toward *this* camera first. */
-  _faceAll(camera) {
+  /** Everything billboarded must be turned toward *this* camera first.
+   *  `members` (the kittens this lens is for) is for the one billboard that
+   *  asks WHO is looking as well as from where: the Dream Dojo's hologram
+   *  hides his bubble from a lens that cannot see him (`DreamDojo.faceCamera`). */
+  _faceAll(camera, members = null) {
     for (const p of this.players) {
       p.faceCamera(camera);
       p.panda?.faceCamera(camera);
@@ -13314,7 +13317,7 @@ class Game {
     for (const d of this.dragons) d.faceCamera(camera);
     for (const L of this.leaders ?? []) L.faceCamera(camera);
     this.payne?.faceCamera(camera);
-    this.dream?.faceCamera(camera);
+    this.dream?.faceCamera(camera, members);
     this.cutscene?.faceCamera(camera);
     for (const s of this.world.shrines) s.faceCamera(camera);
     for (const pk of this.pickups) if (!pk.taken) pk.faceCamera(camera);
@@ -13619,7 +13622,7 @@ class Game {
     if (w < 2 || h < 2) return;
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
-    this._faceAll(camera);
+    this._faceAll(camera, members);
     this._aimXray(camera, members, scene);
     // Can this lens see the big screen? Its fireworks only go off if one can.
     this.arenaBoard?.see(camera);

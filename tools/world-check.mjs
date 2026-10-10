@@ -36006,7 +36006,113 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     }
     ok('...and from any heading at all, it goes to the side the tubes are not on', worst >= 0, worst.toFixed(2));
     const dd = readFileSync(new URL('../src/systems/dreamdojo.js', import.meta.url), 'utf8');
-    ok('...for the real Lionheart and the hologram alike', (dd.match(/this\._turnBubble\(m, camera\)/g) ?? []).length === 2);
+    ok('...for the real Lionheart and the hologram alike', (dd.match(/this\._turnBubble\(m, camera\b/g) ?? []).length === 2);
+
+    /* NEVER HALF OFF HER LENS. Richard: "When Lionheart is talking in the
+       simulator, if you walk away from him, his speech bubble on the bottom of
+       the screen is many times starting in the bottom-middle of the screen and
+       bleeding off the edge of the right side of the screen." Through her own
+       follow camera, settled, at 16:9, with the islands line's bubble at its
+       measured size (12.18 x 3, off `bubbleTexture` in the browser), turned by
+       the game's own `faceCamera`: once as a lens with no kittens (the old
+       rule, which every lens used) and once as hers. */
+    {
+      const hp = SW.toSim(L.lion.x, L.lion.z);
+      const holo = new THREE.Group();
+      holo.position.set(hp.x, DD.ARCADE.y, hp.z);
+      scene.add(holo);
+      const BW = 12.18;
+      const mkB = () => {
+        const q = new THREE.Mesh(new THREE.PlaneGeometry(BW, 3.0));
+        q.userData.w = BW;
+        q.position.y = q.userData.y0 = DD.LION_HEIGHT * 0.9;
+        holo.add(q);
+        return q;
+      };
+      const m = { r: mkB(), l: mkB(), on: true };
+      const was = { lion: D.holoLion, bub: D.holoBubbles, built: D.built };
+      D.holoLion = holo;
+      D.holoBubbles = new Map([['islands', m]]);
+      her.camera.aspect = 16 / 9;
+      her.camera.updateProjectionMatrix();
+      const lens = (q) => {
+        put0(her, q);
+        her.velocity.set(0, 0, 0);
+        for (let f = 0; f < 900; f++) her._updateCamera(1 / 60);
+        her.camera.updateMatrixWorld(true);
+      };
+      const shown = () => (m.r.visible ? m.r : m.l.visible ? m.l : null);
+      const turn = (members) => {
+        D._holoUnseen = false;
+        D._holoFits = [];
+        D.built = true;
+        D.faceCamera(her.camera, members);
+        D.built = was.built;
+        return shown();
+      };
+      const head = () => new THREE.Vector3(0, DD.LION_HEIGHT * 0.9, 0).applyMatrix4(holo.matrixWorld).project(her.camera);
+      const look = (q) => {
+        lens(q);
+        const old = turn(null);
+        const bled = !!old && !DD.bubbleInFrame(old, her.camera, 1);
+        const h = head();
+        const now = turn([0]);
+        return { bled, now: !!now, inside: !!now && DD.bubbleInFrame(now, her.camera, 1 + 1e-6),
+          headIn: Math.abs(h.x) < 0.9 && Math.abs(h.y) < 0.9 && h.z < 1, headOut: !(Math.abs(h.x) < 1.05 && Math.abs(h.y) < 1.05 && h.z < 1),
+          unseen: D._holoUnseen };
+      };
+      // Walking straight away from him, up her screen.
+      lens({ x: L.lion.x + 3, z: L.lion.z + 3 });
+      const fwd = new THREE.Vector3();
+      her.camera.getWorldDirection(fwd);
+      fwd.y = 0;
+      fwd.normalize();
+      const walk = [4, 10, 16, 19, 24, 30, 40].map((d) => ({ d, ...look({ x: L.lion.x + fwd.x * d, z: L.lion.z + fwd.z * d }) }));
+      const fmt = walk.map((r) => `${r.d}:${r.bled ? 'BLED' : 'ok'}>${r.now ? 'shown' : 'card'}`).join(' ');
+      // ...and every spot within his reach, all the way round.
+      const ring = [];
+      for (let rr = 2; rr < DD.LION_NEAR; rr += 3) {
+        for (let k = 0; k < 16; k++) {
+          const a = (k / 16) * Math.PI * 2;
+          ring.push(look({ x: L.lion.x + Math.cos(a) * rr, z: L.lion.z + Math.sin(a) * rr }));
+        }
+      }
+      const cnt = (f) => ring.filter(f).length;
+      const sum = `${ring.length} spots near him: bled before ${cnt((r) => r.bled)}, his head on screen ${cnt((r) => r.headIn)}, bubble shown ${cnt((r) => r.now)}, all inside ${cnt((r) => r.inside)}`;
+      ok('言 walking away from the hologram, his bubble used to run off her lens — measured, so what follows is about the real fault',
+        walk.filter((r) => r.d >= 10).every((r) => r.bled), fmt);
+      ok('...and now it never does: wherever it is shown, all of it is inside her lens, near him or far',
+        [...walk, ...ring].every((r) => !r.now || r.inside), `${fmt} | ${sum}`);
+      ok('...and wherever his head is on her screen and she is near enough to read him, it is still shown — slid along the lens, not taken away',
+        ring.filter((r) => r.headIn).every((r) => r.now) && walk[0].now, sum);
+      ok('...and with his head off her screen there is no bubble for it to belong to',
+        [...walk, ...ring].filter((r) => r.headOut).every((r) => !r.now), sum);
+      ok('...and from LION_NEAR out it is never shown — that is the screen card\'s job',
+        walk.filter((r) => r.d >= DD.LION_NEAR).every((r) => !r.now), fmt);
+      /* Near enough to read him and the bubble hidden anyway (he is off her
+         lens): she must still get his words, on the card. */
+      const hid = walk.find((r) => !r.now && r.d < DD.LION_NEAR);
+      const followed = [];
+      const el = { id: 'lion' };
+      const voiceWas = D.voice;
+      fakeGame.announcer = { follow: (e) => { followed.push(e); return true; }, following: () => false };
+      D.voice = { saying: () => true, elOf: () => el, secs: () => 5, idOf: () => 'x' };
+      D.holoText = DD.LION_LINES.islands;
+      put0(her, { x: L.lion.x + 4, z: L.lion.z });
+      D._holoUnseen = true;
+      D._captionHolo();
+      const onCard = followed.length;
+      D._captionHolo();
+      ok('...and a lens that hid it says so, so she gets his line on the screen\'s card even inside LION_NEAR; the flag is spent once read',
+        !!hid && hid.unseen && onCard === 1 && followed.length === 1 && D._holoUnseen === false,
+        `${hid?.d} unseen ${hid?.unseen} card ${onCard}/${followed.length}`);
+      D.voice = voiceWas;
+      delete fakeGame.announcer;
+      D.holoText = null;
+      D.holoLion = was.lion;
+      D.holoBubbles = was.bub;
+      scene.remove(holo);
+    }
 
     // His words on the screen card when she is too far to read his bubble.
     const voiceWas = D.voice;

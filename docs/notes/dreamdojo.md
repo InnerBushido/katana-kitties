@@ -1801,6 +1801,34 @@ quoted in the code, beside the change it caused.
 
 **Open:** nobody has played either change.
 
+## The hologram's bubble stays on her lens
+
+`fitBubble`, `DreamDojo._turnBubble` with a gate, `_lensNearHolo`:
+- His note: "When Lionheart is talking in the simulator, if you walk away from
+  him, his speech bubble on the bottom of the screen is many times starting in
+  the bottom-middle of the screen and bleeding off the edge of the right side
+  of the screen".
+- The cause was the 3D bubble, not the caption card (that card measured
+  centred). The hologram's bubble was up for as long as he talked, wherever
+  she was, and it draws over everything. Walking away up her screen put him
+  off its bottom edge, and the bubble still hung from there.
+- Measured through her real follow camera at 16:9: the old bubble ran off her
+  lens at every step from 10 units out, and in 68 of 96 spots within
+  `LION_NEAR`.
+- Now each pane asks three things of it, through `faceCamera(camera, members)`:
+  - is one of its kittens within `LION_NEAR` of him;
+  - is his head (where the tail points) on this lens;
+  - and the bubble slides along the lens, sideways and down, by just its
+    overflow past `BUBBLE_EDGE`.
+  A pane that fails the first two hides it, and `_holoUnseen` puts his line on
+  the screen card for that kitten even inside `LION_NEAR`.
+- **Tried and rejected:** hiding every bubble that did not fit whole. Near him
+  it fits whole in only 28 of 96 spots, so that took his bubble away from
+  nearly everybody beside him. Sliding shows it in 72, all of it on screen.
+- A scene's camera has no kittens to ask and keeps the old rule.
+
+**Open:** nobody has played it.
+
 ## Voice
 
 Lionheart is **Barrett** (`d603a8cd-3fe1-55e0-9245-617a2589131e`), nine clips
