@@ -2055,6 +2055,106 @@ different quadrant".
 
 **Open:** none of it has been played.
 
+## Fixes from the latest features: less text, map pins, the Gauntlet's way out, and Kata Trace grows a sword
+
+Richard's thirteen-point list. Branch `mixed/dream-dojo-gauntlet-kata-fixes`.
+
+**The Turning Circle says less.** "remove all the text with Normalized in it
+and the vector xyz text." Every vector's (x, y, z), its length and the
+NORMALIZED tag are gone (`holodojo.js`); the quadrant's name is the one
+readout left, so `placeReadouts` places only that. The triangle and its
+angles stay — they are the lesson.
+
+**Map kiosks on the minimap**, "so players know where they are": a gold
+folded-map pin per kiosk in the sim view (`Minimap._drawSim`, from
+`DreamDojo.simSite().maps`) and on Lionheart's map card.
+
+**The Gauntlet's lasers by section.** "future ones … greenish … the ones
+already completed … grayed out." A beam is live only in the section she is
+running (`beamLook`); ahead is dark green (`BEAM_AHEAD`), behind is grey
+(`BEAM_DONE`). With nobody running, all are live.
+
+**A way out of the Gauntlet**, two of them, both asking first (7):
+- INTERACT mid-run opens LEAVE THE GAUNTLET?, as Kata Trace does. This
+  replaced the hold-to-stop, which fought the new question for the same key.
+- Pause ▸ Kittens & Scores ▸ **LEAVE THE SINE GAUNTLET**, holo-styled like
+  the (HOLO) profile. It went at the top level first, and `world-check`'s
+  "top level is exactly these rows" sent it to the group, rightly.
+Leaving puts her on the plaza, not in the stands.
+
+**Kata Trace, on a keyboard.** "very hard to hit both cardinal direction keys
+at the same time … a slight 0.05s delay … count the scoring or dodge time
+based on when the player presses the first directional button."
+- A step out of the middle is held `DIAG_WAIT` (0.06s); a diagonal seen in that
+  time wins, and the step is stamped with the FIRST press (`settle`). A blow
+  judged inside the wait takes the step first. Back toward the middle is never
+  held.
+- The score card faces the lens square on (`HoloPanel.fullFace`): "it is hard
+  to see the score board because of the camera angle".
+
+**Slashes — hers, and optional.** "if the player misses the slash, then they
+do not lose any lives or score and do not lose their combo, but if they hit
+the slash then they add +1 to their combo."
+- A chart event `{ "beat": n, "slash": true }` is an OPENING: the mark in front
+  of him (named as his spot) glows gold through the tell, and ATTACK on it
+  within `SLASH_WIN` (0.24s) of the beat is a hit, graded like a dodge.
+- Her swing always plays (`attackTimer`), though the pad the drill hands her
+  still carries only JUMP. A swing at nothing costs `WHIFF_COOL` before the next
+  can land, so mashing does not farm the combo.
+- A hit flashes him and shoves him back. He has infinite life.
+- **The finishing attack** is the chart's last slash, when it comes after his
+  last blow (`resolveSlashes`). It knocks him over: flung back with a hop,
+  a cartoon wobble, then flat like a plank with a bounce — rolled in the
+  billboard's own plane about his feet. Once he is down he says **"Oof...
+  good job."** (`lion_kata_ko`, Barrett, [voices.md](voices.md)). Miss it and
+  he stays up, and says nothing.
+- The generator opens one now and then (`DIFFS.slash`, combos up to
+  `DIFFS.combo`, half-beats on HARD only) where the last blow is two beats
+  behind, and ends every song on a finish.
+
+**The Beat Maps page** (`kataeditor.js`):
+- **The grid is ONE stop** to the stick, then its lines, then a line's buttons
+  ("moving up/down … will select the entire beat maps section … clicking into
+  it … the line beats … clicking into a line … the various buttons"). That is
+  `MenuNav`'s new `data-nav-group` dive, kept as numbers because the grid
+  repaints on every press; the floor preview follows the line.
+- **½** is its own toggle; **⚔** cycles a line's openings (beat, beat and
+  half, half).
+- **A new song or level is a new map**, asked first if hers was changed, with
+  the box put back meanwhile so "no" changes nothing.
+- **Text boxes keep their keys**: a key typed into a field never reaches the
+  game (`typingIn`), Escape only leaves the box.
+- A signed chart says **by** whom, on the picker and the saved list.
+
+**Shadow Lionheart's song** — "darker music, more gothic / dark souls / demon
+souls / One Winged Angel inspired with lyrics":
+- `MUSIC.shadow`, an original in D harmonic minor: organ, bells, timpani, a
+  string ostinato, brass — and a **synthesised choir** singing the game's own
+  Latin, UMBRA LEONIS / GLADIUS NOCTIS / SURGE, PUGNA / HONOR! HONOR!
+  (`_choir`: saws through vowel formants, consonants as noise). Nobody's voice
+  and no file, so non-negotiable 9 stands. Level-matched offline: 0.050 RMS,
+  against 0.049 and 0.050 for the other band pieces. His fight plays it while
+  a round is live.
+- **On the Kata Trace list, written by hand** (`shadowChart`): 128 beats, two
+  times round the theme. **Two 凶 per level**: three crosses marked `kyo`, and
+  he moves a quarter-beat after each to a spot whose cross takes the other four
+  marks, so every X is a trip through the middle. Between the Xs she gets two
+  moves a beat (`movesBetween`); HARD's second 凶 is a beat apart. A 凶 that
+  catches her costs ONE life however many Xs land, and each X dodged is its
+  own +1. The 凶 hangs over her head, a third brighter each X.
+- **The finale is in the air**: a sweep, then an opening marked `air` — he
+  leaps for it, she must be off the ground (or have jumped within
+  `AIR_SLASH`), and the swing knocks him down out of the sky. `AIR_SLASH` was
+  1.2s first, and counted the jump over a sweep two beats earlier as "in the
+  air"; it is one jump's airtime, 0.7s, and `onGround` covers a double jump.
+
+**Open:**
+- The choir's words are vowels and consonant bursts. They read as a chant,
+  not as diction. A real sung vocal would have to be a generated recording in
+  `public/voice/`, and is Richard's call.
+- None of it has been played by the kids. The slash rates (`DIFFS.slash`) and
+  the HARD 凶's beat-apart spacing are first numbers.
+
 ## Voice
 
 Lionheart is **Barrett** (`d603a8cd-3fe1-55e0-9245-617a2589131e`), nine clips

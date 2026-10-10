@@ -7,6 +7,7 @@ import { HoloPanel } from './holo.js';
 import { POSE, SHADOW_H } from './shadow.js';
 import * as BM from './beatmap.js';
 import { customCharts } from './chartstore.js';
+import { kyoTexture } from '../crossfx.js';
 
 /* ---------------------------------------------------------------------------
    KATA TRACE — 型, a dance with Lionheart.
@@ -84,6 +85,12 @@ export const DIAG_WAIT = 0.06;
  * through a whole song is not the way to farm the combo.
  */
 export const SLASH_WIN = 0.24;
+/** An opening IN THE AIR ("both (double) jumping"): she must be off the
+ *  ground when she swings — or have pressed JUMP within one jump's airtime
+ *  (`routeAt` arcs 0.62s). 1.2 was tried first and counted the jump over a
+ *  sweep two beats earlier as being in the air for this. A double jump keeps
+ *  her up longer, and `onGround` already says so. */
+export const AIR_SLASH = 0.7;
 export const WHIFF_COOL = 0.3;
 /** What he says when the finishing attack puts him down — a render of exactly
  *  this (Barrett; docs/notes/voices.md). Not shouted: no capitals, no "!". */
@@ -520,6 +527,18 @@ export class KataStage {
     this.koPos = null;
     this.roll = 0;
     this.slashes = [];
+    /* 凶 OVER HER HEAD — "a KYO symbol play in the air above the player as
+       if they were hexed by the Cross-slash KYO attack". His Shadow's brushed
+       凶 (crossfx.js), lit a third more with each X. `herAt` and `hexHurt`
+       are handed in by the drill every frame. */
+    this.hex = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 2.6), new THREE.MeshBasicMaterial({
+      map: kyoTexture(), color: 0xff4a8a, transparent: true, opacity: 0, depthWrite: false, depthTest: false, toneMapped: false,
+    }));
+    this.hex.renderOrder = 12;
+    this.hex.visible = false;
+    this.group.add(this.hex);
+    this.herAt = 'C';
+    this.hexHurt = 0;
     this.lion = new THREE.Group();
     this.group.add(this.lion);
     this.posed = false;
@@ -571,7 +590,20 @@ export class KataStage {
   ko() {
     if (this.koAt != null) return;
     this.koAt = this.clock;
-    this.koPos = { x: this.lion.position.x, z: this.lion.position.z };
+    this.koPos = { x: this.lion.position.x, z: this.lion.position.z, y: this.lion.position.y };
+  }
+
+  /** The 凶 being thrown at `t`, if any: its group, how many Xs have landed, and how long since the last. */
+  kyoAt(t) {
+    for (const a of this.attacks ?? []) {
+      if (a.kyo !== 1) continue;
+      const xs = this.attacks.filter((b) => b.kyoG === a.kyoG);
+      const end = xs[xs.length - 1].hitT + 0.6;
+      if (t < a.tellT || t > end) continue;
+      const done = xs.filter((b) => b.hitT <= t);
+      return { g: a.kyoG, n: done.length, since: done.length ? t - done[done.length - 1].hitT : 9 };
+    }
+    return null;
   }
 
   /** His clock, in real seconds — runs in every state, so the fall finishes after the song. */
@@ -678,10 +710,27 @@ export class KataStage {
       this.slashDisc.material.color.setHex(cue.finish ? 0xff4a8a : HOLO.gold);
       this.slashRing.material.color.setHex(c);
     }
+    // 凶: from the first X's warning to just after the third lands.
+    const hx = live ? this.kyoAt(t) : null;
+    this.hex.visible = !!hx;
+    if (hx) {
+      const o = markOffset(this.herAt);
+      this.hex.position.set(o.x, 5.2 + Math.sin(t * 6) * 0.12, o.z);
+      const kick = Math.max(0, 1 - hx.since / 0.25);
+      this.hex.scale.setScalar(1 + 0.35 * kick + 0.15 * hx.n);
+      this.hex.material.opacity = 0.35 + 0.2 * hx.n + 0.25 * kick;
+      this.hex.material.color.setHex(this.hexHurt === hx.g ? RED : 0xff4a8a);
+    }
     const L = this.lionAt(t);
     let x = this.koPos ? this.koPos.x : L.x;
     let z = this.koPos ? this.koPos.z : L.z;
+    // HE LEAPS for an opening in the air, peaking just before it: she meets him up there.
     let y = 0;
+    for (const s of this.slashes) {
+      if (!s.air || this.koPos) continue;
+      const u = (t - (s.hitT - 1.0)) / 1.5;
+      if (u > 0 && u < 1) y = Math.max(y, Math.sin(u * Math.PI) * 3.4);
+    }
     const len = Math.hypot(x, z) || 1;
     const ax = x / len;
     const az = z / len;
@@ -702,7 +751,9 @@ export class KataStage {
       const fly = Math.min(1, kk / 0.35);
       x += ax * 1.8 * fly;
       z += az * 1.8 * fly;
-      if (kk < 0.35) { y = Math.sin(fly * Math.PI) * 1.3; pose = POSE.sweep; }
+      // Struck in the air, he comes down out of it first.
+      const from = (this.koPos.y ?? 0) * (1 - fly);
+      if (kk < 0.35) { y = from + Math.sin(fly * Math.PI) * 1.3; pose = POSE.sweep; }
       else if (kk < 0.95) {
         const w = (kk - 0.35) / 0.6;
         this.roll = Math.sin(w * Math.PI * 5) * 0.32 * (1 - w * 0.5);
@@ -867,6 +918,7 @@ export function KATA(hall, fl, chart, { speed = 1, id, custom = false } = {}) {
       d.swingCool = 0;
       d.ko = false;
       d.koVoiced = false;
+      d.kyoHurt = 0;
       d.acc = 0;
       /* HER CARD STANDS WHERE HER NAME PLATE DOES, larger. Over her head (the
          drill's usual place) it was a postage stamp at KATA_CAM's distance —
@@ -881,7 +933,8 @@ export function KATA(hall, fl, chart, { speed = 1, id, custom = false } = {}) {
       d.panel.fullFace = true;
       dream.sim.root.add(d.panel);
       fl.plate.visible = false;
-      dream.hint(d.p, d.slashes.length
+      dream.hint(d.p, d.attacks.some((a) => a.kyo) ? 'His 凶 is three Cross Slashes and he MOVES between them — through the middle every time! GOLD: stand on it and ATTACK.'
+        : d.slashes.length
         ? 'RED: he strikes there — step off it ON the beat. GOLD: an opening — stand on it and ATTACK on the beat!'
         : 'Lionheart turns the floor red where he will strike — step off it ON the beat. Back through the middle to change side!');
     },
@@ -958,6 +1011,8 @@ export function KATA(hall, fl, chart, { speed = 1, id, custom = false } = {}) {
         p.facing = Math.atan2(fl.x + L.x + SIM.dx - p.position.x, fl.z + L.z + SIM.dz - p.position.z);
       }
       d.stage.tickFx(dt);
+      d.stage.herAt = d.at;
+      d.stage.hexHurt = d.kyoHurt ?? 0;
       // Won, he stays where the song left him (and falls there, if she finished him).
       d.stage.update(d.state === 'live' || d.state === 'won' ? d.songT : 0, d.state === 'live');
       if (d.ownsMusic && d.state !== 'live' && d.state !== 'ready') release(d);
@@ -1020,11 +1075,13 @@ export function KATA(hall, fl, chart, { speed = 1, id, custom = false } = {}) {
       const live = d.attacks.filter((a) => d.songT >= a.tellT && d.songT <= a.hitT);
       const jump = live.some((a) => a.attack === 'sweep');
       const cue = d.stage.slashCue(d.songT);
+      const kyo = d.stage.kyoAt(d.songT);
       const key = `[${dream.key?.(d.p, 'interact') ?? 'E'}]`;
       return [
         g ? { text: g.word, size: 2.0, color: g.color, glow: true }
           : jump ? { text: 'JUMP!', size: 2.0, color: RED, glow: true }
-            : cue ? { text: cue.finish ? 'FINISHING BLOW!' : 'SLASH!', size: 2.0, color: cue.finish ? 0xff4a8a : HOLO.gold, glow: true }
+            : kyo ? { text: `凶 ${kyo.n + 1 > 3 ? 3 : kyo.n + 1}/3 — MOVE!`, size: 2.0, color: 0xff4a8a, glow: true, jp: true }
+            : cue ? { text: cue.air ? (cue.finish ? 'JUMP — FINISHING BLOW!' : 'JUMP + SLASH!') : cue.finish ? 'FINISHING BLOW!' : 'SLASH!', size: 2.0, color: cue.finish ? 0xff4a8a : HOLO.gold, glow: true }
             : { text: d.combo >= 3 ? `${d.combo} COMBO` : '型', size: 2.0, color: d.combo >= 10 ? HOLO.gold : d.colour, glow: true, jp: true },
         { text: `${hearts}   ${d.score.toLocaleString('en-US')}${comboMult(d.combo) > 1 ? `  ×${comboMult(d.combo)}` : ''}`, size: 1.4, color: HOLO.cyan },
         { text: `${key} to stop`, size: 0.8, color: 0x7f9fa8 },
@@ -1068,7 +1125,9 @@ export function KATA(hall, fl, chart, { speed = 1, id, custom = false } = {}) {
       if (x.done || Math.abs(d.songT - x.hitT) > SLASH_WIN) continue;
       if (!s || Math.abs(d.songT - x.hitT) < Math.abs(d.songT - s.hitT)) s = x;
     }
-    if (!s || d.at !== s.spot) { d.swingCool = WHIFF_COOL; return; }
+    // In the air means in the air: jumped just now, or still off the ground.
+    const up = s?.air && ((d.jumpT != null && d.jumpT >= s.hitT - AIR_SLASH && d.jumpT <= s.hitT + LATE) || d.p?.onGround === false);
+    if (!s || d.at !== s.spot || (s.air && !up)) { d.swingCool = WHIFF_COOL; return; }
     const off = Math.abs(d.songT - s.hitT);
     const g = off <= GRADE_T[0] ? 3 : off <= GRADE_T[1] ? 2 : 1;
     s.done = true;
@@ -1146,9 +1205,14 @@ function judge(d, a, g, free, hall, fl) {
   const x = fl.x + o.x;
   const z = fl.z + o.z;
   if (g === 0) {
-    d.lives--;
+    /* ONE LIFE PER 凶, however many of its Xs catch her: "failing should only
+       be counted as 1 lives lost (1 attack move)". The combo still breaks. */
+    const again = a.kyoG && d.kyoHurt === a.kyoG;
+    if (a.kyoG) d.kyoHurt = a.kyoG;
     d.combo = 0;
     d.p.flashT = 0.3;
+    if (again) return;
+    d.lives--;
     dream.shards?.burst(x, fl.y + 1.2, z, RED, 30, 4, 5);
     if (d.lives <= 0) {
       d.acc = accuracy(d.judged);

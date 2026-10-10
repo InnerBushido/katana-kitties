@@ -369,6 +369,37 @@ export const MUSIC = {
     /* Level matched the same way: 0.036 RMS against the strut's 0.053. */
     mix: 1.45,
   },
+
+  /* ---- SHADOW LIONHEART ------------------------------------------------------
+     Richard: "Shadow Lionheart should have some darker music, more gothic /
+     dark souls / demon souls / One Winged Angel inspired with lyrics".
+
+     INSPIRED, NOT BORROWED — the same line `satan` draws. What those pieces
+     share is a SHAPE nobody owns: a minor key with the raised seventh (the
+     harmonic minor's A major chord is the dread), a church organ, bells, a
+     timpani, a string section sawing an ostinato, and a choir chanting Latin
+     over the top of it. The tune and the words here are this game's own.
+
+     THE CHOIR IS SYNTHESISED, LIKE THE HUAH (`_shout`): saws through three
+     formant filters per vowel, a burst of noise for each consonant. So the
+     "lyrics" are sung by nobody, in no file, and non-negotiable 9 stands —
+     `public/voice/` is still the only audio on disk. What it sings, in Latin:
+       UMBRA LEONIS   the shadow of the lion
+       GLADIUS NOCTIS the sword of the night
+       SURGE, PUGNA   rise, and fight
+       HONOR! HONOR!  his sword's name, which is the prize
+     A choir sings vowels; at this size it is a chant you feel more than read,
+     which is what the pieces it is inspired by do too.
+
+     D HARMONIC MINOR, Dm Bb Gm A. Eighths of 0.22s: the Kata Trace beat is two
+     of them, 0.44s (136 BPM), inside MIN_SPB. Sixteen bars, 28 seconds round. */
+  shadow: {
+    scale: [0, 2, 3, 7, 8], beat: 0.22, root: 146.83, oct: 1, drone: 0,
+    taiko: 0, rest: 1, tune: 'shadow',
+    /* Level matched like the others, rendered offline: 0.068 RMS at 1.3
+       against the kung-fu disco's 0.049 and the Dream Dojo's 0.050. */
+    mix: 0.96,
+  },
 };
 
 /** Biome → piece. Anything unrecognised falls back to the home theme. */
@@ -1937,6 +1968,7 @@ export class Audio {
     if (M.tune === 'kungfu') this._kungfuStep(t, step, M);
     else if (M.tune === 'vr') this._vrStep(t, step, M);
     else if (M.tune === 'saucer') this._saucerStep(t, step, M);
+    else if (M.tune === 'shadow') this._shadowStep(t, step, M);
     else this._strutStep(t, step, M);
   }
 
@@ -2243,6 +2275,139 @@ export class Audio {
    * first eight seconds a kitten hears it, quietly — is beat and bass, and the
    * tune arrives as she reaches the dome.
    */
+  /**
+   * ONE SUNG SYLLABLE. `hzs` are the voices (a section is a chord), `v` the
+   * vowel, `pre`/`post` its consonants. Saws, a slow vibrato, and three
+   * formant band-passes per vowel — men's-choir formants, measured tables
+   * rounded. Consonants are noise: plosives a click, s a hiss, h a breath.
+   */
+  _choir(B, at, hzs, v, len, peak, pre = '', post = '') {
+    const { ctx } = B;
+    const F = { a: [730, 1090, 2440], e: [530, 1840, 2480], i: [270, 2290, 3010], o: [570, 840, 2410], u: [300, 870, 2240] }[v] ?? [730, 1090, 2440];
+    const g = ctx.createGain();
+    const soft = /^[mnlr]/.test(pre);
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.linearRampToValueAtTime(peak, at + (soft ? 0.09 : 0.05));
+    g.gain.setValueAtTime(peak * 0.85, at + len * 0.75);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + len + 0.12);
+    g.connect(B.bus);
+    const sum = ctx.createGain();
+    for (const [k, f] of F.entries()) {
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = f;
+      bp.Q.value = 7;
+      const fg = ctx.createGain();
+      fg.gain.value = [2.6, 1.3, 0.45][k];
+      sum.connect(bp).connect(fg).connect(g);
+    }
+    const end = at + len + 0.2;
+    for (const hz of hzs) {
+      for (const c of [-9, 8]) {
+        const o = ctx.createOscillator();
+        o.type = 'sawtooth';
+        o.frequency.value = hz;
+        o.detune.value = c;
+        const l = ctx.createOscillator();
+        const lg = ctx.createGain();
+        l.frequency.value = 5.2 + c * 0.02;
+        lg.gain.value = hz * 0.007;
+        l.connect(lg).connect(o.frequency);
+        o.connect(sum);
+        o.start(at);
+        o.stop(end);
+        l.start(at);
+        l.stop(end);
+      }
+    }
+    const c0 = pre[0];
+    if ('bdgptk'.includes(c0 ?? '_')) B.noise(at, 'bandpass', 'ptk'.includes(c0) ? 3200 : 1400, peak * 0.5, 0.03, 1.5);
+    else if (c0 === 's') B.noise(at - 0.06, 'highpass', 5200, peak * 0.4, 0.08);
+    else if (c0 === 'h') B.noise(at - 0.05, 'bandpass', 1500, peak * 0.35, 0.07, 1);
+    if (post.includes('s')) B.noise(at + len, 'highpass', 5200, peak * 0.4, 0.12);
+    else if (/[kt]/.test(post)) B.noise(at + len, 'bandpass', 3000, peak * 0.45, 0.03, 1.5);
+  }
+
+  /**
+   * One eighth of Shadow Lionheart's theme. See `MUSIC.shadow`.
+   *   0-3   THE TOLL. Bells, the organ, a timpani swelling, and the choir low
+   *         and quiet: UMBRA LEONIS, GLADIUS NOCTIS.
+   *   4-11  THE MARCH. The strings saw the chord in eighths, the drums hit
+   *         like a door being forced, brass on every bar, and the choir
+   *         through all four lines.
+   *   12-15 HONOR. Full choir an octave doubled, a bell on every half bar,
+   *         and a timpani roll into the toll again.
+   */
+  _shadowStep(t, step, M) {
+    const B = this._band(M.mix);
+    const beat = M.beat;
+    const s = step % 128;
+    const bar = Math.floor(s / 8);
+    const e = s % 8;
+    const D3 = M.root;
+    const hz = (n, base = D3) => base * Math.pow(2, n / 12);
+    // Dm Bb Gm A — semitones from D, each chord's own three.
+    const CH = [[0, 3, 7], [-4, 0, 3], [-7, -4, 0], [-5, -1, 2]];
+    const ch = CH[bar % 4];
+    const intro = bar < 4;
+    const climax = bar >= 12;
+
+    // THE BELL: a toll on the bar in the intro, on every half bar at the end.
+    if ((e === 0 && (intro || climax)) || (climax && e === 4)) {
+      for (const [m, p] of [[1, 0.06], [2.4, 0.035], [3.0, 0.025], [4.2, 0.015]]) {
+        B.osc({ at: t, hz: hz(ch[0] + 12) * m, peak: p, a: 0.004, d: beat * 7 });
+      }
+    }
+    // THE ORGAN, held under everything: the chord low, three detuned squares.
+    if (e === 0) {
+      for (const q of [ch[0] - 12, ...ch]) {
+        B.osc({ at: t, hz: hz(q), type: 'square', peak: intro ? 0.008 : 0.011, a: 0.12, d: beat * 7.6, cut: 1100, det: [-6, 0, 6] });
+      }
+    }
+    // TIMPANI: swelling into the march, and rolling into the repeat.
+    if ((bar === 3 || bar === 15) && e >= 2) B.kick(t, 0.06 + e * 0.025, 110, 52);
+    // THE DRUMS of the march: a forced door, not a dance — 1, the and of 2, 3.
+    if (!intro) {
+      if (e === 0 || e === 3 || e === 4) B.kick(t, e === 0 ? 0.3 : 0.22, 140, 40);
+      if (e === 2 || e === 6) B.noise(t, 'bandpass', 900, 0.1, 0.18, 0.7);
+      if (e % 2 === 1) B.noise(t, 'highpass', 8000, 0.02, 0.04);
+    }
+    // THE STRINGS: the chord sawed in eighths, an octave up — the ostinato.
+    if (!intro) {
+      const ARP = [0, 1, 2, 1, 0, 1, 2, 3];
+      const k = ARP[e];
+      const n = ch[k % 3] + 12 * Math.floor(k / 3) + 12;
+      B.osc({ at: t, hz: hz(n), type: 'sawtooth', peak: 0.02, a: 0.006, d: beat * 0.55, cut: 2600, q: 1.5, det: [-7, 7] });
+    }
+    // BRASS on the bar.
+    if (!intro && e === 0) B.brass(t, ch.map((q) => hz(q)), climax ? 0.05 : 0.035, beat * 1.6);
+
+    // THE CHOIR. Each line two bars: [syllable's pre, vowel, post, eighths, semitones from D4].
+    const LINES = {
+      umbra: [['', 'u', 'm', 2, 0], ['br', 'a', '', 2, 3], ['l', 'e', '', 2, 7], ['', 'o', '', 2, 5], ['n', 'i', 's', 8, 3]],
+      gladius: [['gl', 'a', '', 2, 8], ['d', 'i', '', 2, 5], ['', 'u', 's', 4, 0], ['n', 'o', 'k', 2, 7], ['t', 'i', 's', 6, -1]],
+      surge: [['s', 'u', 'r', 2, 7], ['g', 'e', '', 2, 5], [null, '', '', 4, 0], ['p', 'u', 'g', 2, 3], ['n', 'a', '', 6, 0]],
+      honor: [['h', 'o', '', 2, 12], ['n', 'o', 'r', 6, 8], ['h', 'o', '', 2, 13], ['n', 'o', 'r', 6, 11]],
+    };
+    const PLAN = ['umbra', null, 'gladius', null, 'umbra', null, 'gladius', null,
+      'surge', null, 'gladius', null, 'honor', null, 'umbra', null];
+    // A line starts on an even bar and runs two; `at8` is the eighth inside it.
+    const at8 = (bar % 2) * 8 + e;
+    const L = LINES[PLAN[bar - (bar % 2)]];
+    if (L) {
+      let pos = 0;
+      for (const [pre, v, post, n, semi] of L) {
+        if (pos === at8 && pre !== null) {
+          const top = hz(semi, D3 * 2);
+          const voices = [top, top * Math.pow(2, -7 / 12)];
+          if (climax) voices.push(top / 2);
+          this._choir(B, t, voices, v, beat * n * 0.95, intro ? 0.035 : climax ? 0.07 : 0.05, pre, post);
+        }
+        pos += n;
+      }
+    }
+  }
+
   _vrStep(t, step, M) {
     const B = this._band(M.mix);
     const beat = M.beat;

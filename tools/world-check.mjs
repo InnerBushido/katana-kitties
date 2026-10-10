@@ -33395,7 +33395,7 @@ console.log('\n--- the arena road is shot, not orbited ---');
     /NOT THAT SONG/.test(asrc) && /_tuneStep\(t, step, M\)/.test(asrc)
       && /STILL NOT THOSE SONGS/.test(asrc));
   // The strut is the fall-through of `_tuneStep`; the others are named.
-  const TUNES = { strut: '_strutStep', kungfu: '_kungfuStep', saucer: '_saucerStep', vr: '_vrStep' };
+  const TUNES = { strut: '_strutStep', kungfu: '_kungfuStep', saucer: '_saucerStep', vr: '_vrStep', shadow: '_shadowStep' };
   ok('...and every tune a piece names is one somebody wrote',
     Object.values(MUSIC).filter((m) => m.tune).every((m) => TUNES[m.tune]
       && new RegExp(`${TUNES[m.tune]}\\(t, step, M\\) \\{`).test(asrc)
@@ -37102,6 +37102,85 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         `${wh.state} hits ${wh.slashHits} ko ${wh.ko}`);
       ok('...and a whiff costs a moment before the next swing can land, so mashing is not the way', KT.WHIFF_COOL >= 0.2 && KT.WHIFF_COOL < KT.SLASH_WIN * 2);
       D.voice.speak = was;
+      D.drills[0] = null;
+    }
+
+    /* 凶 AND THE SHADOW'S SONG. "Lionheart does 3 cross slashes rapidly in a
+       row and moves between them ... failing should only be counted as 1
+       lives lost ... if they dodge all 3 it should add to the combo
+       individually ... at least once on Hard it is very fast" — and the finale
+       "where the player and Lionheart are both (double) jumping". */
+    {
+      const sspb = BMP.spbAt('shadow', 1);
+      const go = (chart, plan) => {
+        D.drills[0] = null;
+        D.t += 100;
+        D.startDrill(her, KT.KATA(D.kata, fl, chart, { speed: 1, id: `kata.test.${chart.title}` }), { x: fl.x, y: fl.y, z: fl.z, r: 10, fwd: { x: 0, z: 1 } });
+        const d = D.drills[0];
+        let i = 0;
+        let hexSeen = 0;
+        for (let f = 0; f < 120 * 90 && (d.state === 'ready' || d.state === 'live'); f++) {
+          let mx = 0;
+          let my = 0;
+          let atk = false;
+          let jump = false;
+          while (d.state === 'live' && i < plan.length && d.songT >= plan[i].t && d.armed && !(mx || my || atk || jump)) {
+            const s = plan[i++];
+            if (s.to) {
+              const v = BMP.dirVec(s.to === 'C' ? BMP.DIRS[(BMP.DIRS.indexOf(d.at) + 4) % 8] : s.to);
+              mx = v.x; my = -v.y;
+            } else if (s.jump) jump = true;
+            else atk = true;
+          }
+          /* Her physics does not run here, so her feet are pinned to the floor
+             and "in the air" can only mean the jump she pressed — which is the
+             rule under test. (Left alone, `onGround` read false all run and
+             every swing counted as airborne.) */
+          her.onGround = true;
+          d.spec.steer(d, { mx, my, pressed: (a) => (a === 'attack' && atk) || (a === 'jump' && jump), down: () => false });
+          d.update(1 / 120);
+          if (d.stage.hex.visible) hexSeen = Math.max(hexSeen, d.stage.kyoAt(d.songT)?.n ?? 0);
+        }
+        return { d, hexSeen };
+      };
+      // One 凶 alone, stood through in the middle: three Xs catch her, one life goes.
+      const one = { format: BMP.FORMAT, title: 'kyo test', song: 'shadow', difficulty: 'normal', beats: 20, author: 'world-check', events: [
+        { beat: 5.5, lion: 'N' }, { beat: 8, attack: 'cross', kyo: 1 },
+        { beat: 8.25, lion: 'NW' }, { beat: 10, attack: 'cross', kyo: 2, tell: 1.75 },
+        { beat: 10.25, lion: 'E' }, { beat: 12, attack: 'cross', kyo: 3, tell: 1.75 }] };
+      const stood = go(one, []).d;
+      ok('凶 three Xs that all catch her cost ONE life, not three',
+        stood.grades.filter((g) => g === 0).length === 3 && stood.lives === BMP.DIFFS.normal.lives - 1 && stood.state === 'won',
+        `${stood.grades.join('')} lives ${stood.lives} ${stood.state}`);
+      // ...and danced (diagonal, straight, diagonal, through the middle each time), three on the combo.
+      const rt1 = BMP.route(one);
+      const danced = go(one, rt1.moves.map((m) => ({ t: m.beat * sspb - 0.04, to: m.to })));
+      ok('...dodged, each X is its own +1 on the combo, and every one is a trip through the middle',
+        danced.d.maxCombo === 3 && danced.d.lives === BMP.DIFFS.normal.lives && rt1.moves.filter((m) => m.to === 'C').length >= 2,
+        `combo ${danced.d.maxCombo} lives ${danced.d.lives} moves ${rt1.moves.map((m) => `${m.beat}${m.to}`).join(' ')}`);
+      ok('...with the 凶 over her head, lit a third more by each X', danced.hexSeen === 3, `${danced.hexSeen}`);
+      const cuts = new Set(BMP.resolveChart(one).map((a) => [...BMP.hitMarks('cross', a.spot)].sort().join()));
+      ok('...because he moves between them to a spot whose cross takes the OTHER four marks', cuts.size === 2);
+
+      // HARD, the whole song, danced on the route — the fast 凶 included — and the finale in the air.
+      const hard = BMP.generateChart('shadow', 'hard');
+      const hrt = BMP.route(hard);
+      const fin = BMP.resolveSlashes(hard).find((s) => s.finish);
+      const plan = [
+        ...hrt.moves.map((m) => ({ t: m.beat * sspb - 0.04, to: m.to })),
+        ...hrt.jumps.map((j) => ({ t: j.beat * sspb - 0.05, jump: true })),
+        // To the mark in front of him a beat before; up; and the swing at the top.
+        { t: (fin.beat - 1.5) * sspb, to: 'C' }, { t: (fin.beat - 1) * sspb, to: fin.spot },
+        { t: (fin.beat - 0.6) * sspb, jump: true }, { t: fin.beat * sspb, atk: true },
+      ].sort((a, b) => a.t - b.t);
+      const H = go(hard, plan).d;
+      ok('凶 HARD Shadow Lionheart, danced on the route — the beat-apart 凶 included — is never hit',
+        H.state === 'won' && !H.grades.includes(0), `${H.state} hits ${H.grades.filter((g) => g === 0).length} ${H.why ?? ''}`);
+      ok('...and the finale\'s opening is IN THE AIR, he leaps for it, and it knocks him down',
+        fin.air && H.ko && H.stage.koPos?.y > 1.5, `air ${fin.air} ko ${H.ko} y ${H.stage.koPos?.y?.toFixed(2)}`);
+      // The same swing with her feet on the floor is a swing at nothing.
+      const grounded = go(hard, plan.filter((s) => !(s.jump && s.t > (fin.beat - 1) * sspb))).d;
+      ok('...and swung from the ground, the air opening does not land', grounded.state === 'won' && !grounded.ko, `ko ${grounded.ko}`);
       D.drills[0] = null;
     }
 
@@ -42822,6 +42901,39 @@ console.log('\n--- Lionheart\'s charts leave her openings, and end on a finishin
     /"slash": true/.test(txt) && back.chart && BM.chartToText(back.chart) === txt);
   const no = BM.parseChart({ format: BM.FORMAT, song: 'vr', difficulty: 'easy', beats: 8, events: [{ beat: 2, slash: 'yes' }, { beat: 3, slash: true, attack: 'cut' }] });
   ok('...and a slash that is not `true`, or is two things at once, is refused in words', !no.chart && no.errors.length === 2, no.errors.join(' / '));
+}
+
+console.log('\n--- Shadow Lionheart\'s song: his theme, two 凶, and the finale in the air ---');
+{
+  const BM = await import('../src/systems/dream/beatmap.js');
+  const { MUSIC } = await import('../src/core/audio.js');
+  const S = BM.songById('shadow');
+  ok('his theme is a song on the Kata Trace list, written to two rounds of itself (64 beats a round)',
+    MUSIC.shadow?.tune === 'shadow' && S && S.name === 'Shadow Lionheart' && S.beats === 128 && Math.abs(S.spb - MUSIC.shadow.beat * 2) < 1e-9);
+  const asrc = readFileSync(new URL('../src/core/audio.js', import.meta.url), 'utf8');
+  ok('...sung by a synthesised choir, in its own Latin — nobody\'s voice, and no file',
+    /_choir\(B, at, hzs, v, len, peak/.test(asrc) && /UMBRA LEONIS/.test(asrc) && /honor: \[/.test(asrc)
+    && !/\.(mp3|ogg|wav)/.test(asrc.slice(asrc.indexOf('_shadowStep(t, step, M) {'), asrc.indexOf('_vrStep(t, step, M) {'))));
+  const msrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  ok('...and it is what his fight plays while a round is live', /this\.dream\?\.shadow\?\.state === 'live'\) \{ this\._vrLevel = 1; return 'shadow'; \}/.test(msrc));
+  const bad = [];
+  for (const diff of BM.DIFF_IDS) {
+    const c = BM.generateChart('shadow', diff);
+    const p = BM.parseChart(BM.chartToText(c));
+    const as = BM.resolveChart(c);
+    const groups = [...new Set(as.filter((a) => a.kyoG).map((a) => a.kyoG))].map((g) => as.filter((a) => a.kyoG === g));
+    const sl = BM.resolveSlashes(c);
+    const fin = sl.find((s) => s.finish);
+    if (BM.unfair(c).length || !BM.route(c)) bad.push(`${diff}: unfair`);
+    if (p.warnings.length || p.errors.length) bad.push(`${diff}: ${[...p.errors, ...p.warnings][0]}`);
+    if (groups.length !== 2 || groups.some((g) => g.length !== 3 || g.some((a, i) => a.kyo !== i + 1 || a.attack !== 'cross'))) bad.push(`${diff}: 凶 groups`);
+    const marks = (a) => [...BM.hitMarks('cross', a.spot)].sort().join();
+    if (groups.some((g) => g.some((a, i) => i && marks(a) === marks(g[i - 1])))) bad.push(`${diff}: an X that does not make her move`);
+    if (!fin?.air) bad.push(`${diff}: finish not in the air`);
+  }
+  const gaps = BM.resolveChart(BM.generateChart('shadow', 'hard')).filter((a) => a.kyo > 1).map((a, i, xs) => a.beat - (BM.resolveChart(BM.generateChart('shadow', 'hard')).find((b) => b.kyoG === a.kyoG && b.kyo === a.kyo - 1).beat));
+  ok('every level of his song is fair, warns nothing, has two 凶 that each make her move, and ends in the air', !bad.length, bad.join(' | '));
+  ok('...and on HARD one 凶 comes a beat apart: two steps a beat', Math.min(...gaps) === 1 && BM.movesBetween(0, { beat: 1, tell: 0.75, kyo: 2 }) === 2, gaps.join(' '));
 }
 
 console.log('\n--- the beat-map grid is one stop, then its lines, then a line\'s buttons ---');

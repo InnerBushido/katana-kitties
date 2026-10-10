@@ -8903,6 +8903,9 @@ class Game {
        the Dojo's swell, at full level: it is a song she chose to hear. */
     const kata = this.dream?.kata?.musicTrack?.();
     if (kata) { this._vrLevel = 1; return kata; }
+    /* SHADOW LIONHEART'S FIGHT HAS HIS OWN THEME — "darker music, more
+       gothic" (`MUSIC.shadow`) — while a round of it is live. */
+    if (this.dream?.shadow?.state === 'live') { this._vrLevel = 1; return 'shadow'; }
     this._vrLevel = this.dream?.musicLevel?.(this.players) ?? 0;
     if (this._vrLevel > 0) return 'vr';
     const isl = this._islandTrack(dt);

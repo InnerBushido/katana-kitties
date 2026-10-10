@@ -605,6 +605,40 @@ quoted.
     first numbers. The Gauntlet's bands are measured by search, not by a
     child.
 
+- **Richard's thirteen-point fix list** (branch
+  `mixed/dream-dojo-gauntlet-kata-fixes`).
+  [dreamdojo.md](docs/notes/dreamdojo.md#fixes-from-the-latest-features-less-text-map-pins-the-gauntlets-way-out-and-kata-trace-grows-a-sword)
+  quotes each note:
+  - **The Turning Circle's vector text is gone**, both the (x, y, z) and
+    length readouts and NORMALIZED. The triangle, its angles and the lit
+    quadrant stay.
+  - **Map kiosks are pinned on the minimap.**
+  - **The Gauntlet's lasers go by section:** dark green ahead, live where she
+    is, grey behind. It has a way out: INTERACT asks, or Pause ▸ Kittens &
+    Scores ▸ LEAVE THE SINE GAUNTLET.
+  - **Kata Trace:**
+    - a keyboard diagonal waits 0.06s and scores from the first key;
+    - the score card faces the lens.
+  - **Kata Trace slashes**, optional:
+    - a hit is +1 combo, and a miss costs nothing;
+    - the last opening is the **finishing attack**, which knocks him flat;
+    - then he says "Oof... good job." (`lion_kata_ko`).
+  - **Beat Maps:**
+    - the grid is one stop, then lines, then buttons;
+    - ½ is a toggle and ⚔ sets openings;
+    - a new song or level is a new map, asked first;
+    - text boxes keep their keys;
+    - charts say who they are by.
+  - **Shadow Lionheart's song**: an original gothic theme with a synthesised
+    Latin choir (no file), played in his fight and on the Kata Trace list,
+    charted by hand.
+    - Two **凶 triple crosses** per level. He moves between the Xs, one life
+      is lost per 凶, and each dodge is +1. On HARD one 凶 comes a beat apart.
+    - The finale is an opening **in the air**.
+  - **Open:** nobody has played any of it. The choir sings vowels, not
+    diction; a real sung vocal would be a generated clip, which is Richard's
+    call.
+
 - **The hologram's bubble stays on her lens** (branch `bugfix/holo-bubble-off-lens`).
   [dreamdojo.md](docs/notes/dreamdojo.md#the-holograms-bubble-stays-on-her-lens):
   his bubble is hidden from a pane that is too far away or cannot see him (his

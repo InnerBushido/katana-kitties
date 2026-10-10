@@ -298,6 +298,12 @@ Lionheart's new lines:
   take are deleted; the wall yell is a bubble and a toast now;
 - the yell at a kitten who drops in from a dragon (`lion_yell_drop`).
 
+Kata Trace's finishing attack ([dreamdojo.md](dreamdojo.md#fixes-from-the-latest-features-less-text-map-pins-the-gauntlets-way-out-and-kata-trace-grows-a-sword))
+added one more: **"Oof... good job."** (`lion_kata_ko`, `KATA_LINES.ko` in
+`dream/kata.js`), said once he is knocked flat. It is Barrett like the rest,
+and it is written with no capitals and no "!" because he is down, not
+shouting.
+
 That made 26 new lines and 35 clips; with the wall yell gone, 34. They were made and cut the same
 way as the first nine (raw takes in `lionheart-takes/raw/`, then
 `lionheart-vo.mjs`). Payne's nine are the tour's five, the Dream Dojo card's
