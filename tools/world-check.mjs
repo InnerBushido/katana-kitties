@@ -8601,8 +8601,12 @@ console.log('\n--- half a second of not being there ---');
       `${closest.toFixed(2)} / ${furthest.toFixed(2)}`);
     /* NO TWO IN THE SAME PLACE, which is the bug, stated as the property
        rather than as the formula — a spiral, a jittered ring or a Poisson
-       draw would all satisfy it and all be fine. */
-    ok('...and no two of them are ever on top of each other', closest > 1.2,
+       draw would all satisfy it and all be fine.
+       IT WAS A COIN FLIP AT 1.2: 0.97 and 1.19 in two of four runs, from
+       drops walked out of the solid at (2.6, 45.2) onto `findOpenSpot`'s ring
+       with no idea where the others lay. With `DROP_GAP` handed to the search,
+       1200 necks came out at 1.41 closest; the bar is under that. */
+    ok('...and no two of them are ever on top of each other', closest > 1.35,
       `${closest.toFixed(2)} apart`);
     /* AND STILL A PILE. Scattering them across the town would be the same
        failure with the sign flipped: she has put them down on purpose, for
@@ -36637,101 +36641,232 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     D.drills[0] = null;
   }
 
-  /* --- 型 KATA: a year of them, every one doable --- */
+  /* --- 型 KATA: every built-in chart a dance somebody can actually do --- */
   {
-    const walk = Number(/const WALK_SPEED = ([\d.]+)/.exec(readFileSync(new URL('../src/entities/player.js', import.meta.url), 'utf8'))?.[1]);
-    const fastBeat = 60 / Math.max(...KT.TEMPI);
-    ok('型 a beat of travel at the fastest tempo leaves her a quarter of it to look',
-      KT.TRAVEL <= walk * fastBeat * 0.75, `${KT.TRAVEL} vs ${walk} u/s x ${fastBeat}s`);
-    let bad = [];
-    const dailies = new Set();
-    const day0 = new Date(2026, 0, 1);
-    for (let i = 0; i < 366; i++) {
-      const dt = new Date(day0.getFullYear(), 0, 1 + i);
-      for (const kind of ['daily', 'weekly']) {
-        const key = kind === 'daily' ? PR.dayKey(dt) : PR.weekKey(dt);
-        const k = KT.makeKata(kind, key);
-        const again = KT.makeKata(kind, key);
-        const pool = kind === 'weekly' ? ['step', 'cut', 'jump', 'guard'] : ['step', 'cut', 'jump'];
-        const S = k.steps;
+    const BMP = await import('../src/systems/dream/beatmap.js');
+    const bad = [];
+    const counts = { cut: 0, cross: 0, sweep: 0, lion: 0 };
+    const sameText = [];
+    for (const S of BMP.SONGS) {
+      for (const diff of BMP.DIFF_IDS) {
+        const c = BMP.generateChart(S.id, diff);
         const why = [];
-        if (JSON.stringify(k) !== JSON.stringify(again)) why.push('not deterministic');
-        if (S.length !== (kind === 'weekly' ? 12 : 8)) why.push(`length ${S.length}`);
-        if (S[0].mark !== 0 || S[0].move === 'step' || S[0].beat !== 0) why.push('bad opening');
-        for (const m of pool) if (!S.some((s) => s.move === m)) why.push(`no ${m}`);
-        for (let j = 1; j < S.length; j++) {
-          const g = S[j].beat - S[j - 1].beat;
-          const a = KT.MARKS[S[j - 1].mark]; const b = KT.MARKS[S[j].mark];
-          if (!pool.includes(S[j].move)) why.push(`move ${S[j].move}`);
-          if (g < 1) why.push(`gap ${g}`);
-          if (Math.hypot(a.x - b.x, a.z - b.z) > KT.TRAVEL * g + 1e-6) why.push(`step ${j} too far`);
-          if (S[j - 1].move === 'guard' && g < 2) why.push(`guard ${j - 1} not given two beats`);
-          if (S[j].move === 'step' && S[j].mark === S[j - 1].mark) why.push(`step ${j} goes nowhere`);
-          if (j >= 2 && S[j].move === S[j - 1].move && S[j].move === S[j - 2].move) why.push(`${S[j].move} x3 at ${j}`);
+        if (JSON.stringify(c) !== JSON.stringify(BMP.generateChart(S.id, diff))) why.push('not deterministic');
+        const secs = c.beats * S.spb;
+        if (secs < BMP.SONG_SECS[0] - 0.01 || secs > BMP.SONG_SECS[1] + 0.01) why.push(`${secs.toFixed(1)}s long`);
+        if (BMP.unfair(c).length) why.push(`unfair at ${BMP.unfair(c).join(',')}`);
+        if (!BMP.route(c)) why.push('no route');
+        for (const a of BMP.ATTACKS) if (!c.events.some((e) => e.attack === a)) why.push(`no ${a}`);
+        for (const e of c.events) {
+          if (e.lion) { counts.lion++; if (!BMP.LION_SPOTS.includes(e.lion)) why.push(`lion to ${e.lion}`); } else counts[e.attack]++;
         }
-        if (why.length) bad.push(`${kind} ${key}: ${why.join(', ')}`);
-        if (kind === 'daily') dailies.add(JSON.stringify(S));
+        const back = BMP.parseChart(BMP.chartToText(c));
+        if (!back.chart || back.errors.length || back.warnings.length) why.push(`round trip: ${[...back.errors, ...back.warnings][0]}`);
+        else if (BMP.chartToText(back.chart) !== BMP.chartToText(c)) sameText.push(`${S.id}.${diff}`);
+        if (why.length) bad.push(`${S.id}.${diff}: ${why.join(', ')}`);
       }
     }
-    ok('型 a year of dailies and weeklies: every kata doable at the fastest tempo', bad.length === 0, bad.slice(0, 3).join(' / '));
-    ok('...and a new daily every day', dailies.size >= 360, String(dailies.size));
-    ok("...and today's is the same kata on every machine (same key, same steps)",
-      JSON.stringify(KT.makeKata('daily', '2026-10-03')) === JSON.stringify(KT.makeKata('daily', '2026-10-03'))
-      && JSON.stringify(KT.makeKata('daily', '2026-10-03')) !== JSON.stringify(KT.makeKata('weekly', '2026-10-03')));
-    ok('two beats\' windows can never overlap, at any tempo',
-      KT.TEMPI.every((bpm) => 2 * KT.windowFor(bpm) < 60 / bpm));
-    ok('grades: dead on is PERFECT, off the mark is at best GOOD, late past the window is a MISS',
-      KT.gradeFor(0, true, 100) === 3 && KT.gradeFor(0, false, 100) === 1 && KT.gradeFor(0.15, true, 100) === 2
-      && KT.gradeFor(KT.windowFor(120) + 0.01, true, 120) === 0);
+    ok('型 every song x every level: a chart 30-90s long, fair, with a route through it, and all three attacks',
+      bad.length === 0, bad.slice(0, 3).join(' / ') || `${BMP.SONGS.length * 3} charts`);
+    ok('...and every one reads back from its own JSON as the same chart, warning-free', sameText.length === 0, sameText.slice(0, 3).join(' '));
+    ok('...and Lionheart actually moves, and no one attack is the whole dance',
+      counts.lion > 100 && BMP.ATTACKS.every((a) => counts[a] > 0.15 * (counts.cut + counts.cross + counts.sweep)),
+      JSON.stringify(counts));
+    ok('...and every song in the game is on the list', Object.keys((await import('../src/core/audio.js')).MUSIC).every((k) => BMP.songById(k)), BMP.SONGS.map((s) => s.id).join(' '));
+
+    /* THE FLOOR IS ON THE SCREEN'S COMPASS. N is screen-up at CAM_YAW; get it
+       wrong and "step left" is a step up-left. */
+    const up = KT.markOffset('N', 1);
+    const right = KT.markOffset('E', 1);
+    ok('型 N is straight up the screen and E straight right, at the kata camera\'s yaw',
+      Math.abs(up.x - KT.SCREEN.up.x) < 1e-9 && Math.abs(up.z - KT.SCREEN.up.z) < 1e-9
+      && Math.abs(right.x - KT.SCREEN.right.x) < 1e-9 && Math.abs(right.z - KT.SCREEN.right.z) < 1e-9
+      && Math.abs(up.x * right.x + up.z * right.z) < 1e-9);
+
+    // The stick: up is my < 0. Out from the middle anywhere; back only through it.
+    ok('型 the stick names the mark it points at (up is N, down-left is SW)',
+      BMP.stickDir(0, -1) === 'N' && BMP.stickDir(1, 0) === 'E' && BMP.stickDir(-0.7, 0.7) === 'SW');
+    ok('...from the middle a push goes out; from a ring mark only a push back through the middle moves her',
+      BMP.stepFrom('C', 'NE') === 'NE' && BMP.stepFrom('NE', 'SW') === 'C' && BMP.stepFrom('NE', 'S') === 'C'
+      && BMP.stepFrom('NE', 'E') === null && BMP.stepFrom('NE', 'NE') === null && BMP.stepFrom('N', 'S') === 'C');
+
+    // His blows: a cut down his line, a cross on the diagonals off it, a sweep everywhere.
+    ok('型 a cut from N hits the middle, N and S; a cross from N hits the middle and the four marks off his line',
+      [...BMP.hitMarks('cut', 'N')].sort().join() === 'C,N,S'
+      && [...BMP.hitMarks('cross', 'N')].sort().join() === 'C,NE,NW,SE,SW'
+      && BMP.hitMarks('sweep', 'W').size === 9);
+    ok('...and the cross turns with him: from NE it is the straight marks',
+      [...BMP.hitMarks('cross', 'NE')].sort().join() === 'C,E,N,S,W');
+
+    // The judge.
+    const spb = 0.5;
+    const cut = { attack: 'cut', spot: 'N', hitT: 10, tell: 2 };
+    const sweep = { attack: 'sweep', spot: 'N', hitT: 10, tell: 2 };
+    ok('型 grades: a step ON the beat is PERFECT, a bit off GREAT, standing safe all along only GOOD, standing in it OUCH',
+      KT.judgeBlow(cut, 'E', 10.03, null, spb) === 3 && KT.judgeBlow(cut, 'E', 9.86, null, spb) === 2
+      && KT.judgeBlow(cut, 'E', 9.6, null, spb) === 1 && KT.judgeBlow(cut, 'E', 2, null, spb) === 1
+      && KT.judgeBlow(cut, 'E', null, null, spb) === 1 && KT.judgeBlow(cut, 'S', 10, null, spb) === 0
+      && KT.judgeBlow(cut, 'C', 10, null, spb) === 0);
+    ok('...a sweep is jumped, wherever she stands, and a jump too early or none at all is a hit',
+      KT.judgeBlow(sweep, 'S', null, 9.98, spb) === 3 && KT.judgeBlow(sweep, 'C', null, 10 - KT.AIR + 0.01, spb) > 0
+      && KT.judgeBlow(sweep, 'E', null, 9.4 - KT.AIR, spb) === 0 && KT.judgeBlow(sweep, 'E', null, null, spb) === 0
+      && KT.judgeBlow(sweep, 'E', null, 10 + KT.LATE + 0.01, spb) === 0);
+    ok('...and the combo multiplier is x1, x2 at ten, capped at x4',
+      KT.comboMult(9) === 1 && KT.comboMult(10) === 2 && KT.comboMult(99) === 4);
+
+    // A broken chart is refused in words, and an undodgeable one is warned about.
+    const broke = BMP.parseChart('{"format":"kata-beatmap/1","song":"nope","events":[{"beat":"x"}]}');
+    ok('型 a beat map that is not one is refused, with reasons, and never half-loaded',
+      !broke.chart && broke.errors.length > 0, broke.errors.join(' | '));
+    /* A cross from N leaves only the straight marks safe and one from NE only
+       the diagonals: from E to NE is two steps (through the middle), and a
+       one-beat warning gives one. */
+    const trap = BMP.parseChart({ format: BMP.FORMAT, song: 'vr', difficulty: 'hard', beats: 32,
+      events: [{ beat: 6, attack: 'cross' }, { beat: 7.5, lion: 'NE' }, { beat: 9, attack: 'cross', tell: 1 }] });
+    ok('...and a blow nobody could dodge loads, but says which beat',
+      !!trap.chart && trap.warnings.some((w) => /^beat 9: nobody could dodge/.test(w)), trap.warnings.join(' | '));
+    ok('...and a blow she was standing safe from is GOOD, but kept out of the percentage — hits never are',
+      KT.freeBlow(cut, 2, spb) && KT.freeBlow(cut, null, spb) && !KT.freeBlow(cut, 9.9, spb) && !KT.freeBlow(sweep, null, spb));
   }
 
-  /* --- a kata performed perfectly is three stars; one not performed says so --- */
+  /* --- the beat maps a kitten writes are kept, and a bad row never loads --- */
   {
+    const CS = await import('../src/systems/dream/chartstore.js');
+    const BMP = await import('../src/systems/dream/beatmap.js');
+    const mem = new Map();
+    const was = globalThis.localStorage;
+    globalThis.localStorage = { getItem: (k) => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, String(v)) };
+    const mine = { ...BMP.generateChart('vr', 'easy'), title: 'Ember\'s first', author: 'Ember' };
+    const r = CS.saveChart(BMP.chartToText(mine));
+    const again = CS.saveChart(BMP.chartToText(mine));
+    const rows = CS.customCharts();
+    ok('譜 a custom chart saved is there to load, once — saving it twice is still one row',
+      !!r.id && r.id === again.id && rows.length === 1 && BMP.chartToText(rows[0].chart) === BMP.chartToText(mine), JSON.stringify(r));
+    mem.set('katana-kitties.kata-charts', JSON.stringify([...JSON.parse(mem.get('katana-kitties.kata-charts')), { id: 'junk', text: '{"nope":1}' }]));
+    ok('...a row that is not a chart is skipped, not half-loaded', CS.customCharts().length === 1);
+    CS.deleteChart(r.id);
+    ok('...and a deleted one is gone', CS.customCharts().length === 0);
+    globalThis.localStorage = { getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); } };
+    ok('...and blocked site data costs the custom charts and nothing else', CS.customCharts().length === 0);
+    globalThis.localStorage = was;
+    /* A chart freshly opened is clean, whatever the last visit left: a "yes,
+       close it" used to leave the flag up, and the next open asked "close
+       without saving?" over a chart nobody had touched. */
+    const { KataEditor } = await import('../src/systems/dream/kataeditor.js');
+    const ed = { dirty: true, _changed() {} };
+    KataEditor.prototype._load.call(ed, mine, null, false);
+    const clean = ed.dirty === false;
+    KataEditor.prototype._load.call(ed, mine, null, true);
+    ok('譜 the editor opens a chart clean, even after a visit that closed unsaved', clean && ed.dirty === true);
+  }
+
+  /* --- a run: danced right it is a win; stood through it is CAUGHT --- */
+  {
+    const BMP = await import('../src/systems/dream/beatmap.js');
     const fl = D.kata.floors[0];
+    const pick = D.kata.pickOf(her);
+    Object.assign(pick, { song: 'vr', diff: 'normal', speed: 1, custom: null });
+    const chart = BMP.generateChart('vr', 'normal');
+    const spb = BMP.spbAt('vr', 1);
+    const rt = BMP.route(chart);
     const run = (perform) => {
       D.drills[0] = null;
-      const startT = D.t;
-      D.t = startT + 100;           // past the hint throttle of the last run
-      D.kata.begin(her, 'daily', fl);
+      D.t += 100;
+      D.kata.begin(her, fl);
       const d = D.drills[0];
-      const T = KT.kataTimeline(d.kata);
-      const spb = 60 / d.bpm;
       const dt = 1 / 120;
-      let ghostOff = 0;
-      const pressed = new Set();
-      for (let f = 0; f < 120 * 120 && (d.state === 'ready' || d.state === 'live'); f++) {
-        const s = d.kata.steps[d.cur];
-        const m = s ? d.marks[d.cur] : fl;
-        if (perform) her.position.set(m.x + SW.SIM.dx, fl.y, m.z + SW.SIM.dz);
-        else her.position.set(fl.x + SW.SIM.dx + 2, fl.y, fl.z + SW.SIM.dz);
-        d.update(dt);
-        if (d.state !== 'live') continue;
-        // The demo is truthful: on each of his beats Lionheart is on the mark.
-        for (let j = 0; j < d.kata.steps.length; j++) {
-          const at = T.demo(d.kata.steps[j]) * spb;
-          if (d.t >= at && d.t - at < dt) {
-            const g = d.ghost.group.position; const q = d.marks[j];
-            ghostOff = Math.max(ghostOff, Math.hypot(g.x - q.x, g.z - q.z));
+      const moves = perform ? rt.moves.map((m) => ({ t: m.beat * spb - 0.04, to: m.to })) : [];
+      const jumps = perform ? rt.jumps.map((j) => j.beat * spb - 0.05) : [];
+      let mi = 0;
+      let ji = 0;
+      let wrongSpot = 0;
+      for (let f = 0; f < 120 * 200 && (d.state === 'ready' || d.state === 'live'); f++) {
+        let mx = 0;
+        let my = 0;
+        let jump = false;
+        if (d.state === 'live') {
+          if (mi < moves.length && d.songT >= moves[mi].t && d.armed) {
+            const to = moves[mi++].to;
+            const v = BMP.dirVec(to === 'C' ? BMP.DIRS[(BMP.DIRS.indexOf(d.at) + 4) % 8] : to);
+            mx = v.x; my = -v.y;
           }
+          if (ji < jumps.length && d.songT >= jumps[ji]) { ji++; jump = true; }
         }
-        if (perform && s && s.move !== 'step' && !pressed.has(d.cur) && d.t >= T.hers(s) * spb) {
-          pressed.add(d.cur);
-          if (s.move === 'cut') D.onStrike(her, 'stand', PL.BASE_REACH, { x: 0, y: 1 });
-          else d.spec.pad(d, { pressed: (a) => a === (s.move === 'jump' ? 'jump' : 'mount') });
+        d.spec.steer(d, { mx, my, pressed: (a) => a === 'jump' && jump, down: () => false });
+        d.update(dt);
+        // Where she is drawn is where she is judged.
+        if (d.state === 'live') {
+          const o = KT.markOffset(d.at);
+          const off = Math.hypot(her.position.x - SW.SIM.dx - fl.x - o.x, her.position.z - SW.SIM.dz - fl.z - o.z);
+          if (d.songT - (d.moveT ?? -9) > 0.3) wrongSpot = Math.max(wrongSpot, off);
         }
       }
-      return { d, ghostOff };
+      return { d, wrongSpot, movesLeft: moves.length - mi };
     };
     const good = run(true);
-    const id = good.d.spec.id;
-    ok('型 a kata danced on every beat and every mark is 100% and three stars',
-      good.d.state === 'won' && good.d.acc === 100 && D.progress.stars(her.style?.name ?? her.name, id) === 3,
-      `${good.d.state} ${good.d.acc}% ${good.d.why ?? ''}`);
-    ok('...and the ghost who showed it was standing on every mark on its beat', good.ghostOff < 0.05, good.ghostOff.toFixed(3));
-    ok('...and two stars on a tempo opens the next one', D.kata.tier(her, 'daily') === 1);
+    const G = good.d.grades;
+    ok('型 the route danced on the beat is a WIN, never hit once, every step taken',
+      good.d.state === 'won' && !G.includes(0) && good.movesLeft === 0 && G.length === chart.events.filter((e) => e.attack).length,
+      `${good.d.state} ${good.d.acc}% hits ${G.filter((g) => g === 0).length} left ${good.movesLeft} ${good.d.why ?? ''}`);
+    ok('...and scores three stars, mostly PERFECT', good.d.acc >= KT.KATA_BANDS[2] && G.filter((g) => g === 3).length > G.length / 2
+      && D.progress.stars(her.style?.name ?? her.name, BMP.chartId(chart)) === 3, `${good.d.acc}% ${G.filter((g) => g === 3).length}/${G.length} perfect`);
+    ok('...and she is drawn on the mark she is judged on', good.wrongSpot < 0.05, good.wrongSpot.toFixed(3));
+    ok('...with a score that counts the combo', good.d.score > G.length * 200 && good.d.maxCombo === G.length, `${good.d.score} combo ${good.d.maxCombo}`);
     const bad = run(false);
-    ok('a kata stood through is a refusal that says the score and what earns a star',
-      bad.d.state === 'failed' && /\d+%/.test(bad.d.why ?? ''), bad.d.why);
+    ok('型 standing still through it is CAUGHT, after exactly her lives\' worth of hits, and says what to try',
+      bad.d.state === 'failed' && bad.d.grades.filter((g) => g === 0).length === BMP.DIFFS.normal.lives && /EASY|0\.75/.test(bad.d.why ?? ''), bad.d.why);
+    D.drills[0] = null;
+
+    // The run holds the music, and lets it go at its own tempo.
+    const audio = { musicVolume: 1, musicRate: 1, ctx: { currentTime: 50 }, mode: null,
+      restartMusic(mode, rate) { this.mode = mode; this.musicRate = rate; return 50.2; }, musicGrid: () => null };
+    fakeGame.audio = audio;
+    pick.speed = 1.25;
+    D.t += 100;
+    D.kata.begin(her, fl);
+    const d = D.drills[0];
+    for (let f = 0; f < 600 && d.state === 'ready'; f++) { d.spec.steer(d, { mx: 0, my: 0, pressed: () => false }); d.update(1 / 60); }
+    const owned = D.kata.musicTrack() === 'vr' && audio.musicRate === 1.25 && d.ownsMusic;
+    d.fail('test');
+    d.update(1 / 60);
+    ok('♪ her run plays her song at her speed, and gives it back at 1x when it ends',
+      owned && D.kata.musicTrack() === null && audio.musicRate === 1, `${owned} ${audio.musicRate}`);
+    d.dispose(); D.drills[0] = null;
+    delete fakeGame.audio;
+    pick.speed = 1;
+
+    // INTERACT mid-run asks, and the cursor opens on NO.
+    D.t += 100;
+    D.kata.begin(her, fl);
+    const q = D.drills[0];
+    for (let f = 0; f < 600 && q.state === 'ready'; f++) { q.spec.steer(q, { mx: 0, my: 0, pressed: () => false }); q.update(1 / 60); }
+    q.spec.quit(q);
+    const c = D.choices[0];
+    ok('型 [E] mid-dance asks first, opening on "no, keep dancing" (non-negotiable 7)',
+      q.state === 'live' && !!c && /no, keep/.test(c.rows[c.i].text) && c.rows.some((r) => /yes, stop/.test(r.text)));
+    c.pick();
+    ok('...and no means she is still dancing', q.state === 'live' && !D.choices[0]);
+    q.dispose(); D.drills[0] = null;
+
+    // The picker: ◀▶ turns a row, and it opens on DANCE.
+    D.kata.openPicker(her, fl);
+    const P = D.choices[0];
+    const startOn = P.rows[P.i].text;
+    P.update({ mx: 0, my: 0 });
+    P.i = 0;
+    const before = pick.song;
+    P.update({ mx: 1, my: 0 });
+    const turned = pick.song;
+    P.update({ mx: 0, my: 0 });
+    P.update({ mx: -1, my: 0 });
+    ok('型 the song picker opens on DANCE, and ◀ ▶ turns the song and turns it back',
+      /DANCE/.test(startOn) && turned !== before && pick.song === before, `${startOn} ${before}→${turned}→${pick.song}`);
+    D.closeChoice(her);
+  }
+
+  /* --- one floor each --- */
+  {
+    const fl = D.kata.floors[0];
     /* ONE FLOOR EACH. Richard: "Let's section each area off with the players
        color and symbolism, so they know which area is for them, if the other
        players are not active and not in the simulation, then their area
@@ -36740,13 +36875,13 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     D.drills[0] = null;
     D.t += 100;
     fakeGame.toasts.length = 0;
-    const took = D.kata.begin(sis, 'daily', fl);
+    const took = D.kata.begin(sis, fl);
     ok('型 her floor refuses her sister, in words that say which floor is hers',
       took === false && !D.drills[1] && fakeGame.toasts.some((t) => /yours is the pink 氷 one/.test(t)), fakeGame.toasts.join(' | '));
-    D.kata.begin(sis, 'daily', D.kata.floors[1]);
+    D.kata.begin(sis, D.kata.floors[1]);
     D.drills[1].update(2);
     D.t += 100;
-    const mine = D.kata.begin(her, 'daily', fl);
+    const mine = D.kata.begin(her, fl);
     ok('...and her sister dancing on her own floor never stops her using hers', mine === true && !!D.drills[0] && !!D.drills[1]);
     D.drills[0].dispose(); D.drills[0] = null;
     D.drills[1].dispose(); D.drills[1] = null;
@@ -36760,13 +36895,21 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     ok('...and the floors of seats nobody is in here for are grey, their kiosks greyed, and say so',
       [2, 3].every((k) => !F[k].lit && hex(F[k].edge) === KI.KIOSK_OFF && F[k].kiosks.every((q) => q.lit === false)
         && /nobody in this seat|opens when she comes in/.test(F[k].plate._key)));
+    // The tour lights all four, each in its seat's own colour, and gives them back.
+    D.kata.showAll = true;
+    D.kata.update(0);
+    const allLit = F.every((f, k) => f.lit && hex(f.edge) === PAL.PLAYER_STYLE[k].colour);
+    D.kata.showAll = false;
+    D.kata.update(0);
+    ok('...the tour lights all four in the four seats\' colours, and puts them back after',
+      allLit && !F[2].lit && !F[3].lit && F[0].lit);
     // She steps out: her floor goes grey with her, and comes back when she does.
     sis.realm = null;
     D.kata.update(0);
     D.t += 100;
     fakeGame.toasts.length = 0;
     const greyed = !F[1].lit && hex(F[1].edge) === KI.KIOSK_OFF;
-    const onHers = D.kata.begin(her, 'daily', F[1]);
+    const onHers = D.kata.begin(her, F[1]);
     ok('...a sister who leaves the simulator takes her floor\'s colour with her, and it still will not take anybody else',
       greyed && onHers === false && !D.drills[0] && fakeGame.toasts.some((t) => /Frost's floor — yours is the orange 炎 one/.test(t)),
       fakeGame.toasts.join(' | '));
@@ -40381,6 +40524,112 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const entryClear = Math.min(...solidsD.map((s) => hyp(entry, s) - s.r));
     ok('...and no prop stands where she walks in from the gate or out of a tube',
       solidsD.length >= 6 && blocked.length === 0, `${solidsD.length} props · entry clear by ${entryClear.toFixed(2)}`);
+
+    /* THE TREADMILLS ARE SOLID. Richard: "add colliders so players can't walk
+       through them". A kitten put down on a belt's middle is pushed off it
+       to the drum's edge, by the world's own `resolveSolids`. */
+    const treads = D.gear.layout.treadmills;
+    // A step off dead centre: the push needs a direction.
+    const offBelt = treads.map((tm) => { const q = world.resolveSolids(tm.x + 0.3, tm.z + 0.1, 0.6); return hyp(q, tm); });
+    ok('the treadmills are solid: a kitten on a belt\'s middle is pushed off it, past the drum',
+      treads.length === 2 && offBelt.every((d) => d >= GR.TREAD_R + 0.6 - 1e-3), offBelt.map((d) => d.toFixed(2)).join(' '));
+    /* ...AND THE PAD IS STILL WALKABLE ROUND THEM. A flood fill at a kitten's
+       radius from the way in: every rack reachable within GRAB_R, and the
+       foot of every tube. Two drums 3.6 apart with 1.85 each would wall a
+       corner off if they were set any closer. */
+    {
+      const step = 0.25;
+      const KR = 0.6;
+      const key = (i, j) => `${i},${j}`;
+      const free = (x, z) => hyp({ x, z }, ARCADE) < ARCADE.r - KR && !solidsD.some((s) => hyp({ x, z }, s) < s.r + KR);
+      const seen = new Set();
+      const i0 = Math.round((entry.x - ARCADE.x) / step);
+      const j0 = Math.round((entry.z - ARCADE.z) / step);
+      const queue = [[i0, j0]];
+      seen.add(key(i0, j0));
+      const cells = [];
+      while (queue.length) {
+        const [i, j] = queue.pop();
+        cells.push({ x: ARCADE.x + i * step, z: ARCADE.z + j * step });
+        for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const k = key(i + di, j + dj);
+          if (seen.has(k)) continue;
+          seen.add(k);
+          if (free(ARCADE.x + (i + di) * step, ARCADE.z + (j + dj) * step)) queue.push([i + di, j + dj]);
+        }
+      }
+      const reach = (q, r) => cells.some((c) => hyp(c, q) < r);
+      const lost = [...racks.map((r) => [r.item.id, reach(r.at, GR.GRAB_R - 0.2)]), ...outs.map((o, i) => [`tube ${i + 1}`, reach(o, 1)])]
+        .filter(([, okk]) => !okk).map(([n]) => n);
+      ok('...and every rack and the foot of every tube can still be walked to from the gate, round them',
+        free(entry.x, entry.z) && lost.length === 0, lost.join(', ') || `${cells.length} cells reachable`);
+    }
+    /* THE POSTS MEET THE HOOP. "The poles on top of the VR treadmill model
+       don't connect well to the ring": each post ran 0.1 past the hoop and
+       was a different grey. Every post now stands on the drum and stops on
+       the hoop's own circle and centre line. */
+    const posts = D.gear.treadPosts ?? [];
+    const postBad = posts.filter((pp) => {
+      const tm = treads.reduce((a, b) => (hyp(a, pp) < hyp(b, pp) ? a : b));
+      return Math.abs(hyp(pp, tm) - 1.55) > 0.02 || Math.abs(pp.top - (ARCADE.y + 1.8)) > 1e-6 || Math.abs(pp.base - (ARCADE.y + 0.22)) > 1e-6;
+    });
+    ok('...and each treadmill\'s two posts stand on its drum and end on its hoop, not through it',
+      posts.length === 4 && postBad.length === 0, `${postBad.length} of ${posts.length} off`);
+    /* THE GHOSTS ON THEM. "Holograms ... of Ember and Frost's VR sprite
+       sheets, very faded, walking in random directions, but with unique VR
+       arcade colors that aren't being used yet, and don't look like any of
+       the 4 players." Built from the headset sheets, so handed two here. */
+    {
+      const g0 = D.gear;
+      const keepArt = gD.simArt;
+      const img = { width: 1024, height: 1024 };
+      const fake = (cols) => ({ texture: Object.assign(new THREE.Texture(), { image: img }), cols, rows: 4, pad: 0, contentScale: 1 });
+      gD.simArt = [fake(8), fake(8), null, null];
+      g0.walkers = null;
+      g0._buildWalkers();
+      const ws = g0.walkers ?? [];
+      const hue = (c) => { const h = {}; new THREE.Color(c).getHSL(h); return h.h * 360; };
+      const hd = (a, b) => { const d = Math.abs(hue(a) - hue(b)) % 360; return Math.min(d, 360 - d); };
+      const PS = (await import('../src/core/palette.js')).PLAYER_STYLE;
+      const SWm = await import('../src/world/simworld.js');
+      const taken = [...PS.map((s) => s.colour), ...Object.entries(SWm.HOLO).filter(([k]) => !['deep', 'void'].includes(k)).map(([, v]) => v),
+        ...GR.GEAR_ITEMS.map((it) => it.colour), 0x7dff6a];
+      const nearest = Math.min(...GR.TREAD_HOLO.flatMap((h) => taken.map((c) => hd(h.colour, c))));
+      const onBelts = ws.every((w, i) => hyp(w.b.position, treads[i]) < 1e-6);
+      ok('a ghost on each treadmill — Ember\'s headset drawing and Frost\'s — on the belt, walking (row 1)',
+        ws.length === 2 && ws.map((w) => w.style).join() === '0,1' && onBelts && ws.every((w) => w.b.row === 1));
+      ok('...in colours nobody else here wears: at least 25 degrees of hue from every kitten and every arcade light',
+        nearest >= 25, `nearest ${nearest.toFixed(0)} degrees`);
+      ok('...and very faded: additive, never written to depth, a quarter of full or less',
+        GR.TREAD_ALPHA <= 0.3 && ws.every((w) => w.b.mat.blending === THREE.AdditiveBlending && !w.b.mat.depthWrite));
+      // Random directions: over twenty seconds each turns through a real range of headings.
+      const f0 = ws.map((w) => w.b.facing);
+      let spread = ws.map(() => 0);
+      for (let k = 0; k < 600; k++) { g0.update(1 / 30); ws.forEach((w, i) => { spread[i] = Math.max(spread[i], Math.abs(w.b.facing - f0[i])); }); }
+      ok('...turning to new headings as they go, not walking one way forever', spread.every((s) => s > 1), spread.map((s) => s.toFixed(2)).join(' '));
+      for (const w of ws) w.b.removeFromParent();
+      g0.walkers = null;
+      gD.simArt = keepArt;
+    }
+  }
+
+  /* --- the three pieces, shaped like what they are --- */
+  {
+    /* Richard: "the 3 gear pickups should look like what they are". A visor
+       wider than it is tall, two hands of five fingers each, and a suit as
+       tall as a kitten with a light on every joint. */
+    const box = (id) => new THREE.Box3().setFromObject(GR.gearModel(id, 0xffffff));
+    const hs = box('headset').getSize(new THREE.Vector3());
+    const su = box('suit').getSize(new THREE.Vector3());
+    const gl = GR.gearModel('gloves', 0xffffff).userData.parts;
+    const tr = GR.gearModel('suit', 0xffffff).userData.parts;
+    ok('the headset is a visor: wider than it is tall by more than half again (strap over the top and all), with its row of lights',
+      hs.x > 1.6 * hs.y && hs.x > hs.z && GR.gearModel('headset', 0xffffff).userData.parts.lights === 6, `${hs.x.toFixed(2)} x ${hs.y.toFixed(2)}`);
+    ok('...the gloves are two hands of five fingers', gl.digits === 10);
+    ok('...and the suit is a body, taller than it is wide, with a tracker on every joint (12 and two on the trunk)',
+      su.y > 1.5 * su.x && tr.trackers === 14, `${su.y.toFixed(2)} x ${su.x.toFixed(2)} · ${tr.trackers} trackers`);
+    ok('...and each piece is two draw calls, however many fingers it has',
+      ['headset', 'gloves', 'suit'].every((id) => GR.gearModel(id, 0xffffff).children.length === 2));
   }
 
   /* --- the gear flow --- */
@@ -40687,6 +40936,40 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     D._updateDome(1 / 60);
     ok('...and a dragon perched anywhere else keeps its spot', homeDragon.state === 'perched' && homeDragon.home.x === away.x);
     gD.dragons = [];
+
+    /* THE CUB MAY COME IN. Richard: "the baby panda can go inside the Dream
+       Dojo island, but not inside the simulation. It should wait until the
+       player leaves the simulation, then follow the player again." */
+    const keepPanda = her.panda;
+    const cub = { position: new THREE.Vector3(A.x + 3, A.y, A.z + 1), group: new THREE.Group(), rideable: false };
+    her.panda = cub;
+    her.pandaMount = false;
+    D._updateDome(1 / 60);
+    ok('a cub walks under the dome with her: it is not pushed out', hyp(cub.position, { x: A.x + 3, z: A.z + 1 }) < 1e-9);
+    const grown = { position: new THREE.Vector3(A.x + 3, A.y, A.z + 1), group: new THREE.Group(), rideable: true };
+    her.panda = grown;
+    D._updateDome(1 / 60);
+    ok('...but a grown panda still is', hyp(grown.position, A) >= DOME_R + DD.ANIMAL_PAD - 0.5 - 1e-6, hyp(grown.position, A).toFixed(2));
+    // In the simulator: the cub heels to a spot on the pad by her tube; the grown one to the foot of the stones.
+    const keepRealm = her.realm;
+    const sHer = (D.st[her.index] ??= { phase: null, t: 0 });
+    const keepPhase = sHer.phase;
+    sHer.phase = 'sim';
+    her.realm = 'sim';
+    her.panda = cub;
+    const cubAt = D.ownerFor(her).position;
+    const tubeH = L.tubes[her.index];
+    her.panda = grown;
+    const grownAt = D.ownerFor(her).position;
+    ok('...and while she is in the simulator, her cub waits on the pad by her tube, where she walks out',
+      hyp(cubAt, A) < ARCADE.r - 2 && Math.abs(hyp(cubAt, tubeH) - DD.CUB_WAIT) < 1e-6 && Math.abs(cubAt.y - A.y) < 1e-6,
+      `${hyp(cubAt, tubeH).toFixed(2)} from her tube, ${hyp(cubAt, A).toFixed(2)} from the middle`);
+    ok('...a grown one still at the foot of the stones', hyp(grownAt, L.launch) < 1e-6);
+    her.realm = keepRealm;
+    sHer.phase = keepPhase;
+    her.panda = cub;
+    ok('...and the moment she is out, it heels to HER again', D.ownerFor(her) === her);
+    her.panda = keepPanda;
   }
 
   /* --- the fall: two seconds of air, then back to the start --- */
@@ -41084,8 +41367,11 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         frames++;
         if (!live.active || !row) break;
         // The lens was placed from the row this frame STARTED on; a line that
-        // ended during it moves `i` on afterwards.
-        const want = SS.shotFor(row.shot, live.ctx, 0).loc;
+        // ended during it moves `i` on afterwards, and is not asked about.
+        // On the row's own clock, because one shot (the ending's sky pull)
+        // crosses from the real world into the simulator half way through.
+        if (live.rows[live.i] !== row) continue;
+        const want = SS.shotFor(row.shot, live.ctx, Math.min(1, live.t / live.dur), live.cueClock()).loc;
         if (live.loc !== want) wrong++;
         if (live.loc === 'sim') simFrames++;
       }
@@ -41180,6 +41466,8 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       const rowOf = (shot) => ST.TOUR.find((x) => x.shot === shot);
       const SIMo = (await import('../src/world/simworld.js')).SIM;
       const TC = await import('../src/systems/dream/tourcast.js');
+      const KTo = await import('../src/systems/dream/kata.js');
+      const BMo = await import('../src/systems/dream/beatmap.js');
       const SCH = await import('../src/systems/dream/school.js');
       D._ensureSim();
       const ctxT = D.storyCtx();
@@ -41238,13 +41526,20 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       const hub = ctxT.dojo;
       const SUBS = -0.38;
       const at = (isle, a, b, y) => simP(TC.isleAt(ctxT.isles[isle], a, b, y));
-      const [ka, kb] = TC.kataFloorAt(TC.STAGE.kata.floor);
+      /* The Kata stop is ALL FOUR FLOORS now (Richard: "show all 4 platforms
+         ... with 4 simulated kittens playing a routine"): each floor's middle,
+         and a Lionheart-high point on the spot at the top of each. */
+      const kataPts = [0, 1, 2, 3].flatMap((k) => {
+        const c = TC.isleAt(ctxT.isles.kata, ...TC.kataFloorAt(k), 0);
+        const o = KTo.markOffset('N', KTo.LION_D);
+        return [simP(c), simP({ x: c.x + o.x, y: c.y + 3.2, z: c.z + o.z })];
+      });
       const subjects = {
         range: TC.STAGE.range.canes.flatMap(([a, b]) => [at('range', a, b, 0), at('range', a, b, TC.STAGE.range.cutY)]),
         school: [at('school', SCH.RING_AT[0], SCH.RING_AT[1] - TC.STAGE.school.pairs, 0),
           at('school', SCH.RING_AT[0], SCH.RING_AT[1] + TC.STAGE.school.pairs, 0), at('school', SCH.PEN_AT[0], SCH.PEN_AT[1], 0)],
         storm: [at('storm', ...TC.STAGE.storm.centre, 0), at('storm', ...TC.STAGE.storm.centre, 2)],
-        kata: [at('kata', ka, kb, 0)],
+        kata: kataPts,
         gallery: [at('gallery', 0, 0, SS.ISLE_FRAME.lookY)],
         hall: [at('hall', 0, 0, SS.ISLE_FRAME.lookY)],
       };
@@ -41273,7 +41568,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
           isleN[fs.isle] = (isleN[fs.isle] ?? 0) + 1;
           const pts = subjects[fs.isle].map((p) => p.clone().project(camT));
           const out = pts.filter((v) => !inF(v, 0.9) || v.y < SUBS);
-          if (out.length) lensBad.push(`${name}@${t.toFixed(1)} ${fs.isle}: ${out.length} of ${pts.length} out`);
+          if (out.length) lensBad.push(`${name}@${t.toFixed(1)} ${fs.isle}: ${out.length} of ${pts.length} out (#${pts.indexOf(out[0])} at ${out[0].x.toFixed(2)},${out[0].y.toFixed(2)})`);
           const mid = pts.reduce((s, v) => s + v.x, 0) / pts.length;
           worstMid = Math.max(worstMid, Math.abs(mid));
           if (Math.abs(mid) > 0.5) lensBad.push(`${name}@${t.toFixed(1)} ${fs.isle} off-centre ${mid.toFixed(2)}`);
@@ -41378,12 +41673,21 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       const B = (t) => SS.panBlack('simIsles', t);
       const isLen = clipT(rowOf('simIsles').voice);
       const tail = SS.TOUR_TAIL.simIsles;
-      ok('...and its fades: a dip under the cut to the Kata, slowly out from "Earn stars", in on "climb the ranks", out again after KENSHI and before the clip ends',
+      /* The tail used to be squeezed in before the clip's end (11.30 -> 11.55
+         of 11.58). Richard: "rather than the screen turning black right
+         away, it should fade out to black over some time before fading in to
+         Shadow. We can delay the Shadow cutscene by like 0.5s". So: at least
+         0.9s long, after KENSHI, black before the line's hold runs out — and
+         the hold is ON THE ROW, so the line really is longer. */
+      const isRow = rowOf('simIsles');
+      const isEnd = isLen + 0.5 + (isRow.hold ?? 0);
+      ok('...and its fades: a dip under the cut to the Kata, slowly out from "Earn stars", in on "climb the ranks", and SLOWLY out after KENSHI, into the line\'s own hold',
         B(kataStop.at) > 0.99 && B(kataStop.at + kataStop.cut + 0.01) < 0.01
           && B(stars.at) < 0.01 && stars.fadeOut - stars.at > 0.6 && B(stars.fadeOut) > 0.99
           && B(climb.at + climb.fadeIn + 0.01) < 0.01 && B(tail.from - 0.05) < 0.01
-          && tail.from > 11.3 - 0.01 && B(isLen) > 0.99,
-        `cut ${B(kataStop.at).toFixed(2)}, out ${stars.at}→${stars.fadeOut}, in ${climb.at}+${climb.fadeIn}, tail ${tail.from}→${tail.to} of ${isLen.toFixed(2)}`);
+          && tail.from > 11.3 - 0.01 && tail.to - tail.from >= 0.9 && (isRow.hold ?? 0) >= 0.5
+          && B(isLen) < 0.5 && B(isEnd - 0.15) > 0.99,
+        `cut ${B(kataStop.at).toFixed(2)}, out ${stars.at}→${stars.fadeOut}, in ${climb.at}+${climb.fadeIn}, tail ${tail.from}→${tail.to}, clip ${isLen.toFixed(2)} + hold → ${isEnd.toFixed(2)}`);
       const ssSrc = readD('../src/systems/dream/storyscene.js');
       ok('...and the Shadow\'s line dips up out of that black — the "in" of "fade out and in quickly"',
         SS.shotFor('simIsles', ctxT, 1).black > 0.99 && /\(prevEnd\.black \?\? 0\) >= 0\.99/.test(ssSrc)
@@ -41397,6 +41701,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       const ch = (TC.STAGE.school.cardW * 1.4) / 2;
       const cardBad = [];
       let cardLow = Infinity;
+      let cardTop = -Infinity;
       let cardTall = 0;
       for (let t = climb.at + climb.fadeIn; t < tail.from; t += 0.1) {
         const sh = SS.shotFor('simIsles', ctxT, 0, t);
@@ -41405,11 +41710,16 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         const corners = [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([sx, sy]) => cardP.clone().addScaledVector(right, sx * cw).add(new THREE.Vector3(0, sy * ch, 0)).project(camT));
         if (corners.some((v) => !inF(v, 1))) cardBad.push(`${t.toFixed(1)} off the frame`);
         cardLow = Math.min(cardLow, ...corners.map((v) => v.y));
+        cardTop = Math.max(cardTop, ...corners.map((v) => v.y));
         cardTall = Math.max(cardTall, (corners[2].y - corners[0].y) / 2);
       }
-      ok('...and on "climb the ranks of KENSHI" his card fills the frame above the subtitles, corners in',
-        cardBad.length === 0 && cardLow > SUBS && cardTall > 0.6,
-        cardBad.slice(0, 3).join(' · ') || `bottom at ${cardLow.toFixed(2)} NDC (box ${SUBS}), ${(cardTall * 100).toFixed(0)}% of the frame tall`);
+      /* AND ITS TOP IS READ TOO. Richard: "the card is too high up in the
+         camera's frame, it should be lowered down so that we can see the
+         words Kenshi at the top of the card". It filled 65% with its top
+         edge at NDC 0.98 — in, by the corners, and cut by the frame. */
+      ok('...and on "climb the ranks of KENSHI" his card is big in the frame, above the subtitles, and its 剣士 top well inside the frame',
+        cardBad.length === 0 && cardLow > SUBS && cardTop < 0.85 && cardTall > 0.5,
+        cardBad.slice(0, 3).join(' · ') || `bottom ${cardLow.toFixed(2)} NDC (box ${SUBS}), top ${cardTop.toFixed(2)}, ${(cardTall * 100).toFixed(0)}% of the frame tall`);
 
       /* WHAT IS PLAYED ON THEM (dream/tourcast.js), driven on the line's own
          clock with the lens it is seen through, the way StoryScene drives it.
@@ -41429,7 +41739,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         const schoolStop = hubStops.find((s) => s.isle === 'school');
         cast.start(ctxT, null, 'simHub');
         const hubShows = cast.canes.every((c) => c.group.visible) && cast.fighters.length === 4 && cast.fighters.every((f) => f.group.visible)
-          && cast.critters.every((c) => c.group.visible) && !cast.stormer.group.visible && !cast.ghostD.ghost.group.visible && cast.card.visible;
+          && cast.critters.every((c) => c.group.visible) && !cast.stormer.group.visible && cast.kataStages.every((s) => !s.group.visible) && cast.dancers.every((k) => !k.group.visible) && cast.card.visible;
         const tipAt = cast.canes.map(() => []);
         const penOut = [];
         let critterWalk = 0;
@@ -41477,10 +41787,13 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         // The isles line: the stormer and her fruit, then his kata.
         cast.start(ctxT, null, 'simIsles');
         const islesShows = !cast.canes.some((c) => c.group.visible) && !cast.fighters.some((f) => f.group.visible)
-          && cast.stormer.group.visible && cast.ghostD.ghost.group.visible;
+          && cast.stormer.group.visible && cast.kataStages.length === 4 && cast.dancers.length === 4
+          && cast.kataStages.every((s) => s.group.visible) && cast.dancers.every((k) => k.group.visible) && D.kata?.showAll !== false;
         const stormStop = SS.TOUR_PANS.simIsles.find((s) => s.isle === 'storm');
         const fruitBad = [];
         const ghostAt = [];
+        const lionAt = [];
+        const tellsSeen = [];
         let frostWalk = 0;
         const fPrev = cast.stormer.group.position.clone();
         for (let t = 0; t <= isLen; t += 1 / 30) {
@@ -41493,7 +41806,11 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
             if (f.group.visible !== up) fruitBad.push(`${s.kind}@${t.toFixed(2)}`);
           }
           if (t < kataStop.at) { frostWalk += cast.stormer.group.position.distanceTo(fPrev); fPrev.copy(cast.stormer.group.position); }
-          if (t >= kataStop.at && t <= stars.fadeOut) ghostAt.push(cast.ghostD.ghost.group.position.clone());
+          if (t >= kataStop.at && t <= stars.fadeOut) {
+            ghostAt.push(cast.dancers.map((k, i) => ({ x: k.group.position.x - cast.kataFloors[i].x, z: k.group.position.z - cast.kataFloors[i].z })));
+            lionAt.push(cast.kataStages[0].lionAt(cast.kataTime(t)));
+            tellsSeen.push(cast.kataStages[0].attacks.filter((a) => cast.kataTime(t) >= a.tellT && cast.kataTime(t) <= a.hitT).map((a) => a.attack));
+          }
         }
         const cutsT = cast.fruit.filter((f) => !f.spec.virus).map((f) => f.spec.t0 + TC.STORM_T * TC.STORM_CUT_K);
         ok('...the storm: the fruit is in the air while the lens is on it, each cut out of it but the virus, which is left to fall',
@@ -41501,11 +41818,20 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
             && cast.fruit.some((f) => f.spec.virus) && frostWalk > 2,
           fruitBad.slice(0, 3).join(' · ') || `${cutsT.length} cut from ${Math.min(...cutsT).toFixed(2)} to ${Math.max(...cutsT).toFixed(2)}s, she walked ${frostWalk.toFixed(1)}`);
         let ghostWalk = 0;
-        for (let i = 1; i < ghostAt.length; i++) ghostWalk += ghostAt[i].distanceTo(ghostAt[i - 1]);
-        const marks = new Set(ghostAt.map((p) => cast.ghostD.marks.findIndex((m) => Math.hypot(m.x - p.x, m.z - p.z) < 0.3)).filter((k) => k >= 0));
-        ok('...the Kata: he runs a real routine on the floor\'s marks while the lens is on it — standing on several, moving between them',
-          marks.size >= 3 && ghostWalk > 3,
-          `${marks.size} marks stood on, walked ${ghostWalk.toFixed(1)} in ${(stars.fadeOut - kataStop.at).toFixed(1)}s`);
+        let unison = 0;
+        for (let i = 1; i < ghostAt.length; i++) ghostWalk += Math.hypot(ghostAt[i][0].x - ghostAt[i - 1][0].x, ghostAt[i][0].z - ghostAt[i - 1][0].z);
+        for (const row of ghostAt) for (const q of row) unison = Math.max(unison, Math.hypot(q.x - row[0].x, q.z - row[0].z));
+        const marks = new Set(ghostAt.map(([p]) => KTo.MARK_NAMES.find((n) => { const o = KTo.markOffset(n); return Math.hypot(o.x - p.x, o.z - p.z) < 0.3; })).filter(Boolean));
+        const spots = new Set(lionAt.map((L) => BMo.LION_SPOTS.find((s) => { const o = KTo.markOffset(s, KTo.LION_D); return Math.hypot(o.x - L.x, o.z - L.z) < 0.3; })).filter(Boolean));
+        const kinds = new Set(tellsSeen.flat());
+        ok('...the Kata: four kittens dance one real routine in unison while the lens is on it — standing on several marks, moving between them',
+          marks.size >= 3 && ghostWalk > 3 && unison < 1e-6,
+          `${marks.size} marks stood on, walked ${ghostWalk.toFixed(1)} in ${(stars.fadeOut - kataStop.at).toFixed(1)}s, apart by ${unison.toFixed(3)}`);
+        const tc = BMo.parseChart(TC.TOUR_CHART);
+        ok('...the routine is a beat map like any other: it reads back clean and has a route',
+          !!tc.chart && !tc.errors.length && !tc.warnings.length && !!BMo.route(tc.chart), [...tc.errors, ...tc.warnings].join(' | '));
+        ok('...against a Lionheart who moves spot to spot and throws all three of his attacks',
+          spots.size >= 2 && BMo.ATTACKS.every((a) => kinds.has(a)), `${[...spots].join(',')} · ${[...kinds].join(',')}`);
         cast.stop();
         ok('...and gone with its line, as it is on a skip', !cast.group.visible);
       }

@@ -1,6 +1,8 @@
 import * as THREE from 'three';
-import { paint, toonVertexMat } from '../../core/gfx.js';
+import { Billboard, paint, toonVertexMat } from '../../core/gfx.js';
+import { PLAYER_STYLE } from '../../core/palette.js';
 import { mergeParts } from '../../world/build.js';
+import { holoFlicker } from './holo.js';
 
 /* ---------------------------------------------------------------------------
    THE GEAR ROOM — what is standing on Lionheart's pad, and the suit-up.
@@ -79,6 +81,214 @@ const glow = (colour, opacity = 1) => new THREE.MeshBasicMaterial({
   color: colour, transparent: opacity < 1, opacity, toneMapped: false, depthWrite: opacity >= 1,
 });
 
+/* ---------------------------------------------------------------------------
+   THE THREE PIECES, SHAPED LIKE WHAT THEY ARE. Richard: "the 3 gear pickups
+   should look like what they are": a body tracking suit "with tracking
+   points"; VR gloves like the Noitom Hi5 ("I worked with that company", so
+   the Hi5 mark is on the gloves' rack, behind them); and a headset like the
+   VR goggles in FF7 Remake — "a large visor/glasses". They were a glowing
+   box, two glowing mittens and a dark slab with dots.
+
+   References: Design Ideas/Lionheart - Dream Dojo/VR Gloves (black and grey
+   glove, the red wrist patch and trim, the battery box on the back of the
+   wrist) and .../VR Goggles for players (a dark, angular wrap-around visor
+   with a row of small cyan lights).
+
+   Each is TWO meshes however many fingers it has — the lit shell and the
+   unlit lights, each merged — so a rack is two draw calls (the game is
+   fill-bound and counts them, docs/notes/performance.md). Built facing +Z, the
+   way a rack turns its front to the pad. `userData.parts` is what world-check
+   counts, so a "glove" with no fingers fails a check rather than a look.
+--------------------------------------------------------------------------- */
+const GEAR_RED = 0xd9262c;
+export function gearModel(id, colour) {
+  const shell = [];
+  const lights = [];
+  const put = (list, geo, c, [x, y, z] = [0, 0, 0], [rx, ry, rz] = [0, 0, 0]) => {
+    if (rz) geo.rotateZ(rz);
+    if (rx) geo.rotateX(rx);
+    if (ry) geo.rotateY(ry);
+    geo.translate(x, y, z);
+    list.push(paint(geo, c));
+  };
+  const parts = {};
+  if (id === 'headset') {
+    /* A wide, shallow V of visor, brow over it, pods at the temples, a strap
+       round the back and one over the top; a lens line and three lights a
+       side along its lower edge. */
+    const A = 0.32;
+    for (const s of [-1, 1]) {
+      const cx = s * 0.29 * Math.cos(A);
+      const cz = -0.29 * Math.sin(A);
+      // Swept up at the temples, so it is a visor and not a bar.
+      const W = s * 0.14;
+      put(shell, new THREE.BoxGeometry(0.62, 0.34, 0.14), 0x1d2130, [cx, 0.04, cz], [0, s * A, W]);
+      put(lights, new THREE.BoxGeometry(0.5, 0.06, 0.02), colour, [cx, 0.07, cz + 0.075], [0, s * A, W]);
+      for (let k = 0; k < 3; k++) {
+        const d = 0.1 + k * 0.14;
+        put(lights, new THREE.BoxGeometry(0.045, 0.045, 0.02), colour,
+          [s * d * Math.cos(A), -0.07 + d * 0.14, -d * Math.sin(A) + 0.075], [0, s * A, W]);
+      }
+      put(shell, new THREE.BoxGeometry(0.12, 0.26, 0.32), 0x2b3142, [s * 0.6, 0, -0.3]);
+    }
+    put(shell, new THREE.BoxGeometry(1.1, 0.06, 0.2), 0x3a4258, [0, 0.25, -0.1], [-0.2, 0, 0]);
+    put(shell, new THREE.TorusGeometry(0.5, 0.045, 6, 20, Math.PI), 0x262b38, [0, 0, -0.32], [-Math.PI / 2, 0, 0]);
+    put(shell, new THREE.TorusGeometry(0.42, 0.04, 6, 16, Math.PI), 0x262b38, [0, 0.12, -0.34], [0, Math.PI / 2, 0]);
+    parts.lights = 6;
+  } else if (id === 'gloves') {
+    /* The pair, backs to the pad: dark back of hand, grey finger segments,
+       the red band at the knuckles and the red wrist cuff, and the battery
+       box on the back of the wrist with its light. */
+    let digits = 0;
+    for (const s of [-1, 1]) {
+      const hx = s * 0.33;
+      put(shell, new THREE.BoxGeometry(0.34, 0.36, 0.12), 0x2b2e36, [hx, 0, 0]);
+      put(shell, new THREE.BoxGeometry(0.35, 0.035, 0.13), GEAR_RED, [hx, 0.17, 0]);
+      [-0.12, -0.04, 0.04, 0.12].forEach((dx, i) => {
+        const up = [0.0, 0.03, 0.02, -0.03][i];
+        put(shell, new THREE.BoxGeometry(0.07, 0.17, 0.085), 0x575c67, [hx + dx, 0.27 + up, 0], [0, 0, -dx * 0.6]);
+        put(shell, new THREE.BoxGeometry(0.064, 0.13, 0.078), 0x2b2e36, [hx + dx * 1.08, 0.42 + up, 0], [0, 0, -dx * 0.6]);
+        digits++;
+      });
+      // The thumb, on the inside of each hand.
+      put(shell, new THREE.BoxGeometry(0.08, 0.22, 0.085), 0x575c67, [hx - s * 0.22, 0.1, 0.01], [0, 0, s * 0.5]);
+      digits++;
+      put(shell, new THREE.BoxGeometry(0.32, 0.16, 0.14), GEAR_RED, [hx, -0.27, 0]);
+      put(shell, new THREE.BoxGeometry(0.2, 0.13, 0.08), 0x1a1c22, [hx, -0.27, 0.1]);
+      put(lights, new THREE.BoxGeometry(0.05, 0.05, 0.02), colour, [hx + 0.06, -0.25, 0.145]);
+    }
+    parts.digits = digits;
+  } else {
+    /* The bodysuit, hanging in an A: dark, with grey panels, and on every
+       joint a puck with a light in it — chest, belt, shoulders, elbows,
+       wrists, hips, knees, ankles. */
+    const lift = 0.2;
+    const trk = [];
+    const limb = (from, len, ang, r0, r1, c) => {
+      const dir = [Math.sin(ang), -Math.cos(ang)];
+      put(shell, new THREE.CylinderGeometry(r0, r1, len, 8), c,
+        [from[0] + dir[0] * len / 2, from[1] + dir[1] * len / 2 + lift, 0], [0, 0, ang]);
+      return [from[0] + dir[0] * len, from[1] + dir[1] * len];
+    };
+    const torso = new THREE.CylinderGeometry(0.26, 0.2, 0.62, 10);
+    torso.scale(1, 1, 0.55);
+    put(shell, torso, 0x1b2030, [0, 0.15 + lift, 0]);
+    put(shell, new THREE.BoxGeometry(0.26, 0.5, 0.02), 0x2e3548, [0, 0.15 + lift, 0.115]);
+    put(shell, new THREE.BoxGeometry(0.42, 0.16, 0.18), 0x1b2030, [0, -0.22 + lift, 0]);
+    put(shell, new THREE.CylinderGeometry(0.1, 0.12, 0.08, 10), 0x2e3548, [0, 0.5 + lift, 0]);
+    put(shell, new THREE.TorusGeometry(0.08, 0.02, 5, 12), 0x8a93a8, [0, 0.62 + lift, 0]);
+    trk.push([0, 0.3], [0, -0.17]);
+    for (const s of [-1, 1]) {
+      const sh = [s * 0.28, 0.4];
+      const el = limb(sh, 0.36, s * 0.35, 0.08, 0.07, 0x1b2030);
+      const wr = limb(el, 0.34, s * 0.3, 0.07, 0.06, 0x2e3548);
+      put(shell, new THREE.BoxGeometry(0.1, 0.13, 0.06), 0x1b2030, [wr[0] + s * 0.03, wr[1] - 0.07 + lift, 0]);
+      const hip = [s * 0.12, -0.28];
+      const kn = limb(hip, 0.42, s * 0.08, 0.1, 0.085, 0x1b2030);
+      const an = limb(kn, 0.42, s * 0.04, 0.08, 0.065, 0x2e3548);
+      put(shell, new THREE.BoxGeometry(0.13, 0.06, 0.22), 0x1b2030, [an[0], an[1] - 0.03 + lift, 0.04]);
+      trk.push([sh[0], sh[1] - 0.02], el, wr, [hip[0], hip[1] - 0.04], kn, [an[0], an[1] + 0.05]);
+    }
+    for (const [x, y] of trk) {
+      put(shell, new THREE.CylinderGeometry(0.06, 0.06, 0.03, 10), 0x0e1118, [x, y + lift, 0.11], [Math.PI / 2, 0, 0]);
+      put(lights, new THREE.SphereGeometry(0.035, 8, 6), colour, [x, y + lift, 0.13]);
+    }
+    parts.trackers = trk.length;
+  }
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(mergeParts(shell), toonVertexMat()));
+  g.add(new THREE.Mesh(mergeParts(lights), new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false })));
+  g.userData.parts = parts;
+  return g;
+}
+
+/** THE Hi5 MARK, drawn — a red hand with the U and its circuit lines cut
+ *  into it, and the name. On the back panel of the gloves' rack. Null with no
+ *  document (a check). */
+function hi5Logo() {
+  if (typeof document === 'undefined') return null;
+  const cv = document.createElement('canvas');
+  cv.width = 512;
+  cv.height = 256;
+  const g = cv.getContext('2d');
+  const rr = (x, y, w, h, r) => { g.beginPath(); g.roundRect(x, y, w, h, r); g.fill(); };
+  g.fillStyle = '#14161c';
+  rr(0, 0, 512, 256, 28);
+  g.fillStyle = '#e3262b';
+  rr(38, 104, 136, 124, 28);
+  [14, 0, 6, 24].forEach((dy, i) => rr(44 + i * 32, 34 + dy, 27, 104, 13));
+  g.save();
+  g.translate(44, 160);
+  g.rotate(-0.6);
+  rr(-14, -70, 28, 84, 14);
+  g.restore();
+  g.strokeStyle = '#14161c';
+  g.lineWidth = 11;
+  g.lineCap = 'round';
+  g.beginPath();
+  g.moveTo(82, 118);
+  g.lineTo(82, 164);
+  g.arc(108, 164, 26, Math.PI, 0, true);
+  g.lineTo(134, 118);
+  g.stroke();
+  g.lineWidth = 5;
+  for (const [x, y0, y1] of [[82, 118, 84], [134, 118, 76]]) {
+    g.beginPath(); g.moveTo(x, y0); g.lineTo(x, y1); g.stroke();
+    g.beginPath(); g.arc(x, y1 - 7, 7, 0, Math.PI * 2); g.stroke();
+  }
+  g.fillStyle = '#9aa0ad';
+  g.font = 'bold 34px sans-serif';
+  g.fillText('N O I T O M', 214, 78);
+  g.fillStyle = '#f2f2f2';
+  g.font = 'bold 132px sans-serif';
+  g.fillText('Hi5', 206, 204);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/* ---------------------------------------------------------------------------
+   THE TREADMILL GHOSTS. Richard: "Can add holograms on top of the treadmills
+   of Ember and Frost's VR sprite sheets, very faded, walking in random
+   directions, but with unique VR arcade colors that aren't being used yet,
+   and don't look like any of the 4 players."
+
+   The four kittens are orange, pink, cyan and purple, and the arcade already
+   spends cyan, magenta, gold, yellow and two greens (HOLO, GEAR_ITEMS, the
+   lasers). Left over: CHARTREUSE and COBALT — measured as hue in three's
+   own (linear) HSL, 29 and 31 degrees from the nearest thing already here;
+   an ultramarine (0x4a5cff) was 20 from Blossom. The drawing is worn as
+   brightness only (its luminance times the colour, `_holoMat`), because a
+   tint MULTIPLIES — Frost's pink under a blue came out Blossom's purple.
+--------------------------------------------------------------------------- */
+export const TREAD_HOLO = [
+  { style: 0, colour: 0xc6ff2a },
+  { style: 1, colour: 0x2e86ff },
+];
+/** How faded: "very". Additive, so this is how much light she adds. */
+export const TREAD_ALPHA = 0.24;
+/** The treadmill's own collider — the drum, so she walks round it. */
+export const TREAD_R = 1.85;
+
+/** A billboard's own material, worn as a ghost: luminance times `colour`,
+ *  added to what is behind it, nothing written to depth. */
+export function treadHoloMat(m, colour) {
+  m.color.set(colour);
+  m.transparent = true;
+  m.opacity = TREAD_ALPHA;
+  m.alphaTest = 0.02;
+  m.depthWrite = false;
+  m.blending = THREE.AdditiveBlending;
+  m.onBeforeCompile = (sh) => {
+    sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+#ifdef USE_MAP
+  diffuseColor.rgb = diffuse * (0.25 + 0.95 * dot(sampledDiffuseColor.rgb, vec3(0.299, 0.587, 0.114)));
+#endif`);
+  };
+  m.customProgramCacheKey = () => 'tread-holo';
+  return m;
+}
+
 export class GearRoom {
   /**
    * @param {object} dream the DreamDojo
@@ -130,42 +340,26 @@ export class GearRoom {
       const yaw = this._yawIn(p);
       cyl(RACK_R, RACK_R + 0.1, 0.5, p.x, y + 0.25, p.z, 0x2f3446, 16);
       const back = rel(p, yaw, 0, -0.45);
-      box(1.5, 2.6, 0.18, back.x, y + 1.3, back.z, yaw, 0x3b4152);
-      const g = new THREE.Group();
+      // The gloves' panel is taller: the Hi5 mark hangs over the pair, not behind it.
+      const tall = item.id === 'gloves' ? 3.4 : 2.6;
+      box(1.5, tall, 0.18, back.x, y + tall / 2, back.z, yaw, 0x3b4152);
+      const g = gearModel(item.id, item.colour);
       g.position.set(p.x, y + 1.6, p.z);
       g.rotation.y = yaw;
-      const mat = glow(item.colour);
-      if (item.id === 'headset') {
-        // A visor and its strap.
-        const visor = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.38, 0.32), mat);
-        const strap = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.05, 6, 20, Math.PI), glow(0x223040));
-        strap.rotation.x = Math.PI / 2;
-        strap.position.z = -0.2;
-        g.add(visor, strap);
-      } else if (item.id === 'gloves') {
-        for (const s of [-1, 1]) {
-          const palm = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.42, 0.14), mat);
-          palm.position.x = s * 0.26;
-          for (let f = 0; f < 4; f++) {
-            const fin = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.2, 0.08), mat);
-            fin.position.set((f - 1.5) * 0.08, 0.3, 0);
-            palm.add(fin);
-          }
-          g.add(palm);
-        }
-      } else {
-        // The tracking suit: a hanging bodysuit with glowing tracker dots.
-        const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.85, 0.16), glow(0x1c2230));
-        const legs = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.7, 0.14), glow(0x1c2230));
-        legs.position.y = -0.75;
-        g.add(body, legs);
-        for (const [dx, dy] of [[-0.3, 0.3], [0.3, 0.3], [0, 0.05], [-0.2, -0.55], [0.2, -0.55], [-0.2, -1.05], [0.2, -1.05]]) {
-          const dot = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), mat);
-          dot.position.set(dx, dy, 0.1);
-          g.add(dot);
+      g.scale.setScalar(item.id === 'suit' ? 1.15 : 1.5);
+      this.root.add(g);
+      if (item.id === 'gloves') {
+        const tex = hi5Logo();
+        if (tex) {
+          const logo = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.65),
+            new THREE.MeshBasicMaterial({ map: tex, toneMapped: false }));
+          const lp = rel(p, yaw, 0, -0.35);
+          logo.position.set(lp.x, y + 2.92, lp.z);
+          logo.rotation.y = yaw;
+          this.root.add(logo);
+          this.logo = logo;
         }
       }
-      this.root.add(g);
       /* THE BEACON: a ring on the floor and a column, lit only for a kitten
          who still needs this piece. Off for everybody else, so the pad is not
          a forest of pillars on every visit. */
@@ -242,19 +436,34 @@ export class GearRoom {
       W?.solids?.push({ x: p.x, z: p.z, r: 1.4 });
     }
 
-    /* --- omni-directional treadmills: low discs, ringed, with a frame ---- */
+    /* --- omni-directional treadmills: low discs, ringed, with a frame ----
+       THE POSTS MEET THE HOOP. Richard: "the poles on top of the VR
+       treadmill model don't connect well to the ring". They were 1.9 tall
+       from the floor through a drum 0.22 deep, so each ran 0.1 up past a hoop
+       at 1.8, and the hoop was an unlit glow beside two lit posts — two
+       different greys meeting in a stub. Now each post stands ON the drum,
+       ends AT the hoop's centre line, with a collar over the joint and a foot
+       on the drum, and hoop, collars and posts are one lit part. And it is
+       solid (`TREAD_R`): "add colliders so players can't walk through". */
     this.treadmills = [];
+    this.treadPosts = [];
+    const HOOP_Y = 1.8;
+    const DRUM = 0.22;
     for (const p of this.layout.treadmills) {
-      cyl(1.7, 1.85, 0.22, p.x, y + 0.11, p.z, 0x2a2f3e, 28);
+      cyl(1.7, TREAD_R, DRUM, p.x, y + DRUM / 2, p.z, 0x2a2f3e, 28);
       const yaw = this._yawIn(p);
-      // The waist hoop on two posts.
       for (const s of [-1, 1]) {
         const q = rel(p, yaw, s * 1.55, 0);
-        cyl(0.07, 0.07, 1.9, q.x, y + 0.95, q.z, 0x8a93a8, 6);
+        cyl(0.075, 0.075, HOOP_Y - DRUM, q.x, y + DRUM + (HOOP_Y - DRUM) / 2, q.z, 0x8a93a8, 8);
+        cyl(0.13, 0.15, 0.08, q.x, y + DRUM + 0.04, q.z, 0x5a6378, 10);
+        cyl(0.11, 0.11, 0.2, q.x, y + HOOP_Y, q.z, 0x5a6378, 10);
+        this.treadPosts.push({ x: q.x, z: q.z, base: y + DRUM, top: y + HOOP_Y });
       }
-      const hoop = new THREE.Mesh(new THREE.TorusGeometry(1.55, 0.06, 6, 36), glow(0x8a93a8));
-      hoop.rotation.x = Math.PI / 2;
-      hoop.position.set(p.x, y + 1.8, p.z);
+      const hg = new THREE.TorusGeometry(1.55, 0.06, 6, 40);
+      hg.rotateX(Math.PI / 2);
+      hg.translate(p.x, y + HOOP_Y, p.z);
+      parts.push(paint(hg, 0x8a93a8));
+      W?.solids?.push({ x: p.x, z: p.z, r: TREAD_R });
       // The belt: rings that run inward, so the floor reads as moving under you.
       const belt = new THREE.Mesh(new THREE.RingGeometry(0.3, 1.6, 36, 3), new THREE.ShaderMaterial({
         uniforms: { uTime: { value: 0 } },
@@ -266,7 +475,7 @@ export class GearRoom {
       }));
       belt.rotation.x = -Math.PI / 2;
       belt.position.set(p.x, y + 0.24, p.z);
-      this.root.add(hoop, belt);
+      this.root.add(belt);
       this.treadmills.push(belt);
     }
 
@@ -311,6 +520,42 @@ export class GearRoom {
       this.root.add(pivot);
       this.beams.push({ pivot, a, phase: i * 1.7 });
     }
+  }
+
+  /**
+   * The ghosts on the treadmills, once the headset drawings exist. They are
+   * NOT what makes those drawings load (`_updateGear` asks for them when a
+   * kitten sets foot on the pad, rather than at boot — see `_begin`).
+   * Sized the way `Player` sizes her, off the home sheet's height.
+   */
+  _buildWalkers() {
+    const g = this.dream.game;
+    if (this.walkers || !g?.simArt) return;
+    const out = [];
+    TREAD_HOLO.forEach((h, i) => {
+      const a = g.simArt[h.style];
+      const p = this.layout.treadmills[i];
+      if (!a?.texture || !p) return;
+      const st = PLAYER_STYLE[h.style];
+      const quad = (g.sheets?.[st.sheet]?.height ?? 2.9) / (a.contentScale || 1);
+      const b = new Billboard(a.texture, {
+        cols: a.cols, rows: a.rows, width: quad, height: quad, footOffset: (a.pad ?? 0) * quad,
+        mirror: a.cols <= 4 && a.rows === 1, dirSense: g.sheets?.[st.sheet]?.dirSense ?? 1, artFacesRight: true,
+      });
+      treadHoloMat(b.mat, h.colour);
+      b.mesh.renderOrder = 7;
+      b.row = Math.min(1, a.rows - 1);
+      b.position.set(p.x, this.pad.y + 0.24, p.z);
+      b.facing = (i * 2.3) % (Math.PI * 2);
+      this.root.add(b);
+      out.push({ b, base: this.pad.y + 0.24, want: b.facing, next: 1 + i, seed: i * 3.1, colour: h.colour, style: h.style, rng: 0x9e3779b9 ^ (i + 1) });
+    });
+    this.walkers = out.length ? out : null;
+  }
+
+  /** Turn every billboard the room owns to this lens. */
+  faceCamera(camera) {
+    for (const w of this.walkers ?? []) w.b.faceCamera(camera);
   }
 
   /**
@@ -398,6 +643,22 @@ export class GearRoom {
       }
     }
     for (const b of this.treadmills ?? []) b.material.uniforms.uTime.value = t;
+    if (!this.walkers) this._buildWalkers();
+    for (const w of this.walkers ?? []) {
+      /* "Walking in random directions": a new heading every 1.6-3.6s, turned
+         to at a walker's pace rather than snapped, and a step's bob. */
+      w.next -= dt;
+      if (w.next <= 0) {
+        // Seeded, so the room looks the same twice and a check can ask about it.
+        const r = () => { w.rng = (Math.imul(w.rng, 1664525) + 1013904223) >>> 0; return w.rng / 4294967296; };
+        w.want = w.b.facing + (r() < 0.5 ? -1 : 1) * (0.6 + r() * 2.2);
+        w.next = 1.6 + r() * 2;
+      }
+      const d = Math.atan2(Math.sin(w.want - w.b.facing), Math.cos(w.want - w.b.facing));
+      w.b.facing += d * Math.min(1, dt * 3);
+      w.b.position.y = w.base + Math.abs(Math.sin(t * 5.5 + w.seed)) * 0.07;
+      w.b.mat.opacity = TREAD_ALPHA * (holoFlicker(t, w.seed) / 0.82);
+    }
     for (const b of this.beams) {
       // Each beam leans out and sweeps on its own slow figure, like a show.
       b.pivot.rotation.set(0.55 + Math.sin(t * 0.7 + b.phase) * 0.35, b.a + Math.sin(t * 0.45 + b.phase) * 0.9, 0, 'YXZ');

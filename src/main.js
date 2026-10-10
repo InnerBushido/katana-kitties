@@ -43,6 +43,7 @@ import { ParryFx } from './systems/parryfx.js';
 import { DodgeFx } from './systems/dodgefx.js';
 import { ClanFx } from './systems/clanfx.js';
 import { Confirm } from './systems/confirm.js';
+import { KataEditor } from './systems/dream/kataeditor.js';
 import { onTap } from './core/tap.js';
 import { ShrineScene, SCENE_RADIUS } from './systems/shrinescene.js';
 import { StoryScene } from './systems/dream/storyscene.js';
@@ -747,6 +748,9 @@ class Game {
     /* Same reasoning as Trailer: no world, and it has to exist before the
        buttons below are bound. */
     this.confirm = new Confirm(this);
+    /* The Kata Trace's beat-map editor (dream/kataeditor.js): built on first
+       open, from a Kata floor's 譜 kiosk. */
+    this.kataEditor = new KataEditor(this);
 
     /* THE CROSS SLASH'S WIND-UP AND ITS SEAL. It wants the scene and nothing
        else — it reads the kittens' own clocks every frame and never asks the
@@ -3307,8 +3311,9 @@ class Game {
        without it, a kid mashing a pad through the trailer starts the game
        behind the video she is watching. */
     return [...SUB_PANELS, 'panel-pause', 'panel-profile',
-      'panel-trailer', 'panel-trailer-offer', 'panel-confirm'].some(
-      (id) => !document.getElementById(id).classList.contains('hidden'),
+      'panel-trailer', 'panel-trailer-offer', 'panel-confirm', 'panel-kata-editor'].some(
+      // `?.`: the beat-map editor's panel is built on its first open, so it may not exist yet.
+      (id) => document.getElementById(id)?.classList.contains('hidden') === false,
     );
   }
 
@@ -8901,6 +8906,11 @@ class Game {
        the Turning Circle and "starts playing quietly, from a distance" means
        before she has left it. `musicLevel` is the swell, applied in
        `_updateMusic`. */
+    /* A KATA TRACE RUN PLAYS ITS OWN SONG, at its own speed — the one she
+       picked, which is the beat the run is judged on (dream/kata.js). Above
+       the Dojo's swell, at full level: it is a song she chose to hear. */
+    const kata = this.dream?.kata?.musicTrack?.();
+    if (kata) { this._vrLevel = 1; return kata; }
     this._vrLevel = this.dream?.musicLevel?.(this.players) ?? 0;
     if (this._vrLevel > 0) return 'vr';
     const isl = this._islandTrack(dt);
@@ -10432,7 +10442,10 @@ class Game {
       const shadowShot = near || simDojoC || p.mount ? null
         /* ...and the Sine Gauntlet's: runner and stands alike watch the
            runner, side-on (dream/sine.js). Also sim-only. */
-        : this.dream?.shadow?.cameraFocus?.(p) ?? this.dream?.sine?.cameraFocus?.(p) ?? null;
+        : this.dream?.shadow?.cameraFocus?.(p) ?? this.dream?.sine?.cameraFocus?.(p)
+          /* ...and a Kata Trace run's: her floor and Lionheart across the top
+             of it, so every mark and all five of his spots are in the pane. */
+          ?? this.dream?.kata?.cameraFocus?.(p) ?? null;
       /* THE WAY ACROSS AND THE DOME (DreamDojo.cameraFocus): in close behind
          her for the stones, pulled back over the whole island inside the
          bubble. Never on the Dojo floor itself — `near` wins, so the maths

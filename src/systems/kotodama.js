@@ -125,6 +125,15 @@ const DROP_ASPIN = 0.3;
  * edge, which is all it was ever wanted for here.
  */
 const DROP_CLEAR = 1.5;
+/**
+ * And how far from every orb already lying there. THE SEARCH DID NOT KNOW
+ * ABOUT THEM. A fanned point inside a solid is walked out by `findOpenSpot`
+ * onto its own ring, five units from where it was aimed, and two of those
+ * could land 0.97 apart where the fan itself never gets closer than 1.5 —
+ * world-check's forty necks at (0, 40) went red in two of four runs,
+ * with a quarter of the drops (80 of 320) inside the solid at (2.6, 45.2).
+ */
+const DROP_GAP = 1.4;
 
 export class Kotodama {
   /**
@@ -1081,7 +1090,8 @@ export class Kotodama {
       wx += Math.cos(a) * r;
       wz += Math.sin(a) * r;
     }
-    const spot = this.world.findOpenSpot(wx, wz, DROP_CLEAR) ?? { x: wx, z: wz };
+    const near = this.pickups.map((q) => ({ x: q.group.position.x, z: q.group.position.z, r: DROP_GAP }));
+    const spot = this.world.findOpenSpot(wx, wz, DROP_CLEAR, near) ?? { x: wx, z: wz };
     const g = this.world.heightAt(spot.x, spot.z);
     if (!g) return null;
     const pk = new PowerOrbPickup(spec, spot.x, g.y, spot.z);

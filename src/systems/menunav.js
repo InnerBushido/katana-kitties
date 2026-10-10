@@ -76,7 +76,9 @@
    goes above the one it opened from. Every one of them can have the pause menu
    up behind it, and `panel-kittens` can additionally have the board or the
    profile up in front. */
-const PANELS = ['panel-confirm', 'panel-trailer-offer', 'panel-profile',
+/* THE BEAT-MAP EDITOR is second: its own are-you-sures are the Confirm above
+   it, and nothing else can be open over it (dream/kataeditor.js). */
+const PANELS = ['panel-confirm', 'panel-kata-editor', 'panel-trailer-offer', 'panel-profile',
   'panel-league', 'panel-board', 'panel-settings', 'panel-help',
   'panel-kittens', 'panel-watch', 'panel-saves', 'panel-ending',
   /* PLAY SETTINGS IS BELOW THE THREE IT OPENS, by the same rule: WATCH AGAIN,

@@ -54,6 +54,11 @@ const FADE = 0.5;
 /** A black dip at a change of place — the real world to the simulator — and
  *  only there: a cut between two shots of the same island is a cut. */
 const DIP = 0.35;
+/** ...and a slower one where the reality changes, real to simulator or back:
+ *  "fade out and then fade into the simulator world". */
+const DIP_LOC = 0.8;
+/** How long a line takes to go black before the next one changes reality. */
+const FADE_OUT = 0.6;
 /** Reading time for a line with no recording: a beat per word and a breath. */
 const WORDS_PER_S = 2.6;
 const TYPE_LEAD = 0.72;
@@ -154,7 +159,12 @@ export const TOUR_PANS = {
     { at: 0.95, word: 'Kotodama', isle: 'gallery', swing: 0.85, blend: 'line', frame: { yaw: 8 } },
     { at: 2.5, word: 'clan powers', isle: 'hall', frame: { yaw: -8 } },
     { at: 4.2, word: 'real sword skills', isle: 'range', frame: { look: [3, 0, 2.2], dist: 17, up: 0.42, drift: 2 } },
-    { at: 6.1, word: 'how to fight', isle: 'school', swing: 0.8, frame: { look: [1, 0, 3], dist: 42, up: 0.5, drift: 1.5, push: { to: 0.68, over: 5 } } },
+    /* A FADE, NOT A SWING. Richard: "When Lionheart says 'Real sword skills
+       and how to fight', the transition from the tameshigiri to the Arena
+       School is a bit jarring, maybe we can fade out/in here". The swing was
+       0.8s round the hub between two islands 102 degrees apart. Black peaks
+       just before "how to fight" (6.10) so the school comes up on the word. */
+    { at: 6.0, word: 'how to fight', isle: 'school', cut: 0.3, frame: { look: [1, 0, 3], dist: 42, up: 0.5, drift: 1.5, push: { to: 0.68, over: 5 } } },
   ],
   simIsles: [
     { at: 0, word: 'Every island', pan: { toward: 'storm' } },
@@ -169,25 +179,48 @@ export const TOUR_PANS = {
 /** The black the isles line ends on — after KENSHI (11.31), and complete
  *  before the clip's end (11.58), because the cue clock is the clip's own
  *  playhead and stops there. The Shadow's line then dips in out of it. */
-export const TOUR_TAIL = { simIsles: { from: 11.3, to: 11.55 } };
+/* SLOWER NOW, AND PAST THE CLIP. Richard: "At the end, rather than the
+   screen turning black right away, it should fade out to black over some time
+   before fading in to Shadow. We can delay the Shadow cutscene by like 0.5s".
+   It was 0.25s (11.30 -> 11.55), squeezed in before the clip's end because
+   the cue clock froze there; `StoryScene.cueClock` runs on past it now, and
+   the row's `hold` (stories.js) is the half second he offered. */
+export const TOUR_TAIL = { simIsles: { from: 11.35, to: 12.45 } };
 /** The Kata Trace's frame: on his floor (`STAGE.kata`), from the hub's side,
  *  and from "the maths of the circle" round it, coming down as it goes so the
  *  islands behind rise into the frame. Aimed near the floor, not at his chest:
  *  at 2.6 up the marks he steps on were under the subtitles. */
-export const KATA_FRAME = { dist: 16, up: 0.5, lookY: 1.0, orbit: { at: 5.7, to: 105, over: 3.47, up: 0.22, lookY: 1.6 } };
+/* ALL FOUR FLOORS NOW. Richard: "the tour's DDR section should show all 4
+   platforms in the default player colours, with 4 simulated kittens playing
+   a routine". The lens looks at the hall's middle instead of one floor, and
+   stands back far enough for the four floors and a Lionheart across the top
+   of each; the orbit is the one he asked for before, about the new middle. */
+export const KATA_FRAME = { dist: 46, up: 0.6, lookY: 1.5, centre: true, orbit: { at: 5.7, to: 105, over: 3.47, up: 0.42, lookY: -1.5 } };
 /** The card's close-up, in the frame ABOVE the subtitles: they cover NDC
  *  -0.38 to -0.75 at 16:9, and centred the card's stat rows were behind them.
  *  Aimed `down` below its middle and far enough back that its 8.4 height
  *  runs from the top edge to just over the box, with a slow push for life. */
-export const CARD_FRAME = { dist: 18, to: 16.8, over: 2.4, up: 0.3, down: 2.1 };
+/* LOWER IN THE FRAME. Richard: "the card is too high up in the camera's
+   frame, it should be lowered down so that we can see the words Kenshi at the
+   top of the card". At 18 -> 16.8 back and 2.1 down its top edge ran to NDC
+   0.98 and the 剣士 band was cut by the frame. Further back (21 -> 19.6) with
+   the bottom held where it was, just over the subtitles (-0.33): the top is
+   at ~0.79 now. */
+export const CARD_FRAME = { dist: 21, to: 19.6, over: 2.4, up: 0.3, down: 1.75 };
 /** How long a swing from one stop to the next takes, unless the stop says. */
 export const PAN_T = 0.6;
-/** The lines' lengths (clip + the half second a line is given), for a lens
- *  asked with no clock (`k` only). */
-const PAN_LINE_T = { simHub: 11.32, simIsles: 12.08 };
+/** The lines' spans ON THE CUE CLOCK, for a lens asked with no clock (`k`
+ *  only): from minus the row's `lead` to the clip, the half second a line is
+ *  given and its `hold`. The isles line must end on its own tail's black, or
+ *  the Shadow's line would not know to come up out of it (`StoryScene._next`). */
+const PAN_LINE_T = { simHub: [-3.2, 11.32], simIsles: [0, 12.68] };
 /** The wide frame: how far out and up from the holo-Dojo, and how fast it
  *  turns (radians a second) — "rotating fairly quickly". */
-export const MAP_FRAME = { r: 430, h: 330, spin: 0.32 };
+/* 0.32 -> 0.4 with the line's 3.2s lead (stories.js): "circling around the
+   world before switching to zoom in to the Kotodama Gallery" — 95 degrees of
+   the archipelago go by before the dive, against 17 when the dive was the
+   first thing the line did. */
+export const MAP_FRAME = { r: 430, h: 330, spin: 0.4 };
 /** The "every island" pan: an eye this far out from the hub and this high,
  *  looking at a point `aim` out at `aimY`, turning at `spin`. Out past the
  *  Dojo's own rim (66), so the Turning Circle is not what it shows, and as
@@ -268,7 +301,7 @@ function stopFrame(stops, i, ctx, t) {
   const isle = ctx.isles?.[s.isle];
   if (!isle) return { eye: v3(hub.x, hub.y + MAP_FRAME.h, hub.z - MAP_FRAME.r), look: v3(hub.x, hub.y, hub.z) };
   if (s.frame === 'kata') {
-    const [a, b] = kataFloorAt(STAGE.kata.floor);
+    const [a, b] = KATA_FRAME.centre ? [0, 0] : kataFloorAt(STAGE.kata.floor);
     return isleFrame(isle, { ...KATA_FRAME, look: [a, b, KATA_FRAME.lookY] }, t, s.at);
   }
   return isleFrame(isle, s.frame ?? {}, t, s.at);
@@ -335,7 +368,54 @@ export function panShot(name, ctx, t) {
  * the slam's far end runs off the bottom edge. `world-check` puts him,
  * head to feet, through this lens at every tenth of a second of the line.
  */
-export const SHADOW_SHOT = { from: { back: 22, up: 9, off: 6 }, to: { back: 16, up: 6.5, off: 3.5 }, aimUp: 3.2 };
+/* WIDE FIRST, THEN IN FOR THE CROSS. Richard: "when showing Shadow
+   Lionheart, we can start with the camera zoomed out or raised up a bit more
+   so that we can see the holographic text with Shadow Lionheart in the
+   background more, before zooming on him doing cross-slash." The island's
+   sign (影 SHADOW LIONHEART) hangs over its far rim, 24 past the ring's middle
+   and 12 up; from 22 back and 9 up it sat on the frame's top edge. `wide` holds
+   it in, aimed higher, until `push.from`, and the push lands as his Cross is
+   told (5.7s, `ROUTINE` in tourshadow.js). Cued on the line's clock.
+   `wide` measured at 16:9: 38 back / 16 up had the sign in and HIM a speck
+   under it; 29 / 11 aimed 6.5 up holds the whole 影 SHADOW LIONHEART board
+   over his head with him still big enough to read. */
+export const SHADOW_SHOT = {
+  wide: { back: 29, up: 11, off: 6, aimUp: 6.5 },
+  from: { back: 22, up: 9, off: 6 }, to: { back: 16, up: 6.5, off: 3.5 }, aimUp: 3.2,
+  push: { from: 3.3, to: 5.9 },
+};
+/** `lion_tour_shadow`, clip + the half second. */
+const SHADOW_LINE_T = 8.6;
+
+/* THE TUBES LINE, on Payne's words (`payne_tour_4`, measured: "Talk to
+   Lionheart" 0.03-1.05, "grab your VR gear" 1.70-3.15, "step into your
+   tube" 3.60-5.00, "whoosh" 6.08, "You're inside the simulator!" 7.20-8.80).
+   Richard: "When Payne says 'Talk to Lionheart' the camera is too zoomed in
+   on the tubes, it should be more zoomed out and showing more of the Dream
+   Dojo space, it should focus on Lionheart, since she is talking about him
+   and then should change to focus to the tubes towards the end when she says
+   'step into your tube'." It was 9-15 from the tubes the whole line. */
+export const TUBES_SHOT = {
+  // Tried at 24 -> 20 back: Lionheart filled 40% of the frame and the pad
+  // hardly showed. At 33 back he was a figure in the distance. 27 -> 24.
+  lion: { from: [-27, 0, 12], to: [-24, -3, 10.5], look: 0.25 },
+  swing: { at: 3.45, over: 1.1 },
+  tubes: { from: [-21, 1, 10], to: [-16.5, 0.5, 8.6] },
+  len: 9.6,
+};
+
+/* THE SKY PULL CROSSES INTO THE SIMULATOR UNDER BLACK. Richard: "When
+   Lionheart says 'and every reality' we can start to fade out and then fade
+   back in to the simulator when he says 'real and virtual' and can have the
+   camera zooming out from about the same place/rotation, relative to the
+   Dojo of the Turning Circle between the real world and simulation world ...
+   We can then have the camera fade out when he says 'matter.' and then fade
+   in when Payne starts talking again". The simulator is the real world
+   SIM.dx east (the holo-Dojo is built on the Dojo's coordinates), so the same
+   pull, shifted, IS the same place and rotation — and the move never stops.
+   `lion_tour_mission4`, measured: "and every reality" 0.10-1.57, "real"
+   1.65, "AND" 2.35, "virtual" 2.85-3.40, "They all matter" 8.97-9.97. */
+export const REALITY_CUT = { out: [0.15, 1.55], cross: 1.58, in: [1.62, 2.95], end: [9.3, 10.35], len: 10.77 };
 
 /**
  * The camera for a named shot, `k` (0..1) through its line.
@@ -406,27 +486,40 @@ export function shotFor(name, ctx, k = 0, t = null) {
       return { pos: lerpP(from, to, e), look: mid, loc: 'real' };
     }
     case 'tubes': {
-      const t = ctx.tubes?.length ? ctx.tubes : [at(6, 0)];
-      const mid = v3(t.reduce((s, q) => s + q.x, 0) / t.length, A.y + 3, t.reduce((s, q) => s + q.z, 0) / t.length);
-      const from = at(-9, -3, A.y + 7);
-      const to = at(-5, 1, A.y + 5.5);
-      return { pos: lerpP(from, to, e), look: mid, loc: 'real' };
+      const T = TUBES_SHOT;
+      const tt = t ?? k * T.len;
+      const tb = ctx.tubes?.length ? ctx.tubes : [at(6, 0)];
+      const mid = v3(tb.reduce((s, q) => s + q.x, 0) / tb.length, A.y + 2.8, tb.reduce((s, q) => s + q.z, 0) / tb.length);
+      // Lionheart's chest, a quarter of the way to the pad's middle: him, and his dojo round him.
+      const lionLook = v3(lerp(lion.x, A.x, T.lion.look), A.y + 3.2, lerp(lion.z, A.z, T.lion.look));
+      const P = (q) => at(q[0], q[1], A.y + q[2]);
+      const a0 = clamp01(tt / T.swing.at);
+      const lionF = { pos: lerpP(P(T.lion.from), P(T.lion.to), ease(a0)), look: lionLook };
+      const b0 = clamp01((tt - T.swing.at) / (T.len - T.swing.at));
+      const tubeF = { pos: lerpP(P(T.tubes.from), P(T.tubes.to), ease(b0)), look: mid };
+      const s = ease(clamp01((tt - T.swing.at) / T.swing.over));
+      return { pos: lerpP(lionF.pos, tubeF.pos, s), look: lerpP(lionF.look, tubeF.look, s), loc: 'real' };
     }
     /* --- the tour, in the simulator --- */
     case 'simHub':
     case 'simIsles':
       // Cued on words: `t` is the clip's own clock; without one, `k` of it.
-      return panShot(name, ctx, t ?? k * PAN_LINE_T[name]);
+      return panShot(name, ctx, t ?? lerp(PAN_LINE_T[name][0], PAN_LINE_T[name][1], k));
     case 'simShadow': {
       const s = ctx.isles?.shadow ?? ctx.isles?.school;
       const st = ctx.shadowStage ?? s;
       const c = st ? sim(st) : sim(v3(ctx.dojo.x + u.x * 200, ctx.dojo.y, ctx.dojo.z + u.z * 200));
       const f = s?.fwd ?? u;
       const sd = { x: -f.z, z: f.x };
-      const fr = SHADOW_SHOT.from;
-      const to = SHADOW_SHOT.to;
+      const W = SHADOW_SHOT;
       const p = (q) => v3(c.x - f.x * q.back + sd.x * q.off, c.y + q.up, c.z - f.z * q.back + sd.z * q.off);
-      return { pos: lerpP(p(fr), p(to), e), look: v3(c.x, c.y + SHADOW_SHOT.aimUp, c.z), loc: 'sim' };
+      const tt = t ?? k * SHADOW_LINE_T;
+      // Wide, drifting a little toward `from`; then the push, ending on `to`.
+      const pu = ease(clamp01((tt - W.push.from) / (W.push.to - W.push.from)));
+      const pre = lerpP(p(W.wide), p(W.from), 0.15 * clamp01(tt / W.push.from));
+      const post = lerpP(p(W.from), p(W.to), clamp01((tt - W.push.to) / (SHADOW_LINE_T - W.push.to)));
+      const aim = lerp(W.wide.aimUp, W.aimUp, pu);
+      return { pos: lerpP(pre, post, pu), look: v3(c.x, c.y + aim, c.z), loc: 'sim' };
     }
     /* --- back with him --- */
     case 'lionHero':
@@ -448,7 +541,16 @@ export function shotFor(name, ctx, k = 0, t = null) {
       const r = lerp(30, 340, kk * kk);
       const h = lerp(14, 210, kk * kk);
       const look = lerpP(v3(A.x, A.y + 4, A.z), v3(ctx.dojo.x * 0.5, 0, ctx.dojo.z * 0.5), kk);
-      return { pos: v3(A.x - u.x * r - v.x * r * 0.35, A.y + h, A.z - u.z * r - v.z * r * 0.35), look, loc: 'real' };
+      const pos = v3(A.x - u.x * r - v.x * r * 0.35, A.y + h, A.z - u.z * r - v.z * r * 0.35);
+      if (name === 'skyPull') return { pos, look, loc: 'real' };
+      // "...and every reality, real AND virtual": over, under black, mid-move.
+      const R = REALITY_CUT;
+      const tt = t ?? k * R.len;
+      const black = Math.max(
+        tt < R.cross ? ease(clamp01((tt - R.out[0]) / (R.out[1] - R.out[0]))) : 1 - ease(clamp01((tt - R.in[0]) / (R.in[1] - R.in[0]))),
+        ease(clamp01((tt - R.end[0]) / (R.end[1] - R.end[0]))),
+      );
+      return tt < R.cross ? { pos, look, loc: 'real', black } : { pos: sim(pos), look: sim(look), loc: 'sim', black };
     }
     case 'isleEnd': {
       const from = at(-46, -14, A.y + 22);
@@ -547,10 +649,39 @@ export class StoryScene {
     return true;
   }
 
+  /** A line's length: its LEAD (picture before the voice), the clip, the
+   *  half second every line is given, and its HOLD (picture after it). */
   _dur(row) {
     const d = this.els.get(row.voice)?.duration;
-    if (Number.isFinite(d) && d > 0) return d + 0.5;
-    return Math.max(3, row.text.split(/\s+/).length / WORDS_PER_S + 1.2);
+    const said = Number.isFinite(d) && d > 0 ? d + 0.5 : Math.max(3, row.text.split(/\s+/).length / WORDS_PER_S + 1.2);
+    return (row.lead ?? 0) + said + (row.hold ?? 0);
+  }
+
+  /** Start the line's voice — at once, or once its `lead` has played. */
+  _speak(row) {
+    this.spoke = true;
+    this.voiceEl = this.game.audio?.speak?.(this.els.get(row.voice) ?? null) ?? null;
+  }
+
+  /**
+   * THE CUE CLOCK: seconds into the CLIP. The clip's own playhead while it
+   * plays (it starts after a clip that is still buffering, so the line's
+   * clock would cue early); before it, minus the lead still to go; and after
+   * it, the clip's length plus the time since it ended. The last one is new:
+   * the playhead freezes on the clip's end, so a fade asked for after the
+   * last word — Richard: "rather than the screen turning black right away,
+   * it should fade out to black over some time" — had to be crammed into the
+   * 0.27s between "KENSHI" and the end of the file.
+   */
+  cueClock() {
+    const el = this.voiceEl;
+    if (!this.spoke) return this.t - this.lead;
+    if (el && this.lineEndedAt != null) {
+      const d = el.duration;
+      return (Number.isFinite(d) ? d : el.currentTime) + (this.t - this.lineEndedAt);
+    }
+    if (el && el.currentTime > 0) return el.currentTime;
+    return this.t - this.lead;
   }
 
   /** The actor a shot brings on (`ctx.actors[shot]`), started with the
@@ -586,8 +717,17 @@ export class StoryScene {
        end before transitioning to the Shadow Lionheart scene"), and the next
        line coming up out of that black is the "in". */
     this.dipAt = prev && (prevEnd.loc !== shotFor(row.shot, this.ctx, 0).loc || (prevEnd.black ?? 0) >= 0.99) ? 0 : -1;
+    /* A LEAD IS PICTURE BEFORE THE VOICE. Richard, on the cut into the
+       simulator: "fade into the simulator world and showing what that looks
+       like, circling around the world before switching to zoom in to the
+       Kotodama Gallery". The circling needs seconds nobody is talking over. */
+    this.lead = row.lead ?? 0;
+    this.spoke = false;
+    this.voiceEl = null;
     this.dur = this._dur(row);
-    this.voiceEl = this.game.audio?.speak?.(this.els.get(row.voice) ?? null) ?? null;
+    // A change of reality dips in slower than a cut between two shots of one.
+    this.dipT = prev && prevEnd.loc !== shotFor(row.shot, this.ctx, 0).loc ? DIP_LOC : DIP;
+    if (this.lead <= 0) this._speak(row);
     const lion = row.who === 'lion';
     const colour = lion ? '#ff4b4b' : '#7fd35a';
     if (this.nameEl) {
@@ -655,12 +795,13 @@ export class StoryScene {
     this.fadeIn = Math.max(0, this.fadeIn - dt);
     const row = this.rows[this.i];
     if (!row) { this.finish(); return false; }
+    if (!this.spoke && this.t >= this.lead) this._speak(row);
 
     const k = Math.min(1, this.t / this.dur);
     /* The pans are cued on WORDS, at seconds measured off the clip — so they
        read the clip's own playhead when it is playing, not the line's clock,
        which starts before a clip that is still buffering. */
-    const cue = this.voiceEl && this.voiceEl.currentTime > 0 ? this.voiceEl.currentTime : this.t;
+    const cue = this.cueClock();
     const s = shotFor(row.shot, this.ctx, k, cue);
     this.camera.position.set(s.pos.x, s.pos.y, s.pos.z);
     this.camera.lookAt(s.look.x, s.look.y, s.look.z);
@@ -677,7 +818,7 @@ export class StoryScene {
     this.loc = s.loc;
 
     // Typewriter, on the clip's own playhead when it has one.
-    const clock = this.voiceEl && this.voiceEl.currentTime > 0 ? this.voiceEl.currentTime : this.t;
+    const clock = Math.max(0, this.voiceEl && this.voiceEl.currentTime > 0 ? this.voiceEl.currentTime : this.t - this.lead);
     const rate = row.text.length / Math.max(0.6, (this.dur - 0.5) * TYPE_LEAD);
     const want = Math.min(row.text.length, Math.floor(clock * rate));
     if (want > this.typed && this.textEl) {
@@ -687,16 +828,27 @@ export class StoryScene {
 
     const last = this.i === this.rows.length - 1;
     let black = this.fadeIn / FADE;
-    if (this.dipAt >= 0) black = Math.max(black, 1 - Math.min(1, this.t / DIP));
+    if (this.dipAt >= 0) black = Math.max(black, 1 - Math.min(1, this.t / this.dipT));
     if (last) black = Math.max(black, Math.max(0, FADE - (this.dur - this.t)) / FADE);
+    /* OUT TO BLACK BEFORE A CHANGE OF REALITY, not cut to it. Richard: "When
+       Payne finishes saying 'inside the Simulator.' we should have the camera
+       fade out and then fade into the simulator world". The dip in at the
+       start of the next line was all there was, so the last frame of the real
+       world went to black in one frame. A line that does its own fading (the
+       ending's sky pull) ends black already and this adds nothing. */
+    const nx = this.rows[this.i + 1];
+    if (nx && shotFor(nx.shot, this.ctx, 0).loc !== shotFor(row.shot, this.ctx, 1).loc) {
+      black = Math.max(black, ease(clamp01((this.t - (this.dur - FADE_OUT)) / FADE_OUT)));
+    }
     // A shot's own fades, on its own clock (the tour's cut to the Kata, and
     // its fade from the kata to the card).
     black = Math.max(black, s.black ?? 0);
     if (this.fadeEl) this.fadeEl.style.opacity = String(Math.min(1, black));
     if (this.barEl) this.barEl.style.width = `${((this.i + k) / this.rows.length) * 100}%`;
 
-    if (this.lineEndedAt == null && this._lineFinished()) this.lineEndedAt = this.t;
+    if (this.spoke && this.lineEndedAt == null && this._lineFinished()) this.lineEndedAt = this.t;
     const started = !!this.voiceEl && this.voiceEl.currentTime > 0;
+    // `dur` carries the lead and the hold, so a line is not over until both have played.
     if (beatOver(this.t, this.dur, this.lineEndedAt, started)) this._next();
     return this.active;
   }

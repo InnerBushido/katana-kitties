@@ -97,8 +97,8 @@ function starsOf(progress, name) {
 
 /**
  * What she has done on one island. Pure on the store, her name and her.
- * `max` is null on the kata floor, whose katas are new every day: there is no
- * "all of it" to have done.
+ * `max` is null on the kata floor: any song, three levels, and charts the
+ * kittens write themselves — there is no "all of it" to have done.
  */
 export function isleReport(progress, name, key, p = null) {
   const spec = ISLANDS[key];
@@ -184,8 +184,8 @@ export function lionNext(progress, name, p = null) {
   }
   return {
     kind: 'daily', key: 'kata',
-    text: "You've done it ALL. Come back tomorrow — there's a new kata every day, and a new training of the day.",
-    short: "You've done it all! New kata tomorrow.",
+    text: "You've done it ALL. Now dance my kata to every song — and write me a routine of your own at the beat-map kiosk.",
+    short: "You've done it all! Dance my kata to another song.",
   };
 }
 

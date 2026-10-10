@@ -813,8 +813,10 @@ quoted.
   - The **Tameshigiri Range**: ONE SWING, COMBO 60, and CLEAN CUT (cut at
     (cos θ, sin θ), with the card's numbers and the drawn line from one
     function).
-  - **Kata Trace**: a daily and a weekly kata seeded by the date, Lionheart's
-    ghost demonstrating, her turn judged on the beat, and three tempo tiers.
+  - **Kata Trace**: ~~a daily and a weekly kata seeded by the date, Lionheart's
+    ghost demonstrating, her turn judged on the beat, and three tempo tiers~~ —
+    redesigned as a DDR-style dodge-Lionheart game: any song, three levels,
+    four speeds, JSON beat maps and a beat-map editor (docs/notes/dreamdojo.md).
 - **Stage 3 verified in the browser** with real key presses:
   - A daily at 100% at 100 and at 120 BPM.
   - A clean cut refused 60° off and accepted at 236° against 240°.

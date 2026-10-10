@@ -6380,3 +6380,81 @@ body.touch-ui .ln-kyo-mark { font-size: calc(6 * var(--u)); }
    here: smaller, so four lines of text are not pushed below the fold by a
    goblin. */
 body.touch-ui .payne-help-pic { width: 44px; }
+
+/* ------------------------- 譜 the beat-map editor -------------------------
+   dream/kataeditor.js. A whole screen over a paused game: the grid down the
+   left, the floor, the checks and the JSON down the right, the buttons along
+   the bottom. Laid out in fractions of the viewport so a landscape phone —
+   844x390, SHORT, not narrow — gets the same page in less height: the grid
+   scrolls, the side column scrolls, and the bottom row never leaves.
+   Over the menus (50) and under are-you-sure (58), which it asks through. */
+#panel-kata-editor { z-index: 56; }
+#panel-kata-editor .ke-panel {
+  width: min(1180px, 96vw);
+  height: 92vh;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 20px 18px;
+  overflow: hidden;
+}
+.ke-head { display: flex; align-items: baseline; gap: 16px; }
+.ke-head h2 { margin: 0; }
+.ke-who { font-weight: 900; font-size: 15px; }
+.ke-meta { display: flex; flex-wrap: wrap; gap: 8px 14px; font-weight: 800; font-size: 13px; }
+.ke-meta label { display: flex; align-items: center; gap: 6px; }
+.ke-meta input, .ke-meta select, #ke-speed, #ke-saved {
+  font: inherit; font-weight: 700; padding: 4px 6px; border: 3px solid var(--ink); border-radius: 8px; background: var(--paper-2); color: var(--ink);
+}
+#ke-title { width: 15em; }
+#ke-author { width: 9em; }
+#ke-beats { width: 5em; }
+.ke-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 14px; }
+.ke-grid-wrap { min-height: 0; overflow: auto; border: 3px solid var(--ink); border-radius: 10px; background: #fff7e6; }
+.ke-grid-head, .ke-r {
+  display: grid;
+  grid-template-columns: 4.6em repeat(5, minmax(0, 1fr)) repeat(3, minmax(0, 1.4fr));
+  gap: 2px; align-items: center; padding: 1px 4px;
+}
+.ke-grid-head { position: sticky; top: 0; z-index: 1; background: var(--ink); color: var(--paper); font-weight: 900; font-size: 12px; text-align: center; padding: 4px; }
+.ke-grid-head .ke-a { color: #ff9aa8; }
+.ke-r.bar { border-top: 2px solid rgba(29, 18, 22, 0.35); }
+.ke-r.warn { background: rgba(255, 59, 92, 0.10); }
+.ke-r.bad { background: rgba(255, 59, 92, 0.28); }
+.ke-r.cur { outline: 2px solid #4aa3ff; outline-offset: -2px; }
+.ke-r.play { background: rgba(255, 211, 74, 0.55); }
+.ke-n { font-weight: 900; font-size: 13px; }
+.ke-n i { display: block; font-style: normal; font-weight: 600; font-size: 10px; opacity: 0.6; }
+#panel-kata-editor .menu-btn.ke-c {
+  font-family: 'Nunito', sans-serif; font-weight: 900; font-size: 11px; letter-spacing: 0;
+  padding: 3px 0; border-width: 2px; border-radius: 6px; box-shadow: none; min-width: 0; background: transparent; color: rgba(29, 18, 22, 0.4);
+}
+#panel-kata-editor .menu-btn.ke-c:hover, #panel-kata-editor .menu-btn.ke-c:focus-visible { transform: none; box-shadow: none; background: #ffe9a8; }
+#panel-kata-editor .menu-btn.ke-l.on { background: #ffd34a; color: var(--ink); }
+#panel-kata-editor .menu-btn.ke-a.on { background: #ff3b5c; color: #fff; }
+.ke-side { min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
+#ke-floor { width: min(240px, 34vh); height: auto; aspect-ratio: 1; align-self: center; border-radius: 12px; background: #06141d; }
+.ke-say { font-weight: 800; font-size: 13px; text-align: center; min-height: 1.3em; }
+.ke-say.bad { color: var(--vermillion); }
+.ke-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.ke-row .menu-btn, .ke-foot .menu-btn { font-size: clamp(13px, 1.4vw, 18px); padding: 0.3em 0.7em; }
+.ke-check { list-style: none; margin: 0; padding: 0; font-size: 13px; font-weight: 700; }
+.ke-check li { padding: 2px 0; }
+.ke-check .err { color: #b3122a; }
+.ke-check .warn { color: #a05a00; }
+.ke-check .ok { color: #1d7a3a; }
+.ke-json summary { cursor: pointer; font-weight: 900; }
+#ke-text { width: 100%; min-height: 12em; font: 12px/1.4 ui-monospace, Consolas, monospace; border: 3px solid var(--ink); border-radius: 8px; padding: 6px; box-sizing: border-box; resize: vertical; }
+.ke-foot { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; }
+.ke-foot #ke-saved { max-width: 16em; }
+/* A PHONE: everything a size down, the floor smaller, the meta row one line
+   that scrolls sideways rather than three lines that eat the grid. */
+body.touch-ui #panel-kata-editor .ke-panel { width: 98vw; height: 96vh; max-height: 96vh; padding: 8px 10px 10px; gap: 6px; border-width: 4px; }
+body.touch-ui .ke-head h2 { font-size: 22px; }
+body.touch-ui .ke-meta { flex-wrap: nowrap; overflow-x: auto; font-size: 12px; }
+body.touch-ui .ke-meta input, body.touch-ui .ke-meta select { padding: 2px 4px; }
+body.touch-ui #ke-floor { width: min(150px, 30vh); }
+body.touch-ui #panel-kata-editor .menu-btn.ke-c { padding: 6px 0; font-size: 12px; }
+body.touch-ui .ke-foot .menu-btn, body.touch-ui .ke-row .menu-btn { font-size: 13px; padding: 0.25em 0.5em; }
+@media (max-width: 640px) { .ke-body { grid-template-columns: 1fr; } }
