@@ -200,7 +200,8 @@ window.__ddStills = async function (opts = {}) {
          the island onto a floor of its own. --- */
   const LIVE = {
     gallery: null, hall: null, range: { on: /ONE SWING/, secs: 4 },
-    kata: { on: /DAILY/, secs: 5, her: true }, storm: { on: /STORM/, secs: 6 },
+    // The kata kiosk opens a song picker now (dream/kata.js); `pick` presses its DANCE.
+    kata: { on: /PICK A SONG/, secs: 7, her: true, pick: true }, storm: { on: /STORM/, secs: 6 },
     /* The course is not a station: she JOINS at its kiosk and the run is the
        session's (dream/sine.js). And it is filmed WIDE, from the side its own
        camera looks from, because the card's job is to show one course snaking
@@ -234,6 +235,7 @@ window.__ddStills = async function (opts = {}) {
         p.velocity?.set(0, 0, 0);
         await step(6);
         st.interact(p);
+        if (live.pick) D.choices[p.index]?.pick();
         await until(live.secs);
       } else {
         hideKittens(true);
@@ -267,6 +269,20 @@ window.__ddStills = async function (opts = {}) {
         cam = camAt(
           { x: I.x + Math.sin(yaw) * back + SIM.dx, y: I.y + I.r * (opts.wideUp ?? 0.95), z: I.z + Math.cos(yaw) * back + SIM.dz },
           { x: I.x + SIM.dx, y: I.y, z: I.z + SIM.dz }, 50);
+      } else if (key === 'kata' && D.kata?.cameraFocus?.(p)) {
+        /* THE KATA, as she sees it: up her floor at him, from her run's own
+           yaw and pitch (kata.js KATA_CAM), only nearer for a 480px card.
+           From out past her on the line from the middle — the old herShot —
+           he is at the TOP of her floor and came out cut off at the bottom. */
+        const KTm = await import('/src/systems/dream/kata.js');
+        // Panned 2 down the floor: at 21 her run card, under the floor, was cut by the frame's foot.
+        const c0 = D.kata.cameraFocus(p).centre;
+        const c = { x: c0.x - KTm.SCREEN.up.x * 2, y: c0.y, z: c0.z - KTm.SCREEN.up.z * 2 };
+        const dd = opts.kataDist ?? 21;
+        const pitch = KTm.KATA_CAM.pitch;
+        cam = camAt(
+          { x: c.x - KTm.SCREEN.up.x * dd * Math.cos(pitch), y: c.y + dd * Math.sin(pitch), z: c.z - KTm.SCREEN.up.z * dd * Math.cos(pitch) },
+          { x: c.x, y: c.y, z: c.z }, 50);
       } else if (herShot) {
         const hx = at.x - I.x;
         const hz = at.z - I.z;

@@ -326,76 +326,156 @@ both numbers always mean something and both signs change. A cut more than 12°
 off is refused and **says** both angles. The blade turns at 55°/s in round 1
 and 115°/s in round 5.
 
-### Kata Trace — the core
+### Kata Trace — the core (the beat-map redesign)
 
-Four floors at the island's corners. Each floor has nine marks: the middle,
-and eight on a ring at 3.4. Each floor has two kiosks, DAILY and WEEKLY.
-**Any kitten can use any floor**, but a floor somebody is mid-kata on refuses
-in words ("Ember is using this floor — there are four, try another"). There is
-no "floor k is seat k" rule, because nobody would know which one was theirs.
+> Richard: "For the DDR game, let's redesign it so that, Lionheart is at the
+> top of the pad and will be attacking the player with the same moves he has
+> when players fight him as Shadow Lionheart ... Essentially, the DDR game will
+> now train the player for fighting and winning against Shadow Lionheart."
 
-**`makeKata(kind, key)` is pure.** It runs mulberry32 over an FNV-1a hash of
-`daily:2026-10-03` or `weekly:2026-W40`. That means:
-- four sisters do the same kata today and can compare;
-- tomorrow's is a different one without anybody shipping anything.
+The daily/weekly copy-the-ghost kata is gone (`makeKata`, `TEMPI`, the ghost
+demo and the tempo tiers with it). What replaced it, file by file:
 
-A random kata on every press was rejected: nobody can get better at a thing
-that changes every time.
+| file | what it is |
+| --- | --- |
+| `dream/beatmap.js` | **pure**: the format, the songs, the solver, the generator, the parser. world-check imports it with no DOM |
+| `dream/kata.js` | the hall (four floors, two kiosks each), the song picker, `KataStage` (his blows drawn as a pure function of song time), `judgeBlow`, and the drill |
+| `dream/chartstore.js` | custom charts in localStorage, kept as their own text and re-parsed on the way out |
+| `dream/kataeditor.js` | the 譜 BEAT MAPS editor, a DOM page like the trailer's |
 
-| | daily | weekly |
-| --- | --- | --- |
-| steps | 8 | 12 |
-| moves | 歩 STEP · 斬 CUT · 跳 JUMP | + 守 GUARD (a pair of Wards is lent) |
+**The floor.** Nine marks — the middle and eight on a ring at 3.4 — laid out
+on the SCREEN's compass at the run camera's fixed yaw (`CAM_YAW`), so N is
+straight up the screen and "push left" is a step left. Above the floor are his
+five spots, **W NW N NE E**, at `LION_D`; he starts on N.
 
-**The generation rules**, each one a way an earlier version was wrong:
-1. It opens on the middle mark with an action, because she is standing there.
-2. A STEP always goes somewhere.
-3. No mark is more than `TRAVEL` × gap from the last. `TRAVEL` is 3.7 units a
-   beat: walking is 10.5 u/s, a beat at 120 BPM is 0.5s, and that leaves her
-   30% of the beat to look and turn.
-4. After a GUARD comes a two-beat gap.
-5. **No move three times running.** The first weekly drawn in the browser was
-   six GUARDs out of twelve, four of them in a row.
-6. Every move in the pool appears at least once. The pass that makes sure of
-   this could at first strand the step after the one it changed: the 7th of
-   February asked for a 4.8-unit stride on one beat. It now checks the step
-   on both sides.
+**Her movement is locked to the marks** ("They will start in the center and
+will choose a direction to move in ... then have to move back to center to be
+able to move in other directions"). `steer` takes her stick as an EDGE — over
+0.6 to step, back under 0.35 to re-arm, so a held stick does not walk her over
+and back — and hands the player a still pad with only JUMP connected.
+`stepFrom`: from the middle, any push goes to that mark; from a ring mark,
+only a push within 45° of straight back goes to the middle, so a wobble
+sideways does nothing rather than throwing her across.
 
-`world-check` walks a year of dailies and weeklies. A one-off run over twenty
-years (14,640 katas) found nothing.
+**His blows are Shadow Lionheart's:**
+- **cut** — his line through the middle: the middle, his spot's mark, and the
+  one opposite;
+- **cross** — the middle and the four marks 45° off his line, so from N it is
+  the diagonals and from NE the straights. "When doing cross-slash, can attack
+  from different patterns" is that turn;
+- **sweep** — every mark. Jumping is the dodge, not a place.
 
-**The run.**
-1. Lionheart's ghost dances it from the kiosk's point of view: two count-in
-   beats, then every step on its beat. She watches from the kiosk.
-2. Then comes her count-in of four beats ("YOUR TURN · to the gold middle
-   mark").
-3. Then she does it back. A gold ring closes on her next mark, the one after
-   is drawn faint, and the move and its button are **on her card** (斬 CUT [F]).
+The floor turns red where he will strike for `tell` beats first (2 on NORMAL
+and HARD, 3 on EASY), a ring closing on each mark; it is judged `LATE` (0.07s)
+after the beat.
 
-The move first had its own panel over its mark, and it failed both ways:
-- 3.2 units up, a far mark's panel rose into the toast band;
-- 1.4 units up, it stood in front of her, since every action is done on the
-  mark.
+**The judge** (`judgeBlow`, pure): on a hit mark is OUCH; off it, the grade
+is by how close to the beat she ARRIVED — 0.10s PERFECT, 0.18s GREAT, else
+GOOD. A sweep is graded by the jump, which counts from `AIR` (0.5s) before.
+A blow she never had to move for — safe since before its warning — is GOOD on
+the card and in the score, **but not in the percentage** (`freeBlow`). The
+first cut counted it, and the solver's own route, danced perfectly and never
+touched, came out at **71% and two stars**: the charts contain such blows and
+the right answer to one is to stand still. Lives are 5 / 4 / 3; the last one
+lost is CAUGHT, with "practise on EASY or at 0.75×". Points are 100/200/300
+times a combo multiplier (×2 at 10, ×3 at 20, ×4 at 30) times her speed.
+Stars are on accuracy at 50 / 75 / 90%, per chart: `kata.song.<song>.<level>`
+or `kata.custom.<hash>`.
 
-**The judge.**
-- **Timing:** within 0.10s is PERFECT, 0.18s GREAT, and up to the window
-  (0.35s, capped at 0.45 of a beat so two beats' windows never overlap) GOOD.
-- **Off the mark:** standing more than 1.2 from the mark caps the grade at
-  GOOD rather than throwing it away.
-- **A STEP** is judged at its beat by distance: 0.6 / 0.9 / 1.2.
-- **A miss** is the `miss` thud, not a buzzer.
+**Songs.** "Allow players to even choose their own song (out of all the songs
+we have generated in the game)": `SONGS` is every key of `MUSIC`, so it
+cannot go stale. A piece's chart beat is its step doubled until it is at least
+0.42s (143 BPM) — the Dream Dojo's own piece steps every 0.115s. "Each song
+should be between 30secs - 1:30": a length per piece from a hash, in whole
+bars, then pulled back inside the range by bars (The Crossing rounded to
+90.5s until world-check said so). Speed is 0.75 / 1 / 1.25 / 1.5 and scales the
+music (`Audio.startMusic(mode, rate)`) and the blows together. **The music
+follows ONE run** — the first kitten to start; anyone dancing at the same time
+on another floor gets a metronome tick and a hint saying so. `keepTime`
+re-measures the song's beat against the run's every 0.25s and pushes the song
+LATER if they drift past 50ms (never earlier: a note in the past plays at once).
 
-Accuracy is the points over three per step. 50 / 75 / 90% gives one, two or
-three stars. Below 50% it ends with the score and "Watch him again!".
+**Charts.** "These beat maps ... should be saved as a json file or a similar
+format ... easy to be human readable". `kata-beatmap/1`, one event per line:
 
-**Tempo tiers** are 80, 100 and 120 BPM. Two stars on one opens the next, per
-kata, per day or week. Progress ids look like `kata.daily.2026-10-03.L2`.
+```json
+{
+  "format": "kata-beatmap/1",
+  "title": "The Dream Dojo (normal)", "author": "Lionheart",
+  "song": "vr", "difficulty": "normal", "beats": 68,
+  "events": [
+    { "beat": 6, "attack": "cut" },
+    { "beat": 8.5, "lion": "NW" },
+    { "beat": 11, "attack": "cross", "tell": 3 }
+  ]
+}
+```
 
-**Verified in the browser:**
-- A daily done with real F and Space presses on the beat: 100% at 100 BPM,
-  and again at 120.
-- Lionheart's ghost on every mark on his beat: 0.001 off, measured in
-  `world-check`.
+`parseChart` refuses what is not a chart, with every reason, and never half
+loads one. Two things load with a WARNING rather than an error, because a
+kitten's chart is hers to get wrong: him moving during a blow's warning (the
+blow still comes from where he was), and a blow nobody could dodge — `unfair`
+asks whether ANY sequence of one move per beat gets her somewhere safe, and
+`route` returns the path a perfect kitten takes.
+
+**The generator** (`generateChart`) is pure on (song, level), so four sisters
+on NORMAL Bamboo Grove dance the same thing. It moves him half a beat before a
+warning starts; prefers the attack that makes her move (standing still is not
+a step); never three of one attack running; no one-beat gap after a sweep.
+The first version needed a 3.5-beat gap to move him, so on HARD he barely
+moved and sweeps were most of the chart. world-check runs every song × every
+level: 30–90s, fair, routed, all three attacks, reads back clean from its own
+JSON — and that he moves and no one attack is the whole dance.
+
+**The floor is hers.** Floor *k* is seat *k*'s, in her colour (unchanged —
+see "One kata floor each" below). Two kiosks: 型 KATA TRACE opens the song
+picker and 譜 BEAT MAPS the editor. The picker is a `HoloChoice` beside her:
+▲▼ picks SONG / LEVEL / SPEED / CHART, ◀▶ turns it, and it opens on DANCE —
+nothing on it is irreversible. A custom chart has its own level, and turning
+LEVEL on one says so.
+
+**Her run's camera** (`KATA_CAM`) looks up the floor at him from the fixed
+yaw. 33.5 back, not 31: at 31 (1024×576, measured in NDC) her card's foot
+was at −0.84 under the controls strip at −0.82, and his sword was at 0.75
+against the HUD — no room to aim up, so it backs off its own ray. Her card is
+not over her head: it stands where the floor's name plate does, ×1.45. Over
+her head it was unreadable at that distance, and scaled up there it would
+have covered the marks his blows come from.
+
+**[E] mid-run asks** ("STOP DANCING?", opening on "no, keep dancing"), and a
+"yes" is a stop with no score. Escape and Start are the pause menu as always.
+
+**The beat-map editor** (`kataeditor.js`). "Create their own beat map with a
+custom beat map editor":
+- one row per beat, five cells for where he stands and three for what he
+  throws; a click toggles. A beat whose blow cannot be dodged is shaded and
+  marked ⚠ — the solver's `unfair`, live;
+- a drawing of the floor at the row under the cursor: where he is, which
+  marks are red, and where the perfect route has her;
+- HEAR IT plays the song at the chosen speed with a cursor running down the
+  rows;
+- the chart as JSON, to read, edit by hand and USE, COPY, or SAVE AS A FILE /
+  LOAD A FILE;
+- START FROM LIONHEART'S, CLEAR IT, the saved list, SAVE.
+It pauses the game without the pause menu (it IS the menu, and it is hers),
+and every destructive button asks through `confirm.js`. **The dirty flag is
+SET on load, not only raised**: the first build left it up after a "yes,
+close it", and the next visit asked "close without saving?" over a chart
+nobody had touched. A false alarm is how a kitten learns to click through the
+real one. Its CSS has a `body.touch-ui` rule and a single column under 640px;
+at 844×390 it fits with no page scroll.
+
+**Custom charts** live in localStorage (`katana-kitties.kata-charts`, at most
+60), as their text: a row that does not parse is skipped, never half-read,
+and blocked site data costs the custom charts and nothing else.
+
+**Verified in the browser** (Firefox-equivalent pane, 1024×576 and 844×390):
+the picker's rows and DANCE; a live run holding her on her mark (0.00 off) and
+the music on `vr` at her speed, back to 1× after; the camera numbers above;
+the editor's grid, preview, confirm on CLOSE ("no, keep writing" keeps her
+there, "yes, close it" closes and unpauses), and its phone layout.
+
+**Verified in the browser (the Range):**
 - CLEAN CUT refused a real swing 60° off and cut one at 236° against a 240°
   target.
 - ONE SWING cut 4 with one press from a guessed spot.
@@ -1459,6 +1539,24 @@ spike."
     weekly-shaped routine (`tourKata`: the first one with a cut, a jump, a
     guard and a step inside the time), on the floor's own beat. In the check
     he stands on four marks and walks 24.
+  - ~~One floor and his ghost~~ **All four floors, four kittens, one routine**
+    (the redesign). Richard: "let's enable all 4 with the default players
+    colors/information for each platform ... We can have all 4 of the players
+    simulated being there playing the game and doing a routine, so it looks
+    like an arcade with all the players playing it." `KataHall.showAll` lights
+    every floor in its seat's colour for the line and gives them back; a real
+    `KataStage` per floor draws Lionheart's blows, and four holo-kittens dance
+    `route` in unison. The routine is `TOUR_CHART`, written by hand in the
+    beat-map format: no ~10-beat window of any built-in `vr` chart, at any
+    half-beat start on any level, holds a cut, a cross, a sweep, him changing
+    spot AND the kittens crossing three marks. The first pick found him on N
+    throughout, then kittens who stood through the whole stretch. world-check
+    reads it back with no warnings and a route.
+  - The lens frames the hall's middle (`KATA_FRAME.centre`) at 46, and the
+    orbit aims at −1.5 rather than 2.0: at 2.0 floor 1's middle dipped to NDC
+    −0.40 under the subtitles from 6.7 to 7.0 s, and backing off to 49 only
+    moved the dip to its Lionheart at 7.5. All eight points (four floors, four
+    Lionheart heights) are in frame above the box now.
 - **"When it says 'even the maths of the circle' we can have the camera move
   around the Kata Trace island so that the Sine Gauntlet or Turning Circle
   island is in the background ... main camera focus should be on the Kata

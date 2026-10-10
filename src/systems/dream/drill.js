@@ -28,6 +28,11 @@ import { starsFor } from './progress.js';
    `spec` is the whole drill, as data plus a `setup(d)`:
      { id, title, kanji, colour, time, goal, goalText, bands, lowerIsBetter,
        score: 'time' | 'count' | fn(d), grace, leaveR, setup(d), tick?(d, dt) }
+   and, for a drill that drives her itself (dream/kata.js):
+     always?(d, dt)   every frame, in every state
+     steer?(d, pad)   her pad, every frame from the count-in on — return a
+                      pad to drive her with instead, or null to leave it
+     quit?(d)         INTERACT mid-drill: the drill asks whether to stop
 --------------------------------------------------------------------------- */
 
 export class Drill {
@@ -239,6 +244,8 @@ export class Drill {
 
   update(dt) {
     const players = [this.p];
+    // Every frame, whatever the state: a drill that places her or draws to a clock (Kata Trace).
+    this.spec.always?.(this, dt);
     if (this.state === 'ready') {
       this.readyT -= dt;
       if (this.readyT <= 0) {

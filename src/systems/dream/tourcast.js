@@ -8,7 +8,8 @@ import { holoSolid, holoMat, HoloKitten } from './targets.js';
 import { HoloCritter, PEN_AT, PEN_R, RING_AT } from './school.js';
 import { Fruit, lob, G as STORM_G, FRUIT } from './storm.js';
 import { FighterCard, RANKS } from './rank.js';
-import { buildGhost, runGhost, makeKata, kataTimeline } from './kata.js';
+import { KataStage, routeAt } from './kata.js';
+import * as BM from './beatmap.js';
 
 /* ---------------------------------------------------------------------------
    THE TOUR'S CAST — what the islands are DOING while Lionheart names them.
@@ -52,7 +53,8 @@ export const STAGE = {
   /** The card floats over the school, between the pen and the ring. */
   school: { card: [-4, 0, 7.4], cardW: 6, pairs: 3.2 },
   storm: { centre: [0, 0] },
-  /** Which of the four Kata floors he dances on — one on the bridge side. */
+  /** The Kata floor the lens used to stand on. It frames all four now
+   *  (storyscene.js `KATA_FRAME`); the floor is still the one it orbits past. */
   kata: { floor: 1 },
 };
 
@@ -125,29 +127,60 @@ export const STORM_FRUIT = [
 /** How far through its flight she cuts one: low, the way the drill wants. */
 export const STORM_CUT_K = 0.74;
 
-/** THE KATA, in seconds of `lion_tour_isles`: the lens cuts to his floor on
+/** THE KATA, in seconds of `lion_tour_isles`: the lens cuts to the hall on
  *  "kata" (4.4), walks round it from "the maths of the circle" (5.7), and
- *  fades on "Earn stars" (8.27 -> 9.17). He keeps the floor's own tempo. */
-export const KATA_BPM = 100;
-export const KATA_T0 = 3.4;   // beat 0; his first move (beat 2) lands as the lens arrives
+ *  fades on "Earn stars" (8.27 -> 9.17).
+ *
+ *  Richard: "the tour's DDR section should show all 4 platforms in the
+ *  default player colours, with 4 simulated kittens playing a routine". So
+ *  it is a REAL chart (`TOUR_CHART`, in the beat-map format and judged by
+ *  the same solver), on the four real floors, drawn by the real
+ *  `KataStage`, and danced by four holo-kittens along `BM.route` —
+ *  the path a perfect kitten takes, every step landing on its beat. The song
+ *  is `vr`, the piece the simulator's lines are already playing, so his
+ *  blows land on the tempo the tour is heard at. */
+export const KATA_SONG = 'vr';
+export const KATA_T0 = 3.4;
+/** When the first warning starts: a moment after the lens arrives on "kata". */
+export const KATA_FIRST_TELL = 4.7;
 export const KATA_UNTIL = 9.3;
 
 /**
- * THE KATA HE DOES: the first weekly-shaped routine (`makeKata`, so every
- * rule a real one keeps) whose moves inside the lens's time have a CUT, a
- * JUMP and a GUARD in them — a demo that only stepped would be a walk.
- * Pure and fixed: the same tour on every machine.
+ * THE ROUTINE THE TOUR DANCES, written by hand in the beat-map format.
+ *
+ * The first cut searched the built-in `vr` charts for a stretch the lens
+ * could show, and none of them has one: in the ~10 beats the lens is on the
+ * hall, no window at any half-beat start on any level holds a cut, a cross
+ * AND a sweep, Lionheart changing spot, and the kittens crossing three
+ * marks. What it found instead was him standing on N throughout, then
+ * kittens who could stand through the whole stretch without moving — a
+ * demo of nobody dancing. So it is written to show the game in ten beats:
+ *   cut from N        out to NE                     (beat 6)
+ *   cross from N      back through the middle, to N (8, 9)
+ *   sweep             jump                          (10)
+ *   he moves to NE                                  (10.5)
+ *   cross from NE     back through the middle, out  (12, 13)
+ * world-check reads it back through `parseChart` with no warnings and
+ * through `route`, like any chart a kitten writes.
  */
-export function tourKata() {
-  const spb = 60 / KATA_BPM;
-  const last = (KATA_UNTIL - 0.3 - KATA_T0) / spb;
-  for (let k = 0; k < 200; k++) {
-    const kata = makeKata('weekly', `tour-${k}`);
-    const T = kataTimeline(kata);
-    const seen = kata.steps.filter((s) => T.demo(s) <= last).map((s) => s.move);
-    if (['cut', 'jump', 'guard', 'step'].every((m) => seen.includes(m))) return kata;
-  }
-  return makeKata('weekly', 'tour-0');
+export const TOUR_CHART = {
+  format: BM.FORMAT, title: "Lionheart's tour", author: 'Lionheart', song: KATA_SONG, difficulty: 'hard', beats: 16,
+  events: [
+    { beat: 6, attack: 'cut' },
+    { beat: 9, attack: 'cross' },
+    { beat: 10, attack: 'sweep', tell: 1 },
+    { beat: 10.5, lion: 'NE' },
+    { beat: 13, attack: 'cross' },
+  ],
+};
+
+/** { chart, route, spb, shift } — `shift` is the song seconds added to the
+ *  line's clock so the first warning starts at KATA_FIRST_TELL. */
+export function tourChart() {
+  const S = BM.songById(KATA_SONG);
+  const chart = TOUR_CHART;
+  const a0 = BM.resolveChart(chart)[0];
+  return { chart, route: BM.route(chart), spb: S.spb, shift: (a0.beat - a0.tell) * S.spb - KATA_FIRST_TELL };
 }
 
 /** LIONHEART'S CARD: "can be Lionhearts data, so can be very high values".
@@ -329,19 +362,19 @@ export class TourCast {
       return f;
     });
 
-    /* --- the Kata: his ghost, on the floor's own marks --- */
-    this.kata = tourKata();
-    const fl = D.kata?.floors?.[STAGE.kata.floor];
-    const [fa, fb] = kataFloorAt(STAGE.kata.floor);
-    this.floor = fl ?? { ...isleAt(I.kata, fa, fb), k: STAGE.kata.floor };
-    const markAt = (i) => (D.kata?.markAt ? D.kata.markAt(this.floor, i) : { x: this.floor.x, y: this.floor.y, z: this.floor.z });
-    this.ghostD = {
-      ghost: buildGhost(D, this.group),
-      kata: this.kata,
-      kataFloor: this.floor,
-      marks: this.kata.steps.map((s) => markAt(s.mark)),
-    };
-    this.hall = { markAt: (f, i) => markAt(i) };
+    /* --- the Kata: four floors, four dancers, a Lionheart on each --- */
+    this.kata = tourChart();
+    this.kataFloors = [0, 1, 2, 3].map((k) => D.kata?.floors?.[k] ?? { ...isleAt(I.kata, ...kataFloorAt(k)), k });
+    this.kataStages = this.kataFloors.map((fl) => {
+      const s = new KataStage(D, this.group, fl);
+      s.set(this.kata.chart, this.kata.spb);
+      return s;
+    });
+    this.dancers = this.kataFloors.map((fl, i) => {
+      const colour = PLAYER_STYLE[i]?.colour ?? HOLO.cyan;
+      return kitten(i, fl.x, fl.y, fl.z, { tint: colour, colour });
+    });
+    this.kittens.push(...this.dancers);
     this.lastT = -1;
     return this.group;
   }
@@ -387,7 +420,10 @@ export class TourCast {
     for (const c of this.critters) c.group.visible = hub;
     for (const f of this.fighters) f.group.visible = hub;
     this.stormer.group.visible = !hub;
-    this.ghostD.ghost.group.visible = !hub;
+    for (const s of this.kataStages) s.group.visible = !hub;
+    for (const k of this.dancers) k.group.visible = !hub;
+    // The four floors lit in the four kittens' own colours, owned or not (`KataHall.showAll`).
+    if (this.dream.kata) this.dream.kata.showAll = !hub;
     // His card is in both: over the school, and the last thing the isles line shows.
     this.card.visible = true;
     this.update(0, null);
@@ -397,6 +433,7 @@ export class TourCast {
     if (!this.group) return;
     this.group.visible = false;
     this.line = null;
+    if (this.dream.kata) this.dream.kata.showAll = false;
   }
 
   /** `t` is the line's clock — the one the lens is cued on. */
@@ -409,13 +446,12 @@ export class TourCast {
       this._school(t, crossed, dt);
     } else {
       this._storm(t, crossed, dt);
-      this._kata(t);
+      this._kata(t, camera);
     }
     this._cardTick(t, camera);
     for (const k of this.kittens) if (k.group.visible) k.update(dt);
     if (camera) {
       for (const k of this.kittens) if (k.group.visible) k.faceCamera(camera);
-      this.ghostD.ghost.sprite?.faceCamera(camera);
     }
     this.lastT = t;
   }
@@ -582,12 +618,27 @@ export class TourCast {
     this._swing(st, t, cuts, Math.atan2(fx, fz));
   }
 
-  /** His routine on the floor, on the floor's own beat. */
-  _kata(t) {
-    const spb = 60 / KATA_BPM;
-    const T = kataTimeline(this.kata);
-    const beat = Math.min(T.D - 0.01, Math.max(0, (Math.min(t, KATA_UNTIL) - KATA_T0) / spb));
-    runGhost(this.ghostD, beat, T, spb, this.hall);
+  /** The song's time on the line's clock — the chart's own, from KATA_T0 to KATA_UNTIL. */
+  kataTime(t) {
+    return Math.max(KATA_T0, Math.min(t, KATA_UNTIL)) + this.kata.shift;
+  }
+
+  /** Four floors, the same routine on each: his blows, and a kitten dodging them on the beat. */
+  _kata(t, camera) {
+    const st = this.kataTime(t);
+    const H = this.dream.kata;
+    if (H) for (const fl of H.floors) H._paint(fl);
+    this.kataStages.forEach((s, i) => {
+      s.update(st, true);
+      if (camera) s.faceCamera(camera);
+      const fl = this.kataFloors[i];
+      const r = routeAt(this.kata.route, st, this.kata.spb);
+      const k = this.dancers[i];
+      k.group.position.set(fl.x + r.x, fl.y + r.y, fl.z + r.z);
+      // Facing him, across the top of her floor.
+      const L = s.lionAt(st);
+      if (k.sprite) k.sprite.facing = Math.atan2(L.x - r.x, L.z - r.z);
+    });
   }
 
   /** Over the school, turned to the lens about Y and swaying on it, so the

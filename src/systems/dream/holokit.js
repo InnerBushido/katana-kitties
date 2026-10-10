@@ -213,12 +213,12 @@ export function holoWear(dream, p, j) {
  * it pushed, and that push is not a choice.
  */
 export class HoloChoice {
-  constructor(dream, p, { title, rows }) {
+  constructor(dream, p, { title, rows, start = 0 }) {
     this.dream = dream;
     this.p = p;
     this.rows = rows;
     this.title = title;
-    this.i = 0;
+    this.i = Math.max(0, Math.min(rows.length - 1, start));
     this.armed = false;
     this.panel = new HoloPanel({ w: 7.4, h: 3.4, px: 96, edge: p.style?.colour ?? HOLO.cyan });
     this.panel.position.y = this._y();
@@ -226,16 +226,29 @@ export class HoloChoice {
     this._paint();
   }
 
-  /** Her stick: one step per push, after it has been let go once. */
+  /** Her stick: one step per push, after it has been let go once. ▲▼ picks
+   *  a row; ◀▶ turns a row that has a `cycle` (the Kata Trace's song picker),
+   *  and does nothing on one that has not — a push it cannot answer is not a
+   *  choice, so it is not a sound either. */
   update(pad) {
-    const y = Math.abs(pad?.my ?? 0) > 0.55 ? Math.sign(pad.my) : 0;
-    if (!this.armed) { if (!y) this.armed = true; this._held = 0; return; }
+    const mx = pad?.mx ?? 0;
+    const my = pad?.my ?? 0;
+    const across = Math.abs(mx) > Math.abs(my);
+    const y = !across && Math.abs(my) > 0.55 ? Math.sign(my) : 0;
+    const x = across && Math.abs(mx) > 0.55 ? Math.sign(mx) : 0;
+    if (!this.armed) { if (!y && !x) this.armed = true; this._held = 0; this._heldX = 0; return; }
     if (y && y !== this._held) {
       this.i = (this.i + y + this.rows.length) % this.rows.length;
       this.dream.game.sfx?.('menu');
       this._paint();
     }
+    if (x && x !== this._heldX && this.rows[this.i]?.cycle) {
+      this.rows[this.i].cycle(x);
+      this.dream.game.sfx?.('menu');
+      this._paint();
+    }
     this._held = y;
+    this._heldX = x;
   }
 
   /** INTERACT: do the row under the cursor. */
@@ -249,11 +262,11 @@ export class HoloChoice {
     this.panel.set([
       { text: this.title, size: 1.5, color: this.p.style?.colour ?? HOLO.cyan, glow: true },
       ...this.rows.map((r, k) => ({
-        text: `${k === this.i ? '▶ ' : '   '}${r.text}`,
+        text: `${k === this.i ? '▶ ' : '   '}${typeof r.text === 'function' ? r.text() : r.text}`,
         size: 1.15,
         color: k === this.i ? HOLO.gold : (r.dim ? 0x7f9fa8 : 0xd8fdff),
       })),
-      { text: `stick ▲ ▼ to choose · [${key}] to pick`, size: 0.85, color: 0x9fefff },
+      { text: this.rows.some((r) => r.cycle) ? `stick ▲ ▼ to choose · ◀ ▶ to change · [${key}] to pick` : `stick ▲ ▼ to choose · [${key}] to pick`, size: 0.85, color: 0x9fefff },
     ], this.p.style?.colour ?? HOLO.cyan);
   }
 

@@ -190,7 +190,12 @@ export const TOUR_TAIL = { simIsles: { from: 11.35, to: 12.45 } };
  *  and from "the maths of the circle" round it, coming down as it goes so the
  *  islands behind rise into the frame. Aimed near the floor, not at his chest:
  *  at 2.6 up the marks he steps on were under the subtitles. */
-export const KATA_FRAME = { dist: 16, up: 0.5, lookY: 1.0, orbit: { at: 5.7, to: 105, over: 3.47, up: 0.22, lookY: 1.6 } };
+/* ALL FOUR FLOORS NOW. Richard: "the tour's DDR section should show all 4
+   platforms in the default player colours, with 4 simulated kittens playing
+   a routine". The lens looks at the hall's middle instead of one floor, and
+   stands back far enough for the four floors and a Lionheart across the top
+   of each; the orbit is the one he asked for before, about the new middle. */
+export const KATA_FRAME = { dist: 46, up: 0.6, lookY: 1.5, centre: true, orbit: { at: 5.7, to: 105, over: 3.47, up: 0.42, lookY: -1.5 } };
 /** The card's close-up, in the frame ABOVE the subtitles: they cover NDC
  *  -0.38 to -0.75 at 16:9, and centred the card's stat rows were behind them.
  *  Aimed `down` below its middle and far enough back that its 8.4 height
@@ -296,7 +301,7 @@ function stopFrame(stops, i, ctx, t) {
   const isle = ctx.isles?.[s.isle];
   if (!isle) return { eye: v3(hub.x, hub.y + MAP_FRAME.h, hub.z - MAP_FRAME.r), look: v3(hub.x, hub.y, hub.z) };
   if (s.frame === 'kata') {
-    const [a, b] = kataFloorAt(STAGE.kata.floor);
+    const [a, b] = KATA_FRAME.centre ? [0, 0] : kataFloorAt(STAGE.kata.floor);
     return isleFrame(isle, { ...KATA_FRAME, look: [a, b, KATA_FRAME.lookY] }, t, s.at);
   }
   return isleFrame(isle, s.frame ?? {}, t, s.at);

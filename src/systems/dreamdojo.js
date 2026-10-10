@@ -1225,10 +1225,14 @@ export class DreamDojo {
          pedestal she is answering about. */
       const c = this.choices[i];
       if (c) { c.update(pad); return dead; }
-      /* A DRILL MAY WATCH HER BUTTONS — Kata Trace has to know the moment
-         she pressed jump, not the moment her feet left the floor. Watching
-         only: `pressed` is a pure edge test, and this never consumes one. */
+      /* A DRILL MAY DRIVE HER. Kata Trace locks her to nine marks: her stick
+         steps her between them and the pad it hands back has the stick let
+         go, so the stick that steps her does not also walk her (dream/kata.js). */
       const d = this.drills[i];
+      const steered = (d?.state === 'live' || d?.state === 'ready') ? d.spec.steer?.(d, pad) : null;
+      if (steered) return steered;
+      /* A DRILL MAY WATCH HER BUTTONS. Watching only: `pressed` is a pure
+         edge test, and this never consumes one. */
       if (d?.state === 'live') d.spec.pad?.(d, pad);
       // In the Sine Gauntlet's stands, ATTACK cheers (watching only).
       this.sine?.cheerPad?.(this.game.players?.[i], pad);
@@ -1295,6 +1299,9 @@ export class DreamDojo {
       // The card says which button turns it; a callout under it is the same
       // words a second time, drawn on top of its last line.
       if (this.rundowns[p.index] || this.choices[p.index]) return null;
+      // A drill that drives her (Kata Trace) says its own way out on her card.
+      const dq = this.drills[p.index];
+      if (dq?.spec.quit && (dq.state === 'live' || dq.state === 'ready')) return null;
       if (this.canTalk(p)) {
         return p.powerOrbs?.length ? `[${key}]  RUNDOWN OF YOUR KOTODAMA` : `[${key}]  TALK TO LIONHEART`;
       }
@@ -1337,6 +1344,11 @@ export class DreamDojo {
       const ch = this.choices[p.index];
       if (ch) { ch.pick(); return true; }
       if (this.onPort(p)) { this._begin(p, 'derez'); return true; }
+      /* MID-KATA, INTERACT IS "STOP?" — and only that: on the south-west mark
+         she is close enough to the song kiosk that the press would otherwise
+         open the picker over her own run. */
+      const dq = this.drills[p.index];
+      if (dq?.spec.quit && (dq.state === 'live' || dq.state === 'ready')) { dq.spec.quit(dq); return true; }
       const rd = this.rundowns[p.index];
       if (rd) {
         if (!rd.next()) this._closeRundown(p);

@@ -490,6 +490,7 @@ export class Audio {
     this._nextNote = 0;
     this._step = 0;
     this._mode = 'play';
+    this.musicRate = 1;
   }
 
   /**
@@ -1540,19 +1541,52 @@ export class Audio {
   /* ------------------------------- music --------------------------------- */
 
   /** @param {'play'|'intro'} mode which piece to generate — see MUSIC. */
-  startMusic(mode = 'play') {
+  startMusic(mode = 'play', rate = 1) {
     if (!this.ready) return;
     // Switching pieces tears the old schedule down first, or the two run
     // together and the intro plays underneath the game theme.
     if (this._musicTimer && this._mode !== mode) this.stopMusic();
     this._mode = mode;
     if (this._musicTimer) return;
+    // A piece starts at its own tempo unless a Kata Trace run asked otherwise
+    // (`restartMusic`) — a 1.5x run's speed must not follow her off the floor.
+    this.musicRate = rate;
     this.musicBus.gain.setTargetAtTime(this.musicVolume * this.musicLevel, this.ctx.currentTime, 0.8);
     this._nextNote = this.ctx.currentTime + 0.1;
     this._step = 0;
     // Schedule ahead on a timer rather than per-frame: audio timing must not
     // depend on the render loop, or it stutters whenever the GPU does.
     this._musicTimer = setInterval(() => this._schedule(), 120);
+  }
+
+  /**
+   * KATA TRACE'S SPEED, AND ITS BEAT. "Choose a speed modifier (for song and
+   * attacks)": `musicRate` divides every piece's step, and the chart is timed
+   * off the same number, so the song and Lionheart speed up together.
+   * `restartMusic` starts a piece from its first step NOW, so the run's beat
+   * 0 is a known moment; `musicGrid` and `shiftMusic` let the run keep the
+   * two in phase after anything that stalls one clock and not the other — the
+   * pause menu stops the game and lets the song play on.
+   */
+  restartMusic(mode, rate = 1) {
+    if (!this.ready) return null;
+    this.stopMusic();
+    this.startMusic(mode, rate);
+    return this._nextNote;
+  }
+
+  /** The next step's time on the audio clock, its index, and the step length. */
+  musicGrid() {
+    if (!this._musicTimer) return null;
+    const beat = (MUSIC[this._mode] ?? MUSIC.play).beat / (this.musicRate || 1);
+    return { next: this._nextNote, step: this._step, beat, now: this.ctx.currentTime };
+  }
+
+  /** Push every step not yet scheduled `secs` later. Only ever later: an
+   *  earlier step would be in the past, and the scheduler plays the past all
+   *  at once. */
+  shiftMusic(secs) {
+    if (this._musicTimer && secs > 0) this._nextNote += secs;
   }
 
   /** Which piece is playing, or null if none is. Read by Game._updateMusic,
@@ -1575,7 +1609,7 @@ export class Audio {
   }
 
   _schedule() {
-    const beat = (MUSIC[this._mode] ?? MUSIC.play).beat;
+    const beat = (MUSIC[this._mode] ?? MUSIC.play).beat / (this.musicRate || 1);
     while (this._nextNote < this.ctx.currentTime + 0.6) {
       this._pluck(this._nextNote, this._step);
       this._nextNote += beat;

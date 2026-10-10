@@ -60,7 +60,7 @@ export const ISLE_ABOUT = {
   gallery: { short: 'GALLERY', about: 'Every Kotodama orb on a pedestal. Try its drill — win it, and that orb is yours in here.' },
   hall: { short: 'TRIAL HALL', about: 'All six clans. Swear an oath, then pass the trial that needs its power.' },
   range: { short: 'RANGE', about: 'Three sword drills: ONE SWING, COMBO 60 and CLEAN CUT.' },
-  kata: { short: 'KATA', about: 'Lionheart dances a kata on nine marks. Copy it back on the beat — a new one every day.' },
+  kata: { short: 'KATA', about: 'Pick any song. Lionheart attacks on the beat — step off his blows and jump his sweeps. Write your own routines too.' },
   storm: { short: 'STORM', about: 'Cut the holo-fruit out of the air before it lands. Leave the purple viruses alone.' },
   sine: { short: 'SINE', about: 'An obstacle course of laser bars, one kitten at a time. Duck, jump and dodge — the fastest time wins.' },
   sentries: { short: 'SENTRIES', about: 'Sentries that shoot back, always with a warning. Dodge or raise your Ward, then hit the core.' },
