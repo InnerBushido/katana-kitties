@@ -1,4 +1,5 @@
 import * as BM from './beatmap.js';
+import { typingIn } from '../../core/input.js';
 import { customCharts, saveChart, deleteChart } from './chartstore.js';
 
 /* ---------------------------------------------------------------------------
@@ -198,9 +199,20 @@ export class KataEditor {
     this.pausedHere = false;
   }
 
-  /** ESCAPE IS CLOSE — and so it asks. A question already up answers itself (`Confirm`). */
+  /** ESCAPE IS CLOSE — and so it asks. A question already up answers itself
+   *  (`Confirm`). In a text box it only leaves the box: "If user presses
+   *  'Esc' on keyboard, then it can take them out of the text box input and
+   *  work normally" — closing the page from inside the JSON would be the
+   *  opposite of what she pressed it for. */
   _key(e) {
     if (!this.active || e.code !== 'Escape' || this.game.confirm?.active) return;
+    if (typingIn(e.target)) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      e.target.blur();
+      this._say('Out of the box — the stick and keys drive the page again');
+      return;
+    }
     e.preventDefault();
     e.stopImmediatePropagation();
     this.close();

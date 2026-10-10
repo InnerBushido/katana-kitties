@@ -1006,6 +1006,20 @@ export class InputManager {
     this.autoAxesResult = null;
 
     window.addEventListener('keydown', (e) => {
+      /* A KEY TYPED INTO A BOX IS THE BOX'S. Richard, in the beat-map editor:
+         "when typing in the text boxes, the wasd and okl; text shouldn't be
+         overridden by input so that the user can type on keyboard ... When
+         typing in the JSON file, it should also allow for typing all
+         characters in there, including ." Every one of those is somebody's
+         movement or action key, so the preventDefault below ate the letter
+         and `keys` walked a menu cursor with it. A press with a text field
+         focused is neither: the browser types it and the game never hears
+         it. ESCAPE is the way back out — it leaves the box (and nothing
+         else), so the next Escape is the game's again. */
+      if (typingIn(e.target)) {
+        if (e.code === 'Escape') { e.target.blur(); e.preventDefault(); }
+        return;
+      }
       /* IF THE GAME HAS BOUND IT, THE BROWSER MUST NOT ALSO ACT ON IT.
          This used to name Space and the arrows — the two that scroll the page
          out from under the game — and that was the whole list because it was
@@ -2578,4 +2592,15 @@ function dead(v, threshold = 0.22) {
   if (Math.abs(v) < threshold) return 0;
   // Rescale so motion starts smoothly at the edge of the deadzone.
   return Math.sign(v) * ((Math.abs(v) - threshold) / (1 - threshold));
+}
+
+/** Is this element a place a person types — a text field, a textarea, or
+ *  anything contenteditable? A range slider, a checkbox or a button is not:
+ *  the game's keys still drive those. */
+export function typingIn(el) {
+  if (!el || typeof el !== 'object') return false;
+  if (el.isContentEditable) return true;
+  if (el.tagName === 'TEXTAREA') return true;
+  if (el.tagName !== 'INPUT') return false;
+  return !['range', 'checkbox', 'radio', 'button', 'submit', 'reset', 'file', 'color'].includes(el.type);
 }

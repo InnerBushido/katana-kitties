@@ -170,8 +170,10 @@ export class MenuNav {
        the stick lands on a topic header and `_activate` clicks it, which is
        exactly how a <details> toggles open. Nothing else in the game uses a
        <summary>, so this widens the net for one panel only. */
+    /* `[data-nav-group]` is ONE stop for everything inside it — see `_dive`.
+       What is inside it is not a stop at this level at all. */
     const sel = 'button.menu-btn, summary.help-topic, .panel select,'
-      + ' .panel input[type="range"], .map-cell, button.map-reset';
+      + ' .panel input[type="range"], .map-cell, button.map-reset, [data-nav-group]';
     /* A `<summary>` IS THE ONE THING A SHUT `<details>` STILL SHOWS, so the walk
        starts ABOVE its own card — otherwise every topic header would filter
        itself out and the accordion would have no cursor at all. Everything else
@@ -182,7 +184,81 @@ export class MenuNav {
       return !!from?.closest?.('details:not([open])');
     };
     return [...panel.querySelectorAll(sel)]
-      .filter((el) => el.offsetParent !== null && !folded(el));
+      .filter((el) => el.offsetParent !== null && !folded(el)
+        && !el.parentElement?.closest?.('[data-nav-group]'));
+  }
+
+  /**
+   * A LIST INSIDE THE LIST: ONE STOP, THEN ITS LINES, THEN A LINE'S BUTTONS.
+   *
+   * Richard, on the beat-map editor: "moving up/down between the UI will
+   * select the entire beat maps section as a whole, if the user clicks into
+   * it, then it will select the line beats within the song, starting at line
+   * 0 (or where the cursor last was) and pressing down will go to line 1 or
+   * the next line, if user clicks into a line, then they can select the
+   * various buttons within the line." Its grid is 9 buttons a beat over a
+   * hundred-odd beats, and as a flat list every one of them was a stop: down
+   * from the song box walked into nine hundred buttons before it reached
+   * SAVE.
+   *
+   * So an element marked `data-nav-group` is ONE stop (`items`). JUMP on it
+   * goes IN, to its `[data-nav-row]` lines — up/down a line at a time, from
+   * where she last was — and JUMP on a line goes in again, to its buttons:
+   * left/right along the line, up/down to the same button on the next one.
+   * JUMP there presses it. BACK (interact) comes out one level at a time,
+   * and only at the top does it mean what it always meant.
+   *
+   * KEPT AS NUMBERS, never elements. The editor repaints its grid on every
+   * press, so an element held across a click is a button that is no longer
+   * on the page. `navfocus` is dispatched on the line she lands on, so the
+   * page can show it (the editor's floor follows her row).
+   */
+  _dive(panel) {
+    const st = this.dives?.get(panel.id);
+    if (!st || !st.depth) return null;
+    const group = panel.querySelector('[data-nav-group]');
+    if (!group || group.offsetParent === null) { this.dives.delete(panel.id); return null; }
+    return { st, group };
+  }
+
+  /** Forget where she was inside a panel's group (the page that owns it closed). */
+  undive(id) { this.dives?.delete(id); }
+
+  _updateDive(panel, { st, group }, dt) {
+    const rows = [...group.querySelectorAll('[data-nav-row]')].filter((el) => el.offsetParent !== null);
+    if (!rows.length) { st.depth = 0; return true; }
+    const nav = this._read(panel);
+    const dy = this._step(nav.y, 'y', dt);
+    const dx = this._step(nav.x, 'x', dt);
+    const clamp = (v, n) => Math.max(0, Math.min(n - 1, v));
+    st.row = clamp(st.row ?? 0, rows.length);
+    if (dy) { st.row = clamp(st.row + dy, rows.length); this.game.audio?.play('menu'); }
+    const row = rows[st.row];
+    const cells = [...row.querySelectorAll('button.menu-btn')].filter((el) => el.offsetParent !== null);
+    if (st.depth === 2) {
+      if (!cells.length) st.depth = 1;
+      st.cell = clamp(st.cell ?? 0, Math.max(1, cells.length));
+      if (dx && cells.length) { st.cell = clamp(st.cell + dx, cells.length); this.game.audio?.play('menu'); }
+    }
+    if (nav.confirm || nav.back) nav.spend();
+    if (nav.confirm) {
+      if (st.depth === 1) { st.depth = 2; this.game.audio?.play('menu'); } else if (cells[st.cell]) cells[st.cell].click();
+    } else if (nav.back) {
+      st.depth -= 1;
+      this.game.audio?.play('menu');
+    }
+    // The click may have repainted the grid: find the stop again by number.
+    const rows2 = [...group.querySelectorAll('[data-nav-row]')].filter((el) => el.offsetParent !== null);
+    const row2 = rows2[clamp(st.row, rows2.length)];
+    const cells2 = row2 ? [...row2.querySelectorAll('button.menu-btn')].filter((el) => el.offsetParent !== null) : [];
+    const at = st.depth === 2 ? cells2[clamp(st.cell, cells2.length)] : st.depth === 1 ? row2 : group;
+    if (row2 && row2 !== st.lastRow) {
+      st.lastRow = row2;
+      row2.dispatchEvent?.(new CustomEvent('navfocus', { bubbles: true, detail: { row: st.row } }));
+    }
+    this._paint([at], 0, true);
+    if (st.depth > 0) row2?.classList.add('nav-in');
+    return true;
   }
 
   /**
@@ -313,6 +389,12 @@ export class MenuNav {
       this.lastPanel = null;
       return false;
     }
+    // Inside a group (see `_dive`): its lines and its buttons, not the page's.
+    const dv = this._dive(panel);
+    if (dv) {
+      this.lastPanel = panel.id;
+      return this._updateDive(panel, dv, dt);
+    }
 
     const items = this.items(panel);
     /* Nothing to land on means this is NOT holding the input, and saying so is
@@ -435,7 +517,14 @@ export class MenuNav {
        before this function gets control back. Paying first means there is no
        ordering to get wrong. */
     if (nav.confirm || nav.back) nav.spend();
-    if (nav.confirm) this._activate(items[i]);
+    // JUMP on a group goes IN to its lines (`_dive`), where she last was.
+    if (nav.confirm && items[i]?.dataset?.navGroup != null) {
+      this.dives ??= new Map();
+      const st = this.dives.get(panel.id) ?? { row: Number(items[i].dataset.navAt) || 0, cell: 0 };
+      st.depth = 1;
+      this.dives.set(panel.id, st);
+      this.game.audio?.play('menu');
+    } else if (nav.confirm) this._activate(items[i]);
     /* A TOPIC HEADER SHE JUST OPENED OR SHUT KEEPS THE RING, from THIS frame.
        The click opens or shuts the <details> synchronously and the page
        reflows with it, but `toggle` (where `Game._helpToggled` settles the page
@@ -750,8 +839,8 @@ export class MenuNav {
   }
 
   _clear() {
-    for (const el of document.querySelectorAll('.nav-focus')) {
-      el.classList.remove('nav-focus');
+    for (const el of document.querySelectorAll('.nav-focus, .nav-in')) {
+      el.classList.remove('nav-focus', 'nav-in');
     }
     this._lastPainted = null;
   }

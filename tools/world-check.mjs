@@ -37000,6 +37000,40 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       q.state === 'live' && !!c && /no, keep/.test(c.rows[c.i].text) && c.rows.some((r) => /yes, stop/.test(r.text)));
     c.pick();
     ok('...and no means she is still dancing', q.state === 'live' && !D.choices[0]);
+    /* KEYBOARD DIAGONALS. "very hard to hit both cardinal direction keys at
+       the same time ... a slight 0.05s delay ... count the scoring or dodge
+       time based on when the player presses the first directional button".
+       W, and D three frames later: she lands on NE, stamped with W's time. */
+    {
+      const at0 = q.songT;
+      const key = (mx, my) => { q.spec.steer(q, { mx, my, pressed: () => false, down: () => false }); q.update(1 / 120); };
+      key(0, 0);
+      const pressT = q.songT;
+      key(0, -1);
+      key(0, -1);
+      const held = q.at === 'C';
+      key(0.707, -0.707);
+      for (let f = 0; f < 12; f++) key(0.707, -0.707);
+      const diag = q.at === 'NE' && Math.abs(q.moveT - pressT) < 0.01;
+      for (let f = 0; f < 6; f++) key(0, 0);
+      key(-0.707, 0.707);
+      const back = q.at === 'C';
+      for (let f = 0; f < 6; f++) key(0, 0);
+      // One key alone still steps, after the wait.
+      key(1, 0);
+      const t1 = q.songT;
+      const single0 = q.at === 'C';
+      for (let f = 0; f < 12; f++) key(0, 0);
+      const single = single0 && q.at === 'E' && Math.abs(q.moveT - t1) < 0.01;
+      ok('型 on keys, W then D a few frames later steps her to NE, timed from the W — and one key alone still steps, after DIAG_WAIT',
+        held && diag && back && single && KT.DIAG_WAIT >= 0.04 && KT.DIAG_WAIT <= 0.08,
+        `held ${held} diag ${q.at} ${diag} back ${back} single ${single} (${(q.songT - at0).toFixed(2)}s)`);
+      // A blow judged inside the wait takes the step first.
+      const dd = { pend: { t: 1.0, dir: 'SW' }, at: 'C', moveT: null };
+      KT.settle(dd, 1.05);
+      ok('...and a blow judged inside the wait takes the held step first, at its press time',
+        dd.at === 'SW' && dd.moveT === 1.0 && dd.pend === null);
+    }
     q.dispose(); D.drills[0] = null;
 
     // The picker: ◀▶ turns a row, and it opens on DANCE.

@@ -59,6 +59,23 @@ export const LION_D = FLOOR_R + 1.9;
 export const LATE = 0.07;
 /** A jump pressed this long before a sweep lands still has her in the air. */
 export const AIR = 0.5;
+/**
+ * A STEP OUT OF THE MIDDLE WAITS THIS LONG FOR ITS SECOND KEY. Richard: "it
+ * is hard to play on keyboard (non-joystick) because it is very hard to hit
+ * both cardinal direction keys at the same time to go in the diagonals.
+ * Maybe there needs to be a slight 0.05s delay ... to solidify the direction
+ * ... at least when moving away from the center circle ... We should count
+ * the scoring or dodge time based on when the player presses the first
+ * directional button". On keys, W then D a few frames apart was a step to N
+ * and then nothing (from N, only a push back toward the middle moves her).
+ * So a push out of C is HELD for DIAG_WAIT, a diagonal seen in that time is
+ * the one she meant, and the step is stamped with the FIRST press's time —
+ * the wait costs her nothing in the grade. A blow judged inside the wait
+ * takes the step first (`settle`), so it cannot cost her a dodge either.
+ * Back toward the middle is never held: from a ring mark there is only one
+ * way to go, and the stick's 45° either side already covers a sloppy press.
+ */
+export const DIAG_WAIT = 0.06;
 /** PERFECT and GREAT, seconds off the beat. */
 export const GRADE_T = [0.10, 0.18];
 /** Accuracy (0-100) for one, two, three stars. */
@@ -710,6 +727,7 @@ export function KATA(hall, fl, chart, { speed = 1, id, custom = false } = {}) {
       d.custom = custom;
       d.at = 'C';
       d.moveT = null;
+      d.pend = null;
       d.jumpT = null;
       d.songT = 0;
       d.armed = false;
@@ -736,6 +754,8 @@ export function KATA(hall, fl, chart, { speed = 1, id, custom = false } = {}) {
       d.panel.removeFromParent();
       d.panel.position.set(fl.x + po.x, fl.y + 1.9, fl.z + po.z);
       d.panel.scale.setScalar(1.45);
+      // Square on to her lens, not hinged — see HoloPanel.faceCamera.
+      d.panel.fullFace = true;
       dream.sim.root.add(d.panel);
       fl.plate.visible = false;
       dream.hint(d.p, 'Lionheart turns the floor red where he will strike — step off it ON the beat. Back through the middle to change side!');
@@ -772,9 +792,19 @@ export function KATA(hall, fl, chart, { speed = 1, id, custom = false } = {}) {
       else if (mag > 0.6 && d.armed) {
         d.armed = false;
         if (d.state === 'live') {
-          const to = BM.stepFrom(d.at, BM.stickDir(mx, my));
-          if (to) { d.at = to; d.moveT = d.songT; }
+          settle(d, Infinity);
+          const dir = BM.stickDir(mx, my);
+          if (d.at === 'C') d.pend = { t: d.songT, dir };
+          else {
+            const to = BM.stepFrom(d.at, dir);
+            if (to) { d.at = to; d.moveT = d.songT; }
+          }
         }
+      }
+      // While a step out is held: the latest push, and a diagonal once seen holds.
+      if (d.pend && mag > 0.6) {
+        const dir = BM.stickDir(mx, my);
+        if (dir.length === 2 || d.pend.dir.length === 1) d.pend.dir = dir;
       }
       if (d.state === 'live' && pad.pressed?.('jump')) d.jumpT = d.songT;
       // Read through `d.pad`, so the still pad is always this frame's.
@@ -806,6 +836,7 @@ export function KATA(hall, fl, chart, { speed = 1, id, custom = false } = {}) {
     },
     tick(d, dt) {
       d.songT += dt;
+      settle(d, d.songT - DIAG_WAIT);
       if (d.ownsMusic) keepTime(d, dream, S, spb, dt);
       const beat = Math.floor(d.songT / spb);
       if (beat > d.lastBeat) {
@@ -815,6 +846,7 @@ export function KATA(hall, fl, chart, { speed = 1, id, custom = false } = {}) {
       }
       while (d.next < d.attacks.length && d.songT >= d.attacks[d.next].hitT + LATE) {
         const a = d.attacks[d.next++];
+        settle(d, a.hitT + LATE);
         judge(d, a, judgeBlow(a, d.at, d.moveT, d.jumpT, spb), freeBlow(a, d.moveT, spb), hall, fl);
         if (d.state !== 'live') return;
       }
@@ -908,6 +940,16 @@ function keepTime(d, dream, S, spb, dt) {
   const phase = (((onBeat - g0) % spb) + spb) % spb;
   const err = Math.min(phase, spb - phase);
   if (err > 0.05) audio.shiftMusic((spb - phase) % spb);
+}
+
+/** Take a held step out of the middle (DIAG_WAIT) if it was pressed by `by`
+ *  (song seconds) — stamped with the time of its FIRST press. */
+export function settle(d, by) {
+  const q = d.pend;
+  if (!q || q.t > by) return;
+  d.pend = null;
+  d.at = q.dir;
+  d.moveT = q.t;
 }
 
 function judge(d, a, g, free, hall, fl) {
