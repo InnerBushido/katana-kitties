@@ -578,6 +578,16 @@ quoted.
   - [voices.md](docs/notes/voices.md#lionheart-is-barrett-and-the-wording-is-half-the-casting)
     has the casting, the rule and the gating.
 
+- **A trial's loan, and angels in Shadow Lionheart's fight** (branch
+  `mixed/holo-equipped-shadow-angels`).
+  [dreamdojo.md](docs/notes/dreamdojo.md#the-trials-loan-and-angels-in-shadow-lionhearts-fight):
+  - **A trial's orbs** go back the frame it ends. They were a loan the profile
+    could not show or take off; the orb a won trial pays is in her holo kit.
+  - **Caught is out:** an angel over his arena while a sister still stands,
+    and the fight is lost when the last one is caught. Everybody lands at the
+    edge when it ends.
+  - **Open:** nobody has played it.
+
 - **Richard's first playthrough fixes** (branch `mixed/dojo-playthrough-fixes`).
   [dreamdojo.md](docs/notes/dreamdojo.md#richards-first-playthrough-fixes)
   has each note quoted:
