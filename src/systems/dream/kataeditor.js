@@ -1,4 +1,5 @@
 import * as BM from './beatmap.js';
+import { typingIn } from '../../core/input.js';
 import { customCharts, saveChart, deleteChart } from './chartstore.js';
 
 /* ---------------------------------------------------------------------------
@@ -69,8 +70,8 @@ export class KataEditor {
           <label>by <input id="ke-author" maxlength="40" spellcheck="false"></label>
         </div>
         <div class="ke-body">
-          <div class="ke-grid-wrap" id="ke-grid-wrap">
-            <div class="ke-grid-head"><span>beat</span>${BM.LION_SPOTS.map((s) => `<span class="ke-l">${s}</span>`).join('')}${BM.ATTACKS.map((a) => `<span class="ke-a">${a.toUpperCase()}</span>`).join('')}</div>
+          <div class="ke-grid-wrap" id="ke-grid-wrap" data-nav-group data-nav-at="0">
+            <div class="ke-grid-head"><span>beat</span>${BM.LION_SPOTS.map((s) => `<span class="ke-l">${s}</span>`).join('')}<span class="ke-h" title="his move lands on the half-beat after this one">½</span>${BM.ATTACKS.map((a) => `<span class="ke-a">${a.toUpperCase()}</span>`).join('')}<span class="ke-s" title="an opening: she strikes HIM from the mark in front of him">⚔</span></div>
             <div class="ke-grid" id="ke-grid"></div>
           </div>
           <div class="ke-side">
@@ -112,6 +113,18 @@ export class KataEditor {
       const b = e.target.closest('button[data-b]');
       if (b) this._toggle(Number(b.dataset.b), b.dataset.k, b.dataset.v);
     });
+    /* The stick walking its lines (MenuNav's dive): the line she is on is the
+       row the floor shows. Only the marker moves — a repaint here would swap
+       every button out from under the cursor sixty times a second. */
+    $('ke-grid').addEventListener('navfocus', (e) => {
+      const b = Number(e.target?.dataset?.row);
+      if (!Number.isFinite(b) || b === this.row) return;
+      this.row = b;
+      $('ke-grid-wrap').dataset.navAt = String(b);
+      $('ke-grid').querySelector('.ke-r.cur')?.classList.remove('cur');
+      e.target.classList.add('cur');
+      this._paintFloor(b * this._spb());
+    });
     $('ke-title').addEventListener('input', () => { this.chart.title = $('ke-title').value; this._changed(false); });
     $('ke-author').addEventListener('input', () => { this.chart.author = $('ke-author').value; this._changed(false); });
     $('ke-beats').addEventListener('change', () => {
@@ -130,8 +143,25 @@ export class KataEditor {
         this._ask(`Shorten it to ${n} beats?`, `${cut} event${cut === 1 ? '' : 's'} after beat ${n} will be thrown away.`, `yes, cut ${cut}`, 'no, keep the length', apply);
       } else apply();
     });
+    /* A NEW SONG OR LEVEL IS A NEW MAP. Richard: "When changing the song or
+       level, it should replace all the notes just like 'Start from
+       Lionheart's', and if the user has made any changes to the beat map
+       before switching to a different song, it should do a pop up confirming
+       the user wants to override. If user cancels, then they don't change the
+       song or level." Before this it relabelled the chart and kept every
+       note — a map timed to one song's beat, played to another's.
+       The box is put BACK while the question is up, so a "no" (or an Escape)
+       leaves song, level and notes exactly as they were. */
     for (const [id, key] of [['ke-song', 'song'], ['ke-diff', 'difficulty']]) {
-      $(id).addEventListener('change', () => { this.chart[key] = $(id).value; this._changed(); });
+      $(id).addEventListener('change', () => {
+        const want = { song: this.chart.song, difficulty: this.chart.difficulty, [key]: $(id).value };
+        const go = () => this._load(BM.generateChart(want.song, want.difficulty), null, false);
+        if (!this.dirty) { go(); return; }
+        $(id).value = this.chart[key];
+        const what = key === 'song' ? `the song to ${BM.songById(want.song)?.name ?? want.song}` : `the level to ${BM.DIFFS[want.difficulty]?.name ?? want.difficulty}`;
+        this._ask(`Change ${what}?`, `Your changes to this map are replaced with Lionheart's ${BM.DIFFS[want.difficulty]?.name ?? ''} chart for it.`,
+          'yes, replace my map', 'no, keep my map', go);
+      });
     }
     $('ke-speed').addEventListener('change', () => { this.speed = Number($('ke-speed').value) || 1; if (this.preview) this._play(); });
     $('ke-play').addEventListener('click', () => (this.preview ? this._stop() : this._play()));
@@ -156,6 +186,8 @@ export class KataEditor {
   /** Open for kitten `p`, on a song and level (and a saved chart, if one was picked). */
   open(p, { song = 'vr', difficulty = 'normal', custom = null, speed = 1 } = {}) {
     this._build();
+    // A fresh page starts outside the grid, at line 0 — not wherever the last visit left it.
+    this.game.menuNav?.undive?.('panel-kata-editor');
     this.p = p;
     this.speed = speed;
     const saved = custom ? customCharts().find((c) => c.id === custom) : null;
@@ -198,9 +230,20 @@ export class KataEditor {
     this.pausedHere = false;
   }
 
-  /** ESCAPE IS CLOSE — and so it asks. A question already up answers itself (`Confirm`). */
+  /** ESCAPE IS CLOSE — and so it asks. A question already up answers itself
+   *  (`Confirm`). In a text box it only leaves the box: "If user presses
+   *  'Esc' on keyboard, then it can take them out of the text box input and
+   *  work normally" — closing the page from inside the JSON would be the
+   *  opposite of what she pressed it for. */
   _key(e) {
     if (!this.active || e.code !== 'Escape' || this.game.confirm?.active) return;
+    if (typingIn(e.target)) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      e.target.blur();
+      this._say('Out of the box — the stick and keys drive the page again');
+      return;
+    }
     e.preventDefault();
     e.stopImmediatePropagation();
     this.close();
@@ -251,7 +294,25 @@ export class KataEditor {
   _toggle(beat, kind, value) {
     const ev = this.chart.events;
     this.row = beat;
-    if (kind === 'lion') {
+    if (kind === 'half') {
+      /* ½ — "Lionheart's half beat moves should be a toggle that the user can
+         select". His move on this line lands on the beat or half a beat
+         after it; the move itself is untouched. */
+      const m = ev.find((e) => e.lion && Math.floor(e.beat) === beat);
+      if (!m) { this._say(`Pick where he moves on beat ${beat} first — then ½ puts it on the half-beat`, true); return; }
+      m.beat = m.beat % 1 ? beat : beat + 0.5;
+    } else if (kind === 'slash') {
+      /* ⚔ — her openings on this line, cycled: none → on the beat → the beat
+         AND the half-beat (a two-hit combo) → the half-beat alone → none. */
+      const has = (b) => ev.some((e) => e.slash && e.beat === b);
+      const st = (has(beat) ? 1 : 0) + (has(beat + 0.5) ? 2 : 0);
+      const next = { 0: 1, 1: 3, 3: 2, 2: 0 }[st];
+      const keep = ev.filter((e) => !(e.slash && (e.beat === beat || e.beat === beat + 0.5)));
+      if (next & 1) keep.push({ beat, slash: true });
+      if (next & 2) keep.push({ beat: beat + 0.5, slash: true });
+      ev.length = 0;
+      ev.push(...keep);
+    } else if (kind === 'lion') {
       // A move written on the half-beat (Lionheart's own charts) lives on this row too.
       const i = ev.findIndex((e) => e.lion && Math.floor(e.beat) === beat);
       if (i >= 0 && ev[i].lion === value) ev.splice(i, 1);
@@ -273,18 +334,26 @@ export class KataEditor {
     const as = BM.resolveChart(c);
     const bad = new Set(BM.unfair(c));
     const warned = new Set();
+    const fin = BM.resolveSlashes(c).find((s) => s.finish) ?? null;
     for (const a of as) for (let b = Math.ceil(a.beat - a.tell); b < a.beat; b++) warned.add(b);
     const rows = [];
     const spb = BM.songById(c.song)?.spb ?? 0.5;
     for (let b = 0; b <= c.beats; b++) {
       const lion = c.events.find((e) => e.lion && Math.floor(e.beat) === b);
       const atk = c.events.find((e) => e.attack && e.beat === b);
+      const sOn = c.events.some((e) => e.slash && e.beat === b);
+      const sHalf = c.events.some((e) => e.slash && e.beat === b + 0.5);
+      const sFin = fin && Math.floor(fin.beat) === b;
       const cls = ['ke-r', b % 4 === 0 ? 'bar' : '', warned.has(b) ? 'warn' : '', bad.has(b) ? 'bad' : '', b === this.row ? 'cur' : ''].join(' ');
-      const cells = BM.LION_SPOTS.map((s) => `<button class="menu-btn ke-c ke-l${lion?.lion === s ? ' on' : ''}" data-b="${b}" data-k="lion" data-v="${s}" title="he moves to ${s} on beat ${b}">${lion?.lion === s ? `${s}${lion.beat % 1 ? '½' : ''}` : '·'}</button>`).join('')
-        + BM.ATTACKS.map((a) => `<button class="menu-btn ke-c ke-a${atk?.attack === a ? ' on' : ''}" data-b="${b}" data-k="attack" data-v="${a}" title="a ${a} lands on beat ${b}">${atk?.attack === a ? a.toUpperCase() : '·'}</button>`).join('');
-      rows.push(`<div class="${cls}" data-row="${b}"><span class="ke-n">${bad.has(b) ? '⚠ ' : ''}${b}<i>${(b * spb).toFixed(1)}s</i></span>${cells}</div>`);
+      const half = !!(lion && lion.beat % 1);
+      const cells = BM.LION_SPOTS.map((s) => `<button class="menu-btn ke-c ke-l${lion?.lion === s ? ' on' : ''}" data-b="${b}" data-k="lion" data-v="${s}" title="he moves to ${s} on beat ${b}">${lion?.lion === s ? `${s}${half ? '½' : ''}` : '·'}</button>`).join('')
+        + `<button class="menu-btn ke-c ke-h${half ? ' on' : ''}" data-b="${b}" data-k="half" data-v="1" title="his move on beat ${b} lands half a beat later">${half ? '½' : '·'}</button>`
+        + BM.ATTACKS.map((a) => `<button class="menu-btn ke-c ke-a${atk?.attack === a ? ' on' : ''}" data-b="${b}" data-k="attack" data-v="${a}" title="a ${a} lands on beat ${b}">${atk?.attack === a ? a.toUpperCase() : '·'}</button>`).join('')
+        + `<button class="menu-btn ke-c ke-s${sOn || sHalf ? ' on' : ''}${sFin ? ' fin' : ''}" data-b="${b}" data-k="slash" data-v="1" title="${sFin ? 'the FINISHING attack — it knocks him down' : `her opening on beat ${b}: none, on the beat, beat and half-beat, half-beat`}">${sOn && sHalf ? '⚔⚔' : sOn ? '⚔' : sHalf ? '½⚔' : '·'}</button>`;
+      rows.push(`<div class="${cls}" data-row="${b}" data-nav-row><span class="ke-n">${bad.has(b) ? '⚠ ' : ''}${b}<i>${(b * spb).toFixed(1)}s</i></span>${cells}</div>`);
     }
     this.$('ke-grid').innerHTML = rows.join('');
+    this.$('ke-grid-wrap').dataset.navAt = String(this.row);
   }
 
   _paintCheck() {
@@ -302,7 +371,7 @@ export class KataEditor {
   _paintSaved() {
     const list = customCharts();
     this.$('ke-saved').innerHTML = list.length
-      ? list.map((c) => `<option value="${c.id}"${c.id === this.savedId ? ' selected' : ''}>${esc(c.chart.title)} — ${esc(BM.songById(c.chart.song)?.name ?? c.chart.song)}</option>`).join('')
+      ? list.map((c) => `<option value="${c.id}"${c.id === this.savedId ? ' selected' : ''}>${esc(c.chart.title)}${esc(BM.byLine(c.chart))} — ${esc(BM.songById(c.chart.song)?.name ?? c.chart.song)}</option>`).join('')
       : '<option value="">no saved charts yet</option>';
   }
 
@@ -328,10 +397,12 @@ export class KataEditor {
       else for (const m of BM.hitMarks(a.attack, a.spot)) heat[m] = Math.max(heat[m] ?? 0, k);
     }
     const at = (name, r) => { const v = BM.dirVec(name); return [C + v.x * r, C + W * 0.06 - v.y * r]; };
+    // Her opening, gold, on the mark in front of him.
+    const open = BM.resolveSlashes(this.chart).find((s) => t >= (s.beat - s.tell) * spb && t <= s.beat * spb + 0.2);
     for (const m of ['C', ...BM.DIRS]) {
       const [x, y] = m === 'C' ? [C, C + W * 0.06] : at(m, R);
       const h = Math.max(heat[m] ?? 0, sweep * 0.5);
-      g.fillStyle = h ? `rgba(255, 59, 92, ${0.25 + 0.65 * h})` : 'rgba(127, 244, 255, 0.12)';
+      g.fillStyle = h ? `rgba(255, 59, 92, ${0.25 + 0.65 * h})` : open?.spot === m ? (open.finish ? 'rgba(255, 74, 138, 0.85)' : 'rgba(255, 211, 74, 0.8)') : 'rgba(127, 244, 255, 0.12)';
       g.strokeStyle = m === 'C' ? '#ffd34a' : '#7ff4ff';
       g.lineWidth = 2;
       g.beginPath(); g.arc(x, y, W * 0.055, 0, Math.PI * 2); g.fill(); g.stroke();

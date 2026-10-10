@@ -204,8 +204,19 @@ export class HoloPanel extends THREE.Object3D {
     this.tex.needsUpdate = true;
   }
 
-  /** Turn to the lens, about Y only — a card that tips back is a card on a hinge. */
+  /** Turn to the lens, about Y only — a card that tips back is a card on a hinge.
+   *  ...UNLESS `fullFace`: then square on to the lens, pitch and all. The Kata
+   *  Trace's score card is the one that asks for it — Richard: "it is hard to
+   *  see the score board because of the camera angle. Maybe just having the UI
+   *  become billboard towards the camera can fix this." KATA_CAM looks down at
+   *  0.78 rad, so a card turned about Y alone was read at 45° foreshortened. */
   faceCamera(camera) {
+    if (this.fullFace) {
+      if (this.parent) this.parent.getWorldQuaternion(_q).invert();
+      else _q.identity();
+      this.quaternion.copy(_q).multiply(camera.quaternion);
+      return;
+    }
     _e.setFromQuaternion(camera.quaternion, 'YXZ');
     const parentYaw = this.parent ? _e2.setFromQuaternion(this.parent.getWorldQuaternion(_q), 'YXZ').y : 0;
     this.rotation.set(0, _e.y - parentYaw, 0);

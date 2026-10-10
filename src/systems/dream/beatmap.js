@@ -47,11 +47,35 @@ import { MUSIC } from '../../core/audio.js';
        "events": [
          { "beat": 6, "lion": "NE" },        he moves to a spot
          { "beat": 10, "attack": "cut" },    a blow LANDS on this beat
-         { "beat": 14, "attack": "sweep", "tell": 3 }   optional: its own tell
+         { "beat": 14, "attack": "sweep", "tell": 3 },  optional: its own tell
+         { "beat": 20, "slash": true },      an OPENING: she may strike HIM
+         { "beat": 30, "slash": true, "air": true },   ...only in the air
+         { "beat": 40, "attack": "cross", "kyo": 1 }   the 凶: see below
        ]
      }
    An attack's beat is when it LANDS. Its tell — the warning, the floor going
    red — starts `tell` beats before (the difficulty's, unless the event says).
+
+   SLASHES ARE HERS, AND OPTIONAL. Richard: "allow for optional slashing
+   during the song, where if the player misses the slash, then they do not
+   lose any lives or score and do not lose their combo, but if they hit the
+   slash then they add +1 to their combo ... the player will need to move to
+   infront of where Lionheart is and do the slash attack." So a slash is an
+   opening ON A BEAT (or a half-beat): the mark in front of him — the ring
+   mark named as his spot — glows gold, and ATTACK on that mark on the beat
+   is a hit. "Lionheart has infinite life unless it is the final slash of the
+   song" — the LAST slash, when it comes after his last blow, is the
+   FINISHING ATTACK (`resolveSlashes` marks it), and only that one knocks him
+   down. Slashes never make a chart unfair: missing one costs nothing.
+
+   凶 — HIS TRIPLE CROSS SLASH. Richard: "Lionheart does 3 cross slashes
+   rapidly in a row and moves between them, so the player has to reposition
+   themselves ... failing should only be counted as 1 lives lost ... if they
+   dodge all 3 it should add to the combo individually." Three crosses marked
+   `kyo` 1, 2, 3; he moves a quarter-beat after each, to a spot whose cross
+   takes the OTHER four marks, so every X is a trip through the middle: two
+   moves. Between the Xs of a 凶 she gets two moves a beat (`movesBetween`) —
+   which on HARD, a beat apart, is a step every 0.22s.
 --------------------------------------------------------------------------- */
 
 export const FORMAT = 'kata-beatmap/1';
@@ -62,6 +86,8 @@ export const DIRS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 export const LION_SPOTS = ['W', 'NW', 'N', 'NE', 'E'];
 export const LION_START = 'N';
 export const ATTACKS = ['cut', 'cross', 'sweep'];
+/** The most slashes in one combo, and the shortest step between two: a half-beat. */
+export const SLASH_COMBO = 3;
 
 /** A mark or spot as a unit vector on the SCREEN: x right, y UP. */
 export function dirVec(name) {
@@ -129,9 +155,9 @@ export function stepFrom(at, push) {
  * every blow be dodged from anywhere.
  */
 export const DIFFS = {
-  easy: { name: 'EASY', lives: 5, tell: 3, gaps: [4, 4, 5, 6], lead: 8, pool: { cut: 4, sweep: 1.2, cross: 1.5 }, lion: 0.3 },
-  normal: { name: 'NORMAL', lives: 4, tell: 2, gaps: [3, 3, 4, 4, 2], lead: 8, pool: { cut: 3, sweep: 1.2, cross: 2.5 }, lion: 0.45 },
-  hard: { name: 'HARD', lives: 3, tell: 2, gaps: [2, 2, 3, 3, 1], lead: 8, pool: { cut: 2.5, sweep: 1.2, cross: 3 }, lion: 0.6 },
+  easy: { name: 'EASY', lives: 5, tell: 3, gaps: [4, 4, 5, 6], lead: 8, pool: { cut: 4, sweep: 1.2, cross: 1.5 }, lion: 0.3, slash: 0.12, combo: 1, half: false },
+  normal: { name: 'NORMAL', lives: 4, tell: 2, gaps: [3, 3, 4, 4, 2], lead: 8, pool: { cut: 3, sweep: 1.2, cross: 2.5 }, lion: 0.45, slash: 0.14, combo: 2, half: false },
+  hard: { name: 'HARD', lives: 3, tell: 2, gaps: [2, 2, 3, 3, 1], lead: 8, pool: { cut: 2.5, sweep: 1.2, cross: 3 }, lion: 0.6, slash: 0.15, combo: 3, half: true },
 };
 export const DIFF_IDS = Object.keys(DIFFS);
 
@@ -149,7 +175,7 @@ const SONG_NAMES = {
   autumn: 'Autumn Island', frost: 'Frost Island', bamboo: 'Bamboo Grove', ash: 'Ash Island',
   dusk: 'Dusk Island', dojo: 'The Dojo', arena: 'The Arena', griffin: 'The Griffin',
   flight: 'Dragon Flight', ryu: "Ryu's Ride", snake: 'Snake Way', satanStrut: "Mr. Satan's Strut",
-  satan: "Mr. Satan's Road", vr: 'The Dream Dojo', saucer: 'Gold Saucer',
+  satan: "Mr. Satan's Road", vr: 'The Dream Dojo', saucer: 'Gold Saucer', shadow: 'Shadow Lionheart',
 };
 
 /**
@@ -159,6 +185,11 @@ const SONG_NAMES = {
  * own piece steps at 0.115, which would be a blow every eighth of a second.
  */
 export const MIN_SPB = 0.42;
+/* A piece whose chart is written for its own phrases rather than a length
+   drawn from the hash: Shadow Lionheart's is two times round his theme, so
+   the finale lands on its last HONOR. */
+const SONG_BEATS = { shadow: 128 };
+
 export function songSpb(key) {
   const b = MUSIC[key]?.beat ?? MUSIC.play.beat;
   let k = 1;
@@ -186,6 +217,7 @@ export function rng32(seed) {
 /** "Songs run 30s - 1:30 at normal speed": a length per piece, whole bars of 4. */
 export const SONG_SECS = [30, 90];
 function songBeats(key, spb) {
+  if (SONG_BEATS[key]) return SONG_BEATS[key];
   const secs = SONG_SECS[0] + (hash(`len:${key}`) % 7) * ((SONG_SECS[1] - SONG_SECS[0]) / 6);
   let n = Math.max(16, Math.round(secs / spb / 4) * 4);
   // Rounding to a bar can carry a 90s piece to 90.5 (The Crossing did): back inside by whole bars.
@@ -200,17 +232,47 @@ export const SONGS = Object.keys(MUSIC).map((id) => {
 });
 export const songById = (id) => SONGS.find((s) => s.id === id) ?? null;
 
+/** " · by <author>" for a chart somebody signed, '' for an unsigned one. */
+export const byLine = (chart) => {
+  const a = String(chart?.author ?? '').trim();
+  return a ? ` · by ${a}` : '';
+};
+
 /* -------------------------------- the solver ------------------------------ */
 
 /** The attacks, in the order they land, each with where he stood and its tell. */
 export function resolveChart(chart) {
   const tellOf = DIFFS[chart.difficulty]?.tell ?? 2;
   let spot = LION_START;
+  let group = 0;
   const out = [];
   for (const e of sortedEvents(chart.events)) {
     if (e.lion) spot = e.lion;
-    else if (e.attack) out.push({ beat: e.beat, attack: e.attack, spot, tell: e.tell ?? tellOf });
+    else if (e.attack) {
+      if (e.kyo === 1) group++;
+      out.push({ beat: e.beat, attack: e.attack, spot, tell: e.tell ?? tellOf, kyo: e.kyo ?? 0, kyoG: e.kyo ? group : 0 });
+    }
   }
+  return out;
+}
+
+/**
+ * Her openings, in order: each with the spot he is on (so the mark she must
+ * strike from), its tell, and `finish` on the one that knocks him down — the
+ * chart's last slash, if it comes after his last blow.
+ */
+export function resolveSlashes(chart) {
+  const tellOf = DIFFS[chart.difficulty]?.tell ?? 2;
+  let spot = LION_START;
+  let lastBlow = -Infinity;
+  const out = [];
+  for (const e of sortedEvents(chart.events)) {
+    if (e.lion) spot = e.lion;
+    else if (e.attack) lastBlow = e.beat;
+    else if (e.slash) out.push({ beat: e.beat, spot, tell: tellOf, finish: false, air: !!e.air });
+  }
+  const last = out[out.length - 1];
+  if (last && last.beat > lastBlow) last.finish = true;
   return out;
 }
 
@@ -222,6 +284,8 @@ export function sortedEvents(events) {
 
 /** How many moves she can make between two blows: one per beat, and only once she can see it coming. */
 export function movesBetween(prevBeat, a) {
+  // The 2nd and 3rd X of a 凶: two moves a beat, from the X before.
+  if (a.kyo > 1) return Math.max(0, Math.floor((a.beat - prevBeat) * 2 + 1e-9));
   return Math.max(0, Math.floor(Math.min(a.beat - prevBeat, a.tell) + 1e-9));
 }
 
@@ -294,7 +358,7 @@ export function route(chart) {
     if (!to && at !== 'C' && n >= 2) to = want.find((m) => m !== 'C') ?? null;
     if (!to) return null;
     if (to !== at) {
-      if (at !== 'C') moves.push({ beat: a.beat - 1, to: 'C' });
+      if (at !== 'C') moves.push({ beat: a.beat - (a.kyo > 1 ? 0.5 : 1), to: 'C' });
       moves.push({ beat: a.beat, to });
       at = to;
     }
@@ -328,6 +392,7 @@ function weighted(r, w) {
 export function generateChart(songId, difficulty) {
   const S = songById(songId) ?? songById('play');
   const D = DIFFS[difficulty] ?? DIFFS.normal;
+  if (S.id === 'shadow') return shadowChart(S, difficulty);
   const r = rng32(hash(`kata:${S.id}:${difficulty}`));
   const pick = (a) => a[Math.floor(r() * a.length) % a.length];
   const events = [];
@@ -337,7 +402,29 @@ export function generateChart(songId, difficulty) {
   let prevBeat = 0;
   const seen = [];
   let t = D.lead;
-  while (t <= S.beats - 2) {
+  /* AN OPENING FOR HER: `n` slashes from `t0`, a beat or (HARD) a half-beat
+     apart, on the mark in front of him. Returns the beat of the last. */
+  const phrase = (t0, n) => {
+    let b = t0;
+    for (let i = 0; i < n; i++) {
+      if (i) b += D.half && r() < 0.5 ? 0.5 : 1;
+      events.push({ beat: b, slash: true });
+    }
+    her = spot;
+    return b;
+  };
+  // Room before the end for the finishing attack.
+  while (t <= S.beats - 6) {
+    /* Now and then, instead of a blow, an opening. She needs two moves to get
+       in front of him from anywhere, and two to get away again before his next
+       blow can be dodged — so only where the last blow is two beats behind. */
+    if (D.slash && t - prevBeat >= 2 && r() < D.slash) {
+      const last = phrase(t, 1 + Math.floor(r() * (D.combo ?? 1)));
+      prev = last;
+      prevBeat = Math.ceil(last);
+      t = prevBeat + Math.max(2, D.tell) + 1;
+      continue;
+    }
     const tellStart = t - D.tell;
     /* He moves, maybe: half a beat before the tell, and at least half a beat
        after the last blow — "he moves quickly between 5 spots", and on HARD
@@ -384,6 +471,17 @@ export function generateChart(songId, difficulty) {
     if (gap === 1 && a === 'sweep') gap = 2;
     t += gap;
   }
+  /* THE FINISHING ATTACK, on the last beat: "the final slash of the song",
+     and the only one that knocks him down. A whole combo on HARD. */
+  {
+    const n = Math.max(1, D.combo ?? 1);
+    const end = S.beats - 1;
+    let t0 = end - (n - 1);
+    if (t0 < prevBeat + 2) t0 = Math.min(end, prevBeat + 2);
+    const k = Math.max(1, Math.min(n, Math.floor(end - t0) + 1));
+    let b = t0;
+    for (let i = 0; i < k; i++) { events.push({ beat: b, slash: true }); b += 1; }
+  }
   return {
     format: FORMAT,
     title: `${S.name} (${D.name.toLowerCase()})`,
@@ -395,6 +493,87 @@ export function generateChart(songId, difficulty) {
   };
 }
 
+/**
+ * SHADOW LIONHEART'S SONG, WRITTEN BY HAND. "an epic battle with the
+ * finishing sequence where the player and Lionheart are both (double)
+ * jumping, and the player's final finishing swing knocks him to the ground"
+ * — and the 凶 triple cross, "at least once on Hard it is very fast".
+ *
+ * Two times round his theme (`MUSIC.shadow`, 64 beats a round): the toll, the
+ * march, a 凶 on the first HONOR, the march again, a faster 凶 on the last
+ * HONOR, and then the finale — a sweep she jumps, then an opening IN THE AIR
+ * as he leaps too, and that one is the finishing attack.
+ *
+ *   kyo(b, g, spots)  a 凶 landing on b, b+g, b+2g, from these three spots
+ *                     (alternating which four marks a cross takes); he moves
+ *                     a quarter-beat after each X, and each next X's tell runs
+ *                     from that move.
+ */
+function shadowChart(S, difficulty) {
+  const diff = DIFFS[difficulty] ? difficulty : 'normal';
+  const D = DIFFS[diff];
+  const T = D.tell;
+  const ev = [];
+  const L = (b, s) => ev.push({ beat: b, lion: s });
+  const A = (b, a) => ev.push({ beat: b, attack: a });
+  const X = (b, air = false) => ev.push(air ? { beat: b, slash: true, air: true } : { beat: b, slash: true });
+  const kyo = (b0, g, spots) => {
+    L(b0 - T - 0.5, spots[0]);
+    ev.push({ beat: b0, attack: 'cross', kyo: 1 });
+    for (let i = 1; i < 3; i++) {
+      L(b0 + (i - 1) * g + 0.25, spots[i]);
+      ev.push({ beat: b0 + i * g, attack: 'cross', kyo: i + 1, tell: g - 0.25 });
+    }
+  };
+  if (diff === 'easy') {
+    A(8, 'cut'); A(13, 'cross'); X(17);
+    L(19.5, 'NE'); A(23, 'cut'); A(28, 'sweep'); X(32);
+    L(34.5, 'W'); A(38, 'cross'); A(43, 'cut');
+    kyo(50, 3, ['N', 'NW', 'E']);
+    X(60);
+    L(62.5, 'NW'); A(66, 'cross'); A(71, 'sweep'); X(75);
+    L(77.5, 'N'); A(81, 'cut'); A(86, 'cross'); X(90);
+    kyo(97, 3, ['NE', 'N', 'NW']);
+    X(107);
+    A(113, 'sweep'); X(118); X(124, true);
+  } else if (diff === 'normal') {
+    A(8, 'cut'); A(12, 'cross'); X(15);
+    L(17.5, 'NE'); A(20, 'cut'); A(23, 'sweep'); X(26); X(27);
+    L(29.5, 'W'); A(32, 'cross'); A(35, 'cut'); L(36.5, 'N'); A(39, 'sweep'); X(42);
+    A(45, 'cut');
+    kyo(51, 2, ['N', 'NW', 'E']);
+    X(58); X(59);
+    L(61.5, 'NW'); A(64, 'cross'); A(67, 'cut'); X(70); X(71);
+    L(72.5, 'N'); A(75, 'sweep'); A(78, 'cross'); L(79.5, 'W'); A(82, 'cut'); X(85);
+    A(88, 'sweep'); L(89.5, 'NE'); A(92, 'cross'); A(95, 'cut');
+    kyo(102, 2, ['NE', 'N', 'NW']);
+    X(109); X(110);
+    A(114, 'sweep'); X(118); X(121); X(124, true);
+  } else {
+    A(8, 'cut'); A(10, 'cross'); A(12, 'sweep'); X(15); X(15.5);
+    L(16.5, 'NE'); A(19, 'cut'); A(21, 'cross'); A(23, 'sweep'); X(26); X(26.5); X(27);
+    L(28.5, 'W'); A(31, 'cross'); A(33, 'cut'); L(34.5, 'N'); A(37, 'sweep'); A(39, 'cut'); X(42);
+    A(45, 'cross');
+    kyo(50, 1.5, ['N', 'NW', 'E']);
+    X(56); X(56.5); X(57);
+    L(58.5, 'NW'); A(61, 'cross'); A(63, 'cut'); A(65, 'sweep'); X(68); X(69);
+    L(70.5, 'N'); A(73, 'cross'); A(75, 'sweep'); L(76.5, 'W'); A(79, 'cut'); A(81, 'cross'); X(84);
+    A(87, 'sweep'); L(88.5, 'NE'); A(91, 'cross'); A(93, 'cut'); A(95, 'sweep');
+    kyo(101, 1, ['NE', 'N', 'NW']);
+    X(106); X(106.5); X(107);
+    A(111, 'sweep'); L(112.5, 'N'); A(115, 'cut'); X(118); X(119); A(122, 'sweep'); X(124, true);
+  }
+  return {
+    format: FORMAT,
+    title: `${S.name} (${D.name.toLowerCase()})`,
+    song: S.id,
+    difficulty: diff,
+    beats: S.beats,
+    author: 'Lionheart',
+    events: sortedEvents(ev),
+  };
+}
+
 /* ------------------------------ text in, text out --------------------------- */
 
 /** The chart as a person would write it: one event to a line. */
@@ -403,7 +582,7 @@ export function chartToText(chart) {
     .filter((k) => chart[k] != null)
     .map((k) => `  ${JSON.stringify(k)}: ${JSON.stringify(chart[k])}`);
   const ev = sortedEvents(chart.events).map((e) => {
-    const keys = ['beat', 'lion', 'attack', 'tell'].filter((k) => e[k] != null);
+    const keys = ['beat', 'lion', 'attack', 'kyo', 'slash', 'air', 'tell'].filter((k) => e[k] != null);
     return `    { ${keys.map((k) => `${JSON.stringify(k)}: ${JSON.stringify(e[k])}`).join(', ')} }`;
   });
   return `{\n${head.join(',\n')},\n  "events": [\n${ev.join(',\n')}\n  ]\n}\n`;
@@ -435,15 +614,24 @@ export function parseChart(input) {
     if (!e || typeof e !== 'object') { errors.push(`${at}: not an event`); continue; }
     if (!Number.isFinite(e.beat) || e.beat < 0) { errors.push(`${at}: "beat" must be a number, 0 or more`); continue; }
     if (Number.isFinite(o.beats) && e.beat > o.beats) errors.push(`${at}: beat ${e.beat} is after the end (${o.beats})`);
-    if (e.lion != null && e.attack != null) { errors.push(`${at}: one of "lion" or "attack", not both`); continue; }
+    if ([e.lion, e.attack, e.slash].filter((x) => x != null).length > 1) { errors.push(`${at}: one of "lion", "attack" or "slash", not two`); continue; }
     if (e.lion != null) {
       if (!LION_SPOTS.includes(e.lion)) { errors.push(`${at}: "lion" must be one of ${LION_SPOTS.join(' ')}`); continue; }
       events.push({ beat: e.beat, lion: e.lion });
     } else if (e.attack != null) {
       if (!ATTACKS.includes(e.attack)) { errors.push(`${at}: "attack" must be one of ${ATTACKS.join(', ')}`); continue; }
-      if (e.tell != null && !(Number.isFinite(e.tell) && e.tell >= 1 && e.tell <= 8)) { errors.push(`${at}: "tell" must be 1 to 8 beats`); continue; }
-      events.push(e.tell != null ? { beat: e.beat, attack: e.attack, tell: e.tell } : { beat: e.beat, attack: e.attack });
-    } else errors.push(`${at}: needs "lion" or "attack"`);
+      // Half a beat is the least: the 凶's chained Xs warn from his move, a quarter-beat after the last.
+      if (e.tell != null && !(Number.isFinite(e.tell) && e.tell >= 0.5 && e.tell <= 8)) { errors.push(`${at}: "tell" must be 0.5 to 8 beats`); continue; }
+      if (e.kyo != null && !(e.attack === 'cross' && [1, 2, 3].includes(e.kyo))) { errors.push(`${at}: "kyo" is 1, 2 or 3, on a cross`); continue; }
+      const out = { beat: e.beat, attack: e.attack };
+      if (e.kyo != null) out.kyo = e.kyo;
+      if (e.tell != null) out.tell = e.tell;
+      events.push(out);
+    } else if (e.slash != null) {
+      if (e.slash !== true) { errors.push(`${at}: "slash" must be true`); continue; }
+      if (e.air != null && e.air !== true) { errors.push(`${at}: "air" must be true`); continue; }
+      events.push(e.air ? { beat: e.beat, slash: true, air: true } : { beat: e.beat, slash: true });
+    } else errors.push(`${at}: needs "lion", "attack" or "slash"`);
   }
   if (errors.length) return { chart: null, errors, warnings };
   const chart = {

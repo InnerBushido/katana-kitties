@@ -87,9 +87,11 @@ export const PLAZA = {
  *  is the minimap's own size and every island's, not the course's. */
 export const COURSE_CAM = { dist: 25, pitch: 0.42, lift: 1.6 };
 
-/** Hold INTERACT this long to give a run up — one press is an elbow
- *  (non-negotiable 7). */
-export const STOP_HOLD = 1.2;
+/* (GONE) STOP_HOLD: holding INTERACT 1.2s gave a run up. Nobody was told,
+   and it dropped her in the stands. A press now ASKS (COURSE.quit), default
+   no — which is what non-negotiable 7 wants of one press — and yes takes her
+   out of the Gauntlet altogether (leaveGauntlet). Two ways to stop, one of
+   them hidden, was one too many. */
 /** Below the floor by this much is a fall. */
 const FALL = 3;
 /** A kitten inside the course's walls who is not its runner is walked back
@@ -108,6 +110,21 @@ const BAR_COL = 0xff3b6b;
 const AIR_COL = 0x4fd8ff;
 const ARM_COL = 0xffa23b;
 const CURTAIN_COL = 0xb35cff;
+/**
+ * WHICH BEAMS ARE HERS NOW. Richard: "it's a bit hard to see which lasers are
+ * on the course section you are on ... future ones, not currently active in
+ * the course, the greenish color and the ones already completed by getting
+ * past a checkpoint can be the grayed out color." Five lanes side by side put
+ * every section's beams in her eye line at once. So while a run is live, only
+ * the section she has reached (`run.cp`) wears its own colour; the ones ahead
+ * are a dark holo green, and the ones she has passed are grey. They still
+ * move and they still zap — this is paint, never the rule (`hitAt`). With
+ * nobody running, all of them wear their own colours, for the stands.
+ */
+export const BEAM_AHEAD = { col: 0x1f6b45, core: 0x3f9a6a, glow: 0.3, core_o: 0.55, foot: 0.4 };
+export const BEAM_DONE = { col: 0x4a4f57, core: 0x80858c, glow: 0.18, core_o: 0.35, foot: 0.25 };
+/** Which section a beam belongs to: the sweeper in the air is the stones'. */
+const secOf = (q) => SECTIONS.findIndex((s) => s.key === (q.sec === 'air' ? 'stones' : q.sec));
 
 /** The over-the-shoulder shot for the Sliding Gaps: this far behind her,
  *  this pitch, and the look-at this far AHEAD of her down the lane, so the
@@ -304,7 +321,7 @@ export class SineGauntlet {
         return m;
       });
       this.root.add(g, shadow, foot);
-      return { g, core, glow, ends, shadow, foot, drops, thick: q.thick };
+      return { g, core, glow, ends, shadow, foot, drops, thick: q.thick, col, secI: secOf(q), look: 'live' };
     });
   }
 
@@ -528,6 +545,29 @@ export class SineGauntlet {
     this._next();
   }
 
+  /**
+   * OUT OF THE GAUNTLET ALTOGETHER, from wherever she is in it. Richard: "now
+   * that it is harder, we need a way for the player to be able to leave the
+   * gauntlet if it is too difficult". Before this the only way out of a run
+   * was to hold INTERACT for 1.2s, which nobody was told, and it dropped
+   * her in the stands rather than out. Mid-run she is marked `left` and the
+   * run fails; `update`, which writes her down when the drill goes, then puts
+   * her on the plaza rather than in the stands. Her line on the board stays —
+   * how far she got is still true. Asked by INTERACT mid-run (`COURSE.quit`)
+   * and by the pause menu's LEAVE THE SINE GAUNTLET (main.js); both ask first.
+   */
+  leaveGauntlet(p) {
+    const S = this.session;
+    if (!S || !p || !this.inSession(p)) return false;
+    if (S.runner === p.index && this.run?.i === p.index) {
+      const d = this.run.drill;
+      this.run.left = true;
+      if (d && (d.state === 'live' || d.state === 'ready')) d.fail(`${p.name} left the Sine Gauntlet`);
+      return true;
+    }
+    return this.leave(p);
+  }
+
   /** Everybody out at once (a scene, the tournament, a restart). */
   reset() {
     const S = this.session;
@@ -549,7 +589,7 @@ export class SineGauntlet {
     const isle = this.isle;
     const spec = COURSE(this, S.level);
     this.dream.startDrill(p, spec, { x: isle.x, y: isle.y, z: isle.z, r: isle.r, fwd: isle.fwd });
-    this.run = { i: p.index, drill: this.dream.drills[p.index], sMax: 0, cp: 0, zaps: 0, hold: 0, zapT: 0 };
+    this.run = { i: p.index, drill: this.dream.drills[p.index], sMax: 0, cp: 0, zaps: 0, zapT: 0 };
     this.dream.game.toast?.(`${p.name} — on your mark! L${S.level + 1}`, p.index);
   }
 
@@ -645,11 +685,6 @@ export class SineGauntlet {
     const last = LANES.length - 1;
     if (r.sMax >= FINISH_S - 0.3 && Math.abs(q.a - LANES[last]) < HALVES[last]) d.progress();
     if (d.state === 'live' && d.t >= COURSE_TIME) d.fail(`Time! You reached ${SECTIONS[r.cp].name}`);
-    if (r.holding) {
-      r.hold += dt;
-      if (r.hold >= STOP_HOLD && d.state === 'live') d.fail('You stopped your run');
-    } else r.hold = 0;
-    r.holding = false;
   }
 
   /* -------------------------------- a frame ------------------------------- */
@@ -688,9 +723,15 @@ export class SineGauntlet {
     if (S && this.run && this.dream.drills[this.run.i] !== this.run.drill) {
       this._record(this.run.drill);
       const p = this.dream.game.players?.[this.run.i];
+      const left = this.run.left;
       S.runner = null;
       this.run = null;
-      if (p && this.dream.realmOf(p) === 'sim') {
+      if (p && left) {
+        // She asked to leave (leaveGauntlet): out, not up into the stands.
+        this._toPlaza(p);
+        this.dream.unbench(p);
+        this.dream.game.toast?.(`${p.name} left the Sine Gauntlet`, p.index);
+      } else if (p && this.dream.realmOf(p) === 'sim') {
         if (S.queue.length) { S.stands.add(p.index); this._toStands(p); } else S.stands.add(p.index);
       }
       this._next();
@@ -715,6 +756,26 @@ export class SineGauntlet {
     if (this._boardT <= 0 && this.session) { this._boardT = 0.25; this._paintBoard(); }
   }
 
+  /** 'live', 'ahead' or 'done' for section `i` — see BEAM_AHEAD. */
+  beamLook(i) {
+    const r = this.run;
+    if (!r || r.drill?.state === 'done') return 'live';
+    return i < r.cp ? 'done' : i > r.cp ? 'ahead' : 'live';
+  }
+
+  /** Repaint one beam's materials for a look. Only on a change of look. */
+  _wear(fx, look) {
+    fx.look = look;
+    const B = look === 'ahead' ? BEAM_AHEAD : look === 'done' ? BEAM_DONE : null;
+    const col = B ? B.col : fx.col;
+    fx.glow.material.color.setHex(col);
+    fx.foot.material.color.setHex(col);
+    for (const m of fx.ends) m.material.color.setHex(col);
+    for (const m of fx.drops) m.material.color.setHex(col);
+    fx.core.material.color.setHex(B ? B.core : 0xffffff);
+    fx.core.material.opacity = B ? B.core_o : 0.95;
+  }
+
   /** Every beam, stone and dot, from course.js at `t`. The ONLY writer. */
   _paintCourse(L, t) {
     const list = beams(L, t);
@@ -727,7 +788,10 @@ export class SineGauntlet {
       fx.g.lookAt(b.x + this.sim.root.position.x, b.y + this.sim.root.position.y, b.z + this.sim.root.position.z);
       fx.core.scale.set(q.thick * 0.35, q.thick * 0.35, len);
       fx.glow.scale.set(q.thick * 1.15, q.thick * 1.15, len);
-      fx.glow.material.opacity = 0.42 + 0.12 * Math.sin((this.dream.t ?? 0) * 24 + k);
+      const look = this.beamLook(fx.secI);
+      if (look !== fx.look) this._wear(fx, look);
+      const B = look === 'ahead' ? BEAM_AHEAD : look === 'done' ? BEAM_DONE : null;
+      fx.glow.material.opacity = B ? B.glow : 0.42 + 0.12 * Math.sin((this.dream.t ?? 0) * 24 + k);
       fx.ends[0].position.set(a.x, a.y, a.z);
       fx.ends[1].position.set(b.x, b.y, b.z);
       // The shadow: straight down, sharper and darker the lower the beam.
@@ -740,7 +804,7 @@ export class SineGauntlet {
       fx.foot.position.set(fx.shadow.position.x, I.y + 0.04, fx.shadow.position.z);
       fx.foot.rotation.y = fx.shadow.rotation.y;
       fx.foot.scale.set(0.12 + h * 0.07, 1, flen);
-      fx.foot.material.opacity = THREE.MathUtils.clamp(0.95 - h * 0.15, 0.25, 0.9);
+      fx.foot.material.opacity = THREE.MathUtils.clamp(0.95 - h * 0.15, 0.25, 0.9) * (B ? B.foot : 1);
       fx.drops.forEach((m, n) => {
         const e = n ? b : a;
         const y = n ? q.y1 : q.y0;
@@ -807,10 +871,6 @@ export class SineGauntlet {
   }
 
   /** The runner's pad, watched (never consumed): a held INTERACT stops it. */
-  watchPad(d, pad) {
-    if (this.run?.drill === d && pad?.down?.('interact')) this.run.holding = true;
-  }
-
   /* -------------------------------- cameras ------------------------------- */
 
   /** Is the runner in the Sliding Gaps? Read off how far she has got, so the
@@ -935,7 +995,18 @@ function COURSE(G, n) {
     goal: 1, showCount: false, bands: COURSE_BANDS[n], lowerIsBetter: true,
     grace: 3, leaveR: 60, noBar: true,
     caught: () => true,
-    pad: (d, pad) => G.watchPad(d, pad),
+    /** INTERACT mid-run: leave? Default no, both buttons say what they do (6, 7). */
+    quit(d) {
+      const D = G.dream;
+      if (D.choices?.[d.p.index]) return;
+      D.openChoice(d.p, {
+        title: 'LEAVE THE GAUNTLET?',
+        rows: [
+          { text: 'no, keep running', act: () => D.closeChoice(d.p) },
+          { text: 'yes, leave the Gauntlet', act: () => { D.closeChoice(d.p); G.leaveGauntlet(d.p); } },
+        ],
+      });
+    },
     tick: (d, dt) => G._tick(d, dt),
     paint(d) {
       const r = G.run?.drill === d ? G.run : null;
@@ -951,8 +1022,8 @@ function COURSE(G, n) {
       const lines = [{ text: `${sec.name}`, size: 1.5, color: d.colour, glow: true }];
       if (r.zapT > 0) lines.push({ text: `ZAP! back to ${SECTIONS[r.cp].name}`, size: 1.4, color: 0xff8a8a });
       else lines.push(working(sec, L, d.t, r));
-      const hold = r.hold > 0 ? `  ·  stopping… ${Math.max(0, STOP_HOLD - r.hold).toFixed(1)}` : '';
-      lines.push({ text: `${d.t.toFixed(1)}s   zaps ${r.zaps}${hold}`, size: 1.3, color: HOLO.cyan });
+      lines.push({ text: `${d.t.toFixed(1)}s   zaps ${r.zaps}`, size: 1.3, color: HOLO.cyan });
+      lines.push({ text: `[${G.dream.key?.(d.p, 'interact') ?? 'E'}] to leave`, size: 0.8, color: 0x7f9fa8 });
       return lines;
     },
   };

@@ -13,7 +13,7 @@ import { Drill } from './dream/drill.js';
 import { Gallery } from './dream/gallery.js';
 import { TrialHall } from './dream/hall.js';
 import { TameshigiriRange } from './dream/range.js';
-import { KataHall } from './dream/kata.js';
+import { KataHall, KATA_LINES } from './dream/kata.js';
 import { DataHighway, HIGHWAY } from './dream/highway.js';
 import { KudamonoStorm } from './dream/storm.js';
 import { SineGauntlet } from './dream/sine.js';
@@ -856,6 +856,7 @@ export class DreamDojo {
       ...Object.values(SHADOW_LINES).map((l) => [l.line, l.voice]),
       [HANDOVER.line, HANDOVER.voice],
       ...Object.entries(GEAR_VOICE).map(([k, id]) => [GEAR_LINES[k], id]),
+      ...Object.values(KATA_LINES).map((l) => [l.line, l.voice]),
     ]);
   }
 
@@ -1680,7 +1681,11 @@ export class DreamDojo {
        island: fitted to the discs alone, GALLERY and RANGE were cut to
        "GALL" and "RANGI" at the canvas edge. */
     const m = 0.14 * Math.max(maxX - minX, maxZ - minZ);
-    return { discs, roads, bounds: { minX: minX - m, maxX: maxX + m, minZ: minZ - m, maxZ: maxZ + m } };
+    /* THE MAP KIOSKS, so a kitten can find one. Richard: "Lets show the 'Map
+       of the Simulator' locations on the minimap so players know where they
+       are." Read off the kiosks actually standing, like everything here. */
+    const maps = (this.mapKiosks ?? []).map((k) => off(k.group.position));
+    return { discs, roads, maps, bounds: { minX: minX - m, maxX: maxX + m, minZ: minZ - m, maxZ: maxZ + m } };
   }
 
   /**

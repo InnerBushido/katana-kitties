@@ -33395,7 +33395,7 @@ console.log('\n--- the arena road is shot, not orbited ---');
     /NOT THAT SONG/.test(asrc) && /_tuneStep\(t, step, M\)/.test(asrc)
       && /STILL NOT THOSE SONGS/.test(asrc));
   // The strut is the fall-through of `_tuneStep`; the others are named.
-  const TUNES = { strut: '_strutStep', kungfu: '_kungfuStep', saucer: '_saucerStep', vr: '_vrStep' };
+  const TUNES = { strut: '_strutStep', kungfu: '_kungfuStep', saucer: '_saucerStep', vr: '_vrStep', shadow: '_shadowStep' };
   ok('...and every tune a piece names is one somebody wrote',
     Object.values(MUSIC).filter((m) => m.tune).every((m) => TUNES[m.tune]
       && new RegExp(`${TUNES[m.tune]}\\(t, step, M\\) \\{`).test(asrc)
@@ -35982,18 +35982,21 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       at(0.8, 1.3);
       holo.update(1 / 60, [walker]);
       fx.update(4.1, [walker]);
-      const th = holo.theta;
-      const RD = X.read;
-      const vecOk = Math.abs(num(want(RD.r), 0) - Math.cos(th)) < 0.006 && Math.abs(num(want(RD.r), 1) - Math.sin(th)) < 0.006
-        && /\|r\| = 1\.00  ✓ NORMALIZED/.test(want(RD.r)) && /✓ NORMALIZED/.test(want(RD.n)) && /✓ NORMALIZED/.test(want(RD.t))
-        && Math.abs(num(want(RD.t), 0) + Math.sin(th)) < 0.006 && Math.abs(num(want(RD.v), 3) - holo.playerRadius) < 0.006
-        && Math.abs(holo.playerRadius - 1.3) < 0.01 && !/NORMALIZED/.test(want(RD.v));
+      /* ...BUT NOT THE VECTORS'. The fourth pass: "too much text ... remove
+         all the text with Normalized in it and the vector xyz text". Ask
+         every label on the floor, on the circle and off it. */
+      const wordy = [];
+      for (const rad of [1, 1.3]) {
+        at(0.8, rad);
+        holo.update(1 / 60, [walker]);
+        fx.update(4.1 + rad, [walker]);
+        wordy.push(...holo.labels.filter((l) => /NORMALIZED|\|[rntv]\||\(-?\d+\.\d+, /.test(want(l))).map(want));
+      }
+      ok('円 no vector reads out its (x, y, z), its length or NORMALIZED any more — the floor had too much text',
+        wordy.length === 0 && X.read === undefined, wordy.join(' | '));
       at(0.8, 1);
       holo.update(1 / 60, [walker]);
       fx.update(4.2, [walker]);
-      const onCircle = /\|v\| = 1\.00  ✓ NORMALIZED/.test(want(RD.v));
-      ok('円 every vector reads out its (x, y, z) and its length, off the point: r, n and t are NORMALIZED, and hers only when she stands on the circle',
-        vecOk && onCircle, `${want(RD.r)} | ${want(RD.v)}`);
 
       // The triangle: its corners are the origin, the foot of the sine leg, the point.
       const tp = X.tri.mesh.geometry.attributes.position;
@@ -36031,11 +36034,10 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         && HD.QUAD_C.every((c) => !Object.values(HD.AXIS_C).includes(c)), seen.join());
       /* AND NONE OF IT ON TOP OF ANYTHING ELSE. The first cut put each readout
          at one fixed offset from its arrow, and at θ = 46° four of them were
-         stacked over the point. The placer's first set of spots still clashed
-         in 11 of these 192 frames — the normal's readout on "90° = π/2" at the
-         top of the circle, hers on the leg labels outside it — which is what
-         the either-side spots are for. Walk two laps — on the circle and outside it —
-         and ask every readout's box against every other label on the floor. */
+         stacked over the point. Only the quadrant's name is placed now (the
+         vectors' readouts are gone), and it still has to miss the axis names
+         and the leg labels. Walk two laps — on the circle and outside it —
+         and ask its box against every other label on the floor. */
       let frames = 0; let clash = 0; let hops = 0; let worst = '';
       let last = null;
       for (const rad of [1, 1.3]) {
@@ -36043,7 +36045,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
           at((k / 96) * Math.PI * 2 + 0.01, rad);
           holo.update(1 / 60, [walker]);
           fx.update(8 + k / 60, [walker]);
-          const mine = [...Object.values(X.read), X.quad.label].filter((l) => l.visible);
+          const mine = [X.quad.label].filter((l) => l.visible);
           const others = holo.labels.filter((l) => l.visible && !mine.includes(l));
           frames++;
           const bad = mine.some((a, i) => others.some((b) => HD.boxesOverlap(HD.labelBox(a), HD.labelBox(b), 0))
@@ -36998,7 +37000,189 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       q.state === 'live' && !!c && /no, keep/.test(c.rows[c.i].text) && c.rows.some((r) => /yes, stop/.test(r.text)));
     c.pick();
     ok('...and no means she is still dancing', q.state === 'live' && !D.choices[0]);
+    /* KEYBOARD DIAGONALS. "very hard to hit both cardinal direction keys at
+       the same time ... a slight 0.05s delay ... count the scoring or dodge
+       time based on when the player presses the first directional button".
+       W, and D three frames later: she lands on NE, stamped with W's time. */
+    {
+      const at0 = q.songT;
+      const key = (mx, my) => { q.spec.steer(q, { mx, my, pressed: () => false, down: () => false }); q.update(1 / 120); };
+      key(0, 0);
+      const pressT = q.songT;
+      key(0, -1);
+      key(0, -1);
+      const held = q.at === 'C';
+      key(0.707, -0.707);
+      for (let f = 0; f < 12; f++) key(0.707, -0.707);
+      const diag = q.at === 'NE' && Math.abs(q.moveT - pressT) < 0.01;
+      for (let f = 0; f < 6; f++) key(0, 0);
+      key(-0.707, 0.707);
+      const back = q.at === 'C';
+      for (let f = 0; f < 6; f++) key(0, 0);
+      // One key alone still steps, after the wait.
+      key(1, 0);
+      const t1 = q.songT;
+      const single0 = q.at === 'C';
+      for (let f = 0; f < 12; f++) key(0, 0);
+      const single = single0 && q.at === 'E' && Math.abs(q.moveT - t1) < 0.01;
+      ok('型 on keys, W then D a few frames later steps her to NE, timed from the W — and one key alone still steps, after DIAG_WAIT',
+        held && diag && back && single && KT.DIAG_WAIT >= 0.04 && KT.DIAG_WAIT <= 0.08,
+        `held ${held} diag ${q.at} ${diag} back ${back} single ${single} (${(q.songT - at0).toFixed(2)}s)`);
+      // A blow judged inside the wait takes the step first.
+      const dd = { pend: { t: 1.0, dir: 'SW' }, at: 'C', moveT: null };
+      KT.settle(dd, 1.05);
+      ok('...and a blow judged inside the wait takes the held step first, at its press time',
+        dd.at === 'SW' && dd.moveT === 1.0 && dd.pend === null);
+    }
     q.dispose(); D.drills[0] = null;
+
+    /* ⚔ HER SLASHES. "if the player misses the slash, then they do not lose
+       any lives or score and do not lose their combo, but if they hit the
+       slash then they add +1 to their combo ... the player will need to move
+       to infront of where Lionheart is and do the slash attack ... unless it
+       is the final slash of the song ... a 'finishing attack'". A chart
+       written for it: he stands on N, an opening on 4, his cut on 8 (C, N
+       and S), and the finishing opening on 12. */
+    {
+      const sc = { format: BMP.FORMAT, title: 'slash test', song: 'vr', difficulty: 'easy', beats: 16, author: 'world-check',
+        events: [{ beat: 4, slash: true }, { beat: 8, attack: 'cut' }, { beat: 12, slash: true }] };
+      const sl = BMP.resolveSlashes(sc);
+      ok('⚔ an opening is struck from the mark in front of him, and the last one after his last blow is the finish',
+        sl.length === 2 && sl.every((s) => s.spot === 'N') && !sl[0].finish && sl[1].finish);
+      const sspb = BMP.spbAt('vr', 1);
+      let spoke = 0;
+      const was = D.voice.speak;
+      D.voice.speak = (text) => { if (text === KT.KATA_LINES.ko.line) spoke++; return 0; };
+      /* `plan` is [{ beat, push } | { beat, attack }], acted on the frame the song reaches it. */
+      const dance = (plan) => {
+        D.drills[0] = null;
+        D.t += 100;
+        D.startDrill(her, KT.KATA(D.kata, fl, sc, { speed: 1, id: 'kata.test.slash' }), { x: fl.x, y: fl.y, z: fl.z, r: 10, fwd: { x: 0, z: 1 } });
+        const d = D.drills[0];
+        let i = 0;
+        let swung = 0;
+        for (let f = 0; f < 120 * 40 && (d.state === 'ready' || d.state === 'live'); f++) {
+          let mx = 0;
+          let my = 0;
+          let atk = false;
+          if (d.state === 'live' && i < plan.length && d.songT >= plan[i].beat * sspb && d.armed) {
+            const s = plan[i++];
+            if (s.push) { const v = BMP.dirVec(s.push); mx = v.x; my = -v.y; } else { atk = true; swung = her.attackTimer; }
+          }
+          d.spec.steer(d, { mx, my, pressed: (a) => a === 'attack' && atk, down: () => false });
+          d.update(1 / 120);
+          if (atk) swung = her.attackTimer;
+        }
+        // The card's hold: he falls, and speaks once he is down.
+        for (let f = 0; f < 120 * 2.5 && d.state === 'won'; f++) d.update(1 / 120);
+        return { d, swung };
+      };
+      const lives = BMP.DIFFS.easy.lives;
+      const hitIt = dance([{ beat: 3, push: 'N' }, { beat: 4, attack: true }, { beat: 6, push: 'S' }, { beat: 7, push: 'E' },
+        { beat: 9, push: 'W' }, { beat: 10, push: 'N' }, { beat: 12, attack: true }]);
+      const h = hitIt.d;
+      ok('⚔ on the gold mark, ATTACK on the beat is a hit — both openings, each +1 on the combo, scored and graded',
+        h.state === 'won' && h.slashHits === 2 && h.maxCombo === 3 && h.lives === lives && h.score > 0
+        && h.slashes.every((s) => s.hit), `${h.state} hits ${h.slashHits} combo ${h.maxCombo} lives ${h.lives} ${h.why ?? ''}`);
+      ok('...her swing plays, though the pad she is handed has no ATTACK in it', hitIt.swung > 0.2);
+      ok('...and the finishing attack puts him DOWN: flung, wobbling, then flat over',
+        h.ko && h.stage.koAt != null && Math.abs(h.stage.roll - Math.PI / 2) < 0.05, `ko ${h.ko} roll ${h.stage.roll.toFixed(2)}`);
+      ok('...and once he is down he says it — "Oof... good job." — once', spoke === 1, `${spoke}`);
+      ok('...on the won card too', h.spec.paint(h).some((l) => l.text.includes(KT.KATA_LINES.ko.line)));
+      spoke = 0;
+      const skip = dance([{ beat: 7, push: 'E' }, { beat: 9, push: 'W' }]);
+      const s = skip.d;
+      ok('⚔ letting every opening go costs nothing: no life, no combo, still a win — and no fall, and no line',
+        s.state === 'won' && s.lives === lives && s.slashHits === 0 && s.maxCombo === 1 && !s.ko && s.stage.koAt == null && spoke === 0,
+        `${s.state} lives ${s.lives} combo ${s.maxCombo} ko ${s.ko} spoke ${spoke}`);
+      const whiff = dance([{ beat: 4, attack: true }, { beat: 7, push: 'E' }, { beat: 9, push: 'W' }, { beat: 10, push: 'N' }, { beat: 12, attack: true }]);
+      const wh = whiff.d;
+      ok('⚔ a swing from the middle is a swing at nothing: no hit, nothing lost — and the finish from the right mark still lands',
+        wh.state === 'won' && wh.lives === lives && wh.slashHits === 1 && wh.slashes[0].hit === false && wh.ko,
+        `${wh.state} hits ${wh.slashHits} ko ${wh.ko}`);
+      ok('...and a whiff costs a moment before the next swing can land, so mashing is not the way', KT.WHIFF_COOL >= 0.2 && KT.WHIFF_COOL < KT.SLASH_WIN * 2);
+      D.voice.speak = was;
+      D.drills[0] = null;
+    }
+
+    /* 凶 AND THE SHADOW'S SONG. "Lionheart does 3 cross slashes rapidly in a
+       row and moves between them ... failing should only be counted as 1
+       lives lost ... if they dodge all 3 it should add to the combo
+       individually ... at least once on Hard it is very fast" — and the finale
+       "where the player and Lionheart are both (double) jumping". */
+    {
+      const sspb = BMP.spbAt('shadow', 1);
+      const go = (chart, plan) => {
+        D.drills[0] = null;
+        D.t += 100;
+        D.startDrill(her, KT.KATA(D.kata, fl, chart, { speed: 1, id: `kata.test.${chart.title}` }), { x: fl.x, y: fl.y, z: fl.z, r: 10, fwd: { x: 0, z: 1 } });
+        const d = D.drills[0];
+        let i = 0;
+        let hexSeen = 0;
+        for (let f = 0; f < 120 * 90 && (d.state === 'ready' || d.state === 'live'); f++) {
+          let mx = 0;
+          let my = 0;
+          let atk = false;
+          let jump = false;
+          while (d.state === 'live' && i < plan.length && d.songT >= plan[i].t && d.armed && !(mx || my || atk || jump)) {
+            const s = plan[i++];
+            if (s.to) {
+              const v = BMP.dirVec(s.to === 'C' ? BMP.DIRS[(BMP.DIRS.indexOf(d.at) + 4) % 8] : s.to);
+              mx = v.x; my = -v.y;
+            } else if (s.jump) jump = true;
+            else atk = true;
+          }
+          /* Her physics does not run here, so her feet are pinned to the floor
+             and "in the air" can only mean the jump she pressed — which is the
+             rule under test. (Left alone, `onGround` read false all run and
+             every swing counted as airborne.) */
+          her.onGround = true;
+          d.spec.steer(d, { mx, my, pressed: (a) => (a === 'attack' && atk) || (a === 'jump' && jump), down: () => false });
+          d.update(1 / 120);
+          if (d.stage.hex.visible) hexSeen = Math.max(hexSeen, d.stage.kyoAt(d.songT)?.n ?? 0);
+        }
+        return { d, hexSeen };
+      };
+      // One 凶 alone, stood through in the middle: three Xs catch her, one life goes.
+      const one = { format: BMP.FORMAT, title: 'kyo test', song: 'shadow', difficulty: 'normal', beats: 20, author: 'world-check', events: [
+        { beat: 5.5, lion: 'N' }, { beat: 8, attack: 'cross', kyo: 1 },
+        { beat: 8.25, lion: 'NW' }, { beat: 10, attack: 'cross', kyo: 2, tell: 1.75 },
+        { beat: 10.25, lion: 'E' }, { beat: 12, attack: 'cross', kyo: 3, tell: 1.75 }] };
+      const stood = go(one, []).d;
+      ok('凶 three Xs that all catch her cost ONE life, not three',
+        stood.grades.filter((g) => g === 0).length === 3 && stood.lives === BMP.DIFFS.normal.lives - 1 && stood.state === 'won',
+        `${stood.grades.join('')} lives ${stood.lives} ${stood.state}`);
+      // ...and danced (diagonal, straight, diagonal, through the middle each time), three on the combo.
+      const rt1 = BMP.route(one);
+      const danced = go(one, rt1.moves.map((m) => ({ t: m.beat * sspb - 0.04, to: m.to })));
+      ok('...dodged, each X is its own +1 on the combo, and every one is a trip through the middle',
+        danced.d.maxCombo === 3 && danced.d.lives === BMP.DIFFS.normal.lives && rt1.moves.filter((m) => m.to === 'C').length >= 2,
+        `combo ${danced.d.maxCombo} lives ${danced.d.lives} moves ${rt1.moves.map((m) => `${m.beat}${m.to}`).join(' ')}`);
+      ok('...with the 凶 over her head, lit a third more by each X', danced.hexSeen === 3, `${danced.hexSeen}`);
+      const cuts = new Set(BMP.resolveChart(one).map((a) => [...BMP.hitMarks('cross', a.spot)].sort().join()));
+      ok('...because he moves between them to a spot whose cross takes the OTHER four marks', cuts.size === 2);
+
+      // HARD, the whole song, danced on the route — the fast 凶 included — and the finale in the air.
+      const hard = BMP.generateChart('shadow', 'hard');
+      const hrt = BMP.route(hard);
+      const fin = BMP.resolveSlashes(hard).find((s) => s.finish);
+      const plan = [
+        ...hrt.moves.map((m) => ({ t: m.beat * sspb - 0.04, to: m.to })),
+        ...hrt.jumps.map((j) => ({ t: j.beat * sspb - 0.05, jump: true })),
+        // To the mark in front of him a beat before; up; and the swing at the top.
+        { t: (fin.beat - 1.5) * sspb, to: 'C' }, { t: (fin.beat - 1) * sspb, to: fin.spot },
+        { t: (fin.beat - 0.6) * sspb, jump: true }, { t: fin.beat * sspb, atk: true },
+      ].sort((a, b) => a.t - b.t);
+      const H = go(hard, plan).d;
+      ok('凶 HARD Shadow Lionheart, danced on the route — the beat-apart 凶 included — is never hit',
+        H.state === 'won' && !H.grades.includes(0), `${H.state} hits ${H.grades.filter((g) => g === 0).length} ${H.why ?? ''}`);
+      ok('...and the finale\'s opening is IN THE AIR, he leaps for it, and it knocks him down',
+        fin.air && H.ko && H.stage.koPos?.y > 1.5, `air ${fin.air} ko ${H.ko} y ${H.stage.koPos?.y?.toFixed(2)}`);
+      // The same swing with her feet on the floor is a swing at nothing.
+      const grounded = go(hard, plan.filter((s) => !(s.jump && s.t > (fin.beat - 1) * sspb))).d;
+      ok('...and swung from the ground, the air opening does not land', grounded.state === 'won' && !grounded.ko, `ko ${grounded.ko}`);
+      D.drills[0] = null;
+    }
 
     // The picker: ◀▶ turns a row, and it opens on DANCE.
     D.kata.openPicker(her, fl);
@@ -37490,6 +37674,32 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
           && withDrops === CO.beams(CO.LEVELS[0], 0).filter((q) => q.sec !== 'gaps').length,
         `${dropWorst.toFixed(4)} ${drops} ${withDrops}`);
       ok('...and a LOW beam reads stronger than a high one: brighter, narrower footprint and a darker shadow', order);
+      /* HER SECTION IN ITS COLOURS, THE REST NOT. "future ones ... the
+         greenish color and the ones already completed ... grayed out". Put a
+         run on each checkpoint in turn and ask every beam's paint. */
+      const keep = G.run;
+      let wrong = 0; let seenAll = true;
+      const list0 = CO.beams(CO.LEVELS[0], 1);
+      for (let cp = 0; cp < CO.SECTIONS.length; cp++) {
+        G.run = { cp, drill: { state: 'live' } };
+        G._paintCourse(CO.LEVELS[0], 1);
+        const looks = new Set();
+        list0.forEach((q, k) => {
+          const fx = G.beamFx[k];
+          const want = fx.secI < cp ? SN.BEAM_DONE.col : fx.secI > cp ? SN.BEAM_AHEAD.col : fx.col;
+          looks.add(fx.look);
+          if (fx.glow.material.color.getHex() !== want || fx.ends[0].material.color.getHex() !== want) wrong++;
+        });
+        if (cp === 3) seenAll = looks.size === 3;
+      }
+      G.run = null;
+      G._paintCourse(CO.LEVELS[0], 1);
+      const back = G.beamFx.every((fx) => fx.look === 'live' && fx.glow.material.color.getHex() === fx.col && fx.core.material.color.getHex() === 0xffffff);
+      G.run = keep;
+      ok('...and in a run only her own section wears its colours: the ones ahead dark green, the ones passed grey, and all of them back when nobody runs',
+        wrong === 0 && seenAll && back && G.beamFx.every((fx) => fx.secI >= 0)
+        && new Set([SN.BEAM_AHEAD.col, SN.BEAM_DONE.col, ...G.beamFx.map((fx) => fx.col)]).size === 2 + new Set(G.beamFx.map((fx) => fx.col)).size,
+        `${wrong} wrong`);
     }
     ok('...and the stones are real floors: standing on one stands her at its height',
       (() => {
@@ -37765,18 +37975,37 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       G.run.sMax = sv;
       for (let k = 0; k < 240; k++) G._easeCamera(1 / 60);
     }
-    // One press of INTERACT does not stop her; holding it does.
-    G.watchPad(d0, { down: (a) => a === 'interact' });
+    /* A WAY OUT. "we need a way for the player to be able to leave the
+       gauntlet if it is too difficult ... press the 'action' button to bring
+       up a menu to quit, like we do for the Kata Trace". One press ASKS, and
+       the cursor opens on "no" (non-negotiable 7). */
+    d0.spec.quit(d0);
+    const ask = D.choices[0];
+    ok('正弦 INTERACT mid-run asks LEAVE THE GAUNTLET?, the cursor on "no, keep running", and the run goes on',
+      ask?.title === 'LEAVE THE GAUNTLET?' && ask.i === 0 && /^no, keep running$/.test(ask.rows[0].text)
+      && /^yes, leave the Gauntlet$/.test(ask.rows[1].text) && d0.state === 'live');
+    ask.pick();
     G._tick(d0, 0.1);
-    ok('正弦 one press of INTERACT does not stop a run', d0.state === 'live');
-    for (let k = 0; k < 20; k++) { G.watchPad(d0, { down: (a) => a === 'interact' }); put(her, isleSpot(I, CO.START.a, CO.START.b)); G._tick(d0, 0.1); }
-    ok('...but holding it for STOP_HOLD does, and says so', d0.state === 'failed' && /stopped/.test(d0.why ?? ''), d0.why);
-    // Her drill ends: she is written down, she goes to the stands, her sister runs.
+    ok('...and "no" closes it with the run still live', !D.choices[0] && d0.state === 'live');
+    d0.spec.quit(d0);
+    D.choices[0].i = 1;
+    D.choices[0].pick();
+    ok('...and "yes" ends the run, and says who left', d0.state === 'failed' && /left the Sine Gauntlet/.test(d0.why ?? ''), d0.why);
+    // Her drill ends: she is written down, she goes OUT (not to the stands), her sister runs.
     for (let k = 0; k < 400 && D.drills[0] === d0; k++) { if (!d0.update(1 / 60)) { d0.dispose(); D.drills[0] = null; } }
     G.update(1 / 60);
     const d1 = D.drills[1];
-    ok('...and when her run is over her sister is next, at the same level, and she watches from the stands',
-      G.session?.runner === 1 && d1?.spec.id === 'sine.L1' && G.inStands(her) && G.session.results.length === 1);
+    const lq = lc(her.position.x - SW.SIM.dx, her.position.z - SW.SIM.dz);
+    ok('...and when she has left, her sister is next at the same level, and she is out on the plaza, not in the stands, her run on the board',
+      G.session?.runner === 1 && d1?.spec.id === 'sine.L1' && !G.inSession(her) && !D.st[0].benched
+      && G.session.results.length === 1 && G.session.results[0].i === 0 && lq.a < -17, `${lq.a.toFixed(1)}`);
+    const rd = (u) => readFileSync(new URL(u, import.meta.url), 'utf8');
+    const mainSrc = rd('../src/main.js');
+    ok('...and the pause menu has LEAVE THE SINE GAUNTLET in the holo colour, there only while somebody is in it, asking first',
+      /id="btn-leave-gauntlet" data-action="leave-gauntlet"/.test(rd('../index.html'))
+      && /class="menu-btn holo-btn hidden" id="btn-leave-gauntlet"/.test(rd('../index.html'))
+      && /btn-leave-gauntlet'\)\s*\?\.classList\.toggle\('hidden', !\(on && this\.players\.some\(\(p\) => this\.dream\?\.sine\?\.inSession\(p\)\)\)\)/.test(mainSrc)
+      && /if \(a === 'leave-gauntlet'\) \{[\s\S]{0,900}this\.confirm\.ask\(\{[\s\S]{0,500}no: 'NO, KEEP RUNNING',\s*yes: 'YES, LEAVE THE GAUNTLET',[\s\S]{0,120}G\.leaveGauntlet\(p\)/.test(mainSrc));
     // Her sister finishes: a time.
     for (let k = 0; k < 200 && d1.state === 'ready'; k++) d1.update(1 / 60);
     const fin = isleSpot(I, CO.LANES.at(-1), CO.FINISH_B + 0.5);
@@ -39249,6 +39478,17 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         /if \(site && mine\.length && mine\.every\(\(p\) => p\.realm === 'sim'\)\)/.test(mm)
         && /this\._drawSim\(site, players\.filter\(\(p\) => p\.realm === 'sim'\), mine\)/.test(mm)
         && /g\.world\.simSite = this\.simSite\(\);/.test(ddSrc));
+      /* ...AND WHERE THE MAPS ARE. "show the 'Map of the Simulator' locations
+         on the minimap so players know where they are". Every kiosk standing,
+         in the same world frame as her, and drawn by the minimap. */
+      const kioskAt = D.mapKiosks.map((k) => k.group.getWorldPosition(new THREE.Vector3()));
+      ok('地図 every map kiosk is marked on the simulator\'s minimap, where a kitten standing at it is',
+        site.maps.length === 5 && site.maps.length === D.mapKiosks.length
+        && site.maps.every((q, i) => Math.abs(q.x - kioskAt[i].x) < 0.01 && Math.abs(q.z - kioskAt[i].z) < 0.01)
+        && /for \(const q of site\.maps \?\? \[\]\) this\._mapPin\(/.test(mm),
+        site.maps.map((q, i) => `${(q.x - kioskAt[i].x).toFixed(2)},${(q.z - kioskAt[i].z).toFixed(2)}`).join(' '));
+      ok('...and on Lionheart\'s map card too',
+        (D.guide.mapSvg(her).match(/class="ln-kiosk"/g) ?? []).length === 5);
       ok('...and its names are clamped onto the canvas, which a phone\'s half-size map needs',
         /x = Math\.min\(Math\.max\(x, half\), this\.canvas\.width - half\);/.test(mm));
 
@@ -40250,6 +40490,8 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
        (dream/stories.js) — the same voice, the same folder, the same rule. */
     ...Object.entries(ST.GEAR_VOICE).map(([k, id]) => [ST.GEAR_LINES[k], id, `gear.${k}`]),
     ...ST.STORY_ROWS.filter((r) => r.who === 'lion').map((r) => [r.text, r.voice, r.voice]),
+    // Knocked down by a Kata Trace finishing attack (dream/kata.js).
+    ...Object.entries((await import('../src/systems/dream/kata.js')).KATA_LINES).map(([k, l]) => [l.line, l.voice, `kata.${k}`]),
   ];
   ok('every recorded line of his is a line he actually has',
     Object.keys(DD.LION_VOICE).every((k) => typeof DD.LION_LINES[k] === 'string'));
@@ -42615,6 +42857,205 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
    and 71) because it was only ever counted by hand — and counting the output by
    hand gets it wrong too: labels longer than the 42-char pad push the status
    past the column you'd grep for. The script knows; let it say. */
+console.log('\n--- Lionheart\'s charts leave her openings, and end on a finishing attack ---');
+{
+  const BM = await import('../src/systems/dream/beatmap.js');
+  const bad = [];
+  let total = 0;
+  for (const S of BM.SONGS) {
+    for (const diff of BM.DIFF_IDS) {
+      const c = BM.generateChart(S.id, diff);
+      const D = BM.DIFFS[diff];
+      const sl = BM.resolveSlashes(c);
+      const as = BM.resolveChart(c);
+      total += sl.length;
+      const why = [];
+      if (BM.unfair(c).length) why.push('unfair');
+      if (!BM.route(c)) why.push('no route');
+      const fin = sl.filter((s) => s.finish);
+      if (fin.length !== 1 || fin[0] !== sl[sl.length - 1] || fin[0].beat <= (as[as.length - 1]?.beat ?? -1) || fin[0].beat > c.beats) why.push('finish');
+      // Phrases: no more than SLASH_COMBO in a row, steps of a beat (or half, on HARD only), and he never moves inside one.
+      let run = 1;
+      for (let i = 1; i < sl.length; i++) {
+        const step = sl[i].beat - sl[i - 1].beat;
+        if (step <= 1) {
+          run++;
+          if (step === 0.5 && !D.half) why.push(`half-beat on ${diff}`);
+          if (sl[i].spot !== sl[i - 1].spot) why.push('moved mid-combo');
+        } else run = 1;
+        if (run > Math.min(BM.SLASH_COMBO, Math.max(D.combo, 1))) why.push(`combo of ${run}`);
+      }
+      // She can reach the mark in front of him: two moves since the last blow.
+      for (const s of sl) {
+        const before = as.filter((a) => a.beat < s.beat).pop();
+        if (before && s.beat - before.beat < 2) why.push(`opening ${s.beat} a beat after a blow`);
+      }
+      if (why.length) bad.push(`${S.id}/${diff}: ${[...new Set(why)].join(', ')}`);
+    }
+  }
+  ok('every built-in chart is still fair, has openings, and ends on ONE finishing attack after his last blow', !bad.length && total > BM.SONGS.length * 3,
+    bad.slice(0, 4).join(' | ') || `${total} openings`);
+  const txt = BM.chartToText({ ...BM.generateChart('vr', 'hard') });
+  const back = BM.parseChart(txt);
+  ok('...a slash is a line of the JSON like any other, and reads back the same',
+    /"slash": true/.test(txt) && back.chart && BM.chartToText(back.chart) === txt);
+  const no = BM.parseChart({ format: BM.FORMAT, song: 'vr', difficulty: 'easy', beats: 8, events: [{ beat: 2, slash: 'yes' }, { beat: 3, slash: true, attack: 'cut' }] });
+  ok('...and a slash that is not `true`, or is two things at once, is refused in words', !no.chart && no.errors.length === 2, no.errors.join(' / '));
+}
+
+console.log('\n--- Shadow Lionheart\'s song: his theme, two 凶, and the finale in the air ---');
+{
+  const BM = await import('../src/systems/dream/beatmap.js');
+  const { MUSIC } = await import('../src/core/audio.js');
+  const S = BM.songById('shadow');
+  ok('his theme is a song on the Kata Trace list, written to two rounds of itself (64 beats a round)',
+    MUSIC.shadow?.tune === 'shadow' && S && S.name === 'Shadow Lionheart' && S.beats === 128 && Math.abs(S.spb - MUSIC.shadow.beat * 2) < 1e-9);
+  const asrc = readFileSync(new URL('../src/core/audio.js', import.meta.url), 'utf8');
+  ok('...sung by a synthesised choir, in its own Latin — nobody\'s voice, and no file',
+    /_choir\(B, at, hzs, v, len, peak/.test(asrc) && /UMBRA LEONIS/.test(asrc) && /honor: \[/.test(asrc)
+    && !/\.(mp3|ogg|wav)/.test(asrc.slice(asrc.indexOf('_shadowStep(t, step, M) {'), asrc.indexOf('_vrStep(t, step, M) {'))));
+  const msrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  ok('...and it is what his fight plays while a round is live', /this\.dream\?\.shadow\?\.state === 'live'\) \{ this\._vrLevel = 1; return 'shadow'; \}/.test(msrc));
+  const bad = [];
+  for (const diff of BM.DIFF_IDS) {
+    const c = BM.generateChart('shadow', diff);
+    const p = BM.parseChart(BM.chartToText(c));
+    const as = BM.resolveChart(c);
+    const groups = [...new Set(as.filter((a) => a.kyoG).map((a) => a.kyoG))].map((g) => as.filter((a) => a.kyoG === g));
+    const sl = BM.resolveSlashes(c);
+    const fin = sl.find((s) => s.finish);
+    if (BM.unfair(c).length || !BM.route(c)) bad.push(`${diff}: unfair`);
+    if (p.warnings.length || p.errors.length) bad.push(`${diff}: ${[...p.errors, ...p.warnings][0]}`);
+    if (groups.length !== 2 || groups.some((g) => g.length !== 3 || g.some((a, i) => a.kyo !== i + 1 || a.attack !== 'cross'))) bad.push(`${diff}: 凶 groups`);
+    const marks = (a) => [...BM.hitMarks('cross', a.spot)].sort().join();
+    if (groups.some((g) => g.some((a, i) => i && marks(a) === marks(g[i - 1])))) bad.push(`${diff}: an X that does not make her move`);
+    if (!fin?.air) bad.push(`${diff}: finish not in the air`);
+  }
+  const gaps = BM.resolveChart(BM.generateChart('shadow', 'hard')).filter((a) => a.kyo > 1).map((a, i, xs) => a.beat - (BM.resolveChart(BM.generateChart('shadow', 'hard')).find((b) => b.kyoG === a.kyoG && b.kyo === a.kyo - 1).beat));
+  ok('every level of his song is fair, warns nothing, has two 凶 that each make her move, and ends in the air', !bad.length, bad.join(' | '));
+  ok('...and on HARD one 凶 comes a beat apart: two steps a beat', Math.min(...gaps) === 1 && BM.movesBetween(0, { beat: 1, tell: 0.75, kyo: 2 }) === 2, gaps.join(' '));
+}
+
+console.log('\n--- the beat-map grid is one stop, then its lines, then a line\'s buttons ---');
+{
+  /* Richard: "moving up/down between the UI will select the entire beat maps
+     section as a whole, if the user clicks into it, then it will select the
+     line beats ... if user clicks into a line, then they can select the
+     various buttons within the line." Driven on plain objects, as `_reseat`
+     is above: the rule is numbers and order, not layout. */
+  const BM = await import('../src/systems/dream/beatmap.js');
+  const mk = (tag, cls = []) => {
+    const set = new Set(cls);
+    return {
+      tagName: tag, offsetParent: {}, kids: [], clicks: 0, events: [], dataset: {},
+      classList: { add: (c) => set.add(c), remove: (...c) => c.forEach((x) => set.delete(x)), contains: (c) => set.has(c) },
+      has: (c) => set.has(c),
+      click() { this.clicks += 1; },
+      dispatchEvent(e) { this.events.push(e); return true; },
+      scrollIntoView() {},
+    };
+  };
+  const rows = [0, 1, 2, 3].map((r) => {
+    const row = mk('DIV', ['ke-r']);
+    row.dataset.row = String(r);
+    row.cells = [0, 1, 2].map(() => mk('BUTTON', ['menu-btn']));
+    row.querySelectorAll = () => row.cells;
+    return row;
+  });
+  const group = mk('DIV');
+  group.querySelectorAll = () => rows;
+  const panel = { id: 'panel-kata-editor', querySelector: () => group };
+  globalThis.CustomEvent ??= class { constructor(type, o) { this.type = type; this.detail = o?.detail; } };
+  globalThis.document ??= {};
+  const prevQ = globalThis.document.querySelectorAll;
+  globalThis.document.querySelectorAll = () => [];
+  const nav = new MenuNav({ audio: { play: () => {} } });
+  let pad = {};
+  nav._read = () => ({ x: pad.x ?? 0, y: pad.y ?? 0, confirm: !!pad.confirm, back: !!pad.back, spend() {} });
+  nav._step = (v) => Math.sign(v);
+  const press = (p) => { pad = p; nav._updateDive(panel, { st, group }, 0.016); pad = {}; };
+  const st = { depth: 1, row: 2, cell: 0 };
+  nav.dives = new Map([[panel.id, st]]);
+  press({});
+  ok('JUMP into the grid starts on the line she was on, ringed as a line',
+    rows[2].has('nav-focus') && rows[2].has('nav-in') && rows[2].events.some((e) => e.type === 'navfocus' && e.detail.row === 2));
+  press({ y: 1 });
+  ok('...down is the next line, and the page is told which', st.row === 3 && rows[3].has('nav-focus')
+    && rows[3].events.some((e) => e.detail?.row === 3));
+  press({ y: 1 });
+  ok('...and stops at the last line rather than wrapping or leaving', st.row === 3);
+  press({ x: 1 });
+  ok('...left/right does nothing on a whole line', st.depth === 1 && rows[3].cells.every((c) => c.clicks === 0));
+  press({ confirm: true });
+  ok('...JUMP on a line goes into its buttons, at the first', st.depth === 2 && rows[3].cells[0].has('nav-focus'));
+  press({ x: 1 });
+  press({ y: -1 });
+  ok('...right walks the line, and up keeps the same button on the line above', st.cell === 1 && st.row === 2 && rows[2].cells[1].has('nav-focus'));
+  press({ confirm: true });
+  ok('...JUMP there presses that one button, once', rows[2].cells[1].clicks === 1
+    && rows.flatMap((r) => r.cells).reduce((n, c) => n + c.clicks, 0) === 1);
+  press({ back: true });
+  press({ back: true });
+  ok('...and BACK comes out one level at a time, to the grid as one stop', st.depth === 0);
+  ok('...where the page\'s own list takes over again', nav._dive(panel) === null);
+  nav.undive(panel.id);
+  ok('...and opening the page afresh forgets the line', !nav.dives.has(panel.id));
+  globalThis.document.querySelectorAll = prevQ;
+
+  const nsrc = readFileSync(new URL('../src/systems/menunav.js', import.meta.url), 'utf8');
+  ok('...a group is one stop in the page list, and what is inside it is not',
+    /\[data-nav-group\]'/.test(nsrc) && /!el\.parentElement\?\.closest\?\.\('\[data-nav-group\]'\)/.test(nsrc));
+  const esrc = readFileSync(new URL('../src/systems/dream/kataeditor.js', import.meta.url), 'utf8');
+  ok('...the editor\'s grid is that group, its beats are the lines, and its floor follows the line',
+    /id="ke-grid-wrap" data-nav-group/.test(esrc) && /data-nav-row/.test(esrc)
+    && /addEventListener\('navfocus'/.test(esrc) && /undive\?\.\('panel-kata-editor'\)/.test(esrc));
+
+  /* ½. "Lionheart's half beat moves should be a toggle." */
+  ok('...½ is its own column, and flips his move between the beat and the half-beat',
+    /data-k="half"/.test(esrc) && /m\.beat = m\.beat % 1 \? beat : beat \+ 0\.5/.test(esrc)
+    && /Pick where he moves on beat/.test(esrc));
+  const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  const tmpl = css.match(/\.ke-grid-head, \.ke-r \{[^}]*grid-template-columns:([^;]*);/)?.[1] ?? '';
+  const reps = [...tmpl.matchAll(/repeat\((\d+), minmax\([^)]*\)\)/g)];
+  const cols = reps.reduce((n, m) => n + Number(m[1]), 0)
+    + tmpl.replace(/repeat\(\d+, minmax\([^)]*\)\)/g, '').replace(/minmax\([^)]*\)/g, 'X').trim().split(/\s+/).filter(Boolean).length;
+  ok('...and the grid template has a column for every cell a line draws (beat + 5 spots + ½ + 3 attacks + ⚔)',
+    cols === 1 + BM.LION_SPOTS.length + 1 + BM.ATTACKS.length + 1, `${cols} columns: ${tmpl}`);
+  /* ⚔ cycles none → beat → beat+half → half → none, on a chart, through the real `_toggle`. */
+  {
+    const { KataEditor } = await import('../src/systems/dream/kataeditor.js');
+    const ed = { chart: { events: [] }, game: {}, _changed() {}, _say() {} };
+    const seen = [];
+    for (let i = 0; i < 4; i++) {
+      KataEditor.prototype._toggle.call(ed, 5, 'slash', '1');
+      seen.push(ed.chart.events.filter((e) => e.slash).map((e) => e.beat).join('+') || '-');
+    }
+    ok('...⚔ cycles a line\'s openings: on the beat, beat and half-beat, the half-beat alone, none', seen.join(' ') === '5 5+5.5 5.5 -', seen.join(' '));
+  }
+
+  /* A new song or level is a new map, asked first when hers is changed. */
+  ok('changing the song or level loads his chart for it — asking first, with the box put back, only if she changed the map',
+    /if \(!this\.dirty\) \{ go\(\); return; \}\s*\$\(id\)\.value = this\.chart\[key\];/.test(esrc)
+    && /'yes, replace my map', 'no, keep my map', go\)/.test(esrc));
+
+  /* "By". */
+  ok('a signed chart says who by, an unsigned one says nothing',
+    BM.byLine({ author: ' Mia ' }) === ' · by Mia' && BM.byLine({ author: '' }) === '' && BM.byLine(null) === '');
+  const ksrc = readFileSync(new URL('../src/systems/dream/kata.js', import.meta.url), 'utf8');
+  ok('...on the Kata Trace picker and the editor\'s saved list', /c\.chart\.title\}\$\{BM\.byLine\(c\.chart\)\}/.test(ksrc)
+    && /esc\(BM\.byLine\(c\.chart\)\)/.test(esrc));
+
+  /* Typing. "the wasd and okl; text shouldn't be overridden by input". */
+  const { typingIn } = await import('../src/core/input.js');
+  ok('a text field, a textarea and contenteditable are typed into; a slider and a button are not',
+    typingIn({ tagName: 'INPUT', type: 'text' }) && typingIn({ tagName: 'TEXTAREA' }) && typingIn({ isContentEditable: true })
+    && !typingIn({ tagName: 'INPUT', type: 'range' }) && !typingIn({ tagName: 'BUTTON' }) && !typingIn(null));
+  const isrc = readFileSync(new URL('../src/core/input.js', import.meta.url), 'utf8');
+  ok('...the game hears no key typed into a box, and Escape only leaves the box',
+    /if \(typingIn\(e\.target\)\) \{\s*if \(e\.code === 'Escape'\) \{ e\.target\.blur\(\); e\.preventDefault\(\); \}\s*return;/.test(isrc)
+    && /typingIn\(e\.target\)\) \{\s*e\.preventDefault\(\);\s*e\.stopImmediatePropagation\(\);\s*e\.target\.blur\(\);/.test(esrc));
+}
+
 console.log(fails
   ? `\n${fails} of ${checks} CHECK(S) FAILED`
   : `\nall ${checks} checks passed`);
