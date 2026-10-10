@@ -644,6 +644,94 @@ export function gateSignSpot(dc, dir, halfW = 2.2) {
     z: dc.z + dir.z * r + dir.x * side,
   };
 }
+/**
+ * Is a bubble's whole quad inside this lens? `slack` is how far past the edge
+ * (in NDC, 1 = the edge) a corner may go. The checks ask it of what
+ * `fitBubble` leaves.
+ */
+export function bubbleInFrame(b, camera, slack = 1) {
+  const g = b.geometry?.parameters;
+  if (!g) return true;
+  camera.updateMatrixWorld();
+  b.updateWorldMatrix(true, false);
+  for (const sx of [-0.5, 0.5]) {
+    for (const sy of [-0.5, 0.5]) {
+      _v.set(sx * g.width, sy * g.height, 0).applyMatrix4(b.matrixWorld).project(camera);
+      if (!(_v.z > -1 && _v.z < 1) || Math.abs(_v.x) > slack || Math.abs(_v.y) > slack) return false;
+    }
+  }
+  return true;
+}
+
+/** How far in from a lens's side edge `fitBubble` leaves a bubble, in NDC. */
+export const BUBBLE_EDGE = 0.97;
+
+/**
+ * Keep a speaker's bubble wholly inside this lens, or say it cannot be.
+ *
+ * Richard: "When Lionheart is talking in the simulator, if you walk away from
+ * him, his speech bubble on the bottom of the screen is many times starting in
+ * the bottom-middle of the screen and bleeding off the edge of the right side
+ * of the screen." The hologram's bubble was up for as long as he was talking,
+ * wherever she was, and it is drawn over everything (depthTest off). Walking
+ * away up her screen puts him off its bottom edge, and his bubble still hung
+ * from there, its tail where he was and twelve units of words running off to
+ * the side. Measured through her own follow camera: from 10 units out, every
+ * step of the walk.
+ *
+ * HIDING EVERY BUBBLE THAT DID NOT FIT WAS TRIED FIRST, AND IS WRONG. Within
+ * LION_NEAR of him, on a 16:9 lens, his islands line fits whole in only 28 of
+ * 96 spots, while he himself is on screen in 69 — so that rule took his bubble
+ * away from nearly everybody standing beside him. What it asks instead:
+ *
+ * - HIS HEAD MUST BE IN THE LENS (where the tail points). If it is not, there
+ *   is nobody on screen for the bubble to belong to: false, and the caller
+ *   hides it and puts his words on the screen card.
+ * - THE BUBBLE SLIDES ALONG THE LENS, never off it: it is moved along the
+ *   camera's right, and up, by just its overflow past BUBBLE_EDGE. The plane
+ *   faces the camera, so one depth converts NDC to world units for all of it.
+ *   Sliding DOWN was needed too: with only the sideways slide, a bubble over a
+ *   head near the top of the lens ran off the top (3 of 96 spots) or was
+ *   hidden from a kitten who could see him plainly.
+ * - A bubble bigger than the lens cannot be fixed by sliding: false.
+ *
+ * `slack` is the hysteresis on "in the lens" (see `faceCamera`).
+ */
+export function fitBubble(b, camera, right, slack = 1) {
+  const g = b.geometry?.parameters;
+  const host = b.parent;
+  if (!g || !host || !camera.isPerspectiveCamera) return true;
+  camera.updateMatrixWorld();
+  b.updateWorldMatrix(true, false);
+  // His head: the tail's tip, at the height the bubble is hung for.
+  _v.set(0, b.position.y + (b.userData.tipY ?? 0), 0).applyMatrix4(host.matrixWorld).project(camera);
+  if (!(_v.z > -1 && _v.z < 1) || Math.abs(_v.x) > slack || Math.abs(_v.y) > slack) return false;
+  let lo = Infinity; let hi = -Infinity; let bot = Infinity; let top = -Infinity;
+  for (const sx of [-0.5, 0.5]) {
+    for (const sy of [-0.5, 0.5]) {
+      _v.set(sx * g.width, sy * g.height, 0).applyMatrix4(b.matrixWorld).project(camera);
+      if (!(_v.z > -1 && _v.z < 1)) return false;
+      lo = Math.min(lo, _v.x);
+      hi = Math.max(hi, _v.x);
+      bot = Math.min(bot, _v.y);
+      top = Math.max(top, _v.y);
+    }
+  }
+  if (hi - lo > 2 * BUBBLE_EDGE || top - bot > 2 * BUBBLE_EDGE) return false;
+  const over = (a, z) => (z > BUBBLE_EDGE ? BUBBLE_EDGE - z : a < -BUBBLE_EDGE ? -BUBBLE_EDGE - a : 0);
+  const dx = over(lo, hi);
+  const dy = over(bot, top);
+  if (dx || dy) {
+    _v.setFromMatrixPosition(b.matrixWorld).applyMatrix4(camera.matrixWorldInverse);
+    const perNdc = -_v.z * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
+    _up.set(0, 1, 0).applyQuaternion(camera.quaternion);
+    b.position.x += right.x * dx * perNdc * camera.aspect + _up.x * dy * perNdc;
+    b.position.y += _up.y * dy * perNdc;
+    b.position.z += right.z * dx * perNdc * camera.aspect + _up.z * dy * perNdc;
+  }
+  return true;
+}
+
 /** Who the caption card says is talking. */
 export const LION_WHO = { name: 'LIONHEART', sub: 'Dream Dojo', colour: '#ff3b3b' };
 
@@ -965,17 +1053,36 @@ export class DreamDojo {
     return m;
   }
 
-  /** One bubble pair, shown for this lens on the side away from the tubes. */
-  _turnBubble(m, camera) {
+  /** One bubble pair, shown for this lens on the side away from the tubes.
+   *  With a `gate` ({ near, slack }) it is also kept inside the lens, and
+   *  HIDDEN from one whose kittens are too far to read it or that cannot show
+   *  him — see `fitBubble`. Returns false when it hid a bubble that was up. */
+  _turnBubble(m, camera, gate = null) {
     const s = lionBubbleSide(this.layout, _right);
     const b = s > 0 ? m.r : m.l;
     m.r.visible = m.on && s > 0;
     m.l.visible = m.on && s < 0;
-    if (!m.on) return;
+    if (!m.on) return true;
     b.quaternion.copy(camera.quaternion);
     const off = s * (1.4 + (b.userData.w ?? 4) * 0.5);
     b.position.x = _right.x * off;
     b.position.z = _right.z * off;
+    // From where it rests, every lens: `fitBubble` may have slid it for the last.
+    if (b.userData.y0 !== undefined) b.position.y = b.userData.y0;
+    if (!gate || (gate.near && fitBubble(b, camera, _right, gate.slack))) return true;
+    b.visible = false;
+    return false;
+  }
+
+  /** Is any kitten this lens is for in the sim and near enough the hologram
+   *  to read him — the same LION_NEAR `_captionHolo` hands the card over at. */
+  _lensNearHolo(members) {
+    return members.some((i) => {
+      const p = this.game.players?.[i];
+      if (!p || this.realmOf(p) !== 'sim') return false;
+      const q = this._flatPos(p);
+      return Math.hypot(q.x - this.layout.lion.x, q.z - this.layout.lion.z) < LION_NEAR;
+    });
   }
 
   /** Have the HOLOGRAM say something — the one a kitten in the sim can see.
@@ -3070,7 +3177,7 @@ export class DreamDojo {
       m.on = on && this.bubbleShow > 0.02;
       for (const b of [m.r, m.l]) {
         b.material.opacity = this.bubbleShow;
-        b.position.y = LION_HEIGHT * 0.9 - (b.userData.tipY ?? 0) + Math.sin(this.t * 1.5) * 0.15;
+        b.position.y = b.userData.y0 = LION_HEIGHT * 0.9 - (b.userData.tipY ?? 0) + Math.sin(this.t * 1.5) * 0.15;
         if (!m.on) b.visible = false;
       }
     }
@@ -3099,7 +3206,7 @@ export class DreamDojo {
         m.on = on && this.holoShow > 0.02;
         for (const b of [m.r, m.l]) {
           b.material.opacity = this.holoShow * 0.92;
-          b.position.y = LION_HEIGHT * 0.9 - (b.userData.tipY ?? 0) + Math.sin(this.t * 1.5) * 0.15;
+          b.position.y = b.userData.y0 = LION_HEIGHT * 0.9 - (b.userData.tipY ?? 0) + Math.sin(this.t * 1.5) * 0.15;
           if (!m.on) b.visible = false;
         }
       }
@@ -3126,12 +3233,19 @@ export class DreamDojo {
    * frame, so a kitten who walks away mid-sentence gets the rest of it.
    */
   _captionHolo() {
+    /* ...OR WHOSE LENS COULD NOT SHOW HIS BUBBLE. `faceCamera` hides it from
+       a pane that cannot (`fitBubble`: he is off it, or it will not fit) and
+       says so here, a frame late, which is the order the loop runs in. Near
+       enough to read him and still shown nothing would be the hole the card
+       exists to fill. */
+    const unseen = !!this._holoUnseen;
+    this._holoUnseen = false;
     const a = this.game.announcer;
     const text = this.holoText;
     if (!a?.follow || !text || !this.voice.saying(text)) return;
     const el = this.voice.elOf(text);
     if (a.following(el)) return;
-    const far = this.simKittens().some((p) => {
+    const far = unseen || this.simKittens().some((p) => {
       const q = this._flatPos(p);
       return Math.hypot(q.x - this.layout.lion.x, q.z - this.layout.lion.z) >= LION_NEAR;
     });
@@ -3141,8 +3255,9 @@ export class DreamDojo {
 
   /* ------------------------------ rendering ------------------------------- */
 
-  /** Every billboard the arcade owns, turned to this lens. */
-  faceCamera(camera) {
+  /** Every billboard the arcade owns, turned to this lens. `members` is the
+   *  kittens the lens is for, when it has any (a scene's camera has none). */
+  faceCamera(camera, members = null) {
     if (!this.built) return;
     this.lionSprite?.faceCamera(camera);
     this.holoLionSprite?.faceCamera(camera);
@@ -3187,7 +3302,21 @@ export class DreamDojo {
       for (const d of this.drills) d?.faceCamera(camera);
       for (const r of this.rundowns) r?.faceCamera(camera);
       for (const s of this.st) s?.bar?.faceCamera(camera);
-      for (const [, m] of this.holoBubbles ?? []) this._turnBubble(m, camera);
+      /* HIS BUBBLE ONLY WHERE IT CAN BE READ (`fitBubble`): a lens whose
+         kittens are near him and that has him in it, slid to stay inside it.
+         Anybody else has his words on the screen's card (`_captionHolo`).
+         Held with a little hysteresis per pane, so he does not blink as he
+         crosses the edge of a lens. A scene's camera, with no kittens to ask,
+         keeps the old rule. */
+      const key = members?.[0];
+      const gate = members?.length ? {
+        near: this._lensNearHolo(members),
+        slack: (this._holoFits ??= [])[key] === false ? 0.96 : 1.02,
+      } : null;
+      let fits = true;
+      for (const [, m] of this.holoBubbles ?? []) if (!this._turnBubble(m, camera, gate)) fits = false;
+      if (gate) this._holoFits[key] = fits;
+      if (!fits) this._holoUnseen = true;
       for (const t of this.simTubes ?? []) t.num.quaternion.copy(camera.quaternion);
     }
   }
@@ -3225,5 +3354,7 @@ export class DreamDojo {
 }
 
 const _right = new THREE.Vector3();
+const _v = new THREE.Vector3();
+const _up = new THREE.Vector3();
 const _grey = new THREE.Color();
 const _e = new THREE.Euler();

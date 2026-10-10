@@ -578,6 +578,12 @@ quoted.
   - [voices.md](docs/notes/voices.md#lionheart-is-barrett-and-the-wording-is-half-the-casting)
     has the casting, the rule and the gating.
 
+- **The hologram's bubble stays on her lens** (branch `bugfix/holo-bubble-off-lens`).
+  [dreamdojo.md](docs/notes/dreamdojo.md#the-holograms-bubble-stays-on-her-lens):
+  his bubble is hidden from a pane that is too far away or cannot see him (his
+  words go on the screen card instead), and otherwise slides to stay inside
+  the pane. **Open:** nobody has played it.
+
 - **A trial's loan, and angels in Shadow Lionheart's fight** (branch
   `mixed/holo-equipped-shadow-angels`).
   [dreamdojo.md](docs/notes/dreamdojo.md#the-trials-loan-and-angels-in-shadow-lionhearts-fight):
