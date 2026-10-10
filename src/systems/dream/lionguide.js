@@ -221,9 +221,14 @@ export class LionGuide {
     if (aloud) this.dream.holoSay?.(text.replace(/ — /g, '\n'), 6);
   }
 
+  /** What he last said to her, for the card's head — UNTIL SHE LEAVES, with
+   *  no clock. It had a 14s one, and Richard: "after a few seconds the text
+   *  disappears and I wasn't able to read it all. Why is it disappearing? We
+   *  should keep the text on screen without a timer as it is not needed and
+   *  prevents people from reading it when they want to." The card is hers and
+   *  open on purpose; `leave` (walking off, or the card closing) clears it. */
   speaking(p) {
-    const s = this.said[p.index];
-    return s && (this.dream.t ?? 0) - s.t < 14 ? s.text : null;
+    return this.said[p.index]?.text ?? null;
   }
 
   greet(p) {

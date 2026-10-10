@@ -20793,8 +20793,11 @@ console.log('\n--- Mr. Satan loses his temper ---');
        tools for the other half. */
     ok('...and how the saved games are, which arrived with the autosave',
       noKey.includes('SaveWipe'), noKey.join(', '));
-    ok("...and the Dream Dojo's stars, which are kept per kitten for good",
-      noKey.includes('DreamWipe'), noKey.join(', '));
+    /* NOT the Dream Dojo's stars any more: they are in the save row now
+       ("it shouldn't be shared with all the play sessions"), so wiping the
+       saved games wipes them, and a third row would be a wipe of nothing. */
+    ok("...and no row for the Dream Dojo's stars, which live in the save now",
+      !noKey.includes('DreamWipe') && !/DreamWipe|_debugClearDream/.test(msrc), noKey.join(', '));
     ok('...and the panel no longer claims the board is the only thing kept',
       !/the only thing that outlives the tab/.test(msrc));
   }
@@ -28411,6 +28414,44 @@ console.log('\n--- one press is not enough, and one player drives ---');
     ok('...while one from before the ending has none',
       G4.summonScene.bridges === 0 && !W2.snakeOpen && W2.bridgeT === 0);
   }
+  /* THE DREAM DOJO'S STARS ARE THE SAVE'S. Richard: "when starting a new game
+     or refreshing the browser, I still have the player achievements ... it
+     shouldn't be shared with all the play sessions and all the new games."
+     So: they ride in the snapshot, come back with it, and a load of a save
+     that has none EMPTIES the ledger rather than leaving this page's. */
+  {
+    const PR = await import('../src/systems/dream/progress.js');
+    const mem = new Map([['kk.dreamdojo.v1', '{"v":1,"kittens":{"Ember":{"stars":{"x":3}}}}']]);
+    const store = { getItem: (k) => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, String(v)), removeItem: (k) => mem.delete(k) };
+    PR.forgetLegacy(store);
+    ok("the old browser-wide Dream Dojo ledger is dropped, so it cannot leak into a new game", !mem.has('kk.dreamdojo.v1'));
+    PR.forgetLegacy({ removeItem: () => { throw new Error('blocked'); } });
+    const GA = fakeGame(W2, 1);
+    GA.dream = { progress: new PR.DreamProgress(null) };
+    GA.dream.progress.award('Ember', 'gallery.swift', 3, 9, { lowerIsBetter: true });
+    GA.dream.progress.setFlag('Ember', 'shadow');
+    const snapD = snapshot(GA);
+    GA.dream.progress.award('Ember', 'storm', 2, 40);
+    ok("...the save carries this game's Dream Dojo stars, as a copy taken when it was written",
+      snapD.dream?.kittens?.Ember?.stars?.['gallery.swift'] === 3 && !snapD.dream.kittens.Ember.stars.storm);
+    const GB = fakeGame(W2, 1);
+    GB.dream = { progress: new PR.DreamProgress(null) };
+    GB.dream.progress.award('Frost', 'storm', 1, 5);
+    restore(GB, JSON.parse(JSON.stringify(snapD)));
+    ok('...loading it puts them back — and takes away what this page had before',
+      GB.dream.progress.stars('Ember', 'gallery.swift') === 3 && GB.dream.progress.flag('Ember', 'shadow')
+      && GB.dream.progress.stars('Frost', 'storm') === 0);
+    const olderD = JSON.parse(JSON.stringify(snapD));
+    delete olderD.dream;
+    restore(GB, olderD);
+    ok("...and a save from before they were carried comes back with none, not the last game's",
+      GB.dream.progress.count() === 0);
+    GB.dream.progress.fromSave({ v: 1, kittens: { Ember: 7, Frost: { stars: { a: 2 } } } });
+    ok('...and a junk row in the ledger is dropped, the rest kept and made whole',
+      GB.dream.progress.count() === 1 && GB.dream.progress.stars('Frost', 'a') === 2 && !!GB.dream.progress.of('Frost').best);
+    const fresh = new PR.DreamProgress(null);
+    ok('...and a new game is an empty ledger', fresh.count() === 0);
+  }
 
   if (!hadDocS) delete globalThis.document;
 
@@ -29249,14 +29290,16 @@ console.log('\n--- quests: earned before the end, paid one at a time after it --
   /* SIX SPECIAL SINCE RICHARD: "Lionheart's Honor quest should give a Special
      Kotodama orb, but make it that anyone can do the quest." It stays one of
      the five everybody-quests and pays the special draw. */
-  ok('ten quests: five for everybody, six special — the five one-kitten ones and Lionheart’s Honor',
-    FEATS.length === 10 && FEATS.filter((f) => f.who === 'each').length === 5
-      && FEATS.filter((f) => isSpecial(f.id)).length === 6
-      && FEAT_BY_ID.shadow.who === 'each' && isSpecial('shadow')
-      && FEATS.filter((f) => f.who === 'each' && isSpecial(f.id)).map((f) => f.id).join() === 'shadow',
+  /* ELEVEN SINCE KENSHI 1st CLASS: the secret mission ("Shadow's Secret") is
+     a sixth everybody-quest, special and late like Lionheart's Honor. */
+  ok('eleven quests: six for everybody, seven special — the five one-kitten ones, Lionheart’s Honor and the secret',
+    FEATS.length === 11 && FEATS.filter((f) => f.who === 'each').length === 6
+      && FEATS.filter((f) => isSpecial(f.id)).length === 7
+      && FEAT_BY_ID.shadow.who === 'each' && isSpecial('shadow') && isSpecial('secret')
+      && FEATS.filter((f) => f.who === 'each' && isSpecial(f.id)).map((f) => f.id).join() === 'shadow,secret',
     FEATS.map((f) => `${f.id}:${f.who}`).join(' '));
-  ok('...and only the Shadow’s is earned after the Awakening',
-    FEATS.filter((f) => f.late).map((f) => f.id).join() === 'shadow');
+  ok('...and only the Shadow’s two are earned after the Awakening',
+    FEATS.filter((f) => f.late).map((f) => f.id).join() === 'shadow,secret');
   ok('...and the plain-orb prize is one of them, and special like the rest of them',
     !!FEAT_BY_ID.orbs && isSpecial('orbs'));
   /* THE PROFILE ASKS THE SAME QUESTION. Richard: "In the Character Profile,
@@ -29759,9 +29802,12 @@ console.log('\n--- quests: earned before the end, paid one at a time after it --
 
     const card = helpTopic(html, 'Quests &amp; achievements');
     ok('Help has a Quests & achievements card', card.length > 200, `${card.length} chars`);
-    ok('...listing every quest by its own title, in order',
-      FEATS.every((f) => card.includes(f.title))
-        && FEATS.map((f) => card.indexOf(f.title)).every((v, k, a) => !k || v > a[k - 1]));
+    /* The secret one by its VEILED title: Help is read before anybody is 1st
+       Class, and a secret named on the Help page is not one. */
+    const helpTitle = (f) => (f.secret ? f.veiled.title : f.title);
+    ok('...listing every quest by its own title, in order — the secret one veiled',
+      FEATS.every((f) => card.includes(helpTitle(f))) && !card.includes(FEAT_BY_ID.secret.title)
+        && FEATS.map((f) => card.indexOf(helpTitle(f))).every((v, k, a) => !k || v > a[k - 1]));
     ok('...with the real numbers',
       card.includes(`${DOJO_NEED} seconds`) && card.includes(`${RIDER_NEED} seconds`));
     ok('...and says what does not count, the cap, and the rare chance',
@@ -35924,6 +35970,95 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       && Math.abs(cross) / (v.length() * pp.length()) < 1e-9 && v.dot(pp) > 0 && v.length() > pp.length()
       && Math.abs(tip(X.toHer).y - holo.point.position.y) < 1e-9,
       `${S.length} spheres, tip ${v.x.toFixed(2)},${v.y.toFixed(2)} her ${walker.position.x.toFixed(2)},${walker.position.z.toFixed(2)}, sin of the angle between ${(cross / (v.length() * pp.length())).toExponential(1)}`);
+    /* THE NUMBERS ON IT. "show the xyz values and magnitude for the vectors,
+       if it is a normalized vector, can show that somehow as well ... draw and
+       highlight the right triangle under it and show the 3 angle values
+       changing for the triangle ... highlight the area in different neon
+       colors, when the player or sphere on the unit circle changes to a
+       different quadrant". Every number asked of the point it describes. */
+    {
+      const want = (l) => l._want ?? l._text ?? '';
+      const num = (s, k) => Number(s.match(/-?\d+\.\d+/g)?.[k]);
+      at(0.8, 1.3);
+      holo.update(1 / 60, [walker]);
+      fx.update(4.1, [walker]);
+      const th = holo.theta;
+      const RD = X.read;
+      const vecOk = Math.abs(num(want(RD.r), 0) - Math.cos(th)) < 0.006 && Math.abs(num(want(RD.r), 1) - Math.sin(th)) < 0.006
+        && /\|r\| = 1\.00  ✓ NORMALIZED/.test(want(RD.r)) && /✓ NORMALIZED/.test(want(RD.n)) && /✓ NORMALIZED/.test(want(RD.t))
+        && Math.abs(num(want(RD.t), 0) + Math.sin(th)) < 0.006 && Math.abs(num(want(RD.v), 3) - holo.playerRadius) < 0.006
+        && Math.abs(holo.playerRadius - 1.3) < 0.01 && !/NORMALIZED/.test(want(RD.v));
+      at(0.8, 1);
+      holo.update(1 / 60, [walker]);
+      fx.update(4.2, [walker]);
+      const onCircle = /\|v\| = 1\.00  ✓ NORMALIZED/.test(want(RD.v));
+      ok('円 every vector reads out its (x, y, z) and its length, off the point: r, n and t are NORMALIZED, and hers only when she stands on the circle',
+        vecOk && onCircle, `${want(RD.r)} | ${want(RD.v)}`);
+
+      // The triangle: its corners are the origin, the foot of the sine leg, the point.
+      const tp = X.tri.mesh.geometry.attributes.position;
+      const P = holo.point.position;
+      const corners = [[0, 0], [P.x, 0], [P.x, P.z]].every(([x, z], i) => Math.abs(tp.getX(i) - x) < 1e-6 && Math.abs(tp.getZ(i) - z) < 1e-6);
+      let sums = 0; let refOk = true; let n = 0;
+      for (let k = 0; k < 16; k++) {
+        const a = 0.2 + k * 0.39;
+        const A = HD.triangleAngles(a);
+        sums = Math.max(sums, Math.abs(A[0] + A[1] + A[2] - 180));
+        const ref = Math.acos(Math.abs(Math.cos(a))) * 180 / Math.PI;
+        refOk &&= Math.abs(A[0] - ref) < 1e-9 && A[1] === 90; n++;
+      }
+      const shown = X.tri.angles.map((l) => Number(want(l).replace('°', '')));
+      const A0 = HD.triangleAngles(holo.theta).map((x) => Math.round(x));
+      ok('...the RIGHT TRIANGLE under the legs is filled, origin to foot to point, and its three angles add to 180 all the way round',
+        corners && sums < 1e-9 && refOk && shown.join() === A0.join() && X.tri.mesh.visible, `${shown.join(' + ')}`);
+
+      // The quadrants: walk into each, and the lit one, its colour and its name follow.
+      const seen = [];
+      for (const [a, qq] of [[5.4, 3], [0.5, 0], [2.0, 1], [3.6, 2]]) {
+        at(a, 1);
+        holo.update(1 / 60, [walker]);
+        fx.update(5 + qq, [walker]);
+        const lit = X.quad.meshes.map((m) => m.material.opacity > 0);
+        const flare = X.quad.meshes[qq].material.opacity;
+        fx.update(6 + qq, [walker]);
+        const settled = X.quad.meshes[qq].material.opacity;
+        seen.push(lit.indexOf(true) === qq && lit.filter(Boolean).length === 1 && HD.quadrantOf(holo.theta) === qq
+          && X.tri.mesh.material.color.getHex() === HD.QUAD_C[qq] && flare > settled
+          && new RegExp(`QUADRANT ${HD.QUAD_NAME[qq]} `).test(want(X.quad.label)));
+      }
+      ok('...and the quadrant she is in is lit in its own neon, named with its two signs, and flares on the way in',
+        seen.every(Boolean) && new Set(HD.QUAD_C).size === 4
+        && HD.QUAD_C.every((c) => !Object.values(HD.AXIS_C).includes(c)), seen.join());
+      /* AND NONE OF IT ON TOP OF ANYTHING ELSE. The first cut put each readout
+         at one fixed offset from its arrow, and at θ = 46° four of them were
+         stacked over the point. The placer's first set of spots still clashed
+         in 11 of these 192 frames — the normal's readout on "90° = π/2" at the
+         top of the circle, hers on the leg labels outside it — which is what
+         the either-side spots are for. Walk two laps — on the circle and outside it —
+         and ask every readout's box against every other label on the floor. */
+      let frames = 0; let clash = 0; let hops = 0; let worst = '';
+      let last = null;
+      for (const rad of [1, 1.3]) {
+        for (let k = 0; k < 96; k++) {
+          at((k / 96) * Math.PI * 2 + 0.01, rad);
+          holo.update(1 / 60, [walker]);
+          fx.update(8 + k / 60, [walker]);
+          const mine = [...Object.values(X.read), X.quad.label].filter((l) => l.visible);
+          const others = holo.labels.filter((l) => l.visible && !mine.includes(l));
+          frames++;
+          const bad = mine.some((a, i) => others.some((b) => HD.boxesOverlap(HD.labelBox(a), HD.labelBox(b), 0))
+            || mine.some((b, j) => j > i && HD.boxesOverlap(HD.labelBox(a), HD.labelBox(b), 0)));
+          if (bad) { clash++; worst ||= `θ ${((k / 96) * 360).toFixed(0)}° at ${rad}`; }
+          const now = JSON.stringify(X.spots);
+          if (last && now !== last) hops++;
+          last = now;
+        }
+      }
+      ok('...and no readout lands on another label, all the way round, on the circle and off it',
+        clash === 0, `${clash} of ${frames} frames, first ${worst}; ${hops} spot changes`);
+      at(0.8, 1.3);
+      holo.update(1 / 60, [walker]);
+    }
     fx.update(4, []);
     ok('...and when she steps off the floor her sphere and her vector go with her', X.spheres.every((s) => !s.group.visible) && !X.toHer.group.visible);
     // THE MATHS STILL THE TOWN'S, all of that drawn: drive both again.
@@ -35946,6 +36081,23 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const inSim = D.simDojoAt(her);
     her.position.set(holo.centre.x + MD.DOJO_VIEW_R + 1, 0, holo.centre.z);
     const outside = D.simDojoAt(her);
+    /* "we shouldn't move to the top view until the player is within or near
+       the unit radius, it is currently happening too early". On the hub's own
+       disc, crossing to an island, it is not the room; at the unit circle it
+       is; and walking the circle's line in and out never flickers it. */
+    const R0 = MD.DOJO_RADIUS;
+    const atR = (d) => { her.position.set(holo.centre.x + d, 0, holo.centre.z); return D.simDojoAt(her) != null; };
+    atR(60);
+    const walkIn = [40, 34, DD.SIM_DOJO_IN + 0.5, DD.SIM_DOJO_IN - 0.5, R0].map(atR);
+    let flips = 0; let was = atR(R0);
+    for (let k = 0; k < 200; k++) { const now = atR(R0 + 1.5 * Math.sin(k * 0.4)); if (now !== was) flips++; was = now; }
+    const walkOut = [DD.SIM_DOJO_IN + 1, DD.SIM_DOJO_OUT - 0.5, DD.SIM_DOJO_OUT + 0.5].map(atR);
+    ok('影 in the simulator the top view waits for the unit circle: not on the disc of the hub, yes a stride from the circle, and no flicker on its line',
+      walkIn.join() === 'false,false,false,true,true' && flips === 0 && walkOut.join() === 'true,true,false'
+      && DD.SIM_DOJO_IN < MD.DOJO_VIEW_R - 10 && DD.SIM_DOJO_IN > R0 && DD.SIM_DOJO_OUT < DD.MAP_KIOSKS[0].r,
+      `${walkIn} | ${flips} | ${walkOut}`);
+    her.position.set(holo.centre.x + 20, 0, holo.centre.z - 6);
+    D.simDojoAt(her);
     sis.position.set(holo.centre.x + 5, 0, holo.centre.z);
     const notSim = D.simDojoAt(sis);
     D.simDojo = keepSD;
@@ -37232,9 +37384,35 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       if (d < 1.5) gapMax = Math.max(gapMax, d - 0.8);
     }
     ok('...with no gap between posts a kitten (radius 0.75) fits through', gapMax < 1.2, gapMax.toFixed(2));
-    ok('...and the turns are the only ways from lane to lane: each middle wall stops short at one end only',
-      CO.WALLS[1][1][1] < CO.END_B && CO.WALLS[1][0][1] === -CO.END_B
-      && CO.WALLS[2][0][1] > -CO.END_B && CO.WALLS[2][1][1] === CO.END_B);
+    /* FIVE LANES, AND A TURN AT ALTERNATE ENDS. Each divider runs the whole
+       length of the longer of its two lanes but for ONE opening, TURN long,
+       at the end her route turns at — and her route does turn there. */
+    const turnsOk = CO.DIVIDERS.length === CO.LANES.length - 1 && CO.DIVIDERS.every(([[a0, b0], [a1, b1]], k) => {
+      const lo = Math.min(CO.SPANS[k][0], CO.SPANS[k + 1][0]); const hi = Math.max(CO.SPANS[k][1], CO.SPANS[k + 1][1]);
+      const up = k % 2 === 0;
+      const open = up ? Math.min(CO.SPANS[k][1], CO.SPANS[k + 1][1]) - b1 : b0 - Math.max(CO.SPANS[k][0], CO.SPANS[k + 1][0]);
+      const turnLeg = CO.PATH[2 * k + 1];
+      return a0 === a1 && a0 === CO.LANES[k] + CO.HALVES[k] && Math.abs(open - CO.TURN) < 1e-9
+        && (up ? b0 === lo : b1 === hi) && (up ? turnLeg[1] > b1 : turnLeg[1] < b0);
+    });
+    ok('...and the turns are the only ways from lane to lane: each divider stops short at one end only, the end her route turns at',
+      turnsOk, JSON.stringify(CO.DIVIDERS));
+    ok('...and the five lanes tile the course edge to edge, the first and last cut to half the middle one\'s width',
+      CO.LANES.every((c, k) => k === 0 || Math.abs(c - CO.HALVES[k] - (CO.LANES[k - 1] + CO.HALVES[k - 1])) < 1e-9)
+      && CO.LANES[0] - CO.HALVES[0] === CO.COURSE_A[0] && CO.LANES.at(-1) + CO.HALVES.at(-1) === CO.COURSE_A[1]
+      && CO.HALVES[0] * 2 === CO.HALVES[2] && CO.HALVES.at(-1) * 2 === CO.HALVES[2]);
+    /* "make the middle section longer, take up the entire length of the
+       diameter of the circle". The middle lane's walls reach within 1.9 of
+       the rim at both ends, and it is the longest leg of the route. */
+    const midSpan = CO.SPANS[2];
+    const rimAt = (a) => Math.sqrt(I.r * I.r - a * a);
+    const legs = CO.LANES.map((c, k) => Math.abs(CO.PATH[2 * k + 1][1] - CO.PATH[2 * k][1]));
+    ok('...and the middle lane runs rim to rim across the island, the longest leg of the route',
+      [CO.LANES[2] - CO.HALVES[2], CO.LANES[2] + CO.HALVES[2]].every((a) => rimAt(a) - midSpan[1] < 1.9 && rimAt(a) + midSpan[0] < 1.9)
+      && legs[2] === Math.max(...legs) && CO.STEPS.length >= 1,
+      `${midSpan.join('..')} legs ${legs.map((x) => x.toFixed(1)).join(' ')}`);
+    ok('...and the route is about twice the old one (121): more trials, not just more floor', CO.PATH_LEN > 200 && CO.SECTIONS.length >= 8,
+      `${CO.PATH_LEN.toFixed(1)} long, ${CO.SECTIONS.length} sections`);
     const ins = (a) => a > -17 && a < 13;
     const plaza = [
       lc(G.kiosk.x, G.kiosk.z), lc(G.board.position.x, G.board.position.z), lc(G.standDeck.x, G.standDeck.z),
@@ -37264,15 +37442,16 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
             Math.hypot(e[1].position.x - c.x, e[1].position.y - (I.y + q.y1), e[1].position.z - c.z));
         });
         CO.stones(L, t).forEach((s, n) => { worst = Math.max(worst, Math.abs(G.stoneDecks[n].y - (I.y + s.y))); });
-        const e = CO.sweepEnds(CO.SECTION.sweep, t, L.speed);
+        const MA = CO.MATH_ARM;
+        const e = CO.sweepEnds(MA, t, L.speed);
         const cq = lc(G.cosDot.position.x, G.cosDot.position.z);
-        worst = Math.max(worst, Math.abs(cq.a - CO.LANES[1] - CO.SECTION.sweep.arm.R * Math.cos(e.th)));
+        worst = Math.max(worst, Math.abs(cq.a - MA.pa - MA.R * Math.cos(e.th)), Math.abs(cq.b - MA.pb));
         const sq = lc(G.sinDot.position.x, G.sinDot.position.z);
-        worst = Math.max(worst, Math.abs(sq.b - CO.SECTION.sweep.pivot - CO.SECTION.sweep.arm.R * Math.sin(e.th)));
+        worst = Math.max(worst, Math.abs(sq.b - MA.pb - MA.R * Math.sin(e.th)), Math.abs(sq.a - MA.pa));
         void li;
       }
     }
-    ok('正弦 every beam, stone and the sweeper\'s cos and sin dots are drawn exactly where course.js says', worst < 0.01, worst.toFixed(4));
+    ok('正弦 every beam, stone and the air sweeper\'s cos and sin dots are drawn exactly where course.js says', worst < 0.01, worst.toFixed(4));
 
     /* "lack of shadows on the lasers": a black shadow at 0.36 on this floor
        was there and invisible in the browser. So every beam has a footprint of
@@ -37334,18 +37513,99 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const walk = Number(/const WALK_SPEED = ([\d.]+)/.exec(src)?.[1]);
     const sprint = Number(/const SPRINT_SPEED = ([\d.]+)/.exec(src)?.[1]);
     const apex = jv ** 2 / (2 * gr);
+    // Two jumps: the second at the top of the first, at 0.86 of the push (player.js).
+    const apex2 = apex + (jv * 0.86) ** 2 / (2 * gr);
     const bar = (y) => [{ sec: 'x', a0: -15, b0: 0, y0: y, a1: -9, b1: 0, y1: y, thick: CO.BAR_THICK }];
+    ok('正弦 player.js\'s double jump is still a second push of 0.86 — the reach the course is built against',
+      /this\.velocity\.y = JUMP_V \* 0\.86 \* jumpK;/.test(src), `apex ${apex.toFixed(2)}, two jumps ${apex2.toFixed(2)}`);
+    /* "Keep in mind, player has sprint and double jump ability, so they can
+       jump over most of the objects in this course with a well timed
+       sprint/double jump ... need to make sure that the lasers go high enough
+       to hit a player that double jumps." */
+    {
+      const zl = CO.SECTION.stones;
+      const body = 2.6 * 0.85;
+      const twins = CO.SECTIONS.filter((s) => s.twin);
+      let worstWindow = Infinity; let dblHit = Infinity;
+      for (const sec of twins) {
+        // Across a whole cycle: how often a double jump OVER bar 0 hits its twin.
+        let hits = 0; let n = 0;
+        for (let t = 0; t < (Math.PI * 2) / sec.wave.w; t += 0.02) {
+          const y = CO.barHeight(sec.wave, t, 0, 1);
+          // The window a hop's feet must be in to pass between the two.
+          worstWindow = Math.min(worstWindow, (y + sec.twin - CO.BAR_THICK - CO.BODY_R - body) - (y + CO.BAR_THICK + CO.BODY_R - 0.2));
+          const bar = [{ sec: 'x', a0: -15, b0: 0, y0: y + sec.twin, a1: -9, b1: 0, y1: y + sec.twin, thick: CO.BAR_THICK }];
+          if (CO.hitAt(CO.LEVELS[1], -12, 0, apex2, 0, { list: bar })) hits++;
+          n++;
+        }
+        dblHit = Math.min(dblHit, hits / n);
+      }
+      ok('正弦 every lane after the first has twins: a bar with another 5 above it, which a double jump hits most of the time',
+        twins.length >= 3 && new Set(twins.map((s) => s.lane)).size >= 2 && !CO.SECTIONS.some((s) => s.lane === 0 && s.twin)
+        && dblHit > 0.5, `${twins.map((s) => s.key).join(',')} — a double jump over one hits its twin ${(dblHit * 100).toFixed(0)}% of the cycle`);
+      ok('...but ONE hop always fits between them: the gap a hop\'s feet must hit is never under a unit, and a hop reaches it',
+        worstWindow >= 1 && apex > CO.JUMPABLE + CO.BAR_THICK + CO.BODY_R - 0.2 + 0.2, worstWindow.toFixed(2));
+      const gp = CO.SECTION.gaps;
+      ok('...and no curtain can be jumped, on two jumps or one: its top beam is over a double jump\'s reach',
+        Math.max(...gp.beams) + CO.BAR_THICK + CO.BODY_R > apex2 + 0.2 && Math.min(...gp.beams) - CO.BAR_THICK - CO.BODY_R < 0.2,
+        `top ${Math.max(...gp.beams)}, two jumps ${apex2.toFixed(2)}`);
+      const air = CO.MATH_ARM;
+      const top = zl.stone.H + zl.stone.A;
+      const airList = [{ sec: 'air', a0: air.pa - 1, b0: air.pb, y0: air.y, a1: air.pa + 1, b1: air.pb, y1: air.y, thick: CO.BAR_THICK }];
+      ok('...and the sweeper in the AIR misses a kitten standing on the highest stone, and hits one who hops off it',
+        !CO.hitAt(CO.LEVELS[0], air.pa, air.pb, top, 0, { list: airList }) && !!CO.hitAt(CO.LEVELS[0], air.pa, air.pb, top + apex, 0, { list: airList })
+        && air.pb - air.R > zl.floor[0] && air.pb + air.R < zl.floor[1], `${air.y} over a ${top} stone`);
+      const ground = CO.ARMS.filter((m) => m.sec === 'sweep');
+      ok('...and the floor has four turning arms where it had one, every one inside its lane and none touching another',
+        ground.length === 4 && ground.every((m) => Math.abs(m.pa - CO.LANES[2]) + m.R < CO.HALVES[2] - 0.2
+          && ground.every((o) => o === m || Math.hypot(o.pa - m.pa, o.pb - m.pb) > m.R + o.R)), ground.map((m) => `${m.pa},${m.pb}`).join(' '));
+      /* "keeping the first row or two relatively easy and it gets
+         progressively harder". The first lane's waves are the slowest and
+         plainest; the last is the fastest wave on the course. */
+      const waves = CO.SECTIONS.filter((s) => s.wave);
+      ok('...and it gets harder as it goes: the first lane slowest and twin-free, the last lane\'s wave the fastest of all',
+        waves.filter((s) => s.lane === 0).every((s) => waves.filter((o) => o.lane > 0).every((o) => o.wave.w >= s.wave.w))
+        && CO.SECTION.final.wave.w === Math.max(...waves.map((s) => s.wave.w)) && CO.SECTION.final.bars.length >= 6,
+        waves.map((s) => `${s.key} ${s.wave.w}`).join(' '));
+    }
     ok('正弦 a bar at UNDER is walked under, one at JUMPABLE is cleared at the top of a hop, one at 2.0 hits',
       !CO.hitAt(CO.LEVELS[0], -12, 0, 0, 0, { list: bar(CO.UNDER) })
       && !CO.hitAt(CO.LEVELS[0], -12, 0, apex, 0, { list: bar(CO.JUMPABLE) })
       && !!CO.hitAt(CO.LEVELS[0], -12, 0, 0, 0, { list: bar(2.0) }), `apex ${apex.toFixed(2)}`);
     const zl = CO.SECTION.stones;
+    const zc = CO.LANES[zl.lane];
     ok('...and the red floor zaps a kitten standing on it, and not one standing on a stone',
-      CO.hitAt(CO.LEVELS[0], CO.LANES[1], 12.8, 0, 0, { list: [] }) === 'stones'
-      && !CO.hitAt(CO.LEVELS[0], CO.LANES[1], zl.stones[0], CO.stoneHeight(zl, 0, 0), 0, { list: [] }));
-    const cpClear = CO.SECTIONS.every((sec) => [0, 0.7, 1.9, 3.3, 5.1, 7.7].every((t) =>
-      CO.LEVELS.every((L) => !CO.hitAt(L, CO.LANES[sec.lane], sec.cp, 0, t))));
-    ok('...and no checkpoint is ever inside a hazard, so a zap never lands her in another one', cpClear);
+      CO.hitAt(CO.LEVELS[0], zc, (zl.stones[0] + zl.stones[1]) / 2, 0, 0, { list: [] }) === 'stones'
+      && !CO.hitAt(CO.LEVELS[0], zc, zl.stones[0], CO.stoneHeight(zl, 0, 0), 0, { list: [] }));
+    /* NO GRACE, SO THIS IS WHAT KEEPS A ZAP FAIR. With the 0.9s of
+       invulnerability gone ("they should not have invulnerability as its like
+       cheating"), a checkpoint a beam can reach would zap her the frame she
+       lands and every frame after. Sampled every 0.05s for 40s, every level. */
+    let cpBad = null;
+    for (const L of CO.LEVELS) {
+      for (let t = 0; t < 40 && !cpBad; t += 0.05) {
+        const list = CO.beams(L, t);
+        for (const sec of CO.SECTIONS) {
+          if (CO.hitAt(L, CO.LANES[sec.lane], sec.cp, 0, t, { list })) { cpBad = `${sec.key} at ${t.toFixed(2)}s`; break; }
+        }
+      }
+    }
+    ok('...and no checkpoint is EVER inside a hazard, sampled through 40s of every level, so a zap never lands her in another one',
+      !cpBad, cpBad ?? '');
+
+    /* THE SINE AND THE COSINE STONES. "have some of the spinning or moving
+       surfaces moving in a Sin or Cos wave pattern". Half of them each, and
+       the cosine one IS the sine a quarter-turn on. */
+    const cosN = zl.stones.map((_, n) => n).filter((n) => CO.stoneIsCos(n));
+    ok('正弦 the stones are twice as many (8, from 4), half riding a sine and half a cosine — a quarter-turn apart, to the thousandth',
+      zl.stones.length >= 8 && cosN.length * 2 === zl.stones.length && (zl.floor[1] - zl.floor[0]) >= 2 * 14
+      && [0.3, 1.7, 4.4].every((t) => {
+        const th = zl.stone.w * t - zl.stone.k * 1;
+        return Math.abs(CO.stoneHeight(zl, t, 1, 1) - (zl.stone.H + zl.stone.A * Math.sin(th + Math.PI / 2))) < 1e-3;
+      }), `${zl.stones.length} stones over ${(zl.floor[1] - zl.floor[0]).toFixed(1)}`);
+    ok('...and their decks are coloured as their axes are: cosine cyan, sine gold',
+      G.stoneDecks.every((d, n) => d._grp.children[1].material.color.getHex() === (CO.stoneIsCos(n) ? SW.HOLO.cyan : SW.HOLO.gold)),
+      G.stoneDecks.map((d) => d._grp.children[1].material.color.getHexString()).join(' '));
 
     /* THE STARS ARE MEASURED: the search, re-run, and the bands held to it. */
     const runs = CO.LEVELS.map((L) => ({
@@ -37424,11 +37684,92 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       found != null && G.run.zaps === 1 && Math.abs(back.b - sb.cp) < 0.01 && d0.state === 'live', `${G.run.zaps} ${back.b.toFixed(2)}`);
     ok('...and a zap touches neither her SIM bar nor her health', D.st[0].simHp === simWas && her.hp === hpWas,
       `sim ${simWas} -> ${D.st[0].simHp}, hp ${hpWas} -> ${her.hp}`);
+    /* NO GRACE. "the player has invulnerability for a short amount of time
+       when respawning in the course, they should not have invulnerability as
+       its like cheating". Straight back into the same bar on the very next
+       frame is a second zap. */
+    put(her, { x: zq.x, z: zq.z, y: I.y });
+    G._tick(d0, 1 / 60);
+    ok('正弦 no invulnerability after a zap: back into a beam on the very next frame is zapped again',
+      G.run.zaps === 2 && !/safeT|SAFE_T =/.test(readFileSync(new URL('../src/systems/dream/sine.js', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')),
+      `${G.run.zaps} zaps`);
+
+    /* NO CHECKPOINT CAN BE SKIPPED, AND THE FINISH CAN ALWAYS BE REACHED.
+       "I seemed to have somehow skipped over a checkpoint when doing the
+       gauntlet and wasn't able to complete it when I got to the finish line". */
+    {
+      const sv = G.run.sMax;
+      const svT = d0.t;
+      // The old rule: a step of more than 6 was ignored, and so was every later one.
+      const big = CO.advance(CO.CP_S[0] + 1, CO.CP_S[1] - 1);
+      ok('正弦 a big step forward inside her section counts — the old "within 6" rule froze her record for good',
+        big.skip == null && big.sMax === CO.CP_S[1] - 1 && CO.advance(big.sMax, big.sMax + 9).sMax === big.sMax + 9);
+      const leap = CO.advance(CO.CP_S[1] + 1, CO.CP_S[3] + 2);
+      ok('...but a step past the checkpoint AFTER next is a skip, and names the one she missed',
+        leap.skip === 2 && leap.sMax === CO.CP_S[1] + 1, JSON.stringify(leap));
+      d0.t = 0.01;
+      G.run.sMax = CO.CP_S[1] + 1;
+      const skipQ = isleSpot(I, CO.LANES[CO.SECTION.stones.lane], CO.SECTION.stones.cp + 0.5);
+      put(her, { x: skipQ.x, z: skipQ.z, y: I.y });
+      fakeGame.toasts.length = 0;
+      G._tick(d0, 1 / 60);
+      const sk = lc(her.position.x - SW.SIM.dx, her.position.z - SW.SIM.dz);
+      ok('...and the course puts her back at the line she missed, and says so',
+        G.run.cp === 2 && Math.abs(sk.a - CO.LANES[CO.SECTIONS[2].lane]) < 0.01 && Math.abs(sk.b - CO.SECTIONS[2].cp) < 0.01
+        && fakeGame.toasts.some((t) => /missed the TWIN WAVE line/.test(t)), `${G.run.cp} ${fakeGame.toasts.join(' | ')}`);
+      // The lane decides the leg: 0.5 inside the wide lane is the wide lane.
+      ok('...and where she is along the route is read off HER lane: half a unit inside the middle lane is the middle lane, not the narrow one beside it',
+        Math.abs(CO.pathS(CO.LANES[2] - CO.HALVES[2] + 0.5, 0) - CO.pathS(CO.LANES[2], 0)) < 5
+        && Math.abs(CO.pathS(CO.LANES[1] + CO.HALVES[1] - 0.5, 0) - CO.pathS(CO.LANES[1], 0)) < 3);
+      /* Every point down the middle of the route, walked at 0.25 a step,
+         advances her record without a skip from GO to the gold line. */
+      let m = 0; let bad = null;
+      for (let s = 0; s <= CO.PATH_LEN && !bad; s += 0.25) {
+        const q = CO.pathAt(s);
+        const g = CO.advance(m, CO.pathS(q.a, q.b));
+        if (g.skip != null) bad = `skip at ${s.toFixed(2)}`;
+        m = g.sMax;
+      }
+      ok('...and walking the route end to end never trips it, and reaches the finish',
+        !bad && m >= CO.FINISH_S - 0.3 && CO.checkpointFor(m) === CO.SECTIONS.length - 1, bad ?? m.toFixed(1));
+      G.run.sMax = sv; G.run.cp = CO.checkpointFor(sv); d0.t = svT;
+    }
+
+    /* THE SLIDING GAPS FROM BEHIND HER. "we need the camera angle to change
+       as players can't see where they need to go in the side view, should be
+       over the shoulder front view at that point". Eased, not cut, and back to
+       side-on at the next line. */
+    {
+      const sv = G.run.sMax;
+      const gi = CO.SECTIONS.indexOf(CO.SECTION.gaps);
+      G.run.sMax = CO.CP_S[gi] + 0.5;
+      const gq = isleSpot(I, CO.LANES[CO.SECTION.gaps.lane], CO.SECTION.gaps.cp - 0.5);
+      put(her, { x: gq.x, z: gq.z, y: I.y });
+      const y0 = G.cameraFocus(her).yaw;
+      G._easeCamera(1 / 60);
+      const step = Math.abs(G.cameraFocus(her).yaw - y0);
+      for (let k = 0; k < 240; k++) G._easeCamera(1 / 60);
+      const fs = G.cameraFocus(her);
+      // Where the lens sits, from the look-at: (sin yaw, cos yaw), in island axes.
+      const off = lc(I.x + Math.sin(fs.yaw), I.z + Math.cos(fs.yaw));
+      const run = CO.SECTION.gaps.lane % 2 ? -1 : 1;
+      const ahead = lc(fs.centre.x - SW.SIM.dx, fs.centre.z - SW.SIM.dz).b - lc(her.position.x - SW.SIM.dx, her.position.z - SW.SIM.dz).b;
+      ok('正弦 in the Sliding Gaps the lens swings round BEHIND her, looking down her lane — and swings, never cuts',
+        off.b * run < -0.99 && Math.abs(fs.dist - SN.SHOULDER_CAM.dist) < 0.05 && ahead * run > SN.SHOULDER_CAM.lead * 0.9
+        && step < 0.1 && step > 0, `behind ${off.b.toFixed(2)}, ahead ${ahead.toFixed(2)}, first frame ${step.toFixed(3)}`);
+      G.run.sMax = CO.CP_S[gi + 1] + 0.5;
+      for (let k = 0; k < 240; k++) G._easeCamera(1 / 60);
+      const back = G.cameraFocus(her);
+      ok('...and at the next line it is side-on again', Math.abs(Math.sin(back.yaw) - I.fwd.x) < 0.01 && Math.abs(Math.cos(back.yaw) - I.fwd.z) < 0.01
+        && Math.abs(back.dist - SN.COURSE_CAM.dist) < 0.05);
+      G.run.sMax = sv;
+      for (let k = 0; k < 240; k++) G._easeCamera(1 / 60);
+    }
     // One press of INTERACT does not stop her; holding it does.
     G.watchPad(d0, { down: (a) => a === 'interact' });
     G._tick(d0, 0.1);
     ok('正弦 one press of INTERACT does not stop a run', d0.state === 'live');
-    for (let k = 0; k < 20; k++) { G.run.safeT = 0; G.watchPad(d0, { down: (a) => a === 'interact' }); put(her, isleSpot(I, CO.START.a, CO.START.b)); G._tick(d0, 0.1); }
+    for (let k = 0; k < 20; k++) { G.watchPad(d0, { down: (a) => a === 'interact' }); put(her, isleSpot(I, CO.START.a, CO.START.b)); G._tick(d0, 0.1); }
     ok('...but holding it for STOP_HOLD does, and says so', d0.state === 'failed' && /stopped/.test(d0.why ?? ''), d0.why);
     // Her drill ends: she is written down, she goes to the stands, her sister runs.
     for (let k = 0; k < 400 && D.drills[0] === d0; k++) { if (!d0.update(1 / 60)) { d0.dispose(); D.drills[0] = null; } }
@@ -37438,11 +37779,10 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       G.session?.runner === 1 && d1?.spec.id === 'sine.L1' && G.inStands(her) && G.session.results.length === 1);
     // Her sister finishes: a time.
     for (let k = 0; k < 200 && d1.state === 'ready'; k++) d1.update(1 / 60);
-    const fin = isleSpot(I, CO.LANES[2], CO.FINISH_B + 0.5);
+    const fin = isleSpot(I, CO.LANES.at(-1), CO.FINISH_B + 0.5);
     G.run.sMax = CO.FINISH_S;
     put(sis, { x: fin.x, z: fin.z, y: I.y });
     d1.t = 18;
-    G.run.safeT = 1;
     G._tick(d1, 1 / 60);
     ok('正弦 the gold line wins it, scored by time, with the measured bands', d1.state === 'won' && d1.stars_ === 3, `${d1.state} ${d1.stars_}`);
     for (let k = 0; k < 400 && D.drills[1] === d1; k++) { if (!d1.update(1 / 60)) { d1.dispose(); D.drills[1] = null; } }
@@ -38813,39 +39153,57 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         /s\.lostT = 0;\s*s\.lostN = 0;/.test(ddSrc) && /award\(p, id, stars, score, lowerIsBetter\) \{\s*const s0 = this\.st\[p\.index\];\s*if \(s0\) s0\.lostT = 0;/.test(ddSrc)
         && /startDrill\(p, spec, at\) \{\s*const s0 = this\.st\[p\.index\];\s*if \(s0\) s0\.lostT = 0;/.test(ddSrc));
 
-      /* THE MAP KIOSK on the hub. Measured clear of everything else on it. */
+      /* THE MAP KIOSKS — four round the hub and one at the Arena School
+         ("place 4 in the corners ... of the Dojo of the Turning Circle and also
+         in the Arena School, can be near the Today's Training circle"). Every
+         one measured clear of everything else, the way the first one was. */
       D._buildMapKiosk();
       const K = D.mapKiosk;
-      const kd = Math.hypot(K.x - dc.x, K.z - dc.z);
-      ok('地図 the map kiosk stands on the hub, off the Dojo of the Turning Circle\'s floor and inside the rim',
-        kd - K.r > 38 && kd + K.r < 50, `at ${kd.toFixed(1)} r ${K.r}`);
       const segD = (q, A, B) => {
         const ax = B.x - A.x; const az = B.z - A.z;
         const t = Math.max(0, Math.min(1, ((q.x - A.x) * ax + (q.z - A.z) * az) / (ax * ax + az * az || 1)));
         return Math.hypot(q.x - A.x - ax * t, q.z - A.z - az * t);
       };
-      let deckGap = Infinity;
-      /* The gate signs, where `_gateSign` puts them: one per island the hub
-         reaches, from the same `islandCentre` and `gateSignSpot`. The port
-         bridge has none — the kiosk stands where its sign would be. */
-      let signGap = Infinity;
-      for (const k of KEYS.filter((k2) => !ISL.ISLANDS[k2].from)) {
-        const c = ISL.islandCentre(dc, L.u, ISL.ISLANDS[k]);
-        const sg = DD.gateSignSpot(dc, c.dir, ISL.ISLANDS[k].cycle ? HW.HIGHWAY.halfW : 2.2);
-        signGap = Math.min(signGap, Math.hypot(sg.x - K.x, sg.z - K.z));
-      }
-      for (const B of sim.bridges) {
-        // The road is a Snake Way road, in WORLD coordinates; the kiosk is the layer's.
-        const pts = (B.road?.pts ?? []).map((q) => ({ x: q.x - SW.SIM.dx, z: q.z - SW.SIM.dz }));
-        for (let i = 1; i < pts.length; i++) deckGap = Math.min(deckGap, segD(K, pts[i - 1], pts[i]) - B.deck.halfW - K.r);
-      }
-      ok('...off every bridge and highway deck, by a clear stride', deckGap > 1.5, `${deckGap.toFixed(2)}`);
-      ok('...and clear of every gate sign\'s post', signGap > 6, `${signGap.toFixed(2)}`);
-      const otherSt = D.stations.filter((s) => s !== K.station);
-      const stGap = Math.min(...otherSt.map((s) => Math.hypot(s.x - K.x, s.z - K.z) - s.r - K.r));
-      ok('...and from every other station, so one press can only mean one of them', stGap > 2, `${stGap.toFixed(2)}`);
+      const hubKs = D.mapKiosks.slice(0, DD.MAP_KIOSKS.length);
+      const schoolK = D.mapKiosks[DD.MAP_KIOSKS.length];
+      const kds = hubKs.map((k) => Math.hypot(k.x - dc.x, k.z - dc.z));
+      ok('地図 four map kiosks stand on the hub, off the Dojo of the Turning Circle\'s floor and inside the rim, a quarter-turn or so apart',
+        hubKs.length === 4 && kds.every((kd, i) => kd - hubKs[i].r > 38 && kd + hubKs[i].r < 50)
+        && hubKs.every((k, i) => hubKs.every((q, j) => i === j || Math.hypot(k.x - q.x, k.z - q.z) > 40)),
+        kds.map((x) => x.toFixed(1)).join(' '));
+      const gaps = D.mapKiosks.map((MK) => {
+        let deckGap = Infinity;
+        let signGap = Infinity;
+        /* The gate signs, where `_gateSign` puts them: one per island the hub
+           reaches, from the same `islandCentre` and `gateSignSpot`. */
+        for (const k of KEYS.filter((k2) => !ISL.ISLANDS[k2].from)) {
+          const c = ISL.islandCentre(dc, L.u, ISL.ISLANDS[k]);
+          const sg = DD.gateSignSpot(dc, c.dir, ISL.ISLANDS[k].cycle ? HW.HIGHWAY.halfW : 2.2);
+          signGap = Math.min(signGap, Math.hypot(sg.x - MK.x, sg.z - MK.z));
+        }
+        for (const B of sim.bridges) {
+          // The road is a Snake Way road, in WORLD coordinates; the kiosk is the layer's.
+          const pts = (B.road?.pts ?? []).map((q) => ({ x: q.x - SW.SIM.dx, z: q.z - SW.SIM.dz }));
+          for (let i = 1; i < pts.length; i++) deckGap = Math.min(deckGap, segD(MK, pts[i - 1], pts[i]) - B.deck.halfW - MK.r);
+        }
+        const otherSt = D.stations.filter((st) => st !== MK.station);
+        const stGap = Math.min(...otherSt.map((st) => Math.hypot(st.x - MK.x, st.z - MK.z) - st.r - MK.r));
+        return { deckGap, signGap, stGap };
+      });
+      ok('...every map kiosk off every bridge and highway deck, by a clear stride', gaps.every((g) => g.deckGap > 1.5),
+        gaps.map((g) => g.deckGap.toFixed(2)).join(' '));
+      ok('...and clear of every gate sign\'s post', gaps.every((g) => g.signGap > 6), gaps.map((g) => g.signGap.toFixed(2)).join(' '));
+      ok('...and from every other station, so one press can only mean one of them', gaps.every((g) => g.stGap > 2),
+        gaps.map((g) => g.stGap.toFixed(2)).join(' '));
+      const kd = kds[0];
       const towardPort = ((K.x - dc.x) * L.u.x + (K.z - dc.z) * L.u.z) / kd;
-      ok('...on the side of the hub she arrives on, the first thing she passes', towardPort > 0.95, towardPort.toFixed(3));
+      ok('...the first on the side of the hub she arrives on, the first thing she passes', towardPort > 0.95, towardPort.toFixed(3));
+      const IS2 = D.isles.school;
+      const tq = isleSpot(IS2, ...RK.TODAY_KIOSK);
+      ok('...and the fifth on the Arena School, beside TODAY\'S TRAINING, on the island\'s floor',
+        !!schoolK && Math.hypot(schoolK.x - tq.x, schoolK.z - tq.z) < 12
+        && Math.hypot(schoolK.x - IS2.x, schoolK.z - IS2.z) + schoolK.r < IS2.r, schoolK ? `${Math.hypot(schoolK.x - tq.x, schoolK.z - tq.z).toFixed(1)} from TODAY` : 'none');
+      D.mapKiosks.forEach((MK, i) => { if (i) MK.update(0.5, [her]); });
       put(her, { x: K.x, y: K.y, z: K.z });
       ok('...and standing on it, INTERACT is the kiosk\'s', D.stationAt(her) === K.station
         && /OPEN THE MAP/.test(K.station.prompt(her, 'E')));
@@ -38905,7 +39263,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         const at = sec.indexOf(`data-isle="${k}"`);
         return at < 0 ? '' : sec.slice(at, sec.indexOf('</li>', at));
       };
-      ok('🥽 Help has a Dream Dojo topic, with a card for every island in the clan cards\' layout',
+      ok('🎮 Help has a Dream Dojo topic, with a card for every island in the clan cards\' layout',
         !!sec && KEYS.every((k) => /class="clan-card dd-card"/.test(sec) && cardOf(k).includes(`src="/help/dojo/isle-${k}.jpg"`))
         && (sec.match(/data-isle="/g) ?? []).length === KEYS.length,
         KEYS.filter((k) => !cardOf(k)).join());
@@ -38946,6 +39304,18 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         && /if \(key === 'help'\) \{\s*this\.closeAll\(\);\s*this\.game\.openHelpAt\?\.\('help-dream', index\);/.test(read('../src/systems/inspector.js'))
         && /id="help-dream"/.test(html)
         && /openHelpAt\(id, slot = null\) \{[\s\S]{0,300}this\.setPaused\(true\);\s*this\._claimMenu\(slot\);/.test(read('../src/main.js')));
+
+      /* WHERE NEXT STAYS UP. "after a few seconds the text disappears and I
+         wasn't able to read it all" - it had a 14s clock. */
+      {
+        const t0 = D.t;
+        D.guide.choose(her, 'next');
+        const said = D.guide.speaking(her);
+        D.t = t0 + 600;
+        ok("...and what he says on WHERE SHOULD I GO NEXT stays on her card with no clock - ten minutes on, it is still there",
+          !!said && D.guide.speaking(her) === said && D.guide.markup(her.index, 'lionQuests', 0, () => '').includes('pn-said'));
+        D.t = t0;
+      }
     }
 
     // And it is the GATE that refuses, for every trial in the hall, not the panda's.
@@ -39266,8 +39636,12 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
           const dx = v.x - mid.x; const dz = v.z - mid.z; const r = Math.hypot(dx, dz);
           if (r < 1e-6) continue;   // the disc's own centre vertex
           const at = (k) => ({ x: v.x + (dx / r) * k, z: v.z + (dz / r) * k });
+          /* His blow, OR the split X under every other kitten standing in
+             the fight (`echoes`) — each is drawn red and each must land on
+             exactly what it drew. */
           const test = (q) => (kind === 'slam' ? SH.inSlam(a.o, a.dir, q.x, q.z)
-            : kind === 'sweep' ? SH.inSweep(a.o, q.x, q.z, 0) : SH.inCross(a.c, a.yaw, q.x, q.z));
+            : kind === 'sweep' ? SH.inSweep(a.o, q.x, q.z, 0) : SH.inCross(a.c, a.yaw, q.x, q.z))
+            || (a.echoes ?? []).some((e) => SH.inCross(e.c, e.yaw, q.x, q.z, { ...SH.CROSS, len: e.len }));
           n++;
           if (!test(at(-0.05))) lies++;
           if (test(at(0.12))) lies++;
@@ -39483,16 +39857,30 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     {
       const WALK = Number(/const WALK_SPEED = ([\d.]+);/.exec(read('../src/entities/player.js'))?.[1]);
       const outX = SH.CROSS.half / Math.SQRT1_2;
-      const worst = Math.min(...LV.map((L) => Math.min(
-        SH.SLAM.tell * 0.85 * L.tellK - (0.2 + SH.SLAM.half / WALK),
-        SH.CROSS.tell * L.tellK * (L.triple ? SH.CROSS.chain : 1) - (0.2 + outX / WALK))));
-      ok('影 on every level every red shape is up long enough to react to and walk out of', worst > 0.05, `${worst.toFixed(3)}s spare`);
+      /* EVERY level he can be fought on — the secret EXTRA HARD too — and at
+         the party size that makes him quickest: four kittens standing. */
+      const P4 = SH.partyK(4).tell;
+      const chainT = (L, k) => Math.max(SH.CHAIN_MIN, SH.CROSS.tell * L.tellK * k * SH.CROSS.chain);
+      const worst = Math.min(...SH.FIGHT_LEVELS.map((L) => Math.min(
+        SH.SLAM.tell * 0.85 * L.tellK * P4 - (0.2 + SH.SLAM.half / WALK),
+        (L.triple ? chainT(L, P4) : SH.CROSS.tell * L.tellK * P4) - (0.2 + outX / WALK))));
+      ok('影 on every level, EXTRA HARD and four kittens included, every red shape is up long enough to react to and walk out of',
+        worst > 0.05, `${worst.toFixed(3)}s spare`);
       const ifr = DD.SIM_IFRAMES;
-      const chain = Math.min(...LV.filter((L) => L.triple).map((L) => SH.CROSS.tell * L.tellK * SH.CROSS.chain));
+      const chain = Math.min(...SH.FIGHT_LEVELS.filter((L) => L.triple).map((L) => chainT(L, P4)));
       ok('...and each X of the 凶 comes after the last hit\'s i-frames are over, so all three CAN land', chain > ifr + 0.02,
         `${chain.toFixed(2)}s vs ${ifr}s`);
+      ok('...and the floor under the chain changes nothing that shipped: HARD alone is above it',
+        SH.CROSS.tell * LV[2].tellK * SH.CROSS.chain >= SH.CHAIN_MIN);
+      /* MORE OF YOU, MORE OF HIM — "he will attack fast and have more health".
+         Alone he is the fight he was, to the number. */
+      const k1 = SH.partyK(1); const k2 = SH.partyK(2); const k4 = SH.partyK(4);
+      ok('影 alone he is the fight he was; with more kittens standing he walks faster, winds up quicker and rests less',
+        k1.speed === 1 && k1.tell === 1 && k1.rest === 1 && k2.speed > 1 && k2.tell < 1 && k2.rest < 1
+        && k4.speed > k2.speed && k4.tell < k2.tell && k4.rest < k2.rest && SH.partyK(9).tell === k4.tell,
+        JSON.stringify([k2, k4]));
     }
-    const kioskOk = F.kiosks.length === 3 && F.kiosks.every((k, i) =>
+    const kioskOk = F.kiosks.length === SH.FIGHT_LEVELS.length && F.kiosks.every((k, i) =>
       Math.hypot(k.x - F.centre.x, k.z - F.centre.z) > SH.ARENA_R + k.r
       && !!sim.heightAt(k.x + SW.SIM.dx, k.z + SW.SIM.dz, IH.y + 2)
       && F.kiosks.every((q, j) => j === i || Math.hypot(k.x - q.x, k.z - q.z) > 4));
@@ -39573,6 +39961,90 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       for (let f = 0; f < 60 * 15; f++) F.update(1 / 60);
       return F.state === 'waiting' && !F.boss;
     })());
+
+    /* ONE CARD AT A TIME. "the text above easy/med/hard is showing up for all
+       of them at the same time and they are blocking each other". Standing
+       by MEDIUM's pad she gets MEDIUM's card, and no other kiosk shows one. */
+    {
+      put(her, F.kiosks[1]);
+      put(sis, inside);
+      for (let f = 0; f < 30; f++) F.update(1 / 60);
+      const lit = F.kiosks.map((k) => (k.card.visible ? 1 : 0));
+      ok('影 one difficulty card shows at a time — the one whose pad she is on — and it wraps instead of shrinking',
+        lit.join('') === '0100' && F.kiosks.every((k) => k.card.w >= 8)
+        && F.card(her, 1).some((l) => l.wrap), lit.join(''));
+    }
+
+    /* 秘 EXTRA HARD. "If player unlocks Kenshi 1st Class, let's have them
+       unlock a special/hidden 'Extra Hard' fight ... Players should get a
+       message about this being unlocked when they reach Kenshi 1st Class." */
+    {
+      const K = F.kiosks[SH.EXTRA];
+      put(her, K);
+      put(sis, inside);
+      fakeGame.toasts.length = 0;
+      for (let f = 0; f < 10; f++) F.update(1 / 60);
+      const hidden = !K.group.visible;
+      K.station.interact(her);
+      ok('秘 EXTRA HARD is hidden, and refused in words, until somebody is KENSHI 1st Class',
+        hidden && F.state === 'waiting' && K.station.prompt(her, 'E') === null && SH.SHADOW_LEVELS.every((L) => !L.secret),
+        `${hidden} ${F.state}`);
+      for (let i = 0; i < 20; i++) D.progress.award(nameOf(her), `wc.first.${i}`, 3);
+      D.progress.setFlag(nameOf(her), 'shadow');
+      D.ranks._watchFirstClass();
+      D.ranks._watchFirstClass();
+      for (let f = 0; f < 10; f++) F.update(1 / 60);
+      ok('秘 ...she makes 1st Class: told ONCE what it opened, and the secret kiosk stands',
+        D.progress.flag(nameOf(her), 'secret') && !D.progress.flag(nameOf(sis), 'secret') && K.group.visible
+        && fakeGame.toasts.filter((t) => /KENSHI 1st CLASS.*SECRET.*EXTRA HARD/.test(t)).length === 1,
+        fakeGame.toasts.join(' / '));
+      K.station.interact(her);
+      const BX = F.boss;
+      ok('秘 ...and it is TWICE hard: twice HARD\'s bar, sized for her and her sister',
+        F.level === SH.EXTRA && BX && BX.maxHits === SH.SHADOW_EXTRA.hits + SH.SHADOW_EXTRA.per
+        && SH.SHADOW_EXTRA.hits === 2 * LV[2].hits && SH.SHADOW_EXTRA.dmgK > LV[2].dmgK && SH.SHADOW_EXTRA.restK < LV[2].restK,
+        `${F.level} ${BX?.maxHits}`);
+
+      /* SPLIT: with two standing, his slam on her is an X under her sister
+         too, and the X lands on exactly her sister. */
+      F._clearTells();
+      F._choose(her, 3, 'slam');
+      const a = F.act;
+      const e = a.echoes?.[0];
+      const sx = sis.position.x - SW.SIM.dx; const sz = sis.position.z - SW.SIM.dz;
+      ok('影 two kittens standing: his blow on one is an X on the other, drawn under where she is',
+        a.echoes?.length === 1 && Math.hypot(e.c.x - sx, e.c.z - sz) < 1e-6
+        && a.meshes.length === 1 + SH.crossBars(0).length, `${a.echoes?.length} ${a.meshes.length}`);
+      const sst = D.st[sis.index];
+      const hp0 = sst ? (sst.simHp = D.simMax(sis)) : 0;
+      if (sst) sst.iframes = 0;
+      her.position.x += 40;   // out of everything he drew
+      F._strike(a);
+      her.position.x -= 40;
+      ok('...and it lands: she is hit for three-quarters of the blow, from where it was drawn',
+        !!sst && hp0 - sst.simHp === SH.shadowDmg(Math.round(SH.SLAM.dmg * SH.SHADOW_EXTRA.dmgK * SH.ECHO_K), D.simMax(sis)),
+        `${hp0} -> ${sst?.simHp}`);
+      F._clearTells();
+      F.act = { kind: 'idle', t: 99 };
+
+      fakeGame.feats.earned.length = 0;
+      F.t = 100;
+      BX.hp = 1;
+      BX.hit(blow);
+      ok('秘 beaten: the secret quest is paid to the 1st-Class kitten — her sister helped and gets the stars, not the secret',
+        F.state === 'won' && fakeGame.feats.earned.includes('0:secret') && !fakeGame.feats.earned.includes('1:secret')
+        && her.shadowBeat.extra && fakeGame.feats.earned.includes('0:shadow'), fakeGame.feats.earned.join());
+      for (let f = 0; f < 60 * 20; f++) F.update(1 / 60);
+      ok('...and it clears itself like the others', F.state === 'waiting' && !F.boss);
+
+      /* THE LIST: "should show up in the Quests list for players but only say
+         that they will receive it after reaching Kenshi 1st Class". */
+      const FT = new Feats({ players: [her, sis], dream: D, kotodama: { awakened: false } });
+      const rowOf = (p) => FT.status(p).find((r) => r.feat.id === 'secret');
+      ok('秘 the quest list shows the secret to a 1st-Class kitten, and to her sister only how to be given it',
+        rowOf(her).feat.title === FEAT_BY_ID.secret.title && rowOf(sis).feat.title === FEAT_BY_ID.secret.veiled.title
+        && /1st Class/.test(rowOf(sis).feat.how) && !/EXTRA/.test(rowOf(sis).feat.how), rowOf(sis).feat.title);
+    }
 
     /* 凶 IN HIS HANDS: "When he does cross-slash, it should be three attacks
        and show some special cross slash symbols in front of him". Three Xs,
@@ -39666,7 +40138,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       const CF = read('../src/systems/crossfx.js');
       ok('凶 her seal draws 凶 instead of 十, brushed like it, chosen per technique',
         /const glyph = p\.kyo \? kyoTexture\(\) : kanjiTexture\(\);/.test(CF) && /export function kyoTexture\(\) \{ return glyphTexture\('凶', KYO_STROKES\); \}/.test(CF)
-        && /p\.shadowBeat = \{ easy: false, medium: false, hard: false \};/.test(read('../src/main.js')));
+        && /p\.shadowBeat = \{ easy: false, medium: false, hard: false, extra: false \};/.test(read('../src/main.js')));
     }
 
     // Everybody walks off: it is lost, and says so.
@@ -41293,7 +41765,14 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const list = PNd.questList({ feats: shut }, kid);
     const row = list.find((x) => x.id === 'shadow');
     ok('Payne\'s quest list shows Lionheart\'s Honor, in a Dream Dojo section of its own',
-      row?.dojo === true && !list.filter((x) => x.dojo).some((x) => x.id !== 'shadow') && row.title === "Lionheart's Honor");
+      row?.dojo === true && list.filter((x) => x.dojo).map((x) => x.id).join() === 'shadow,secret' && row.title === "Lionheart's Honor");
+    {
+      const sec = list.find((x) => x.id === 'secret');
+      const open = PNd.questList({ feats: { ...shut, secretOpen: () => true } }, kid).find((x) => x.id === 'secret');
+      ok("...and below it the SECRET one, which says only how to be given it until she is KENSHI 1st Class",
+        sec?.title === FEAT_BY_ID.secret.veiled.title && /1st Class/.test(sec.how) && !/EXTRA HARD/.test(sec.how)
+        && open?.title === FEAT_BY_ID.secret.title && /EXTRA HARD/.test(open.how) && sec.state === 'open', `${sec?.title} / ${open?.title}`);
+    }
     ok('...and it says open after the ending too, because it is a LATE quest',
       row?.state === 'open' && PNd.questState({ feats: shut }, kid, 'rider') === 'closed');
     ok('her card has a DREAM DOJO row, and its buttons say what they do',

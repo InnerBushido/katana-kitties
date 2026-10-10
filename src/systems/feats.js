@@ -152,6 +152,20 @@ export const FEATS = [
      the Awakening it is a gold token like the other nine. */
   { id: 'shadow', who: 'each', icon: '🦁', title: "Lionheart's Honor", late: true, special: true,
     short: "Lionheart's Honor", how: 'Beat Shadow Lionheart on MEDIUM or HARD in the Dream Dojo.' },
+  /* THE ELEVENTH, AND A SECRET. Richard: "If player unlocks Kenshi 1st Class,
+     let's have them unlock a special/hidden 'Extra Hard' fight with Shadow
+     Lionheart ... if players defeat this version of Shadow, then they unlock
+     a Special Kotodama orb that can be unlocked anytime, like the 'Hard'
+     version offers ... This should show up in the Quests list for players but
+     only say that they will receive it after reaching Kenshi 1st Class and
+     after completing a 'Secret' Kenshi 1st Class only mission".
+     So it is `late` and `special` like the Shadow's, and `secret`: until she
+     is 1st Class the list shows `veiled` instead of `title` / `how`, and
+     `status` decides which (see `secretOpen`). Paid by dream/shadow.js `_won`
+     on EXTRA HARD, to a kitten who was 1st Class when she won it. */
+  { id: 'secret', who: 'each', icon: '秘', title: "Shadow's Secret", late: true, special: true, secret: true,
+    short: "Shadow's Secret", how: 'Beat Shadow Lionheart on the secret EXTRA HARD in the Dream Dojo.',
+    veiled: { title: 'A secret mission', how: 'Reach KENSHI 1st Class in the Dream Dojo to be given it.' } },
   { id: 'rider', who: 'one', icon: '🎯', title: 'Beam gunner',
     short: 'Beam gunner',
     how: `Be the first to ride Ryuuseki's second seat for ${RIDER_NEED} seconds.` },
@@ -709,8 +723,19 @@ export class Feats {
          Lionheart's Honor became an everybody-quest that pays the special
          draw, and the profile went on calling it an ordinary one while the
          award paid it special. One question, asked in one place. */
-      return { feat: f, got, paid, star, note, special: isSpecial(f.id) };
+      /* THE SECRET STAYS ONE until she is 1st Class: the row is there (so
+         the list is honest that there is something more) and says only how to
+         be given it. A quest she has already earned is never veiled. */
+      const shown = f.secret && !got && !this.secretOpen(p) ? { ...f, ...f.veiled } : f;
+      return { feat: shown, got, paid, star, note, special: isSpecial(f.id) };
     });
+  }
+
+  /** Is the secret mission hers to see? KENSHI 1st Class in the Dream Dojo —
+   *  asked of the simulator's ledger, which is this game's (dream/progress.js). */
+  secretOpen(p) {
+    const P = this.game.dream?.progress;
+    return !!(P && p && P.flag(p.style?.name ?? p.name, 'secret'));
   }
 
   /* ------------------------------ save/load ------------------------------ */

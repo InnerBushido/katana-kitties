@@ -5,7 +5,7 @@ import { Kiosk, idleIn, isleSpot } from './kiosk.js';
 import { HoloPanel, holoFlicker } from './holo.js';
 import { Target, holoSolid, holoMat } from './targets.js';
 import { starsFor } from './progress.js';
-import { rankOf } from './rank.js';
+import { rankOf, atLeast } from './rank.js';
 import { VOICE_TAIL } from './lionvoice.js';
 import { kyoTexture } from '../crossfx.js';
 
@@ -152,11 +152,66 @@ export function shadowDmg(dmg, max) {
   return Math.round(dmg * Math.max(1, max || 100) / 100);
 }
 
-export const LEVEL_BY_ID = Object.fromEntries(SHADOW_LEVELS.map((L, k) => [L.id, k]));
+/**
+ * 秘 EXTRA HARD — THE SECRET FOURTH. Richard: "If player unlocks Kenshi 1st
+ * Class, let's have them unlock a special/hidden 'Extra Hard' fight with
+ * Shadow Lionheart that is twice as hard as the 'Hard' version and, if players
+ * defeat this version of Shadow, then they unlock a Special Kotodama orb".
+ *
+ * NOT IN `SHADOW_LEVELS`, on purpose: that list is the three every card,
+ * every guide line and 凶 count ("beat him on all three"), and a secret that
+ * turned up in Lionheart's checklist would not be one. `FIGHT_LEVELS` is what
+ * the ring runs; `SHADOW_LEVELS` is what anybody is TOLD about.
+ *
+ * "TWICE AS HARD" is read as twice the bar (80, +40 a sister) and about half
+ * the breath between blows, with half again the damage — his 凶 is 35+35+45 =
+ * 115, a full bar, so all three is a catch. The tells are as short as the
+ * fairness rule allows (world-check: every red shape is still up long enough
+ * to react to and walk out of, at four kittens too). First numbers, for
+ * Richard to tune — he has not played it.
+ */
+export const SHADOW_EXTRA = {
+  id: 'extra', name: 'EXTRA HARD', colour: 0xff2a2a, speed: 2.1, tellK: 0.6, restK: 0.25, hits: 80, per: 40,
+  dmgK: 2.7, crossDmg: 35, crossBonus: 10, phase2: 0.9, triple: true, order: ['cross', 'slam', 'cross', 'sweep', 'cross'],
+  secret: true,
+};
+export const FIGHT_LEVELS = [...SHADOW_LEVELS, SHADOW_EXTRA];
+/** EXTRA HARD's index in `FIGHT_LEVELS`, and so its kiosk's. */
+export const EXTRA = FIGHT_LEVELS.length - 1;
+export const LEVEL_BY_ID = Object.fromEntries(FIGHT_LEVELS.map((L, k) => [L.id, k]));
+
+/** May she take the secret fight? KENSHI 1st Class, in THIS game's ledger. */
+export function extraOpen(progress, p) {
+  return !!p && !!progress && atLeast(progress, p.style?.name ?? p.name, 'k1');
+}
+
+/**
+ * MORE OF YOU, MORE OF HIM. Richard: "If multiple people are fighting Shadow
+ * Lionheart, then he will attack fast and have more health, he can do
+ * multiple attacks on multiple players if they fight him at the same time."
+ * The health was already there (`per`, a bar's worth per sister); this is the
+ * rest, by how many are STANDING — a sister caught is not one he has to watch.
+ * One kitten is 1 / 1 / 1, so a solo fight is the fight it was, number for
+ * number. The tell never drops below 0.85 of itself: the fairness check reads
+ * the worst case, four kittens on EXTRA HARD.
+ */
+export function partyK(n) {
+  const m = Math.max(0, Math.min(3, (n | 0) - 1));
+  return { speed: 1 + 0.1 * m, tell: 1 - 0.05 * m, rest: 1 - 0.15 * m };
+}
+/** No X of a 凶 comes sooner than this after the last, whatever is scaling
+ *  it: a sim hit's i-frames are 0.6s, and an X inside them cannot land. Hard,
+ *  alone, is 0.653 — above it, so this changes nothing that shipped. */
+export const CHAIN_MIN = 0.65;
+/** A split blow — the X he throws at every OTHER kitten standing while his
+ *  real blow comes down on the nearest — hits for this share of the blow,
+ *  and is drawn this much shorter than his own Cross Slash. */
+export const ECHO_K = 0.75;
+export const ECHO_LEN = 0.7;
 /** Where the three kiosks stand, at the ring's edge, easy where the one
  *  kiosk always stood. Fanned round the rim at the old one's radius so all
  *  three are outside the ring and none is on the highway's pad. */
-export const KIOSKS_AT = [KIOSK_AT, [-16.8, 12.0], [-13.6, 16.4]];
+export const KIOSKS_AT = [KIOSK_AT, [-16.8, 12.0], [-13.6, 16.4], [-9.45, 19.9]];
 
 /**
  * WHAT BEATING HIM ON EACH LEVEL PAYS. "They only need to defeat him on
@@ -168,7 +223,7 @@ export const KIOSKS_AT = [KIOSK_AT, [-16.8, 12.0], [-13.6, 16.4]];
  * easier one's prize.
  */
 export function shadowPrize(level) {
-  return { quest: level >= 1, rank: level >= 1 };
+  return { quest: level >= 1, rank: level >= 1, secret: level === EXTRA };
 }
 
 /** A FACT ABOUT THIS GAME, like her gear: `p.shadowBeat`, saved in her row
@@ -227,7 +282,7 @@ export const SHADOW_LINES = {
   kyo: { line: 'And my CROSS SLASH is yours, too.\nStrike with KYO, a quarter harder!', voice: 'lion_shadow_kyo' },
 };
 /** What he says first, on the frame he breaks, by level. */
-export const BEATEN_LINE = [SHADOW_LINES.easy, SHADOW_LINES.medium, HANDOVER];
+export const BEATEN_LINE = [SHADOW_LINES.easy, SHADOW_LINES.medium, HANDOVER, HANDOVER];
 
 /* ------------------------------ the shapes -------------------------------- */
 
@@ -554,15 +609,28 @@ export class ShadowFight {
        which is which from across the ring; a chooser would have been a menu
        with an owner and a cursor, for a choice a kiosk already makes. */
     this.level = 0;
-    this.kiosks = SHADOW_LEVELS.map((L, k) => {
+    /* THE CARDS ARE BIG AND THERE IS ONE AT A TIME. Richard: "the text above
+       easy/med/hard is showing up for all of them at the same time and they
+       are blocking each other ... The text for the difficulty on Shadow
+       Lionheart is hard to read, it is too small, can be on multiple lines."
+       Three kiosks five units apart each showed its card to the nearest
+       kitten within eight — so one kitten lit all three, 6.6 wide each, over
+       each other. `update` now hands the cards out (see `_cardFor`), which
+       frees the room to make the one that shows a third bigger and wrap its
+       lines instead of shrinking them to fit. */
+    this.kiosks = FIGHT_LEVELS.map((L, k) => {
       const kq = isleSpot(isle, ...KIOSKS_AT[k]);
       return new Kiosk(dream, {
-        x: kq.x, z: kq.z, y: isle.y, colour: k === 0 ? 0x9b4dff : L.colour, kanji: '影', title: `SHADOW · ${L.name}`,
+        x: kq.x, z: kq.z, y: isle.y, colour: k === 0 ? 0x9b4dff : L.colour, kanji: L.secret ? '秘' : '影', title: `SHADOW · ${L.name}`,
+        cardW: 8.6, cardH: 6.2,
         card: (p) => this.card(p, k),
-        prompt: (p, key) => (this.state === 'live' ? null : `[${key}]  FIGHT SHADOW LIONHEART — ${L.name}`),
+        prompt: (p, key) => (this.state === 'live' || (L.secret && !extraOpen(dream.progress, p)) ? null : `[${key}]  FIGHT SHADOW LIONHEART — ${L.name}`),
         interact: (p) => this.begin(p, k),
       });
     });
+    /** The secret kiosk stands only once somebody here is KENSHI 1st Class. */
+    this.extraKiosk = this.kiosks[EXTRA];
+    this.extraKiosk.group.visible = false;
     /** Easy's: the one kiosk there always was, where it always stood. */
     this.kiosk = this.kiosks[0];
     this.stations = this.kiosks.map((k) => k.station);
@@ -594,25 +662,55 @@ export class ShadowFight {
     const n = p.style?.name ?? p.name;
     const r = rankOf(P, n);
     const best = P.best(n, 'shadow');
-    const L = SHADOW_LEVELS[k];
+    const L = FIGHT_LEVELS[k];
     const beat = p.shadowBeat ?? {};
     const tick = SHADOW_LEVELS.map((q) => `${beat[q.id] ? '✔' : '·'} ${q.name}`).join('   ');
+    const W = { wrap: true };
+    const head = k === 0 ? 0xc89bff : L.colour;
     const lines = [
-      { text: `影 SHADOW LIONHEART — ${L.name}`, size: 1.8, color: k === 0 ? 0xc89bff : L.colour, glow: true, jp: true },
-      { text: 'The final exam. Fight him TOGETHER — everyone on the island joins in', size: 1.0 },
-      { text: 'Red on the floor = where he will hit. SWEEP? JUMP! After the CROSS he is OPEN', size: 0.9, color: 0x9fefff },
+      { text: `${L.secret ? '秘' : '影'} SHADOW LIONHEART`, size: 1.5, color: head, glow: true, jp: true },
+      { text: L.name, size: 1.7, color: head, glow: true },
     ];
+    if (L.secret) {
+      lines.push({ text: 'KENSHI 1st CLASS ONLY. Twice as hard as HARD.', size: 1.0, ...W });
+      lines.push({ text: 'Win it for a SPECIAL Kotodama!', size: 1.0, color: HOLO.gold, ...W });
+      lines.push({ text: beat.extra ? 'You have beaten it!' : 'Your SECRET mission', size: 0.95, color: 0xffc0d8 });
+      return lines;
+    }
+    lines.push({ text: 'Fight him TOGETHER — everyone on this island joins in.', size: 0.95, ...W });
+    lines.push({ text: 'RED on the floor = his blow. SWEEP? JUMP!', size: 0.95, color: 0x9fefff, ...W });
     if (k === 0) {
-      lines.push({ text: r.shadow ? `beaten! best ${best != null ? `${Math.round(best)}s` : '—'}` : 'Anyone may try! A warm-up — beat him on MEDIUM for a SPECIAL Kotodama!', size: 1.1, color: HOLO.gold });
+      lines.push({ text: r.shadow ? `beaten! best ${best != null ? `${Math.round(best)}s` : '—'}` : 'Anyone may try! Beat MEDIUM for a SPECIAL Kotodama!', size: 1.0, color: HOLO.gold, ...W });
     } else if (k === 1) {
-      lines.push({ text: 'Faster, tougher, and his CROSS SLASH strikes THREE times', size: 0.95, color: 0xffc0d8 });
-      lines.push({ text: r.shadow ? `beaten! best ${best != null ? `${Math.round(best)}s` : '—'}` : 'Anyone may try! Beat him for a SPECIAL Kotodama!', size: 1.1, color: HOLO.gold });
+      lines.push({ text: 'Faster, tougher — his CROSS strikes THREE times.', size: 0.95, color: 0xffc0d8, ...W });
+      lines.push({ text: r.shadow ? `beaten! best ${best != null ? `${Math.round(best)}s` : '—'}` : 'Anyone may try! Beat him for a SPECIAL Kotodama!', size: 1.0, color: HOLO.gold, ...W });
     } else {
-      lines.push({ text: 'His 凶 CROSS SLASH can take 80 — DODGE every X!', size: 0.95, color: 0xffc0d8 });
-      lines.push({ text: inherited(p) ? 'You have his 凶 CROSS SLASH!' : 'Beat him on all three to learn his 凶 CROSS SLASH', size: 1.1, color: HOLO.gold });
+      lines.push({ text: 'His 凶 CROSS SLASH can take 80 — dodge every X!', size: 0.95, color: 0xffc0d8, ...W });
+      lines.push({ text: inherited(p) ? 'You have his 凶 CROSS SLASH!' : 'Beat all three to learn his 凶 CROSS SLASH.', size: 1.0, color: HOLO.gold, ...W });
     }
     lines.push({ text: tick, size: 0.9, color: 0x9fefff });
     return lines;
+  }
+
+  /** Which kitten each kiosk's card is for: ONE card on, at the kiosk whose
+   *  pad somebody is standing in, else the kiosk nearest any kitten within
+   *  its reach. Returns one list per kiosk, for `Kiosk.update`. */
+  _cardFor(idle) {
+    const lists = this.kiosks.map(() => []);
+    let best = null;
+    for (const p of idle) {
+      const x = p.position.x - SIM.dx; const z = p.position.z - SIM.dz;
+      this.kiosks.forEach((k, i) => {
+        if (!k.group.visible) return;
+        const d = Math.hypot(x - k.x, z - k.z);
+        if (d > (k.o.near ?? 8)) return;
+        // Standing IN a pad beats being nearer to another: the pad is the choice.
+        const score = d <= k.r ? d - 100 : d;
+        if (!best || score < best.score) best = { i, p, score };
+      });
+    }
+    if (best) lists[best.i].push(best.p);
+    return lists;
   }
 
   /** The kiosk's button. Refused in words, or the fight begins. */
@@ -622,7 +720,12 @@ export class ShadowFight {
       return;
     }
     if (this.state !== 'waiting') return;
-    this.level = Math.max(0, Math.min(SHADOW_LEVELS.length - 1, k | 0));
+    if (k === EXTRA && !extraOpen(this.dream.progress, p)) {
+      this.dream.game.sfx?.('deny');
+      this.dream.hint(p, 'Not yet! Reach KENSHI 1st Class to take this fight.');
+      return;
+    }
+    this.level = Math.max(0, Math.min(FIGHT_LEVELS.length - 1, k | 0));
     this._spawn();
     for (const q of this._onFloor()) this._join(q, true);
     /* SHE IS STEPPED IN. The kiosk is outside the ring — 24.04 from its middle
@@ -640,12 +743,19 @@ export class ShadowFight {
     this._say(SHADOW_LINES.hello.line, 4);
     this.dream.game.sfx?.('gong');
     if (this.level > 0) {
-      for (const { p: q } of this.who.values()) this.dream.hint(q, `SHADOW LIONHEART — ${SHADOW_LEVELS[this.level].name}!`);
+      for (const { p: q } of this.who.values()) this.dream.hint(q, `SHADOW LIONHEART — ${this.L.name}!`);
     }
   }
 
   /** This fight's row of SHADOW_LEVELS. */
-  get L() { return SHADOW_LEVELS[this.level] ?? SHADOW_LEVELS[0]; }
+  get L() { return FIGHT_LEVELS[this.level] ?? SHADOW_LEVELS[0]; }
+
+  /** How many of his opponents are still standing, and what that makes him. */
+  _party() {
+    let n = 0;
+    for (const w of this.who.values()) if (!w.out) n++;
+    return partyK(n);
+  }
 
   /** Where she walks on: the ring's DOWNSTAGE edge, so the whole floor he
    *  stages on is beyond her from the lens. ENTRY_AT was the hub side, which
@@ -782,7 +892,7 @@ export class ShadowFight {
     const lv = this.level;
     const L = this.L;
     const pay = shadowPrize(lv);
-    this._say(BEATEN_LINE[lv].line, HANDOVER.secs);
+    this._say((BEATEN_LINE[lv] ?? HANDOVER).line, HANDOVER.secs);
     /* EVERYTHING IS DECIDED NOW; only the telling of it waits for his line.
        See HANDOVER. The quest is earned with the same delay, which is the
        payout queue's own — its card comes up after the line, not over it. */
@@ -801,9 +911,14 @@ export class ShadowFight {
       const earned = pay.quest ? g.feats?.earn?.(p, 'shadow', { delay: HANDOVER.secs }) : false;
       const kyo = !had && inherited(p);
       if (kyo) this.kyo = true;
+      /* THE SECRET'S PRIZE IS HERS ONLY IF THE SECRET WAS: a sister who is not
+         1st Class yet may stand in the ring and help, and earns the stars. */
+      const secret = pay.secret && extraOpen(this.dream.progress, p)
+        ? g.feats?.earn?.(p, 'secret', { delay: HANDOVER.secs }) : false;
       const left = SHADOW_LEVELS.filter((q) => !p.shadowBeat[q.id]).map((q) => q.name);
       this.paid.push({ p, text: `${p.name} beat Shadow Lionheart on ${L.name}! ${'★'.repeat(stars)}`
         + (earned ? (g.feats.open ? ' A Powerup Kotodama waits for you at the award ceremony!' : ' A Powerup Kotodama is on its way!') : '')
+        + (secret ? ' SECRET MISSION complete — a SPECIAL Kotodama is yours!' : '')
         + (kyo ? ' You inherit his 凶 CROSS SLASH!'
           : !inherited(p) && left.length ? ` Beat him on ${left.join(' and ')} too, for his 凶 CROSS SLASH.` : '') });
     }
@@ -857,7 +972,10 @@ export class ShadowFight {
   /* ------------------------------ per frame ------------------------------- */
 
   update(dt) {
-    for (const k of this.kiosks) k.update(dt, idleIn(this.dream));
+    const idle = idleIn(this.dream);
+    this.extraKiosk.group.visible = this.dream.simKittens().some((q) => extraOpen(this.dream.progress, q));
+    const cardFor = this._cardFor(idle);
+    this.kiosks.forEach((k, i) => k.update(dt, cardFor[i]));
     /* The island's own sign is drawn at renderOrder 8, over everything at any
        depth, and from the fight's camera it hangs straight across his body. */
     if (this.isle.sign) this.isle.sign.visible = this.state === 'waiting';
@@ -923,7 +1041,8 @@ export class ShadowFight {
   _think(dt) {
     const b = this.boss;
     const a = this.act;
-    const SPEED = BOSS_SPEED * this.L.speed;
+    const K = this._party();
+    const SPEED = BOSS_SPEED * this.L.speed * K.speed;
     a.t -= dt;
     const { p: tgt, d } = this._target();
     if (!tgt) return;
@@ -984,7 +1103,7 @@ export class ShadowFight {
     }
     if (a.kind === 'recover' && a.t <= 0) {
       b.blade.rotation.z = -0.25;
-      this.act = { kind: 'idle', t: (this.phase === 2 ? 0.7 : 1.1) * this.L.restK };
+      this.act = { kind: 'idle', t: (this.phase === 2 ? 0.7 : 1.1) * this.L.restK * this._party().rest };
     }
   }
 
@@ -995,6 +1114,7 @@ export class ShadowFight {
     const o = b.local;
     const y = this.isle.y;
     const L = this.L;
+    const K = this._party();
     const order = this.phase === 2 ? L.order : ['slam', 'sweep'];
     this.n = (this.n ?? -1) + 1;
     let kind = force ?? order[this.n % order.length];
@@ -1006,7 +1126,7 @@ export class ShadowFight {
     if (kind === 'slam') {
       const f = { ...b.facing };
       meshes.push(barMesh(o.x + f.x * SLAM.len / 2, y, o.z + f.z * SLAM.len / 2, SLAM.half * 2, SLAM.len, f));
-      tell = SLAM.tell * (this.phase === 2 ? 0.85 : 1) * L.tellK;
+      tell = SLAM.tell * (this.phase === 2 ? 0.85 : 1) * L.tellK * K.tell;
       this.act = { kind: 'tell', what: 'slam', t: tell, tell, meshes, o: { x: o.x, z: o.z }, dir: f };
       say = 'SLAM! Get out of the red line!';
     } else if (kind === 'sweep') {
@@ -1014,7 +1134,7 @@ export class ShadowFight {
       m.position.set(o.x, y + 0.08, o.z);
       m.renderOrder = 5;
       meshes.push(m);
-      tell = SWEEP.tell * L.tellK;
+      tell = SWEEP.tell * L.tellK * K.tell;
       this.act = { kind: 'tell', what: 'sweep', t: tell, tell, meshes, o: { x: o.x, z: o.z } };
       say = 'SWEEP! JUMP!';
     } else {
@@ -1026,14 +1146,31 @@ export class ShadowFight {
          at where she is NOW — so standing still after the first is what
          the second catches. */
       const cuts = L.triple ? (chain ?? 3) : 0;
-      tell = CROSS.tell * L.tellK * (cuts && cuts < 3 ? CROSS.chain : 1);
+      tell = CROSS.tell * L.tellK * K.tell * (cuts && cuts < 3 ? CROSS.chain : 1);
+      if (cuts && cuts < 3) tell = Math.max(CHAIN_MIN, tell);
       this.act = { kind: 'tell', what: 'cross', t: tell, tell, meshes, c, yaw, cuts };
       say = !cuts ? 'CROSS SLASH! Get out of the X!'
         : cuts === 3 ? '凶 CROSS SLASH — THREE strikes! Keep moving!' : `${4 - cuts} of 3 — MOVE!`;
     }
+    /* SPLIT: every OTHER kitten standing gets an X of her own on the same
+       count, under where she is now — "he can do multiple attacks on
+       multiple players if they fight him at the same time". Built from the
+       same `crossBars` / `inCross` as his Cross Slash (shorter, `ECHO_LEN`),
+       so it lands exactly on what it drew, in the same red. One kitten has
+       no others, so a solo fight draws nothing new. */
+    const echoes = [];
+    for (const { p, out } of this.who.values()) {
+      if (out || p === tgt) continue;
+      const c = { x: p.position.x - SIM.dx, z: p.position.z - SIM.dz };
+      const eyaw = Math.atan2(c.x - o.x, c.z - o.z);
+      const len = CROSS.len * ECHO_LEN;
+      for (const dir of crossBars(eyaw)) meshes.push(barMesh(c.x, y, c.z, CROSS.half * 2, len, dir));
+      echoes.push({ c, yaw: eyaw, len });
+    }
+    this.act.echoes = echoes;
     for (const m of meshes) this.dream.sim.root.add(m);
     this.tells.push(...meshes.map((mesh) => ({ mesh })));
-    for (const { p } of this.who.values()) this.dream.hint(p, say);
+    for (const { p } of this.who.values()) this.dream.hint(p, echoes.length && p !== tgt ? 'An X is on YOU too — MOVE!' : say);
   }
 
   /** The blow lands — on exactly the shape that was drawn. */
@@ -1055,8 +1192,14 @@ export class ShadowFight {
         if (a.cuts === 1 && n >= 2) dmg += this.L.crossBonus ?? 0;
       }
       if (a.what === 'cross' && a.cuts === 3) this.chainHits?.delete(p.index);
-      if (!hit) continue;
-      const from = a.what === 'cross' ? a.c : a.o;
+      let from = a.what === 'cross' ? a.c : a.o;
+      if (!hit) {
+        const e = (a.echoes ?? []).find((q) => inCross(q.c, q.yaw, x, z, { ...CROSS, len: q.len }));
+        if (!e) continue;
+        hit = true;
+        from = e.c;
+        dmg = Math.round((a.what === 'cross' ? this.L.crossDmg : dmg) * ECHO_K);
+      }
       const dx = x - from.x; const dz = z - from.z;
       const n = Math.hypot(dx, dz) || 1;
       // `from` and `foe`: a 返 Riposte guard toward him catches it and answers him.

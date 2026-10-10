@@ -58,6 +58,26 @@ import { holoFlicker } from './holo.js';
        walks the rim the arrow's tip and the point meet; inside or outside it
        the arrow says how far off the circle she is.
 
+   AND THE NUMBERS ON ALL OF IT. Richard, the third pass: "For the vectors
+   shown, it would be nice to show the xyz values and magnitude for the
+   vectors, if it is a normalized vector, can show that somehow as well ...
+   With the lines formed for the x and y values of the unit circle, can draw
+   and highlight the right triangle under it and show the 3 angle values
+   changing for the triangle. Also list somewhere, or highlight the area in
+   different neon colors, when the player or sphere on the unit circle
+   changes to a different quadrant on the graph."
+     · EVERY VECTOR SAYS WHAT IT IS: its (x, y, z) in units of the circle
+       and its length. The radius to the point, the normal and the tangent
+       are all length 1 by construction and say NORMALIZED; the vector to her
+       says it only when she is standing on the circle, which is the lesson.
+     · THE RIGHT TRIANGLE under the legs — origin, the foot of the sine leg,
+       the point — filled, with its three angles at its three corners: the
+       angle the radius makes with the x axis, 90°, and what is left. They
+       add to 180 because they are read off one angle, not three.
+     · THE QUADRANT she is in is lit in its own neon, and named — I, II, III,
+       IV and the two signs that make it — and it flares when she crosses
+       into the next.
+
    THE MATHS IS NOT TOUCHED (non-negotiable 1). Every mesh keeps its place in
    the group and its place in `_liveBits`; `MathDojo.update` moves the point,
    the legs and the arc exactly as it does in town, from the same theta. Only
@@ -102,6 +122,83 @@ export const SPHERE_R = 2.6;
 export const SPHERE_UP = 1.6;
 /** The vector to her is drawn at the point's own height, so it passes through it. */
 const VEC_Y = 0.9;
+/** One neon per quadrant, I to IV — none of them the axis or leg colours. */
+export const QUAD_C = [0x39ff14, 0xff2bd6, 0xffb300, 0x00e5ff];
+export const QUAD_NAME = ['I', 'II', 'III', 'IV'];
+/** How bright the lit quadrant sits, and how bright it flares on entry. */
+export const QUAD_A = 0.13;
+export const QUAD_FLASH = 0.42;
+/** Which quadrant an angle is in, 0..3. On an axis it is the one it is
+ *  turning INTO, the way θ grows. */
+export function quadrantOf(theta) {
+  const t = ((theta % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+  return Math.min(3, Math.floor(t / (Math.PI / 2)));
+}
+/** The triangle's three angles, in degrees, from θ: at the origin (the
+ *  radius against the x axis, between 0 and 90), at the foot, at the point. */
+export function triangleAngles(theta) {
+  const a = (Math.atan2(Math.abs(Math.sin(theta)), Math.abs(Math.cos(theta))) * 180) / Math.PI;
+  return [a, 90, 90 - a];
+}
+/** A label's box on the floor, in the Dojo group's units: its centre and its
+ *  half-sizes, read off the quad it actually draws (width × the scale
+ *  `faceCamera` gave it last frame). A live label's box is its WIDEST string,
+ *  so this errs wide, which is the safe way to err. */
+export function labelBox(l, x = l.position.x, z = l.position.z) {
+  const g = l.mesh.geometry.parameters;
+  return { x, z, hw: (g.width * l.mesh.scale.x) / 2, hh: (g.height * l.mesh.scale.y) / 2 };
+}
+
+/** Do two boxes overlap, with `pad` of clear floor between them required? */
+export function boxesOverlap(a, b, pad = 0.4) {
+  return Math.abs(a.x - b.x) < a.hw + b.hw + pad && Math.abs(a.z - b.z) < a.hh + b.hh + pad;
+}
+
+/**
+ * Put each readout on the first of ITS OWN candidate spots that is clear of
+ * everything already down — the fixed labels first, then the readouts placed
+ * before it, in order. A readout keeps the spot it had for as long as that
+ * spot stays clear, so the labels do not hop between two spots as she walks;
+ * when none is clear it takes the one it overlaps least.
+ *
+ * WHY THIS AND NOT FIXED OFFSETS. The first cut put each readout at one fixed
+ * place relative to its arrow, and at θ = 46° in the browser four of them were
+ * stacked on one another above the point: the normal's readout under the
+ * quadrant's name, the tangent's running into the normal's. The readouts are
+ * about 20 units wide on a 24-unit circle — no single offset is clear all the
+ * way round. `items` are `{ box: {hw, hh}, spots: [{x, z}], prev }`; `prev`
+ * comes back set to the spot chosen.
+ */
+export function placeReadouts(items, fixed) {
+  const down = fixed.slice();
+  for (const it of items) {
+    const at = (s) => ({ x: s.x, z: s.z, hw: it.box.hw, hh: it.box.hh });
+    const clear = (s) => !down.some((b) => boxesOverlap(at(s), b));
+    let k = it.prev != null && it.spots[it.prev] && clear(it.spots[it.prev]) ? it.prev : it.spots.findIndex(clear);
+    if (k < 0) {
+      // Nothing clear: the least overlapped, by area.
+      const area = (s) => down.reduce((sum, b) => {
+        const a = at(s);
+        const ox = Math.max(0, Math.min(a.x + a.hw, b.x + b.hw) - Math.max(a.x - a.hw, b.x - b.hw));
+        const oz = Math.max(0, Math.min(a.z + a.hh, b.z + b.hh) - Math.max(a.z - a.hh, b.z - b.hh));
+        return sum + ox * oz;
+      }, 0);
+      k = 0;
+      for (let i = 1; i < it.spots.length; i++) if (area(it.spots[i]) < area(it.spots[k])) k = i;
+    }
+    it.prev = k;
+    down.push(at(it.spots[k]));
+  }
+  return down.slice(fixed.length);
+}
+
+/** A vector's readout: (x, y, z) to two places, its length, and NORMALIZED
+ *  when the length is 1 to those two places. */
+export function vecText(name, x, y, z = 0) {
+  const f = (v) => (Math.abs(v) < 0.005 ? 0 : v).toFixed(2);
+  const m = Math.hypot(x, y, z);
+  return `${name} (${f(x)}, ${f(y)}, ${f(z)})  |${name}| = ${m.toFixed(2)}${Math.abs(m - 1) < 0.005 ? '  ✓ NORMALIZED' : ''}`;
+}
 const UP = new THREE.Vector3(0, 1, 0);
 const _d = new THREE.Vector3();
 
@@ -258,6 +355,59 @@ export function holoDojo(dojo) {
   parts.toHer = toHer;
   parts.spheres = spheres;
 
+  // THE NUMBERS (see the header). Live labels: one canvas each, repainted.
+  const readout = (colour, widest, height = 2.1) => {
+    const l = new Label('', {
+      height, size: 60, color: colour, stroke: '#0b0f1a', strokeWidth: 8, fixedScreenSize: true, live: widest,
+    });
+    dojo.group.add(l);
+    dojo.labels?.push(l);
+    return l;
+  };
+  const WIDE = 'n (−0.00, −0.00, 0.00)  |n| = 1.00  ✓ NORMALIZED';
+  const hexCss = (h) => `#${h.toString(16).padStart(6, '0')}`;
+  parts.read = {
+    r: readout('#bfeaff', WIDE),
+    n: readout(hexCss(NORMAL_C), WIDE),
+    t: readout('#ffffff', WIDE),
+    v: readout('#ffffff', WIDE.replace(/n/g, 'v')),
+  };
+
+  // THE RIGHT TRIANGLE: a fill under the legs, a square at the right angle,
+  // and its three angles.
+  const triGeo = new THREE.BufferGeometry();
+  triGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(9), 3));
+  const triMat = additive(new THREE.MeshBasicMaterial({ color: QUAD_C[0], toneMapped: false, opacity: 0.2, side: THREE.DoubleSide }));
+  const tri = new THREE.Mesh(triGeo, triMat);
+  tri.frustumCulled = false;
+  tri.renderOrder = 2;
+  const sqGeo = new THREE.BufferGeometry();
+  sqGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(9), 3));
+  const square = new THREE.Line(sqGeo, new THREE.LineBasicMaterial({
+    color: 0xffffff, transparent: true, opacity: 0.9, toneMapped: false, blending: THREE.AdditiveBlending, depthWrite: false,
+  }));
+  square.frustumCulled = false;
+  dojo.group.add(tri, square);
+  const angles = [0, 1, 2].map(() => readout('#fff6c8', '90°', 2.4));
+  parts.tri = { mesh: tri, square, angles };
+
+  // THE QUADRANTS: four quarter-discs on the floor, one lit; and its name.
+  /* CircleGeometry is born in the xy plane and rotateX(−π/2) carries its +y to
+     the world's −z — which is the maths y here (ZS = −1), so a quarter-disc
+     from `thetaStart` k·π/2 lies over maths quadrant k with no further turn. */
+  const quads = QUAD_C.map((c, k) => {
+    const m = new THREE.Mesh(new THREE.CircleGeometry(DOJO_RADIUS, 24, (k * Math.PI) / 2, Math.PI / 2).rotateX(-Math.PI / 2),
+      additive(new THREE.MeshBasicMaterial({ color: c, toneMapped: false, opacity: 0, side: THREE.DoubleSide })));
+    m.position.y = 0.015;
+    m.renderOrder = 1;
+    dojo.group.add(m);
+    return m;
+  });
+  const quadLabel = readout('#ffffff', 'QUADRANT III · cos − · sin −', 2.8);
+  parts.quad = { meshes: quads, label: quadLabel, now: -1, flash: 0, at: -1 };
+  /** Where each readout went last frame (see placeReadouts). */
+  parts.spots = {};
+
   // THE PROJECTOR: a rim of light, and a ring that sweeps out from the origin.
   const rim = new THREE.Mesh(
     new THREE.RingGeometry(DOJO_VIEW_R - 0.5, DOJO_VIEW_R, 128).rotateX(-Math.PI / 2),
@@ -330,6 +480,63 @@ export function holoDojo(dojo) {
         tangent.set(_a, _b);
       }
 
+      /* THE NUMBERS. All of it from the point's own position and θ — the same
+         two numbers that put the point there. Positions every frame; text
+         only while somebody can read it (MathDojo's `readable`). */
+      const R = DOJO_RADIUS;
+      const th = dojo.theta ?? 0;
+      const cx = P.x / R;
+      const sy = -P.z / R;          // maths y is the world's −z (ZS)
+      const sx = Math.sign(cx) || 1;
+      const sgy = Math.sign(sy) || 1;
+      const readable = dojo.readable !== false;
+      const RD = parts.read;
+      for (const l of Object.values(RD)) l.visible = show;
+      // Where they go is decided at the bottom, once everything else is down.
+      if (show) {
+        if (readable) {
+          RD.r.setText(vecText('r', cx, sy));
+          RD.n.setText(vecText('n', cx, sy));
+          RD.t.setText(vecText('t', -sy, cx));
+        }
+      }
+
+      // The triangle: origin, the foot of the sine leg, the point.
+      const T = parts.tri;
+      T.mesh.visible = T.square.visible = show;
+      const tp = triGeo.attributes.position;
+      tp.setXYZ(0, 0, 0.05, 0);
+      tp.setXYZ(1, P.x, 0.05, 0);
+      tp.setXYZ(2, P.x, 0.05, P.z);
+      tp.needsUpdate = true;
+      const m = Math.min(1.8, Math.abs(P.x) * 0.3, Math.abs(P.z) * 0.3);
+      const qp = sqGeo.attributes.position;
+      qp.setXYZ(0, P.x - sx * m, 0.08, 0);
+      qp.setXYZ(1, P.x - sx * m, 0.08, -sgy * m);
+      qp.setXYZ(2, P.x, 0.08, -sgy * m);
+      qp.needsUpdate = true;
+      const ang = triangleAngles(th);
+      const gx = (0 + P.x + P.x) / 3; const gz = (0 + 0 + P.z) / 3;
+      [[0, 0], [P.x, 0], [P.x, P.z]].forEach(([vx, vz], i) => {
+        const l = T.angles[i];
+        l.visible = show;
+        l.position.set(vx + (gx - vx) * 0.42, 1.6, vz + (gz - vz) * 0.42);
+        if (readable && show) l.setText(`${ang[i].toFixed(0)}°`);
+      });
+
+      // The quadrant: lit in its own colour, flaring on the way in.
+      const Q = parts.quad;
+      const q = quadrantOf(th);
+      if (q !== Q.now) { Q.now = q; Q.flash = 1; }
+      Q.flash = Math.max(0, Q.flash - (Q.at < 0 ? 0 : Math.max(0, t - Q.at)) * 1.6);
+      Q.at = t;
+      Q.meshes.forEach((mm, k) => { mm.material.opacity = k === q ? (QUAD_A + (QUAD_FLASH - QUAD_A) * Q.flash) * f : 0; });
+      triMat.color.setHex(QUAD_C[q]);
+      Q.label.visible = show;
+      if (readable && show) {
+        Q.label.setText(`QUADRANT ${QUAD_NAME[q]} · cos ${q === 1 || q === 2 ? '−' : '+'} · sin ${q >= 2 ? '−' : '+'}`);
+      }
+
       // HER SPHERES: every kitten standing on the floor, in pool order.
       let n = 0;
       for (const p of players) {
@@ -352,11 +559,61 @@ export function holoDojo(dojo) {
          height, so it runs through the point on its way to her. */
       const D = dojo.driver;
       toHer.group.visible = !!D && show && spheres.some((s) => s.who === D);
+      RD.v.visible = toHer.group.visible;
       if (toHer.group.visible) {
         local(D, _b);
         _a.set(0, VEC_Y, 0);
         _b.y = VEC_Y;
         toHer.set(_a, _b);
+        /* Her vector in units of the circle: her radius, at her angle — the
+           two numbers MathDojo read off her. On the circle it is a unit. */
+        const pr = dojo.playerRadius ?? 1;
+        if (readable) RD.v.setText(vecText('v', pr * Math.cos(th), pr * Math.sin(th)));
+      }
+
+      /* WHERE THE READOUTS GO (see placeReadouts). Each one's spots are in the
+         order it would rather have them: beside its own arrow first. The
+         fixed things are every other visible label on the floor, the point,
+         and her. */
+      if (show) {
+        const mine = new Set([...Object.values(RD), Q.label]);
+        const fixed = dojo.labels.filter((l) => l.visible && !mine.has(l)).map((l) => labelBox(l));
+        fixed.push({ x: P.x, z: P.z, hw: 1.6, hh: 1.6 });
+        if (RD.v.visible) fixed.push({ x: _b.x, z: _b.z, hw: 1.6, hh: 1.6 });
+        const tip = (dx, dz, l) => {
+          // Beside an arrow's head, running AWAY from the circle along the screen.
+          const x = P.x + dx * 7.8;
+          const z = P.z + dz * 7.8;
+          const hw = labelBox(l).hw;
+          const lean = Math.abs(dx) < 0.25 ? 0 : Math.sign(dx) * (hw - 1);
+          const up = (Math.sign(dz) || -1) * 2.8;
+          const side = hw + 1.5;
+          return [{ x: x + lean, z }, { x: x + lean, z: z + up }, { x, z: z + up }, { x: x + lean, z: z - up },
+            // ...and, where an axis name is standing on the tip, either side of it.
+            { x: x + side, z }, { x: x - side, z }, { x, z: z + up * 2 }];
+        };
+        const items = [];
+        const add = (key, l, spots) => items.push({ key, l, box: labelBox(l), spots, prev: parts.spots[key] });
+        add('r', RD.r, [0.55, 0.4, 0.7].flatMap((k) => [0, 2.6, -2.6].map((dz) => ({ x: P.x * k, z: P.z * k + dz }))));
+        add('n', RD.n, tip(nx, nz, RD.n));
+        add('t', RD.t, tip(nz, -nx, RD.t));
+        if (RD.v.visible) {
+          const side = labelBox(RD.v).hw + 2;
+          add('v', RD.v, [...[3.2, -3.2, 6, -6].map((dz) => ({ x: _b.x, z: _b.z + dz })),
+            { x: _b.x + side, z: _b.z }, { x: _b.x - side, z: _b.z }]);
+        }
+        // The quadrant's name: somewhere inside the lit quarter.
+        add('quad', Q.label, [0.62, 0.85, 0.4].flatMap((rk) => [0.5, 0.25, 0.75].map((fk) => {
+          const a = (q + fk) * (Math.PI / 2);
+          return { x: Math.cos(a) * R * rk, z: -Math.sin(a) * R * rk };
+        })));
+        placeReadouts(items, fixed);
+        const lift = { r: 4.2, n: 2.4, t: 2.4, v: 5.2, quad: 3.2 };
+        for (const it of items) {
+          parts.spots[it.key] = it.prev;
+          const s = it.spots[it.prev];
+          it.l.position.set(s.x, lift[it.key], s.z);
+        }
       }
     },
   };

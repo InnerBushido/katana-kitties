@@ -3,12 +3,12 @@ import { Billboard, paint, toonVertexMat } from '../core/gfx.js';
 import { bubbleTexture } from '../entities/leader.js';
 import { mergeParts } from '../world/build.js';
 import { SimWorld, SIM, HOLO, toSim } from '../world/simworld.js';
-import { MathDojo, inDojoView } from './mathdojo.js';
+import { MathDojo, inDojoView, DOJO_RADIUS } from './mathdojo.js';
 import { aggregate, ORB_BY_ID } from '../entities/powerorb.js';
 import { buildWornOrbs } from './kotodama.js';
 import { TrainingGate, Shards } from './dream/targets.js';
 import { makeSimHud } from './dream/simhud.js';
-import { DreamProgress } from './dream/progress.js';
+import { DreamProgress, forgetLegacy } from './dream/progress.js';
 import { Drill } from './dream/drill.js';
 import { Gallery } from './dream/gallery.js';
 import { TrialHall } from './dream/hall.js';
@@ -38,7 +38,7 @@ import { PeekTrigger } from './dream/peek.js';
 import { tickKeptPandas, dropKept } from './dream/pandatrial.js';
 import { enterHolo, leaveHolo, grantHolo, holoLeft, HoloChoice, HOLO_MAX_EACH } from './dream/holokit.js';
 import { LionGuide, LOST_AFTER, LOST_AGAIN, LOST_MAX } from './dream/lionguide.js';
-import { Kiosk, idleIn } from './dream/kiosk.js';
+import { Kiosk, idleIn, isleSpot } from './dream/kiosk.js';
 
 /** Her single-cell pose billboards, which the tube puppet mirrors. */
 const PUPPET_POSES = ['eatPose', 'blessPose', 'warpPose', 'breathPose', 'scaredPose', 'sweepPose'];
@@ -632,6 +632,38 @@ export const SIM_IFRAMES = 0.6;
  *  the port, `side` across the port bridge's line — the same side every gate
  *  sign stands on, so the hub reads as one row of posts. */
 export const MAP_KIOSK = { r: 43, side: 7 };
+/**
+ * EVERY MAP IN THE SIMULATOR. Richard: "We should place the Map of the
+ * Simulator in multiple places in the simulator, let's place 4 in the corners
+ * (4 opposing spots from current location) of the Dojo of the Turning Circle
+ * and also in the Arena School, can be near the Today's Training circle."
+ *
+ * THE HUB'S FOUR are the one there was and its three quarter-turns round the
+ * Dojo, `ang` degrees off the port spoke (positive is screen-left, as
+ * `islandCentre` turns). A quarter-turn lands ON a spoke's line or a gate
+ * sign, so the two sides are pulled into the gaps between spokes — 97 sits
+ * between the Range (78) and the Storm (116). The far one is on the school's
+ * spoke, and the school's gate sign stands there: 180 offset 7 either way, and
+ * 163-168 off either side, were all inside 6 of that sign's post (0.4-5.6,
+ * measured); 185, pulled 9 across, is 7.5 clear of it and 2.2 off the bridge.
+ * world-check measures every one of them clear
+ * of decks, signs and stations, the way it measured the first.
+ *
+ * THE SCHOOL'S is `school`, island coordinates like the Fighter Card's and
+ * TODAY's (rank.js), in the same row beyond TODAY.
+ */
+export const MAP_KIOSKS = [
+  { ang: 0, r: 43, side: 7 },
+  { ang: 97, r: 43, side: 0 },
+  { ang: 185, r: 43, side: -9 },
+  { ang: -97, r: 43, side: 0 },
+];
+export const SCHOOL_MAP = [-19, 15];
+/** The simulator's Turning Circle takes the camera at this far from its
+ *  middle, and lets it go at this far: the unit circle (DOJO_RADIUS, 24) and a
+ *  stride past it, then a little more — see `simDojoAt`. */
+export const SIM_DOJO_IN = DOJO_RADIUS + 4;
+export const SIM_DOJO_OUT = DOJO_RADIUS + 9;
 
 /** Where a bridge's gate sign stands on the hub: `back` in from the mouth
  *  (at 47), `side` across from the deck's EDGE (a highway is wider than a
@@ -792,11 +824,15 @@ export class DreamDojo {
     this._toastAt = new Map();
     /** The holograms a kitten's blade can find in here — see dream/targets.js. */
     this.gate = new TrainingGate();
-    /** Stars, bests and flags, per kitten, for good. `localStorage` may throw
-     *  just being READ in a locked-down frame, so it is asked inside a try. */
+    /** Stars, bests and flags, per kitten, for THIS game: written into the
+     *  save row by savegame.js and read back from it, never kept by the
+     *  browser (dream/progress.js says why). The browser-wide key the old
+     *  build kept is dropped here, once, so it cannot leak into a new game.
+     *  `localStorage` may throw just being READ, so it is asked inside a try. */
     let store = null;
     try { store = globalThis.localStorage ?? null; } catch { store = null; }
-    this.progress = new DreamProgress(store);
+    forgetLegacy(store);
+    this.progress = new DreamProgress(null);
     /* LIONHEART'S CARD in the simulator — his rows, on the Inspector's card
        (dream/lionguide.js). */
     this.guide = new LionGuide(this);
@@ -1576,11 +1612,21 @@ export class DreamDojo {
    * clearance from every other station and sign.
    */
   _buildMapKiosk() {
+    // Built again (a check does), it replaces the last set rather than doubling it.
+    for (const k of this.mapKiosks ?? []) {
+      k.group.removeFromParent();
+      this.stations = this.stations.filter((s) => s !== k.station);
+    }
     const dc = this.game.world.dojoCentre;
     const u = this.layout.u;
-    const at = MAP_KIOSK;
-    this.mapKiosk = new Kiosk(this, {
-      x: dc.x + u.x * at.r - u.z * at.side, z: dc.z + u.z * at.r + u.x * at.side, y: dc.y,
+    const spots = MAP_KIOSKS.map((at) => {
+      const a = (at.ang * Math.PI) / 180;
+      const d = { x: u.x * Math.cos(a) - u.z * Math.sin(a), z: u.x * Math.sin(a) + u.z * Math.cos(a) };
+      return { x: dc.x + d.x * at.r - d.z * at.side, z: dc.z + d.z * at.r + d.x * at.side, y: dc.y };
+    });
+    if (this.isles?.school) spots.push(isleSpot(this.isles.school, ...SCHOOL_MAP));
+    this.mapKiosks = spots.map((q) => new Kiosk(this, {
+      x: q.x, z: q.z, y: q.y,
       r: 1.8, colour: HOLO.cyan, kanji: '地図', title: 'MAP', near: 7,
       card: (p) => {
         const n = this.guide.next(p);
@@ -1598,8 +1644,10 @@ export class DreamDojo {
         if (this.game.inspector?.openLion) this.game.inspector.openLion(p.index, 'lionMap');
         else this.game.toast?.('The map is on Lionheart\'s card — talk to him at your tubes', p.index);
       },
-    });
-    this.stations.push(this.mapKiosk.station);
+    }));
+    /** The first, by the port bridge — the one a kitten passes on arrival. */
+    this.mapKiosk = this.mapKiosks[0];
+    this.stations.push(...this.mapKiosks.map((k) => k.station));
   }
 
   /**
@@ -2138,7 +2186,7 @@ export class DreamDojo {
     this._updateSign();
     this._updateTraining(dt);
     tickKeptPandas(this, dt);
-    if (this.mapKiosk) this.mapKiosk.update(dt, idleIn(this));
+    if (this.mapKiosks) { const idle = idleIn(this); for (const k of this.mapKiosks) k.update(dt, idle); }
     this._updateRez(dt);
     this._updatePuppets(dt);
     this._updateTubes(dt);
@@ -2800,14 +2848,34 @@ export class DreamDojo {
   }
 
   /**
-   * The centre of the simulator's Turning Circle if she is standing in it,
-   * else null: main.js frames it with the town Dojo's own shot. The same
-   * `inDojoView` the town's asks, so the two rooms start at the same edge.
+   * The centre of the simulator's Turning Circle if she is standing at it,
+   * else null: main.js frames it with the town Dojo's own shot.
+   *
+   * NOT THE TOWN'S EDGE, ANY MORE. Richard: "In the simulator, for the Dojo of
+   * the Turning Circle, we shouldn't move to the top view until the player is
+   * within or near the unit radius, it is currently happening too early." The
+   * town's edge is its dark disc (42), which is right in the town, where the
+   * Dojo is somewhere you go. In the simulator the disc IS THE HUB: every
+   * bridge to every island starts at its rim (43, where the map kiosks
+   * stand), so a kitten walking from one island to the next was lifted into
+   * the top view for the whole crossing.
+   *
+   * So here the room starts at the painted unit circle plus a stride
+   * (SIM_DOJO_IN), and lets go a little further out (SIM_DOJO_OUT) — one edge
+   * would flicker the camera under a kitten walking the circle's own line,
+   * which is the one thing the lesson asks her to do.
    */
   simDojoAt(p) {
     const D = this.simDojo;
-    if (!D || !p || this.realmOf(p) !== 'sim') return null;
-    return inDojoView(p, D.centre) ? D.centre : null;
+    if (!D || !p || this.realmOf(p) !== 'sim') {
+      if (p) (this._inSimDojo ??= new Set()).delete(p.index);
+      return null;
+    }
+    const held = (this._inSimDojo ??= new Set());
+    const r = held.has(p.index) ? SIM_DOJO_OUT : SIM_DOJO_IN;
+    const inside = inDojoView(p, D.centre, r);
+    if (inside) held.add(p.index); else held.delete(p.index);
+    return inside ? D.centre : null;
   }
 
   /**
@@ -3328,7 +3396,7 @@ export class DreamDojo {
     if (this.sim && camera.position.x > SIM.dx * 0.5) {
       for (const k of this.simPandas) k?.panda.faceCamera(camera);
       for (const c of this.choices) c?.faceCamera(camera);
-      this.mapKiosk?.faceCamera(camera);
+      for (const k of this.mapKiosks ?? []) k.faceCamera(camera);
       this.sim.faceCamera(camera);
       this.gallery?.faceCamera(camera);
       this.hall?.faceCamera(camera);

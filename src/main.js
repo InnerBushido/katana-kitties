@@ -3528,7 +3528,7 @@ class Game {
       // Lionheart's racks are a first-visit thing, and this is a first visit.
       p.dreamGeared = false;
       // His Shadow's three levels, and so 凶, are earned in a game too.
-      p.shadowBeat = { easy: false, medium: false, hard: false };
+      p.shadowBeat = { easy: false, medium: false, hard: false, extra: false };
       // ...and so are the orbs she earned in the simulator (dream/holokit.js).
       p.holoOrbs = [];
       p.holoClan = null;
@@ -5050,7 +5050,6 @@ class Game {
     if (code === 'SaveWipe') this._debugClearSaves();
     /* AND THE THIRD: the simulator's stars, which are kept per kitten for
        good ("per kitten, forever" was Richard's answer). No key, same reason. */
-    if (code === 'DreamWipe') this._debugClearDream();
     /* THE HEALTH NUMBERS BEHIND THE ARENA'S BARS. No key, because it is only
        ever wanted while a tournament is running and a keyboard in that room
        already has four kittens' worth of hands on it. See
@@ -5352,35 +5351,6 @@ class Game {
         this.toast(`[debug] saved games wiped — ${n} gone`, 0);
         /* The row prints the count, so it is wrong until the panel is rebuilt,
            and a stale row reads as a button that did nothing. */
-        this._refreshDebugPanel();
-      },
-    });
-  }
-
-  /**
-   * Throw away every star the Dream Dojo has given out on this device.
-   *
-   * THE SAME SHAPE AS THE TWO WIPES ABOVE IT: the count in the button, words
-   * that say what goes and what stays, no `.primary`. Counted in KITTENS
-   * because that is what the stars are filed under — "3 kittens" is a number a
-   * tester can check against who has played.
-   */
-  _debugClearDream() {
-    const n = this.dream?.progress.count() ?? 0;
-    if (!n) {
-      this.toast('[debug] nobody has any Dream Dojo stars yet', 0);
-      return;
-    }
-    this.confirm.ask({
-      title: 'WIPE THE DREAM DOJO STARS?',
-      body: `Every star and best time from Lionheart's simulator goes, for all `
-        + `${n} ${n === 1 ? 'kitten' : 'kittens'}, and there is no way to get them `
-        + 'back. Saved games and the record board are kept.',
-      no: 'NO, KEEP THE STARS',
-      yes: `YES, WIPE ALL ${n}`,
-      onYes: () => {
-        this.dream.progress.wipe();
-        this.toast(`[debug] Dream Dojo stars wiped — ${n} ${n === 1 ? 'kitten' : 'kittens'}`, 0);
         this._refreshDebugPanel();
       },
     });
@@ -6287,7 +6257,6 @@ class Game {
       <div class="dbg-sep">THIS DEVICE — what outlives the tab</div>
       ${row('BoardWipe', `wipe the RECORD BOARD (${this._boardRows()} results)`)}
       ${row('SaveWipe', `wipe the SAVED GAMES (${listSaves().length} of ${saveCap()})`)}
-      ${row('DreamWipe', `wipe the DREAM DOJO stars (${this.dream?.progress.count() ?? 0} kittens)`)}
       <div class="dbg-sep">SCENE VIEWER — choose, then play</div>
       ${row('Minus', '&#9664; previous scene')}
       ${row('Equal', 'next scene &#9654;')}

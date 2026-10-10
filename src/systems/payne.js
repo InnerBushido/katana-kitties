@@ -580,7 +580,10 @@ export function questList(g, p) {
      time) and not a tag-along (everybody can win it). */
   for (const id of DOJO_QUESTS) {
     const f = FEAT_BY_ID[id];
-    if (f) rows.push({ id, icon: f.icon, title: f.title, how: f.how, state: questState(g, p, id), tag: false, dojo: true });
+    if (!f) continue;
+    // The secret one says only how to be GIVEN it until she is 1st Class (feats.js).
+    const v = f.secret && !g.feats?.has?.(p, id) && !g.feats?.secretOpen?.(p) ? { ...f, ...f.veiled } : f;
+    rows.push({ id, icon: v.icon, title: v.title, how: v.how, state: questState(g, p, id), tag: false, dojo: true });
   }
   return rows;
 }
@@ -588,8 +591,9 @@ export function questList(g, p) {
 /** The Dream Dojo card's buttons, in order: what each one DOES. */
 export const DOJO_ACTS = [['view', 'VIEW THE DREAM DOJO'], ['ddmark', 'MARK IT ON MY MAP'], ['back', '◀ BACK']];
 
-/** The Dream Dojo's quests on her list — Lionheart's Honor, for now. */
-export const DOJO_QUESTS = ['shadow'];
+/** The Dream Dojo's quests on her list — Lionheart's Honor, and the secret
+ *  one KENSHI 1st Class is given (veiled until then). */
+export const DOJO_QUESTS = ['shadow', 'secret'];
 
 /* --------------------------------- art ----------------------------------- */
 

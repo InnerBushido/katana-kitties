@@ -555,7 +555,7 @@ export class Player {
     /** Which of Shadow Lionheart's three levels she has beaten THIS GAME —
      *  saved in her row like her gear (savegame.js `castRow`). All three is
      *  `kyo`: his 凶 Cross Slash, at `KYO.dmgK`. See dream/shadow.js. */
-    this.shadowBeat = { easy: false, medium: false, hard: false };
+    this.shadowBeat = { easy: false, medium: false, hard: false, extra: false };
     /** The Kotodama she has EARNED in the simulator — the Gallery's first
      *  wins and a 3★ pedestal's extras, at most four of a kind. Hers only in
      *  there, and saved in her row. See dream/holokit.js. */
