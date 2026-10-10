@@ -1765,6 +1765,42 @@ quoted in the code, beside the change it caused.
 - The holo axis bars and the triad are tuned at the desktop shot. They have
   not been looked at on a phone's 44-unit shot.
 
+## The trial's loan, and angels in Shadow Lionheart's fight
+
+**A trial's orbs went back with it** (`DreamDojo._updateTraining`):
+- His note: "when player obtains kotodama in the simulation, the orbs are
+  equipped to the player through the trials, but they are not appearing on
+  the 'Equipped' section of the Holo Character Profile, they should appear
+  there and the player should be able to unequip them".
+- What he saw was the trial's LOAN. `lend` puts what a trial needs in
+  `s.loans`, `_applyKit` wears it, and nothing took it off until she left the
+  simulator. The profile shows `holoWorn`, so she walked the rest of the visit
+  in orbs it could neither show nor take off.
+- Now the loan is handed back the frame the drill is disposed. A won trial has
+  already paid its orb into `holoWorn` (`onDrillEnd`), where it shows and
+  stows.
+
+**Caught is out** (`ShadowFight.onCatch`, `_landOut`, `Player.angelLeash`):
+- His note: "the match is over when all players die. If a player dies and
+  there are more players still alive fighting Shadow, they turn into an angel
+  and can only fly around the area of the fight and have to wait for the fight
+  to end before respawning ... like how it is when a player dies in the arena
+  and during the Feast".
+- It used to set her down at the edge with 15s on the party's time, so no
+  fight could be lost to his blows.
+- Now a caught kitten with a sister still standing becomes the ring's own
+  angel (`becomeAngel`):
+  - she is held over HIS arena by `angelLeash` (radius `ARENA_R`, at most
+    `ANGEL_SHADOW_CEIL` = 9 up, so his camera stays on the fight);
+  - `simHit` and `_target` pass her over;
+  - she is never dropped from the fight for flying off its floor.
+- The last kitten caught loses it. Alone, that is the first catch.
+- Everybody caught lands at the edge, on a full bar, when the fight ends, won
+  or lost (`_landOut`).
+- The 15s still goes on a caught kitten's time on the board.
+
+**Open:** nobody has played either change.
+
 ## Voice
 
 Lionheart is **Barrett** (`d603a8cd-3fe1-55e0-9245-617a2589131e`), nine clips

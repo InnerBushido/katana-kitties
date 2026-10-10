@@ -2437,6 +2437,8 @@ export class DreamDojo {
   simHit(p, { dmg = 10, push = null, src = 'laser', hold = false, from = null, foe = null } = {}) {
     const s = this.st[p.index];
     if (!s || this.realmOf(p) !== 'sim') return 'none';
+    // Out of Shadow Lionheart's fight and flying (dream/shadow.js): nothing to hit.
+    if (p.angel) return 'none';
     if (p.dodgeAt) return 'dodged';
     if (from && !hold) {
       const at = { x: from.x + SIM.dx, z: from.z + SIM.dz };
@@ -2494,7 +2496,20 @@ export class DreamDojo {
       // Her real orbs can change in here (the profile's INVENTORY tab).
       this._applyKit(p);
       const d = this.drills[p.index];
-      if (d && !d.update(dt)) { d.dispose(); this.drills[p.index] = null; }
+      if (d && !d.update(dt)) {
+        d.dispose();
+        this.drills[p.index] = null;
+        /* THE LOAN GOES BACK WITH THE TRIAL. Richard: "when player obtains
+           kotodama in the simulation, the orbs are equipped to the player
+           through the trials, but they are not appearing on the 'Equipped'
+           section of the Holo Character Profile". They were not hers: `lend`
+           puts what a trial needs in `s.loans`, which `_applyKit` wears, and
+           nothing took them off until she left the simulator — so she walked
+           the rest of her visit in orbs the profile (which shows `holoWorn`)
+           could neither show nor take off. A WON trial has already paid its
+           orb into `holoWorn` (`onDrillEnd`), where it shows and stows. */
+        if (s.loans?.length) { s.loans = []; this._applyKit(p, true); }
+      }
       const r = this.rundowns[p.index];
       if (r && !this.canTalk(p)) this._closeRundown(p);
       // The bar shows when it is not full, or while a drill could take it.

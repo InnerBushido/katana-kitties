@@ -827,6 +827,10 @@ export class Player {
      */
     this.clansSworn = new Set();
     this.angel = false;
+    /** Where an angel is held when it is NOT the arena ring — `{x, z, y, r,
+     *  ceil}` in world space. Shadow Lionheart's fight sets it (dream/
+     *  shadow.js); null means the ring, as it always did. Cleared on landing. */
+    this.angelLeash = null;
     /** Wings and a halo, built once at boot. See AngelForm. */
     this.angelForm = null;
 
@@ -2373,6 +2377,7 @@ export class Player {
   /** Back to earth, and back to being a cat. */
   landAngel() {
     this.angel = false;
+    this.angelLeash = null;
     this.angelForm?.hide();
     this.sprite.mesh.rotation.z = 0;
   }
@@ -2418,15 +2423,21 @@ export class Player {
        Both are measured off the ARENA, not off the world, because the angel
        only ever exists there and a camera framing two fighters cannot follow
        somebody who has flown to another island. */
-    const g = world.heightAt(this.position.x, this.position.z, this.position.y);
-    const floor = (g ? g.y : this.position.y) + ANGEL_FLOOR;
+    /* A LEASH OF HER OWN (Shadow Lionheart's arena, in the simulator) is
+       floored and ceilinged off ITS height, not off the ground under her: a
+       kitten flown past a sim island's rim has no ground under her, and
+       `g ? g.y : this.position.y` would then lift her by ANGEL_FLOOR every
+       frame, for ever. */
+    const L = this.angelLeash;
+    const g = L ? null : world.heightAt(this.position.x, this.position.z, this.position.y);
+    const floor = (L ? L.y : g ? g.y : this.position.y) + ANGEL_FLOOR;
     if (this.position.y < floor) {
       this.position.y = floor;
       this.velocity.y = Math.max(0, this.velocity.y);
     }
-    const R = world.arenaRing;
+    const R = L ? { x: L.x, z: L.z, y: L.y, half: L.r - ANGEL_ROAM } : world.arenaRing;
     if (R) {
-      const ceil = R.y + ANGEL_CEIL;
+      const ceil = R.y + (L?.ceil ?? ANGEL_CEIL);
       if (this.position.y > ceil) {
         this.position.y = ceil;
         this.velocity.y = Math.min(0, this.velocity.y);

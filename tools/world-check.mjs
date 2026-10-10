@@ -36098,6 +36098,33 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     her.setPowerOrbs([]);
   }
 
+  /* --- ...AND THE TRIAL TAKES ITS LOAN BACK WHEN IT ENDS --- Richard: "the
+     orbs are equipped to the player through the trials, but they are not
+     appearing on the 'Equipped' section of the Holo Character Profile". The
+     loans stayed worn until she left the simulator, in no list the profile
+     reads. Run through the real per-frame path: a drill that reports itself
+     done, and what she is wearing the frame after. */
+  {
+    const s0 = D.st[0];
+    const inSim = D.realmOf(her) === 'sim';
+    s0.holoWorn = ['swift'];
+    s0.loans = [];
+    D.lend(her, ['reach', 'reach']);
+    const during = her.wornOrbs.length;
+    let disposed = false;
+    D.drills[0] = { update: () => false, dispose: () => { disposed = true; }, lasers: [], bolts: [] };
+    const sh0 = D.shards;
+    D.shards = null;
+    D._updateTraining(1 / 60);
+    D.shards = sh0;
+    ok('a trial that ends hands its loan back the same frame: she wears her holo kit, which the profile shows and can take off',
+      inSim && during === 3 && disposed && D.drills[0] === null && s0.loans.length === 0
+      && her.wornOrbs.length === 1 && JSON.stringify(her.power) === JSON.stringify(PO.aggregate(['swift'])),
+      `in sim ${inSim}, worn ${during} -> ${her.wornOrbs.length}, loans ${s0.loans.join(',')}`);
+    s0.holoWorn = null;
+    D._leaveSim(her);
+  }
+
   /* --- a trial oath is the simulator's, and the save keeps the real one --- */
   {
     const real = CLANS.find((c) => c.id === 'thunder');
@@ -39049,13 +39076,54 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     B.hit(blow);
     ok('...and once otherwise', hp1 - B.hp === 1);
 
-    // Caught: back to the edge, a cost, and the fight goes on.
-    D._simCatch(her);
-    const e = isleSpot(IH, ...SH.ENTRY_AT);
-    ok('影 a kitten the simulator catches is set down at the arena\'s edge, with a catch on her time, and the fight goes on',
-      F.state === 'live' && F.who.get(0).catches === 1
-      && Math.hypot(her.position.x - SW.SIM.dx - e.x, her.position.z - SW.SIM.dz - e.z) < 0.01,
-      `${F.state} ${F.who.get(0)?.catches}`);
+    /* CAUGHT IS OUT. Richard: "the match is over when all players die. If a
+       player dies and there are more players still alive fighting Shadow,
+       they turn into an angel and can only fly around the area of the fight
+       and have to wait for the fight to end before respawning". It used to
+       set her down at the edge with 15s on the time, so no fight could be
+       lost to his blows at all. */
+    {
+      const saved = new Map(F.who);
+      const mate = { index: 7, name: 'Mate', position: new THREE.Vector3(), velocity: new THREE.Vector3(),
+        becomeAngel() { this.angel = true; }, landAngel() { this.angel = false; this.angelLeash = null; } };
+      F.who.set(mate.index, { p: mate, catches: 0 });
+      D._simCatch(her);
+      const w = F.who.get(0);
+      const lz = her.angelLeash;
+      const flown = her.position.clone().set(F.centre.x + SW.SIM.dx + 60, IH.y + 40, F.centre.z + SW.SIM.dz);
+      her.position.copy(flown);
+      her.velocity.set(0, 0, 0);
+      for (let f = 0; f < 240; f++) her._updateAngel(1 / 60, { mx: 0, my: 0, down: () => false, pressed: () => false }, world);
+      const reel = Math.hypot(her.position.x - SW.SIM.dx - F.centre.x, her.position.z - SW.SIM.dz - F.centre.z);
+      ok('影 caught with a sister still standing, she is an ANGEL and the fight goes on, with the catch on her time',
+        F.state === 'live' && w.out && w.catches === 1 && her.angel && !!lz && lz.r === SH.ARENA_R,
+        `${F.state} out ${w.out} angel ${her.angel}`);
+      ok('...held over HIS arena, low enough for his camera: flown off 60 out and 40 up, she is reeled in and capped',
+        reel < SH.ARENA_R + 6 && her.position.y <= IH.y + SH.ANGEL_SHADOW_CEIL + 1e-6 && her.position.y >= IH.y,
+        `${reel.toFixed(1)} out, ${(her.position.y - IH.y).toFixed(1)} up`);
+      const hpBefore = D.st[0].simHp;
+      ok('...and out of it: no hologram can hit her, and he aims at whoever is still standing',
+        D.simHit(her, { dmg: 50 }) === 'none' && D.st[0].simHp === hpBefore && F._target().p !== her && !F.who.get(F._target().p.index).out,
+        `${D.simHit(her, { dmg: 0 })} ${D.st[0].simHp}/${hpBefore} ${F._target().p?.name} ${[...F.who.keys()]}`);
+      ok('...and a caught angel is never dropped from the fight for flying off his floor',
+        /const far = !w\.out && !floor\.includes\(w\.p\)/.test(readFileSync(new URL('../src/systems/dream/shadow.js', import.meta.url), 'utf8')));
+      for (const q of [...F.who.values()]) if (!q.out) F.onCatch(q.p);
+      const e = F._entry();
+      ok('...and when the LAST is caught the fight is LOST, and everybody comes down at the edge as a cat',
+        F.state === 'lost' && !her.angel && !her.angelLeash && [...F.who.values()].every((q) => !q.p.angel && !q.out)
+        && Math.hypot(her.position.x - SW.SIM.dx - e.x, her.position.z - SW.SIM.dz - e.z) < 0.01,
+        `${F.state} angel ${her.angel}`);
+      const solo = new Map([[0, { p: her, catches: 0 }]]);
+      F.who = solo; F.state = 'live';
+      D._simCatch(her);
+      ok('...so a kitten fighting him ALONE loses it the moment she is caught, and is never an angel',
+        F.state === 'lost' && !her.angel, F.state);
+      // Back to the fight the checks below are about.
+      F.who = saved; F.state = 'live'; F.endT = 0;
+      // Only her catch is the fight’s; the others were caught here to lose it.
+      for (const q of F.who.values()) { q.out = false; if (q.p !== her) q.catches = 0; }
+      put(her, { x: e.x, y: e.y, z: e.z });
+    }
     // Phase two at half his bar.
     B.hp = Math.floor(B.maxHits * SH.PHASE2);
     F.update(1 / 60);

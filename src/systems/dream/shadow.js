@@ -61,6 +61,10 @@ export const SHADOW_PER = 12;
 export const SHADOW_T = 240;
 /** Score is seconds + this per catch; lower is better. */
 export const CATCH_COST = 15;
+/** How high a caught kitten may fly over his floor. The ring's 34 is sized
+ *  for a stadium; his fight camera frames everybody in `who`, and an angel
+ *  at 34 would drag it up off the fight. */
+export const ANGEL_SHADOW_CEIL = 9;
 export const SHADOW_BANDS = [SHADOW_T + 60, 150, 100];
 /** How tall he is drawn: LIONHEART'S OWN HEIGHT (`LION_HEIGHT` in
  *  dreamdojo.js, 6.2 — a literal here because that file imports this one).
@@ -703,16 +707,58 @@ export class ShadowFight {
     if (!quiet) this.dream.game.toast?.(`${p.name} joined the fight against Shadow Lionheart!`, p.index);
   }
 
-  /** The simulator caught one of his opponents. Back to the edge, and a cost. */
+  /**
+   * The simulator caught one of his opponents: SHE IS OUT.
+   *
+   * Richard: "If player dies/health is depleted while fighting Shadow
+   * Lionheart, then they lose the match. We can do it that the match is over
+   * when all players die. If a player dies and there are more players still
+   * alive fighting Shadow, they turn into an angel and can only fly around the
+   * area of the fight and have to wait for the fight to end before respawning
+   * ... like how it is when a player dies in the arena and during the Feast".
+   *
+   * It used to set her back at the edge with 15s on the party's time, so a
+   * fight could not be lost by being hit at all — with the bar's refill, that
+   * was "makes it hard for them to die" twice over.
+   *
+   * THE RING'S OWN ANGEL (`Player.becomeAngel`), held over HIS arena by
+   * `angelLeash` instead of the ring's, and low enough to stay in his shot.
+   * She cannot strike — the angel has no attack — and `simHit` and `_target`
+   * both pass her over. Everybody out lands in `_landOut`, when the fight
+   * ends, won or lost, and not a moment before. `catches` still costs the
+   * time on the board, so a win carried by one sister is scored as one.
+   */
   onCatch(p) {
     const w = this.who.get(p.index);
-    if (!w || this.state !== 'live') return false;
+    if (!w || this.state !== 'live' || w.out) return false;
     w.catches += 1;
-    const e = this._entry();
-    p.position.set(e.x + SIM.dx, e.y + 0.1, e.z + SIM.dz);
-    p.velocity?.set?.(0, 0, 0);
-    this.dream.game.toast?.(`${p.name} was caught — back to the edge! (+${CATCH_COST}s on your time)`, p.index);
+    w.out = true;
+    const standing = [...this.who.values()].some((q) => !q.out);
+    if (!standing) {
+      this._lost(this.who.size > 1 ? 'Every kitten was caught!' : 'You were caught!');
+      return true;
+    }
+    p.becomeAngel?.();
+    p.angelLeash = {
+      x: this.centre.x + SIM.dx, z: this.centre.z + SIM.dz, y: this.isle.y, r: ARENA_R, ceil: ANGEL_SHADOW_CEIL,
+    };
+    this.dream.game.toast?.(`${p.name} was caught — an angel until the fight is over!`, p.index);
+    this.dream.hint?.(p, 'CAUGHT! Fly about until your side wins it — or loses it.');
     return true;
+  }
+
+  /** The fight is over: everybody who was caught comes down at the edge, on
+   *  a full bar, as a cat again. The only place an angel of his lands. */
+  _landOut() {
+    const e = this._entry();
+    for (const w of this.who.values()) {
+      if (!w.out) continue;
+      w.out = false;
+      if (w.p.angel) w.p.landAngel?.();
+      w.p.position.set(e.x + SIM.dx, e.y + 0.1, e.z + SIM.dz);
+      w.p.velocity?.set?.(0, 0, 0);
+      this.dream.refillSim(w.p);
+    }
   }
 
   /** Show a line over him, and say it if it is one of the recorded ones. The
@@ -728,6 +774,7 @@ export class ShadowFight {
   _won() {
     if (this.state !== 'live') return;
     this.state = 'won';
+    this._landOut();
     this.endT = HANDOVER.secs + 7;
     this._clearTells();
     const g = this.dream.game;
@@ -778,6 +825,7 @@ export class ShadowFight {
   _lost(why) {
     if (this.state !== 'live') return;
     this.state = 'lost';
+    this._landOut();
     this.endT = 5;
     this._clearTells();
     const left = Math.round((this.boss.hp / this.boss.maxHits) * 100);
@@ -787,6 +835,7 @@ export class ShadowFight {
   }
 
   _reset() {
+    this._landOut();
     this._clearTells();
     this.kyo = false;
     this.kyoT = 0;
@@ -842,8 +891,10 @@ export class ShadowFight {
     for (const q of floor) this._join(q);
     for (const [i, w] of [...this.who]) {
       const gone = !this.dream.game.players?.includes(w.p) || this.dream.realmOf(w.p) !== 'sim';
-      const far = !floor.includes(w.p) && Math.hypot(w.p.position.x - SIM.dx - this.centre.x, w.p.position.z - SIM.dz - this.centre.z) > ARENA_R + 4;
+      const far = !w.out && !floor.includes(w.p) && Math.hypot(w.p.position.x - SIM.dx - this.centre.x, w.p.position.z - SIM.dz - this.centre.z) > ARENA_R + 4;
       if (gone || far) {
+        // Wings off on the way out, whichever way she went.
+        if (w.p.angel) w.p.landAngel?.();
         this.who.delete(i);
         if (!gone) this.dream.game.toast?.(`${w.p.name} left the fight`, w.p.index);
       }
@@ -861,7 +912,8 @@ export class ShadowFight {
   _target() {
     let best = null;
     let bd = Infinity;
-    for (const { p } of this.who.values()) {
+    for (const { p, out } of this.who.values()) {
+      if (out) continue;
       const d = Math.hypot(p.position.x - SIM.dx - this.boss.local.x, p.position.z - SIM.dz - this.boss.local.z);
       if (d < bd) { bd = d; best = p; }
     }
@@ -988,7 +1040,8 @@ export class ShadowFight {
   _strike(a) {
     const b = this.boss;
     const y = this.isle.y;
-    for (const { p } of this.who.values()) {
+    for (const { p, out } of this.who.values()) {
+      if (out) continue;
       const x = p.position.x - SIM.dx; const z = p.position.z - SIM.dz;
       let hit = false;
       let dmg = 0;
