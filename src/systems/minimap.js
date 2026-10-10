@@ -765,7 +765,30 @@ export class Minimap {
       c.fillStyle = d.key === 'port' ? '#ffb8f0' : '#c8fdff';
       c.fillText(word, x, y);
     }
+    // The map kiosks (DreamDojo.simSite `maps`): a gold board with a fold, the
+    // kiosks' own 地図 too small to read at this size.
+    for (const q of site.maps ?? []) this._mapPin(this._px(q.x), this._py(q.z));
     this._drawKittens(players);
+  }
+
+  /** One map kiosk: a little folded map, gold on the dark of the floor. */
+  _mapPin(x, y) {
+    const c = this.ctx;
+    const s = 3.6 * this.dpr;
+    c.beginPath();
+    c.moveTo(x - s * 1.2, y - s); c.lineTo(x - s * 0.4, y - s * 0.7); c.lineTo(x + s * 0.4, y - s);
+    c.lineTo(x + s * 1.2, y - s * 0.7); c.lineTo(x + s * 1.2, y + s); c.lineTo(x + s * 0.4, y + s * 0.7);
+    c.lineTo(x - s * 0.4, y + s); c.lineTo(x - s * 1.2, y + s * 0.7); c.closePath();
+    c.fillStyle = '#ffd24a';
+    c.fill();
+    c.lineWidth = 1.2 * this.dpr;
+    c.strokeStyle = 'rgba(4,16,24,0.95)';
+    c.stroke();
+    c.beginPath();
+    c.moveTo(x - s * 0.4, y - s * 0.7); c.lineTo(x - s * 0.4, y + s);
+    c.moveTo(x + s * 0.4, y - s); c.lineTo(x + s * 0.4, y + s * 0.7);
+    c.lineWidth = 0.9 * this.dpr;
+    c.stroke();
   }
 
   /** The kittens: a wedge each in her colour, pointing where she faces. */

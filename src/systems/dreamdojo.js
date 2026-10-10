@@ -1680,7 +1680,11 @@ export class DreamDojo {
        island: fitted to the discs alone, GALLERY and RANGE were cut to
        "GALL" and "RANGI" at the canvas edge. */
     const m = 0.14 * Math.max(maxX - minX, maxZ - minZ);
-    return { discs, roads, bounds: { minX: minX - m, maxX: maxX + m, minZ: minZ - m, maxZ: maxZ + m } };
+    /* THE MAP KIOSKS, so a kitten can find one. Richard: "Lets show the 'Map
+       of the Simulator' locations on the minimap so players know where they
+       are." Read off the kiosks actually standing, like everything here. */
+    const maps = (this.mapKiosks ?? []).map((k) => off(k.group.position));
+    return { discs, roads, maps, bounds: { minX: minX - m, maxX: maxX + m, minZ: minZ - m, maxZ: maxZ + m } };
   }
 
   /**

@@ -400,12 +400,15 @@ export class LionGuide {
       pd = `<circle cx="${port.x}" cy="${port.z}" r="${port.r}" class="ln-port"/>`
         + `<text x="${tx}" y="${tz}" font-size="${f * 0.8}" class="ln-lbl hub">YOUR TUBES</text>`;
     }
+    // The map kiosks, as on the corner minimap: one wherever there is a map.
+    const kiosks = (D.mapKiosks ?? []).map((k) => k.group.position)
+      .map((q) => `<rect x="${q.x - f * 0.45}" y="${q.z - f * 0.35}" width="${f * 0.9}" height="${f * 0.7}" class="ln-kiosk"/>`).join('');
     const at = D._flatPos?.(p);
     const me = at && Number.isFinite(at.x)
       ? `<circle cx="${at.x}" cy="${at.z}" r="${f * 0.55}" class="ln-me"/>`
         + `<text x="${at.x}" y="${at.z - f * 0.9}" font-size="${f * 0.8}" class="ln-lbl me">YOU</text>` : '';
     return `<svg class="ln-map" viewBox="${minX} ${minZ} ${vw} ${vh}" width="${w}" preserveAspectRatio="xMidYMid meet">`
-      + `${roads.join('')}${hub}${pd}${discs}${me}</svg>`;
+      + `${roads.join('')}${hub}${pd}${discs}${kiosks}${me}</svg>`;
   }
 
   /** The card's markup. `state` is the Inspector's card state. */

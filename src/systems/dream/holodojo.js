@@ -66,10 +66,11 @@ import { holoFlicker } from './holo.js';
    changing for the triangle. Also list somewhere, or highlight the area in
    different neon colors, when the player or sphere on the unit circle
    changes to a different quadrant on the graph."
-     · EVERY VECTOR SAYS WHAT IT IS: its (x, y, z) in units of the circle
-       and its length. The radius to the point, the normal and the tangent
-       are all length 1 by construction and say NORMALIZED; the vector to her
-       says it only when she is standing on the circle, which is the lesson.
+     · (GONE) EVERY VECTOR SAID WHAT IT WAS: its (x, y, z) and its length,
+       with NORMALIZED on a unit. Richard, the fourth pass: "too much text in
+       the dojo of the turning circle, let's remove all the text with
+       Normalized in it and the vector xyz text". Four 20-unit readouts on a
+       24-unit circle were most of the floor; the arrows still say it.
      · THE RIGHT TRIANGLE under the legs — origin, the foot of the sine leg,
        the point — filled, with its three angles at its three corners: the
        angle the radius makes with the x axis, 90°, and what is left. They
@@ -192,13 +193,6 @@ export function placeReadouts(items, fixed) {
   return down.slice(fixed.length);
 }
 
-/** A vector's readout: (x, y, z) to two places, its length, and NORMALIZED
- *  when the length is 1 to those two places. */
-export function vecText(name, x, y, z = 0) {
-  const f = (v) => (Math.abs(v) < 0.005 ? 0 : v).toFixed(2);
-  const m = Math.hypot(x, y, z);
-  return `${name} (${f(x)}, ${f(y)}, ${f(z)})  |${name}| = ${m.toFixed(2)}${Math.abs(m - 1) < 0.005 ? '  ✓ NORMALIZED' : ''}`;
-}
 const UP = new THREE.Vector3(0, 1, 0);
 const _d = new THREE.Vector3();
 
@@ -364,14 +358,6 @@ export function holoDojo(dojo) {
     dojo.labels?.push(l);
     return l;
   };
-  const WIDE = 'n (−0.00, −0.00, 0.00)  |n| = 1.00  ✓ NORMALIZED';
-  const hexCss = (h) => `#${h.toString(16).padStart(6, '0')}`;
-  parts.read = {
-    r: readout('#bfeaff', WIDE),
-    n: readout(hexCss(NORMAL_C), WIDE),
-    t: readout('#ffffff', WIDE),
-    v: readout('#ffffff', WIDE.replace(/n/g, 'v')),
-  };
 
   // THE RIGHT TRIANGLE: a fill under the legs, a square at the right angle,
   // and its three angles.
@@ -490,16 +476,6 @@ export function holoDojo(dojo) {
       const sx = Math.sign(cx) || 1;
       const sgy = Math.sign(sy) || 1;
       const readable = dojo.readable !== false;
-      const RD = parts.read;
-      for (const l of Object.values(RD)) l.visible = show;
-      // Where they go is decided at the bottom, once everything else is down.
-      if (show) {
-        if (readable) {
-          RD.r.setText(vecText('r', cx, sy));
-          RD.n.setText(vecText('n', cx, sy));
-          RD.t.setText(vecText('t', -sy, cx));
-        }
-      }
 
       // The triangle: origin, the foot of the sine leg, the point.
       const T = parts.tri;
@@ -559,56 +535,30 @@ export function holoDojo(dojo) {
          height, so it runs through the point on its way to her. */
       const D = dojo.driver;
       toHer.group.visible = !!D && show && spheres.some((s) => s.who === D);
-      RD.v.visible = toHer.group.visible;
       if (toHer.group.visible) {
         local(D, _b);
         _a.set(0, VEC_Y, 0);
         _b.y = VEC_Y;
         toHer.set(_a, _b);
-        /* Her vector in units of the circle: her radius, at her angle — the
-           two numbers MathDojo read off her. On the circle it is a unit. */
-        const pr = dojo.playerRadius ?? 1;
-        if (readable) RD.v.setText(vecText('v', pr * Math.cos(th), pr * Math.sin(th)));
       }
 
-      /* WHERE THE READOUTS GO (see placeReadouts). Each one's spots are in the
-         order it would rather have them: beside its own arrow first. The
-         fixed things are every other visible label on the floor, the point,
-         and her. */
+      /* WHERE THE QUADRANT'S NAME GOES (see placeReadouts) — the one readout
+         left now the vectors' are gone, but it still has to miss the axis
+         names, the leg labels, the point and her. */
       if (show) {
-        const mine = new Set([...Object.values(RD), Q.label]);
+        const mine = new Set([Q.label]);
         const fixed = dojo.labels.filter((l) => l.visible && !mine.has(l)).map((l) => labelBox(l));
         fixed.push({ x: P.x, z: P.z, hw: 1.6, hh: 1.6 });
-        if (RD.v.visible) fixed.push({ x: _b.x, z: _b.z, hw: 1.6, hh: 1.6 });
-        const tip = (dx, dz, l) => {
-          // Beside an arrow's head, running AWAY from the circle along the screen.
-          const x = P.x + dx * 7.8;
-          const z = P.z + dz * 7.8;
-          const hw = labelBox(l).hw;
-          const lean = Math.abs(dx) < 0.25 ? 0 : Math.sign(dx) * (hw - 1);
-          const up = (Math.sign(dz) || -1) * 2.8;
-          const side = hw + 1.5;
-          return [{ x: x + lean, z }, { x: x + lean, z: z + up }, { x, z: z + up }, { x: x + lean, z: z - up },
-            // ...and, where an axis name is standing on the tip, either side of it.
-            { x: x + side, z }, { x: x - side, z }, { x, z: z + up * 2 }];
-        };
+        if (toHer.group.visible) fixed.push({ x: _b.x, z: _b.z, hw: 1.6, hh: 1.6 });
         const items = [];
         const add = (key, l, spots) => items.push({ key, l, box: labelBox(l), spots, prev: parts.spots[key] });
-        add('r', RD.r, [0.55, 0.4, 0.7].flatMap((k) => [0, 2.6, -2.6].map((dz) => ({ x: P.x * k, z: P.z * k + dz }))));
-        add('n', RD.n, tip(nx, nz, RD.n));
-        add('t', RD.t, tip(nz, -nx, RD.t));
-        if (RD.v.visible) {
-          const side = labelBox(RD.v).hw + 2;
-          add('v', RD.v, [...[3.2, -3.2, 6, -6].map((dz) => ({ x: _b.x, z: _b.z + dz })),
-            { x: _b.x + side, z: _b.z }, { x: _b.x - side, z: _b.z }]);
-        }
         // The quadrant's name: somewhere inside the lit quarter.
         add('quad', Q.label, [0.62, 0.85, 0.4].flatMap((rk) => [0.5, 0.25, 0.75].map((fk) => {
           const a = (q + fk) * (Math.PI / 2);
           return { x: Math.cos(a) * R * rk, z: -Math.sin(a) * R * rk };
         })));
         placeReadouts(items, fixed);
-        const lift = { r: 4.2, n: 2.4, t: 2.4, v: 5.2, quad: 3.2 };
+        const lift = { quad: 3.2 };
         for (const it of items) {
           parts.spots[it.key] = it.prev;
           const s = it.spots[it.prev];

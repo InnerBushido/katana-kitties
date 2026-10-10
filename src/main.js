@@ -2707,6 +2707,27 @@ class Game {
             onYes: () => this.quitMatch(),
           });
         }
+        if (a === 'leave-gauntlet') {
+          /* WHOSE: the kitten who opened the menu if she is in the Gauntlet,
+             else everybody who is — a shared menu has nobody to single out. */
+          const G = this.dream?.sine;
+          const inIt = this.players.filter((p) => G?.inSession(p));
+          const own = this.players[this.menuOwner];
+          const who = own && inIt.includes(own) ? [own] : inIt;
+          if (who.length) {
+            this.confirm.ask({
+              title: who.length === 1 ? `TAKE ${who[0].name.toUpperCase()} OUT OF THE GAUNTLET?` : 'LEAVE THE SINE GAUNTLET?',
+              body: 'A run going now stops with no time, and the queue and the stands '
+                + 'let go. How far anybody got stays on the board.',
+              no: 'NO, KEEP RUNNING',
+              yes: 'YES, LEAVE THE GAUNTLET',
+              onYes: () => {
+                for (const p of who) G.leaveGauntlet(p);
+                this.setPaused(false);
+              },
+            });
+          }
+        }
         if (a === 'quit') {
           /* THE QUESTION SAYS WHICH OF THE TWO SAVES SHE IS ABOUT TO GET. A
              game past the five minutes is kept for good and one short of it is
@@ -3407,6 +3428,8 @@ class Game {
     /* THE HOLO PROFILE ONLY EXISTS WHILE SOMEBODY IS IN THE SIMULATOR — a
        button for a kit nobody is wearing is a button that opens four cards
        saying "not in here". Rebuilt on the way in, like the rows above. */
+    document.getElementById('btn-leave-gauntlet')
+      ?.classList.toggle('hidden', !(on && this.players.some((p) => this.dream?.sine?.inSession(p))));
     document.getElementById('btn-holo-profile')
       ?.classList.toggle('hidden', !(on && this.dream?.built && this.players.some((p) => this.dream.st[p.index]?.holoWorn)));
     document.getElementById('panel-pause').classList.toggle('hidden', !on);

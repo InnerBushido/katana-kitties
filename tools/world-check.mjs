@@ -35982,18 +35982,21 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       at(0.8, 1.3);
       holo.update(1 / 60, [walker]);
       fx.update(4.1, [walker]);
-      const th = holo.theta;
-      const RD = X.read;
-      const vecOk = Math.abs(num(want(RD.r), 0) - Math.cos(th)) < 0.006 && Math.abs(num(want(RD.r), 1) - Math.sin(th)) < 0.006
-        && /\|r\| = 1\.00  ✓ NORMALIZED/.test(want(RD.r)) && /✓ NORMALIZED/.test(want(RD.n)) && /✓ NORMALIZED/.test(want(RD.t))
-        && Math.abs(num(want(RD.t), 0) + Math.sin(th)) < 0.006 && Math.abs(num(want(RD.v), 3) - holo.playerRadius) < 0.006
-        && Math.abs(holo.playerRadius - 1.3) < 0.01 && !/NORMALIZED/.test(want(RD.v));
+      /* ...BUT NOT THE VECTORS'. The fourth pass: "too much text ... remove
+         all the text with Normalized in it and the vector xyz text". Ask
+         every label on the floor, on the circle and off it. */
+      const wordy = [];
+      for (const rad of [1, 1.3]) {
+        at(0.8, rad);
+        holo.update(1 / 60, [walker]);
+        fx.update(4.1 + rad, [walker]);
+        wordy.push(...holo.labels.filter((l) => /NORMALIZED|\|[rntv]\||\(-?\d+\.\d+, /.test(want(l))).map(want));
+      }
+      ok('円 no vector reads out its (x, y, z), its length or NORMALIZED any more — the floor had too much text',
+        wordy.length === 0 && X.read === undefined, wordy.join(' | '));
       at(0.8, 1);
       holo.update(1 / 60, [walker]);
       fx.update(4.2, [walker]);
-      const onCircle = /\|v\| = 1\.00  ✓ NORMALIZED/.test(want(RD.v));
-      ok('円 every vector reads out its (x, y, z) and its length, off the point: r, n and t are NORMALIZED, and hers only when she stands on the circle',
-        vecOk && onCircle, `${want(RD.r)} | ${want(RD.v)}`);
 
       // The triangle: its corners are the origin, the foot of the sine leg, the point.
       const tp = X.tri.mesh.geometry.attributes.position;
@@ -36031,11 +36034,10 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         && HD.QUAD_C.every((c) => !Object.values(HD.AXIS_C).includes(c)), seen.join());
       /* AND NONE OF IT ON TOP OF ANYTHING ELSE. The first cut put each readout
          at one fixed offset from its arrow, and at θ = 46° four of them were
-         stacked over the point. The placer's first set of spots still clashed
-         in 11 of these 192 frames — the normal's readout on "90° = π/2" at the
-         top of the circle, hers on the leg labels outside it — which is what
-         the either-side spots are for. Walk two laps — on the circle and outside it —
-         and ask every readout's box against every other label on the floor. */
+         stacked over the point. Only the quadrant's name is placed now (the
+         vectors' readouts are gone), and it still has to miss the axis names
+         and the leg labels. Walk two laps — on the circle and outside it —
+         and ask its box against every other label on the floor. */
       let frames = 0; let clash = 0; let hops = 0; let worst = '';
       let last = null;
       for (const rad of [1, 1.3]) {
@@ -36043,7 +36045,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
           at((k / 96) * Math.PI * 2 + 0.01, rad);
           holo.update(1 / 60, [walker]);
           fx.update(8 + k / 60, [walker]);
-          const mine = [...Object.values(X.read), X.quad.label].filter((l) => l.visible);
+          const mine = [X.quad.label].filter((l) => l.visible);
           const others = holo.labels.filter((l) => l.visible && !mine.includes(l));
           frames++;
           const bad = mine.some((a, i) => others.some((b) => HD.boxesOverlap(HD.labelBox(a), HD.labelBox(b), 0))
@@ -37490,6 +37492,32 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
           && withDrops === CO.beams(CO.LEVELS[0], 0).filter((q) => q.sec !== 'gaps').length,
         `${dropWorst.toFixed(4)} ${drops} ${withDrops}`);
       ok('...and a LOW beam reads stronger than a high one: brighter, narrower footprint and a darker shadow', order);
+      /* HER SECTION IN ITS COLOURS, THE REST NOT. "future ones ... the
+         greenish color and the ones already completed ... grayed out". Put a
+         run on each checkpoint in turn and ask every beam's paint. */
+      const keep = G.run;
+      let wrong = 0; let seenAll = true;
+      const list0 = CO.beams(CO.LEVELS[0], 1);
+      for (let cp = 0; cp < CO.SECTIONS.length; cp++) {
+        G.run = { cp, drill: { state: 'live' } };
+        G._paintCourse(CO.LEVELS[0], 1);
+        const looks = new Set();
+        list0.forEach((q, k) => {
+          const fx = G.beamFx[k];
+          const want = fx.secI < cp ? SN.BEAM_DONE.col : fx.secI > cp ? SN.BEAM_AHEAD.col : fx.col;
+          looks.add(fx.look);
+          if (fx.glow.material.color.getHex() !== want || fx.ends[0].material.color.getHex() !== want) wrong++;
+        });
+        if (cp === 3) seenAll = looks.size === 3;
+      }
+      G.run = null;
+      G._paintCourse(CO.LEVELS[0], 1);
+      const back = G.beamFx.every((fx) => fx.look === 'live' && fx.glow.material.color.getHex() === fx.col && fx.core.material.color.getHex() === 0xffffff);
+      G.run = keep;
+      ok('...and in a run only her own section wears its colours: the ones ahead dark green, the ones passed grey, and all of them back when nobody runs',
+        wrong === 0 && seenAll && back && G.beamFx.every((fx) => fx.secI >= 0)
+        && new Set([SN.BEAM_AHEAD.col, SN.BEAM_DONE.col, ...G.beamFx.map((fx) => fx.col)]).size === 2 + new Set(G.beamFx.map((fx) => fx.col)).size,
+        `${wrong} wrong`);
     }
     ok('...and the stones are real floors: standing on one stands her at its height',
       (() => {
@@ -37765,18 +37793,37 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       G.run.sMax = sv;
       for (let k = 0; k < 240; k++) G._easeCamera(1 / 60);
     }
-    // One press of INTERACT does not stop her; holding it does.
-    G.watchPad(d0, { down: (a) => a === 'interact' });
+    /* A WAY OUT. "we need a way for the player to be able to leave the
+       gauntlet if it is too difficult ... press the 'action' button to bring
+       up a menu to quit, like we do for the Kata Trace". One press ASKS, and
+       the cursor opens on "no" (non-negotiable 7). */
+    d0.spec.quit(d0);
+    const ask = D.choices[0];
+    ok('正弦 INTERACT mid-run asks LEAVE THE GAUNTLET?, the cursor on "no, keep running", and the run goes on',
+      ask?.title === 'LEAVE THE GAUNTLET?' && ask.i === 0 && /^no, keep running$/.test(ask.rows[0].text)
+      && /^yes, leave the Gauntlet$/.test(ask.rows[1].text) && d0.state === 'live');
+    ask.pick();
     G._tick(d0, 0.1);
-    ok('正弦 one press of INTERACT does not stop a run', d0.state === 'live');
-    for (let k = 0; k < 20; k++) { G.watchPad(d0, { down: (a) => a === 'interact' }); put(her, isleSpot(I, CO.START.a, CO.START.b)); G._tick(d0, 0.1); }
-    ok('...but holding it for STOP_HOLD does, and says so', d0.state === 'failed' && /stopped/.test(d0.why ?? ''), d0.why);
-    // Her drill ends: she is written down, she goes to the stands, her sister runs.
+    ok('...and "no" closes it with the run still live', !D.choices[0] && d0.state === 'live');
+    d0.spec.quit(d0);
+    D.choices[0].i = 1;
+    D.choices[0].pick();
+    ok('...and "yes" ends the run, and says who left', d0.state === 'failed' && /left the Sine Gauntlet/.test(d0.why ?? ''), d0.why);
+    // Her drill ends: she is written down, she goes OUT (not to the stands), her sister runs.
     for (let k = 0; k < 400 && D.drills[0] === d0; k++) { if (!d0.update(1 / 60)) { d0.dispose(); D.drills[0] = null; } }
     G.update(1 / 60);
     const d1 = D.drills[1];
-    ok('...and when her run is over her sister is next, at the same level, and she watches from the stands',
-      G.session?.runner === 1 && d1?.spec.id === 'sine.L1' && G.inStands(her) && G.session.results.length === 1);
+    const lq = lc(her.position.x - SW.SIM.dx, her.position.z - SW.SIM.dz);
+    ok('...and when she has left, her sister is next at the same level, and she is out on the plaza, not in the stands, her run on the board',
+      G.session?.runner === 1 && d1?.spec.id === 'sine.L1' && !G.inSession(her) && !D.st[0].benched
+      && G.session.results.length === 1 && G.session.results[0].i === 0 && lq.a < -17, `${lq.a.toFixed(1)}`);
+    const rd = (u) => readFileSync(new URL(u, import.meta.url), 'utf8');
+    const mainSrc = rd('../src/main.js');
+    ok('...and the pause menu has LEAVE THE SINE GAUNTLET in the holo colour, there only while somebody is in it, asking first',
+      /id="btn-leave-gauntlet" data-action="leave-gauntlet"/.test(rd('../index.html'))
+      && /class="menu-btn holo-btn hidden" id="btn-leave-gauntlet"/.test(rd('../index.html'))
+      && /btn-leave-gauntlet'\)\s*\?\.classList\.toggle\('hidden', !\(on && this\.players\.some\(\(p\) => this\.dream\?\.sine\?\.inSession\(p\)\)\)\)/.test(mainSrc)
+      && /if \(a === 'leave-gauntlet'\) \{[\s\S]{0,900}this\.confirm\.ask\(\{[\s\S]{0,500}no: 'NO, KEEP RUNNING',\s*yes: 'YES, LEAVE THE GAUNTLET',[\s\S]{0,120}G\.leaveGauntlet\(p\)/.test(mainSrc));
     // Her sister finishes: a time.
     for (let k = 0; k < 200 && d1.state === 'ready'; k++) d1.update(1 / 60);
     const fin = isleSpot(I, CO.LANES.at(-1), CO.FINISH_B + 0.5);
@@ -39249,6 +39296,17 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         /if \(site && mine\.length && mine\.every\(\(p\) => p\.realm === 'sim'\)\)/.test(mm)
         && /this\._drawSim\(site, players\.filter\(\(p\) => p\.realm === 'sim'\), mine\)/.test(mm)
         && /g\.world\.simSite = this\.simSite\(\);/.test(ddSrc));
+      /* ...AND WHERE THE MAPS ARE. "show the 'Map of the Simulator' locations
+         on the minimap so players know where they are". Every kiosk standing,
+         in the same world frame as her, and drawn by the minimap. */
+      const kioskAt = D.mapKiosks.map((k) => k.group.getWorldPosition(new THREE.Vector3()));
+      ok('地図 every map kiosk is marked on the simulator\'s minimap, where a kitten standing at it is',
+        site.maps.length === 5 && site.maps.length === D.mapKiosks.length
+        && site.maps.every((q, i) => Math.abs(q.x - kioskAt[i].x) < 0.01 && Math.abs(q.z - kioskAt[i].z) < 0.01)
+        && /for \(const q of site\.maps \?\? \[\]\) this\._mapPin\(/.test(mm),
+        site.maps.map((q, i) => `${(q.x - kioskAt[i].x).toFixed(2)},${(q.z - kioskAt[i].z).toFixed(2)}`).join(' '));
+      ok('...and on Lionheart\'s map card too',
+        (D.guide.mapSvg(her).match(/class="ln-kiosk"/g) ?? []).length === 5);
       ok('...and its names are clamped onto the canvas, which a phone\'s half-size map needs',
         /x = Math\.min\(Math\.max\(x, half\), this\.canvas\.width - half\);/.test(mm));
 
