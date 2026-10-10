@@ -200,6 +200,12 @@ export const SONGS = Object.keys(MUSIC).map((id) => {
 });
 export const songById = (id) => SONGS.find((s) => s.id === id) ?? null;
 
+/** " · by <author>" for a chart somebody signed, '' for an unsigned one. */
+export const byLine = (chart) => {
+  const a = String(chart?.author ?? '').trim();
+  return a ? ` · by ${a}` : '';
+};
+
 /* -------------------------------- the solver ------------------------------ */
 
 /** The attacks, in the order they land, each with where he stood and its tell. */

@@ -6415,7 +6415,7 @@ body.touch-ui .payne-help-pic { width: 44px; }
 .ke-grid-wrap { min-height: 0; overflow: auto; border: 3px solid var(--ink); border-radius: 10px; background: #fff7e6; }
 .ke-grid-head, .ke-r {
   display: grid;
-  grid-template-columns: 4.6em repeat(5, minmax(0, 1fr)) repeat(3, minmax(0, 1.4fr));
+  grid-template-columns: 4.6em repeat(5, minmax(0, 1fr)) minmax(0, 0.8fr) repeat(3, minmax(0, 1.4fr));
   gap: 2px; align-items: center; padding: 1px 4px;
 }
 .ke-grid-head { position: sticky; top: 0; z-index: 1; background: var(--ink); color: var(--paper); font-weight: 900; font-size: 12px; text-align: center; padding: 4px; }
@@ -6434,6 +6434,14 @@ body.touch-ui .payne-help-pic { width: 44px; }
 #panel-kata-editor .menu-btn.ke-c:hover, #panel-kata-editor .menu-btn.ke-c:focus-visible { transform: none; box-shadow: none; background: #ffe9a8; }
 #panel-kata-editor .menu-btn.ke-l.on { background: #ffd34a; color: var(--ink); }
 #panel-kata-editor .menu-btn.ke-a.on { background: #ff3b5c; color: #fff; }
+#panel-kata-editor .menu-btn.ke-h.on { background: #4aa3ff; color: #fff; }
+.ke-grid-head .ke-h { color: #9fd0ff; }
+/* The grid is ONE stop to the stick (MenuNav `_dive`): ringed as a whole, then
+   the line she is on, then the button on it. */
+.ke-grid-wrap.nav-focus { outline: 4px solid #4aa3ff; outline-offset: 2px; }
+.ke-r.nav-in { background: rgba(74, 163, 255, 0.22); }
+.ke-r.nav-focus { outline: 3px solid #4aa3ff; outline-offset: -3px; }
+#panel-kata-editor .menu-btn.ke-c.nav-focus { outline: 3px solid #1d1216; outline-offset: 0; background: #ffe9a8; color: var(--ink); }
 .ke-side { min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
 #ke-floor { width: min(240px, 34vh); height: auto; aspect-ratio: 1; align-self: center; border-radius: 12px; background: #06141d; }
 .ke-say { font-weight: 800; font-size: 13px; text-align: center; min-height: 1.3em; }

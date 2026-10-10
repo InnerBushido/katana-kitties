@@ -42707,6 +42707,115 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
    and 71) because it was only ever counted by hand — and counting the output by
    hand gets it wrong too: labels longer than the 42-char pad push the status
    past the column you'd grep for. The script knows; let it say. */
+console.log('\n--- the beat-map grid is one stop, then its lines, then a line\'s buttons ---');
+{
+  /* Richard: "moving up/down between the UI will select the entire beat maps
+     section as a whole, if the user clicks into it, then it will select the
+     line beats ... if user clicks into a line, then they can select the
+     various buttons within the line." Driven on plain objects, as `_reseat`
+     is above: the rule is numbers and order, not layout. */
+  const BM = await import('../src/systems/dream/beatmap.js');
+  const mk = (tag, cls = []) => {
+    const set = new Set(cls);
+    return {
+      tagName: tag, offsetParent: {}, kids: [], clicks: 0, events: [], dataset: {},
+      classList: { add: (c) => set.add(c), remove: (...c) => c.forEach((x) => set.delete(x)), contains: (c) => set.has(c) },
+      has: (c) => set.has(c),
+      click() { this.clicks += 1; },
+      dispatchEvent(e) { this.events.push(e); return true; },
+      scrollIntoView() {},
+    };
+  };
+  const rows = [0, 1, 2, 3].map((r) => {
+    const row = mk('DIV', ['ke-r']);
+    row.dataset.row = String(r);
+    row.cells = [0, 1, 2].map(() => mk('BUTTON', ['menu-btn']));
+    row.querySelectorAll = () => row.cells;
+    return row;
+  });
+  const group = mk('DIV');
+  group.querySelectorAll = () => rows;
+  const panel = { id: 'panel-kata-editor', querySelector: () => group };
+  globalThis.CustomEvent ??= class { constructor(type, o) { this.type = type; this.detail = o?.detail; } };
+  globalThis.document ??= {};
+  const prevQ = globalThis.document.querySelectorAll;
+  globalThis.document.querySelectorAll = () => [];
+  const nav = new MenuNav({ audio: { play: () => {} } });
+  let pad = {};
+  nav._read = () => ({ x: pad.x ?? 0, y: pad.y ?? 0, confirm: !!pad.confirm, back: !!pad.back, spend() {} });
+  nav._step = (v) => Math.sign(v);
+  const press = (p) => { pad = p; nav._updateDive(panel, { st, group }, 0.016); pad = {}; };
+  const st = { depth: 1, row: 2, cell: 0 };
+  nav.dives = new Map([[panel.id, st]]);
+  press({});
+  ok('JUMP into the grid starts on the line she was on, ringed as a line',
+    rows[2].has('nav-focus') && rows[2].has('nav-in') && rows[2].events.some((e) => e.type === 'navfocus' && e.detail.row === 2));
+  press({ y: 1 });
+  ok('...down is the next line, and the page is told which', st.row === 3 && rows[3].has('nav-focus')
+    && rows[3].events.some((e) => e.detail?.row === 3));
+  press({ y: 1 });
+  ok('...and stops at the last line rather than wrapping or leaving', st.row === 3);
+  press({ x: 1 });
+  ok('...left/right does nothing on a whole line', st.depth === 1 && rows[3].cells.every((c) => c.clicks === 0));
+  press({ confirm: true });
+  ok('...JUMP on a line goes into its buttons, at the first', st.depth === 2 && rows[3].cells[0].has('nav-focus'));
+  press({ x: 1 });
+  press({ y: -1 });
+  ok('...right walks the line, and up keeps the same button on the line above', st.cell === 1 && st.row === 2 && rows[2].cells[1].has('nav-focus'));
+  press({ confirm: true });
+  ok('...JUMP there presses that one button, once', rows[2].cells[1].clicks === 1
+    && rows.flatMap((r) => r.cells).reduce((n, c) => n + c.clicks, 0) === 1);
+  press({ back: true });
+  press({ back: true });
+  ok('...and BACK comes out one level at a time, to the grid as one stop', st.depth === 0);
+  ok('...where the page\'s own list takes over again', nav._dive(panel) === null);
+  nav.undive(panel.id);
+  ok('...and opening the page afresh forgets the line', !nav.dives.has(panel.id));
+  globalThis.document.querySelectorAll = prevQ;
+
+  const nsrc = readFileSync(new URL('../src/systems/menunav.js', import.meta.url), 'utf8');
+  ok('...a group is one stop in the page list, and what is inside it is not',
+    /\[data-nav-group\]'/.test(nsrc) && /!el\.parentElement\?\.closest\?\.\('\[data-nav-group\]'\)/.test(nsrc));
+  const esrc = readFileSync(new URL('../src/systems/dream/kataeditor.js', import.meta.url), 'utf8');
+  ok('...the editor\'s grid is that group, its beats are the lines, and its floor follows the line',
+    /id="ke-grid-wrap" data-nav-group/.test(esrc) && /data-nav-row/.test(esrc)
+    && /addEventListener\('navfocus'/.test(esrc) && /undive\?\.\('panel-kata-editor'\)/.test(esrc));
+
+  /* ½. "Lionheart's half beat moves should be a toggle." */
+  ok('...½ is its own column, and flips his move between the beat and the half-beat',
+    /data-k="half"/.test(esrc) && /m\.beat = m\.beat % 1 \? beat : beat \+ 0\.5/.test(esrc)
+    && /Pick where he moves on beat/.test(esrc));
+  const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  const tmpl = css.match(/\.ke-grid-head, \.ke-r \{[^}]*grid-template-columns:([^;]*);/)?.[1] ?? '';
+  const reps = [...tmpl.matchAll(/repeat\((\d+), minmax\([^)]*\)\)/g)];
+  const cols = reps.reduce((n, m) => n + Number(m[1]), 0)
+    + tmpl.replace(/repeat\(\d+, minmax\([^)]*\)\)/g, '').replace(/minmax\([^)]*\)/g, 'X').trim().split(/\s+/).filter(Boolean).length;
+  ok('...and the grid template has a column for every cell a line draws (beat + 5 spots + ½ + 3 attacks)',
+    cols === 1 + BM.LION_SPOTS.length + 1 + BM.ATTACKS.length, `${cols} columns: ${tmpl}`);
+
+  /* A new song or level is a new map, asked first when hers is changed. */
+  ok('changing the song or level loads his chart for it — asking first, with the box put back, only if she changed the map',
+    /if \(!this\.dirty\) \{ go\(\); return; \}\s*\$\(id\)\.value = this\.chart\[key\];/.test(esrc)
+    && /'yes, replace my map', 'no, keep my map', go\)/.test(esrc));
+
+  /* "By". */
+  ok('a signed chart says who by, an unsigned one says nothing',
+    BM.byLine({ author: ' Mia ' }) === ' · by Mia' && BM.byLine({ author: '' }) === '' && BM.byLine(null) === '');
+  const ksrc = readFileSync(new URL('../src/systems/dream/kata.js', import.meta.url), 'utf8');
+  ok('...on the Kata Trace picker and the editor\'s saved list', /c\.chart\.title\}\$\{BM\.byLine\(c\.chart\)\}/.test(ksrc)
+    && /esc\(BM\.byLine\(c\.chart\)\)/.test(esrc));
+
+  /* Typing. "the wasd and okl; text shouldn't be overridden by input". */
+  const { typingIn } = await import('../src/core/input.js');
+  ok('a text field, a textarea and contenteditable are typed into; a slider and a button are not',
+    typingIn({ tagName: 'INPUT', type: 'text' }) && typingIn({ tagName: 'TEXTAREA' }) && typingIn({ isContentEditable: true })
+    && !typingIn({ tagName: 'INPUT', type: 'range' }) && !typingIn({ tagName: 'BUTTON' }) && !typingIn(null));
+  const isrc = readFileSync(new URL('../src/core/input.js', import.meta.url), 'utf8');
+  ok('...the game hears no key typed into a box, and Escape only leaves the box',
+    /if \(typingIn\(e\.target\)\) \{\s*if \(e\.code === 'Escape'\) \{ e\.target\.blur\(\); e\.preventDefault\(\); \}\s*return;/.test(isrc)
+    && /typingIn\(e\.target\)\) \{\s*e\.preventDefault\(\);\s*e\.stopImmediatePropagation\(\);\s*e\.target\.blur\(\);/.test(esrc));
+}
+
 console.log(fails
   ? `\n${fails} of ${checks} CHECK(S) FAILED`
   : `\nall ${checks} checks passed`);

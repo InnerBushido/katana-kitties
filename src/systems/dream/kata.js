@@ -365,7 +365,10 @@ export class KataHall {
         cycle: (s) => { k.speed = cyc(BM.SPEEDS, k.speed, s); },
       },
       {
-        text: () => { const c = custom(); return `CHART  ◀ ${c ? c.chart.title : "Lionheart's"} ▶`; },
+        /* "by" — Richard: "if the user selects a chart that is not
+           Lionheart's, then it should show the 'By' name for the author on
+           the list." Two sisters' maps of the same song can share a title. */
+        text: () => { const c = custom(); return `CHART  ◀ ${c ? `${c.chart.title}${BM.byLine(c.chart)}` : "Lionheart's"} ▶`; },
         cycle: (s) => {
           const ids = [null, ...customs().map((c) => c.id)];
           if (ids.length === 1) { this.dream.hint(p, 'No custom charts for this song yet — make one at the 譜 BEAT MAPS kiosk'); this.dream.game.sfx?.('deny'); return; }
