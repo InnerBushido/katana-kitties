@@ -71,7 +71,7 @@ export class KataEditor {
         </div>
         <div class="ke-body">
           <div class="ke-grid-wrap" id="ke-grid-wrap" data-nav-group data-nav-at="0">
-            <div class="ke-grid-head"><span>beat</span>${BM.LION_SPOTS.map((s) => `<span class="ke-l">${s}</span>`).join('')}<span class="ke-h" title="his move lands on the half-beat after this one">½</span>${BM.ATTACKS.map((a) => `<span class="ke-a">${a.toUpperCase()}</span>`).join('')}</div>
+            <div class="ke-grid-head"><span>beat</span>${BM.LION_SPOTS.map((s) => `<span class="ke-l">${s}</span>`).join('')}<span class="ke-h" title="his move lands on the half-beat after this one">½</span>${BM.ATTACKS.map((a) => `<span class="ke-a">${a.toUpperCase()}</span>`).join('')}<span class="ke-s" title="an opening: she strikes HIM from the mark in front of him">⚔</span></div>
             <div class="ke-grid" id="ke-grid"></div>
           </div>
           <div class="ke-side">
@@ -301,6 +301,17 @@ export class KataEditor {
       const m = ev.find((e) => e.lion && Math.floor(e.beat) === beat);
       if (!m) { this._say(`Pick where he moves on beat ${beat} first — then ½ puts it on the half-beat`, true); return; }
       m.beat = m.beat % 1 ? beat : beat + 0.5;
+    } else if (kind === 'slash') {
+      /* ⚔ — her openings on this line, cycled: none → on the beat → the beat
+         AND the half-beat (a two-hit combo) → the half-beat alone → none. */
+      const has = (b) => ev.some((e) => e.slash && e.beat === b);
+      const st = (has(beat) ? 1 : 0) + (has(beat + 0.5) ? 2 : 0);
+      const next = { 0: 1, 1: 3, 3: 2, 2: 0 }[st];
+      const keep = ev.filter((e) => !(e.slash && (e.beat === beat || e.beat === beat + 0.5)));
+      if (next & 1) keep.push({ beat, slash: true });
+      if (next & 2) keep.push({ beat: beat + 0.5, slash: true });
+      ev.length = 0;
+      ev.push(...keep);
     } else if (kind === 'lion') {
       // A move written on the half-beat (Lionheart's own charts) lives on this row too.
       const i = ev.findIndex((e) => e.lion && Math.floor(e.beat) === beat);
@@ -323,17 +334,22 @@ export class KataEditor {
     const as = BM.resolveChart(c);
     const bad = new Set(BM.unfair(c));
     const warned = new Set();
+    const fin = BM.resolveSlashes(c).find((s) => s.finish) ?? null;
     for (const a of as) for (let b = Math.ceil(a.beat - a.tell); b < a.beat; b++) warned.add(b);
     const rows = [];
     const spb = BM.songById(c.song)?.spb ?? 0.5;
     for (let b = 0; b <= c.beats; b++) {
       const lion = c.events.find((e) => e.lion && Math.floor(e.beat) === b);
       const atk = c.events.find((e) => e.attack && e.beat === b);
+      const sOn = c.events.some((e) => e.slash && e.beat === b);
+      const sHalf = c.events.some((e) => e.slash && e.beat === b + 0.5);
+      const sFin = fin && Math.floor(fin.beat) === b;
       const cls = ['ke-r', b % 4 === 0 ? 'bar' : '', warned.has(b) ? 'warn' : '', bad.has(b) ? 'bad' : '', b === this.row ? 'cur' : ''].join(' ');
       const half = !!(lion && lion.beat % 1);
       const cells = BM.LION_SPOTS.map((s) => `<button class="menu-btn ke-c ke-l${lion?.lion === s ? ' on' : ''}" data-b="${b}" data-k="lion" data-v="${s}" title="he moves to ${s} on beat ${b}">${lion?.lion === s ? `${s}${half ? '½' : ''}` : '·'}</button>`).join('')
         + `<button class="menu-btn ke-c ke-h${half ? ' on' : ''}" data-b="${b}" data-k="half" data-v="1" title="his move on beat ${b} lands half a beat later">${half ? '½' : '·'}</button>`
-        + BM.ATTACKS.map((a) => `<button class="menu-btn ke-c ke-a${atk?.attack === a ? ' on' : ''}" data-b="${b}" data-k="attack" data-v="${a}" title="a ${a} lands on beat ${b}">${atk?.attack === a ? a.toUpperCase() : '·'}</button>`).join('');
+        + BM.ATTACKS.map((a) => `<button class="menu-btn ke-c ke-a${atk?.attack === a ? ' on' : ''}" data-b="${b}" data-k="attack" data-v="${a}" title="a ${a} lands on beat ${b}">${atk?.attack === a ? a.toUpperCase() : '·'}</button>`).join('')
+        + `<button class="menu-btn ke-c ke-s${sOn || sHalf ? ' on' : ''}${sFin ? ' fin' : ''}" data-b="${b}" data-k="slash" data-v="1" title="${sFin ? 'the FINISHING attack — it knocks him down' : `her opening on beat ${b}: none, on the beat, beat and half-beat, half-beat`}">${sOn && sHalf ? '⚔⚔' : sOn ? '⚔' : sHalf ? '½⚔' : '·'}</button>`;
       rows.push(`<div class="${cls}" data-row="${b}" data-nav-row><span class="ke-n">${bad.has(b) ? '⚠ ' : ''}${b}<i>${(b * spb).toFixed(1)}s</i></span>${cells}</div>`);
     }
     this.$('ke-grid').innerHTML = rows.join('');
@@ -381,10 +397,12 @@ export class KataEditor {
       else for (const m of BM.hitMarks(a.attack, a.spot)) heat[m] = Math.max(heat[m] ?? 0, k);
     }
     const at = (name, r) => { const v = BM.dirVec(name); return [C + v.x * r, C + W * 0.06 - v.y * r]; };
+    // Her opening, gold, on the mark in front of him.
+    const open = BM.resolveSlashes(this.chart).find((s) => t >= (s.beat - s.tell) * spb && t <= s.beat * spb + 0.2);
     for (const m of ['C', ...BM.DIRS]) {
       const [x, y] = m === 'C' ? [C, C + W * 0.06] : at(m, R);
       const h = Math.max(heat[m] ?? 0, sweep * 0.5);
-      g.fillStyle = h ? `rgba(255, 59, 92, ${0.25 + 0.65 * h})` : 'rgba(127, 244, 255, 0.12)';
+      g.fillStyle = h ? `rgba(255, 59, 92, ${0.25 + 0.65 * h})` : open?.spot === m ? (open.finish ? 'rgba(255, 74, 138, 0.85)' : 'rgba(255, 211, 74, 0.8)') : 'rgba(127, 244, 255, 0.12)';
       g.strokeStyle = m === 'C' ? '#ffd34a' : '#7ff4ff';
       g.lineWidth = 2;
       g.beginPath(); g.arc(x, y, W * 0.055, 0, Math.PI * 2); g.fill(); g.stroke();

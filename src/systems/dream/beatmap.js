@@ -47,11 +47,24 @@ import { MUSIC } from '../../core/audio.js';
        "events": [
          { "beat": 6, "lion": "NE" },        he moves to a spot
          { "beat": 10, "attack": "cut" },    a blow LANDS on this beat
-         { "beat": 14, "attack": "sweep", "tell": 3 }   optional: its own tell
+         { "beat": 14, "attack": "sweep", "tell": 3 },  optional: its own tell
+         { "beat": 20, "slash": true }       an OPENING: she may strike HIM
        ]
      }
    An attack's beat is when it LANDS. Its tell — the warning, the floor going
    red — starts `tell` beats before (the difficulty's, unless the event says).
+
+   SLASHES ARE HERS, AND OPTIONAL. Richard: "allow for optional slashing
+   during the song, where if the player misses the slash, then they do not
+   lose any lives or score and do not lose their combo, but if they hit the
+   slash then they add +1 to their combo ... the player will need to move to
+   infront of where Lionheart is and do the slash attack." So a slash is an
+   opening ON A BEAT (or a half-beat): the mark in front of him — the ring
+   mark named as his spot — glows gold, and ATTACK on that mark on the beat
+   is a hit. "Lionheart has infinite life unless it is the final slash of the
+   song" — the LAST slash, when it comes after his last blow, is the
+   FINISHING ATTACK (`resolveSlashes` marks it), and only that one knocks him
+   down. Slashes never make a chart unfair: missing one costs nothing.
 --------------------------------------------------------------------------- */
 
 export const FORMAT = 'kata-beatmap/1';
@@ -62,6 +75,8 @@ export const DIRS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 export const LION_SPOTS = ['W', 'NW', 'N', 'NE', 'E'];
 export const LION_START = 'N';
 export const ATTACKS = ['cut', 'cross', 'sweep'];
+/** The most slashes in one combo, and the shortest step between two: a half-beat. */
+export const SLASH_COMBO = 3;
 
 /** A mark or spot as a unit vector on the SCREEN: x right, y UP. */
 export function dirVec(name) {
@@ -129,9 +144,9 @@ export function stepFrom(at, push) {
  * every blow be dodged from anywhere.
  */
 export const DIFFS = {
-  easy: { name: 'EASY', lives: 5, tell: 3, gaps: [4, 4, 5, 6], lead: 8, pool: { cut: 4, sweep: 1.2, cross: 1.5 }, lion: 0.3 },
-  normal: { name: 'NORMAL', lives: 4, tell: 2, gaps: [3, 3, 4, 4, 2], lead: 8, pool: { cut: 3, sweep: 1.2, cross: 2.5 }, lion: 0.45 },
-  hard: { name: 'HARD', lives: 3, tell: 2, gaps: [2, 2, 3, 3, 1], lead: 8, pool: { cut: 2.5, sweep: 1.2, cross: 3 }, lion: 0.6 },
+  easy: { name: 'EASY', lives: 5, tell: 3, gaps: [4, 4, 5, 6], lead: 8, pool: { cut: 4, sweep: 1.2, cross: 1.5 }, lion: 0.3, slash: 0.12, combo: 1, half: false },
+  normal: { name: 'NORMAL', lives: 4, tell: 2, gaps: [3, 3, 4, 4, 2], lead: 8, pool: { cut: 3, sweep: 1.2, cross: 2.5 }, lion: 0.45, slash: 0.14, combo: 2, half: false },
+  hard: { name: 'HARD', lives: 3, tell: 2, gaps: [2, 2, 3, 3, 1], lead: 8, pool: { cut: 2.5, sweep: 1.2, cross: 3 }, lion: 0.6, slash: 0.15, combo: 3, half: true },
 };
 export const DIFF_IDS = Object.keys(DIFFS);
 
@@ -217,6 +232,26 @@ export function resolveChart(chart) {
     if (e.lion) spot = e.lion;
     else if (e.attack) out.push({ beat: e.beat, attack: e.attack, spot, tell: e.tell ?? tellOf });
   }
+  return out;
+}
+
+/**
+ * Her openings, in order: each with the spot he is on (so the mark she must
+ * strike from), its tell, and `finish` on the one that knocks him down — the
+ * chart's last slash, if it comes after his last blow.
+ */
+export function resolveSlashes(chart) {
+  const tellOf = DIFFS[chart.difficulty]?.tell ?? 2;
+  let spot = LION_START;
+  let lastBlow = -Infinity;
+  const out = [];
+  for (const e of sortedEvents(chart.events)) {
+    if (e.lion) spot = e.lion;
+    else if (e.attack) lastBlow = e.beat;
+    else if (e.slash) out.push({ beat: e.beat, spot, tell: tellOf, finish: false });
+  }
+  const last = out[out.length - 1];
+  if (last && last.beat > lastBlow) last.finish = true;
   return out;
 }
 
@@ -343,7 +378,29 @@ export function generateChart(songId, difficulty) {
   let prevBeat = 0;
   const seen = [];
   let t = D.lead;
-  while (t <= S.beats - 2) {
+  /* AN OPENING FOR HER: `n` slashes from `t0`, a beat or (HARD) a half-beat
+     apart, on the mark in front of him. Returns the beat of the last. */
+  const phrase = (t0, n) => {
+    let b = t0;
+    for (let i = 0; i < n; i++) {
+      if (i) b += D.half && r() < 0.5 ? 0.5 : 1;
+      events.push({ beat: b, slash: true });
+    }
+    her = spot;
+    return b;
+  };
+  // Room before the end for the finishing attack.
+  while (t <= S.beats - 6) {
+    /* Now and then, instead of a blow, an opening. She needs two moves to get
+       in front of him from anywhere, and two to get away again before his next
+       blow can be dodged — so only where the last blow is two beats behind. */
+    if (D.slash && t - prevBeat >= 2 && r() < D.slash) {
+      const last = phrase(t, 1 + Math.floor(r() * (D.combo ?? 1)));
+      prev = last;
+      prevBeat = Math.ceil(last);
+      t = prevBeat + Math.max(2, D.tell) + 1;
+      continue;
+    }
     const tellStart = t - D.tell;
     /* He moves, maybe: half a beat before the tell, and at least half a beat
        after the last blow — "he moves quickly between 5 spots", and on HARD
@@ -390,6 +447,17 @@ export function generateChart(songId, difficulty) {
     if (gap === 1 && a === 'sweep') gap = 2;
     t += gap;
   }
+  /* THE FINISHING ATTACK, on the last beat: "the final slash of the song",
+     and the only one that knocks him down. A whole combo on HARD. */
+  {
+    const n = Math.max(1, D.combo ?? 1);
+    const end = S.beats - 1;
+    let t0 = end - (n - 1);
+    if (t0 < prevBeat + 2) t0 = Math.min(end, prevBeat + 2);
+    const k = Math.max(1, Math.min(n, Math.floor(end - t0) + 1));
+    let b = t0;
+    for (let i = 0; i < k; i++) { events.push({ beat: b, slash: true }); b += 1; }
+  }
   return {
     format: FORMAT,
     title: `${S.name} (${D.name.toLowerCase()})`,
@@ -409,7 +477,7 @@ export function chartToText(chart) {
     .filter((k) => chart[k] != null)
     .map((k) => `  ${JSON.stringify(k)}: ${JSON.stringify(chart[k])}`);
   const ev = sortedEvents(chart.events).map((e) => {
-    const keys = ['beat', 'lion', 'attack', 'tell'].filter((k) => e[k] != null);
+    const keys = ['beat', 'lion', 'attack', 'slash', 'tell'].filter((k) => e[k] != null);
     return `    { ${keys.map((k) => `${JSON.stringify(k)}: ${JSON.stringify(e[k])}`).join(', ')} }`;
   });
   return `{\n${head.join(',\n')},\n  "events": [\n${ev.join(',\n')}\n  ]\n}\n`;
@@ -441,7 +509,7 @@ export function parseChart(input) {
     if (!e || typeof e !== 'object') { errors.push(`${at}: not an event`); continue; }
     if (!Number.isFinite(e.beat) || e.beat < 0) { errors.push(`${at}: "beat" must be a number, 0 or more`); continue; }
     if (Number.isFinite(o.beats) && e.beat > o.beats) errors.push(`${at}: beat ${e.beat} is after the end (${o.beats})`);
-    if (e.lion != null && e.attack != null) { errors.push(`${at}: one of "lion" or "attack", not both`); continue; }
+    if ([e.lion, e.attack, e.slash].filter((x) => x != null).length > 1) { errors.push(`${at}: one of "lion", "attack" or "slash", not two`); continue; }
     if (e.lion != null) {
       if (!LION_SPOTS.includes(e.lion)) { errors.push(`${at}: "lion" must be one of ${LION_SPOTS.join(' ')}`); continue; }
       events.push({ beat: e.beat, lion: e.lion });
@@ -449,7 +517,10 @@ export function parseChart(input) {
       if (!ATTACKS.includes(e.attack)) { errors.push(`${at}: "attack" must be one of ${ATTACKS.join(', ')}`); continue; }
       if (e.tell != null && !(Number.isFinite(e.tell) && e.tell >= 1 && e.tell <= 8)) { errors.push(`${at}: "tell" must be 1 to 8 beats`); continue; }
       events.push(e.tell != null ? { beat: e.beat, attack: e.attack, tell: e.tell } : { beat: e.beat, attack: e.attack });
-    } else errors.push(`${at}: needs "lion" or "attack"`);
+    } else if (e.slash != null) {
+      if (e.slash !== true) { errors.push(`${at}: "slash" must be true`); continue; }
+      events.push({ beat: e.beat, slash: true });
+    } else errors.push(`${at}: needs "lion", "attack" or "slash"`);
   }
   if (errors.length) return { chart: null, errors, warnings };
   const chart = {

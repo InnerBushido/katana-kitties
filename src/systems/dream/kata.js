@@ -76,6 +76,20 @@ export const AIR = 0.5;
  * way to go, and the stick's 45° either side already covers a sloppy press.
  */
 export const DIAG_WAIT = 0.06;
+/**
+ * HER SLASH: ATTACK, on the mark in front of him, this close to the beat.
+ * Wider than a dodge's LATE because a swing is a button, not a step — and
+ * graded by the same GRADE_T. A swing at nothing (wrong mark, no opening)
+ * costs nothing but WHIFF_COOL before the next can land, so mashing ATTACK
+ * through a whole song is not the way to farm the combo.
+ */
+export const SLASH_WIN = 0.24;
+export const WHIFF_COOL = 0.3;
+/** What he says when the finishing attack puts him down — a render of exactly
+ *  this (Barrett; docs/notes/voices.md). Not shouted: no capitals, no "!". */
+export const KATA_LINES = {
+  ko: { line: 'Oof... good job.', voice: 'lion_kata_ko' },
+};
 /** PERFECT and GREAT, seconds off the beat. */
 export const GRADE_T = [0.10, 0.18];
 /** Accuracy (0-100) for one, two, three stars. */
@@ -495,6 +509,17 @@ export class KataStage {
     this.cutBar = add(bar(LION_D * 2), 0xffffff, 0, 0.1);
     this.crossBars = [add(bar(FLOOR_R * 2.3), 0xffffff, 0, 0.1), add(bar(FLOOR_R * 2.3), 0xffffff, 0, 0.11)];
     this.pulse = add(new THREE.RingGeometry(0.95, 1.2, 40).rotateX(-Math.PI / 2), HOLO.gold, 0, 0.07);
+    // Her opening: the mark in front of him, gold, and a ring closing on the beat.
+    this.slashDisc = add(disc, HOLO.gold, 0, 0.065);
+    this.slashRing = add(ring, HOLO.gold, 0, 0.085);
+    /* His own clock for being hit, separate from the song's: the KO plays on
+       after the song has stopped and the run is won. */
+    this.clock = 0;
+    this.hitAt = -9;
+    this.koAt = null;
+    this.koPos = null;
+    this.roll = 0;
+    this.slashes = [];
     this.lion = new THREE.Group();
     this.group.add(this.lion);
     this.posed = false;
@@ -531,7 +556,26 @@ export class KataStage {
     this.spb = spb;
     this.attacks = BM.resolveChart(chart).map((a) => ({ ...a, hitT: a.beat * spb, tellT: (a.beat - a.tell) * spb }));
     this.lionMoves = BM.sortedEvents(chart.events).filter((e) => e.lion).map((e) => ({ t: e.beat * spb, spot: e.lion }));
+    this.slashes = BM.resolveSlashes(chart).map((s) => ({ ...s, hitT: s.beat * spb, tellT: (s.beat - s.tell) * spb, done: false, hit: false }));
   }
+
+  /** The opening she should be watching at `t`: the first one not yet taken or missed whose tell is up. */
+  slashCue(t) {
+    return this.slashes.find((s) => !s.done && t >= s.tellT && t <= s.hitT + SLASH_WIN) ?? null;
+  }
+
+  /** Struck: a flash and a shove back. He has infinite life — this is all a hit does. */
+  hit() { this.hitAt = this.clock; }
+
+  /** THE FINISHING ATTACK lands: down he goes, from where he stands. */
+  ko() {
+    if (this.koAt != null) return;
+    this.koAt = this.clock;
+    this.koPos = { x: this.lion.position.x, z: this.lion.position.z };
+  }
+
+  /** His clock, in real seconds — runs in every state, so the fall finishes after the song. */
+  tickFx(dt) { this.clock += dt; }
 
   /** Where he is at `t`: his spot, sliding from the last one over a quarter beat. */
   lionAt(t) {
@@ -620,16 +664,78 @@ export class KataStage {
     this.pulse.visible = live && t >= 0;
     this.pulse.scale.setScalar(1 + ph * 0.6);
     this.pulse.material.opacity = (1 - ph) * 0.55;
+    // Her opening on the floor.
+    const cue = live ? this.slashCue(t) : null;
+    this.slashDisc.visible = this.slashRing.visible = !!cue;
+    if (cue) {
+      const o = markOffset(cue.spot);
+      const k = Math.min(1, Math.max(0, (t - cue.tellT) / Math.max(0.05, cue.hitT - cue.tellT)));
+      for (const m of [this.slashDisc, this.slashRing]) { m.position.x = o.x; m.position.z = o.z; }
+      this.slashDisc.material.opacity = 0.18 + 0.45 * k;
+      this.slashRing.scale.setScalar(1 + (1 - k) * (cue.finish ? 2.6 : 1.8));
+      this.slashRing.material.opacity = 0.4 + 0.55 * k;
+      const c = cue.finish ? 0xffffff : HOLO.gold;
+      this.slashDisc.material.color.setHex(cue.finish ? 0xff4a8a : HOLO.gold);
+      this.slashRing.material.color.setHex(c);
+    }
     const L = this.lionAt(t);
-    this.lion.position.set(L.x, 0, L.z);
+    let x = this.koPos ? this.koPos.x : L.x;
+    let z = this.koPos ? this.koPos.z : L.z;
+    let y = 0;
+    const len = Math.hypot(x, z) || 1;
+    const ax = x / len;
+    const az = z / len;
+    // A hit: shoved back off her blade, and springing in again.
+    const hk = this.clock - this.hitAt;
+    if (hk >= 0 && hk < 0.4) {
+      const e = (1 - hk / 0.4) ** 2;
+      x += ax * e * 1.1;
+      z += az * e * 1.1;
+    }
+    /* THE FALL. "a funny falling-over death animation": flung back with a hop,
+       a wobble on his heels like a cartoon, then over like a plank — with a
+       bounce where he lands. Played on his own clock, so it carries on past
+       the song's last beat. */
+    this.roll = 0;
+    if (this.koAt != null) {
+      const kk = this.clock - this.koAt;
+      const fly = Math.min(1, kk / 0.35);
+      x += ax * 1.8 * fly;
+      z += az * 1.8 * fly;
+      if (kk < 0.35) { y = Math.sin(fly * Math.PI) * 1.3; pose = POSE.sweep; }
+      else if (kk < 0.95) {
+        const w = (kk - 0.35) / 0.6;
+        this.roll = Math.sin(w * Math.PI * 5) * 0.32 * (1 - w * 0.5);
+      } else {
+        const f = Math.min(1, (kk - 0.95) / 0.55);
+        this.roll = (Math.PI / 2) * bounceOut(f);
+        if (f >= 1) y = Math.max(0, Math.sin(Math.min(1, (kk - 1.5) / 0.3) * Math.PI) * 0.25);
+      }
+    }
+    this.lion.position.set(x, y, z);
+    // A hit flashes him white; down, he goes a shade darker.
+    const mat = this.sprite?.mat ?? this.sprite?.material;
+    if (mat?.color) {
+      const base = this.koAt != null && this.clock - this.koAt > 0.95 ? 0xc8b088 : 0xffe2a0;
+      mat.color.setHex(hk >= 0 && hk < 0.18 ? 0xffffff : base);
+    }
     this.pose = pose;
     this.lionSpot = L.spot;
   }
 
   faceCamera(camera) {
-    if (!this.sprite?.faceCamera) return;
-    this.sprite.faceCamera(camera);
-    if (this.posed) this.sprite._setCell(this.pose, 0, false);
+    if (this.sprite?.faceCamera) {
+      this.sprite.faceCamera(camera);
+      if (this.posed) this.sprite._setCell(this.pose, 0, false);
+    }
+    /* Rolled in the plane of the billboard, about his feet (the quad's
+       origin): `faceCamera` sets only rotation.y, and in YXZ the roll is
+       applied first, so he tips over sideways as the lens sees him. */
+    const m = this.sprite?.mesh ?? this.sprite;
+    if (m?.rotation) {
+      m.rotation.order = 'YXZ';
+      m.rotation.z = this.roll;
+    }
   }
 
   dispose() {
@@ -644,6 +750,15 @@ export class KataStage {
  * before each sweep. The tour's holo-kittens are put here every frame.
  * Returns a layer offset from the floor's middle, and `y`.
  */
+const bounceOut = (x) => {
+  const n = 7.5625;
+  const d = 2.75;
+  if (x < 1 / d) return n * x * x;
+  if (x < 2 / d) return n * (x -= 1.5 / d) * x + 0.75;
+  if (x < 2.5 / d) return n * (x -= 2.25 / d) * x + 0.9375;
+  return n * (x -= 2.625 / d) * x + 0.984375;
+};
+
 export function routeAt(rt, t, spb) {
   let from = 'C';
   let to = 'C';
@@ -717,7 +832,7 @@ export function KATA(hall, fl, chart, { speed = 1, id, custom = false } = {}) {
     id,
     title: `${chart.title} · ${speed}×`,
     kanji: '型',
-    goalText: 'Dodge Lionheart — step on the beat!',
+    goalText: 'Dodge Lionheart — step on the beat! Gold mark? Stand on it and SLASH!',
     score: (d) => d.acc,
     lowerIsBetter: false,
     bands: KATA_BANDS,
@@ -747,6 +862,11 @@ export function KATA(hall, fl, chart, { speed = 1, id, custom = false } = {}) {
       d.stage = new KataStage(dream, d.root, fl);
       d.stage.set(chart, spb);
       d.attacks = d.stage.attacks;
+      d.slashes = d.stage.slashes;
+      d.slashHits = 0;
+      d.swingCool = 0;
+      d.ko = false;
+      d.koVoiced = false;
       d.acc = 0;
       /* HER CARD STANDS WHERE HER NAME PLATE DOES, larger. Over her head (the
          drill's usual place) it was a postage stamp at KATA_CAM's distance —
@@ -761,7 +881,9 @@ export function KATA(hall, fl, chart, { speed = 1, id, custom = false } = {}) {
       d.panel.fullFace = true;
       dream.sim.root.add(d.panel);
       fl.plate.visible = false;
-      dream.hint(d.p, 'Lionheart turns the floor red where he will strike — step off it ON the beat. Back through the middle to change side!');
+      dream.hint(d.p, d.slashes.length
+        ? 'RED: he strikes there — step off it ON the beat. GOLD: an opening — stand on it and ATTACK on the beat!'
+        : 'Lionheart turns the floor red where he will strike — step off it ON the beat. Back through the middle to change side!');
     },
     /* GO: the song from its first step, at her speed — if nobody else's run
        has the music. The first beat of the song is the first beat of the run. */
@@ -810,6 +932,7 @@ export function KATA(hall, fl, chart, { speed = 1, id, custom = false } = {}) {
         if (dir.length === 2 || d.pend.dir.length === 1) d.pend.dir = dir;
       }
       if (d.state === 'live' && pad.pressed?.('jump')) d.jumpT = d.songT;
+      if (d.state === 'live' && pad.pressed?.('attack')) swing(d);
       // Read through `d.pad`, so the still pad is always this frame's.
       d.pad = pad;
       return d.stillPad ??= {
@@ -834,8 +957,18 @@ export function KATA(hall, fl, chart, { speed = 1, id, custom = false } = {}) {
         const L = d.stage.lionAt(d.songT);
         p.facing = Math.atan2(fl.x + L.x + SIM.dx - p.position.x, fl.z + L.z + SIM.dz - p.position.z);
       }
-      d.stage.update(d.state === 'live' ? d.songT : 0, d.state === 'live');
+      d.stage.tickFx(dt);
+      // Won, he stays where the song left him (and falls there, if she finished him).
+      d.stage.update(d.state === 'live' || d.state === 'won' ? d.songT : 0, d.state === 'live');
       if (d.ownsMusic && d.state !== 'live' && d.state !== 'ready') release(d);
+      /* "an Elevenlabs generated Lionheart 'death voice' that says 'good job'
+         before the camera goes back to the player after the song" — once he
+         has hit the floor, inside the won card's hold. */
+      if (d.ko && !d.koVoiced && d.stage.koAt != null && d.stage.clock - d.stage.koAt > 1.1) {
+        d.koVoiced = true;
+        dream.voice?.load?.();
+        dream.voice?.speak?.(KATA_LINES.ko.line, dream.t ?? 0);
+      }
     },
     tick(d, dt) {
       d.songT += dt;
@@ -853,8 +986,11 @@ export function KATA(hall, fl, chart, { speed = 1, id, custom = false } = {}) {
         judge(d, a, judgeBlow(a, d.at, d.moveT, d.jumpT, spb), freeBlow(a, d.moveT, spb), hall, fl);
         if (d.state !== 'live') return;
       }
+      d.swingCool = Math.max(0, d.swingCool - dt);
+      // An opening let go by is just gone: no life, no score, no combo lost.
+      for (const s of d.slashes) if (!s.done && d.songT > s.hitT + SLASH_WIN) s.done = true;
       d.flashT = Math.max(0, d.flashT - dt);
-      if (d.songT >= endT && d.next >= d.attacks.length) {
+      if (d.songT >= endT && d.next >= d.attacks.length && d.slashes.every((s) => s.done)) {
         d.acc = accuracy(d.judged);
         d.win();
         d.endT = 7;
@@ -867,8 +1003,10 @@ export function KATA(hall, fl, chart, { speed = 1, id, custom = false } = {}) {
         return [
           { text: won ? `${stars3(d.stars_ ?? 1)}  ${d.result?.gained ? 'NEW BEST!' : 'CLEAR!'}` : 'CAUGHT!', size: 1.9, color: won ? HOLO.gold : 0xff8a8a, glow: true },
           { text: `SCORE ${d.score.toLocaleString('en-US')}`, size: 1.7, color: HOLO.gold },
-          { text: `${d.acc}% · best combo ${d.maxCombo} · ${count(d.grades, 3)} perfect · ${count(d.grades, 0)} hit`, size: 1.0 },
-          { text: won ? `${chart.title} · ${speed}×` : (d.why ?? ''), size: 0.95, color: won ? 0x9fefff : 0xff8a8a },
+          { text: `${d.acc}% · best combo ${d.maxCombo} · ${count(d.grades, 3)} perfect · ${count(d.grades, 0)} hit${d.slashes.length ? ` · ⚔ ${d.slashHits}/${d.slashes.length}` : ''}`, size: 1.0 },
+          won && d.ko
+            ? { text: `LIONHEART: “${KATA_LINES.ko.line}”`, size: 0.95, color: HOLO.gold }
+            : { text: won ? `${chart.title} · ${speed}×` : (d.why ?? ''), size: 0.95, color: won ? 0x9fefff : 0xff8a8a },
         ];
       }
       if (d.state === 'ready') {
@@ -881,10 +1019,12 @@ export function KATA(hall, fl, chart, { speed = 1, id, custom = false } = {}) {
       const g = d.flashT > 0 ? GRADE[d.flashG] : null;
       const live = d.attacks.filter((a) => d.songT >= a.tellT && d.songT <= a.hitT);
       const jump = live.some((a) => a.attack === 'sweep');
+      const cue = d.stage.slashCue(d.songT);
       const key = `[${dream.key?.(d.p, 'interact') ?? 'E'}]`;
       return [
         g ? { text: g.word, size: 2.0, color: g.color, glow: true }
           : jump ? { text: 'JUMP!', size: 2.0, color: RED, glow: true }
+            : cue ? { text: cue.finish ? 'FINISHING BLOW!' : 'SLASH!', size: 2.0, color: cue.finish ? 0xff4a8a : HOLO.gold, glow: true }
             : { text: d.combo >= 3 ? `${d.combo} COMBO` : '型', size: 2.0, color: d.combo >= 10 ? HOLO.gold : d.colour, glow: true, jp: true },
         { text: `${hearts}   ${d.score.toLocaleString('en-US')}${comboMult(d.combo) > 1 ? `  ×${comboMult(d.combo)}` : ''}`, size: 1.4, color: HOLO.cyan },
         { text: `${key} to stop`, size: 0.8, color: 0x7f9fa8 },
@@ -911,6 +1051,46 @@ export function KATA(hall, fl, chart, { speed = 1, id, custom = false } = {}) {
       d.stage.dispose();
     },
   };
+
+  /**
+   * ATTACK in a run: her swing, always — and a hit if an opening is on the
+   * beat and she is standing in front of him. "if the player misses the
+   * slash, then they do not lose any lives or score and do not lose their
+   * combo, but if they hit the slash then they add +1 to their combo".
+   */
+  function swing(d) {
+    if (d.swingCool > 0) return;
+    if (d.p) d.p.attackTimer = 0.26;
+    sfx('slash');
+    settle(d, Infinity);
+    let s = null;
+    for (const x of d.slashes) {
+      if (x.done || Math.abs(d.songT - x.hitT) > SLASH_WIN) continue;
+      if (!s || Math.abs(d.songT - x.hitT) < Math.abs(d.songT - s.hitT)) s = x;
+    }
+    if (!s || d.at !== s.spot) { d.swingCool = WHIFF_COOL; return; }
+    const off = Math.abs(d.songT - s.hitT);
+    const g = off <= GRADE_T[0] ? 3 : off <= GRADE_T[1] ? 2 : 1;
+    s.done = true;
+    s.hit = true;
+    d.slashHits++;
+    d.combo++;
+    d.maxCombo = Math.max(d.maxCombo, d.combo);
+    d.score += Math.round(POINTS[g] * comboMult(d.combo) * d.speed);
+    d.flashG = g;
+    d.flashT = 0.5;
+    sfx(GRADE[g].sfx);
+    sfx('hit');
+    d.stage.hit();
+    const L = d.stage.lion.position;
+    const st = d.stage.group.position;
+    dream.shards?.burst(st.x + L.x, st.y + 2.2, st.z + L.z, s.finish ? 0xff4a8a : HOLO.gold, s.finish ? 60 : 22, 4, 6);
+    if (s.finish) {
+      d.ko = true;
+      d.stage.ko();
+      sfx('ko');
+    }
+  }
 
   function release(d) {
     if (!d.ownsMusic) return;

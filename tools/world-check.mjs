@@ -37036,6 +37036,75 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     }
     q.dispose(); D.drills[0] = null;
 
+    /* ⚔ HER SLASHES. "if the player misses the slash, then they do not lose
+       any lives or score and do not lose their combo, but if they hit the
+       slash then they add +1 to their combo ... the player will need to move
+       to infront of where Lionheart is and do the slash attack ... unless it
+       is the final slash of the song ... a 'finishing attack'". A chart
+       written for it: he stands on N, an opening on 4, his cut on 8 (C, N
+       and S), and the finishing opening on 12. */
+    {
+      const sc = { format: BMP.FORMAT, title: 'slash test', song: 'vr', difficulty: 'easy', beats: 16, author: 'world-check',
+        events: [{ beat: 4, slash: true }, { beat: 8, attack: 'cut' }, { beat: 12, slash: true }] };
+      const sl = BMP.resolveSlashes(sc);
+      ok('⚔ an opening is struck from the mark in front of him, and the last one after his last blow is the finish',
+        sl.length === 2 && sl.every((s) => s.spot === 'N') && !sl[0].finish && sl[1].finish);
+      const sspb = BMP.spbAt('vr', 1);
+      let spoke = 0;
+      const was = D.voice.speak;
+      D.voice.speak = (text) => { if (text === KT.KATA_LINES.ko.line) spoke++; return 0; };
+      /* `plan` is [{ beat, push } | { beat, attack }], acted on the frame the song reaches it. */
+      const dance = (plan) => {
+        D.drills[0] = null;
+        D.t += 100;
+        D.startDrill(her, KT.KATA(D.kata, fl, sc, { speed: 1, id: 'kata.test.slash' }), { x: fl.x, y: fl.y, z: fl.z, r: 10, fwd: { x: 0, z: 1 } });
+        const d = D.drills[0];
+        let i = 0;
+        let swung = 0;
+        for (let f = 0; f < 120 * 40 && (d.state === 'ready' || d.state === 'live'); f++) {
+          let mx = 0;
+          let my = 0;
+          let atk = false;
+          if (d.state === 'live' && i < plan.length && d.songT >= plan[i].beat * sspb && d.armed) {
+            const s = plan[i++];
+            if (s.push) { const v = BMP.dirVec(s.push); mx = v.x; my = -v.y; } else { atk = true; swung = her.attackTimer; }
+          }
+          d.spec.steer(d, { mx, my, pressed: (a) => a === 'attack' && atk, down: () => false });
+          d.update(1 / 120);
+          if (atk) swung = her.attackTimer;
+        }
+        // The card's hold: he falls, and speaks once he is down.
+        for (let f = 0; f < 120 * 2.5 && d.state === 'won'; f++) d.update(1 / 120);
+        return { d, swung };
+      };
+      const lives = BMP.DIFFS.easy.lives;
+      const hitIt = dance([{ beat: 3, push: 'N' }, { beat: 4, attack: true }, { beat: 6, push: 'S' }, { beat: 7, push: 'E' },
+        { beat: 9, push: 'W' }, { beat: 10, push: 'N' }, { beat: 12, attack: true }]);
+      const h = hitIt.d;
+      ok('⚔ on the gold mark, ATTACK on the beat is a hit — both openings, each +1 on the combo, scored and graded',
+        h.state === 'won' && h.slashHits === 2 && h.maxCombo === 3 && h.lives === lives && h.score > 0
+        && h.slashes.every((s) => s.hit), `${h.state} hits ${h.slashHits} combo ${h.maxCombo} lives ${h.lives} ${h.why ?? ''}`);
+      ok('...her swing plays, though the pad she is handed has no ATTACK in it', hitIt.swung > 0.2);
+      ok('...and the finishing attack puts him DOWN: flung, wobbling, then flat over',
+        h.ko && h.stage.koAt != null && Math.abs(h.stage.roll - Math.PI / 2) < 0.05, `ko ${h.ko} roll ${h.stage.roll.toFixed(2)}`);
+      ok('...and once he is down he says it — "Oof... good job." — once', spoke === 1, `${spoke}`);
+      ok('...on the won card too', h.spec.paint(h).some((l) => l.text.includes(KT.KATA_LINES.ko.line)));
+      spoke = 0;
+      const skip = dance([{ beat: 7, push: 'E' }, { beat: 9, push: 'W' }]);
+      const s = skip.d;
+      ok('⚔ letting every opening go costs nothing: no life, no combo, still a win — and no fall, and no line',
+        s.state === 'won' && s.lives === lives && s.slashHits === 0 && s.maxCombo === 1 && !s.ko && s.stage.koAt == null && spoke === 0,
+        `${s.state} lives ${s.lives} combo ${s.maxCombo} ko ${s.ko} spoke ${spoke}`);
+      const whiff = dance([{ beat: 4, attack: true }, { beat: 7, push: 'E' }, { beat: 9, push: 'W' }, { beat: 10, push: 'N' }, { beat: 12, attack: true }]);
+      const wh = whiff.d;
+      ok('⚔ a swing from the middle is a swing at nothing: no hit, nothing lost — and the finish from the right mark still lands',
+        wh.state === 'won' && wh.lives === lives && wh.slashHits === 1 && wh.slashes[0].hit === false && wh.ko,
+        `${wh.state} hits ${wh.slashHits} ko ${wh.ko}`);
+      ok('...and a whiff costs a moment before the next swing can land, so mashing is not the way', KT.WHIFF_COOL >= 0.2 && KT.WHIFF_COOL < KT.SLASH_WIN * 2);
+      D.voice.speak = was;
+      D.drills[0] = null;
+    }
+
     // The picker: ◀▶ turns a row, and it opens on DANCE.
     D.kata.openPicker(her, fl);
     const P = D.choices[0];
@@ -40342,6 +40411,8 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
        (dream/stories.js) — the same voice, the same folder, the same rule. */
     ...Object.entries(ST.GEAR_VOICE).map(([k, id]) => [ST.GEAR_LINES[k], id, `gear.${k}`]),
     ...ST.STORY_ROWS.filter((r) => r.who === 'lion').map((r) => [r.text, r.voice, r.voice]),
+    // Knocked down by a Kata Trace finishing attack (dream/kata.js).
+    ...Object.entries((await import('../src/systems/dream/kata.js')).KATA_LINES).map(([k, l]) => [l.line, l.voice, `kata.${k}`]),
   ];
   ok('every recorded line of his is a line he actually has',
     Object.keys(DD.LION_VOICE).every((k) => typeof DD.LION_LINES[k] === 'string'));
@@ -42707,6 +42778,52 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
    and 71) because it was only ever counted by hand — and counting the output by
    hand gets it wrong too: labels longer than the 42-char pad push the status
    past the column you'd grep for. The script knows; let it say. */
+console.log('\n--- Lionheart\'s charts leave her openings, and end on a finishing attack ---');
+{
+  const BM = await import('../src/systems/dream/beatmap.js');
+  const bad = [];
+  let total = 0;
+  for (const S of BM.SONGS) {
+    for (const diff of BM.DIFF_IDS) {
+      const c = BM.generateChart(S.id, diff);
+      const D = BM.DIFFS[diff];
+      const sl = BM.resolveSlashes(c);
+      const as = BM.resolveChart(c);
+      total += sl.length;
+      const why = [];
+      if (BM.unfair(c).length) why.push('unfair');
+      if (!BM.route(c)) why.push('no route');
+      const fin = sl.filter((s) => s.finish);
+      if (fin.length !== 1 || fin[0] !== sl[sl.length - 1] || fin[0].beat <= (as[as.length - 1]?.beat ?? -1) || fin[0].beat > c.beats) why.push('finish');
+      // Phrases: no more than SLASH_COMBO in a row, steps of a beat (or half, on HARD only), and he never moves inside one.
+      let run = 1;
+      for (let i = 1; i < sl.length; i++) {
+        const step = sl[i].beat - sl[i - 1].beat;
+        if (step <= 1) {
+          run++;
+          if (step === 0.5 && !D.half) why.push(`half-beat on ${diff}`);
+          if (sl[i].spot !== sl[i - 1].spot) why.push('moved mid-combo');
+        } else run = 1;
+        if (run > Math.min(BM.SLASH_COMBO, Math.max(D.combo, 1))) why.push(`combo of ${run}`);
+      }
+      // She can reach the mark in front of him: two moves since the last blow.
+      for (const s of sl) {
+        const before = as.filter((a) => a.beat < s.beat).pop();
+        if (before && s.beat - before.beat < 2) why.push(`opening ${s.beat} a beat after a blow`);
+      }
+      if (why.length) bad.push(`${S.id}/${diff}: ${[...new Set(why)].join(', ')}`);
+    }
+  }
+  ok('every built-in chart is still fair, has openings, and ends on ONE finishing attack after his last blow', !bad.length && total > BM.SONGS.length * 3,
+    bad.slice(0, 4).join(' | ') || `${total} openings`);
+  const txt = BM.chartToText({ ...BM.generateChart('vr', 'hard') });
+  const back = BM.parseChart(txt);
+  ok('...a slash is a line of the JSON like any other, and reads back the same',
+    /"slash": true/.test(txt) && back.chart && BM.chartToText(back.chart) === txt);
+  const no = BM.parseChart({ format: BM.FORMAT, song: 'vr', difficulty: 'easy', beats: 8, events: [{ beat: 2, slash: 'yes' }, { beat: 3, slash: true, attack: 'cut' }] });
+  ok('...and a slash that is not `true`, or is two things at once, is refused in words', !no.chart && no.errors.length === 2, no.errors.join(' / '));
+}
+
 console.log('\n--- the beat-map grid is one stop, then its lines, then a line\'s buttons ---');
 {
   /* Richard: "moving up/down between the UI will select the entire beat maps
@@ -42790,8 +42907,19 @@ console.log('\n--- the beat-map grid is one stop, then its lines, then a line\'s
   const reps = [...tmpl.matchAll(/repeat\((\d+), minmax\([^)]*\)\)/g)];
   const cols = reps.reduce((n, m) => n + Number(m[1]), 0)
     + tmpl.replace(/repeat\(\d+, minmax\([^)]*\)\)/g, '').replace(/minmax\([^)]*\)/g, 'X').trim().split(/\s+/).filter(Boolean).length;
-  ok('...and the grid template has a column for every cell a line draws (beat + 5 spots + ½ + 3 attacks)',
-    cols === 1 + BM.LION_SPOTS.length + 1 + BM.ATTACKS.length, `${cols} columns: ${tmpl}`);
+  ok('...and the grid template has a column for every cell a line draws (beat + 5 spots + ½ + 3 attacks + ⚔)',
+    cols === 1 + BM.LION_SPOTS.length + 1 + BM.ATTACKS.length + 1, `${cols} columns: ${tmpl}`);
+  /* ⚔ cycles none → beat → beat+half → half → none, on a chart, through the real `_toggle`. */
+  {
+    const { KataEditor } = await import('../src/systems/dream/kataeditor.js');
+    const ed = { chart: { events: [] }, game: {}, _changed() {}, _say() {} };
+    const seen = [];
+    for (let i = 0; i < 4; i++) {
+      KataEditor.prototype._toggle.call(ed, 5, 'slash', '1');
+      seen.push(ed.chart.events.filter((e) => e.slash).map((e) => e.beat).join('+') || '-');
+    }
+    ok('...⚔ cycles a line\'s openings: on the beat, beat and half-beat, the half-beat alone, none', seen.join(' ') === '5 5+5.5 5.5 -', seen.join(' '));
+  }
 
   /* A new song or level is a new map, asked first when hers is changed. */
   ok('changing the song or level loads his chart for it — asking first, with the box put back, only if she changed the map',

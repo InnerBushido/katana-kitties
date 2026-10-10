@@ -13,7 +13,7 @@ import { Drill } from './dream/drill.js';
 import { Gallery } from './dream/gallery.js';
 import { TrialHall } from './dream/hall.js';
 import { TameshigiriRange } from './dream/range.js';
-import { KataHall } from './dream/kata.js';
+import { KataHall, KATA_LINES } from './dream/kata.js';
 import { DataHighway, HIGHWAY } from './dream/highway.js';
 import { KudamonoStorm } from './dream/storm.js';
 import { SineGauntlet } from './dream/sine.js';
@@ -856,6 +856,7 @@ export class DreamDojo {
       ...Object.values(SHADOW_LINES).map((l) => [l.line, l.voice]),
       [HANDOVER.line, HANDOVER.voice],
       ...Object.entries(GEAR_VOICE).map(([k, id]) => [GEAR_LINES[k], id]),
+      ...Object.values(KATA_LINES).map((l) => [l.line, l.voice]),
     ]);
   }
 
