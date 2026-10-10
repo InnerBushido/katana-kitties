@@ -51,14 +51,18 @@ export const TOUR = [
   L('lion_tour_hi', 'Welcome, young warriors! I am Lionheart, and this is my Dream Dojo.', 'lionClose'),
   L('lion_tour_past', 'I have trained with the sword since I was a kitten no bigger than you. I fell down a thousand times — and got up a thousand and one.', 'lionOrbit'),
   L('lion_tour_why', 'So I built a dojo out of light, where any kitten can train — and nothing you break in here stays broken.', 'gear'),
-  P('payne_tour_4', "Talk to Lionheart, grab your VR gear, step into your tube and — whoosh! You're inside the simulator!", 'tubes'),
-  L('lion_tour_learn', 'In here you learn your Kotodama, your clan powers, real sword skills, and how to fight — and you get a little better every single day.', 'simHub'),
-  L('lion_tour_isles', 'Every island is a lesson: aim, timing, kata, even the maths of the circle. Earn stars, and climb the ranks of KENSHI!', 'simIsles'),
+  /* `hold` is picture after the voice, `lead` picture before it
+     (StoryScene._dur): the fade out of the real world after "inside the
+     simulator!", the circle round the simulator before "In here", and the
+     slower fade after "KENSHI". */
+  { ...P('payne_tour_4', "Talk to Lionheart, grab your VR gear, step into your tube and — whoosh! You're inside the simulator!", 'tubes'), hold: 0.3 },
+  { ...L('lion_tour_learn', 'In here you learn your Kotodama, your clan powers, real sword skills, and how to fight — and you get a little better every single day.', 'simHub'), lead: 3.2 },
+  { ...L('lion_tour_isles', 'Every island is a lesson: aim, timing, kata, even the maths of the circle. Earn stars, and climb the ranks of KENSHI!', 'simIsles'), hold: 0.6 },
   L('lion_tour_shadow', 'And at the very end waits my Shadow. Beat him, and you earn a share of my HONOR — and a SPECIAL Kotodama.', 'simShadow'),
   L('lion_tour_mission1', 'I train the next generation of fighters to be strong and fierce, independent and wise. Kitty-beings with no fear...', 'lionHero'),
   L('lion_tour_mission2', '...who always do what is just and honorable, and live their very best lives.', 'lionHero2'),
   L('lion_tour_mission3', 'Together, we bring equanimity — balance and calm — to every island, every world, every galaxy...', 'skyPull'),
-  L('lion_tour_mission4', '...and every reality, real AND virtual. They are all tangential. Or is it tangible? ...BOTH! They all matter.', 'skyPull2'),
+  { ...L('lion_tour_mission4', '...and every reality, real AND virtual. They are all tangential. Or is it tangible? ...BOTH! They all matter.', 'skyPull2'), hold: 0.3 },
   P('payne_tour_5', "He talks like that ALL the time. You get used to it! Now go and give it a try — I'll be right here.", 'isleEnd'),
 ];
 

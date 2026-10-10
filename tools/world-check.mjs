@@ -41084,8 +41084,11 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         frames++;
         if (!live.active || !row) break;
         // The lens was placed from the row this frame STARTED on; a line that
-        // ended during it moves `i` on afterwards.
-        const want = SS.shotFor(row.shot, live.ctx, 0).loc;
+        // ended during it moves `i` on afterwards, and is not asked about.
+        // On the row's own clock, because one shot (the ending's sky pull)
+        // crosses from the real world into the simulator half way through.
+        if (live.rows[live.i] !== row) continue;
+        const want = SS.shotFor(row.shot, live.ctx, Math.min(1, live.t / live.dur), live.cueClock()).loc;
         if (live.loc !== want) wrong++;
         if (live.loc === 'sim') simFrames++;
       }
@@ -41378,12 +41381,21 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       const B = (t) => SS.panBlack('simIsles', t);
       const isLen = clipT(rowOf('simIsles').voice);
       const tail = SS.TOUR_TAIL.simIsles;
-      ok('...and its fades: a dip under the cut to the Kata, slowly out from "Earn stars", in on "climb the ranks", out again after KENSHI and before the clip ends',
+      /* The tail used to be squeezed in before the clip's end (11.30 -> 11.55
+         of 11.58). Richard: "rather than the screen turning black right
+         away, it should fade out to black over some time before fading in to
+         Shadow. We can delay the Shadow cutscene by like 0.5s". So: at least
+         0.9s long, after KENSHI, black before the line's hold runs out — and
+         the hold is ON THE ROW, so the line really is longer. */
+      const isRow = rowOf('simIsles');
+      const isEnd = isLen + 0.5 + (isRow.hold ?? 0);
+      ok('...and its fades: a dip under the cut to the Kata, slowly out from "Earn stars", in on "climb the ranks", and SLOWLY out after KENSHI, into the line\'s own hold',
         B(kataStop.at) > 0.99 && B(kataStop.at + kataStop.cut + 0.01) < 0.01
           && B(stars.at) < 0.01 && stars.fadeOut - stars.at > 0.6 && B(stars.fadeOut) > 0.99
           && B(climb.at + climb.fadeIn + 0.01) < 0.01 && B(tail.from - 0.05) < 0.01
-          && tail.from > 11.3 - 0.01 && B(isLen) > 0.99,
-        `cut ${B(kataStop.at).toFixed(2)}, out ${stars.at}→${stars.fadeOut}, in ${climb.at}+${climb.fadeIn}, tail ${tail.from}→${tail.to} of ${isLen.toFixed(2)}`);
+          && tail.from > 11.3 - 0.01 && tail.to - tail.from >= 0.9 && (isRow.hold ?? 0) >= 0.5
+          && B(isLen) < 0.5 && B(isEnd - 0.15) > 0.99,
+        `cut ${B(kataStop.at).toFixed(2)}, out ${stars.at}→${stars.fadeOut}, in ${climb.at}+${climb.fadeIn}, tail ${tail.from}→${tail.to}, clip ${isLen.toFixed(2)} + hold → ${isEnd.toFixed(2)}`);
       const ssSrc = readD('../src/systems/dream/storyscene.js');
       ok('...and the Shadow\'s line dips up out of that black — the "in" of "fade out and in quickly"',
         SS.shotFor('simIsles', ctxT, 1).black > 0.99 && /\(prevEnd\.black \?\? 0\) >= 0\.99/.test(ssSrc)
@@ -41397,6 +41409,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       const ch = (TC.STAGE.school.cardW * 1.4) / 2;
       const cardBad = [];
       let cardLow = Infinity;
+      let cardTop = -Infinity;
       let cardTall = 0;
       for (let t = climb.at + climb.fadeIn; t < tail.from; t += 0.1) {
         const sh = SS.shotFor('simIsles', ctxT, 0, t);
@@ -41405,11 +41418,16 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         const corners = [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([sx, sy]) => cardP.clone().addScaledVector(right, sx * cw).add(new THREE.Vector3(0, sy * ch, 0)).project(camT));
         if (corners.some((v) => !inF(v, 1))) cardBad.push(`${t.toFixed(1)} off the frame`);
         cardLow = Math.min(cardLow, ...corners.map((v) => v.y));
+        cardTop = Math.max(cardTop, ...corners.map((v) => v.y));
         cardTall = Math.max(cardTall, (corners[2].y - corners[0].y) / 2);
       }
-      ok('...and on "climb the ranks of KENSHI" his card fills the frame above the subtitles, corners in',
-        cardBad.length === 0 && cardLow > SUBS && cardTall > 0.6,
-        cardBad.slice(0, 3).join(' · ') || `bottom at ${cardLow.toFixed(2)} NDC (box ${SUBS}), ${(cardTall * 100).toFixed(0)}% of the frame tall`);
+      /* AND ITS TOP IS READ TOO. Richard: "the card is too high up in the
+         camera's frame, it should be lowered down so that we can see the
+         words Kenshi at the top of the card". It filled 65% with its top
+         edge at NDC 0.98 — in, by the corners, and cut by the frame. */
+      ok('...and on "climb the ranks of KENSHI" his card is big in the frame, above the subtitles, and its 剣士 top well inside the frame',
+        cardBad.length === 0 && cardLow > SUBS && cardTop < 0.85 && cardTall > 0.5,
+        cardBad.slice(0, 3).join(' · ') || `bottom ${cardLow.toFixed(2)} NDC (box ${SUBS}), top ${cardTop.toFixed(2)}, ${(cardTall * 100).toFixed(0)}% of the frame tall`);
 
       /* WHAT IS PLAYED ON THEM (dream/tourcast.js), driven on the line's own
          clock with the lens it is seen through, the way StoryScene drives it.

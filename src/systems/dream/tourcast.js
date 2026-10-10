@@ -74,7 +74,9 @@ export function isleAt(isle, a, b, y = 0) {
 /** THE RANGE, in seconds of `lion_tour_learn`: the lens swings onto it at
  *  4.2 ("real sword skills"), holds, and swings away at 6.1 ("how to
  *  fight"). Four of the five canes fall while it is there. */
-export const RANGE_CUTS = [4.75, 5.2, 5.6, 6.0];
+/* Pulled in from 4.75 5.2 5.6 6.0 when the lens began fading to the school
+   at 5.7 (TOUR_PANS): the fourth cut was being made in the dark. */
+export const RANGE_CUTS = [4.75, 5.05, 5.35, 5.6];
 /** How a cut cane falls: it slides off the cut, tips over, lands, and then
  *  the hologram lets it go. Seconds after the cut. */
 export const FELL = { slide: 0.12, tip: 0.62, lie: 1.1, fade: 0.5 };
