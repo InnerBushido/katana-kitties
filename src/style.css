@@ -78,7 +78,11 @@ html, body {
 
 /* ------------------------------- loading --------------------------------- */
 
+/* OVER THE MENUS (50-58), UNDER THE ROTATE GATE (70). At the `.screen` 10 it
+   shared with #title, which comes after it in the page, so a build started
+   from the title ran behind the menu and read as a lag. */
 #loading {
+  z-index: 60;
   background: radial-gradient(circle at 50% 40%, #2b2036, #100b14 70%);
   color: var(--paper);
 }
@@ -128,8 +132,9 @@ html, body {
    and the bars are this: black. The art itself (`.title-art-main`, `contain`)
    is untouched — the second non-negotiable. A desktop keeps its blurred fill;
    nothing was reported there. */
-body.touch-ui #title { background: #000; }
-body.touch-ui #title .title-art { display: none; }
+/* ...AND ON A DESKTOP. Richard: "We should do this on web/pc as well." */
+#title { background: #000; }
+#title .title-art { display: none; }
 
 /* Two layers: a blown-up blurred copy fills whatever shape the window is,
    and the real art sits on top at `contain` so the logo is never cropped.

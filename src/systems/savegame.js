@@ -142,6 +142,10 @@ export const AUTOSAVE_EVERY = 30;
 export const AUTOSAVE_AFTER = 5 * 60;
 
 /** A fingerprint of the world this save was taken in. See the header. */
+/** Where the last build writes its shape, so the save list can be scored
+ *  before this page has built a world of its own. */
+export const WORLD_SHAPE_KEY = 'kk.worldshape.v1';
+
 export function worldSig(world) {
   return `${world?.props?.length ?? 0}:${world?.mischiefTotal ?? 0}:`
     + `${world?.islands?.length ?? 0}:${world?.dragonBalls?.length ?? 0}`;
@@ -675,7 +679,13 @@ const two = (n) => (n < 10 ? `0${n}` : `${n}`);
 export function describe(snap, world = null) {
   const when = new Date(snap.at);
   const mins = Math.floor((snap.played ?? 0) / 60);
+  /* `world` IS THE WORLD, OR ITS SHAPE (`{ sig, mischiefTotal }`, the
+     `WORLD_SHAPE_KEY` note the last build left behind) — the list is painted
+     BEFORE the world is built now, because LOAD picks a save first and builds
+     after. The shape is advisory: `Game._loadSave` asks the real world again
+     once it exists, and refuses there. */
   const total = world?.mischiefTotal ?? 0;
+  const sigNow = typeof world?.sig === 'string' ? world.sig : worldSig(world);
   const done = snap.world?.scored?.length ?? 0;
   return {
     id: snap.id,
@@ -713,7 +723,7 @@ export function describe(snap, world = null) {
     /** Whether this save can be loaded at all, and if not, why — in words,
      *  because a greyed-out row that will not say what is wrong with it is the
      *  sixth non-negotiable broken in the place it is easiest to break. */
-    stale: world ? snap.sig !== worldSig(world) : false,
+    stale: world ? snap.sig !== sigNow : false,
   };
 }
 

@@ -154,11 +154,11 @@ authentication — fine at home, not fine in a café. Stop the server after.
 
 On the phone: **landscape** (portrait is gated with a message), the on-screen
 pad, and the debug panel — **five taps in the top-left corner** within 600ms,
-because a phone has no `` ` `` key. **A phone builds nothing until PLAY**: the
-title is black with no world behind it, the world is built behind the loading
-screen when PLAY (or LOAD A SAVED GAME) is pressed, and going back to the main
-menu is a real page reload. So on a phone the debug rows only work once a game
-has started. → [mobile.md](docs/notes/mobile.md)
+because a phone has no `` ` `` key. **Nothing is built until PLAY, on any
+machine**: the title is black with no world behind it, the world is built
+behind the loading screen when PLAY is pressed or a saved game is chosen, and
+going back to the main menu, RESTART and an in-game LOAD are real page reloads.
+So the debug rows only work once a game has started. → [mobile.md](docs/notes/mobile.md)
 
 ### On a phone — the hosted build
 
