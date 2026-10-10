@@ -130,6 +130,9 @@ export function animalContact(pos) {
 /** The rock under the pad, as it is BUILT below: its top radius, its top's
  *  depth under the deck, its height; and how deep the dome's rim reaches. */
 export const ROCK = { r: ARCADE.r * 0.95, top: 1.4, h: 16, rim: 2 };
+/** Where her cub waits while she is in the simulator: this far from her
+ *  tube toward the pad's middle, the end of the walk out (`ownerFor`). */
+export const CUB_WAIT = 3.2;
 /** How tall Lionheart stands — Payne's height, he is a grown-up too. */
 export const LION_HEIGHT = 6.2;
 export const LION_TALK_R = 5.6;
@@ -1176,6 +1179,24 @@ export class DreamDojo {
     if (this.realmOf(p) !== 'sim' || !this.layout) return p;
     const s = this.st[p.index];
     if (!s) return p;
+    /* A CUB WAITS ON THE PAD, AT HER TUBE. Richard: "the baby panda can go
+       inside the Dream Dojo island, but not inside the simulation. It should
+       wait until the player leaves the simulation, then follow the player
+       again." The dome lets a cub in (`_updateDome`), so it is on the pad
+       when she steps into the tube, and it waits on the spot she walks out
+       onto — `CUB_WAIT` toward the middle from her tube, where the walk out
+       of it ends — and heels again the frame she is back in the real world. */
+    if (p.panda && !p.panda.rideable) {
+      if (!s.cubProxy) {
+        const tube = this.layout.tubes[p.index] ?? this.layout.tubes[0];
+        const d = Math.hypot(ARCADE.x - tube.x, ARCADE.z - tube.z) || 1;
+        const wait = new THREE.Vector3(tube.x + ((ARCADE.x - tube.x) / d) * CUB_WAIT, ARCADE.y, tube.z + ((ARCADE.z - tube.z) / d) * CUB_WAIT);
+        s.cubProxy = new Proxy(p, {
+          get: (t, k) => (k === 'position' ? wait : Reflect.get(t, k)),
+        });
+      }
+      return s.cubProxy;
+    }
     if (!s.proxy) {
       /* At the take-off for the first stone since the way across curved:
          the old spot, 61 out along the straight line, is no longer "the foot
@@ -2881,6 +2902,9 @@ export class DreamDojo {
       if (!p || this.realmOf(p) === 'sim') continue;
       const s = this.st[p.index];
       const h = Math.hypot(p.position.x - ARCADE.x, p.position.z - ARCADE.z);
+      /* The treadmills' ghosts wear the headset drawings, so the pad is where
+         they start loading — one step earlier than `_begin`, still not boot. */
+      if (h < ARCADE.r && !g.simArt) g.loadSimArt?.();
       if (s?.gather && !s.phase) {
         for (const id of s.gather) need.add(id);
         const id = this.gear?.rackAt(p);
@@ -3130,6 +3154,12 @@ export class DreamDojo {
     if (g.ryu) push(g.ryu, (g.players ?? []).find((p) => p && (p.mount === g.ryu || p.rideAlong === g.ryu)) ?? null);
     for (const p of g.players ?? []) {
       if (!p?.panda) continue;
+      /* ...BUT NOT A CUB. "The baby panda can go inside the Dream Dojo
+         island": it is the size of a house cat, nobody rides it, and the dome
+         is there for things that FLY or are ridden into it. Pushed out with
+         the rest, it was kept outside the glass while she went in. It still
+         never goes into the simulator: `ownerFor`. */
+      if (!p.panda.rideable && !p.pandaMount) continue;
       push(p.panda, p.pandaMount ? p : null);
       // ...and a kitten riding it is carried with it.
       if (p.pandaMount) { p.position.x = p.panda.position.x; p.position.z = p.panda.position.z; }
@@ -3261,6 +3291,7 @@ export class DreamDojo {
     if (!this.built) return;
     this.lionSprite?.faceCamera(camera);
     this.holoLionSprite?.faceCamera(camera);
+    this.gear?.faceCamera(camera);
     _right.set(1, 0, 0).applyQuaternion(camera.quaternion);
     _right.y = 0;
     if (_right.lengthSq() > 1e-6) _right.normalize();

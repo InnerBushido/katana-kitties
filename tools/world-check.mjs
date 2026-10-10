@@ -8601,8 +8601,12 @@ console.log('\n--- half a second of not being there ---');
       `${closest.toFixed(2)} / ${furthest.toFixed(2)}`);
     /* NO TWO IN THE SAME PLACE, which is the bug, stated as the property
        rather than as the formula — a spiral, a jittered ring or a Poisson
-       draw would all satisfy it and all be fine. */
-    ok('...and no two of them are ever on top of each other', closest > 1.2,
+       draw would all satisfy it and all be fine.
+       IT WAS A COIN FLIP AT 1.2: 0.97 and 1.19 in two of four runs, from
+       drops walked out of the solid at (2.6, 45.2) onto `findOpenSpot`'s ring
+       with no idea where the others lay. With `DROP_GAP` handed to the search,
+       1200 necks came out at 1.41 closest; the bar is under that. */
+    ok('...and no two of them are ever on top of each other', closest > 1.35,
       `${closest.toFixed(2)} apart`);
     /* AND STILL A PILE. Scattering them across the town would be the same
        failure with the sign flipped: she has put them down on purpose, for
@@ -40381,6 +40385,112 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const entryClear = Math.min(...solidsD.map((s) => hyp(entry, s) - s.r));
     ok('...and no prop stands where she walks in from the gate or out of a tube',
       solidsD.length >= 6 && blocked.length === 0, `${solidsD.length} props · entry clear by ${entryClear.toFixed(2)}`);
+
+    /* THE TREADMILLS ARE SOLID. Richard: "add colliders so players can't walk
+       through them". A kitten put down on a belt's middle is pushed off it
+       to the drum's edge, by the world's own `resolveSolids`. */
+    const treads = D.gear.layout.treadmills;
+    // A step off dead centre: the push needs a direction.
+    const offBelt = treads.map((tm) => { const q = world.resolveSolids(tm.x + 0.3, tm.z + 0.1, 0.6); return hyp(q, tm); });
+    ok('the treadmills are solid: a kitten on a belt\'s middle is pushed off it, past the drum',
+      treads.length === 2 && offBelt.every((d) => d >= GR.TREAD_R + 0.6 - 1e-3), offBelt.map((d) => d.toFixed(2)).join(' '));
+    /* ...AND THE PAD IS STILL WALKABLE ROUND THEM. A flood fill at a kitten's
+       radius from the way in: every rack reachable within GRAB_R, and the
+       foot of every tube. Two drums 3.6 apart with 1.85 each would wall a
+       corner off if they were set any closer. */
+    {
+      const step = 0.25;
+      const KR = 0.6;
+      const key = (i, j) => `${i},${j}`;
+      const free = (x, z) => hyp({ x, z }, ARCADE) < ARCADE.r - KR && !solidsD.some((s) => hyp({ x, z }, s) < s.r + KR);
+      const seen = new Set();
+      const i0 = Math.round((entry.x - ARCADE.x) / step);
+      const j0 = Math.round((entry.z - ARCADE.z) / step);
+      const queue = [[i0, j0]];
+      seen.add(key(i0, j0));
+      const cells = [];
+      while (queue.length) {
+        const [i, j] = queue.pop();
+        cells.push({ x: ARCADE.x + i * step, z: ARCADE.z + j * step });
+        for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const k = key(i + di, j + dj);
+          if (seen.has(k)) continue;
+          seen.add(k);
+          if (free(ARCADE.x + (i + di) * step, ARCADE.z + (j + dj) * step)) queue.push([i + di, j + dj]);
+        }
+      }
+      const reach = (q, r) => cells.some((c) => hyp(c, q) < r);
+      const lost = [...racks.map((r) => [r.item.id, reach(r.at, GR.GRAB_R - 0.2)]), ...outs.map((o, i) => [`tube ${i + 1}`, reach(o, 1)])]
+        .filter(([, okk]) => !okk).map(([n]) => n);
+      ok('...and every rack and the foot of every tube can still be walked to from the gate, round them',
+        free(entry.x, entry.z) && lost.length === 0, lost.join(', ') || `${cells.length} cells reachable`);
+    }
+    /* THE POSTS MEET THE HOOP. "The poles on top of the VR treadmill model
+       don't connect well to the ring": each post ran 0.1 past the hoop and
+       was a different grey. Every post now stands on the drum and stops on
+       the hoop's own circle and centre line. */
+    const posts = D.gear.treadPosts ?? [];
+    const postBad = posts.filter((pp) => {
+      const tm = treads.reduce((a, b) => (hyp(a, pp) < hyp(b, pp) ? a : b));
+      return Math.abs(hyp(pp, tm) - 1.55) > 0.02 || Math.abs(pp.top - (ARCADE.y + 1.8)) > 1e-6 || Math.abs(pp.base - (ARCADE.y + 0.22)) > 1e-6;
+    });
+    ok('...and each treadmill\'s two posts stand on its drum and end on its hoop, not through it',
+      posts.length === 4 && postBad.length === 0, `${postBad.length} of ${posts.length} off`);
+    /* THE GHOSTS ON THEM. "Holograms ... of Ember and Frost's VR sprite
+       sheets, very faded, walking in random directions, but with unique VR
+       arcade colors that aren't being used yet, and don't look like any of
+       the 4 players." Built from the headset sheets, so handed two here. */
+    {
+      const g0 = D.gear;
+      const keepArt = gD.simArt;
+      const img = { width: 1024, height: 1024 };
+      const fake = (cols) => ({ texture: Object.assign(new THREE.Texture(), { image: img }), cols, rows: 4, pad: 0, contentScale: 1 });
+      gD.simArt = [fake(8), fake(8), null, null];
+      g0.walkers = null;
+      g0._buildWalkers();
+      const ws = g0.walkers ?? [];
+      const hue = (c) => { const h = {}; new THREE.Color(c).getHSL(h); return h.h * 360; };
+      const hd = (a, b) => { const d = Math.abs(hue(a) - hue(b)) % 360; return Math.min(d, 360 - d); };
+      const PS = (await import('../src/core/palette.js')).PLAYER_STYLE;
+      const SWm = await import('../src/world/simworld.js');
+      const taken = [...PS.map((s) => s.colour), ...Object.entries(SWm.HOLO).filter(([k]) => !['deep', 'void'].includes(k)).map(([, v]) => v),
+        ...GR.GEAR_ITEMS.map((it) => it.colour), 0x7dff6a];
+      const nearest = Math.min(...GR.TREAD_HOLO.flatMap((h) => taken.map((c) => hd(h.colour, c))));
+      const onBelts = ws.every((w, i) => hyp(w.b.position, treads[i]) < 1e-6);
+      ok('a ghost on each treadmill — Ember\'s headset drawing and Frost\'s — on the belt, walking (row 1)',
+        ws.length === 2 && ws.map((w) => w.style).join() === '0,1' && onBelts && ws.every((w) => w.b.row === 1));
+      ok('...in colours nobody else here wears: at least 25 degrees of hue from every kitten and every arcade light',
+        nearest >= 25, `nearest ${nearest.toFixed(0)} degrees`);
+      ok('...and very faded: additive, never written to depth, a quarter of full or less',
+        GR.TREAD_ALPHA <= 0.3 && ws.every((w) => w.b.mat.blending === THREE.AdditiveBlending && !w.b.mat.depthWrite));
+      // Random directions: over twenty seconds each turns through a real range of headings.
+      const f0 = ws.map((w) => w.b.facing);
+      let spread = ws.map(() => 0);
+      for (let k = 0; k < 600; k++) { g0.update(1 / 30); ws.forEach((w, i) => { spread[i] = Math.max(spread[i], Math.abs(w.b.facing - f0[i])); }); }
+      ok('...turning to new headings as they go, not walking one way forever', spread.every((s) => s > 1), spread.map((s) => s.toFixed(2)).join(' '));
+      for (const w of ws) w.b.removeFromParent();
+      g0.walkers = null;
+      gD.simArt = keepArt;
+    }
+  }
+
+  /* --- the three pieces, shaped like what they are --- */
+  {
+    /* Richard: "the 3 gear pickups should look like what they are". A visor
+       wider than it is tall, two hands of five fingers each, and a suit as
+       tall as a kitten with a light on every joint. */
+    const box = (id) => new THREE.Box3().setFromObject(GR.gearModel(id, 0xffffff));
+    const hs = box('headset').getSize(new THREE.Vector3());
+    const su = box('suit').getSize(new THREE.Vector3());
+    const gl = GR.gearModel('gloves', 0xffffff).userData.parts;
+    const tr = GR.gearModel('suit', 0xffffff).userData.parts;
+    ok('the headset is a visor: wider than it is tall by more than half again (strap over the top and all), with its row of lights',
+      hs.x > 1.6 * hs.y && hs.x > hs.z && GR.gearModel('headset', 0xffffff).userData.parts.lights === 6, `${hs.x.toFixed(2)} x ${hs.y.toFixed(2)}`);
+    ok('...the gloves are two hands of five fingers', gl.digits === 10);
+    ok('...and the suit is a body, taller than it is wide, with a tracker on every joint (12 and two on the trunk)',
+      su.y > 1.5 * su.x && tr.trackers === 14, `${su.y.toFixed(2)} x ${su.x.toFixed(2)} · ${tr.trackers} trackers`);
+    ok('...and each piece is two draw calls, however many fingers it has',
+      ['headset', 'gloves', 'suit'].every((id) => GR.gearModel(id, 0xffffff).children.length === 2));
   }
 
   /* --- the gear flow --- */
@@ -40687,6 +40797,40 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     D._updateDome(1 / 60);
     ok('...and a dragon perched anywhere else keeps its spot', homeDragon.state === 'perched' && homeDragon.home.x === away.x);
     gD.dragons = [];
+
+    /* THE CUB MAY COME IN. Richard: "the baby panda can go inside the Dream
+       Dojo island, but not inside the simulation. It should wait until the
+       player leaves the simulation, then follow the player again." */
+    const keepPanda = her.panda;
+    const cub = { position: new THREE.Vector3(A.x + 3, A.y, A.z + 1), group: new THREE.Group(), rideable: false };
+    her.panda = cub;
+    her.pandaMount = false;
+    D._updateDome(1 / 60);
+    ok('a cub walks under the dome with her: it is not pushed out', hyp(cub.position, { x: A.x + 3, z: A.z + 1 }) < 1e-9);
+    const grown = { position: new THREE.Vector3(A.x + 3, A.y, A.z + 1), group: new THREE.Group(), rideable: true };
+    her.panda = grown;
+    D._updateDome(1 / 60);
+    ok('...but a grown panda still is', hyp(grown.position, A) >= DOME_R + DD.ANIMAL_PAD - 0.5 - 1e-6, hyp(grown.position, A).toFixed(2));
+    // In the simulator: the cub heels to a spot on the pad by her tube; the grown one to the foot of the stones.
+    const keepRealm = her.realm;
+    const sHer = (D.st[her.index] ??= { phase: null, t: 0 });
+    const keepPhase = sHer.phase;
+    sHer.phase = 'sim';
+    her.realm = 'sim';
+    her.panda = cub;
+    const cubAt = D.ownerFor(her).position;
+    const tubeH = L.tubes[her.index];
+    her.panda = grown;
+    const grownAt = D.ownerFor(her).position;
+    ok('...and while she is in the simulator, her cub waits on the pad by her tube, where she walks out',
+      hyp(cubAt, A) < ARCADE.r - 2 && Math.abs(hyp(cubAt, tubeH) - DD.CUB_WAIT) < 1e-6 && Math.abs(cubAt.y - A.y) < 1e-6,
+      `${hyp(cubAt, tubeH).toFixed(2)} from her tube, ${hyp(cubAt, A).toFixed(2)} from the middle`);
+    ok('...a grown one still at the foot of the stones', hyp(grownAt, L.launch) < 1e-6);
+    her.realm = keepRealm;
+    sHer.phase = keepPhase;
+    her.panda = cub;
+    ok('...and the moment she is out, it heels to HER again', D.ownerFor(her) === her);
+    her.panda = keepPanda;
   }
 
   /* --- the fall: two seconds of air, then back to the start --- */

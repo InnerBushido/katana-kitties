@@ -1068,10 +1068,12 @@ export class World {
    * first genuinely clear spot is more reliable than nudging coordinates by
    * hand every time the town changes.
    */
-  findOpenSpot(wx, wz, clearance = 9) {
+  findOpenSpot(wx, wz, clearance = 9, avoid = null) {
     const ok = (x, z) => {
       const g = this.heightAt(x, z);
       if (g == null) return false;
+      // Things already put down that are not solids (`Kotodama.dropInWorld`).
+      if (avoid?.some((q) => Math.hypot(x - q.x, z - q.z) < q.r)) return false;
       // Room around it, counting the thing's own footprint.
       for (const s of this.solids) {
         if (Math.hypot(x - s.x, z - s.z) < s.r + clearance) return false;
