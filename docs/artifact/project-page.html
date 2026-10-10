@@ -485,7 +485,7 @@ footer b { color: var(--text); }
 <div class="wrap">
 
 <header class="mast">
-  <div class="stamp">Last updated <span>·</span> 3 Oct 2026</div>
+  <div class="stamp">Last updated <span>·</span> 10 Oct 2026</div>
   <h1>Katana Kitties<em>The whole project on one page</em></h1>
   <p class="lede">A <b>split-screen co-op browser game for up to four players</b>: samurai kittens
     knocking over a chain of floating Japanese islands, riding storm dragons between them, and
@@ -695,7 +695,6 @@ git push origin alpha</code></pre>
       <tr><td><kbd>R</kbd><kbd>U</kbd></td><td>Step WASD · step the arrows round the kittens sharing that set — her, her sister, then <b>both at once</b></td></tr>
       <tr><td><i>no key</i></td><td><b>Wipe the RECORD BOARD</b> — every league, on this device</td></tr>
       <tr><td><i>no key</i></td><td><b>Wipe the SAVED GAMES</b> — every saved play session, kept ones included</td></tr>
-      <tr><td><i>no key</i></td><td><b>Wipe the DREAM DOJO stars</b> — every kitten's simulator stars and best times</td></tr>
     </tbody>
   </table></div>
 
@@ -1333,7 +1332,7 @@ git push origin alpha</code></pre>
     <div><code>audio.md</code><span>The synthesised sound set, and a piece of music per island</span></div>
     <div><code>voices.md</code><span>The voice registry — which preset is which character, with ids</span></div>
     <div><code>payne.md</code><span>Payne, the quest-giver: her quest chain, opt-in hints, the Goblin Sweep, her script — a real person's likeness; her lines and voice approved</span></div>
-    <div><code>dreamdojo.md</code><span>The Dream Dojo, Lionheart's VR arcade: the simulator as a second reality in the same place, the tubes, the training gate that lets a blade in there find holograms only, the Gallery and Trial Hall, the holo kit (she goes in with a copy of her ring and no clan, earns orbs in there, and her real kit is never touched) and its (HOLO) PLAYER PROFILE, Lionheart as the simulator's quest-giver (WHERE NEXT, a map, the sim on the minimap), the Tameshigiri Range and Kata Trace (Lionheart attacks from the top of her floor with Shadow's cut, cross and sweep, on the beat of any song in the game, at three levels and four speeds; its beat maps are human-readable JSON, <code>kata-beatmap/1</code>, with an in-game beat-map editor and custom charts kept in <code>localStorage</code>), the far islands (light-cycle highways, Kudamono Storm, the Sine Gauntlet (one obstacle course run one kitten at a time against the clock, the queue in cheering stands, one shared pane), Holo-Sentries and Bamboo Infiltration, every star band measured by a search), the Arena School (a practice round per tournament mode, under the tournament's own rules), KENSHI ranks, the foil Fighter Card, the daily and weekly training, and Shadow Lionheart on three levels, the co-op boss whose MEDIUM or HARD win is the tenth quest and the only one that counts after the Awakening, and all three her 凶; and what is still to build. Lionheart is Richard, likeness approved</span></div>
+    <div><code>dreamdojo.md</code><span>The Dream Dojo, Lionheart's VR arcade: the simulator as a second reality in the same place, the tubes, the training gate that lets a blade in there find holograms only, the Gallery and Trial Hall, the holo kit (she goes in with a copy of her ring and no clan, earns orbs in there, and her real kit is never touched) and its (HOLO) PLAYER PROFILE, Lionheart as the simulator's quest-giver (WHERE NEXT, five map kiosks, the sim on the minimap), its progress carried in the save row (<code>snapshot.dream</code>), the unit-circle overlays in its Dojo (every vector's (x, y, z) and length, the right triangle and its three angles, the lit quadrant), the Tameshigiri Range and Kata Trace (Lionheart attacks from the top of her floor with Shadow's cut, cross and sweep, on the beat of any song in the game, at three levels and four speeds; its beat maps are human-readable JSON, <code>kata-beatmap/1</code>, with an in-game beat-map editor and custom charts kept in <code>localStorage</code>), the far islands (light-cycle highways, Kudamono Storm, the Sine Gauntlet (one obstacle course run one kitten at a time against the clock — five snaking lanes, eight obstacles, a rim-to-rim middle, no grace after a zap and no line that can be skipped, an over-the-shoulder lens through the Sliding Gaps — the queue in cheering stands, one shared pane), Holo-Sentries and Bamboo Infiltration, every star band measured by a search), the Arena School (a practice round per tournament mode, under the tournament's own rules), KENSHI ranks, the foil Fighter Card, the daily and weekly training, and Shadow Lionheart on three levels, quicker and harder with more kittens on the island, the co-op boss whose MEDIUM or HARD win is the tenth quest and the only one that counts after the Awakening, and all three her 凶 — plus a secret EXTRA HARD opened at KENSHI 1st Class, whose win is the veiled eleventh; and what is still to build. Lionheart is Richard, likeness approved</span></div>
     <div><code>consent.md</code><span>Why nothing irreversible happens on one press</span></div>
     <div><code>rules.md</code><span>The gameplay invariants in full, with the measurements behind them</span></div>
     <div><code>gotchas.md</code><span>The traps that cost real time and are not obvious from the code</span></div>
@@ -1413,8 +1412,12 @@ git push origin alpha</code></pre>
       <b>and her orbs</b> where she left them — dropping out keeps everything, and the way to leave
       orbs for somebody else is the <b>DROP HER ORBS</b> row beside each kitten's DROP OUT. An orb
       left lying in the town is saved with its coordinates and comes back on the same spot. Dropping
-      out also writes a save immediately, since the party and the orb positions both just moved. The record board, the controller calibration, the stick setting,
-      the Dream Dojo's stars (<code>kk.dreamdojo.v1</code>, per kitten), the Kata Trace's custom
+      out also writes a save immediately, since the party and the orb positions both just moved.
+      <b>The Dream Dojo's progress is in the row too</b> — every kitten's simulator stars, bests and
+      flags, as <code>snapshot.dream</code> — so a new game starts the simulator fresh and a loaded
+      one brings its own back; the shared <code>kk.dreamdojo.v1</code> key it used to live in is
+      forgotten on boot. The record board, the controller calibration, the stick setting,
+      the Kata Trace's custom
       beat maps (<code>katana-kitties.kata-charts</code>)
       and every other row of <i>Settings</i> (<code>kk.settings</code>, only the rows somebody changed)
       survive a reload the same way. All of it is <code>localStorage</code>, so none of it follows a

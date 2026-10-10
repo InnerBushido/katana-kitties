@@ -1927,6 +1927,134 @@ quoted in the code, beside the change it caused.
 
 **Open:** nobody has played it.
 
+## Saves, maps, the doubled Gauntlet, the secret Shadow and the numbers on the circle
+
+Richard's "More improvements" list. Branch
+`mixed/dream-dojo-saves-gauntlet-shadow`.
+
+**What persists.** His note: the simulator's progress should be "stored per
+save file", not shared across games or refreshes.
+- The stars, bests and flags lived under one shared `localStorage` key
+  (`kk.dreamdojo.v1`). So a new game inherited an old one's simulator, and so
+  did a sister on the same machine.
+- They now travel in the save row as `snapshot.dream`
+  (`dream/progress.js`, `savegame.js`). A new game starts the simulator clean,
+  and a loaded game brings its own back.
+- The old key is forgotten on boot. The debug panel's *wipe the DREAM DOJO
+  stars* row is gone with it, because wiping the saves now wipes the stars.
+
+**The maps.** He asked for four in the corners of the Turning Circle and one in
+the Arena School by TODAY'S TRAINING.
+- `MAP_KIOSKS` stand on the hub's rim at r 43. Every spot was searched clear
+  of the decks, gate signs and stations.
+- The third kiosk could not sit at 163–168°. Every one of those bearings put a
+  sign through the board, so it is at 185° with side −9.
+- `SCHOOL_MAP` stands beside TODAY'S TRAINING.
+
+**Shadow Lionheart** (`dream/shadow.js`):
+- **One difficulty card at a time**: the card for the pad she is on, or else
+  the nearest. The text is larger and wraps.
+- **The party scales him.** Only kittens on the island count, so a sister
+  elsewhere in the sim does not make the fight harder. More kittens make him
+  quicker and give him shorter rests, and a blow aimed at one draws an echo
+  under each of the others.
+- **秘 EXTRA HARD** is twice HARD and opens at KENSHI 1st Class, announced
+  once. Beating it pays `secret` in feats.js, which is `late`, `special` and
+  veiled: until it opens, every list shows "A secret mission" and how to be
+  given it.
+- **Open:** these are first numbers, not yet played.
+
+**WHERE NEXT** used to time out. It now stays until the card changes, because
+a child reading slowly lost it.
+
+**The Sine Gauntlet, doubled** (`dream/course.js`, `dream/sine.js`). His
+notes, in order:
+
+> "the middle section should span the full diameter ... the jumping portion
+> twice as long ... more spinning ground lasers and one in the air ... first
+> and ending sections split into 2 snaking lanes, the second one harder ...
+> the course about twice as long, progressively harder ... the lasers high
+> enough to hit a double jumper".
+
+- **The layout.** Five lanes (`LANES`, `HALVES`) joined by four turns, about
+  218 units of route and eight sections. The two outer pairs snake. The
+  middle lane is 10 wide and runs rim to rim, held at its −b end by one
+  `STEPS` wall.
+- **The middle.**
+  - **Stones:** eight in sine/cosine pairs. Cosine stones are cyan and sine
+    stones gold, and the readout names both.
+  - **Sweep:** four ground arms.
+  - **One air arm** at 5.6, high enough to hit a double jump at its apex of
+    4.20. Its axes and cos/sin dots are drawn on the floor.
+- **Twin bars** catch a double jumper. A single hop clears them, and a double
+  is hit 53% of the time. `world-check` holds both numbers.
+- **No grace after a zap.** His note: "they should not have invulnerability
+  as its like cheating". `SAFE_T` is gone, and stepping back into the same
+  beam on the next frame is a second zap.
+- **No skipping.** His note: "I seemed to have somehow skipped over a
+  checkpoint ... and wasn't able to complete it".
+  - **Cause:** two bugs at once.
+    - The old rule ignored any step of more than 6, and every later one as
+      well, so her record froze for good.
+    - `pathS` took the nearest leg, which beside a divider could be the
+      neighbouring lane.
+  - **Fix:**
+    - `advance` lets any step inside her section count. A step past the
+      checkpoint after next counts as a skip: she is put back at the line she
+      missed, with a toast that says so.
+    - `pathS` now reads only the legs through her own lane.
+  - **Check:** walking the route in 0.25 steps never trips it and reaches the
+    gold line.
+- **The Sliding Gaps from behind her.** His note: "players can't see where
+  they need to go in the side view, should be over the shoulder". The shot
+  changes on her checkpoint record, not on where she stands, because a zap
+  moves her. It is eased at `CAM_EASE`, not cut.
+- **`SHOULDER_CAM` is 13 / 0.36 / lift 1.6 / lead 5**, framed at 800×418.
+  Tried and rejected:
+
+  | dist / pitch / lift / lead | rejected because |
+  | --- | --- |
+  | 9.5 / 0.3 / 1.8 / 3.5 | she sat over her own gap |
+  | 12 / 0.5 / 3 / 5 | the drill card landed centre-frame |
+  | 10 / 0.36 / 1.6 / 5 | the card was cut off under the HUD |
+- **Bands.** The clock is 240 s, and the star bands were measured by search.
+  Walking takes 26.9 / 26.6 / 25.9 s and sprinting 19.7 / 18.6 / 16.6 s on
+  the three levels. A run that never hops never finishes.
+
+**The sim Dojo's top view.** His note: "we shouldn't move to the top view until
+the player is within or near the unit radius".
+- In the simulator the Dojo's disc is the hub, and every bridge starts at its
+  rim, so the old edge lifted her into the top view on every crossing.
+- `simDojoAt` now enters at `SIM_DOJO_IN` (R + 4) and lets go at
+  `SIM_DOJO_OUT` (R + 9). The gap is hysteresis, so a kitten walking the
+  circle's own line does not flicker the camera.
+
+**The numbers on the circle** (`dream/holodojo.js`). His note asked for "the xyz
+values and magnitude for the vectors ... the right triangle ... the 3 angle
+values ... different neon colors when the player or sphere ... changes to a
+different quadrant".
+- **Vectors.** r, n and t read `(x, y, z)  |r| = 1.00  ✓ NORMALIZED`. Her
+  vector v reads the same, but says NORMALIZED only when she is standing on
+  the circle.
+- **The triangle.** It is filled between the origin, the foot of the sine leg
+  and the point, with a square marking the right angle. Its three angles all
+  come from one θ, which is why they add to 180.
+- **The quadrant.** The one she is in is lit in its own neon (`QUAD_C`, none
+  of them an axis colour), flares on entry, and is named with its two signs.
+- **The placer.** The first cut gave each readout one fixed offset from its
+  arrow. At θ = 46° in the browser, four of them stacked over the point.
+  - Each readout is about 20 units wide on a 24-unit circle, so no single
+    offset stays clear all the way round.
+  - `placeReadouts` gives each one an ordered list of spots. It takes the
+    first spot clear of every other label on the floor, and keeps that spot
+    while it stays clear.
+  - The first spot list still clashed in 11 of 192 checked frames, near the
+    axis names and the leg labels. The either-side spots fixed it.
+  - `world-check` walks two laps and fails on any overlap. 58 spot changes
+    over those two laps is the cost.
+
+**Open:** none of it has been played.
+
 ## Voice
 
 Lionheart is **Barrett** (`d603a8cd-3fe1-55e0-9245-617a2589131e`), nine clips

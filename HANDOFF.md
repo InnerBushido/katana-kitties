@@ -578,6 +578,33 @@ quoted.
   - [voices.md](docs/notes/voices.md#lionheart-is-barrett-and-the-wording-is-half-the-casting)
     has the casting, the rule and the gating.
 
+- **Richard's "More improvements" list** (branch
+  `mixed/dream-dojo-saves-gauntlet-shadow`).
+  [dreamdojo.md](docs/notes/dreamdojo.md#saves-maps-the-doubled-gauntlet-the-secret-shadow-and-the-numbers-on-the-circle)
+  has each note quoted with its cause and numbers:
+  - **The simulator's progress is in the save row** (`snapshot.dream`), not a
+    shared `localStorage` key, so a new game starts it fresh. The debug panel's
+    *wipe the DREAM DOJO stars* row went with the key.
+  - **Five map kiosks**: four round the hub, one beside TODAY'S TRAINING.
+  - **The Help icon is 🎮.**
+  - **Shadow Lionheart:** one difficulty card at a time, bigger and wrapped.
+    He is quicker and harder with more kittens on the island, and a blow on
+    one draws an echo under each of the others. **KENSHI 1st Class opens a
+    secret EXTRA HARD**, and beating it pays the veiled eleventh quest.
+  - **WHERE NEXT stays up** until the card changes.
+  - **The Sine Gauntlet, doubled:** five snaking lanes, eight obstacles, a
+    rim-to-rim middle and twin bars for the double jump. There is no grace
+    after a zap and no checkpoint can be skipped. The Sliding Gaps use an
+    over-the-shoulder lens.
+  - **The sim Dojo's top view** waits until she is near the unit circle.
+  - **Numbers on the circle:** every vector shows its (x, y, z) and length,
+    with NORMALIZED when it is a unit. The right triangle under the legs is
+    shown with its three angles, and the quadrant she is in is lit in neon.
+    A placer keeps the readouts off every other label.
+  - **Open:** nobody has played any of it. Party scaling and EXTRA HARD are
+    first numbers. The Gauntlet's bands are measured by search, not by a
+    child.
+
 - **The hologram's bubble stays on her lens** (branch `bugfix/holo-bubble-off-lens`).
   [dreamdojo.md](docs/notes/dreamdojo.md#the-holograms-bubble-stays-on-her-lens):
   his bubble is hidden from a pane that is too far away or cannot see him (his

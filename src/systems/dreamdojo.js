@@ -3,7 +3,7 @@ import { Billboard, paint, toonVertexMat } from '../core/gfx.js';
 import { bubbleTexture } from '../entities/leader.js';
 import { mergeParts } from '../world/build.js';
 import { SimWorld, SIM, HOLO, toSim } from '../world/simworld.js';
-import { MathDojo, inDojoView } from './mathdojo.js';
+import { MathDojo, inDojoView, DOJO_RADIUS } from './mathdojo.js';
 import { aggregate, ORB_BY_ID } from '../entities/powerorb.js';
 import { buildWornOrbs } from './kotodama.js';
 import { TrainingGate, Shards } from './dream/targets.js';
@@ -659,6 +659,11 @@ export const MAP_KIOSKS = [
   { ang: -97, r: 43, side: 0 },
 ];
 export const SCHOOL_MAP = [-19, 15];
+/** The simulator's Turning Circle takes the camera at this far from its
+ *  middle, and lets it go at this far: the unit circle (DOJO_RADIUS, 24) and a
+ *  stride past it, then a little more — see `simDojoAt`. */
+export const SIM_DOJO_IN = DOJO_RADIUS + 4;
+export const SIM_DOJO_OUT = DOJO_RADIUS + 9;
 
 /** Where a bridge's gate sign stands on the hub: `back` in from the mouth
  *  (at 47), `side` across from the deck's EDGE (a highway is wider than a
@@ -2843,14 +2848,34 @@ export class DreamDojo {
   }
 
   /**
-   * The centre of the simulator's Turning Circle if she is standing in it,
-   * else null: main.js frames it with the town Dojo's own shot. The same
-   * `inDojoView` the town's asks, so the two rooms start at the same edge.
+   * The centre of the simulator's Turning Circle if she is standing at it,
+   * else null: main.js frames it with the town Dojo's own shot.
+   *
+   * NOT THE TOWN'S EDGE, ANY MORE. Richard: "In the simulator, for the Dojo of
+   * the Turning Circle, we shouldn't move to the top view until the player is
+   * within or near the unit radius, it is currently happening too early." The
+   * town's edge is its dark disc (42), which is right in the town, where the
+   * Dojo is somewhere you go. In the simulator the disc IS THE HUB: every
+   * bridge to every island starts at its rim (43, where the map kiosks
+   * stand), so a kitten walking from one island to the next was lifted into
+   * the top view for the whole crossing.
+   *
+   * So here the room starts at the painted unit circle plus a stride
+   * (SIM_DOJO_IN), and lets go a little further out (SIM_DOJO_OUT) — one edge
+   * would flicker the camera under a kitten walking the circle's own line,
+   * which is the one thing the lesson asks her to do.
    */
   simDojoAt(p) {
     const D = this.simDojo;
-    if (!D || !p || this.realmOf(p) !== 'sim') return null;
-    return inDojoView(p, D.centre) ? D.centre : null;
+    if (!D || !p || this.realmOf(p) !== 'sim') {
+      if (p) (this._inSimDojo ??= new Set()).delete(p.index);
+      return null;
+    }
+    const held = (this._inSimDojo ??= new Set());
+    const r = held.has(p.index) ? SIM_DOJO_OUT : SIM_DOJO_IN;
+    const inside = inDojoView(p, D.centre, r);
+    if (inside) held.add(p.index); else held.delete(p.index);
+    return inside ? D.centre : null;
   }
 
   /**

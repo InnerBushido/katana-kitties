@@ -111,8 +111,16 @@ const CURTAIN_COL = 0xb35cff;
 
 /** The over-the-shoulder shot for the Sliding Gaps: this far behind her,
  *  this pitch, and the look-at this far AHEAD of her down the lane, so the
- *  next curtain is in the frame rather than her back filling it. */
-export const SHOULDER_CAM = { dist: 9.5, pitch: 0.3, lift: 1.8, lead: 3.5 };
+ *  next curtain is in the frame rather than her back filling it.
+ *  Framed in the browser at 800x418, three tries:
+ *    9.5 / 0.3 / lift 1.8 / lead 3.5 — she sat big at the bottom-middle, over
+ *      the very gap she was aiming for;
+ *    12 / 0.5 / lift 3 / lead 5 — the drill card landed dead centre, on the lane;
+ *    10 / 0.36 / lift 1.6 / lead 5 — right shape, but the card was cut off
+ *      under the HUD.
+ *  13 / 0.36 / lift 1.6 / lead 5: card at the top, the next three curtains
+ *  and their gaps in the middle, her head at the bottom. */
+export const SHOULDER_CAM = { dist: 13, pitch: 0.36, lift: 1.6, lead: 5 };
 /** How fast the lens swings between the side-on shot and that one (1/s). */
 const CAM_EASE = 2.5;
 

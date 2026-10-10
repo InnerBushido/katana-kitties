@@ -35970,6 +35970,95 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       && Math.abs(cross) / (v.length() * pp.length()) < 1e-9 && v.dot(pp) > 0 && v.length() > pp.length()
       && Math.abs(tip(X.toHer).y - holo.point.position.y) < 1e-9,
       `${S.length} spheres, tip ${v.x.toFixed(2)},${v.y.toFixed(2)} her ${walker.position.x.toFixed(2)},${walker.position.z.toFixed(2)}, sin of the angle between ${(cross / (v.length() * pp.length())).toExponential(1)}`);
+    /* THE NUMBERS ON IT. "show the xyz values and magnitude for the vectors,
+       if it is a normalized vector, can show that somehow as well ... draw and
+       highlight the right triangle under it and show the 3 angle values
+       changing for the triangle ... highlight the area in different neon
+       colors, when the player or sphere on the unit circle changes to a
+       different quadrant". Every number asked of the point it describes. */
+    {
+      const want = (l) => l._want ?? l._text ?? '';
+      const num = (s, k) => Number(s.match(/-?\d+\.\d+/g)?.[k]);
+      at(0.8, 1.3);
+      holo.update(1 / 60, [walker]);
+      fx.update(4.1, [walker]);
+      const th = holo.theta;
+      const RD = X.read;
+      const vecOk = Math.abs(num(want(RD.r), 0) - Math.cos(th)) < 0.006 && Math.abs(num(want(RD.r), 1) - Math.sin(th)) < 0.006
+        && /\|r\| = 1\.00  ✓ NORMALIZED/.test(want(RD.r)) && /✓ NORMALIZED/.test(want(RD.n)) && /✓ NORMALIZED/.test(want(RD.t))
+        && Math.abs(num(want(RD.t), 0) + Math.sin(th)) < 0.006 && Math.abs(num(want(RD.v), 3) - holo.playerRadius) < 0.006
+        && Math.abs(holo.playerRadius - 1.3) < 0.01 && !/NORMALIZED/.test(want(RD.v));
+      at(0.8, 1);
+      holo.update(1 / 60, [walker]);
+      fx.update(4.2, [walker]);
+      const onCircle = /\|v\| = 1\.00  ✓ NORMALIZED/.test(want(RD.v));
+      ok('円 every vector reads out its (x, y, z) and its length, off the point: r, n and t are NORMALIZED, and hers only when she stands on the circle',
+        vecOk && onCircle, `${want(RD.r)} | ${want(RD.v)}`);
+
+      // The triangle: its corners are the origin, the foot of the sine leg, the point.
+      const tp = X.tri.mesh.geometry.attributes.position;
+      const P = holo.point.position;
+      const corners = [[0, 0], [P.x, 0], [P.x, P.z]].every(([x, z], i) => Math.abs(tp.getX(i) - x) < 1e-6 && Math.abs(tp.getZ(i) - z) < 1e-6);
+      let sums = 0; let refOk = true; let n = 0;
+      for (let k = 0; k < 16; k++) {
+        const a = 0.2 + k * 0.39;
+        const A = HD.triangleAngles(a);
+        sums = Math.max(sums, Math.abs(A[0] + A[1] + A[2] - 180));
+        const ref = Math.acos(Math.abs(Math.cos(a))) * 180 / Math.PI;
+        refOk &&= Math.abs(A[0] - ref) < 1e-9 && A[1] === 90; n++;
+      }
+      const shown = X.tri.angles.map((l) => Number(want(l).replace('°', '')));
+      const A0 = HD.triangleAngles(holo.theta).map((x) => Math.round(x));
+      ok('...the RIGHT TRIANGLE under the legs is filled, origin to foot to point, and its three angles add to 180 all the way round',
+        corners && sums < 1e-9 && refOk && shown.join() === A0.join() && X.tri.mesh.visible, `${shown.join(' + ')}`);
+
+      // The quadrants: walk into each, and the lit one, its colour and its name follow.
+      const seen = [];
+      for (const [a, qq] of [[5.4, 3], [0.5, 0], [2.0, 1], [3.6, 2]]) {
+        at(a, 1);
+        holo.update(1 / 60, [walker]);
+        fx.update(5 + qq, [walker]);
+        const lit = X.quad.meshes.map((m) => m.material.opacity > 0);
+        const flare = X.quad.meshes[qq].material.opacity;
+        fx.update(6 + qq, [walker]);
+        const settled = X.quad.meshes[qq].material.opacity;
+        seen.push(lit.indexOf(true) === qq && lit.filter(Boolean).length === 1 && HD.quadrantOf(holo.theta) === qq
+          && X.tri.mesh.material.color.getHex() === HD.QUAD_C[qq] && flare > settled
+          && new RegExp(`QUADRANT ${HD.QUAD_NAME[qq]} `).test(want(X.quad.label)));
+      }
+      ok('...and the quadrant she is in is lit in its own neon, named with its two signs, and flares on the way in',
+        seen.every(Boolean) && new Set(HD.QUAD_C).size === 4
+        && HD.QUAD_C.every((c) => !Object.values(HD.AXIS_C).includes(c)), seen.join());
+      /* AND NONE OF IT ON TOP OF ANYTHING ELSE. The first cut put each readout
+         at one fixed offset from its arrow, and at θ = 46° four of them were
+         stacked over the point. The placer's first set of spots still clashed
+         in 11 of these 192 frames — the normal's readout on "90° = π/2" at the
+         top of the circle, hers on the leg labels outside it — which is what
+         the either-side spots are for. Walk two laps — on the circle and outside it —
+         and ask every readout's box against every other label on the floor. */
+      let frames = 0; let clash = 0; let hops = 0; let worst = '';
+      let last = null;
+      for (const rad of [1, 1.3]) {
+        for (let k = 0; k < 96; k++) {
+          at((k / 96) * Math.PI * 2 + 0.01, rad);
+          holo.update(1 / 60, [walker]);
+          fx.update(8 + k / 60, [walker]);
+          const mine = [...Object.values(X.read), X.quad.label].filter((l) => l.visible);
+          const others = holo.labels.filter((l) => l.visible && !mine.includes(l));
+          frames++;
+          const bad = mine.some((a, i) => others.some((b) => HD.boxesOverlap(HD.labelBox(a), HD.labelBox(b), 0))
+            || mine.some((b, j) => j > i && HD.boxesOverlap(HD.labelBox(a), HD.labelBox(b), 0)));
+          if (bad) { clash++; worst ||= `θ ${((k / 96) * 360).toFixed(0)}° at ${rad}`; }
+          const now = JSON.stringify(X.spots);
+          if (last && now !== last) hops++;
+          last = now;
+        }
+      }
+      ok('...and no readout lands on another label, all the way round, on the circle and off it',
+        clash === 0, `${clash} of ${frames} frames, first ${worst}; ${hops} spot changes`);
+      at(0.8, 1.3);
+      holo.update(1 / 60, [walker]);
+    }
     fx.update(4, []);
     ok('...and when she steps off the floor her sphere and her vector go with her', X.spheres.every((s) => !s.group.visible) && !X.toHer.group.visible);
     // THE MATHS STILL THE TOWN'S, all of that drawn: drive both again.
@@ -35992,6 +36081,23 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const inSim = D.simDojoAt(her);
     her.position.set(holo.centre.x + MD.DOJO_VIEW_R + 1, 0, holo.centre.z);
     const outside = D.simDojoAt(her);
+    /* "we shouldn't move to the top view until the player is within or near
+       the unit radius, it is currently happening too early". On the hub's own
+       disc, crossing to an island, it is not the room; at the unit circle it
+       is; and walking the circle's line in and out never flickers it. */
+    const R0 = MD.DOJO_RADIUS;
+    const atR = (d) => { her.position.set(holo.centre.x + d, 0, holo.centre.z); return D.simDojoAt(her) != null; };
+    atR(60);
+    const walkIn = [40, 34, DD.SIM_DOJO_IN + 0.5, DD.SIM_DOJO_IN - 0.5, R0].map(atR);
+    let flips = 0; let was = atR(R0);
+    for (let k = 0; k < 200; k++) { const now = atR(R0 + 1.5 * Math.sin(k * 0.4)); if (now !== was) flips++; was = now; }
+    const walkOut = [DD.SIM_DOJO_IN + 1, DD.SIM_DOJO_OUT - 0.5, DD.SIM_DOJO_OUT + 0.5].map(atR);
+    ok('影 in the simulator the top view waits for the unit circle: not on the disc of the hub, yes a stride from the circle, and no flicker on its line',
+      walkIn.join() === 'false,false,false,true,true' && flips === 0 && walkOut.join() === 'true,true,false'
+      && DD.SIM_DOJO_IN < MD.DOJO_VIEW_R - 10 && DD.SIM_DOJO_IN > R0 && DD.SIM_DOJO_OUT < DD.MAP_KIOSKS[0].r,
+      `${walkIn} | ${flips} | ${walkOut}`);
+    her.position.set(holo.centre.x + 20, 0, holo.centre.z - 6);
+    D.simDojoAt(her);
     sis.position.set(holo.centre.x + 5, 0, holo.centre.z);
     const notSim = D.simDojoAt(sis);
     D.simDojo = keepSD;
