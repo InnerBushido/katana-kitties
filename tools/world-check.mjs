@@ -35004,14 +35004,54 @@ console.log('\n--- mobile: nothing behind the main menu ---');
   const m = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
   const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
   const mc = stripComments(m).replace(/\s+/g, ' ');
-  ok('a phone boots to the title without building the world',
-    /this\._lazyWorld = !!this\.device\.touchPrimary;/.test(m)
-    && /async boot\(\) \{ this\._resize\(\); this\._applyQuality\(\); if \(!this\._lazyWorld\) await this\._buildWorld\(\); this\._showTitle\(\); \}/.test(mc));
+  /* "We should do this on web/pc as well." */
+  ok('EVERY machine boots to the title without building the world, a desktop too',
+    /this\._lazyWorld = true;/.test(m)
+    && /async boot\(\) \{ this\._resize\(\); this\._applyQuality\(\); if \(!this\._lazyWorld\) await this\._buildWorld\(\); const order = takeBootOrder\(\); this\._showTitle\(\); if \(!order\) return;/.test(mc));
+  const sp = mc.slice(mc.indexOf('startPlay() {'));
   ok('...and builds it on PLAY, after the trailer question',
-    /if \(!this\._worldReady\) \{ this\._worldThen\(\(\) => this\.startPlay\(\)\); return; \}/.test(mc)
-    && mc.indexOf('this._trailerOfferDue()) {') < mc.indexOf('this._worldThen(() => this.startPlay())'));
-  ok('...or on LOAD A SAVED GAME, whose list is scored against the world',
-    /if \(a === 'saves'\) this\._worldThen\(\(\) => \{ this\._paintSaves\(\); show\('panel-saves'\); \}\);/.test(mc));
+    /if \(!this\._worldReady\) \{ this\._worldThen\(\(\) => this\.startPlay\(\)\); return; \}/.test(sp)
+    && sp.indexOf('this._trailerOfferDue()) {') < sp.indexOf('this._worldThen(() => this.startPlay())'));
+  /* "After clicking Load a Saved Game, the player should first select a save
+     to load and then the loading screen should appear". */
+  ok('LOAD A SAVED GAME opens the list FIRST, building nothing',
+    /if \(a === 'saves'\) \{ this\._paintSaves\(\); show\('panel-saves'\); \}/.test(mc)
+    && !/a === 'saves'\) this\._worldThen/.test(mc));
+  ok('...and the build comes after the save is chosen, under the loading screen; from a game, a reload',
+    /yes: 'YES, LOAD IT', onYes: \(\) => this\._loadChosen\(row\.id\),/.test(mc)
+    && /_loadChosen\(id\) \{ if \(this\.state === 'play'\) \{[\s\S]{0,260}this\._reloadInto\(\{ do: 'load', id \}\); return; \} this\._worldThen\(\(\) => this\._loadSave\(id\)\); \}/.test(mc));
+  ok('...and the real world refuses a save the list could only guess about',
+    /_loadSave\(id\) \{[\s\S]{0,200}if \(snap\.sig !== worldSig\(this\.world\)\) \{/.test(mc));
+  {
+    /* THE LIST WITH NO WORLD UNDER IT, really scored. */
+    const snap = { id: 's1', at: Date.now(), played: 400, sig: worldSig(world), players: [{ style: 'Ember', orbs: [] }],
+      world: { scored: new Array(Math.round(world.mischiefTotal / 2)).fill(0), balls: [] } };
+    const shape = { sig: worldSig(world), mischiefTotal: world.mischiefTotal };
+    const a = describe(snap, shape);
+    const bShape = describe({ ...snap, sig: 'old' }, shape);
+    const none = describe(snap, null);
+    ok('...a row is scored off the last build\u2019s SHAPE as it is off the world, and with neither it guesses nothing',
+      a.mischief === describe(snap, world).mischief && a.mischief === 50 && !a.stale && bShape.stale
+      && none.mischief === null && !none.stale, `${a.mischief}% ${bShape.stale}`);
+    ok('...and that shape is written when a build finishes, under the loading screen',
+      /_warmWorld\(\) \{ try \{ localStorage\.setItem\(WORLD_SHAPE_KEY, JSON\.stringify\(\{ sig: worldSig\(this\.world\), mischiefTotal: this\.world\.mischiefTotal \}\)\);/.test(mc)
+      && /this\._buildWorld\(\)\.then\(\(\) => this\._warmWorld\(\)\)\.then\(\(\) => \{ this\._building = false; document\.getElementById\('loading'\)\.classList\.add\('hidden'\);/.test(mc));
+  }
+  /* "This should also happen when Restart is selected and the cache should
+     be reset with a loading screen before a new game is loaded." */
+  ok('RESTART is a reload into a new game, the trailer question not asked twice',
+    /yes: 'YES, START OVER', onYes: \(\) => this\._reloadInto\(\{ do: 'new' \}\),/.test(mc)
+    && /if \(order\.do === 'new'\) \{ this\._offerAnswered = true; this\._worldThen\(\(\) => this\.startPlay\(\)\); \} else if \(order\.do === 'load' && order\.id\) \{ this\._worldThen\(\(\) => this\._loadSave\(order\.id\)\); \}/.test(mc));
+  ok('...and the order across the reload is read ONCE and deleted, so a refresh lands on the title',
+    /const raw = sessionStorage\.getItem\(BOOT_KEY\); sessionStorage\.removeItem\(BOOT_KEY\);/.test(mc));
+  /* THE LOADING SCREEN COULD NOT BE SEEN: #loading and #title were both a
+     `.screen` at z 10, and #title comes later in the page. */
+  {
+    const zOf = (sel) => Number((css.replace(/\/\*[\s\S]*?\*\//g, '').match(new RegExp(`${sel} \\{[^}]*?z-index:\\s*(\\d+)`)) ?? [])[1] ?? 10);
+    const zLoad = zOf('#loading');
+    ok('the loading screen paints OVER the title and the menus (50-58), and under the rotate gate',
+      zLoad > zOf('#title') && zLoad > 58 && zLoad < zOf('#rotate-gate'), `${zLoad}`);
+  }
   ok('...behind the loading screen, with the loop stopped and a second press dropped',
     /_worldThen\(fn\) \{ if \(this\._worldReady\) \{ fn\(\); return; \} if \(this\._building\) return; this\._building = true; this\.renderer\.setAnimationLoop\(null\); document\.getElementById\('loading'\)\.classList\.remove\('hidden'\);/.test(mc));
   ok('...and `_worldReady` is the last thing the build sets',
@@ -35025,15 +35065,16 @@ console.log('\n--- mobile: nothing behind the main menu ---');
      not and does not, because it goes through `_enterPlay` and never
      `startPlay`. */
   ok('...and PLAY after it is a new game, which opens on the intro: nothing outside the game remembers it played',
-    !/INTRO_SEEN_KEY|sessionStorage/.test(stripComments(m))
+    !/INTRO_SEEN_KEY/.test(stripComments(m))
+    && (stripComments(m).match(/sessionStorage\.\w+\(([A-Z_]+)/g) ?? []).every((s) => s.endsWith('BOOT_KEY'))
     && /if \(this\.cutscene\) \{ this\.cutscene\.play\(\);/.test(mc));
   ok('...and LOAD never plays it: the saved-game door is `_enterPlay`, not `startPlay`',
     /if \(this\.state !== 'play'\) \{ this\._enterPlay\(\);/.test(mc));
   ok('the title draws no fly-over with no world under it',
     /_renderTitleIdle\(dt\) \{ if \(!this\._worldReady\) return;/.test(mc));
-  ok('...and on a phone its background is black, with the blurred fill not drawn',
-    /body\.touch-ui #title \{ background: #000; \}/.test(css)
-    && /body\.touch-ui #title \.title-art \{ display: none; \}/.test(css));
+  ok('...and its background is black, with the blurred fill not drawn, on every machine',
+    /\n#title \{ background: #000; \}/.test(css.replace(/\r/g, ''))
+    && /\n#title \.title-art \{ display: none; \}/.test(css.replace(/\r/g, '')));
   ok('the settings rows that rebuild the HUD wait for a world',
     /bind\('set-dir', 'dir', \(\) => \{ if \(!this\._worldReady\) return;/.test(mc));
   ok('...and so do the debug rows, which say so in the panel, bar the frame cost',

@@ -1415,7 +1415,39 @@ cache is reset and reloaded. The background should be black"*
   - the debug rows say `NO WORLD YET` in the panel itself, since toasts live in
     the hidden HUD. Only `8` (frame cost) works before PLAY.
 
-A desktop is unchanged, fly-over and all.
+A desktop was left unchanged, fly-over and all, until the next pass.
+
+### ...and on a desktop, with a loading screen that can be seen
+
+Richard: "We should do this on web/pc as well", and "when starting a New Game
+or clicking Load A Saved Game, there is a lag before the game starts ... Let's
+put the 'Loading screen' that plays when the game is first started to play
+during the long loading time. This should also happen when Restart is
+selected ... After clicking Load a Saved Game, the player should first select
+a save to load and then the loading screen should appear".
+
+- **Every machine is lazy now** (`_lazyWorld = true`). The title is black and
+  `.title-art`'s blurred fill is not drawn anywhere.
+- **The lag was the loading screen, hidden.** `_worldThen` did raise
+  `#loading`, but it and `#title` were both `.screen` at z 10, and `#title`
+  comes later in the page, so the frozen menu sat on top of it for the whole
+  build. `#loading` is z 60: over the menus (50-58), under the rotate gate (70).
+- **The first frame's shader links happen behind it too.** `_warmWorld` runs
+  `compileAsync` over the scene before the loading screen comes down. Measured
+  in the pane: the build is ~14s on a desktop, and the screen stays up ~0.7s
+  past `_worldReady` for the warm-up.
+- **LOAD lists first, builds after.** The list is scored against the shape the
+  last build left in `kk.worldshape.v1` (`WORLD_SHAPE_KEY`: its signature and
+  mischief total), and `_loadSave` asks the real world again before restoring.
+  With no shape yet, a row shows no percentage and is never marked stale.
+- **RESTART and an in-game LOAD are reloads** (`_reloadInto`), carrying one
+  order across in `sessionStorage` (`kk.boot.v1`: `{do: 'new'}` or
+  `{do: 'load', id}`). `boot` reads it once and deletes it, so a refresh after
+  lands on the title. An in-game LOAD writes the game being left first, under
+  the same five-minute rule as before. A restart does not ask the trailer
+  question again.
+- **What a reload costs:** paired controllers press A again to rejoin, as at
+  any boot.
 
 ### Settings are remembered
 

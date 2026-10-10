@@ -3099,8 +3099,9 @@ See "The feast was a still of the whole deck" in
 
 - **Maps:** the one-screen map is a tenth smaller and clears the stick, and a
   split phone's maps sit in the top outer corners.
-- **Title:** a phone builds nothing until PLAY. The title is black, and going
-  back to the main menu is a real reload.
+- **Title:** nothing is built until PLAY, on a desktop too. The title is
+  black. Going back to the main menu, RESTART and an in-game LOAD are real
+  reloads, and every build runs behind a loading screen that can now be seen.
 - **Settings:** every row is remembered (`kk.settings`).
 - **Ring camera:** fitted through the lens into the space the HUD and thumbs
   leave, so both kittens stay in view.

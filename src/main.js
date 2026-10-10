@@ -65,9 +65,21 @@ import { ArenaBoard, boardZoneWeight, boardShot, BOARD_VIEW } from './systems/ar
 import { loadBoard, clearBoard, BOARD_MODES } from './systems/leaderboard.js';
 import {
   listSaves, putSave, dropSave, clearSaves, snapshot, describe, restore,
-  castRow, applyCast, meaningful, newSessionId,
+  castRow, applyCast, meaningful, newSessionId, worldSig, WORLD_SHAPE_KEY,
   AUTOSAVE_EVERY, AUTOSAVE_AFTER, MAX_SAVES, MAX_LIST, saveCap, saveByHand,
 } from './systems/savegame.js';
+
+/** One order carried across a reload — `{ do: 'new' }` or `{ do: 'load', id }`
+ *  — read and deleted by `Game.boot`. NOT a memory of anything having played:
+ *  it lives for exactly one page load. */
+const BOOT_KEY = 'kk.boot.v1';
+function takeBootOrder() {
+  try {
+    const raw = sessionStorage.getItem(BOOT_KEY);
+    sessionStorage.removeItem(BOOT_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
 import { POWER_ORBS } from './entities/powerorb.js';
 import { Kotodama, buildWornOrbs } from './systems/kotodama.js';
 import { ORB_IDS, CROSS, triDmgK } from './entities/powerorb.js';
@@ -586,10 +598,10 @@ class Game {
        See `_claimMenu` — this is the whole of the one-cursor rule. */
     this.menuOwner = null;
     this.merged = true;
-    /* ON A PHONE THE WORLD IS NOT BUILT UNTIL PLAY — see `boot`. Decided once,
-       off the device the page loaded on, because it decides what `boot` does
-       and a boot only happens once. */
-    this._lazyWorld = !!this.device.touchPrimary;
+    /* THE WORLD IS NOT BUILT UNTIL PLAY — see `boot`. It was a phone's rule
+       only; Richard: "We should do this on web/pc as well." Kept as a field
+       so the one place that reads it (`toTitle`) still says what it is. */
+    this._lazyWorld = true;
     /** Set at the very end of `_buildWorld`. `this.world` is not the same
      *  question: it is assigned a third of the way through the build. */
     this._worldReady = false;
@@ -1338,14 +1350,37 @@ class Game {
    * (see `toTitle`), which is the only way to hand a phone its memory back:
    * a world "reset" in place is still a world held.
    *
-   * A DESKTOP IS UNCHANGED, fly-over and all. The kids' title art over the
-   * living world is the game's front door there, and nothing was reported.
+   * AND NOW A DESKTOP TOO. Richard: "We should do this on web/pc as well."
+   * The fly-over and the blurred fill are gone there, and its title is black.
+   *
+   * A RELOAD CAN CARRY ONE ORDER (`BOOT_KEY`): RESTART and an in-game LOAD
+   * are reloads too, because "the cache should be reset with a loading screen
+   * before a new game is loaded", and a reload is the only reset that hands
+   * the memory back. The order is read once and deleted here, so a refresh
+   * after it lands on the title like any other.
    */
   async boot() {
     this._resize();
     this._applyQuality();
     if (!this._lazyWorld) await this._buildWorld();
+    const order = takeBootOrder();
     this._showTitle();
+    if (!order) return;
+    /* Straight back under the loading screen, which `_worldThen` raises over
+       the title before the title has had a frame to be seen. */
+    if (order.do === 'new') {
+      // Asked already, at the main menu this game started from.
+      this._offerAnswered = true;
+      this._worldThen(() => this.startPlay());
+    } else if (order.do === 'load' && order.id) {
+      this._worldThen(() => this._loadSave(order.id));
+    }
+  }
+
+  /** Reload the page, and do `order` on the far side of it (see `boot`). */
+  _reloadInto(order) {
+    try { sessionStorage.setItem(BOOT_KEY, JSON.stringify(order)); } catch { /* a refused store is a plain reload to the title */ }
+    window.location.reload();
   }
 
   /** Loading screen down, title up, and the loop running. */
@@ -1377,7 +1412,16 @@ class Game {
     this._building = true;
     this.renderer.setAnimationLoop(null);
     document.getElementById('loading').classList.remove('hidden');
-    this._buildWorld().then(() => {
+    /* THE LAG WITH NO LOADING SCREEN. Richard: "when starting a New Game or
+       clicking Load A Saved Game, there is a lag before the game starts ...
+       Let's put the 'Loading screen' ... to play during the long loading
+       time." It WAS raised here, and could not be seen: `#loading` comes
+       before `#title` in the page and both were `.screen` at z 10, so the
+       later one painted over it and the menu sat frozen through the build.
+       It is z 60 now (style.css). And the first frame after a build linked
+       every shader on the spot, so the loading screen stays up through
+       `_warmWorld` as well — the hitch happens behind it, not in front. */
+    this._buildWorld().then(() => this._warmWorld()).then(() => {
       this._building = false;
       document.getElementById('loading').classList.add('hidden');
       this.clock.getDelta();   // the build's seconds are not a frame
@@ -1388,6 +1432,25 @@ class Game {
       const el = document.getElementById('load-text');
       if (el) el.textContent = `Something broke: ${err.message}`;
     });
+  }
+
+  /**
+   * Link the world's shaders while the loading screen is still up, and leave
+   * the save list its shape (`WORLD_SHAPE_KEY`) for the next time it is
+   * painted before a build. Never throws: a warm-up that fails is a first
+   * frame that hitches, which is what there was before.
+   */
+  async _warmWorld() {
+    try {
+      localStorage.setItem(WORLD_SHAPE_KEY, JSON.stringify({ sig: worldSig(this.world), mischiefTotal: this.world.mischiefTotal }));
+    } catch { /* the list just shows no percentages */ }
+    const cam = this.players[0]?.camera;
+    if (!cam || !this.renderer.compileAsync) return;
+    try {
+      await this.renderer.compileAsync(this.scene, cam);
+    } catch (e) {
+      console.warn('[boot] shader warm-up skipped', e);
+    }
   }
 
   /** Every sprite, the world, and everybody in it. What `boot` used to be. */
@@ -2590,10 +2653,13 @@ class Game {
         if (a === 'help') { show('panel-help'); this._warmHelpClips(); }
         if (a === 'settings') { this._refreshPads(); show('panel-settings'); }
         if (a === 'board') { this._paintBoard(); show('panel-board'); }
-        /* THE LIST NEEDS THE WORLD — every row is scored against it (how far
-           through, and whether it was saved from a different build) — so on a
-           phone the list is where the build happens when LOAD comes first. */
-        if (a === 'saves') this._worldThen(() => { this._paintSaves(); show('panel-saves'); });
+        /* THE LIST FIRST, THE BUILD AFTER. Richard: "After clicking Load a
+           Saved Game, the player should first select a save to load and then
+           the loading screen should appear". It used to build here, because
+           each row is scored against the world; with no world yet it is
+           scored against the shape the last build left (`describe`), and
+           `_loadSave` asks the real one before it restores anything. */
+        if (a === 'saves') { this._paintSaves(); show('panel-saves'); }
         /* The three groups the pause menu was cut into. They carry no state of
            their own — every row inside is the same `data-action` it was when
            it sat in the pause menu — so opening one is only a `show`. */
@@ -2620,7 +2686,11 @@ class Game {
               + 'beginning. The record board is kept.',
             no: 'NO, KEEP PLAYING',
             yes: 'YES, START OVER',
-            onYes: () => this.restart(),
+            /* A RELOAD, behind the loading screen, into a new game. Richard:
+               "This should also happen when Restart is selected and the cache
+               should be reset with a loading screen before a new game is
+               loaded." `restart()` in place kept every mesh and texture. */
+            onYes: () => this._reloadInto({ do: 'new' }),
           });
         }
         if (a === 'quit-match') {
@@ -6189,7 +6259,7 @@ class Game {
 
     el.innerHTML = `
       <b>DEBUG</b> <span class="k">\`</span> closes
-      ${this._worldReady ? '' : '<div class="dbg-sep">NO WORLD YET — a phone builds it on PLAY. '
+      ${this._worldReady ? '' : '<div class="dbg-sep">NO WORLD YET — it is built on PLAY. '
         + 'Only 8 works until then.</div>'}
       <div class="dbg-sep">THE AFTERNOON, IN ORDER — 1 to 7</div>
       ${row('Digit1', `knock over ${this._batchLabel()} of the mischief`)}
@@ -7981,7 +8051,12 @@ class Game {
     el.textContent = '';
     let rows = [];
     try {
-      rows = listSaves().map((snap) => describe(snap, this.world));
+      /* No world yet on the title: the shape the last build left instead. */
+      let shape = null;
+      if (!this._worldReady) {
+        try { shape = JSON.parse(localStorage.getItem(WORLD_SHAPE_KEY) ?? 'null'); } catch { shape = null; }
+      }
+      rows = listSaves().map((snap) => describe(snap, this._worldReady ? this.world : shape));
     } catch { rows = []; }
 
     if (!rows.length) {
@@ -8120,7 +8195,7 @@ class Game {
         + 'The record board is kept.',
       no: 'NO, KEEP PLAYING',
       yes: 'YES, LOAD IT',
-      onYes: () => this._loadSave(row.id),
+      onYes: () => this._loadChosen(row.id),
     });
   }
 
@@ -8140,9 +8215,32 @@ class Game {
       && session !== this.sessionId;
   }
 
+  /**
+   * She chose a save: NOW the loading screen. From the title that is the
+   * build. From a game it is a reload — the game being left is written down
+   * first, exactly as `_loadSave` would have — so the save is restored into a
+   * world nobody has played in, with the memory handed back.
+   */
+  _loadChosen(id) {
+    if (this.state === 'play') {
+      const snap = listSaves().find((r) => r.id === id);
+      if (!snap) { this.toast('That save is gone.', 0); return; }
+      if (this._saveBeforeLoad(snap.session)) this._autoSave({ spare: snap.id });
+      this._reloadInto({ do: 'load', id });
+      return;
+    }
+    this._worldThen(() => this._loadSave(id));
+  }
+
   _loadSave(id) {
     const snap = listSaves().find((r) => r.id === id);
     if (!snap) { this.toast('That save is gone.', 0); return; }
+    /* THE REAL WORLD'S ANSWER. The list was scored against the last build's
+       shape, which a new version of the game can have changed. */
+    if (snap.sig !== worldSig(this.world)) {
+      this.toast('That save was made by a different version of the game.', 0);
+      return;
+    }
     /* THE GAME BEING LEFT, WRITTEN DOWN FIRST — sparing the row being loaded,
        so that write cannot push the chosen afternoon off the list under the
        load. `snap` is already in hand, so the load itself is safe either way;
