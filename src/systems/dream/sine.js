@@ -3,9 +3,9 @@ import { SIM, HOLO } from '../../world/simworld.js';
 import { HoloPanel } from './holo.js';
 import { Kiosk, idleIn, isleSpot, stars3 } from './kiosk.js';
 import {
-  LEVELS, LANES, LANE_HALF, WALLS, START, START_LINE, SECTIONS, SECTION, FINISH_B, END_B,
-  beams, stones, groundAt, hitAt, pathS, CP_S, FINISH_S, checkpointFor,
-  barWorking, waveText, sweepEnds, gapCentre, stoneHeight, COURSE_BANDS, COURSE_TIME,
+  LEVELS, LANES, HALVES, WALLS, START, START_LINE, SECTIONS, SECTION, FINISH_B, END_B, COURSE_A,
+  ARMS, MATH_ARM, beams, stones, groundAt, hitAt, pathS, CP_S, FINISH_S, advance, laneOf,
+  barWorking, waveText, sweepEnds, gapCentre, stoneHeight, stoneIsCos, COURSE_BANDS, COURSE_TIME,
 } from './course.js';
 
 export { LEVELS, COURSE_BANDS };
@@ -42,7 +42,19 @@ export { LEVELS, COURSE_BANDS };
        the split screen, and `groupShot` is the shared rig's shot.
      · A ZAP OR A FALL is back to the last checkpoint with the clock still
        running, never the end of the run: they are nine and younger, and the
-       time is the score.
+       time is the score. AND NO GRACE AFTER IT. Richard: "the player has
+       invulnerability for a short amount of time when respawning in the
+       course, they should not have invulnerability as its like cheating."
+       There was 0.9s of it (SAFE_T), and you could run straight through a
+       beam on it. Every checkpoint is instead a spot no beam ever reaches,
+       which world-check samples every 0.02s on every level.
+     · NO CHECKPOINT CAN BE SKIPPED: `advance` (course.js) is how far she has
+       got, and a step that would leap one puts her back at it.
+     · THE SLIDING GAPS ARE FILMED FROM BEHIND HER. "we need the camera angle
+       to change as players can't see where they need to go in the side view,
+       should be over the shoulder front view at that point" — side-on, a gap
+       sliding across her lane slides toward and away from the lens, which is
+       the one direction a picture cannot show.
 
    NOTHING HERE HURTS ANYBODY. A zap is `hitAt` (course.js) answered with a
    teleport; nothing here hurts anybody, and the SIM bar is not touched.
@@ -78,8 +90,6 @@ export const COURSE_CAM = { dist: 25, pitch: 0.42, lift: 1.6 };
 /** Hold INTERACT this long to give a run up — one press is an elbow
  *  (non-negotiable 7). */
 export const STOP_HOLD = 1.2;
-/** After a zap, this long before anything can zap her again. */
-const SAFE_T = 0.9;
 /** Below the floor by this much is a fall. */
 const FALL = 3;
 /** A kitten inside the course's walls who is not its runner is walked back
@@ -93,8 +103,18 @@ const FALL = 3;
 export const STRAY_T = 1.5;
 
 const BAR_COL = 0xff3b6b;
+/** A twin, and the sweeper in the air: the beams that are there for the
+ *  double jump, in their own colour so a kitten can tell up from down. */
+const AIR_COL = 0x4fd8ff;
 const ARM_COL = 0xffa23b;
 const CURTAIN_COL = 0xb35cff;
+
+/** The over-the-shoulder shot for the Sliding Gaps: this far behind her,
+ *  this pitch, and the look-at this far AHEAD of her down the lane, so the
+ *  next curtain is in the frame rather than her back filling it. */
+export const SHOULDER_CAM = { dist: 9.5, pitch: 0.3, lift: 1.8, lead: 3.5 };
+/** How fast the lens swings between the side-on shot and that one (1/s). */
+const CAM_EASE = 2.5;
 
 export class SineGauntlet {
   constructor(dream, isle) {
@@ -168,29 +188,33 @@ export class SineGauntlet {
    *  the sweeper's circle with its two axes — the cos and the sin. */
   _buildFloor() {
     const lane = (k) => LANES[k];
-    this._strip(lane(0) - LANE_HALF, START_LINE, lane(0) + LANE_HALF, START_LINE, 0.35, 0xffffff, 0.8);
-    this._strip(lane(2) - LANE_HALF, FINISH_B, lane(2) + LANE_HALF, FINISH_B, 0.6, HOLO.gold, 0.9);
+    const last = LANES.length - 1;
+    this._strip(lane(0) - HALVES[0], START_LINE, lane(0) + HALVES[0], START_LINE, 0.35, 0xffffff, 0.8);
+    this._strip(lane(last) - HALVES[last], FINISH_B, lane(last) + HALVES[last], FINISH_B, 0.6, HOLO.gold, 0.9);
     SECTIONS.forEach((sec, i) => {
       if (i === 0) return;
-      const c = lane(sec.lane);
-      this._strip(c - LANE_HALF, sec.cp, c + LANE_HALF, sec.cp, 0.18, HOLO.cyan, 0.55);
+      const c = lane(sec.lane); const h = HALVES[sec.lane];
+      this._strip(c - h, sec.cp, c + h, sec.cp, 0.18, HOLO.cyan, 0.55);
     });
     // The floor that zaps: red, and it pulses while a run is live.
     const st = SECTION.stones;
-    const c = lane(st.lane);
-    this.zapFloor = this._strip(c, st.floor[0], c, st.floor[1], LANE_HALF * 2 - 0.3, 0xff2a4a, 0.22, 0.03);
-    for (let b = st.floor[0] + 1; b < st.floor[1]; b += 1.5) this._strip(c - LANE_HALF + 0.2, b, c + LANE_HALF - 0.2, b, 0.06, 0xff6a80, 0.5, 0.035);
-    // The sweeper: its circle, its two axes, and the two dots that are the
-    // tip's cos and sin — they slide along the axes as the bar turns.
-    const sw = SECTION.sweep;
-    const pc = this._w(lane(sw.lane), sw.pivot, 0.05);
-    const ring = new THREE.Mesh(new THREE.RingGeometry(sw.arm.R - 0.06, sw.arm.R + 0.06, 64).rotateX(-Math.PI / 2),
-      new THREE.MeshBasicMaterial({ color: ARM_COL, transparent: true, opacity: 0.6, toneMapped: false, depthWrite: false }));
-    ring.position.set(pc.x, pc.y, pc.z);
-    this.root.add(ring);
-    const R = sw.arm.R;
-    this._strip(lane(sw.lane) - R, sw.pivot, lane(sw.lane) + R, sw.pivot, 0.06, HOLO.cyan, 0.6, 0.06);
-    this._strip(lane(sw.lane), sw.pivot - R, lane(sw.lane), sw.pivot + R, 0.06, HOLO.gold, 0.6, 0.06);
+    const c = lane(st.lane); const sh = HALVES[st.lane];
+    this.zapFloor = this._strip(c, st.floor[0], c, st.floor[1], sh * 2 - 0.3, 0xff2a4a, 0.22, 0.03);
+    for (let b = st.floor[0] + 1; b < st.floor[1]; b += 1.5) this._strip(c - sh + 0.2, b, c + sh - 0.2, b, 0.06, 0xff6a80, 0.5, 0.035);
+    // Every arm's circle on the floor under it.
+    for (const arm of ARMS) {
+      const pc = this._w(arm.pa, arm.pb, 0.05);
+      const ring = new THREE.Mesh(new THREE.RingGeometry(arm.R - 0.06, arm.R + 0.06, 64).rotateX(-Math.PI / 2),
+        new THREE.MeshBasicMaterial({ color: arm === MATH_ARM ? AIR_COL : ARM_COL, transparent: true, opacity: 0.6, toneMapped: false, depthWrite: false }));
+      ring.position.set(pc.x, pc.y, pc.z);
+      this.root.add(ring);
+    }
+    // THE ONE IN THE AIR is the unit circle's: its two axes on the floor, and
+    // the two dots that are the tip's cos and sin — they slide along the axes
+    // as it turns, which is the arm's SHADOW read as two numbers.
+    const R = MATH_ARM.R;
+    this._strip(MATH_ARM.pa - R, MATH_ARM.pb, MATH_ARM.pa + R, MATH_ARM.pb, 0.06, HOLO.cyan, 0.6, 0.06);
+    this._strip(MATH_ARM.pa, MATH_ARM.pb - R, MATH_ARM.pa, MATH_ARM.pb + R, 0.06, HOLO.gold, 0.6, 0.06);
     const dot = (col) => {
       const m = new THREE.Mesh(new THREE.SphereGeometry(0.2, 10, 8), new THREE.MeshBasicMaterial({ color: col, toneMapped: false }));
       this.root.add(m);
@@ -198,12 +222,14 @@ export class SineGauntlet {
     };
     this.cosDot = dot(HOLO.cyan);
     this.sinDot = dot(HOLO.gold);
-    // The curtains' frames: two tall posts at the lane's edges.
+    // The curtains' frames: two posts at the lane's edges, as tall as the
+    // curtain's top beam and then some.
     const gp = SECTION.gaps;
+    const top = Math.max(...gp.beams) + 0.6;
     for (const b of gp.curtains) {
       for (const s of [-1, 1]) {
-        const q = this._w(lane(gp.lane) + s * LANE_HALF, b);
-        const m = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 4.6, 6).translate(0, 2.3, 0),
+        const q = this._w(lane(gp.lane) + s * HALVES[gp.lane], b);
+        const m = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, top, 6).translate(0, top / 2, 0),
           new THREE.MeshBasicMaterial({ color: CURTAIN_COL, toneMapped: false }));
         m.position.set(q.x, q.y, q.z);
         this.root.add(m);
@@ -213,9 +239,11 @@ export class SineGauntlet {
 
   /** The stones: decks like any other, moved every frame. */
   _buildStones() {
+    /* A SINE stone is gold and a COSINE one cyan — the colours of the sin and
+       cos axes under the air sweeper, so the floor says which is which. */
     this.stoneDecks = stones(LEVELS[0], 0).map((s) => {
       const q = this._w(s.a, s.b, s.y);
-      const d = this.sim.addTempDisc({ x: q.x, z: q.z, r: s.r, y: q.y, colour: HOLO.cyan, name: 'sine-stone' });
+      const d = this.sim.addTempDisc({ x: q.x, z: q.z, r: s.r, y: q.y, colour: s.cos ? HOLO.cyan : HOLO.gold, name: 'sine-stone' });
       d._y0 = q.y;
       return d;
     });
@@ -245,7 +273,7 @@ export class SineGauntlet {
     // Unit height, base at 0: scale.y IS the beam's height above the floor.
     const pole = new THREE.CylinderGeometry(0.05, 0.05, 1, 6, 1, true).translate(0, 0.5, 0);
     this.beamFx = list.map((q) => {
-      const col = q.sec === 'sweep' ? ARM_COL : q.sec === 'gaps' ? CURTAIN_COL : BAR_COL;
+      const col = q.high ? AIR_COL : q.sec === 'sweep' ? ARM_COL : q.sec === 'gaps' ? CURTAIN_COL : BAR_COL;
       const g = new THREE.Group();
       const core = new THREE.Mesh(cyl, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, toneMapped: false }));
       const glow = new THREE.Mesh(cyl, new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.5, toneMapped: false, depthWrite: false }));
@@ -363,7 +391,7 @@ export class SineGauntlet {
     if (!p) return false;
     const q = this.laneCoords(p);
     const feet = p.position.y - this.isle.y;
-    return q.a > WALLS[0][0][0] && q.a < WALLS[3][0][0] && Math.abs(q.b) < END_B && feet > -FALL;
+    return q.a > COURSE_A[0] && q.a < COURSE_A[1] && Math.abs(q.b) < END_B && feet > -FALL;
   }
 
   runner() {
@@ -423,7 +451,7 @@ export class SineGauntlet {
     }).join('   ');
     return [
       { text: '正弦 SINE GAUNTLET', size: 1.9, color: HOLO.cyan, glow: true, jp: true },
-      { text: 'six obstacles, one runner at a time, best time wins', size: 1.0, color: 0x9fefff },
+      { text: `${SECTIONS.length} obstacles, one runner at a time, best time wins`, size: 1.0, color: 0x9fefff },
       { text: S ? `L${n + 1} · ${S.queue.length + (S.runner != null ? 1 : 0)} in the queue` : `your level: L${n + 1}`, size: 1.2, color: HOLO.gold },
       { text: 'no orbs, no clan in here: just you', size: 1.0, color: 0x9fefff },
       { text: row, size: 1.1, color: HOLO.gold },
@@ -513,21 +541,26 @@ export class SineGauntlet {
     const isle = this.isle;
     const spec = COURSE(this, S.level);
     this.dream.startDrill(p, spec, { x: isle.x, y: isle.y, z: isle.z, r: isle.r, fwd: isle.fwd });
-    this.run = { i: p.index, drill: this.dream.drills[p.index], sMax: 0, cp: 0, zaps: 0, safeT: 0, hold: 0, zapT: 0 };
+    this.run = { i: p.index, drill: this.dream.drills[p.index], sMax: 0, cp: 0, zaps: 0, hold: 0, zapT: 0 };
     this.dream.game.toast?.(`${p.name} — on your mark! L${S.level + 1}`, p.index);
   }
 
-  /** A zap or a fall: back to the checkpoint she has earned. */
+  /** A zap or a fall: back to the checkpoint she has earned — and nothing
+   *  after it but her own legs (see the header: no grace). */
   zap(p, why) {
     const r = this.run;
-    if (!r || r.safeT > 0) return;
-    const sec = SECTIONS[r.cp];
+    if (!r) return;
     r.zaps++;
-    r.safeT = SAFE_T;
     r.zapT = 1.4;
     r.why = why;
     this.dream.game.sfx?.('zap');
-    this._place(p, LANES[sec.lane], sec.cp, 0, sec.lane === 1 ? -1 : 1);
+    this._toCheckpoint(p, r.cp);
+  }
+
+  /** Put her on checkpoint `k`, facing the way her lane runs. */
+  _toCheckpoint(p, k) {
+    const sec = SECTIONS[k];
+    this._place(p, LANES[sec.lane], sec.cp, 0, sec.lane % 2 ? -1 : 1);
   }
 
   _record(d) {
@@ -583,17 +616,26 @@ export class SineGauntlet {
     if (!r || r.drill !== d) return;
     const p = d.p;
     const L = LEVELS[this.session.level];
-    r.safeT = Math.max(0, r.safeT - dt);
     r.zapT = Math.max(0, r.zapT - dt);
     const q = this.laneCoords(p);
     const feet = p.position.y - this.isle.y;
-    const s = pathS(q.a, q.b);
-    if (s > r.sMax && Math.abs(s - r.sMax) < 6) r.sMax = s;
-    r.cp = checkpointFor(r.sMax);
+    const go = advance(r.sMax, pathS(q.a, q.b));
+    if (go.skip != null) {
+      // She is past a checkpoint she never crossed: back to it, in words.
+      r.cp = go.skip;
+      r.sMax = Math.max(r.sMax, CP_S[go.skip]);
+      this._toCheckpoint(p, go.skip);
+      this.dream.game.sfx?.('deny');
+      this.dream.game.toast?.(`${p.name}: you missed the ${SECTIONS[go.skip].name} line — back to it!`, p.index);
+      return;
+    }
+    r.sMax = go.sMax;
+    r.cp = go.cp;
     if (feet < -FALL) { this.zap(p, 'fell'); return; }
     const hit = hitAt(L, q.a, q.b, Math.max(0, feet), d.t, { height: p.height ?? 2.6 });
     if (hit) { this.zap(p, hit); return; }
-    if (r.sMax >= FINISH_S - 0.3 && Math.abs(q.a - LANES[2]) < LANE_HALF) d.progress();
+    const last = LANES.length - 1;
+    if (r.sMax >= FINISH_S - 0.3 && Math.abs(q.a - LANES[last]) < HALVES[last]) d.progress();
     if (d.state === 'live' && d.t >= COURSE_TIME) d.fail(`Time! You reached ${SECTIONS[r.cp].name}`);
     if (r.holding) {
       r.hold += dt;
@@ -658,6 +700,7 @@ export class SineGauntlet {
         p.position.z = w.z + SIM.dz;
       }
     }
+    this._easeCamera(dt);
     const { L, t } = this._clock();
     this._paintCourse(L, t);
     this._boardT = (this._boardT ?? 0) - dt;
@@ -702,10 +745,9 @@ export class SineGauntlet {
       d.y = I.y + s.y;
       if (d._grp) d._grp.position.y = d.y - d._y0;
     });
-    const sw = SECTION.sweep;
-    const e = sweepEnds(sw, t, L.speed);
-    const c = this._w(e.p.a, sw.pivot, 0.12);
-    const s2 = this._w(LANES[sw.lane], e.p.b, 0.12);
+    const e = sweepEnds(MATH_ARM, t, L.speed);
+    const c = this._w(e.p.a, MATH_ARM.pb, 0.12);
+    const s2 = this._w(MATH_ARM.pa, e.p.b, 0.12);
     this.cosDot.position.set(c.x, c.y, c.z);
     this.sinDot.position.set(s2.x, s2.y, s2.z);
     const live = this.run?.drill?.state === 'live';
@@ -763,11 +805,50 @@ export class SineGauntlet {
 
   /* -------------------------------- cameras ------------------------------- */
 
-  /** Where the runner is — or the start, between runs — in the world. */
+  /** Is the runner in the Sliding Gaps? Read off how far she has got, so the
+   *  shot changes when she crosses that checkpoint and changes back on the
+   *  next one — not off where she stands, which a zap moves. */
+  _shoulder() {
+    const r = this.run;
+    const d = r?.drill;
+    if (!r || !d || (d.state !== 'live' && d.state !== 'ready')) return false;
+    return SECTIONS[nextSection(r.sMax)].key === 'gaps';
+  }
+
+  /** The side-on yaw (see COURSE_CAM), or, behind her, the yaw that looks
+   *  down her lane the way it runs. */
+  _wantShot() {
+    if (!this._shoulder()) return { yaw: this._yaw(), dist: COURSE_CAM.dist, pitch: COURSE_CAM.pitch, lead: 0, lift: COURSE_CAM.lift };
+    const f = this.isle.fwd;
+    const sg = SECTION.gaps.lane % 2 ? -1 : 1;     // the way her lane runs, in b
+    return { yaw: Math.atan2(sg * f.z, -sg * f.x), dist: SHOULDER_CAM.dist, pitch: SHOULDER_CAM.pitch, lead: SHOULDER_CAM.lead, lift: SHOULDER_CAM.lift };
+  }
+
+  /** The shot, eased: a cut from side-on to behind her would be a quarter
+   *  turn in one frame, and `setFocus` hands yaw straight to the lens. */
+  _easeCamera(dt) {
+    const w = this._wantShot();
+    const c = (this._cam ??= { ...w });
+    let dy = w.yaw - c.yaw;
+    while (dy > Math.PI) dy -= Math.PI * 2;
+    while (dy < -Math.PI) dy += Math.PI * 2;
+    const k = 1 - Math.exp(-dt * CAM_EASE);
+    c.yaw += dy * k;
+    for (const key of ['dist', 'pitch', 'lead', 'lift']) c[key] += (w[key] - c[key]) * k;
+    return c;
+  }
+
+  /** Where the runner is — or the start, between runs — in the world: her,
+   *  lifted, and pushed `lead` down her lane. */
   _shotCentre() {
     const p = this.runner();
+    const cam = this._cam ?? this._wantShot();
     const c = (this._centre ??= new THREE.Vector3());
-    if (p && this.run?.drill) return c.set(p.position.x, p.position.y + COURSE_CAM.lift, p.position.z);
+    if (p && this.run?.drill) {
+      const f = this.isle.fwd;
+      const sg = laneOf(this.laneCoords(p).a) % 2 ? -1 : 1;
+      return c.set(p.position.x - f.z * sg * cam.lead, p.position.y + cam.lift, p.position.z + f.x * sg * cam.lead);
+    }
     const q = this._w(START.a, START.b, COURSE_CAM.lift);
     return c.set(q.x + SIM.dx, q.y, q.z + SIM.dz);
   }
@@ -789,8 +870,11 @@ export class SineGauntlet {
   cameraFocus(p) {
     if (!this.inSession(p)) return null;
     const f = (this._focus ??= { centre: new THREE.Vector3(), aim: true, dist: COURSE_CAM.dist, pitch: COURSE_CAM.pitch, yaw: 0 });
+    const cam = this._cam ?? this._wantShot();
     f.centre.copy(this._shotCentre());
-    f.yaw = this._yaw();
+    f.yaw = cam.yaw;
+    f.dist = cam.dist;
+    f.pitch = cam.pitch;
     return f;
   }
 
@@ -807,8 +891,11 @@ export class SineGauntlet {
     const players = this.dream.game.players ?? [];
     if (!this.session || !members?.length || !members.every((i) => this.inSession(players[i]))) return null;
     const g = (this._group ??= { centre: new THREE.Vector3(), dist: COURSE_CAM.dist, pitch: COURSE_CAM.pitch, yaw: 0 });
+    const cam = this._cam ?? this._wantShot();
     g.centre.copy(this._shotCentre());
-    g.yaw = this._yaw();
+    g.yaw = cam.yaw;
+    g.dist = cam.dist;
+    g.pitch = cam.pitch;
     return g;
   }
 
@@ -836,7 +923,7 @@ function COURSE(G, n) {
   const L = LEVELS[n];
   return {
     id: `sine.L${n + 1}`, title: `THE COURSE · L${n + 1}`, kanji: '正弦',
-    goalText: 'Six obstacles to the gold line',
+    goalText: `${SECTIONS.length} obstacles to the gold line`,
     goal: 1, showCount: false, bands: COURSE_BANDS[n], lowerIsBetter: true,
     grace: 3, leaveR: 60, noBar: true,
     caught: () => true,
@@ -873,26 +960,33 @@ function nextSection(sMax) {
 /** The working for the section she is in — the same numbers as the beams. */
 function working(sec, L, t, r) {
   const sp = L.speed;
+  const lane = LANES[sec.lane];
   if (sec.bars) {
     // The first bar of this section she has not passed yet.
-    const q = sec.bars.findIndex((b) => pathS(LANES[sec.lane], b) > r.sMax);
+    const q = sec.bars.findIndex((b) => pathS(lane, b) > r.sMax);
     const n = q < 0 ? sec.bars.length - 1 : q;
-    const w = barWorking(sec.wave, t, n, sp);
+    const w = barWorking(sec.wave, t, n, sp, sec.twin ?? 0);
     return { text: `${w.text} → ${w.word}`, size: 1.1, color: w.word === 'WAIT…' ? 0xff8a8a : 0x8bff9a };
   }
   if (sec.stones) {
-    const ys = sec.stones.map((_, n) => stoneHeight(sec, t, n, sp).toFixed(1)).join('  ');
-    return { text: `stones: y = ${sec.stone.H} + ${sec.stone.A}·sin(…)   ${ys}`, size: 1.05, color: HOLO.gold };
+    // The next two stones ahead of her: one sine, one cosine.
+    const q = sec.stones.findIndex((b) => pathS(lane, b) > r.sMax);
+    const n = Math.max(0, Math.min(sec.stones.length - 2, q < 0 ? sec.stones.length - 2 : q));
+    const part = (m) => `${stoneIsCos(m) ? 'cos' : 'sin'} → ${stoneHeight(sec, t, m, sp).toFixed(1)}`;
+    return { text: `stones: ${sec.stone.H} + ${sec.stone.A}·${part(n)}   ${sec.stone.H} + ${sec.stone.A}·${part(n + 1)}`, size: 1.05, color: HOLO.gold };
   }
-  if (sec.arm) {
-    const e = sweepEnds(sec, t, sp);
+  if (sec.arms) {
+    // The nearest arm ahead of her.
+    const arms = ARMS.filter((m) => m.sec === 'sweep');
+    const m = arms.find((x) => pathS(lane, x.pb) > r.sMax) ?? arms.at(-1);
+    const e = sweepEnds(m, t, sp);
     const deg = ((Math.round((e.th * 180) / Math.PI) % 360) + 360) % 360;
     return { text: `θ ${deg}°   cos ${Math.cos(e.th).toFixed(2)}   sin ${Math.sin(e.th).toFixed(2)}`, size: 1.15, color: HOLO.gold };
   }
   if (sec.curtains) {
-    const q = sec.curtains.findIndex((b) => pathS(LANES[sec.lane], b) > r.sMax);
+    const q = sec.curtains.findIndex((b) => pathS(lane, b) > r.sMax);
     const i = q < 0 ? sec.curtains.length - 1 : q;
-    const off = gapCentre(sec, t, i, sp) - LANES[sec.lane];
+    const off = gapCentre(sec, t, i, sp) - lane;
     return { text: `gap ${i + 1} at ${sec.gap.A}·sin(…) = ${off >= 0 ? '+' : ''}${off.toFixed(1)}`, size: 1.15, color: HOLO.gold };
   }
   return { text: waveText(SECTIONS[0].wave, sp), size: 1.1 };

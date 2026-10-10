@@ -37278,9 +37278,35 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       if (d < 1.5) gapMax = Math.max(gapMax, d - 0.8);
     }
     ok('...with no gap between posts a kitten (radius 0.75) fits through', gapMax < 1.2, gapMax.toFixed(2));
-    ok('...and the turns are the only ways from lane to lane: each middle wall stops short at one end only',
-      CO.WALLS[1][1][1] < CO.END_B && CO.WALLS[1][0][1] === -CO.END_B
-      && CO.WALLS[2][0][1] > -CO.END_B && CO.WALLS[2][1][1] === CO.END_B);
+    /* FIVE LANES, AND A TURN AT ALTERNATE ENDS. Each divider runs the whole
+       length of the longer of its two lanes but for ONE opening, TURN long,
+       at the end her route turns at — and her route does turn there. */
+    const turnsOk = CO.DIVIDERS.length === CO.LANES.length - 1 && CO.DIVIDERS.every(([[a0, b0], [a1, b1]], k) => {
+      const lo = Math.min(CO.SPANS[k][0], CO.SPANS[k + 1][0]); const hi = Math.max(CO.SPANS[k][1], CO.SPANS[k + 1][1]);
+      const up = k % 2 === 0;
+      const open = up ? Math.min(CO.SPANS[k][1], CO.SPANS[k + 1][1]) - b1 : b0 - Math.max(CO.SPANS[k][0], CO.SPANS[k + 1][0]);
+      const turnLeg = CO.PATH[2 * k + 1];
+      return a0 === a1 && a0 === CO.LANES[k] + CO.HALVES[k] && Math.abs(open - CO.TURN) < 1e-9
+        && (up ? b0 === lo : b1 === hi) && (up ? turnLeg[1] > b1 : turnLeg[1] < b0);
+    });
+    ok('...and the turns are the only ways from lane to lane: each divider stops short at one end only, the end her route turns at',
+      turnsOk, JSON.stringify(CO.DIVIDERS));
+    ok('...and the five lanes tile the course edge to edge, the first and last cut to half the middle one\'s width',
+      CO.LANES.every((c, k) => k === 0 || Math.abs(c - CO.HALVES[k] - (CO.LANES[k - 1] + CO.HALVES[k - 1])) < 1e-9)
+      && CO.LANES[0] - CO.HALVES[0] === CO.COURSE_A[0] && CO.LANES.at(-1) + CO.HALVES.at(-1) === CO.COURSE_A[1]
+      && CO.HALVES[0] * 2 === CO.HALVES[2] && CO.HALVES.at(-1) * 2 === CO.HALVES[2]);
+    /* "make the middle section longer, take up the entire length of the
+       diameter of the circle". The middle lane's walls reach within 1.9 of
+       the rim at both ends, and it is the longest leg of the route. */
+    const midSpan = CO.SPANS[2];
+    const rimAt = (a) => Math.sqrt(I.r * I.r - a * a);
+    const legs = CO.LANES.map((c, k) => Math.abs(CO.PATH[2 * k + 1][1] - CO.PATH[2 * k][1]));
+    ok('...and the middle lane runs rim to rim across the island, the longest leg of the route',
+      [CO.LANES[2] - CO.HALVES[2], CO.LANES[2] + CO.HALVES[2]].every((a) => rimAt(a) - midSpan[1] < 1.9 && rimAt(a) + midSpan[0] < 1.9)
+      && legs[2] === Math.max(...legs) && CO.STEPS.length >= 1,
+      `${midSpan.join('..')} legs ${legs.map((x) => x.toFixed(1)).join(' ')}`);
+    ok('...and the route is about twice the old one (121): more trials, not just more floor', CO.PATH_LEN > 200 && CO.SECTIONS.length >= 8,
+      `${CO.PATH_LEN.toFixed(1)} long, ${CO.SECTIONS.length} sections`);
     const ins = (a) => a > -17 && a < 13;
     const plaza = [
       lc(G.kiosk.x, G.kiosk.z), lc(G.board.position.x, G.board.position.z), lc(G.standDeck.x, G.standDeck.z),
@@ -37310,15 +37336,16 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
             Math.hypot(e[1].position.x - c.x, e[1].position.y - (I.y + q.y1), e[1].position.z - c.z));
         });
         CO.stones(L, t).forEach((s, n) => { worst = Math.max(worst, Math.abs(G.stoneDecks[n].y - (I.y + s.y))); });
-        const e = CO.sweepEnds(CO.SECTION.sweep, t, L.speed);
+        const MA = CO.MATH_ARM;
+        const e = CO.sweepEnds(MA, t, L.speed);
         const cq = lc(G.cosDot.position.x, G.cosDot.position.z);
-        worst = Math.max(worst, Math.abs(cq.a - CO.LANES[1] - CO.SECTION.sweep.arm.R * Math.cos(e.th)));
+        worst = Math.max(worst, Math.abs(cq.a - MA.pa - MA.R * Math.cos(e.th)), Math.abs(cq.b - MA.pb));
         const sq = lc(G.sinDot.position.x, G.sinDot.position.z);
-        worst = Math.max(worst, Math.abs(sq.b - CO.SECTION.sweep.pivot - CO.SECTION.sweep.arm.R * Math.sin(e.th)));
+        worst = Math.max(worst, Math.abs(sq.b - MA.pb - MA.R * Math.sin(e.th)), Math.abs(sq.a - MA.pa));
         void li;
       }
     }
-    ok('正弦 every beam, stone and the sweeper\'s cos and sin dots are drawn exactly where course.js says', worst < 0.01, worst.toFixed(4));
+    ok('正弦 every beam, stone and the air sweeper\'s cos and sin dots are drawn exactly where course.js says', worst < 0.01, worst.toFixed(4));
 
     /* "lack of shadows on the lasers": a black shadow at 0.36 on this floor
        was there and invisible in the browser. So every beam has a footprint of
@@ -37380,18 +37407,99 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const walk = Number(/const WALK_SPEED = ([\d.]+)/.exec(src)?.[1]);
     const sprint = Number(/const SPRINT_SPEED = ([\d.]+)/.exec(src)?.[1]);
     const apex = jv ** 2 / (2 * gr);
+    // Two jumps: the second at the top of the first, at 0.86 of the push (player.js).
+    const apex2 = apex + (jv * 0.86) ** 2 / (2 * gr);
     const bar = (y) => [{ sec: 'x', a0: -15, b0: 0, y0: y, a1: -9, b1: 0, y1: y, thick: CO.BAR_THICK }];
+    ok('正弦 player.js\'s double jump is still a second push of 0.86 — the reach the course is built against',
+      /this\.velocity\.y = JUMP_V \* 0\.86 \* jumpK;/.test(src), `apex ${apex.toFixed(2)}, two jumps ${apex2.toFixed(2)}`);
+    /* "Keep in mind, player has sprint and double jump ability, so they can
+       jump over most of the objects in this course with a well timed
+       sprint/double jump ... need to make sure that the lasers go high enough
+       to hit a player that double jumps." */
+    {
+      const zl = CO.SECTION.stones;
+      const body = 2.6 * 0.85;
+      const twins = CO.SECTIONS.filter((s) => s.twin);
+      let worstWindow = Infinity; let dblHit = Infinity;
+      for (const sec of twins) {
+        // Across a whole cycle: how often a double jump OVER bar 0 hits its twin.
+        let hits = 0; let n = 0;
+        for (let t = 0; t < (Math.PI * 2) / sec.wave.w; t += 0.02) {
+          const y = CO.barHeight(sec.wave, t, 0, 1);
+          // The window a hop's feet must be in to pass between the two.
+          worstWindow = Math.min(worstWindow, (y + sec.twin - CO.BAR_THICK - CO.BODY_R - body) - (y + CO.BAR_THICK + CO.BODY_R - 0.2));
+          const bar = [{ sec: 'x', a0: -15, b0: 0, y0: y + sec.twin, a1: -9, b1: 0, y1: y + sec.twin, thick: CO.BAR_THICK }];
+          if (CO.hitAt(CO.LEVELS[1], -12, 0, apex2, 0, { list: bar })) hits++;
+          n++;
+        }
+        dblHit = Math.min(dblHit, hits / n);
+      }
+      ok('正弦 every lane after the first has twins: a bar with another 5 above it, which a double jump hits most of the time',
+        twins.length >= 3 && new Set(twins.map((s) => s.lane)).size >= 2 && !CO.SECTIONS.some((s) => s.lane === 0 && s.twin)
+        && dblHit > 0.5, `${twins.map((s) => s.key).join(',')} — a double jump over one hits its twin ${(dblHit * 100).toFixed(0)}% of the cycle`);
+      ok('...but ONE hop always fits between them: the gap a hop\'s feet must hit is never under a unit, and a hop reaches it',
+        worstWindow >= 1 && apex > CO.JUMPABLE + CO.BAR_THICK + CO.BODY_R - 0.2 + 0.2, worstWindow.toFixed(2));
+      const gp = CO.SECTION.gaps;
+      ok('...and no curtain can be jumped, on two jumps or one: its top beam is over a double jump\'s reach',
+        Math.max(...gp.beams) + CO.BAR_THICK + CO.BODY_R > apex2 + 0.2 && Math.min(...gp.beams) - CO.BAR_THICK - CO.BODY_R < 0.2,
+        `top ${Math.max(...gp.beams)}, two jumps ${apex2.toFixed(2)}`);
+      const air = CO.MATH_ARM;
+      const top = zl.stone.H + zl.stone.A;
+      const airList = [{ sec: 'air', a0: air.pa - 1, b0: air.pb, y0: air.y, a1: air.pa + 1, b1: air.pb, y1: air.y, thick: CO.BAR_THICK }];
+      ok('...and the sweeper in the AIR misses a kitten standing on the highest stone, and hits one who hops off it',
+        !CO.hitAt(CO.LEVELS[0], air.pa, air.pb, top, 0, { list: airList }) && !!CO.hitAt(CO.LEVELS[0], air.pa, air.pb, top + apex, 0, { list: airList })
+        && air.pb - air.R > zl.floor[0] && air.pb + air.R < zl.floor[1], `${air.y} over a ${top} stone`);
+      const ground = CO.ARMS.filter((m) => m.sec === 'sweep');
+      ok('...and the floor has four turning arms where it had one, every one inside its lane and none touching another',
+        ground.length === 4 && ground.every((m) => Math.abs(m.pa - CO.LANES[2]) + m.R < CO.HALVES[2] - 0.2
+          && ground.every((o) => o === m || Math.hypot(o.pa - m.pa, o.pb - m.pb) > m.R + o.R)), ground.map((m) => `${m.pa},${m.pb}`).join(' '));
+      /* "keeping the first row or two relatively easy and it gets
+         progressively harder". The first lane's waves are the slowest and
+         plainest; the last is the fastest wave on the course. */
+      const waves = CO.SECTIONS.filter((s) => s.wave);
+      ok('...and it gets harder as it goes: the first lane slowest and twin-free, the last lane\'s wave the fastest of all',
+        waves.filter((s) => s.lane === 0).every((s) => waves.filter((o) => o.lane > 0).every((o) => o.wave.w >= s.wave.w))
+        && CO.SECTION.final.wave.w === Math.max(...waves.map((s) => s.wave.w)) && CO.SECTION.final.bars.length >= 6,
+        waves.map((s) => `${s.key} ${s.wave.w}`).join(' '));
+    }
     ok('正弦 a bar at UNDER is walked under, one at JUMPABLE is cleared at the top of a hop, one at 2.0 hits',
       !CO.hitAt(CO.LEVELS[0], -12, 0, 0, 0, { list: bar(CO.UNDER) })
       && !CO.hitAt(CO.LEVELS[0], -12, 0, apex, 0, { list: bar(CO.JUMPABLE) })
       && !!CO.hitAt(CO.LEVELS[0], -12, 0, 0, 0, { list: bar(2.0) }), `apex ${apex.toFixed(2)}`);
     const zl = CO.SECTION.stones;
+    const zc = CO.LANES[zl.lane];
     ok('...and the red floor zaps a kitten standing on it, and not one standing on a stone',
-      CO.hitAt(CO.LEVELS[0], CO.LANES[1], 12.8, 0, 0, { list: [] }) === 'stones'
-      && !CO.hitAt(CO.LEVELS[0], CO.LANES[1], zl.stones[0], CO.stoneHeight(zl, 0, 0), 0, { list: [] }));
-    const cpClear = CO.SECTIONS.every((sec) => [0, 0.7, 1.9, 3.3, 5.1, 7.7].every((t) =>
-      CO.LEVELS.every((L) => !CO.hitAt(L, CO.LANES[sec.lane], sec.cp, 0, t))));
-    ok('...and no checkpoint is ever inside a hazard, so a zap never lands her in another one', cpClear);
+      CO.hitAt(CO.LEVELS[0], zc, (zl.stones[0] + zl.stones[1]) / 2, 0, 0, { list: [] }) === 'stones'
+      && !CO.hitAt(CO.LEVELS[0], zc, zl.stones[0], CO.stoneHeight(zl, 0, 0), 0, { list: [] }));
+    /* NO GRACE, SO THIS IS WHAT KEEPS A ZAP FAIR. With the 0.9s of
+       invulnerability gone ("they should not have invulnerability as its like
+       cheating"), a checkpoint a beam can reach would zap her the frame she
+       lands and every frame after. Sampled every 0.05s for 40s, every level. */
+    let cpBad = null;
+    for (const L of CO.LEVELS) {
+      for (let t = 0; t < 40 && !cpBad; t += 0.05) {
+        const list = CO.beams(L, t);
+        for (const sec of CO.SECTIONS) {
+          if (CO.hitAt(L, CO.LANES[sec.lane], sec.cp, 0, t, { list })) { cpBad = `${sec.key} at ${t.toFixed(2)}s`; break; }
+        }
+      }
+    }
+    ok('...and no checkpoint is EVER inside a hazard, sampled through 40s of every level, so a zap never lands her in another one',
+      !cpBad, cpBad ?? '');
+
+    /* THE SINE AND THE COSINE STONES. "have some of the spinning or moving
+       surfaces moving in a Sin or Cos wave pattern". Half of them each, and
+       the cosine one IS the sine a quarter-turn on. */
+    const cosN = zl.stones.map((_, n) => n).filter((n) => CO.stoneIsCos(n));
+    ok('正弦 the stones are twice as many (8, from 4), half riding a sine and half a cosine — a quarter-turn apart, to the thousandth',
+      zl.stones.length >= 8 && cosN.length * 2 === zl.stones.length && (zl.floor[1] - zl.floor[0]) >= 2 * 14
+      && [0.3, 1.7, 4.4].every((t) => {
+        const th = zl.stone.w * t - zl.stone.k * 1;
+        return Math.abs(CO.stoneHeight(zl, t, 1, 1) - (zl.stone.H + zl.stone.A * Math.sin(th + Math.PI / 2))) < 1e-3;
+      }), `${zl.stones.length} stones over ${(zl.floor[1] - zl.floor[0]).toFixed(1)}`);
+    ok('...and their decks are coloured as their axes are: cosine cyan, sine gold',
+      G.stoneDecks.every((d, n) => d._grp.children[1].material.color.getHex() === (CO.stoneIsCos(n) ? SW.HOLO.cyan : SW.HOLO.gold)),
+      G.stoneDecks.map((d) => d._grp.children[1].material.color.getHexString()).join(' '));
 
     /* THE STARS ARE MEASURED: the search, re-run, and the bands held to it. */
     const runs = CO.LEVELS.map((L) => ({
@@ -37470,11 +37578,92 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       found != null && G.run.zaps === 1 && Math.abs(back.b - sb.cp) < 0.01 && d0.state === 'live', `${G.run.zaps} ${back.b.toFixed(2)}`);
     ok('...and a zap touches neither her SIM bar nor her health', D.st[0].simHp === simWas && her.hp === hpWas,
       `sim ${simWas} -> ${D.st[0].simHp}, hp ${hpWas} -> ${her.hp}`);
+    /* NO GRACE. "the player has invulnerability for a short amount of time
+       when respawning in the course, they should not have invulnerability as
+       its like cheating". Straight back into the same bar on the very next
+       frame is a second zap. */
+    put(her, { x: zq.x, z: zq.z, y: I.y });
+    G._tick(d0, 1 / 60);
+    ok('正弦 no invulnerability after a zap: back into a beam on the very next frame is zapped again',
+      G.run.zaps === 2 && !/safeT|SAFE_T =/.test(readFileSync(new URL('../src/systems/dream/sine.js', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')),
+      `${G.run.zaps} zaps`);
+
+    /* NO CHECKPOINT CAN BE SKIPPED, AND THE FINISH CAN ALWAYS BE REACHED.
+       "I seemed to have somehow skipped over a checkpoint when doing the
+       gauntlet and wasn't able to complete it when I got to the finish line". */
+    {
+      const sv = G.run.sMax;
+      const svT = d0.t;
+      // The old rule: a step of more than 6 was ignored, and so was every later one.
+      const big = CO.advance(CO.CP_S[0] + 1, CO.CP_S[1] - 1);
+      ok('正弦 a big step forward inside her section counts — the old "within 6" rule froze her record for good',
+        big.skip == null && big.sMax === CO.CP_S[1] - 1 && CO.advance(big.sMax, big.sMax + 9).sMax === big.sMax + 9);
+      const leap = CO.advance(CO.CP_S[1] + 1, CO.CP_S[3] + 2);
+      ok('...but a step past the checkpoint AFTER next is a skip, and names the one she missed',
+        leap.skip === 2 && leap.sMax === CO.CP_S[1] + 1, JSON.stringify(leap));
+      d0.t = 0.01;
+      G.run.sMax = CO.CP_S[1] + 1;
+      const skipQ = isleSpot(I, CO.LANES[CO.SECTION.stones.lane], CO.SECTION.stones.cp + 0.5);
+      put(her, { x: skipQ.x, z: skipQ.z, y: I.y });
+      fakeGame.toasts.length = 0;
+      G._tick(d0, 1 / 60);
+      const sk = lc(her.position.x - SW.SIM.dx, her.position.z - SW.SIM.dz);
+      ok('...and the course puts her back at the line she missed, and says so',
+        G.run.cp === 2 && Math.abs(sk.a - CO.LANES[CO.SECTIONS[2].lane]) < 0.01 && Math.abs(sk.b - CO.SECTIONS[2].cp) < 0.01
+        && fakeGame.toasts.some((t) => /missed the TWIN WAVE line/.test(t)), `${G.run.cp} ${fakeGame.toasts.join(' | ')}`);
+      // The lane decides the leg: 0.5 inside the wide lane is the wide lane.
+      ok('...and where she is along the route is read off HER lane: half a unit inside the middle lane is the middle lane, not the narrow one beside it',
+        Math.abs(CO.pathS(CO.LANES[2] - CO.HALVES[2] + 0.5, 0) - CO.pathS(CO.LANES[2], 0)) < 5
+        && Math.abs(CO.pathS(CO.LANES[1] + CO.HALVES[1] - 0.5, 0) - CO.pathS(CO.LANES[1], 0)) < 3);
+      /* Every point down the middle of the route, walked at 0.25 a step,
+         advances her record without a skip from GO to the gold line. */
+      let m = 0; let bad = null;
+      for (let s = 0; s <= CO.PATH_LEN && !bad; s += 0.25) {
+        const q = CO.pathAt(s);
+        const g = CO.advance(m, CO.pathS(q.a, q.b));
+        if (g.skip != null) bad = `skip at ${s.toFixed(2)}`;
+        m = g.sMax;
+      }
+      ok('...and walking the route end to end never trips it, and reaches the finish',
+        !bad && m >= CO.FINISH_S - 0.3 && CO.checkpointFor(m) === CO.SECTIONS.length - 1, bad ?? m.toFixed(1));
+      G.run.sMax = sv; G.run.cp = CO.checkpointFor(sv); d0.t = svT;
+    }
+
+    /* THE SLIDING GAPS FROM BEHIND HER. "we need the camera angle to change
+       as players can't see where they need to go in the side view, should be
+       over the shoulder front view at that point". Eased, not cut, and back to
+       side-on at the next line. */
+    {
+      const sv = G.run.sMax;
+      const gi = CO.SECTIONS.indexOf(CO.SECTION.gaps);
+      G.run.sMax = CO.CP_S[gi] + 0.5;
+      const gq = isleSpot(I, CO.LANES[CO.SECTION.gaps.lane], CO.SECTION.gaps.cp - 0.5);
+      put(her, { x: gq.x, z: gq.z, y: I.y });
+      const y0 = G.cameraFocus(her).yaw;
+      G._easeCamera(1 / 60);
+      const step = Math.abs(G.cameraFocus(her).yaw - y0);
+      for (let k = 0; k < 240; k++) G._easeCamera(1 / 60);
+      const fs = G.cameraFocus(her);
+      // Where the lens sits, from the look-at: (sin yaw, cos yaw), in island axes.
+      const off = lc(I.x + Math.sin(fs.yaw), I.z + Math.cos(fs.yaw));
+      const run = CO.SECTION.gaps.lane % 2 ? -1 : 1;
+      const ahead = lc(fs.centre.x - SW.SIM.dx, fs.centre.z - SW.SIM.dz).b - lc(her.position.x - SW.SIM.dx, her.position.z - SW.SIM.dz).b;
+      ok('正弦 in the Sliding Gaps the lens swings round BEHIND her, looking down her lane — and swings, never cuts',
+        off.b * run < -0.99 && Math.abs(fs.dist - SN.SHOULDER_CAM.dist) < 0.05 && ahead * run > SN.SHOULDER_CAM.lead * 0.9
+        && step < 0.1 && step > 0, `behind ${off.b.toFixed(2)}, ahead ${ahead.toFixed(2)}, first frame ${step.toFixed(3)}`);
+      G.run.sMax = CO.CP_S[gi + 1] + 0.5;
+      for (let k = 0; k < 240; k++) G._easeCamera(1 / 60);
+      const back = G.cameraFocus(her);
+      ok('...and at the next line it is side-on again', Math.abs(Math.sin(back.yaw) - I.fwd.x) < 0.01 && Math.abs(Math.cos(back.yaw) - I.fwd.z) < 0.01
+        && Math.abs(back.dist - SN.COURSE_CAM.dist) < 0.05);
+      G.run.sMax = sv;
+      for (let k = 0; k < 240; k++) G._easeCamera(1 / 60);
+    }
     // One press of INTERACT does not stop her; holding it does.
     G.watchPad(d0, { down: (a) => a === 'interact' });
     G._tick(d0, 0.1);
     ok('正弦 one press of INTERACT does not stop a run', d0.state === 'live');
-    for (let k = 0; k < 20; k++) { G.run.safeT = 0; G.watchPad(d0, { down: (a) => a === 'interact' }); put(her, isleSpot(I, CO.START.a, CO.START.b)); G._tick(d0, 0.1); }
+    for (let k = 0; k < 20; k++) { G.watchPad(d0, { down: (a) => a === 'interact' }); put(her, isleSpot(I, CO.START.a, CO.START.b)); G._tick(d0, 0.1); }
     ok('...but holding it for STOP_HOLD does, and says so', d0.state === 'failed' && /stopped/.test(d0.why ?? ''), d0.why);
     // Her drill ends: she is written down, she goes to the stands, her sister runs.
     for (let k = 0; k < 400 && D.drills[0] === d0; k++) { if (!d0.update(1 / 60)) { d0.dispose(); D.drills[0] = null; } }
@@ -37484,11 +37673,10 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       G.session?.runner === 1 && d1?.spec.id === 'sine.L1' && G.inStands(her) && G.session.results.length === 1);
     // Her sister finishes: a time.
     for (let k = 0; k < 200 && d1.state === 'ready'; k++) d1.update(1 / 60);
-    const fin = isleSpot(I, CO.LANES[2], CO.FINISH_B + 0.5);
+    const fin = isleSpot(I, CO.LANES.at(-1), CO.FINISH_B + 0.5);
     G.run.sMax = CO.FINISH_S;
     put(sis, { x: fin.x, z: fin.z, y: I.y });
     d1.t = 18;
-    G.run.safeT = 1;
     G._tick(d1, 1 / 60);
     ok('正弦 the gold line wins it, scored by time, with the measured bands', d1.state === 'won' && d1.stars_ === 3, `${d1.state} ${d1.stars_}`);
     for (let k = 0; k < 400 && D.drills[1] === d1; k++) { if (!d1.update(1 / 60)) { d1.dispose(); D.drills[1] = null; } }
