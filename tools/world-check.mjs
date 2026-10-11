@@ -37737,20 +37737,30 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         const looks = new Set();
         list0.forEach((q, k) => {
           const fx = G.beamFx[k];
-          const want = fx.secI < cp ? SN.BEAM_DONE.col : fx.secI > cp ? SN.BEAM_AHEAD.col : fx.col;
+          const lit = fx.secI === cp || (fx.secI > cp && CO.SECTIONS[fx.secI].lane === CO.SECTIONS[cp].lane);
+          const want = lit ? fx.col : SN.BEAM_DONE.col;
           looks.add(fx.look);
           if (fx.glow.material.color.getHex() !== want || fx.ends[0].material.color.getHex() !== want) wrong++;
         });
         if (cp === 3) seenAll = looks.size === 3;
       }
+      /* "make all the 'upcoming' lasers their normal colors if they are in
+         the same row or section that the player is ... not have to wait to
+         get past the checkpoint". Her checkpoint is still the TRAVELLING WAVE
+         (lane 0), but her feet have turned into lane 1: the twin and counter
+         waves are lit already, and the lanes past it are not. */
+      G.run = { cp: 1, lane: 1, drill: { state: 'live' } };
+      G._paintCourse(CO.LEVELS[0], 1);
+      const early = G.beamFx.every((fx) => (fx.look === 'live') === [1, 2, 3].includes(fx.secI));
       G.run = null;
       G._paintCourse(CO.LEVELS[0], 1);
       const back = G.beamFx.every((fx) => fx.look === 'live' && fx.glow.material.color.getHex() === fx.col && fx.core.material.color.getHex() === 0xffffff);
       G.run = keep;
-      ok('...and in a run only her own section wears its colours: the ones ahead dark green, the ones passed grey, and all of them back when nobody runs',
-        wrong === 0 && seenAll && back && G.beamFx.every((fx) => fx.secI >= 0)
-        && new Set([SN.BEAM_AHEAD.col, SN.BEAM_DONE.col, ...G.beamFx.map((fx) => fx.col)]).size === 2 + new Set(G.beamFx.map((fx) => fx.col)).size,
+      ok('...and in a run her section and what is left of her LANE wear their colours, everything else grey, and all of them back when nobody runs',
+        wrong === 0 && seenAll && back && G.beamFx.every((fx) => fx.secI >= 0) && SN.BEAM_AHEAD === SN.BEAM_DONE
+        && !G.beamFx.some((fx) => fx.col === SN.BEAM_DONE.col),
         `${wrong} wrong`);
+      ok('...and turning into the next lane lights it before she reaches its checkpoint line', early);
     }
     ok('...and the stones are real floors: standing on one stands her at its height',
       (() => {
@@ -37838,6 +37848,21 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     ok('...and the red floor zaps a kitten standing on it, and not one standing on a stone',
       CO.hitAt(CO.LEVELS[0], zc, (zl.stones[0] + zl.stones[1]) / 2, 0, 0, { list: [] }) === 'stones'
       && !CO.hitAt(CO.LEVELS[0], zc, zl.stones[0], CO.stoneHeight(zl, 0, 0), 0, { list: [] }));
+    /* Richard: "if the player falls on the 'lava' lazers under the floating
+       platforms, they will be invulnerable while touching the ground." Feet
+       on the floor UNDER a stone's edge, at every moment of a stone's swing. */
+    {
+      let safe = 0;
+      for (let t = 0; t < 10; t += 0.05) {
+        for (const [n, sb] of zl.stones.entries()) {
+          const s = CO.stones(CO.LEVELS[0], t)[n];
+          if (!CO.hitAt(CO.LEVELS[0], zc, sb + s.r * 0.7, 0, t, { list: [] })) safe++;
+        }
+      }
+      ok('...and the red floor zaps her UNDER a stone too — a stone over her head is not a floor under her feet',
+        safe === 0 && Math.min(...[...Array(200)].flatMap((_, k) => CO.stones(CO.LEVELS[0], k * 0.05).map((s) => s.y))) > 0.08,
+        `${safe} safe moments`);
+    }
     /* NO GRACE, SO THIS IS WHAT KEEPS A ZAP FAIR. With the 0.9s of
        invulnerability gone ("they should not have invulnerability as its like
        cheating"), a checkpoint a beam can reach would zap her the frame she

@@ -408,7 +408,14 @@ export function hitAt(L, a, b, feet, t, { height = 2.6, list = null } = {}) {
     _b.set(q.a1, q.y1, q.b1);
     if (segSegDist(_a, _b, _p0, _p1) < q.thick + BODY_R) return q.sec;
   }
-  if (feet < 0.08 && onZapFloor(a, b) && groundAt(L, a, b, t) < 0.08) return 'stones';
+  /* FEET ON THE RED FLOOR IS A ZAP, whatever is over her. It used to ask
+     `groundAt` too, which is the highest stone COVERING (a, b) — so a kitten
+     who had dropped onto the floor under a stone's edge was "on the stone"
+     and could stand in the lava for as long as she liked. Richard: "if the
+     player falls on the 'lava' lazers under the floating platforms, they will
+     be invulnerable while touching the ground." A stone's top never comes
+     lower than H − A (0.3), so feet this low are never on one. */
+  if (feet < 0.08 && onZapFloor(a, b)) return 'stones';
   return null;
 }
 
