@@ -182,6 +182,11 @@ export const SHOULDER_CAM = { dist: 14, pitch: 0.42, lift: 0.8, lead: 4 };
 export const STONES_CAM = { dist: 18, pitch: 0.55, lift: 1.0, lead: 3 };
 /** How fast the lens swings between the side-on shot and that one (1/s). */
 const CAM_EASE = 2.5;
+/** The card over her head with the lens behind her (see `_fitCard`): this
+ *  big, this far over her head, this opaque. Side-on it is 1, 2.3 and 1. */
+export const CARD_BEHIND = { scale: 0.5, lift: 1.2, opacity: 0.6 };
+/** How far before a `behind` stretch's checkpoint the lens starts to turn (see `_shoulder`). */
+export const SHOT_AHEAD = 5;
 
 /**
  * THE SWIPE, when the course is changed at the kiosk. Richard: "We can make
@@ -1094,6 +1099,7 @@ export class SineGauntlet {
       }
     }
     this._easeCamera(dt);
+    this._fitCard();
     const { L, t } = this._clock();
     this._paintCourse(L, t);
     this._carry();
@@ -1273,21 +1279,32 @@ export class SineGauntlet {
     const r = this.run;
     const d = r?.drill;
     if (!r || !d || (d.state !== 'live' && d.state !== 'ready')) return null;
-    const sec = SECTIONS[nextSection(r.sMax)];
+    const k = nextSection(r.sMax);
+    const sec = SECTIONS[k];
     // The Riptide's stones slide ACROSS her lane — toward and away from a side-on lens —
     // and the Dragon Gate's corridor walls run AWAY from it (`behind`).
-    return sec.key === 'gaps' || sec.behind || (sec.key === 'stones' && sec.stone.slide) ? sec : null;
+    const behind = (s) => s.key === 'gaps' || s.behind || (s.key === 'stones' && s.stone.slide);
+    if (behind(sec)) return sec;
+    /* ...AND A `behind` STRETCH TURNS THE LENS BEFORE SHE IS IN IT. Richard:
+       "before the lava lazer area with the platforms, the camera should go
+       behind the player". The High Steps' checkpoint is 1.6 short of its lava,
+       which a sprinter covers in a tenth of a second, and the lens eases in
+       over about 0.4 (CAM_EASE) — on the checkpoint alone she would be on
+       the first ledge, or in the floor, before it had turned. So it turns
+       from SHOT_AHEAD before the line: half way across the U-turn into it. */
+    const next = SECTIONS[k + 1];
+    return next?.behind && CP_S[k + 1] - r.sMax < SHOT_AHEAD ? next : null;
   }
 
   /** The side-on yaw (see COURSE_CAM), or, behind her, the yaw that looks
    *  down her lane the way it runs. */
   _wantShot() {
     const sec = this._shoulder();
-    if (!sec) return { yaw: this._yaw(), dist: COURSE_CAM.dist, pitch: COURSE_CAM.pitch, lead: 0, lift: COURSE_CAM.lift, pin: 0 };
+    if (!sec) return { yaw: this._yaw(), dist: COURSE_CAM.dist, pitch: COURSE_CAM.pitch, lead: 0, lift: COURSE_CAM.lift, pin: 0, behind: 0 };
     const f = this.isle.fwd;
     const sg = sec.lane % 2 ? -1 : 1;     // the way her lane runs, in b
     const S = sec.key === 'stones' ? STONES_CAM : SHOULDER_CAM;
-    return { yaw: Math.atan2(sg * f.z, -sg * f.x), dist: S.dist, pitch: S.pitch, lead: S.lead, lift: S.lift, pin: S === STONES_CAM ? 1 : 0 };
+    return { yaw: Math.atan2(sg * f.z, -sg * f.x), dist: S.dist, pitch: S.pitch, lead: S.lead, lift: S.lift, pin: S === STONES_CAM ? 1 : 0, behind: 1 };
   }
 
   /** The shot, eased: a cut from side-on to behind her would be a quarter
@@ -1300,8 +1317,30 @@ export class SineGauntlet {
     while (dy < -Math.PI) dy += Math.PI * 2;
     const k = 1 - Math.exp(-dt * CAM_EASE);
     c.yaw += dy * k;
-    for (const key of ['dist', 'pitch', 'lead', 'lift', 'pin']) c[key] = (c[key] ?? 0) + (w[key] - (c[key] ?? 0)) * k;
+    for (const key of ['dist', 'pitch', 'lead', 'lift', 'pin', 'behind']) c[key] = (c[key] ?? 0) + (w[key] - (c[key] ?? 0)) * k;
     return c;
+  }
+
+  /**
+   * THE CARD OVER HER HEAD, SMALLER AND FAINTER WHILE THE LENS IS BEHIND HER.
+   * Richard: "When the camera is pulling behind the player on the Sine
+   * Gauntlet course, the text UI appearing above their heads is too big and
+   * taking up too much of the top half of the screen real-estate ... best to
+   * make it smaller and more transparent so player can still read it if they
+   * want". Side-on, the card is beside the course; from behind it sits ON the
+   * course ahead of her, which is the one thing that shot is for. It eases
+   * with the lens (`behind`, 0 side-on to 1 behind) rather than snapping, so
+   * the card shrinks as the camera turns and grows back as it turns away.
+   * Not moved to the bottom of the screen: the card belongs to HER — in a
+   * shared pane her sister in the stands reads whose run it is off it.
+   */
+  _fitCard() {
+    const d = this.run?.drill;
+    if (!d?.panel) return;
+    const k = this._cam?.behind ?? 0;
+    d.panel.scale.setScalar(1 - (1 - CARD_BEHIND.scale) * k);
+    d.panel.position.y = (d.p.height ?? 2.6) + 2.3 - (2.3 - CARD_BEHIND.lift) * k;
+    d.panel.mat.opacity = 1 - (1 - CARD_BEHIND.opacity) * k;
   }
 
   /** Where the runner is — or the start, between runs — in the world: her,
@@ -1459,7 +1498,9 @@ function nextSection(sMax) {
 function working(sec, L, t, r) {
   const sp = L.speed;
   const lane = LANES[sec.lane];
-  if (sec.bars) {
+  // A stretch with ledges AND bars (the Dragon's Tail) reads the ledges until the last is behind her.
+  const climbing = sec.ledges && sec.ledges.some((l) => pathS(lane, l.b) > r.sMax);
+  if (sec.bars && !climbing) {
     // The first bar of this section she has not passed yet.
     const q = sec.bars.findIndex((b) => pathS(lane, b) > r.sMax);
     const n = q < 0 ? sec.bars.length - 1 : q;

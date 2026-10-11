@@ -26,6 +26,17 @@
    world-check walks a kitten through every pair of places without a
    renderer. `Waypoints` owns the meshes and the per-kitten state.
 
+   ONLY AT THE INTERSECTIONS. Richard, later: "When a selection is made on
+   the Map, there are too many waypoints for the player to go to, it should
+   just be at the main intersections of where they need to go to next, like
+   before the bridge or half way between bridges". The first cut put one
+   every `gap` (11) so the next was always in frame — along every bridge,
+   across every island, round the ring — and a walk to the Shadow was a
+   string of fifteen. Now a marker is a bridge's two ends and, round the
+   hub, ONE halfway between the mouth she came out of and the one she is
+   going to, when that walk is longer than `midIf`. The frame rule went with
+   the spacing, and the cursor below is what answers "which way" instead.
+
    WHAT SHE SEES: the next `show` markers only — the one she is going to,
    bright, and the one after it, faint, so the next is in view as she
    reaches each one without a line of ten pyramids across the sky. They are
@@ -52,15 +63,22 @@ import { holoSolid } from './targets.js';
    round the ring (`step` is that arc, in degrees), along a bridge ('along'
    markers between its two ends) and across an island she walks THROUGH
    ('across' — the Arena School, rim to rim on the way to the Shadow, is 56
-   units with nothing on it otherwise). */
+   units with nothing on it otherwise).
+   NO LONGER THE SPACING (see ONLY AT THE INTERSECTIONS, above): a marker
+   is now an intersection, wherever that is, and `gap` survives as the yard
+   stick for `midIf` — a walk round the ring under two of them gets no
+   halfway marker, because both ends of it are in one frame. */
 const GAP = 11;
 const RING = 44;
 export const WAYPOINT = {
   ring: RING, gap: GAP, step: (GAP / RING) * (180 / Math.PI), hubR: 47, rimIn: 2,
   reach: 4.5, reachY: 6, show: 2,
   size: 1.1, tall: 1.6, lift: 3, bob: 0.55, bobHz: 1.4, spin: 1.2, faint: 0.35,
-  // The pointing cursor at her feet (see `_point`): how far out, how high, how big.
-  pointR: 2.4, pointY: 0.7, pointLen: 1.3, pointW: 0.55, edge: 0.95,
+  // One marker halfway round the ring, only when the walk round is longer than this.
+  midIf: 2 * GAP,
+  // The pointing cursor at her feet (see `_point`): how far out, how high, how big;
+  // and for how long it blinks after she comes off a bridge, at what rate.
+  pointR: 2.4, pointY: 0.7, pointLen: 1.3, pointW: 0.55, blink: 2.5, blinkHz: 2.5,
   /* A marker nearer her lens than `near` is shrunk in proportion, so it is
      never drawn bigger than one `near` away. The camera sits ~25 from her
      (measured: 13 back, 13 across, 16 up on the hub), so a marker 11 toward
@@ -157,26 +175,24 @@ function chainOf(key, L) {
 
 const angOf = (q, hub) => Math.atan2(q.z - hub.z, q.x - hub.x);
 
-/** Ring markers from angle a0 to a1 the short way, ends excluded. */
+/** The ring marker from angle a0 to a1 the short way: one, halfway, when
+ *  that arc is longer than `midIf` — "half way between bridges" — else none. */
 function ringBetween(a0, a1, hub) {
   let d = a1 - a0;
   while (d > Math.PI) d -= 2 * Math.PI;
   while (d < -Math.PI) d += 2 * Math.PI;
-  const n = Math.ceil(Math.abs(d) / ((WAYPOINT.step * Math.PI) / 180)) - 1;
-  const out = [];
-  for (let i = 1; i <= n; i++) {
-    const a = a0 + (d * i) / (n + 1);
-    out.push({ x: hub.x + Math.cos(a) * WAYPOINT.ring, y: hub.y, z: hub.z + Math.sin(a) * WAYPOINT.ring, kind: 'ring' });
-  }
-  return out;
+  if (Math.abs(d) * WAYPOINT.ring <= WAYPOINT.midIf) return [];
+  const a = a0 + d / 2;
+  return [{ x: hub.x + Math.cos(a) * WAYPOINT.ring, y: hub.y, z: hub.z + Math.sin(a) * WAYPOINT.ring, kind: 'ring' }];
 }
 
 /**
  * THE MARKERS from `q` (layer) to `target`, in order, or null when there is
  * nothing to walk (she is on it already, or nowhere a route can start).
  * Each is `{ x, y, z, kind }`: 'start' a bridge's near end, 'end' its far
- * end, 'along' a point on the bridge between them, 'across' one on an island
- * floor between two bridges, 'ring' a point on the hub's walking ring.
+ * end, 'ring' the point halfway round the hub's walking ring. ('along' and
+ * 'across', a marker every `gap` on a bridge or an island, are gone — see
+ * ONLY AT THE INTERSECTIONS, above.)
  */
 export function route(q, target, hub, L) {
   const at = placeOf(q, hub, L);
@@ -185,37 +201,20 @@ export function route(q, target, hub, L) {
   const want = target === 'dojo' ? [] : chainOf(target, L);
   const out = [];
   const mk = (p, kind) => out.push({ x: p.x, y: p.y, z: p.z, kind });
-  // Across a bridge: its near end, a marker every `gap` along it, its far
-  // end — and when she has just come off another bridge onto this island's
-  // floor, markers across the floor to this one first.
+  // Across a bridge: its near end and its far end.
   const cross = (a, b) => {
-    const prev = out.at(-1);
-    if (prev?.kind === 'end') along(prev, a, 'across');
     mk(a, 'start');
-    along(a, b);
     mk(b, 'end');
   };
-  /* `y` straight between the two ends; the bridges actually climb in an S
-     (measured on the Shadow's: 2.6 under the line at a tenth of the way, 2.6
-     over at nine tenths), so `Waypoints` puts each one on the deck itself. */
-  function along(a, b, kind = 'along') {
-    const n = Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / WAYPOINT.gap) - 1;
-    for (let i = 1; i <= n; i++) {
-      const t = i / (n + 1);
-      out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t, kind });
-    }
-  }
   // UP: from where she is, toward the hub, until a place the target's chain shares.
   let cur = at.on ?? null;
   if (at.bridge) {
     const b = at.bridge;
     if (want.includes(b)) {
-      // On a bridge she has to cross anyway: on along it to its far end, then on down.
-      along(q, L[b].to);
+      // On a bridge she has to cross anyway: on to its far end, then on down.
       mk(L[b].to, 'end');
       cur = b;
     } else {
-      along(q, L[b].from);
       mk(L[b].from, 'end');
       cur = L[b].parent ?? 'dojo';
     }
@@ -302,14 +301,6 @@ export class Waypoints {
     }
     const marks = route(pos, target, hub, L);
     if (!marks) return { ok: false, text: 'Get back onto an island or a bridge first, then mark it again' };
-    // On the deck, not on the straight line between a bridge's two ends.
-    const S = this.dream.sim;
-    const o = S?.root?.position;
-    for (const m of marks) {
-      if (m.kind !== 'along' || !S?.heightAt || !o) continue;
-      const h = S.heightAt(m.x + o.x, m.z + o.z, m.y + 5)?.y;
-      if (Number.isFinite(h)) m.y = h;
-    }
     this.clear(p);
     const colour = p.style?.colour ?? 0xffd24a;
     const meshes = marks.map(() => {
@@ -321,7 +312,8 @@ export class Waypoints {
     const arrow = pointer(colour);
     arrow.visible = false;
     this.root.add(arrow);
-    this.by.set(p.index, { target, marks, i: 0, meshes, colour, arrow });
+    // The cursor blinks once as it is set, so she knows which way to start.
+    this.by.set(p.index, { target, marks, i: 0, meshes, colour, arrow, blinkT: WAYPOINT.blink });
     this._place(this.by.get(p.index));
     return { ok: true, text: `Waypoint set: the ${destName(target)} — follow your markers` };
   }
@@ -373,6 +365,8 @@ export class Waypoints {
         const m = w.marks[k];
         if (Math.hypot(q.x - m.x, q.z - m.z) < WAYPOINT.reach && Math.abs(q.y - m.y) < WAYPOINT.reachY) {
           w.i = k + 1;
+          // Off a bridge: the cursor blinks the way on (see `_point`).
+          if (m.kind === 'end') w.blinkT = WAYPOINT.blink;
           D.shards?.burst?.(m.x, m.y + WAYPOINT.lift, m.z, w.colour, 14, 3, 4);
           D.game?.sfx?.('star', 0.35);
           break;
@@ -385,33 +379,30 @@ export class Waypoints {
         continue;
       }
       this._place(w, p);
+      w.blinkT = Math.max(0, (w.blinkT ?? 0) - dt);
       this._point(w, p, q);
     }
   }
 
-  /* 道標 THE POINTING CURSOR. Spacing cannot put the next marker in her frame
-     in every direction: the camera keeps one fixed yaw (player.js), so
-     toward the camera it shows only about 12 units, and walking four routes
-     marker by marker in the browser the next one sat 0.0–0.2 past the
-     frame's edge at 12 stops of 75, every one of them a marker toward the
-     camera or out to the side. Richard offered "upside down pyramids or a
-     pointing cursor"; this is the cursor, for exactly those stops — a flat
-     arrow at her feet in her colour, aimed at the marker, up ONLY while that
-     marker is out of her frame (`edge`), so it is never two things saying
-     the same thing. No camera (a check's stub) means no arrow. */
+  /* 道標 THE POINTING CURSOR: a flat arrow at her feet in her colour, aimed at
+     her next marker — for `blink` seconds after she comes off a bridge (and
+     as the waypoint is set), BLINKING, and then gone.
+     IT WAS UP WHENEVER THE NEXT MARKER WAS OUT OF HER FRAME, which with
+     markers every 11 was a few stops of a route; with markers only at the
+     intersections the next is out of frame most of the way, and Richard:
+     "remove the arrow next to the player pointing them to the direction they
+     need to go to as it is annoying for gameplay incase the player decides
+     to not go there anymore, or can just make it appear and blink for a 2 -
+     3 seconds after they get off a bridge so they know which direction to
+     go." Off a bridge is the one place the way on is a real question: on a
+     bridge there is one way, and on the ring the halfway marker is ahead. */
   _point(w, p, q) {
     const a = w.arrow;
     if (!a) return;
     const n = w.marks[w.i];
-    const cam = p.camera;
-    const o = this.root.parent?.position ?? { x: 0, y: 0, z: 0 };
-    let off = false;
-    if (n && cam?.isCamera) {
-      const v = (this._v ??= new THREE.Vector3()).set(n.x + o.x, n.y + WAYPOINT.lift + o.y, n.z + o.z).project(cam);
-      off = v.z > 1 || Math.abs(v.x) > WAYPOINT.edge || Math.abs(v.y) > WAYPOINT.edge;
-    }
-    a.visible = off;
-    if (!off) return;
+    const on = !!n && (w.blinkT ?? 0) > 0 && Math.floor(this.t * WAYPOINT.blinkHz * 2) % 2 === 0;
+    a.visible = on;
+    if (!on) return;
     const dx = n.x - q.x;
     const dz = n.z - q.z;
     const L = Math.hypot(dx, dz) || 1;

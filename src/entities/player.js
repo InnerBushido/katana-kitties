@@ -1750,11 +1750,12 @@ export class Player {
    * Derived rather than stored, so it cannot fall out of step with `maxHp`
    * through either of the two lines above.
    */
-  /** 凶: she has beaten his Shadow on all three levels. Read by `triDmgK`
-   *  and by crossfx.js, which draws 凶 in her seal instead of 十. */
+  /** 凶: she has beaten his Shadow on HARD (or 秘 EXTRA HARD) — the same
+   *  rule as dream/shadow.js `inherited`, which says why it is not all three.
+   *  Read by `triDmgK` and by crossfx.js, which draws 凶 in her seal instead of 十. */
   get kyo() {
     const s = this.shadowBeat;
-    return !!(s?.easy && s?.medium && s?.hard);
+    return !!(s?.hard || s?.extra);
   }
 
   get baseMaxHp() { return Math.max(1, this.maxHp - this.bonusHp); }

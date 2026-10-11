@@ -233,10 +233,15 @@ const RIPTIDE = [
      Riptide, the gaps are too narrow and makes it very difficult to pass
      through, either make it less narrow, add a checkpoint in between, or
      reduce the number of gaps". Two of the three: half 1.05 -> 1.35 and one
-     curtain fewer, spread over the same lane. A hair wider than the
-     Gauntlet's 1.25, because these move further (A 1.1) and faster (w 1.4). */
+     curtain fewer, spread over the same lane.
+     AND THEN BACK HALF WAY. Richard, the next pass: "make the purple lazer
+     doorways a bit harder to get through, previously it was too hard, now it
+     is a bit too easy, so somewhere in between would be best." Half 1.2 —
+     the middle of 1.05 and 1.35 — and the five curtains kept, so the one
+     thing that changed is the doorway. Now a hair under the Gauntlet's 1.25,
+     whose gaps move less (A 0.9) and slower. */
   { key: 'gaps', name: 'NARROW GAPS', lane: 3, cp: 20.4, curtains: [15, 9, 3, -3, -9],
-    gap: { half: 1.35, A: 1.1, w: 1.4, ph: [0, 1.6, 3.2, 4.8, 0.8] }, beams: [0.5, 1.4, 2.3, 3.2, 4.1, 5.0, 5.9] },
+    gap: { half: 1.2, A: 1.1, w: 1.4, ph: [0, 1.6, 3.2, 4.8, 0.8] }, beams: [0.5, 1.4, 2.3, 3.2, 4.1, 5.0, 5.9] },
   { key: 'final', name: 'FINAL WAVE', lane: 4, cp: -19.2, bars: [-15, -11, -7, -3, 1, 5, 9], twin: 4.8,
     wave: { A: 1.8, C: 2.0, w: 2.6, k: -1.0 } },
 ];
@@ -279,13 +284,23 @@ const GATE = [
       .map((f) => ({ a0: -2.45, a1: 2.45, ...f })) },
   /* THE HIGH STEPS: the first floor that zaps outside the stones, and
      ledges up to a second level and back down — stepping stones that stand
-     still and ask for the landing instead of the timing. The middle ones are
-     2 across and 2.6 apart: a hop at half a walk carries 4 or more, so it
-     goes over the next one into the floor. The first cut (2.3 across, 2.9
-     apart) was landed by exactly that hop, which is not precision at all. */
-  { key: 'twin', name: 'THE HIGH STEPS', lane: 1, cp: 15.6, floor: [1.2, 14],
-    ledges: [{ da: 0.6, b: 12.6, y: 1.0, r: 1.2 }, { da: -0.5, b: 10.0, y: 2.0, r: 1.0 },
-      { da: 0.5, b: 7.4, y: 2.0, r: 1.0 }, { da: -0.5, b: 4.8, y: 2.0, r: 1.0 }, { da: 0.4, b: 2.4, y: 1.0, r: 1.1 }] },
+     still and ask for the landing instead of the timing.
+     FROM BEHIND HER, FOUR OF THEM, AND STAGGERED HARD. Richard: "the camera
+     should go behind the player so that they can see the platforms better
+     that are staggered left/right as it is hard to see they are staggered in
+     the side view ... we can make the platforms the player needs to jump on
+     more staggered in this lava area and potentially reduce the number of
+     platforms to make it more challenging." The first cut had five, swung
+     ±0.5 — less than their own radius, so the middle of the lane was on every
+     one and the stagger was decoration. Now four, swung ±1.2–1.3: no ledge
+     covers the lane's middle, each hop is a diagonal one, centre to centre
+     about 4 (it was 2.8), and the search runs down `route` — through them —
+     rather than down a middle line that is now all lava. `behind` turns the
+     lens as she comes round into the lane, before the lava starts at 14. */
+  { key: 'twin', name: 'THE HIGH STEPS', lane: 1, cp: 15.6, behind: true, floor: [1.2, 14],
+    ledges: [{ da: 1.2, b: 12.4, y: 1.0, r: 1.1 }, { da: -1.3, b: 9.2, y: 2.0, r: 1.0 },
+      { da: 1.3, b: 6.0, y: 2.0, r: 1.0 }, { da: -1.2, b: 2.8, y: 1.0, r: 1.1 }],
+    route: [[15.6, 0], [12.4, 1.2], [9.2, -1.3], [6.0, 1.3], [2.8, -1.2], [0.4, 0]] },
   { key: 'counter', name: 'COUNTER WAVE', lane: 1, cp: -1.5, bars: [-5, -8.5, -12, -15.5], twin: 4.8,
     wave: { A: 1.7, C: 2.0, w: 2.3, k: -1.0 } },
   /* THE DRAGON STAIR: four static ledges climbing a step at a time to a
@@ -298,20 +313,50 @@ const GATE = [
     ledges: [{ da: 0.8, b: -15.8, y: 1.0, r: 1.2 }, { da: -0.6, b: -13.2, y: 2.0, r: 1.0 },
       { da: 0.6, b: -10.6, y: 3.0, r: 1.0 }, { da: 0, b: -7.6, y: 4.0, r: 1.6 }, { da: 0, b: 6.6, y: 2.4, r: 1.4 }],
     air: { a: 0, b: 0.2, R: 4.0, y: 6.7, w: 0.9, ph: 0 } },
+  /* THE SWEEPERS AS REVOLVING DOORS. Richard: "on the area where there are 4
+     circles on the ground with lazers, lets make their lazers into lazer
+     walls so that the player can't just easily jump over them all." Each arm
+     is a WALL now (`wall`): the same arm at five heights, 0.5 to 4.1, which a
+     double jump (feet to 4.2) cannot top — over 4.1 needs her feet at 4.65 —
+     and whose rows are 0.9 apart, closer than she is tall. So the way past a
+     pair is the way through a revolving door: wait for both arms to swing
+     along the lane, and go between them. The circles were already laid so
+     that's the only gap: centred ±2.5 with arms of 2.2, an arm pointing
+     across leaves 0.3 of the middle, and she needs 0.75. */
   { key: 'sweep', name: 'THE SWEEPERS', lane: 2, cp: 11,
     arms: [
       { a: -2.5, b: 14.2, R: 2.2, y: 0.9, w: 1.6, ph: 0 },
       { a: 2.5, b: 14.2, R: 2.2, y: 0.9, w: -1.6, ph: Math.PI },
       { a: -2.5, b: 18.8, R: 2.2, y: 0.9, w: -1.8, ph: Math.PI / 2 },
       { a: 2.5, b: 18.8, R: 2.2, y: 0.9, w: 1.8, ph: -Math.PI / 2 },
-    ] },
+    ].map((m) => ({ ...m, wall: [0.5, 1.4, 2.3, 3.2, 4.1] })) },
   /* LASER WALLS: the sliding-gap curtains, with a static hurdle in front of
      three of them — hop, land, and be lined up with a gap that is moving. */
   { key: 'gaps', name: 'LASER WALLS', lane: 3, cp: 20.4, curtains: [15, 9, 3, -3, -9],
     gap: { half: 1.35, A: 1.0, w: 1.3, ph: [0, 1.7, 3.4, 5.1, 0.9] }, beams: [0.5, 1.4, 2.3, 3.2, 4.1, 5.0, 5.9],
     fixed: [12, 6, 0].map((b) => ({ a0: -2.45, a1: 2.45, b, y: 0.55 })) },
-  { key: 'final', name: 'FINAL WAVE', lane: 4, cp: -19.2, bars: [-14, -9.5, -5, -0.5, 4, 8.5], twin: 4.8,
-    wave: { A: 1.7, C: 2.0, w: 2.5, k: -0.9 } },
+  /* 龍尾 THE DRAGON'S TAIL — the Gate's own last stretch. Richard: "Let's make
+     the ending run/section more interesting as it is too similar to the
+     Riptide course." It was the Riptide's FINAL WAVE to the decimal — six
+     twins, crest at her — so the course built on climbing, landing and
+     staying in line ended on the one stretch that asks none of them. Now it
+     asks all three, once more, in the order the course taught them:
+       CLIMB  four ledges over lava, staggered as the High Steps are and
+              rising a step at a time to 3 up, then down to one at 1.6 and off;
+       WEAVE  four walls of light, each across MOST of the lane and from
+              alternate sides, so the way down it is a slalom (`route`);
+       TIME   a wave bar between each pair of walls, crest running at her —
+              the sine is still the thing she reads, now while she turns.
+     From behind her (`behind`), because both the stagger and the slalom are
+     side to side, which is the axis a side-on lens cannot show. */
+  { key: 'final', name: "THE DRAGON'S TAIL", lane: 4, cp: -19.2, behind: true, floor: [-17.6, -3.6],
+    ledges: [{ da: -1.2, b: -15.6, y: 1.0, r: 1.1 }, { da: 1.3, b: -12.4, y: 2.0, r: 1.0 },
+      { da: -1.3, b: -9.2, y: 3.0, r: 1.0 }, { da: 1.0, b: -5.8, y: 1.6, r: 1.2 }],
+    fixed: [[0, -1], [4.5, 1], [9, -1], [13.5, 1]].flatMap(([b, s]) => [0.5, 1.4, 2.3, 3.2, 4.1]
+      .map((y) => ({ a0: s < 0 ? -2.45 : -0.2, a1: s < 0 ? 0.2 : 2.45, b, y, wall: true }))),
+    bars: [2.25, 6.75, 11.25], wave: { A: 1.6, C: 2.0, w: 2.2, k: -0.9 },
+    route: [[-19.2, 0], [-15.6, -1.2], [-12.4, 1.3], [-9.2, -1.3], [-5.8, 1.0], [-0.8, 1.5], [0.8, 1.5],
+      [3.7, -1.5], [5.3, -1.5], [8.2, 1.5], [9.8, 1.5], [12.7, -1.5], [14.3, -1.5], [17, 0]] },
 ];
 
 /**
@@ -324,10 +369,12 @@ const GATE = [
  * `useCourse`. Measured 2026-10-11 (walker / sprinter, seconds):
  *   ripple    L1 23.63/16.77  L2 23.27/16.03  L3 22.10/15.53  L4 22.43/14.23
  *   gauntlet  L1 26.90/19.70  L2 26.63/18.57  L3 25.87/16.63  L4 23.60/14.33
- *   riptide   L1 27.20/20.50  L2 26.47/21.33  L3 24.30/18.67  L4 24.83/16.60
- *             (re-measured with its Narrow Gaps widened: five curtains, half 1.35)
- *   gate      L1 31.77/19.83  L2 27.03/19.77  L3 25.73/19.60  L4 23.37/17.03
- *             (with its own finer hops; the sprinter has no way through without them)
+ *   riptide   L1 27.20/20.50  L2 26.47/21.33  L3 25.33/18.67  L4 24.83/16.60
+ *             (re-measured with its Narrow Gaps at half 1.2, between the two cuts)
+ *   gate      L1 31.53/20.23  L2 26.37/24.17  L3 25.53/19.47  L4 23.80/17.57
+ *             (with its own finer hops, which the sprinter has no way through
+ *             without; and down its `route` — the High Steps and the Dragon's
+ *             Tail are no longer on the lane's middle, see `searchLine`)
  * and on every one of the twelve, nobody gets through without hopping.
  */
 export const COURSES = [
@@ -336,10 +383,10 @@ export const COURSES = [
   { id: 'gauntlet', name: 'THE GAUNTLET', kanji: '正弦', blurb: 'the course: eight obstacles to the gold line', sections: GAUNTLET,
     bands: [[240, 81, 40.5], [240, 80, 40], [240, 78, 39], [240, 20.1, 15.8]] },
   { id: 'riptide', name: 'THE RIPTIDE', kanji: '激流', blurb: 'the hard one: six stones that go round in circles', sections: RIPTIDE,
-    bands: [[240, 81.6, 40.8], [240, 79.4, 39.7], [240, 72.9, 36.5], [240, 23.2, 18.3]] },
+    bands: [[240, 81.6, 40.8], [240, 79.4, 39.7], [240, 76, 38], [240, 23.2, 18.3]] },
   { id: 'gate', name: 'THE DRAGON GATE', kanji: '登竜', blurb: 'the skill one: climb, land small, stay in line', sections: GATE,
     hops: [1, 0.75, 0.5, 0.4, 0.3, 0.22, 0.15, 0],
-    bands: [[240, 95.3, 47.7], [240, 81.1, 40.5], [240, 77.2, 38.6], [240, 23.8, 18.7]] },
+    bands: [[240, 94.6, 47.3], [240, 79.1, 39.6], [240, 76.6, 38.3], [240, 24.6, 19.3]] },
 ];
 export const courseById = (id) => COURSES.find((c) => c.id === id) ?? null;
 /** Where a level's stars go: see COURSES. */
@@ -456,8 +503,11 @@ export function beams(L, t) {
     for (const arm of ARMS) {
       if ((arm.sec === 'air' ? 'stones' : 'sweep') !== sec.key) continue;
       const e = sweepEnds(arm, t, sp);
-      out.push({ sec: arm.sec === 'air' ? 'air' : 'sweep', n: ARMS.indexOf(arm), high: arm.sec === 'air',
-        a0: e.q.a, b0: e.q.b, y0: arm.y, a1: e.p.a, b1: e.p.b, y1: arm.y, thick: BAR_THICK });
+      // An arm that is a WALL (`wall`, the Dragon Gate's sweepers) is the same arm at every row.
+      for (const y of arm.wall ?? [arm.y]) {
+        out.push({ sec: arm.sec === 'air' ? 'air' : 'sweep', n: ARMS.indexOf(arm), high: arm.sec === 'air', wall: !!arm.wall,
+          a0: e.q.a, b0: e.q.b, y0: y, a1: e.p.a, b1: e.p.b, y1: y, thick: BAR_THICK });
+      }
     }
     if (sec.curtains) {
       sec.curtains.forEach((b, i) => {
@@ -632,6 +682,54 @@ export function hitAt(L, a, b, feet, t, { height = 2.6, list = null } = {}) {
 
 /* ------------------------------ the stars ------------------------------- */
 
+/** How far across her lane the search's line swings at (a, b): a stretch's
+ *  `route`, [b, da] waypoints, straight between them; 0 where none is. */
+export function weaveAt(a, b) {
+  for (const sec of SECTIONS) {
+    const R = sec.route;
+    if (!R || Math.abs(a - LANES[sec.lane]) > HALVES[sec.lane]) continue;
+    for (let k = 1; k < R.length; k++) {
+      const [b0, d0] = R[k - 1];
+      const [b1, d1] = R[k];
+      if ((b - b0) * (b - b1) <= 0) return b1 === b0 ? d0 : d0 + ((d1 - d0) * (b - b0)) / (b1 - b0);
+    }
+  }
+  return 0;
+}
+
+/**
+ * THE SEARCH'S LINE, every `ds` along it, and the step the finish is on.
+ * Down the middle of her route — UNLESS a stretch has a `route`, where it
+ * swings across the lane through it, and is re-measured along the swing, so
+ * a weave costs her the extra distance it really is. A course with no
+ * `route` anywhere gets exactly the points it always had (`pathAt`).
+ */
+function searchLine(ds) {
+  if (!SECTIONS.some((s) => s.route)) {
+    const N = Math.ceil(PATH_LEN / ds) + 1;
+    return { pts: Array.from({ length: N }, (_, i) => pathAt(i * ds)), goal: Math.ceil(FINISH_S / ds) };
+  }
+  const fine = 0.02;
+  const raw = [];
+  for (let s = 0; s <= PATH_LEN + 1e-9; s += fine) {
+    const p = pathAt(s);
+    raw.push({ a: p.a + weaveAt(p.a, p.b), b: p.b, s });
+  }
+  const len = [0];
+  for (let i = 1; i < raw.length; i++) len.push(len[i - 1] + Math.hypot(raw[i].a - raw[i - 1].a, raw[i].b - raw[i - 1].b));
+  const pts = [];
+  let goal = null;
+  for (let i = 0, j = 0; ; i++) {
+    const want = i * ds;
+    while (j < raw.length - 1 && len[j + 1] < want) j++;
+    if (j >= raw.length - 1) { pts.push({ a: raw.at(-1).a, b: raw.at(-1).b }); break; }
+    const u = (want - len[j]) / ((len[j + 1] - len[j]) || 1);
+    pts.push({ a: raw[j].a + (raw[j + 1].a - raw[j].a) * u, b: raw[j].b + (raw[j + 1].b - raw[j].b) * u });
+    if (goal == null && raw[j].s >= FINISH_S - fine) goal = i;
+  }
+  return { pts, goal: goal ?? pts.length - 1 };
+}
+
 /**
  * THE FASTEST CLEAN RUN, by search — where the star bands come from.
  *
@@ -644,6 +742,10 @@ export function hitAt(L, a, b, feet, t, { height = 2.6, list = null } = {}) {
  *
  * It is the BEST case, not the typical one: the centre line, perfect timing,
  * and no double jump (which only adds ways through). Bands are set above it.
+ * "The centre line" is the middle of her lane except where a stretch says
+ * otherwise (`route`, `searchLine`): the Dragon Gate's staggered ledges and
+ * its slalom are not ON the middle, and a search that kept to it would be
+ * asking whether she can cross lava, not whether she can run the course.
  *
  * `hops` are the fractions of full speed a hop may carry forward: full, half
  * and straight up on every course that had them — and finer on the Dragon
@@ -665,9 +767,8 @@ export function hitAt(L, a, b, feet, t, { height = 2.6, list = null } = {}) {
  */
 export function fastestRun(L, { v = 17, dt = 1 / 30, jumpV = 11.2, gravity = 26, height = 2.6, tMax = 120, back = 8, hops = HOPS } = {}) {
   const ds = v * dt;
-  const N = Math.ceil(PATH_LEN / ds) + 1;
-  const goal = Math.ceil(FINISH_S / ds);
-  const pts = Array.from({ length: N }, (_, i) => pathAt(i * ds));
+  const { pts, goal } = searchLine(ds);
+  const N = pts.length;
   const steps = Math.ceil(tMax / dt);
   const hopT = (2 * jumpV) / gravity + 0.4;
   const W = Math.ceil(hopT / dt) + 2;

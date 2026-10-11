@@ -3213,6 +3213,25 @@ more than distance 64; past that it stays on the kitten eating, at 40 (was 34).
 See "The feast was a still of the whole deck" in
 [mobile.md](docs/notes/mobile.md).
 
+**The twelfth pass (the Sine Gauntlet, the map, 凶)** is in
+[dreamdojo.md](docs/notes/dreamdojo.md), *The Dragon Gate from behind…*:
+
+- **The Dragon Gate's High Steps** are filmed from behind (the lens turns
+  before the lava), with four ledges, staggered ±1.3.
+- **Its Sweepers** are walls a double jump cannot top.
+- **Its ending** is its own: 龍尾 the Dragon's Tail, a climb, a slalom of
+  walls and waves.
+- **The Riptide's doorways** are half 1.2, between the two earlier cuts.
+- **The card over her head** is half the size and fainter whenever the lens
+  is behind her.
+- **On the map**, choosing the marked place again unmarks it. Markers are
+  only at bridge ends and halfway round the hub. The arrow only blinks, for
+  2.5s, off a bridge.
+- **Lionheart's 凶** is a HARD win alone.
+- **Open:** played through the stepped game loop at 800x450, not by hand on a
+  pad. The new Gate stretches and the doorway width have not been felt by a
+  kitten yet.
+
 **The eleventh pass (Richard's "Next batch of fixes")** is in
 [mobile.md](docs/notes/mobile.md), thirteen notes on a phone:
 

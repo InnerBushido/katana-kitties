@@ -2473,6 +2473,129 @@ Nobody gets through without hopping.
 It was offered as a possibility, and both need a new verb on the player that
 the course's search cannot model yet.
 
+## The Dragon Gate from behind, a Riptide in between, fewer markers, and 凶 on HARD
+
+Richard's next list, after alpha. Five notes.
+
+### The High Steps from behind, staggered harder
+
+*"before the lava lazer area with the platforms, the camera should go behind
+the player so that they can see the platforms better that are staggered
+left/right as it is hard to see they are staggered in the side view ... we can
+make the platforms the player needs to jump on more staggered in this lava area
+and potentially reduce the number of platforms"*.
+
+- **Behind her** (`behind: true` on the High Steps). The checkpoint is 1.6 short
+  of the lava, and the lens eases in over about 0.4s (`CAM_EASE`), so on the
+  checkpoint alone a sprinter was on the first ledge before it had turned.
+  `_shoulder` now turns for a `behind` stretch from `SHOT_AHEAD` (5) before
+  its line: half way round the U-turn into it, 6.5 short of the lava.
+- **Four ledges, not five, swung ±1.2–1.3.** The old swing was ±0.5, less
+  than a ledge's own radius, so the lane's middle was on every one of them and
+  the stagger was decoration. Now no ledge covers the middle, and centre to
+  centre a hop is about 4 (it was 2.8), on a diagonal.
+- **The search had to learn to weave.** `fastestRun` walked the middle of the
+  lane, which is now all lava. A stretch can carry a `route` ([b, across]
+  waypoints) and the search's line swings through it, re-measured along the
+  swing (`searchLine`), so a weave costs the distance it really is. A course
+  with no `route` gets exactly the points it always had.
+
+### The Sweepers are walls
+
+*"lets make their lazers into lazer walls so that the player can't just easily
+jump over them all."* Each arm is five rows, 0.5 to 4.1 (`wall` on the arm),
+turning together. Over 4.1 needs her feet at 4.65, and a double jump tops out
+at 4.2; the rows are 0.9 apart, closer than she is tall. The circles were
+already laid so that the gap between a pair is 0.3 when both arms point across
+(she needs 0.75), so the way past is a revolving door: wait for both to swing
+along the lane. Drawn without drop lines, like the corridor's walls.
+
+### 龍尾 The Dragon's Tail
+
+*"Let's make the ending run/section more interesting as it is too similar to
+the Riptide course."* It WAS the Riptide's FINAL WAVE, near enough number for
+number. Now the course's three skills once more, in the order it taught them:
+
+- **Climb:** four staggered ledges over lava, up to 3 and down to 1.6.
+- **Weave:** four walls of light, each across most of the lane, from
+  alternate sides — a slalom.
+- **Time:** a wave bar between each pair of walls, its crest running at her.
+
+It is filmed from behind, because both the stagger and the slalom are side to
+side. The card reads the ledges while she climbs, then the bars.
+
+### The Riptide's doorways, in between
+
+*"previously it was too hard, now it is a bit too easy, so somewhere in
+between would be best."* Half 1.05 → 1.35 → **1.2**, with the five curtains
+kept. The perfect run hardly notices: L3's walker goes 24.30s → 25.33s, and
+the other levels don't move at all. The search times to the frame, a kitten
+doesn't, and a 0.3 narrower doorway is what she feels.
+
+### The card over her head, from behind
+
+*"the text UI appearing above their heads is too big and taking up too much of
+the top half of the screen ... best to make it smaller and more transparent"*.
+`_fitCard` eases it with the lens (`behind`, 0 to 1). Behind her it is half
+the size, 1.2 over her head instead of 2.3, and at 0.6 opacity (`CARD_BEHIND`).
+
+- **Measured at the High Steps, 800x450, through her lens:** the old card
+  covered 15.1% of the frame and ran off its top (NDC 0.43 to 1.01). The new
+  one covers 3.3%, at NDC 0.31 to 0.58, with her head at 0.
+- **Not moved to the bottom of the screen**, which Richard also offered: in a
+  shared pane her sister reads whose run it is off the card over her.
+
+### Re-measured bands
+
+The search is `fastestRun`, as before; the walker's number is first, the
+sprinter's second.
+
+| course | L1 | L2 | L3 | L4 |
+| --- | --- | --- | --- | --- |
+| riptide | 27.20 / 20.50 | 26.47 / 21.33 | 25.33 / 18.67 | 24.83 / 16.60 |
+| gate | 31.53 / 20.23 | 26.37 / 24.17 | 25.53 / 19.47 | 23.80 / 17.57 |
+
+The bands come off these at the usual multiples. A sprinter with only full and
+half hops still has no way through the Gate (precision landing), and nobody
+gets through any level without hopping.
+
+### The map: unmarking, and markers only at the intersections
+
+- **Unmarking.** *"there is no way to deselect the area"*. There was a CLEAR
+  row, but it was the last thing on the card, under eight chips and the map.
+  Choosing the marked place again used to REFRESH it. Now it unmarks it, says
+  so, and the card says that JUMP will. Choosing it once more brings every
+  marker back, which is what refreshing was for.
+- **Markers.** *"too many waypoints ... it should just be at the main
+  intersections of where they need to go to next, like before the bridge or
+  half way between bridges"*. A marker is now a bridge's two ends, plus one
+  halfway round the hub's ring when the walk round is longer than `midIf`
+  (22). The 'along' and 'across' markers, one every 11, are gone. Over all 132
+  routes that is 638 markers, and the longest route is 7.
+- **The arrow.** *"remove the arrow ... or can just make it appear and blink
+  for a 2 - 3 seconds after they get off a bridge"*. It blinks for 2.5s (at
+  2.5Hz) as the waypoint is set and each time she reaches a bridge's far end,
+  and is never up otherwise. It used to be up whenever the next marker was out
+  of frame, which with markers this far apart would have been nearly always.
+
+### 凶 on HARD
+
+*"to unlock Lionhearts cross-slash, you need to just beat him on the hard
+difficulty, not necessary to beat him on Medium or Easy, so that the voice
+dialog plays after beating him on Hard."*
+
+- **The rule.** `inherited` and `Player.kyo` are HARD, or 秘 EXTRA HARD by
+  the same argument. `world-check` holds the two to the same answer on all
+  sixteen records.
+- **What she hears.** The hand-over and 凶 lines now play on the first Hard
+  win, whatever came before it. A sister standing in that fight gets 凶 too.
+- **The words.** The voiced lines are untouched, as asked. The lists that are
+  worked out ("beat him on X too") come from `kyoLeft`, so they now name
+  HARD alone.
+- **Still saying "all three"**, as asked: the Shadow's island blurb (Help, and
+  `ISLE_ABOUT`), his 凶 row's lock blurb, the hard kiosk's card, and his
+  "every level" refusal line. Each is still true, just more than she needs.
+
 ## Voice
 
 Lionheart is **Barrett** (`d603a8cd-3fe1-55e0-9245-617a2589131e`), nine clips
