@@ -20776,9 +20776,18 @@ console.log('\n--- Mr. Satan loses his temper ---');
     let quiet = '';
     for (const c of noKey) {
       const call = new RegExp(`code === '${c}'\\)[^\\n]*this\\.(_[A-Za-z0-9]+)\\(`).exec(dbgBody);
-      const at = call ? msrc.indexOf(`\n  ${call[1]}(`) : -1;
-      const body = at > 0 ? msrc.slice(at, msrc.indexOf('\n  }\n', at)) : '';
-      if (body.includes('confirm.ask(')) asked++;
+      /* LF, or '\n  }\n' never matches in a CRLF main.js and the "body" runs to
+         the end of the file — which always contains some confirm.ask, so this
+         check passed every row unread, OverflowDbg included, until the file
+         was once saved LF. */
+      const lf = msrc.replace(/\r\n/g, '\n');
+      const at = call ? lf.indexOf(`\n  ${call[1]}(`) : -1;
+      const body = at > 0 ? lf.slice(at, lf.indexOf('\n  }\n', at)) : '';
+      /* A `_toggle…` that only flips a view flag throws nothing away — the
+         health-overflow numbers — and asking before showing a number would be
+         a dialog with nothing behind it. It is held to that: no save, no wipe. */
+      const toggle = /^_toggle/.test(call?.[1] ?? '') && !/save|wipe|clear|delete|remove\(|setFlag|localStorage/i.test(body);
+      if (body.includes('confirm.ask(') || toggle) asked++;
       else quiet += ` ${c}`;
     }
     ok('...and a row the keyboard cannot reach asks before it throws anything away',
@@ -36798,6 +36807,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
   /* --- 型 KATA: every built-in chart a dance somebody can actually do --- */
   {
     const BMP = await import('../src/systems/dream/beatmap.js');
+    const { MUSIC_FILES: MUSIC_FILES_WC } = await import('../src/core/musicfiles.js');
     const bad = [];
     const counts = { cut: 0, cross: 0, sweep: 0, lion: 0 };
     const sameText = [];
@@ -36807,7 +36817,9 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         const why = [];
         if (JSON.stringify(c) !== JSON.stringify(BMP.generateChart(S.id, diff))) why.push('not deterministic');
         const secs = c.beats * S.spb;
-        if (secs < BMP.SONG_SECS[0] - 0.01 || secs > BMP.SONG_SECS[1] + 0.01) why.push(`${secs.toFixed(1)}s long`);
+        // Except Nightmare's LONG cut, which is long on purpose ("an optional 'longer' version") — 2-3 minutes.
+        const span = MUSIC_FILES_WC[S.id]?.longOf ? [120, 180] : BMP.SONG_SECS;
+        if (secs < span[0] - 0.01 || secs > span[1] + 0.01) why.push(`${secs.toFixed(1)}s long`);
         if (BMP.unfair(c).length) why.push(`unfair at ${BMP.unfair(c).join(',')}`);
         if (!BMP.route(c)) why.push('no route');
         for (const a of BMP.ATTACKS) if (!c.events.some((e) => e.attack === a)) why.push(`no ${a}`);
@@ -41878,7 +41890,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     ok('...and a kitten on a dragon does not count — the flight theme has her', at(5) === 0);
     her.mount = null;
     ok('...and the piece is the Dream Dojo\'s own synthwave, wired into the router',
-      MUSd.vr?.tune === 'vr' && /this\._vrLevel = this\.dream\?\.musicLevel\?\.\(this\.players\) \?\? 0;\s*if \(this\._vrLevel > 0\) return 'vr';/.test(readD('../src/main.js')));
+      MUSd.vr?.tune === 'vr' && /this\._vrLevel = this\.dream\?\.musicLevel\?\.\(this\.players\) \?\? 0;[\s\S]{0,400}?if \(this\._vrLevel > 0\) return 'vr';/.test(readD('../src/main.js')));
     park(her);
   }
 
@@ -42915,7 +42927,9 @@ console.log('\n--- Shadow Lionheart\'s song: his theme, two 凶, and the finale 
     /_choir\(B, at, hzs, v, len, peak/.test(asrc) && /UMBRA LEONIS/.test(asrc) && /honor: \[/.test(asrc)
     && !/\.(mp3|ogg|wav)/.test(asrc.slice(asrc.indexOf('_shadowStep(t, step, M) {'), asrc.indexOf('_vrStep(t, step, M) {'))));
   const msrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
-  ok('...and it is what his fight plays while a round is live', /this\.dream\?\.shadow\?\.state === 'live'\) \{ this\._vrLevel = 1; return 'shadow'; \}/.test(msrc));
+  ok('...and it is what his fight plays while a round is live — on EASY; the other levels play his recordings (SHADOW_TRACK)',
+    /this\.dream\?\.shadow\?\.state === 'live'\) \{\s*this\._vrLevel = 1;\s*return SHADOW_TRACK\[this\.dream\.shadow\.L\?\.id\] \?\? 'shadow';/.test(msrc)
+    && BM.SHADOW_TRACK.easy === 'shadow');
   const bad = [];
   for (const diff of BM.DIFF_IDS) {
     const c = BM.generateChart('shadow', diff);
@@ -42934,6 +42948,140 @@ console.log('\n--- Shadow Lionheart\'s song: his theme, two 凶, and the finale 
   const gaps = BM.resolveChart(BM.generateChart('shadow', 'hard')).filter((a) => a.kyo > 1).map((a, i, xs) => a.beat - (BM.resolveChart(BM.generateChart('shadow', 'hard')).find((b) => b.kyoG === a.kyoG && b.kyo === a.kyo - 1).beat));
   ok('every level of his song is fair, warns nothing, has two 凶 that each make her move, and ends in the air', !bad.length, bad.join(' | '));
   ok('...and on HARD one 凶 comes a beat apart: two steps a beat', Math.min(...gaps) === 1 && BM.movesBetween(0, { beat: 1, tell: 0.75, kyo: 2 }) === 2, gaps.join(' '));
+}
+
+console.log('\n--- his recordings: one song per level, looped on the beat, won in the fight ---');
+{
+  /* Richard: "Orchestral 1 the Medium boss fight music ..., Electronic 1 is
+     the Hard ..., and Electronic 2 is the Extra Hard", "loop properly without
+     a long awkward pause", "After the player beats Shadow Lionheart on the set
+     difficulty, then the song should be added to the Kata Trace ... with the
+     Easy song being the exception". Every number below is MEASURED by
+     tools/capture/shadow-music.mjs; these checks ask that what it wrote still
+     describes a song a kitten can dance to, and that the game reads it. */
+  const BM = await import('../src/systems/dream/beatmap.js');
+  const { MUSIC_FILES } = await import('../src/core/musicfiles.js');
+  const { DreamProgress } = await import('../src/systems/dream/progress.js');
+  const { KataHall } = await import('../src/systems/dream/kata.js');
+  const ids = Object.keys(MUSIC_FILES);
+  const bad = [];
+  for (const id of ids) {
+    const f = MUSIC_FILES[id];
+    const path = new URL(`../public/${f.file}`, import.meta.url);
+    if (!existsSync(path)) { bad.push(`${id}: no file`); continue; }
+    // 0.40-0.48s is the band the measurement is held to; outside it, it locked onto a multiple of the beat.
+    if (!(f.spb > 0.40 && f.spb < 0.48)) bad.push(`${id}: spb ${f.spb}`);
+    // The long cut's beat 0 measures 3.5ms BEFORE its first sample (encoder padding, folded to the
+    // nearest whole beat by the tool); `_fileStart` delays a negative offset rather than clipping it.
+    if (!(f.first > -0.01 && f.first < f.spb)) bad.push(`${id}: first beat ${f.first}`);
+    if (!(f.mix > 0 && f.mix <= 1)) bad.push(`${id}: mix ${f.mix}`);
+    if (f.loop) {
+      const [A, B] = f.loopBeats;
+      // Whole BARS apart, and the seconds ARE those beats — a loop off the grid drifts a beat a lap.
+      if ((B - A) % 4 || A < 8 || B > f.beats + 8) bad.push(`${id}: loop beats ${A}-${B}`);
+      if (Math.abs(f.loop[0] - (f.first + A * f.spb)) > 0.002 || Math.abs(f.loop[1] - (f.first + B * f.spb)) > 0.002) bad.push(`${id}: loop off its beats`);
+      if (f.loop[1] - f.loop[0] < 20) bad.push(`${id}: loop only ${(f.loop[1] - f.loop[0]).toFixed(1)}s`);
+    }
+  }
+  ok('every recording is on disk, its beat is a beat, and its loop is whole bars on that beat', ids.length === 4 && !bad.length,
+    bad.join(' | ') || ids.join(' '));
+  ok('...one per level: his procedural theme on EASY, Requiem on MEDIUM, Darksynth on HARD, Nightmare on 秘 EXTRA HARD',
+    BM.SHADOW_TRACK.easy === 'shadow' && ['medium', 'hard', 'extra'].every((lv) => MUSIC_FILES[BM.SHADOW_TRACK[lv]]?.level === lv && MUSIC_FILES[BM.SHADOW_TRACK[lv]].loop),
+    JSON.stringify(BM.SHADOW_TRACK));
+  const long = ids.filter((id) => MUSIC_FILES[id].longOf);
+  ok('...and Nightmare has its long cut, 2-3 minutes, with no loop of its own (it is the loop, played out)',
+    long.length === 1 && MUSIC_FILES[long[0]].longOf === 'shadowNight' && MUSIC_FILES[long[0]].level === 'extra'
+    && MUSIC_FILES[long[0]].loop === null && MUSIC_FILES[long[0]].beats * MUSIC_FILES[long[0]].spb >= 120
+    && MUSIC_FILES[long[0]].beats * MUSIC_FILES[long[0]].spb <= 180,
+    long.map((id) => `${id} ${(MUSIC_FILES[id].beats * MUSIC_FILES[id].spb).toFixed(1)}s`).join(''));
+
+  /* THE LOCKS. A kitten who has won nothing; then one fight at a time. */
+  const kit = (beat = {}) => ({ name: 'Mittens', style: { name: 'Mittens' }, shadowBeat: beat });
+  const none = kit();
+  const openNow = BM.SONGS.filter((s) => !BM.songLocked(s.id, none)).map((s) => s.id);
+  ok('a kitten who has never fought him can dance to his theme and every other song, and to none of his recordings',
+    openNow.includes('shadow') && ids.every((id) => !openNow.includes(id)) && openNow.length === BM.SONGS.length - ids.length,
+    openNow.join(' '));
+  const perWin = ['medium', 'hard', 'extra'].map((lv) => ids.filter((id) => !BM.songLocked(id, kit({ [lv]: true }))).sort().join('+'));
+  ok('...each win opens exactly its own level\'s song (and EXTRA HARD its long cut with it)',
+    perWin[0] === 'shadowOrch' && perWin[1] === 'shadowSynth' && perWin[2] === ['shadowNight', ...long].sort().join('+'), perWin.join(' / '));
+  ok('...a lock says what to do, naming the level',
+    BM.songLocked('shadowOrch', none) === 'Beat Shadow Lionheart on MEDIUM to unlock this song!'
+    && /on 秘 EXTRA HARD to unlock/.test(BM.songLocked('shadowNight', none)), BM.songLocked('shadowOrch', none));
+  ok('...and the debug panel\'s "every song" opens all four for a kitten who has won nothing',
+    ids.every((id) => !BM.songLocked(id, none, true)));
+
+  /* THE SECRET STAYS SECRET. "Beat him on 秘 EXTRA HARD" on a nine-year-old's
+     song list would give away the one thing in the game meant to be found. */
+  const P = new DreamProgress(null);
+  const hall = (debug = false) => ({ dream: { game: { _debugSongs: debug }, progress: P } });
+  const listed = (debug, p = none) => KataHall.prototype.songChoices.call(hall(debug), p).map((c) => c.S.id);
+  const extraIds = ids.filter((id) => MUSIC_FILES[id].level === 'extra');
+  const hidden = listed(false);
+  ok('Kata Trace does not even LIST the EXTRA HARD songs until the secret is open to her',
+    extraIds.length === 2 && extraIds.every((id) => !hidden.includes(id)) && hidden.includes('shadowOrch') && hidden.includes('shadowSynth'),
+    hidden.join(' '));
+  P.setFlag('Mittens', 'extra');
+  const shown = KataHall.prototype.songChoices.call(hall(false), none);
+  ok('...the debug "open EXTRA HARD" flag lists them — still LOCKED, since she has not beaten him there',
+    extraIds.every((id) => shown.find((c) => c.S.id === id)?.locked), shown.filter((c) => c.locked).map((c) => c.S.id).join(' '));
+  /* THE DEBUG ROW OPENS IT "AS IF I HAD JUST BECOME KENSHI 1st CLASS so that
+     any text or voice is played". So the flag must reach the SAME watcher the
+     rank does, and that watcher must say all of it — once. */
+  {
+    const { Ranks } = await import('../src/systems/dream/rank.js');
+    const { extraOpen } = await import('../src/systems/dream/shadow.js');
+    const PP = new DreamProgress(null);
+    const said = [];
+    const kitten = { name: 'Mittens', style: { name: 'Mittens' }, index: 0 };
+    const fake = { dream: { progress: PP, simKittens: () => [kitten], holoSay: (t) => said.push(`holo:${t}`),
+      game: { sfx: (s) => said.push(`sfx:${s}`), toast: (t) => said.push(`toast:${t}`) } } };
+    Ranks.prototype._watchFirstClass.call(fake);
+    const before = said.length;
+    const closed = extraOpen(PP, kitten);
+    PP.setFlag('Mittens', 'extra');
+    Ranks.prototype._watchFirstClass.call(fake);
+    Ranks.prototype._watchFirstClass.call(fake);
+    ok('the debug "open EXTRA HARD" plays the 1st Class announcement — fanfare, toast, his line — once, and opens the fight',
+      before === 0 && !closed && extraOpen(PP, kitten) && said.length === 3 && said[0] === 'sfx:victory'
+      && /KENSHI 1st CLASS! A SECRET is open/.test(said[1]) && /My SHADOW has a secret/.test(said[2]) && PP.flag('Mittens', 'secret'),
+      said.map((s) => s.slice(0, 30)).join(' | '));
+  }
+  ok('...and "every song" lists and opens all of them, secret or not',
+    KataHall.prototype.songChoices.call({ dream: { game: { _debugSongs: true }, progress: new DreamProgress(null) } }, none)
+      .filter((c) => ids.includes(c.S.id) && !c.locked).length === ids.length);
+
+  /* HIS CHART, FITTED. One hand-written chart, opening / march / finale; the
+     finale is pinned to each song's END and the march fills the middle. At
+     the procedural theme's 128 beats `fitShadow` must hand the chart back
+     untouched — that is the chart that shipped. */
+  const ev = [{ beat: 1 }, { beat: 70 }, { beat: 120 }];
+  ok('his chart at 128 beats is the one that shipped, event for event', BM.fitShadow(ev, 60, 112, 128) === ev);
+  const fitBad = [];
+  for (const id of ids) {
+    for (const diff of BM.DIFF_IDS) {
+      const c = BM.generateChart(id, diff);
+      const as = BM.resolveChart(c);
+      const kyo = new Set(as.filter((a) => a.kyoG).map((a) => a.kyoG)).size;
+      const fin = BM.resolveSlashes(c).find((s) => s.finish);
+      const lastBeat = Math.max(...c.events.map((e) => e.beat));
+      if (kyo < 2 || (MUSIC_FILES[id].longOf ? kyo < 4 : kyo !== 2)) fitBad.push(`${id}.${diff}: ${kyo} 凶`);
+      if (!fin?.air) fitBad.push(`${id}.${diff}: finish not in the air`);
+      if (lastBeat > c.beats - 2) fitBad.push(`${id}.${diff}: event at ${lastBeat} of ${c.beats}`);
+      if (c.events.some((e, i) => i && e.beat < c.events[i - 1].beat)) fitBad.push(`${id}.${diff}: out of order`);
+    }
+  }
+  ok('...and fitted to every recording: whole 凶 only, the finish in the air, nothing past the song\'s end', !fitBad.length, fitBad.slice(0, 4).join(' | '));
+
+  /* THE PLAYER. The boss fight loops; Kata Trace plays a song ONCE, as charted. */
+  const asrc = readFileSync(new URL('../src/core/audio.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+  ok('a Kata Trace run plays the recording through once, never round its boss loop',
+    /restartMusic\(mode, rate = 1\) \{[\s\S]{0,120}this\.startMusic\(mode, rate, \{ loop: false \}\)/.test(asrc));
+  ok('...the boss loop is crossfaded on a COPY, so a straight play-through never hears the seam',
+    /_loopBuffer\(id, buf\) \{[\s\S]*?createBuffer\(buf\.numberOfChannels[\s\S]*?Math\.cos\(w\)[\s\S]*?Math\.sin\(w\)/.test(asrc)
+    && /src\.buffer = this\._fileLoop \? this\._loopBuffer\(id, buf\) : buf;/.test(asrc));
+  ok('...and a recording keeps the scheduler\'s clock, so musicGrid and keepTime read it as they read a tune',
+    /_stepLen\(\) \{[\s\S]{0,120}FM \? FM\.spb/.test(asrc) && /if \(!file\) this\._pluck\(/.test(asrc));
 }
 
 console.log('\n--- the beat-map grid is one stop, then its lines, then a line\'s buttons ---');

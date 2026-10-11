@@ -12,7 +12,11 @@ this folder — see [the index](README.md).*
 
 ## Sound
 
-Every sound *except the eleven cutscene voice lines* is **synthesised at
+*Since Oct 2026 the rule is "procedural by default, generated where it is
+better and affordable" — see [Shadow Lionheart's recordings](#shadow-lionhearts-recordings)
+at the bottom. What follows is still how every procedural piece works.*
+
+Every sound *except the voice lines and Shadow Lionheart's boss music* is **synthesised at
 runtime** in `src/core/audio.js` — oscillators and filtered noise. The
 exception is `public/voice/*.mp3`; see The story above for why it earned one. Nothing to download, nothing to
 licence, no asset pipeline, a few KB of source. The music is generated the same
@@ -198,3 +202,82 @@ ash 0.257  bamboo 0.245  flight 0.276  ryu 0.410
 and post-compressor with the slider at maximum, ryu peaks 0.885 — no clipping.
 The quiet ones are quiet by design; the two loudest are the dragons, which is
 the shape it should be.
+
+## Shadow Lionheart's recordings
+
+**The rule changed.** Richard, Oct 2026: "not everything needs to be procedural! ... if we can get better quality not doing something procedurally, such as, having high quality generated voices and music, then we will choose the higher quality route where possible and affordable". Non-negotiable 9 now
+reads *procedural by default; generated where it is better and affordable*, and
+every file must degrade to the procedural thing.
+
+**What he asked for, and where it went:**
+
+| level | his fight plays | file | in Kata Trace |
+| --- | --- | --- | --- |
+| EASY | `MUSIC.shadow`, the procedural theme | none | open from the start |
+| MEDIUM | **Requiem** (Orchestral 1) | `public/music/shadowOrch.mp3` | opens when she beats him on MEDIUM |
+| HARD | **Darksynth** (Electronic 1) | `shadowSynth.mp3` | ...on HARD |
+| 秘 EXTRA HARD | **Nightmare** (Electronic 2) | `shadowNight.mp3` | ...on EXTRA HARD, with the long cut |
+
+`SHADOW_TRACK` (beatmap.js) is that table; `_wantedTrack` reads it. Orchestral 2
+was generated and not chosen; it stays in `tools/capture/music-takes/raw/`.
+
+**How they were made.** ElevenLabs Music v2.5 (`eleven_music_v2_5`, a node in
+Richard's own ElevenLabs connector — Higgsfield's `generate_audio` is speech
+only and says standalone music is not supported). Four 56-second takes at ~900
+credits each. The prompts asked for the theme's own facts: 136 BPM, strict 4/4,
+D harmonic minor, the Dm–Bb–Gm–A loop, and the Latin (UMBRA LEONIS, GLADIUS
+NOCTIS, SURGE, PUGNA, HONOR). Generation ids are in `musicfiles.js` (`gen`).
+
+**They are not the theme re-orchestrated, and cannot be from a prompt.** The
+takes keep the tempo and the mood and ignore the chord loop: a bass-root-per-
+beat reading of the procedural theme comes out Dm–Bb–Gm–A clean, and the takes
+wander. The connector's music node has an **audio input port**, which might
+take the theme as a reference for a closer "upscale"; that is untried.
+
+**The beat is measured, not trusted** (`tools/capture/music-beats.mjs`): an
+onset envelope, then a period-and-phase search. Unconstrained, the search
+locked onto 3/2 and 5/3 of the beat (81.6 and 90.6 BPM), so it is held to
+0.40–0.48 s a beat — and validated on the procedural theme, which it reads
+as exactly 136.364. The takes measure 136.07, 136.07 and 136.67 BPM; their
+drift against a straight grid spans 52–62 ms, i.e. about ±30 ms, inside Kata
+Trace's ±100 ms PERFECT.
+
+**The loop is found by self-similarity**, not by bar-counting the prompt's
+chord loop (which the takes do not play). Per beat: chroma plus band energies;
+every pair of beats whole bars apart (A ≥ 16, B ≤ end−8, B−A ≥ 48 and a multiple
+of 4) is scored over ±4 beats, and the longest loop within 0.01 of the best
+score wins. Requiem loops beats 40–88 (21.2 s), Darksynth 52–100 (21.2 s),
+Nightmare 20–92 (31.6 s).
+
+**Playing it** (`startMusic` / `_fileStart`):
+- **The scheduler's clock is kept.** The timer still ticks `_nextNote` and
+  `_step`, it just plucks nothing, and `_beat0` is beat 0 on the audio clock.
+  So `musicGrid`, `shiftMusic` and Kata Trace's `keepTime` work unchanged, and
+  a file still decoding comes in late *on the beat* rather than late and wrong.
+- **The fight loops** with `loopStart`/`loopEnd` on a COPY of the buffer whose
+  last 25 ms before `loopEnd` are crossfaded (equal power) into the 25 ms before
+  `loopStart` — no click every 21 s. Kata Trace plays the original straight
+  through (`restartMusic` passes `loop: false`) and never hears the seam.
+- **Fetched, then decoded on demand**: bytes (~1.4 MB each) are prefetched when
+  a kitten nears the Dream Dojo; only the playing piece is kept decoded (~20 MB
+  a minute of stereo).
+- **Speed changes pitch.** Kata Trace's 1.25×/1.5× is `playbackRate` on a
+  recording, so it plays higher. A time-stretch would need a library; not done.
+- **Level-matched**: each file's `mix` brings it to 0.050 RMS, the procedural
+  pieces' level.
+
+**Nightmare's long cut** (`shadowNightLong.mp3`, 336 beats, 2:27): the take
+with its loop played three extra times, seams crossfaded offline, re-encoded at
+192k and **re-measured**. The encoder's padding moved beat 0 by a whole beat
+modulo the grid (it read a beat late); the tool folds the shift to the nearest
+whole beat, leaving beat 0 3.5 ms before the first sample, which `_fileStart`
+handles by delaying rather than clipping.
+
+**His chart fits every song** (`fitShadow`): the hand-written 128-beat chart is
+opening / march / finale; the finale is pinned to the song's end and the march
+fills the gap with whole copies plus the tail of one, never cut inside a 凶. At
+128 beats it is the chart that shipped, event for event.
+
+**Tried and failed:** an unconstrained beat search (multiples of the beat);
+finding the loop from the prompt's chord progression (the takes ignore it);
+taking the long cut's re-measured beat 0 at face value (one beat late).

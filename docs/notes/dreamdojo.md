@@ -2148,10 +2148,37 @@ souls / One Winged Angel inspired with lyrics":
   1.2s first, and counted the jump over a sweep two beats earlier as "in the
   air"; it is one jump's airtime, 0.7s, and `onGround` covers a double jump.
 
+**His recordings, one per level** — Richard: "Orchestral 1 the Medium boss
+fight music ..., Electronic 1 is the Hard ..., and Electronic 2 is the Extra
+Hard", "it would be ideal if the songs could loop", "After the player beats
+Shadow Lionheart on the set difficulty, then the song should be added to the
+Kata Trace ... with the Easy song being the exception":
+- EASY keeps the procedural theme; MEDIUM / HARD / 秘 EXTRA HARD play Requiem,
+  Darksynth and Nightmare (`SHADOW_TRACK`), each on its measured loop for as
+  long as the round lasts. How they were made and looped:
+  [audio.md](audio.md#shadow-lionhearts-recordings).
+- **In Kata Trace each is a trophy**: locked until she beats him at that level
+  exactly, and the lock says so ("Beat Shadow Lionheart on MEDIUM to unlock
+  this song!"), in the picker, on DANCE and in the Beat Map editor's list. A
+  custom chart of a locked song is locked too. **The EXTRA HARD songs are not
+  even listed** until the secret is open to her — the list would give it away.
+  Nightmare has a 2:27 long cut that opens with it.
+- **Debug panel, SHADOW LIONHEART section**, both keyless and both ask:
+  *open every Shadow song in Kata Trace* (this tab only), and *open 秘 EXTRA
+  HARD — as if 1st Class*, which sets an `extra` flag in the save; `extraOpen`
+  and the rank's own `_watchFirstClass` read it, so the fanfare, toast and his
+  line play exactly as a real promotion's would — in the simulator, where the
+  watcher runs. Her rank does not change.
+- Those dialogs used to open UNDER the debug panel (z 58 against 90) — the
+  board and save wipes too. `#panel-confirm` rises above it while it is open.
+
 **Open:**
 - The choir's words are vowels and consonant bursts. They read as a chant,
-  not as diction. A real sung vocal would have to be a generated recording in
-  `public/voice/`, and is Richard's call.
+  not as diction. A real sung vocal would be a generated recording, which the
+  new rule allows; Richard's call.
+- The recordings are not the theme re-orchestrated — same tempo and mood, not
+  its chords. ElevenLabs' music node takes an audio reference, untried.
+- Kata Trace at 1.25×/1.5× raises a recording's pitch.
 - None of it has been played by the kids. The slash rates (`DIFFS.slash`) and
   the HARD 凶's beat-apart spacing are first numbers.
 
