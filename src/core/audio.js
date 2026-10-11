@@ -854,6 +854,15 @@ export class Audio {
         this._noise({ from: 3200, to: 800, dur: 0.18, gain: 0.55 * v, q: 1.8, delay: 0.15 });
         this._tone({ type: 'triangle', from: 140, to: 60, dur: 0.16, gain: 0.2 * v });
         break;
+      case 'specter':
+        /* SHADOW LIONHEART, DASHING (dream/shadow.js). Richard: "a 'whoosh'
+           or specter sound effect". A breathy rush that rises and falls back
+           with a hollow, falling moan a fifth under it — air, then a ghost. */
+        this._noise({ from: 500, to: 2400, dur: 0.14, gain: 0.45 * v, q: 0.9 });
+        this._noise({ from: 2400, to: 380, dur: 0.3, gain: 0.4 * v, q: 0.9, delay: 0.12 });
+        this._tone({ type: 'sine', from: 520, to: 260, dur: 0.38, gain: 0.08 * v });
+        this._tone({ type: 'sine', from: 780, to: 390, dur: 0.36, gain: 0.05 * v, delay: 0.02 });
+        break;
       case 'breath':
         // A long exhale that opens up and closes again.
         this._noise({ from: 400, to: 2600, dur: 0.38, gain: 0.55 * v, type: 'lowpass', q: 0.9 });

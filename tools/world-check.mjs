@@ -40448,7 +40448,11 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
           const a = F.act;
           if (a.kind === 'tell' && a.what === 'cross' && !centres.includes(a.c)) {
             centres.push(a.c);
-            if (dodge && centres.length > 1) put(her, { x: her.position.x - SW.SIM.dx, z: her.position.z - SW.SIM.dz + 3.2, y: IH.y });
+            /* Between the X's arms, which is along ITS line: on HARD each X
+               comes from a new side (CIRCLE), so "+z" is no longer that. */
+            if (dodge && centres.length > 1) {
+              put(her, { x: her.position.x - SW.SIM.dx + Math.sin(a.yaw) * 3.2, z: her.position.z - SW.SIM.dz + Math.cos(a.yaw) * 3.2, y: IH.y });
+            }
           }
           F._think(1 / 60);
           D.st[0].iframes = Math.max(0, (D.st[0].iframes ?? 0) - 1 / 60);
@@ -40485,6 +40489,137 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       const wE = walk(0); const wH = walk(2);
       F.level = 2;
       ok('影 on HARD he walks LV.speed times as fast as on easy', Math.abs(wH / wE - LV[2].speed) < 0.02, `${wE.toFixed(2)} ${wH.toFixed(2)}`);
+
+      /* 円 HARD AND UP: FIVE SPOTS ROUND HER. Richard: "move around the
+         selected player in the 5 different directions, similar to Kata Trace:
+         W, NW, N, NE, and E relative to the player. He moves quickly into
+         place, and then does his attack." Off her lens: N is into the screen,
+         W and E its left and right — none of them between her and the camera. */
+      {
+        const view = { x: 0.6, z: 0.8 };
+        const right = { x: -view.z, z: view.x };
+        const dirs = Object.fromEntries(SH.CIRCLE_SPOTS.map((s) => [s, SH.circleDir(s, view)]));
+        const dot = (a, b) => a.x * b.x + a.z * b.z;
+        ok('円 the five spots are W, NW, N, NE and E off HER lens: N into the screen, E its right, and none downstage of her',
+          SH.CIRCLE_SPOTS.join() === 'W,NW,N,NE,E' && dot(dirs.N, view) > 0.999 && dot(dirs.E, right) > 0.999 && dot(dirs.W, right) < -0.999
+          && Math.abs(dot(dirs.NE, view) - Math.SQRT1_2) < 1e-9 && SH.CIRCLE_SPOTS.every((s) => dot(dirs[s], view) >= -1e-9),
+          SH.CIRCLE_SPOTS.map((s) => `${s} ${dot(dirs[s], view).toFixed(2)}`).join(' '));
+        ok('...on HARD and EXTRA HARD only — easy and medium are the fights they were',
+          LV[2].circle && SH.SHADOW_EXTRA.circle && !LV[0].circle && !LV[1].circle);
+
+        // A live HARD fight, phase two, for twenty seconds with her standing still.
+        const at = isleSpot(IH, SH.ARENA_AT[0] - 2, 1);
+        put(her, at);
+        D.refillSim(her);
+        const hx = her.position.x - SW.SIM.dx; const hz = her.position.z - SW.SIM.dz;
+        F.view = view;
+        F.phase = 2;
+        F._clearTells();
+        F.act = { kind: 'idle', t: 0.5 };
+        BX.local.x = hx + 9; BX.local.z = hz; BX.group.position.x = BX.local.x; BX.group.position.z = BX.local.z;
+        fakeGame.sounds.length = 0;
+        const landings = []; let dashes = 0; let attackAt = 0; let wasDash = false; let longest = 0; let cur = null;
+        for (let f = 0; f < 60 * 20; f++) {
+          const before = F.act;
+          if (before.kind === 'dash' && before !== cur) { cur = before; dashes++; longest = Math.max(longest, before.len); }
+          F._think(1 / 60);
+          D.st[0].iframes = 9; // she stands through every blow; this is about HIM
+          if (wasDash && F.act.kind !== 'dash') {
+            const rx = BX.local.x - hx; const rz = BX.local.z - hz;
+            const want = SH.circleDir(before.spot, view);
+            landings.push({ r: Math.hypot(rx, rz), on: (rx * want.x + rz * want.z) / Math.hypot(rx, rz), up: rx * view.x + rz * view.z, next: F.act.kind });
+            if (F.act.kind === 'tell') attackAt++;
+          }
+          wasDash = F.act.kind === 'dash';
+          if (F.act.kind === 'recover' && F.act.t > 0.5) F.act.t = 0.5;
+        }
+        const badLand = landings.filter((q) => Math.abs(q.r - SH.CIRCLE.r) > 0.05 || q.on < 0.999 || q.up < -1e-6);
+        ok('円 on HARD he DASHES to one of her five spots, lands on it, and his blow\'s tell starts on the frame he lands',
+          dashes >= 6 && landings.length >= 6 && badLand.length === 0 && attackAt === landings.length && longest <= SH.CIRCLE.dashMax,
+          `${dashes} dashes, ${landings.length} landed, ${badLand.length} off their spot, ${attackAt} straight into a blow, longest ${longest.toFixed(2)}s`);
+        ok('...with a whoosh each time ("a \'whoosh\' or specter sound effect"), a sound the synth has',
+          fakeGame.sounds.filter((s) => s === 'specter').length === dashes && read('../src/core/audio.js').includes("case 'specter':"),
+          `${fakeGame.sounds.filter((s) => s === 'specter').length} of ${dashes}`);
+
+        /* "The cross-slash should be limited in distance, mainly in front of
+           Shadow, and no longer follows a player who is far away." */
+        F._clearTells();
+        BX.local.x = hx + 18; BX.local.z = hz; BX.group.position.x = BX.local.x; BX.group.position.z = BX.local.z;
+        F._choose(her, 18, 'cross', 1);
+        const cx = F.act.c;
+        const fromHim = Math.hypot(cx.x - BX.local.x, cx.z - BX.local.z);
+        const ahead = ((cx.x - BX.local.x) * (hx - BX.local.x) + (cx.z - BX.local.z) * (hz - BX.local.z)) / (fromHim * 18);
+        const farSafe = !SH.inCross(cx, F.act.yaw, hx, hz);
+        F._clearTells();
+        F.level = 0;
+        F._choose(her, 18, 'cross', 1);
+        const easyOnHer = Math.hypot(F.act.c.x - hx, F.act.c.z - hz) < 1e-9;
+        F._clearTells();
+        F.level = 2;
+        ok('円 his Cross Slash on HARD is drawn in front of HIM, no further than his reach: a kitten 18 away is not followed — easy still lands on her',
+          Math.abs(fromHim - SH.CIRCLE.crossReach) < 1e-6 && ahead > 0.999 && farSafe && easyOnHer,
+          `centre ${fromHim.toFixed(2)} out, ahead ${ahead.toFixed(3)}, she is ${farSafe ? 'clear' : 'IN IT'}`);
+      }
+
+      /* 体 HIS BODY, every level. "players shouldn't be able to run through
+         Shadow ... If the player runs into Shadow, then the player gets
+         knocked back and dazed for 0.5 seconds and plays the 'vr_scared'
+         image. When Shadow passes through the player, the player is also
+         playing the 'vr_scared' image and loses input until Shadow lands." */
+      {
+        const R = SH.BODY.r + SH.BODY.kitten;
+        const at = isleSpot(IH, SH.ARENA_AT[0], 0);
+        const ox = at.x - SW.SIM.dx; const oz = at.z - SW.SIM.dz;
+        BX.local.x = ox; BX.local.z = oz; BX.group.position.x = ox; BX.group.position.z = oz;
+        F._clearTells();
+        F.act = { kind: 'recover', t: 99 };
+        const gap = () => Math.hypot(her.position.x - SW.SIM.dx - ox, her.position.z - SW.SIM.dz - oz);
+        // Standing against him: put back on his edge, not frightened.
+        put(her, { x: ox + 0.7, z: oz, y: IH.y });
+        her.spookT = 0; her.velocity.set(0, 0, 0);
+        F._bodies(1 / 60);
+        const leant = { gap: gap(), spook: her.spookT };
+        // Running into him at 7 a second: thrown back off him, and scared for 0.5s.
+        put(her, { x: ox + 1.6, z: oz, y: IH.y });
+        her.spookT = 0; her.velocity.set(-7, 0, 0);
+        F._bodies(1 / 60);
+        const ran = { gap: gap(), spook: her.spookT, vx: her.velocity.x };
+        ok('体 she cannot walk through him: leaning on him she is set on his edge, unhurt and unafraid',
+          Math.abs(leant.gap - R) < 1e-6 && leant.spook === 0, `${leant.gap.toFixed(2)} of ${R}`);
+        ok('...and RUNNING into him knocks her back and scares her for half a second',
+          Math.abs(ran.gap - R) < 1e-6 && ran.spook === SH.BODY.bump && SH.BODY.bump === 0.5 && ran.vx >= SH.BODY.push - 1e-9,
+          `spook ${ran.spook}, thrown at ${ran.vx.toFixed(1)}`);
+        // Through her: a dash from one side of her to the other.
+        put(her, { x: ox, z: oz, y: IH.y });
+        her.spookT = 0; her.velocity.set(0, 0, 0);
+        const view = F.view;
+        F.view = { x: 0, z: 1 };
+        BX.local.x = ox - SH.CIRCLE.r; BX.local.z = oz;
+        F.spot = 'W';
+        F.act = { kind: 'dash', t: 0, u: 0, len: 0.4, from: { x: ox - SH.CIRCLE.r, z: oz }, to: { x: ox + SH.CIRCLE.r, z: oz }, spot: 'E', then: { force: 'slam' } };
+        let ghost = 0; let frozeFrames = 0; let landedAt = null; let freeAt = null; let pushed = 0;
+        for (let f = 0; f < 60; f++) {
+          const was = F.act.kind;
+          F._think(1 / 60);
+          F._bodies(1 / 60);
+          ghost = Math.max(ghost, BX.spectre);
+          if (her.spookT > 0) frozeFrames++;
+          if (gap() > 0.01 && was === 'dash') pushed++;
+          if (was === 'dash' && F.act.kind !== 'dash' && landedAt == null) landedAt = f;
+          her.spookT = Math.max(0, her.spookT - 1 / 60);
+          if (landedAt != null && freeAt == null && her.spookT === 0) freeAt = f;
+        }
+        F.view = view;
+        const P = read('../src/entities/player.js');
+        ok('体 he goes THROUGH her as a ghost — see-through, not shoving her — and she is frozen in fright until he lands, and only just after',
+          ghost === 1 && pushed === 0 && frozeFrames > 0 && landedAt != null && freeAt != null && freeAt - landedAt <= 10 && BX.spectre === 0,
+          `ghost ${ghost}, frozen ${frozeFrames} frames, landed ${landedAt}, free ${freeAt}, shoved ${pushed}`);
+        ok('...and fright is her scared drawing and a frozen stick, the same two the triple slash uses',
+          /this\.heldBy \|\| this\.spookT > 0\) pad = FROZEN_PAD/.test(P) && /const held = \(!!this\.heldBy \|\| this\.spookT > 0\) && !this\.ko;/.test(P));
+        her.spookT = 0;
+        F._clearTells();
+        F.act = { kind: 'idle', t: 99 };
+      }
       F.dispose();
       put(sis, inside);
     }

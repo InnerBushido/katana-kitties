@@ -91,6 +91,60 @@ export const SWEEP = { tell: 1.1, r: 6.5, dmg: 14, clear: 0.6, recover: 0.7 };
 export const CROSS = { tell: 1.2, len: 14, half: 1.3, dmg: 22, open: 2.2, chain: 0.8 };
 
 /**
+ * HARD AND UP, HE FIGHTS FROM FIVE SPOTS ROUND HER. Richard: "on HARD and
+ * EXTRA HARD, have Shadow Lionheart move around the selected player in the 5
+ * different directions, similar to Kata Trace: W, NW, N, NE, and E relative to
+ * the player. He moves quickly into place, and then does his attack ... The
+ * cross-slash should be limited in distance, mainly in front of Shadow, and
+ * no longer follows a player who is far away. He can also reposition around
+ * the player during the cross-slash to get closer to the player."
+ *
+ * The five are Kata Trace's back row and its two sides, read off HER LENS
+ * (`view`, as `upstageSpot` reads it): N is beyond her into the screen, W and
+ * E are her screen's left and right — so he never stands between her and the
+ * camera, which is what staging upstage was for in the first place. Between
+ * blows he walks to keep his spot as she moves (at the level's own speed, the
+ * knob `speed` has always been); to throw one he DASHES to a different spot,
+ * `dashV` a second, and the blow's tell starts on the frame he lands. The
+ * Cross Slash is drawn in front of him, at most `crossReach` out — on her if
+ * she is that close, short of her if she is not — and between the Xs of the
+ * 凶 he dashes again, so the next one comes from a new side.
+ */
+export const CIRCLE = { r: 6.5, dashV: 30, dashMin: 0.14, dashMax: 0.45, crossReach: 7 };
+export const CIRCLE_SPOTS = ['W', 'NW', 'N', 'NE', 'E'];
+
+/** Unit vector from her to spot `s`, off a lens looking along `view`. */
+export function circleDir(s, view) {
+  const f = view ?? { x: 0, z: 1 };
+  const rx = -f.z; const rz = f.x;
+  const [a, b] = { W: [0, -1], NW: [1, -1], N: [1, 0], NE: [1, 1], E: [0, 1] }[s];
+  const x = f.x * a + rx * b; const z = f.z * a + rz * b;
+  const n = Math.hypot(x, z) || 1;
+  return { x: x / n, z: z / n };
+}
+
+/** Where spot `s` round her is, or null if it is off his floor. */
+export function circleSpot(tx, tz, s, view, centre, r = CIRCLE.r) {
+  const d = circleDir(s, view);
+  const p = { x: tx + d.x * r, z: tz + d.z * r };
+  return Math.hypot(p.x - centre.x, p.z - centre.z) <= BOSS_ROAM ? p : null;
+}
+
+/**
+ * HE IS SOLID — UNLESS HE IS MOVING THROUGH YOU. Richard: "players shouldn't
+ * be able to run through Shadow. If Shadow moves through the player, then
+ * Shadow becomes temporarily transparent and ghostly ... If the player runs
+ * into Shadow, then the player gets knocked back and dazed for 0.5 seconds
+ * and plays the 'vr_scared' image. When Shadow passes through the player,
+ * the player is also playing the 'vr_scared' image and loses input until
+ * Shadow lands in his spot. Also play a 'whoosh' or specter sound effect."
+ * `r` is his body, `kitten` hers (the sim's 0.6); `bump` the scare; `push`
+ * how hard she bounces off; `into` how fast she must be running AT him for it
+ * to be a collision rather than standing against him. Every level.
+ */
+export const BODY = { r: 1.4, kitten: 0.6, bump: 0.5, push: 9, into: 1.5, ghostFade: 0.25 };
+
+/**
  * THREE DIFFICULTIES. Richard: "Shadow Lionheart is too easy. Let's make it
  * that there are 3 difficulties. The current timing and difficulty should be
  * easy. We should increase his speed, attack speed, health, damage dealt and
@@ -144,6 +198,7 @@ export const SHADOW_LEVELS = [
   {
     id: 'hard', name: 'HARD', colour: 0xff4a6e, speed: 1.7, tellK: 0.68, restK: 0.45, hits: 40, per: 20,
     dmgK: 1.8, crossDmg: 25, crossBonus: 5, phase2: 0.75, triple: true, order: ['cross', 'slam', 'cross', 'sweep'],
+    circle: true,
   },
 ];
 /** One of his blows against HER bar: authored against 100, scaled to her max
@@ -173,7 +228,7 @@ export function shadowDmg(dmg, max) {
 export const SHADOW_EXTRA = {
   id: 'extra', name: 'EXTRA HARD', colour: 0xff2a2a, speed: 2.1, tellK: 0.6, restK: 0.25, hits: 80, per: 40,
   dmgK: 2.7, crossDmg: 35, crossBonus: 10, phase2: 0.9, triple: true, order: ['cross', 'slam', 'cross', 'sweep', 'cross'],
-  secret: true,
+  secret: true, circle: true,
 };
 export const FIGHT_LEVELS = [...SHADOW_LEVELS, SHADOW_EXTRA];
 /** EXTRA HARD's index in `FIGHT_LEVELS`, and so its kiosk's. */
@@ -461,6 +516,8 @@ export class ShadowBoss extends Target {
     aura.position.y = 0.04;
     this.group.add(aura);
     this.open = 0;
+    /** 0..1: how far he has gone to a ghost, moving through somebody (BODY). */
+    this.spectre = 0;
   }
 
   /**
@@ -560,7 +617,7 @@ export class ShadowBoss extends Target {
     }
     if (this.sprite) {
       const gold = this.open > 0;
-      this.sprite.mat.color.setHex(this.flash > 0.3 ? 0xffffff : gold ? 0xffc93c : this.tint);
+      this.sprite.mat.color.setHex(this.flash > 0.3 ? 0xffffff : gold ? 0xffc93c : this.spectre > 0.05 ? 0xbfe6ff : this.tint);
       // Soft, not a blink — see `holoFlicker` (it was 3.7 hard blinks a second).
       this.baseOp = holoFlicker(this.t, 3, 0.9, 0.3);
       this.sprite.mat.opacity = this.baseOp;
@@ -582,7 +639,14 @@ export class ShadowBoss extends Target {
        be a guard from one side and a slam from the other. Overwrite it with
        what he is doing; facing still turns the quad to the lens. */
     if (this.posed) this.sprite._setCell(this.pose, 0, false);
-    if (this.sprite) this.sprite.mat.opacity = (this.baseOp ?? 0.9) * veil;
+    if (this.sprite) {
+      /* A GHOST, PASSING THROUGH: two-thirds gone and pale. The billboard's
+         alphaTest (0.35) would cut a figure that faint to nothing at all, so
+         it drops while he is one — both non-zero, so no shader rebuild. */
+      const g = this.spectre ?? 0;
+      this.sprite.mat.opacity = (this.baseOp ?? 0.9) * veil * (1 - 0.65 * g);
+      this.sprite.mat.alphaTest = g > 0.02 ? 0.04 : 0.35;
+    }
     _e.setFromQuaternion(camera.quaternion, 'YXZ');
     this.bladeGrp.rotation.y = _e.y;
   }
@@ -1027,6 +1091,45 @@ export class ShadowFight {
       this._say(SHADOW_LINES.cross.line, 3.5);
     }
     this._think(dt);
+    this._bodies(dt);
+  }
+
+  /** BODY: nobody runs through him; he may go through anybody, as a ghost. */
+  _bodies(dt) {
+    const b = this.boss;
+    if (!b) return;
+    const o = b.local;
+    const R = BODY.r + BODY.kitten;
+    const dash = this.act.kind === 'dash';
+    let through = false;
+    for (const { p, out } of this.who.values()) {
+      if (out || p.angel) continue;
+      const x = p.position.x - SIM.dx; const z = p.position.z - SIM.dz;
+      const dx = x - o.x; const dz = z - o.z;
+      const d = Math.hypot(dx, dz);
+      if (d >= R) continue;
+      if (dash) {
+        // Through her: she freezes in fright until he has landed.
+        through = true;
+        p.spook?.(Math.max(0, this.act.len - this.act.u) + 0.12);
+        continue;
+      }
+      const ux = d > 1e-3 ? dx / d : -b.facing.x; const uz = d > 1e-3 ? dz / d : -b.facing.z;
+      const into = -((p.velocity?.x ?? 0) * ux + (p.velocity?.z ?? 0) * uz);
+      p.position.x = o.x + ux * R + SIM.dx;
+      p.position.z = o.z + uz * R + SIM.dz;
+      if (into > BODY.into && !(p.spookT > 0)) {
+        p.velocity.x = ux * BODY.push;
+        p.velocity.z = uz * BODY.push;
+        p.velocity.y = Math.max(p.velocity.y, 3);
+        p.spook?.(BODY.bump);
+        this.dream.game.sfx?.('hit');
+      } else if (into > 0) {
+        p.velocity.x += ux * into;
+        p.velocity.z += uz * into;
+      }
+    }
+    b.spectre = through ? 1 : Math.max(0, b.spectre - dt / BODY.ghostFade);
   }
 
   /** The nearest kitten he is fighting, flat, in the layer. */
@@ -1051,6 +1154,41 @@ export class ShadowFight {
     if (!tgt) return;
     const tx = tgt.position.x - SIM.dx; const tz = tgt.position.z - SIM.dz;
     const o = b.local;
+
+    if (a.kind === 'dash') {
+      // Its own clock, counting UP: `a.t` is counted down for every act above.
+      a.u += dt;
+      const k = Math.min(1, a.u / a.len);
+      const e = k * k * (3 - 2 * k);
+      o.x = a.from.x + (a.to.x - a.from.x) * e;
+      o.z = a.from.z + (a.to.z - a.from.z) * e;
+      b.group.position.x = o.x; b.group.position.z = o.z;
+      const n = Math.hypot(tx - o.x, tz - o.z) || 1;
+      b.facing = { x: (tx - o.x) / n, z: (tz - o.z) / n };
+      if (k >= 1) {
+        this.spot = a.spot;
+        const dd = Math.hypot(tx - o.x, tz - o.z);
+        // "moves quickly into place, and then does his attack" — on the frame he lands.
+        this._choose(tgt, dd, a.then?.force ?? null, a.then?.chain ?? null);
+      }
+      return;
+    }
+    if (a.kind === 'idle' && this.L.circle) {
+      const n = d || 1;
+      b.facing = { x: (tx - o.x) / n, z: (tz - o.z) / n };
+      if (a.t <= 0) { this._dashTo(tgt, null); return; }
+      // Between blows: keep his spot round her, at walking pace.
+      this.spot ??= this._nearestSpot(tx, tz);
+      const goal = circleSpot(tx, tz, this.spot, this.view, this.centre) ?? upstageSpot(tx, tz, this.view ?? { x: 0, z: 1 }, this.centre, CIRCLE.r);
+      const gd = Math.hypot(goal.x - o.x, goal.z - o.z);
+      if (gd > 1e-6) {
+        const step = Math.min(SPEED * dt, gd);
+        o.x += ((goal.x - o.x) / gd) * step;
+        o.z += ((goal.z - o.z) / gd) * step;
+        b.group.position.x = o.x; b.group.position.z = o.z;
+      }
+      return;
+    }
 
     if (a.kind === 'idle') {
       // Walk at her, and turn to her: the facing is what the next slam uses.
@@ -1110,6 +1248,37 @@ export class ShadowFight {
     }
   }
 
+  /** The spot round her he is nearest now. */
+  _nearestSpot(tx, tz) {
+    const o = this.boss.local;
+    let best = 'N'; let bd = Infinity;
+    for (const s of CIRCLE_SPOTS) {
+      const q = circleSpot(tx, tz, s, this.view, this.centre);
+      if (!q) continue;
+      const d = Math.hypot(q.x - o.x, q.z - o.z);
+      if (d < bd) { bd = d; best = s; }
+    }
+    return best;
+  }
+
+  /** Off to another of her five spots, fast; `then` is the blow to throw on landing. */
+  _dashTo(tgt, then) {
+    const b = this.boss;
+    const o = b.local;
+    const tx = tgt.position.x - SIM.dx; const tz = tgt.position.z - SIM.dz;
+    const open = CIRCLE_SPOTS.filter((s) => s !== this.spot)
+      .map((s) => ({ s, q: circleSpot(tx, tz, s, this.view, this.centre) })).filter((c) => c.q);
+    /* SEEDED, not Math.random: the order he picks sides in must replay, or a
+       check that walks the fight is a coin flip (house style). */
+    this._rng = ((this._rng ?? 7) * 1103515245 + 12345) % 2147483648;
+    const pick = open.length ? open[Math.floor((this._rng / 2147483648) * open.length)]
+      : { s: this.spot, q: upstageSpot(tx, tz, this.view ?? { x: 0, z: 1 }, this.centre, CIRCLE.r) };
+    const dist = Math.hypot(pick.q.x - o.x, pick.q.z - o.z);
+    const len = Math.max(CIRCLE.dashMin, Math.min(CIRCLE.dashMax, dist / CIRCLE.dashV));
+    this.act = { kind: 'dash', t: 0, u: 0, len, from: { x: o.x, z: o.z }, to: pick.q, spot: pick.s, then };
+    this.dream.game.sfx?.('specter');
+  }
+
   /** `force` names the attack — for world-check, which draws each shape on
    *  demand and measures it against its own hit test. */
   _choose(tgt, d, force = null, chain = null) {
@@ -1141,7 +1310,14 @@ export class ShadowFight {
       this.act = { kind: 'tell', what: 'sweep', t: tell, tell, meshes, o: { x: o.x, z: o.z } };
       say = 'SWEEP! JUMP!';
     } else {
-      const c = { x: tgt.position.x - SIM.dx, z: tgt.position.z - SIM.dz };
+      let c = { x: tgt.position.x - SIM.dx, z: tgt.position.z - SIM.dz };
+      if (L.circle) {
+        // In front of HIM, no further than his reach: a far kitten is not followed.
+        const fx = c.x - o.x; const fz = c.z - o.z; const fd = Math.hypot(fx, fz) || 1;
+        b.facing = { x: fx / fd, z: fz / fd };
+        const k = Math.min(fd, CIRCLE.crossReach);
+        c = { x: o.x + b.facing.x * k, z: o.z + b.facing.z * k };
+      }
       const yaw = Math.atan2(b.facing.x, b.facing.z);
       for (const dir of crossBars(yaw)) meshes.push(barMesh(c.x, y, c.z, CROSS.half * 2, CROSS.len, dir));
       /* 凶: THREE Xs. `chain` is how many are still to come after this one;
@@ -1221,6 +1397,8 @@ export class ShadowFight {
       // The next X of the 凶, drawn on her NOW. No breath between them.
       this.n -= 1;
       const { p: tgt, d } = this._target();
+      // Hard and up: round her to a new side first, and the next X from there.
+      if (tgt && this.L.circle) { this._dashTo(tgt, { force: 'cross', chain: a.cuts - 1 }); return; }
       if (tgt) { this._choose(tgt, d, 'cross', a.cuts - 1); return; }
     }
     if (a.what === 'cross') {
