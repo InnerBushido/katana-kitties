@@ -18,7 +18,7 @@ import { World, CLANS } from './world/world.js';
 import { Player, ATTACKS, COMBAT, BASE_REACH, MAX_HP, KO_TIME, SWEEP_UP } from './entities/player.js';
 import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss, cssFor } from './core/palette.js';
 import {
-  splitLayout, mapWidth, mapSpot, mathSharedWidth, assignMaps, nearestMap, keyMaps,
+  splitLayout, mapWidth, mapSpot, pauseBeside, mathSharedWidth, assignMaps, nearestMap, keyMaps,
   fitDistance, stablePanes, paneSeats, outOfShot, framedMembers, paneWiden, cornerSpot,
   fitShot, RIG_AIM_RATE, RIG_DIST_RATE,
   warnSpot, warnWidth, WARN_FIT,
@@ -861,7 +861,12 @@ class Game {
        is top-left because that is where it was asked to be. A class the
        stylesheet does not read is a comment that lies about where the layout
        lives, so there isn't one. */
-    this.touchPad.setVisible(pad);
+    /* A PHONE ALWAYS HAS THE CORNER BUTTON, the stick or no stick — see
+       `TouchPad.setCornerOnly`. Corner-only is set FIRST so that the frame it
+       becomes visible on is already the reduced one. */
+    this.touchPad.setCornerOnly(phone && !pad);
+    this.touchPad.onCornerSkip = () => this._skipScene();
+    this.touchPad.setVisible(pad || phone);
     /* THE PAD ALWAYS CARRIES WASD AS ITS SECOND SURFACE — see `_freeKeysets` in
        core/input.js. On a phone there is no keyboard and that costs nothing; on
        a tablet with one attached it is player 1's other hand, and on this desktop
@@ -1038,10 +1043,17 @@ class Game {
   _updateTouchContext() {
     if (!this.touchPad?.visible) return;
 
-    const scene = this._sceneActive();
+    /* THE GRIFFIN'S FLIGHT IS A SCENE TOO, for this button. "When flying on
+       griffin to/from arena, the menu icon is not turning into the 'fast
+       forward' icon like it does to skip a cutscene." The ride has been
+       skippable on Start all along (`_updatePlay`'s `this.travel` branch) and
+       the button went on saying MENU, which is the glyph lying about what a
+       tap does. It is not in `_sceneActive` itself, which a dozen other
+       callers read as "a story owns the screen". */
+    const scene = this._sceneActive() || !!this.travel;
     this.touchPad.setPauseMode(scene ? 'skip' : 'menu');
     this.touchPad.setSceneMode(scene);
-    if (scene) return;
+    if (scene || this.touchPad.cornerOnly) return;
 
     const p = this.players[0];
     if (!p) return;
@@ -1455,6 +1467,33 @@ class Game {
       await this.renderer.compileAsync(this.scene, cam);
     } catch (e) {
       console.warn('[boot] shader warm-up skipped', e);
+    }
+    /* ...AND EVERY TEXTURE, AND ONE DRAW, UNDER THE SAME SCREEN. Richard: "On
+       mobile, when starting a new game, the game is freezing for a few seconds
+       before beginning." Linking was only half of the first frame. Measured at
+       844x390 with the loading screen already down: the first `render` was
+       457ms and every one after it 4-10, because a program that has linked
+       still uploads every atlas it samples, and the buffers of every mesh it
+       draws, on the frame it is first drawn — and that frame was the first
+       one she could see. It is the hitch the sim already pays off the same way
+       (`primeSim`, `_primeSim`). NOT the Dream Dojo, which it was blamed on:
+       `dream.build` is 8ms, and the sim's own textures stay out of this —
+       `traverseVisible` skips its hidden root, and `primeSim` puts them up
+       under the tour's fade, where they cost nobody a frame. */
+    try {
+      const seen = new Set();
+      this.scene.traverseVisible((o) => {
+        for (const m of [].concat(o.material ?? [])) {
+          for (const t of [m.map, m.alphaMap, m.emissiveMap, m.uniforms?.map?.value]) {
+            if (!t?.isTexture || seen.has(t)) continue;
+            seen.add(t);
+            this.renderer.initTexture(t);
+          }
+        }
+      });
+      this.renderer.render(this.scene, cam);
+    } catch (e) {
+      console.warn('[boot] texture warm-up skipped', e);
     }
   }
 
@@ -2992,6 +3031,24 @@ class Game {
       el.addEventListener('change', () => writePref(key, Number(el.value)));
     };
     vol('set-sfx', 'sfx', (v) => this.audio.setSfxVolume(v), () => this.audio.play('menu'));
+    /* WHERE THE BUTTONS SIT - see `CLUSTER_SHIFT`. The pad moves under the
+       panel as the slider does, so she can see the spot she is choosing.
+       WRITTEN ON `input`, NOT ON `change`: a slider moved by a stick in
+       `MenuNav._adjust` only ever fires `input`, so a pref written on the
+       release alone would never be written from a controller. */
+    const shift = (id, key, axis) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (this._prefs[key] !== undefined) el.value = String(this._prefs[key]);
+      const apply = () => {
+        const s = { ...this.touchPad.shift, [axis]: Number(el.value) };
+        this.touchPad.setShift(s.x, s.y);
+      };
+      apply();
+      el.addEventListener('input', () => { apply(); writePref(key, Number(el.value)); });
+    };
+    shift('set-padx', 'padx', 'x');
+    shift('set-pady', 'pady', 'y');
     vol('set-music', 'music', (v) => {
       this.audio.setMusicVolume(v);
       /* Turning it back up must resume THIS island's piece, not the home
@@ -5242,7 +5299,8 @@ class Game {
     for (let i = 0; i < this.partySize; i++) {
       const badge = document.querySelector(`#hud .score.p${i + 1}`);
       if (!badge) continue;
-      const k = this.input.bindings[i]?.keyset;
+      // `keysetOf`, so the touch player sharing WASD dims too — see there.
+      const k = this.input.keysetOf(i);
       const shared = k != null && this.input.keysetShare(k).length > 1;
       const waiting = shared && !this.input.keysetDrives(k, i);
       badge.style.opacity = waiting ? '0.4' : '';
@@ -9729,7 +9787,8 @@ class Game {
       const slot = this.input.bindings.findIndex((b) => b.touch);
       if (slot >= 0) this.touchPad.paint(this.input.players[slot]);
       this._updateTouchContext();
-      this._updateMathForDojo();
+      // Not for the corner-only pad: that is the stick's rule, and was before.
+      if (!this.touchPad.cornerOnly) this._updateMathForDojo();
     }
 
     // Keep the controller readout live while it's on screen — it's only
@@ -11488,6 +11547,9 @@ class Game {
     /* What already sits in a top corner, measured once per draw and only if a
        phone's split map asks — see `cornerSpot`. */
     let cornerBlocks = null;
+    /* ...and the maps that went INTO a top corner, so the pause button can
+       step out of their way — see `pauseBeside`. */
+    const cornerMaps = [];
 
     for (let i = 0; i < this.maps.length; i++) {
       const box = document.getElementById(`map-box-${i}`);
@@ -11593,9 +11655,12 @@ class Game {
            pane that does not reach the top of the screen, and in the Dojo,
            where `_drawMathBoard` can take a pane's top outer corner for the
            board; both keep the seam rule below. */
-        const spot = (this.device.touchPrimary && !mathUp
-          && cornerSpot({ v, W, H, size, avoid: cornerBlocks ??= this._cornerBlocks() }))
-          || mapSpot({ v, W, H, size, pad: 14, hint: HINT_CLEAR });
+        const corner = this.device.touchPrimary && !mathUp
+          && cornerSpot({ v, W, H, size, avoid: cornerBlocks ??= this._cornerBlocks() });
+        const spot = corner || mapSpot({ v, W, H, size, pad: 14, hint: HINT_CLEAR });
+        if (corner) {
+          cornerMaps.push({ left: spot.left, top: spot.top, right: spot.left + size, bottom: spot.top + size });
+        }
         box.style.right = 'auto';
         box.style.bottom = 'auto';
         box.style.left = `${spot.left}px`;
@@ -11662,6 +11727,7 @@ class Game {
     }
 
     this._drawMathBoard(panes, groups, W, H, mathUp);
+    this._placePause(cornerMaps);
     /* AND ANY WARNING ON SCREEN MOVES WITH THE PANES. Riding this throttle
        rather than growing one of its own, exactly as `_updateHint` does: both
        are "something about the shape of the screen has changed", neither is
@@ -11674,6 +11740,30 @@ class Game {
   }
 
   /**
+   * Step the pause button left of a corner map — see `pauseBeside`.
+   *
+   * A CSS VARIABLE ON THE PAD, NOT AN INLINE `right`, so the rule that puts it
+   * back in the corner during a scene (`#touch-pad.scene`) can do so from the
+   * stylesheet: the skip glyph is where Richard looks for it, "in the top
+   * right corner", and the maps are not on screen under a scene anyway.
+   * Its home is read off the button where it is NOW plus the shift it is
+   * carrying, so this costs one rect and never a style flush.
+   */
+  _placePause(maps) {
+    const btn = this.touchPad?.pause;
+    const pad = this.touchPad?.root;
+    if (!btn || !pad) return;
+    const r = btn.getBoundingClientRect();
+    const cur = this._pauseIn ?? 0;
+    const home = r.width > 0
+      ? { left: r.left + cur, right: r.right + cur, top: r.top, bottom: r.bottom } : null;
+    const shift = Math.round(pauseBeside({ home, maps }));
+    if (shift === cur) return;
+    this._pauseIn = shift;
+    pad.style.setProperty('--pause-in', `${shift}px`);
+  }
+
+  /**
    * The page rects a phone's corner map must not land on: the pause button
    * and the scoreboard. MEASURED, for the reason `mapSpot`'s `clear` is — the
    * scoreboard is a row of badges whose width moves with the party, and the
@@ -11683,7 +11773,11 @@ class Game {
    */
   _cornerBlocks() {
     const out = [];
-    for (const sel of ['#touch-pad .tp-pause', '.scoreboard']) {
+    /* NOT THE PAUSE BUTTON ANY MORE — it moves for the map, see `pauseBeside`.
+       Measuring it here as well would have the map avoid wherever the button
+       was moved to last time, and the two would chase each other along the
+       top of the screen at 20Hz. */
+    for (const sel of ['.scoreboard']) {
       const r = document.querySelector(sel)?.getBoundingClientRect();
       if (r && r.width > 0 && r.height > 0) {
         out.push({ left: r.left, top: r.top, right: r.right, bottom: r.bottom });

@@ -46,6 +46,12 @@ export const PREF_CHOICES = {
 /** The two volume sliders, as the slider's own 0..100. */
 export const PREF_LEVELS = ['sfx', 'music'];
 
+/** Sliders with a range of their own: the face cluster's shift, in px (see
+ *  `CLUSTER_SHIFT` in core/touchpad.js — repeated here, like the options
+ *  above, so this file needs no DOM and no pad; `pad-check` asserts the two
+ *  agree, and that the markup's `min`/`max` are the same numbers). */
+export const PREF_RANGES = { padx: [0, 160], pady: [-40, 120] };
+
 function store(s) {
   if (s !== undefined) return s;
   try { return globalThis.localStorage ?? null; } catch { return null; }
@@ -55,6 +61,7 @@ function store(s) {
 export function prefOk(key, v) {
   if (PREF_CHOICES[key]) return PREF_CHOICES[key].includes(v);
   if (PREF_LEVELS.includes(key)) return Number.isFinite(v) && v >= 0 && v <= 100;
+  if (PREF_RANGES[key]) return Number.isFinite(v) && v >= PREF_RANGES[key][0] && v <= PREF_RANGES[key][1];
   return false;
 }
 

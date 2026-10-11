@@ -3213,6 +3213,25 @@ more than distance 64; past that it stays on the kitten eating, at 40 (was 34).
 See "The feast was a still of the whole deck" in
 [mobile.md](docs/notes/mobile.md).
 
+**The eleventh pass (Richard's "Next batch of fixes")** is in
+[mobile.md](docs/notes/mobile.md), thirteen notes on a phone:
+
+- **The corner skip** is there with the stick switched off (`cornerOnly`).
+- **New game**: the first visible frame goes from 457ms to 91ms, because the
+  textures are uploaded under the loading screen.
+- **The face buttons** sit 48px further in. *Settings ▸ Buttons* moves them.
+- **At a talking card**, ACTION and JUMP work at 0.75 opacity, and Payne's and
+  Lionheart's cards scroll (the Lionheart quest was under the floor).
+- **At two players**, the right half's map is in the corner and Menu steps
+  left of it.
+- **The griffin ride** shows the skip glyph.
+- **The profile at 3–4** has one-line tabs, and the tabs are a page the body
+  scrolls to (quests 2 → 9).
+- **Force-spawn on a phone** is P1 + P3 on WASD.
+- **The arena HUD** puts a side on each side of the clock at any seating.
+- **Open:** played on the 844x390 emulation only, not on a real phone. The
+  2v1v1 HUD is checked by the pure deal, not filmed.
+
 **The tenth pass (Richard's "quick fixes")** is in
 [mobile.md](docs/notes/mobile.md) and [payne.md](docs/notes/payne.md):
 

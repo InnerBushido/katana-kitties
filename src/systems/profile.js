@@ -1556,6 +1556,29 @@ export class ProfileScreen {
     const i = this._moved;
     this._moved = null;
     if (i == null || !this.body) return;
+    /* THE TABS ARE A PAGE, at three or four cards — see "THE TABS ARE A PAGE
+       OF THEIR OWN" in style.css. A cursor arriving on a header (or stepping
+       into a tab) brings the whole block on screen, list and all, rather than
+       the header row alone at the bottom edge with the list it opens still
+       under the fold; leaving it for the rack goes back to the top, which at
+       three or four is the whole rack. ONLY AT THREE OR FOUR, asked of the
+       same `data-cards` the stylesheet reads: at one or two "keep those as
+       they are", and a short phone scrolling a two-card body for some other
+       reason must not be thrown back to the top by a cursor leaving a tab. */
+    const cards = Number(this.body.parentElement?.getAttribute?.('data-cards') ?? 0);
+    if (this.mode === 'profile' && cards >= 3) {
+      const inTabs = !!(this.sides[i].inside || this._tabAt(i));
+      const was = this._tabsPage?.[i];
+      (this._tabsPage ??= [])[i] = inTabs;
+      if (inTabs) {
+        this.body.querySelector(`.kd-card.kd-p${i} .kd-tabs`)?.scrollIntoView({ block: 'nearest' });
+        // The inventory's cursor is a cell inside the page, walked below.
+        if (this.sides[i].inside !== 'inventory') return;
+      } else if (was) {
+        this.body.scrollTop = 0;
+        return;
+      }
+    }
     const sel = this.mode === 'shop'
       ? `.kd-shelf .kd-row[data-slot="${this.sides[i].i}"]`
       : this.sides[i].inside === 'inventory'

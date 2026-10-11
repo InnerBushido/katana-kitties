@@ -1794,3 +1794,140 @@ with the voice when it is being said, then just show all the text at once"*
   shown whole, and the count never goes down (`_showWords`).
 - **Measured on the real clips** (a three-way FREE FOR ALL, 12 words): each
   name comes up 30ms after its clip starts, in 18 steps, and none goes down.
+
+## The eleventh pass: thumbs, corners, and lists that scroll
+
+Richard's "Next batch of fixes", thirteen notes, all on a phone. Measured at
+844x390 unless it says otherwise.
+
+### The skip is always in the corner
+
+*"The skip button for cutscenes have disappeared from the top right corner
+when the Input is not set to Mobile. The skip button should always be there
+regardless of the input."*
+
+- **The cause.** With the stick switched off, the whole pad was hidden, and
+  the corner button with it.
+- **The fix.** A phone with the stick off keeps the pad in `cornerOnly`. The
+  stick and the face buttons are gone, and the corner button is drawn only
+  under a scene, where a tap skips (`onCornerSkip`). It is not a device
+  there, so it has no MENU to be.
+
+### The start is paid for under the loading screen
+
+*"when starting a new game, the game is freezing for a few seconds before
+beginning."*
+
+- **Measured.** The first visible frame was 457ms and every one after it
+  4–10. Linking was already done under the screen; uploading every atlas and
+  buffer was not. `dream.build` is 8ms and was not the cause.
+- **The fix.** `_warmWorld` now uploads every visible texture
+  (`renderer.initTexture`) and draws one frame before the screen comes down.
+  The first frame she sees is now 91ms. Prefetching at the title was rejected:
+  the build is CPU-bound, and the lazy world is a memory decision.
+
+### The buttons moved in off the right thumb
+
+*"the buttons on the right side of the screen may be too far to the right and
+hurts my right thumb ... move them about 3x's the gap width between the right
+most button and the right side, to the left. The default y-position is okay."*
+
+- **Measured.** The gap was 16px: the stick's mirror lands off a landscape
+  phone, and the clamp holds the cluster at the edge.
+- **The fix.** `CLUSTER_SHIFT` is 48px in by default. *Settings ▸ Buttons —
+  further in / higher* move it (0–160, −40–120). It is a shift from the
+  mirror, not a position, so a tablet moves by the same thumb-width. `clusterSpot`
+  never lets it into the stick's 46% catchment or off the screen.
+
+### Talking to Payne: ACTION and JUMP work, at three-quarters
+
+*"let's make the Action and Jump buttons enabled so that we can select and back
+out of screens with those button presses. Let's make those buttons 75%
+opaque."*
+
+- The other face buttons stay dead at 0.3 under a card. Pause keeps its 0.5,
+  because it is not one of the two. The earlier "50% or more transparent" note
+  dates from when the card sat over the cluster; it now sits beside it (card
+  x 233–611, JUMP's centre right of 640).
+
+### Payne's and Lionheart's cards scroll
+
+*"Lionheart's quest is not appearing on the 'What's my next quest?' screen ...
+add a scroll list"* and *"make her options scrollable so it works with 3
+players on mobile."*
+
+- **The cause.** The card was `overflow: hidden`, so the fourth Dream Dojo
+  quest was under the floor. At three players the card is 155px tall and holds
+  279px.
+- **The fix.** The whole talking card scrolls, with a thin bar, and BACK and
+  the hint are pinned to its bottom, opaque. The first cut inherited
+  `.pc-foot`'s 0.8 opacity, and the rows read through it.
+- **On a pad.** On the two reading cards (`STICK_SCROLLS`) the stick's
+  up/down scrolls and left/right moves between the two buttons.
+- **Repaints.** A repaint keeps the scroll, so the list does not jump back to
+  the top on every line she says.
+
+### The right half's map is in the corner, and Menu steps aside
+
+*"the minimap on the right side is to the left of the 'Menu' button instead
+of being in the corner."*
+
+- **The cause.** `cornerSpot` treated the pause button as something to avoid,
+  so the map slid in beside it.
+- **The fix.** The map goes in first, at 707–836, and the button steps left of
+  it (`pauseBeside`, to 657–699). The button moves rather than the map because
+  it is 42px and the map is 129. Richard's other offer, the bottom-left, is the
+  stick's catchment.
+- **Under a scene.** The button returns to the true corner for the skip
+  (`--pause-in: 0`).
+
+### The griffin's ride shows the skip
+
+*"When flying on griffin to/from arena, the menu icon is not turning into the
+'fast forward' icon"*.
+
+- The ride has always been skippable on Start. `_updateTouchContext` now
+  treats `this.travel` as a scene for the button only. `_sceneActive` itself
+  is untouched, because a dozen other callers read it.
+
+### The profile at three and four: one-line tabs, and a page to scroll to
+
+*"the tab text wraps around to 2 lines ... keep it on 1 line and decrease the
+text size if needed"* and *"the tab area is too small. Let's make the scroll
+list as large as possible and allow the screen to scroll ... mainly work by
+touch, and be able to page for keyboard/joystick."*
+
+- **The headers.** They are `nowrap` at 16px (18px wrapped to two lines at
+  four). The "JUMP to open" hint is what ellipsises.
+- **Measured at four.** `#kd-body` shows 276px and the rack took 201 of it,
+  so the list had 38px: two quests. That is all "the quests take what is left"
+  can ever give.
+- **The fix.** The tab block is `100cqh` of the body, and the body scrolls
+  between two pages, the rack and the tabs. The list goes 38 → 236px, two
+  quests → nine.
+- **On a pad.** A stick reaching a header scrolls the body 0 → 390 with the
+  block filling it exactly. Leaving for the rack puts it back to 0, and inside
+  the tab the list pages as before.
+- **One and two cards** keep their layout, as asked. Paging would work there,
+  but their list already fits four quests.
+
+### Four on a phone's keyboard: P1 and P3 on WASD
+
+*"player 1 and player 3 should go to WASD, like it is on web/pc."* See
+[input.md](input.md), *Force-spawn*. The old three-on-the-arrows answer was
+pinned in `pad-check` as the ring-of-four case, and that check was the bug.
+
+### The arena HUD: a side each side of the clock
+
+*"In a 1v3 match, both team's health and names are on the left of the
+countdown timer"* and *"In a 1v2v1v1 match, the 2 blue players are crammed on
+the left side of the timer"*.
+
+- **The cause.** The wings were dealt left until the left held half, which is
+  right only when sides arrive biggest-first. Sides arrive in seat order, and
+  the picker can seat the lone kitten first. A 3v1 or a 2v1 seated that way
+  left the right wing empty, and a 2v1v1 seated 1,2,2,1 went 3 | 1.
+- **The fix.** `dealWings` takes the most even split. Ties go to: the left not
+  smaller, the first-seated side on the left, then fewest out of order. Every
+  seating the old deal already split evenly comes out the same, the duel
+  included. `world-check` puts all 108 seatings of every league through it.

@@ -121,7 +121,7 @@ import {
   cardRect,
   paneSeats, outOfShot, framedMembers, OUT_DROP, paneWiden, BIG_PANE_IN,
   mathSharedWidth, MATH_SHARED_W, MAP_TOUCH_UP, MAP_QUAD_DOWN, MAP_MERGED_PHONE,
-  warnSpot, warnWidth, WARN_UP, WARN_FIT, WARN_MAX_W, cornerSpot, fitShot,
+  warnSpot, warnWidth, WARN_UP, WARN_FIT, WARN_MAX_W, cornerSpot, pauseBeside, fitShot,
   RIG_AIM_RATE, RIG_DIST_RATE,
 } from '../src/core/split.js';
 import {
@@ -30006,7 +30006,9 @@ console.log('\n--- quests: earned before the end, paid one at a time after it --
        because "somewhere in main.js" would pass with the call in a dead
        branch. */
     ok('...and they move with the panes for as long as they are up',
-      /this\._drawMathBoard\(panes, groups, W, H, mathUp\); this\._placeWarnings\(\);/
+      /* `_placePause` between them is the pause button stepping aside for a
+         corner map — placed off the same panes, so it belongs in the run. */
+      /this\._drawMathBoard\(panes, groups, W, H, mathUp\);(?: this\._placePause\(cornerMaps\);)? this\._placeWarnings\(\);/
         .test(Mc));
     /* ...AND THE HINT NO LONGER MOVES THEM, which is the old rule and would now
        fight the new one: it measured `.hint` and wrote a `bottom`. */
@@ -30542,13 +30544,25 @@ console.log('\n=== NINE NOTES FROM A PHONE ===');
      no way out is worse than a button that does nothing, which is the far side
      of the sixth non-negotiable. */
   ok('...except ACTION, which is the back button, and START, which is the way out',
-    /\.tp-interact,[\s\S]{0,80}\.tp-pause \{ pointer-events: auto/.test(behind));
+    /~ #touch-pad \.tp-pause \{ pointer-events: auto/.test(behind)
+      && /~ #touch-pad \.tp-interact,\s*#pane-cards:not\(\.hidden\) ~ #touch-pad \.tp-jump \{ pointer-events: auto/.test(behind));
+  /* ...AND JUMP, which chooses. "When talking to Payne or other NPC, let's make
+     the Action and Jump buttons enabled so that we can select and back out of
+     screens with those button presses. Let's make those buttons 75% opaque."
+     Read as a number for the same reason the half below is. */
+  {
+    const m = /\.tp-jump \{ pointer-events: auto; opacity: ([\d.]+)/.exec(behind);
+    ok('...and JUMP is live too, both at three-quarters opacity',
+      m && +m[1] === 0.75, m ? m[1] : 'no opacity');
+    ok('...and every OTHER face button is still dead and dimmed under the card',
+      /~ #touch-pad \.tp-btn \{ pointer-events: none; opacity: 0\.3; \}/.test(behind));
+  }
   /* "We should make the Action button 50% or more transparent so user can read
      text behind it." Read as a number, so a later restyle cannot quietly put it
      back to opaque over the words. */
   {
     const m = /\.tp-pause \{ pointer-events: auto; opacity: ([\d.]+)/.exec(behind);
-    ok('...and the two that stay are at most half opaque, over the words',
+    ok('...and the pause button is at most half opaque, over the words',
       m && +m[1] <= 0.5, m ? m[1] : 'no opacity');
   }
   /* THE STICK IS DELIBERATELY NOT IN THAT LIST — "joystick button is fine as
@@ -31122,6 +31136,36 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
         && /\[data-cards="4"\] > #kd-body \{ grid-template-columns: repeat\(4, minmax\(0, 1fr\)\); \}/.test(css));
     ok('...and none of it reaches a desktop', !/\n\.kd-cards\[data-cards|\n\.kd-panel\.kd-cards\[data-cards/.test(css)
       && !fullBtn.includes('3px 11px'));
+
+    /* "when there are 3+ players, the tab area is too small. Let's make the
+       scroll list as large as possible and allow the screen to scroll ...
+       mainly work by touch, and be able to page for keyboard/joystick."
+       Measured at 844x390, four kittens: the quest list went 38px -> 236px on
+       screen, two quests -> nine; a stick reaching QUESTS scrolled the body
+       0 -> 390 with the tab block filling it exactly (62-332 in 56-332), and
+       leaving it for the rack put it back to 0. */
+    const pageBody = rule(`body.touch-ui .kd-panel.kd-cards:is([data-cards="3"], [data-cards="4"]) > #kd-body`) ?? '';
+    const pageTabs = rule(`${many} .kd-tabs`) ?? '';
+    ok('at three or four, the tab block is a page as tall as the body, and the body scrolls to it',
+      /container-type: size;/.test(pageBody) && /grid-auto-rows: auto;/.test(pageBody)
+        && /height: calc\(100cqh - 12px\);/.test(pageTabs) && /flex: none;/.test(pageTabs),
+      pageTabs.replace(/\s+/g, ' '));
+    ok('...and a stick reaching a header brings the whole block on screen, leaving it goes back to the rack',
+      /const inTabs = !!\(this\.sides\[i\]\.inside \|\| this\._tabAt\(i\)\);/.test(prof)
+        && /querySelector\(`\.kd-card\.kd-p\$\{i\} \.kd-tabs`\)\?\.scrollIntoView\(\{ block: 'nearest' \}\)/.test(prof)
+        && /\} else if \(was\) \{\s*this\.body\.scrollTop = 0;/.test(prof));
+    ok('...only at three or four: one and two "keep those as they are"',
+      /if \(this\.mode === 'profile' && cards >= 3\) \{/.test(prof)
+        && !/\[data-cards="1"\][^{]*\.kd-tabs \{[^}]*100cqh/.test(css));
+    /* "the tab text wraps around to 2 lines and the tab gets taller. Let's
+       keep it on 1 line and decrease the text size if needed." */
+    const tabRule = rule(`${many} .kd-tab`) ?? '';
+    ok('at three or four, a tab name stays on one line, smaller than the two-card tab',
+      /white-space: nowrap;/.test(tabRule)
+        && (px(tabRule, 'font-size') ?? 99) < (px(rule('body.touch-ui .kd-tab'), 'font-size') ?? 0),
+      tabRule.replace(/\s+/g, ' '));
+    ok('...and the hint beside them is what gives, not the names',
+      /text-overflow: ellipsis;/.test(rule(`${many} .kd-tab-hint`) ?? ''));
   }
 
   /* --- 6. A PHONE'S OWN CARD IS A HALF, AND IT HAS A WAY OUT -------------
@@ -34959,6 +35003,127 @@ console.log('\n--- mobile: the one-screen map clears the stick ---');
     mapWidth({ paneW: 1920, paneH: 1080, screenH: 1080 }) === 300);
 }
 
+console.log('\n--- mobile, October: the skip, the start, the griffin, the talking cards ---');
+{
+  const M = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  const T = readFileSync(new URL('../src/core/touchpad.js', import.meta.url), 'utf8');
+  const C = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  const I = readFileSync(new URL('../src/systems/inspector.js', import.meta.url), 'utf8');
+
+  /* 1. "The skip button for cutscenes have disappeared from the top right
+     corner when the Input is not set to Mobile. The skip button should always
+     be there regardless of the input." A phone with the stick switched off
+     keeps the corner button, and in that mode it does ONE thing: skip. */
+  ok('a phone with the stick off still has the corner button, set before it is shown',
+    /this\.touchPad\.setCornerOnly\(phone && !pad\);\s*this\.touchPad\.onCornerSkip = \(\) => this\._skipScene\(\);\s*this\.touchPad\.setVisible\(pad \|\| phone\);/.test(M));
+  {
+    const { TouchPad } = await import('../src/core/touchpad.js');
+    const pause = { id: 'pause' }; const jump = { id: 'jump', dataset: { action: 'jump' } };
+    let skips = 0;
+    const fake = (mode) => ({
+      visible: true, cornerOnly: true, pause, _pauseMode: mode,
+      onCornerSkip: () => { skips++; }, _active: new Map(), _held: {},
+    });
+    const tap = (pad, target) => TouchPad.prototype._down.call(pad, {
+      target: { closest: () => target }, pointerId: 1, preventDefault() {},
+    });
+    const a = fake('skip'); tap(a, pause);
+    const b = fake('menu'); tap(b, pause);
+    const c = fake('skip'); tap(c, jump);
+    ok('...and in that mode a tap on it skips a scene, and nothing else does anything',
+      skips === 1 && !a._active.size && !b._active.size && !c._active.size && !c._held.jump, `skips ${skips}`);
+  }
+  ok('...with the stick, the face buttons and the out-of-scene MENU all off the screen',
+    /#touch-pad\.corner-only \.tp-zone,\s*#touch-pad\.corner-only \.tp-cluster,\s*#touch-pad\.corner-only:not\(\.scene\) \.tp-pause \{\s*display: none;/.test(C)
+      || (/#touch-pad\.corner-only \.tp-zone/.test(C) && /#touch-pad\.corner-only:not\(\.scene\) \.tp-pause \{ display: none; \}/.test(C)));
+  ok('...and the per-frame pad work is skipped when there is no pad to do it for',
+    /if \(scene \|\| this\.touchPad\.cornerOnly\) return;/.test(M)
+      && /if \(!this\.touchPad\.cornerOnly\) this\._updateMathForDojo\(\);/.test(M));
+
+  /* 2. "when starting a new game, the game is freezing for a few seconds
+     before beginning." Measured: the first visible frame was 457ms, the rest
+     4-10ms — every atlas uploaded on the frame she first saw. 91ms after. */
+  const warm = M.slice(M.indexOf('...AND EVERY TEXTURE, AND ONE DRAW'), M.indexOf('...AND EVERY TEXTURE, AND ONE DRAW') + 2400);
+  ok('the world\'s textures go up, and one frame is drawn, under the loading screen',
+    /this\.scene\.traverseVisible\(/.test(warm) && /this\.renderer\.initTexture\(t\);/.test(warm)
+      && /this\.renderer\.render\(this\.scene, cam\);/.test(warm) && /\} catch \(e\) \{/.test(warm));
+
+  /* 8. "When flying on griffin to/from arena, the menu icon is not turning
+     into the 'fast forward' icon like it does to skip a cutscene." */
+  ok('the griffin\'s flight turns the corner button into the skip, as a scene does',
+    /const scene = this\._sceneActive\(\) \|\| !!this\.travel;\s*this\.touchPad\.setPauseMode\(scene \? 'skip' : 'menu'\);/.test(M)
+      && /if \(this\.travel\) this\.griffin\?\.skip\(\)/.test(M));
+  ok('...without making the ride a scene for the dozen other things that ask',
+    !/_sceneActive\(\) \{[^}]*this\.travel/.test(M));
+
+  /* 5 and 6. "Lionheart's quest is not appearing on the 'What's my next
+     quest?' screen ... add a scroll list" and "make her options scrollable so
+     it works with 3 players on mobile". Measured at three: the card is 155px
+     tall with 279px of content, and it scrolls. */
+  ok('Payne\'s and Lionheart\'s cards scroll, the whole card, with a thin bar that says so',
+    /\.pn-card \{\s*overflow-y: auto;\s*scrollbar-width: thin;/.test(C)
+      && /export const CARD_SCROLLER = '\.pc-list, \.pn-card';/.test(I));
+  ok('...with the way out pinned to the bottom, opaque, so the rows do not show through it',
+    /\.pn-card > \.pc-foot \{[^}]*position: sticky;[^}]*opacity: 1;/.test(C));
+  ok('...and a stick scrolls the two reading cards, whose cursor only has the buttons',
+    /export const STICK_SCROLLS = new Set\(\['payneQuests', 'lionQuests'\]\);/.test(I)
+      && /if \(el\) el\.scrollTop \+= pad\.my \* STICK_SCROLL_PX \* dt;/.test(I));
+  ok('...and a repaint mid-sentence keeps the scroll a thumb put there',
+    /const was = c\._paintedState === c\.state\s*\? c\.el\.querySelector\(CARD_SCROLLER\)\?\.scrollTop \?\? 0 : 0;/.test(I)
+      && /if \(sc && was\) sc\.scrollTop = was;/.test(I));
+}
+
+console.log('\n--- the arena HUD: one side each side of the clock ---');
+{
+  /* "In a 1v3 match, both team's health and names are on the left of the
+     countdown timer" and "In a 1v2v1v1 match, the 2 blue players are crammed
+     on the left side of the timer". The old deal, kept here as the reference
+     the even cases must still match: left until the left held half. */
+  const { dealWings } = await import('../src/systems/tournament.js');
+  const old = (ids, counts, n) => {
+    const left = []; const right = []; let got = 0;
+    ids.forEach((s, k) => {
+      if (got < n / 2 && right.length === 0) { left.push(s); got += counts[k]; } else right.push(s);
+    });
+    return { left, right };
+  };
+  const deal = (sides) => {
+    const ids = [...new Set(sides)];
+    const counts = ids.map((s) => sides.filter((x) => x === s).length);
+    const fighters = (wing) => wing.reduce((n, s) => n + counts[ids.indexOf(s)], 0);
+    const d = dealWings(ids, counts);
+    return { ...d, l: fighters(d.left), r: fighters(d.right), old: old(ids, counts, sides.length) };
+  };
+  const same = (a, b) => JSON.stringify(a.left) === JSON.stringify(b.left)
+    && JSON.stringify(a.right) === JSON.stringify(b.right);
+  const lone = deal([1, 0, 0, 0]);
+  line('3v1, the one in seat 1', `${lone.l} | ${lone.r} (was ${JSON.stringify(lone.old)})`);
+  ok('a 3v1 with the lone kitten seated first has a side on EACH side of the clock',
+    lone.left.length === 1 && lone.right.length === 1 && lone.old.right.length === 0);
+  ok('...and so does a 2v1 seated the same way', deal([1, 0, 0]).right.length === 1);
+  const free = deal([1, 0, 0, 2]);
+  line('2v1v1, the pair in seats 2 and 3', `${free.l} | ${free.r} (was 3 | 1)`);
+  ok('a 2v1v1 seated with the pair in the middle splits two and two, the pair on a wing of its own',
+    free.l === 2 && free.r === 2 && (free.right.join() === '0' || free.left.join() === '0'));
+  /* EVERY SEATING THE OLD DEAL ALREADY SPLIT EVENLY COMES OUT THE SAME —
+     including the duel, which is the fifth non-negotiable. */
+  const even = [[0, 1], [0, 1, 2], [0, 1, 2, 3], [0, 0, 1, 1], [0, 1, 0, 1], [0, 0, 1],
+    [0, 0, 0, 1], [0, 0, 1, 2], [1, 2, 0, 0]];
+  ok('...and every seating the old deal got right is dealt exactly as it was',
+    even.every((s) => same(deal(s), deal(s).old)));
+  ok('...the duel included: [0] | [1]', JSON.stringify(deal([0, 1])) .includes('"left":[0],"right":[1]'));
+  /* NEVER AN EMPTY WING WITH TWO SIDES UP, at any seating of any league. */
+  const leagues = [[0, 0, 1, 1], [0, 0, 1], [0, 0, 0, 1], [0, 0, 1, 2], [0, 1, 2], [0, 1, 2, 3]];
+  const perms = (a) => a.length < 2 ? [a] : a.flatMap((x, i) => perms([...a.slice(0, i), ...a.slice(i + 1)]).map((p) => [x, ...p]));
+  const all = leagues.flatMap(perms);
+  const bad = all.filter((s) => { const d = deal(s); return !d.left.length || !d.right.length || Math.abs(d.l - d.r) > 2; });
+  ok(`...and no seating of any league leaves a wing empty or lopsided (${all.length} seatings)`,
+    bad.length === 0, bad.slice(0, 3).map((s) => s.join('')).join(' '));
+  const tsrc = readFileSync(new URL('../src/systems/tournament.js', import.meta.url), 'utf8');
+  ok('...and the HUD deals with it rather than a loop of its own',
+    /const \{ left, right \} = dealWings\(ids, counts\);/.test(tsrc) && !/got < players\.length \/ 2/.test(tsrc));
+}
+
 console.log('\n--- mobile: a split map goes in its corner ---');
 {
   /* "the minimaps are not in the corners of the screen ... lets move it there
@@ -34968,37 +35133,58 @@ console.log('\n--- mobile: a split map goes in its corner ---');
   const pause = { left: 790, top: 10, right: 832, bottom: 52 };
   const score = { left: 275, top: 6, right: 569, bottom: 34 };
   const [a, bb] = splitLayout(2, W, H, 3, 'vertical');
-  const L = cornerSpot({ v: a, W, H, size, avoid: [pause, score] });
-  const Rr = cornerSpot({ v: bb, W, H, size, avoid: [pause, score] });
+  /* THE PAUSE BUTTON IS NOT AVOIDED ANY MORE — it steps aside. "the minimap
+     on the right side is to the left of the 'Menu' button instead of being in
+     the corner. I think we can either move the menu button to the left of the
+     minimap and have the minimap in the corner". */
+  const L = cornerSpot({ v: a, W, H, size, avoid: [score] });
+  const Rr = cornerSpot({ v: bb, W, H, size, avoid: [score] });
   const [left, right] = a.x < bb.x ? [L, Rr] : [Rr, L];
   const overlaps = (s, r) => s.left < r.right && s.left + size > r.left && s.top < r.bottom && s.top + size > r.top;
+  const rect = (s) => ({ left: s.left, top: s.top, right: s.left + size, bottom: s.top + size });
+  const shift = pauseBeside({ home: pause, maps: [rect(left), rect(right)] });
+  const moved = { ...pause, left: pause.left - shift, right: pause.right - shift };
   line('844x390 side by side: the two maps', `${left.left},${left.top} and ${right.left},${right.top}`);
+  line('...and the pause button', `${moved.left}-${moved.right} (stepped ${shift}px in)`);
   ok('side by side on a phone, the left half\'s map is in the top-left corner',
     left.left === 8 && left.top === 8);
-  ok('...and the right half\'s is top-right, beside the pause button, level with it',
-    right.top === left.top && right.left + size <= pause.left - 8 + 1e-9
-    && right.left + size >= pause.left - 8 - 1e-9);
-  ok('...on neither the pause button nor the scoreboard',
-    ![left, right].some((s) => overlaps(s, pause) || overlaps(s, score)));
+  ok('...and the right half\'s is in the top-RIGHT corner, level with it',
+    right.top === left.top && right.left === W - 8 - size);
+  ok('...and the pause button steps to its left, 8px clear, at the height it was',
+    moved.right === right.left - 8 && moved.top === pause.top);
+  ok('...on neither the other map nor the scoreboard, and neither map on the scoreboard',
+    ![left, right].some((s) => overlaps(s, score))
+      && moved.left >= score.right && !overlaps(left, moved));
+  /* AND HOME AGAIN when no corner map is under it — one kitten, whose merged
+     map is in the top-LEFT. */
+  ok('...and with only a top-left map the pause button stays home',
+    pauseBeside({ home: pause, maps: [rect(left)] }) === 0 && pauseBeside({ home: pause, maps: [] }) === 0);
   /* THE BOTTOM OF THE SCREEN IS THUMBS, which is the whole reason for the top.
      The face buttons start at y=207 on the right; both maps end above it. */
   ok('...and both clear of the thumbs below', left.top + size < 207 && right.top + size < 207);
   /* NO PAUSE BUTTON (the stick switched off), NO SLIDE: the true corner. */
   const bare = cornerSpot({ v: a.x > bb.x ? a : bb, W, H, size, avoid: [score] });
-  ok('...and with the stick switched off the right map takes the true corner',
+  ok('...and with the stick switched off the right map takes the same corner',
     bare.left === W - 8 - size);
   /* A SCOREBOARD TOO WIDE TO SLIDE PAST drops it under the pause button. */
   const wideScore = { left: 200, top: 6, right: 800, bottom: 34 };
-  const under = cornerSpot({ v: a.x > bb.x ? a : bb, W, H, size, avoid: [pause, wideScore] });
-  ok('...and a scoreboard in the way puts it under the pause button instead of on it',
-    under && under.left === W - 8 - size && under.top >= pause.bottom + 8 && under.top >= wideScore.bottom);
+  const under = cornerSpot({ v: a.x > bb.x ? a : bb, W, H, size, avoid: [wideScore] });
+  ok('...and a scoreboard in the way puts it under the scoreboard, still in the corner',
+    under && under.left === W - 8 - size && under.top >= wideScore.bottom + 8);
   /* A PANE WHOSE TOP IS THE SEAM IS NOT A CORNER, so it keeps `mapSpot`. */
   const [up, low] = splitLayout(2, W, H, 3, 'horizontal');
   const lower = (H - up.y - up.h) > (H - low.y - low.h) ? up : low;
   ok('...and a lower stacked pane is left to the seam rule', cornerSpot({ v: lower, W, H, size, avoid: [] }) === null);
   const m = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
   ok('...asked only on a phone, and not in the Dojo, whose board can take that corner',
-    /this\.device\.touchPrimary && !mathUp\s*&& cornerSpot\(\{ v, W, H, size, avoid: cornerBlocks \?\?= this\._cornerBlocks\(\) \}\)\)\s*\|\| mapSpot\(/.test(m));
+    /this\.device\.touchPrimary && !mathUp\s*&& cornerSpot\(\{ v, W, H, size, avoid: cornerBlocks \?\?= this\._cornerBlocks\(\) \}\);\s*const spot = corner \|\| mapSpot\(/.test(m));
+  ok('...and the pause button is measured as the thing that MOVES, not as a block',
+    /_cornerBlocks\(\) \{[\s\S]{0,600}for \(const sel of \['\.scoreboard'\]\)/.test(m)
+      && /this\._placePause\(cornerMaps\)/.test(m));
+  const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  ok('...by a variable a scene puts back to 0, so the skip is in the true corner',
+    /right: calc\(env\(safe-area-inset-right\) \+ 12px \+ var\(--pause-in, 0px\)\)/.test(css)
+      && /#touch-pad\.scene \{ --pause-in: 0px; \}/.test(css));
 }
 
 console.log('\n--- mobile: the settings are remembered ---');

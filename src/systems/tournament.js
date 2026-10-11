@@ -177,6 +177,59 @@ export const ROLL_WORDS = {
  *   is how many of the card's words each clip says, so the card can put each
  *   name up as he says it - see `Announcer._start`.
  */
+/**
+ * Which sides go on the left of the round clock and which on the right.
+ *
+ * "In a 1v3 match, both team's health and names are on the left of the
+ * countdown timer, one team should be on the left and other on the right."
+ * and "In a 1v2v1v1 match, the 2 blue players are crammed on the left side of
+ * the timer, they should be placed on the right side or wherever there is
+ * more space."
+ *
+ * IT WAS A LOOP THAT DEALT LEFT UNTIL THE LEFT HELD HALF, which is right only
+ * when the sides arrive biggest-first. `ids` is in SEAT order, and the side
+ * picker lets any seat be the lone kitten: a 3v1 with the one in seat 1 dealt
+ * her left (1 < 2), then her three opponents left too (still under half when
+ * the check ran) and the right wing was empty. A 2v1v1 seated 1,2,1 put three
+ * fighters on the left of the clock and one on the right.
+ *
+ * NOW: THE MOST EVEN SPLIT, and every old answer that was already even comes
+ * out the same. Ties go, in order, to: the left not having fewer than the
+ * right (a free-for-all of three was two-left, one-right and still is); the
+ * first side seated being on the left (the seat-order rule this replaced); and
+ * fewest sides out of seat order. Two players is always the duel's [0] | [1]
+ * — the fifth non-negotiable — and with one side left nothing is dealt right.
+ *
+ * PURE, so world-check can put every league and every seating through it.
+ * Four sides at most, so sixteen splits.
+ *
+ * @param {number[]} ids     the side indices, in the order they are seated
+ * @param {number[]} counts  how many fighters each of `ids` has
+ * @returns {{ left: number[], right: number[] }} both in `ids` order
+ */
+export function dealWings(ids, counts) {
+  const total = counts.reduce((a, b) => a + b, 0);
+  const before = (a, b) => {
+    for (let k = 0; k < a.length; k++) if (a[k] !== b[k]) return a[k] < b[k];
+    return false;
+  };
+  let best = null;
+  for (let mask = 0; mask < (1 << ids.length); mask++) {
+    if (ids.length > 1 && (mask === 0 || mask === (1 << ids.length) - 1)) continue;
+    let L = 0; let inversions = 0; let seenRight = 0;
+    ids.forEach((_, k) => {
+      if (mask & (1 << k)) { L += counts[k]; inversions += seenRight; } else seenRight++;
+    });
+    const score = [Math.abs(total - 2 * L), L < total - L ? 1 : 0, mask & 1 ? 0 : 1, inversions];
+    if (!best || before(score, best.score)) best = { mask, score };
+  }
+  const mask = best?.mask ?? 1;
+  return {
+    left: ids.filter((_, k) => mask & (1 << k)),
+    right: ids.filter((_, k) => !(mask & (1 << k))),
+  };
+}
+
 export function rollCall(round, names, sides) {
   const bySide = [];
   names.forEach((n, i) => { (bySide[sides[i]] ??= []).push(n); });
@@ -2987,15 +3040,9 @@ export class Tournament {
         + `${head}${mates.map(fighter).join('')}</div>`;
     };
 
-    // Deal sides left until the left half holds half the fighters.
-    const left = [];
-    const right = [];
-    let got = 0;
-    for (const s of ids) {
-      const n = this.sides.filter((x) => x === s).length;
-      if (got < players.length / 2 && right.length === 0) { left.push(s); got += n; }
-      else right.push(s);
-    }
+    // Which sides fly on the left of the clock and which on the right.
+    const counts = ids.map((s) => this.sides.slice(0, players.length).filter((x) => x === s).length);
+    const { left, right } = dealWings(ids, counts);
     /* THE MIDDLE OF THE BAR IS A CLOCK, because a countdown nobody can see is
        a rule that arrives as a surprise. The feast had one from the start — its
        fifteen seconds are the whole point of the state — and the ROUND did not,

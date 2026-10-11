@@ -164,6 +164,60 @@ const STICK_REST_Y = 0.62;
  *  the usual value — the mirror normally lands well inside it. */
 const CLUSTER_EDGE = 16;
 
+/** How far the face cluster sits IN from where the mirror puts it, in CSS px:
+ *  `x` further left, `y` further up. Settings ▸ Buttons moves these.
+ *
+ *  "the buttons on the right side of the screen may be too far to the right
+ *  and hurts my right thumb to use over time ... the default is we should
+ *  move them about 3x's the gap width between the right most button and the
+ *  right side, to the left. The default y-position is okay." Measured at
+ *  844x390: the gap was 16px — CLUSTER_EDGE, because a phone in landscape is
+ *  exactly the case where the mirror lands off the screen and the clamp
+ *  holds it — so three of them is 48.
+ *
+ *  A SHIFT, NOT A POSITION. The mirror is still what places the cluster on
+ *  every screen; this moves it from there, so a tablet whose mirror lands
+ *  well inside the edge is moved by the same thumb-width a phone is rather
+ *  than being pulled to a spot that was measured on a phone. */
+export const CLUSTER_SHIFT = { x: 3 * CLUSTER_EDGE, y: 0 };
+
+/** The range each slider in Settings covers — prefs.js refuses anything else. */
+export const CLUSTER_SHIFT_RANGE = { x: [0, 160], y: [-40, 120] };
+
+/** The stick zone's width as a fraction of the pad — `.tp-zone { width }`. */
+const ZONE_W = 0.46;
+
+/**
+ * Where the face cluster goes: `right` and `bottom`, in px inside the pad.
+ *
+ * PURE, so pad-check can put a phone and a tablet through it without a DOM.
+ *
+ * TWO CLAMPS, AND THEY ARE THE SHIFT'S LIMITS RATHER THAN THE SLIDER'S. The
+ * cluster may not leave the screen (CLUSTER_EDGE all round) and may not cross
+ * into the stick's catchment, which is the left 46% of the pad (`.tp-zone`):
+ * a button over the stick's zone is a thumb on the stick that lands a SLASH.
+ *
+ * @param {{x:number,y:number}} rest  the stick's resting centre, client px
+ * @param {{x:number,y:number,w:number,h:number}} box  the pad's content box
+ * @param {{width:number,height:number}} c  the cluster's size
+ * @param {{x:number,y:number}} [shift]
+ */
+export function clusterSpot(rest, box, c, shift = CLUSTER_SHIFT) {
+  const sx = Number.isFinite(shift?.x) ? shift.x : CLUSTER_SHIFT.x;
+  const sy = Number.isFinite(shift?.y) ? shift.y : CLUSTER_SHIFT.y;
+  // The stick sits `rest.x - box.x` in from the left, so its reflection sits
+  // that far in from the right; same idea for the bottom.
+  const mirrorR = Math.max(CLUSTER_EDGE, (rest.x - box.x) - c.width / 2);
+  const mirrorB = Math.max(CLUSTER_EDGE, (box.y + box.h - rest.y) - c.height / 2);
+  const maxR = Math.max(CLUSTER_EDGE, box.w * (1 - ZONE_W) - c.width);
+  const maxB = Math.max(CLUSTER_EDGE, box.h - c.height - CLUSTER_EDGE);
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  return {
+    right: clamp(mirrorR + sx, CLUSTER_EDGE, maxR),
+    bottom: clamp(mirrorB + sy, CLUSTER_EDGE, maxB),
+  };
+}
+
 export class TouchPad {
   /**
    * @param {HTMLElement} root  the overlay container, already in the document
@@ -185,6 +239,13 @@ export class TouchPad {
     /** Which actions a double tap is allowed to latch, set by the game. */
     this.lockable = new Set(['sprint']);
     this.visible = false;
+    /** The phone is not on the stick (Settings ▸ Input is a gamepad): only the
+     *  corner button is drawn, and only while a scene can be skipped. */
+    this.cornerOnly = false;
+    /** Called when the corner button is tapped in `cornerOnly`. See there. */
+    this.onCornerSkip = null;
+    /** Settings ▸ Buttons — see `CLUSTER_SHIFT`. */
+    this.shift = { ...CLUSTER_SHIFT };
 
     this._build();
     this._bind();
@@ -274,6 +335,15 @@ export class TouchPad {
   _down(e) {
     if (!this.visible) return;
     const btn = e.target.closest?.('.tp-btn');
+    /* WITHOUT A SEAT THE BUTTON HAS NOBODY TO REPORT TO. In `cornerOnly` the
+       pad is not a device — `attachTouch` was handed null — so a `start` held
+       here would be read by nobody, which is the dead control the mode exists
+       to get rid of. It says what it does instead, and the only thing it does
+       is skip. */
+    if (this.cornerOnly) {
+      if (btn === this.pause && this._pauseMode === 'skip') this.onCornerSkip?.();
+      return;
+    }
     if (btn) {
       const action = btn.dataset.action;
       this._active.set(e.pointerId, { kind: 'button', action });
@@ -474,12 +544,15 @@ export class TouchPad {
     if (!rest || !box.w) return;
     const c = this.cluster.getBoundingClientRect();
     if (!c.width) return;
-    // The stick sits `rest.x - box.x` in from the left, so its reflection sits
-    // that far in from the right; same idea for the bottom.
-    this.cluster.style.right =
-      `${Math.max(CLUSTER_EDGE, (rest.x - box.x) - c.width / 2)}px`;
-    this.cluster.style.bottom =
-      `${Math.max(CLUSTER_EDGE, (box.y + box.h - rest.y) - c.height / 2)}px`;
+    const spot = clusterSpot(rest, box, c, this.shift);
+    this.cluster.style.right = `${spot.right}px`;
+    this.cluster.style.bottom = `${spot.bottom}px`;
+  }
+
+  /** Move the face cluster in from its mirrored spot — Settings ▸ Buttons. */
+  setShift(x, y) {
+    this.shift = { x, y };
+    if (this.visible) this._placeCluster();
   }
 
   /* -------------------------------- state ------------------------------- */
@@ -500,6 +573,29 @@ export class TouchPad {
        to be centred on the stick's reflection. */
     this._parkStick();
     this._placeCluster();
+  }
+
+  /**
+   * The skip button with no stick under it.
+   *
+   * "On mobile, the button to skip the cutscenes has disappeared from the
+   * top-right corner, seems this may be happening because of the Input not
+   * being set to Mobile input, but it should always be there, regardless."
+   * It was: `Game._applyTouchMode` hid the whole overlay with the stick, and
+   * the overlay is where the button lives. A phone held with a controller in
+   * the other hand still has a thumb free for the glass, and the cutscene's
+   * own SKIP line is hidden on touch (`body.touch-ui #cs-skip`) because it
+   * names keys — so a phone on a gamepad had no way to see that a scene can
+   * be skipped at all.
+   *
+   * ONLY THE SKIP, NOT THE MENU. Out of a scene the button would be a second
+   * Start for a seat it does not hold, and the pad in her hand already has
+   * one; so outside a scene it is not drawn (`.corner-only:not(.scene)`).
+   */
+  setCornerOnly(on) {
+    this.cornerOnly = on;
+    this.root.classList.toggle('corner-only', on);
+    if (on) this._releaseAll();
   }
 
   /** The zone moves when the window does, so the resting base has to follow. */

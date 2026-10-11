@@ -1972,6 +1972,21 @@
           </select>
         </label>
         <p class="tiny" id="touch-note"></p>
+        <!-- WHERE THE BUTTONS SIT, for a thumb that is not the one they were
+             placed for. "Let's make the placement of the buttons a variable in
+             the Settings that allows us to adjust the x/y position." Only on a
+             screen with the pad on it (`body.touch-ui .touch-row`); the numbers
+             are px IN FROM the spot the stick's mirror puts them, and 48 is
+             three times the gap that spot leaves on a phone - see
+             `CLUSTER_SHIFT` in core/touchpad.js. -->
+        <label class="row touch-row">
+          <span>Buttons — further in</span>
+          <input id="set-padx" type="range" min="0" max="160" step="4" value="48">
+        </label>
+        <label class="row touch-row">
+          <span>Buttons — higher</span>
+          <input id="set-pady" type="range" min="-40" max="120" step="4" value="0">
+        </label>
         <label class="row">
           <span>Split screen</span>
           <select id="set-split">

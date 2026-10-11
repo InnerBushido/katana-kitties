@@ -944,13 +944,26 @@ body.touch-ui .pane-edge { border-width: 4px; }
    leaves the game at all, and a screen with no way out is the one thing worse
    than a button that does nothing.
 
-   HALF TRANSPARENT, BECAUSE THEY ARE OVER THE WORDS. "We should make the Action
-   button 50% or more transparent so user can read text behind it." They are the
-   two controls that have to stay both on top and usable, so they give up their
-   opacity rather than their place. */
+   AND JUMP CAME BACK. "When talking to Payne or other NPC, let's make the
+   Action and Jump buttons enabled so that we can select and back out of
+   screens with those button presses. Let's make those buttons 75% opaque."
+   Tapping a row was meant to make JUMP unnecessary, and it does choose — but
+   a thumb resting on the cluster is the same thumb that walked her to Payne,
+   and asking it to reach up into the card for every answer is the reach the
+   cluster exists to save. JUMP chooses the row under the cursor (`Inspector.
+   _drive`), so the two buttons are the pad's whole grammar for a card: one
+   in, one out.
+
+   THREE-QUARTERS, NOT HALF. "We should make the Action button 50% or more
+   transparent so user can read text behind it" was the earlier note, from
+   when the card was over the cluster; it now sits beside it (measured at
+   844x390: the card spans x 233-611, JUMP's centre is right of 640) and the
+   buttons have to read as live. Pause keeps its half: it is over nothing she
+   reads either way, and it is not one of the two. */
 #pane-cards:not(.hidden) ~ #touch-pad .tp-btn { pointer-events: none; opacity: 0.3; }
-#pane-cards:not(.hidden) ~ #touch-pad .tp-interact,
 #pane-cards:not(.hidden) ~ #touch-pad .tp-pause { pointer-events: auto; opacity: 0.5; }
+#pane-cards:not(.hidden) ~ #touch-pad .tp-interact,
+#pane-cards:not(.hidden) ~ #touch-pad .tp-jump { pointer-events: auto; opacity: 0.75; }
 .pane-card {
   position: absolute;
   /* `size`, NOT `inline-size`, so `cqh` is available inside — see `--u` below.
@@ -4889,6 +4902,55 @@ body.touch-ui .kd-cards:is([data-cards="3"], [data-cards="4"]) .kd-act {
    onto a row of its own with a card's width of nothing beside it. */
 body.touch-ui .kd-panel.kd-cards[data-cards="3"] > #kd-body { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 body.touch-ui .kd-panel.kd-cards[data-cards="4"] > #kd-body { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+/* THREE OR FOUR: THE TABS ARE A PAGE OF THEIR OWN, AND THE SCREEN SCROLLS TO
+   IT. "On Character Profile screen, when there are 3+ players, the tab area
+   is too small. Let's make the scroll list as large as possible and allow the
+   screen to scroll. Scrolling should mainly work by touch, and be able to page
+   for keyboard/joystick."
+   MEASURED AT 844x390, FOUR KITTENS: `#kd-body` shows 276px; the rack and its
+   rows took 201 of it, so the quest list had the 38px left over — two quests
+   — and that is all "the quests take what is left" can ever give at four.
+   So the cards stop being pinned to the body's height: the rack keeps its
+   own, and the tab block under it is as tall as the body itself (`100cqh`,
+   the body measured from inside the half-size zoom, so it is the same answer
+   at any phone height). The body scrolls between two pages — the rack, then
+   the tabs — and the list goes 38px -> 239px, two quests -> about nine.
+   A finger drags the body; the stick pages it (`ProfileScreen._followCursors`
+   brings the whole tab block on screen when her cursor reaches a header, and
+   the rack back when it leaves). The list inside still pages on its own, so
+   nothing a pad could reach before is out of reach now.
+   ONE AND TWO KEEP THE LAYOUT THEY HAVE: "otherwise keep those as they are".
+   The paging would work there too, but their list already has 116px and four
+   quests beside a rack laid out for it, and a page to scroll to is a cost a
+   screen that fits should not pay. */
+body.touch-ui .kd-panel.kd-cards:is([data-cards="3"], [data-cards="4"]) > #kd-body {
+  container-type: size;
+  grid-auto-rows: auto;
+  align-items: start;
+}
+body.touch-ui .kd-cards:is([data-cards="3"], [data-cards="4"]) .kd-tabs {
+  flex: none;
+  height: calc(100cqh - 12px);
+}
+/* AND THE TAB NAMES ON ONE LINE. "On Character Profile screen, when there are
+   3-4 players, the tab text wraps around to 2 lines and the tab gets taller.
+   Let's keep it on 1 line and decrease the text size if needed." Measured at
+   four: at 18px the two headers wrapped to 32px tall; on one line at 16px they
+   are 102+139 of a 350px row (the card's own px, drawn at half), with room for
+   "JUMP to open" beside them. The hint is what gives if a name grows. */
+body.touch-ui .kd-cards:is([data-cards="3"], [data-cards="4"]) .kd-tab {
+  white-space: nowrap;
+  font-size: 16px;
+  padding: 7px 10px 5px;
+  letter-spacing: 0.03em;
+}
+body.touch-ui .kd-cards:is([data-cards="3"], [data-cards="4"]) .kd-tab-hint {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 /* "the game has ended", said once beside the heading. Darker than the heading
    it sits on rather than bigger: it is a state, not a warning. */
 .kd-q-over { color: #b4432c; font-weight: 700; opacity: 1; margin-left: 6px; }
@@ -5464,7 +5526,9 @@ body.touch-ui #panel-teams .panel { margin-top: max(6px, env(safe-area-inset-top
 .tp-pause {
   position: absolute;
   top: calc(env(safe-area-inset-top) + 10px);
-  right: calc(env(safe-area-inset-right) + 12px);
+  /* `--pause-in` is set by `Game._placePause`: how far it has stepped left so
+     a phone's split map can have the corner (core/split.js `pauseBeside`). */
+  right: calc(env(safe-area-inset-right) + 12px + var(--pause-in, 0px));
   /* ITS OWN UNIT, so growing the face cluster leaves it alone. It is not a
      thumb control — it is deliberately far from them, because a mis-tap next to
      JUMP costs her the round — so it neither wants the extra size nor the extra
@@ -5582,6 +5646,9 @@ body.touch-ui #hud.has-balls #toasts { top: calc(env(safe-area-inset-top) + 72px
    Ctrl is the same failure as telling a kid on a laptop to drag her thumb. */
 .touch-only { display: none; }
 body.touch-ui .touch-only { display: block; }
+/* A SETTINGS ROW is a flex row, so it cannot borrow `.touch-only`'s block. */
+.row.touch-row { display: none; }
+body.touch-ui .row.touch-row { display: flex; }
 
 /* The panels are readable but desktop-sized; on a phone in landscape they have
    to fit inside 390px of height, which means scrolling rather than shrinking the
@@ -5639,6 +5706,10 @@ body.touch-ui .panel:not(.kd-panel) {
    survives, wearing a fast-forward. */
 #touch-pad.scene .tp-zone,
 #touch-pad.scene .tp-cluster { display: none; }
+/* A PHONE ON A GAMEPAD keeps only the skip — see `TouchPad.setCornerOnly`. */
+#touch-pad.corner-only .tp-zone,
+#touch-pad.corner-only .tp-cluster,
+#touch-pad.corner-only:not(.scene) .tp-pause { display: none; }
 body.touch-ui #cs-skip { display: none; }
 
 /* THE SKIP BUTTON HAS TO OUTRANK THE CUTSCENE, and only while one is playing.
@@ -5658,6 +5729,10 @@ body.touch-ui #cs-skip { display: none; }
 body.touch-ui #touch-pad.scene .tp-pause {
   top: calc(env(safe-area-inset-top) + 7vh + 8px);
 }
+/* ...and IN the corner, wherever a split map had moved it to: the maps are
+   not drawn under a scene, and the skip is looked for "in the top right
+   corner". */
+#touch-pad.scene { --pause-in: 0px; }
 
 /* The corner button as a SKIP rather than a menu: vermillion, so it reads as
    the one live control on a screen that is otherwise a film. */
@@ -6245,6 +6320,41 @@ body.touch-ui .ph-text { font-size: 13px; }
 
 /* --- her talking card: the dealer's `.pane-card`, with her face on it --- */
 .pn-card { border-color: #7fd35a; }
+/* THE WHOLE TALKING CARD SCROLLS, Payne's and Lionheart's. "When talking to
+   Payne, we need to make her options scrollable so it works with 3 players on
+   mobile" — a third of a phone is about 130px tall, and her face, her line and
+   five rows are not. `.pc-inner` is `overflow: hidden` for the dealer's sake
+   (its list scrolls inside it and its footer must not); here the card is one
+   column of things to read, so the card is the scroller.
+   THE BAR IS SHOWN, THIN, unlike the shelf's: on the shelf a cursor walks the
+   list into view, and here the list is read — a list with no bar and no
+   cursor gives nobody a reason to think there is more of it. `pan-y` and
+   `contain` for the same reasons `.pc-list` gives. */
+.pn-card {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(251, 238, 210, 0.45) transparent;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+/* AND THE WAY OUT STAYS ON SCREEN while the rest scrolls under it. Pulled
+   down over the card's bottom padding so the rows do not show through the
+   gap under it. */
+.pn-card > .pc-foot {
+  position: sticky;
+  bottom: calc(-1.6 * var(--u));
+  margin-bottom: calc(-1.6 * var(--u));
+  padding-bottom: calc(1.6 * var(--u));
+  background: rgb(29, 18, 22);
+  z-index: 1;
+  /* OPAQUE, which `.pc-foot`'s 0.8 is not: an opacity dims the BACKGROUND
+     too, and measured at three players the rows scrolling under it read
+     straight through ("Most mischief" under the hint line). The dimming goes
+     on the words instead. */
+  opacity: 1;
+  color: color-mix(in srgb, var(--paper-2) 80%, transparent);
+}
 .pn-head { display: flex; gap: calc(1.2 * var(--u)); align-items: flex-start; }
 .pn-face {
   width: calc(11 * var(--u));
