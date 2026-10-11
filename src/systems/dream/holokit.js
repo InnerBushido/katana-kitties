@@ -223,19 +223,27 @@ export function holoWear(dream, p, j) {
  * it pushed, and that push is not a choice.
  */
 export class HoloChoice {
-  constructor(dream, p, { title, rows, start = 0, anchor = null }) {
+  constructor(dream, p, { title, rows, start = 0, anchor = null, lens = null }) {
     this.dream = dream;
     this.p = p;
     this.rows = rows;
     this.title = title;
     this.anchor = anchor;
+    /* `lens: { d, h, nx, ny }` pins the card to HER camera instead of the
+       floor: `d` in front of it, `h` of the frame's height tall, its centre at
+       (nx, ny) in NDC. For a menu read from the Sine Gauntlet's bird's eye, 74
+       back: anchored at the kiosk it was a smudge, and hung big over the far
+       rim (scale 2.6) it sat under the HUD and was still too small to read
+       (browser, 800x475). Shown only in panes she is in — her sister's camera
+       must not grow her menu on its glass. */
+    this.lens = lens;
     this.i = Math.max(0, Math.min(rows.length - 1, start));
     this.armed = false;
     this.panel = new HoloPanel({ w: 7.4, h: 3.4, px: 96, edge: p.style?.colour ?? HOLO.cyan, depthTest: false });
     this.panel.mesh.renderOrder = 40;
     this.panel.position.y = this._y();
     // Anchored: in the layer, where the pad is. Not: on her, wherever she is.
-    (anchor && dream.sim?.root ? dream.sim.root : p.group).add(this.panel);
+    ((anchor || lens) && dream.sim?.root ? dream.sim.root : p.group).add(this.panel);
     this._paint();
   }
 
@@ -286,7 +294,23 @@ export class HoloChoice {
   /** Centred a little under her head, so it stands on the floor beside her. */
   _y() { return Math.max(1.8, (this.p.height ?? 2.6) * 0.65); }
 
-  faceCamera(camera) {
+  /** On her lens (see `lens`): placed in front of this camera, sized off its
+   *  field of view, and hidden from any pane she is not in. */
+  _onLens(camera, members) {
+    const L = this.lens;
+    this.panel.visible = !members || members.includes(this.p.index);
+    const halfH = L.d * Math.tan(THREE.MathUtils.degToRad((camera.fov ?? 50) / 2));
+    const halfW = halfH * (camera.aspect ?? 16 / 9);
+    _lp.set(L.nx * halfW, L.ny * halfH, -L.d).applyMatrix4(camera.matrixWorld);
+    this.panel.parent?.worldToLocal(_lp);
+    this.panel.position.copy(_lp);
+    this.panel.scale.setScalar((L.h * 2 * halfH) / 3.4);
+    this.panel.quaternion.copy(camera.quaternion);
+    if (this.panel.parent) this.panel.quaternion.premultiply(this.panel.parent.getWorldQuaternion(_pq).invert());
+  }
+
+  faceCamera(camera, members = null) {
+    if (this.lens) { this._onLens(camera, members); return; }
     // Half the card's width plus a body's clearance, along this camera's right.
     // 1.3 clipped the orbs she wears, which circle her at about 1.5 (seen in
     // the browser pane); 1.8 clears them.
@@ -309,3 +333,4 @@ export class HoloChoice {
 
 const _side = new THREE.Vector3();
 const _pq = new THREE.Quaternion();
+const _lp = new THREE.Vector3();

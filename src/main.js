@@ -5090,6 +5090,11 @@ class Game {
        into the save, so both ask, like every keyless row. */
     if (code === 'DreamSongs') this._debugShadowSongs();
     if (code === 'DreamExtra') this._debugOpenExtra();
+    /* 秘 EXTRA HARD in the Sine Gauntlet, on every course, for every kitten.
+       Richard: "Add a debug unlock for this Extra hard level so I can test
+       it." A flag on the game for the tab, never written into a save, and
+       pressing it again closes it — so it asks nothing. */
+    if (code === 'SineExtra') this._toggleSineExtra();
     /* THE WALK TO THE TUBES, DRAWN: what it goes round, and the way it is
        taking (dream/padnav.js). Paint only — it changes nothing a kitten does. */
     if (code === 'DreamNav') this._toggleDreamNav();
@@ -6098,6 +6103,12 @@ class Game {
     this._refreshDebugPanel();
   }
 
+  _toggleSineExtra() {
+    this._debugSineExtra = !this._debugSineExtra;
+    this.toast(`[debug] 秘 EXTRA HARD in the Sine Gauntlet ${this._debugSineExtra ? 'OPEN on every course' : 'locked again'}`, 0);
+    this._refreshDebugPanel();
+  }
+
   _debugShadowSongs() {
     if (this._debugSongs) { this.toast('[debug] every Shadow song is already open in Kata Trace', 0); return; }
     this.confirm.ask({
@@ -6347,6 +6358,7 @@ class Game {
       ${row('DreamSongs', 'open every Shadow song in Kata Trace', this._debugSongs)}
       ${row('DreamExtra', 'open 秘 EXTRA HARD — as if 1st Class')}
       ${row('DreamNav', 'show the Dream Dojo walk paths', !!this.dream?.navDebug)}
+      ${row('SineExtra', 'open 秘 EXTRA HARD in the Sine Gauntlet', !!this._debugSineExtra)}
       <div class="dbg-sep">THIS DEVICE — what outlives the tab</div>
       ${row('BoardWipe', `wipe the RECORD BOARD (${this._boardRows()} results)`)}
       ${row('SaveWipe', `wipe the SAVED GAMES (${listSaves().length} of ${saveCap()})`)}

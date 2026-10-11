@@ -3574,7 +3574,7 @@ export class DreamDojo {
     this.simDojo?.faceCamera?.(camera);
     if (this.sim && camera.position.x > SIM.dx * 0.5) {
       for (const k of this.simPandas) k?.panda.faceCamera(camera);
-      for (const c of this.choices) c?.faceCamera(camera);
+      for (const c of this.choices) c?.faceCamera(camera, members);
       for (const k of this.mapKiosks ?? []) k.faceCamera(camera);
       this.sim.faceCamera(camera);
       this.gallery?.faceCamera(camera);

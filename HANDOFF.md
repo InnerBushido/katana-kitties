@@ -622,6 +622,32 @@ quoted.
   - **Open:** nobody has played it. The takes do not follow the theme's chords,
     and Kata Trace speed raises their pitch.
 
+- **Richard's October Dream Dojo list** (six branches, chained, each merged
+  `--no-ff`: `feature/dream-gear-camera-and-pad-paths`,
+  `feature/extra-hard-unlock-voice`, `feature/kata-ko-pose`,
+  `feature/shadow-circles-and-ghosts`, `feature/kata-leaderboard`,
+  `feature/sine-courses`). [dreamdojo.md](docs/notes/dreamdojo.md) quotes each
+  note in its October list:
+  - **The gear room's camera** shows the racks she still needs, then turns to
+    the tubes; the walk to her tube is an A* path round the treadmills.
+  - **The EXTRA HARD unlock is said aloud** and names both prizes.
+  - **Kata Trace's KO**: Lionheart lands on the floor, not in it, kneels on
+    his sword and winks after "good job".
+  - **Shadow Lionheart** dashes round her five spots on HARD and up, and has
+    a body on every level.
+  - **記 The Kata Board**: a platform off the Kata island, by song, filtered
+    by level, speed and kitten. Her last score stays on her plate until she
+    leaves the area.
+  - **The Sine Gauntlet is three courses** (the Ripple, the Gauntlet, the
+    Riptide). They are picked at the kiosk under a bird's-eye lens and swiped
+    round the hub. The Riptide's stones slide and carry her, with the lens over
+    her shoulder. Each course has a **secret 秘 EXTRA HARD**, opened by ★★★ on
+    its L3 or the debug row, where a zap is back to the start.
+  - **Not built:** the optional multi-level / multi-island Hard courses.
+  - **Open:** nobody has played any of it. The new courses' bands are measured
+    by search, not by a child. The Riptide's carry is a per-frame delta, so a
+    jump off a sliding stone keeps no sideways momentum.
+
 - **Richard's thirteen-point fix list** (branch
   `mixed/dream-dojo-gauntlet-kata-fixes`).
   [dreamdojo.md](docs/notes/dreamdojo.md#fixes-from-the-latest-features-less-text-map-pins-the-gauntlets-way-out-and-kata-trace-grows-a-sword)

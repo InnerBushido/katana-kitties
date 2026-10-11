@@ -6,9 +6,10 @@ import {
   LEVELS, LANES, HALVES, WALLS, START, START_LINE, SECTIONS, SECTION, FINISH_B, END_B, COURSE_A,
   ARMS, MATH_ARM, beams, stones, groundAt, hitAt, pathS, CP_S, FINISH_S, advance, laneOf,
   barWorking, waveText, sweepEnds, gapCentre, stoneHeight, stoneIsCos, COURSE_BANDS, COURSE_TIME,
+  COURSES, COURSE_ID, courseById, useCourse, starsId, EXTRA_L, HARD_L,
 } from './course.js';
 
-export { LEVELS, COURSE_BANDS };
+export { LEVELS, COURSE_BANDS, COURSES };
 
 /* ---------------------------------------------------------------------------
    THE SINE GAUNTLET — 正弦. A course, one kitten at a time, for the best time.
@@ -151,6 +152,37 @@ export const SHOULDER_CAM = { dist: 13, pitch: 0.36, lift: 1.6, lead: 5 };
 /** How fast the lens swings between the side-on shot and that one (1/s). */
 const CAM_EASE = 2.5;
 
+/**
+ * THE SWIPE, when the course is changed at the kiosk. Richard: "We can make
+ * the current course cycle as if being swiped away visually (could be in a
+ * circular rotation swipe away pattern, as if the circular center of the
+ * swipe away direction is the center of the dojo of the turning circle) ...
+ * the old level being swiped away and fading away in a cool way while the new
+ * course is being swiped into place". So each course is drawn in its own
+ * group hung off a pivot at the HUB'S centre, and a swipe turns the old one
+ * `ang` round that pivot and out, fading, while the new one turns in from
+ * `ang` the other side. At the Gauntlet's 150 from the hub, 0.36 rad is 54
+ * units of travel: clean off the island's 26. The beams stay LIT the whole
+ * way ("The LED's should be on of the course like normal"): the old one is
+ * frozen at its last frame and the new one is live from its first.
+ */
+export const SWIPE = { dur: 1.6, ang: 0.36 };
+/**
+ * THE BIRD'S EYE, while a kitten is choosing. "The camera should zoom out in
+ * such a way that we get a decent birds eye view of the entire course. The
+ * camera can be rotating around the center of the island". A sway, not a
+ * spin — `sway` radians either side of the side-on yaw, once every
+ * 2π/`rate` seconds — because the player camera eases its yaw back by a
+ * straight lerp when the focus lets go, and a yaw that had wound round twice
+ * would unwind twice on the way out.
+ */
+export const BIRD = { dist: 74, pitch: 1.0, sway: 0.7, rate: 0.22, lift: 0 };
+/** The course picker on her lens (HoloChoice `lens`): 0.32 of the frame tall,
+ *  its centre left of middle and a little low. Clear of the HUD on top, the
+ *  minimap's corner on the right, and the speaker card along the bottom —
+ *  at ny -0.42 Lionheart's welcome covered its RUN row (browser, 800x475). */
+export const PICK = { d: 12, h: 0.32, nx: -0.46, ny: -0.12 };
+
 export class SineGauntlet {
   constructor(dream, isle) {
     this.dream = dream;
@@ -164,16 +196,28 @@ export class SineGauntlet {
     this.session = null;
     this.run = null;
     this.last = null;            // the last session's results, for the board
+    /** Who has the course picker open, by seat — one driver (non-negotiable 7). */
+    this.picking = null;
+    /** A swipe in progress: { t, dir, out } — `out` the old course's view. */
+    this.swipe = null;
     this._buildWalls();
-    this._buildFloor();
-    this._buildStones();
-    this._buildBeams();
+    this._buildLines();
+    this.view = this._buildCourse();
     this._buildPlaza();
     this.stations = this.kiosks.map((k) => k.station);
     dream.sim.tickers.push((dt) => this.update(dt));
   }
 
   /* ------------------------------- building ------------------------------ */
+
+  /* THE COURSE'S OWN DRAWING lives in `view` — one per course on the island,
+     two during a swipe. These keep the names everything already reads. */
+  get beamFx() { return this.view.beamFx; }
+  get stoneDecks() { return this.view.stoneDecks; }
+  get zapFloor() { return this.view.zapFloor; }
+  get cosDot() { return this.view.cosDot; }
+  get sinDot() { return this.view.sinDot; }
+  get course() { return courseById(COURSE_ID); }
 
   _w(a, b, y = 0) {
     const q = isleSpot(this.isle, a, b);
@@ -208,24 +252,60 @@ export class SineGauntlet {
   }
 
   /** A flat strip on the floor from (a0,b0) to (a1,b1), `w` wide. */
-  _strip(a0, b0, a1, b1, w, colour, opacity, y = 0.04) {
+  _strip(a0, b0, a1, b1, w, colour, opacity, y = 0.04, into = this._into ?? this.root) {
     const p0 = this._w(a0, b0, y); const p1 = this._w(a1, b1, y);
     const len = Math.hypot(p1.x - p0.x, p1.z - p0.z);
     const m = new THREE.Mesh(new THREE.PlaneGeometry(w, len).rotateX(-Math.PI / 2),
       new THREE.MeshBasicMaterial({ color: colour, transparent: true, opacity, toneMapped: false, depthWrite: false }));
     m.position.set((p0.x + p1.x) / 2, p0.y, (p0.z + p1.z) / 2);
     m.rotation.y = Math.atan2(p1.x - p0.x, p1.z - p0.z);
-    this.root.add(m);
+    into.add(m);
     return m;
   }
 
-  /** The lines on the floor: start, checkpoints, finish, the zap floor, and
-   *  the sweeper's circle with its two axes — the cos and the sin. */
-  _buildFloor() {
-    const lane = (k) => LANES[k];
+  /** The start and the finish: every course's, so they never swipe. */
+  _buildLines() {
     const last = LANES.length - 1;
-    this._strip(lane(0) - HALVES[0], START_LINE, lane(0) + HALVES[0], START_LINE, 0.35, 0xffffff, 0.8);
-    this._strip(lane(last) - HALVES[last], FINISH_B, lane(last) + HALVES[last], FINISH_B, 0.6, HOLO.gold, 0.9);
+    this._strip(LANES[0] - HALVES[0], START_LINE, LANES[0] + HALVES[0], START_LINE, 0.35, 0xffffff, 0.8, 0.04, this.root);
+    this._strip(LANES[last] - HALVES[last], FINISH_B, LANES[last] + HALVES[last], FINISH_B, 0.6, HOLO.gold, 0.9, 0.04, this.root);
+  }
+
+  /**
+   * ONE COURSE'S DRAWING — the course `useCourse` has laid — in a group of its
+   * own off a pivot at the hub's centre (see SWIPE). At rest the pivot turns
+   * nothing, so every position in it is the layer's, as everything else is.
+   */
+  _buildCourse() {
+    const dc = this.dream.game?.world?.dojoCentre ?? { x: 0, z: 0 };
+    const pivot = new THREE.Group();
+    pivot.position.set(dc.x, 0, dc.z);
+    const inner = new THREE.Group();
+    inner.position.set(-dc.x, 0, -dc.z);
+    pivot.add(inner);
+    this.root.add(pivot);
+    const view = { id: COURSE_ID, pivot, inner, fade: 1 };
+    this._into = inner;
+    this._buildFloor(view);
+    this._buildStones(view);
+    this._buildBeams(view);
+    this._into = null;
+    /* Every material's own opacity, for the fade — and which of them the
+       paint writes every frame anyway (`painted`), which the fade multiplies
+       instead of overwriting. */
+    view.mats = [];
+    inner.traverse((o) => {
+      const ms = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
+      for (const m of ms) if (!view.mats.some((x) => x.m === m)) view.mats.push({ m, o0: m.opacity, tr: m.transparent });
+    });
+    view.painted = new Set([view.zapFloor.material, ...view.beamFx.flatMap((fx) => [fx.glow.material, fx.shadow.material, fx.foot.material, fx.core.material])]);
+    return view;
+  }
+
+  /** The lines on the floor: checkpoints, the zap floor, and the sweeper's
+   *  circle with its two axes — the cos and the sin. */
+  _buildFloor(view) {
+    const lane = (k) => LANES[k];
+    const into = this._into;
     SECTIONS.forEach((sec, i) => {
       if (i === 0) return;
       const c = lane(sec.lane); const h = HALVES[sec.lane];
@@ -234,7 +314,7 @@ export class SineGauntlet {
     // The floor that zaps: red, and it pulses while a run is live.
     const st = SECTION.stones;
     const c = lane(st.lane); const sh = HALVES[st.lane];
-    this.zapFloor = this._strip(c, st.floor[0], c, st.floor[1], sh * 2 - 0.3, 0xff2a4a, 0.22, 0.03);
+    view.zapFloor = this._strip(c, st.floor[0], c, st.floor[1], sh * 2 - 0.3, 0xff2a4a, 0.22, 0.03);
     for (let b = st.floor[0] + 1; b < st.floor[1]; b += 1.5) this._strip(c - sh + 0.2, b, c + sh - 0.2, b, 0.06, 0xff6a80, 0.5, 0.035);
     // Every arm's circle on the floor under it.
     for (const arm of ARMS) {
@@ -242,7 +322,7 @@ export class SineGauntlet {
       const ring = new THREE.Mesh(new THREE.RingGeometry(arm.R - 0.06, arm.R + 0.06, 64).rotateX(-Math.PI / 2),
         new THREE.MeshBasicMaterial({ color: arm === MATH_ARM ? AIR_COL : ARM_COL, transparent: true, opacity: 0.6, toneMapped: false, depthWrite: false }));
       ring.position.set(pc.x, pc.y, pc.z);
-      this.root.add(ring);
+      into.add(ring);
     }
     // THE ONE IN THE AIR is the unit circle's: its two axes on the floor, and
     // the two dots that are the tip's cos and sin — they slide along the axes
@@ -252,11 +332,11 @@ export class SineGauntlet {
     this._strip(MATH_ARM.pa, MATH_ARM.pb - R, MATH_ARM.pa, MATH_ARM.pb + R, 0.06, HOLO.gold, 0.6, 0.06);
     const dot = (col) => {
       const m = new THREE.Mesh(new THREE.SphereGeometry(0.2, 10, 8), new THREE.MeshBasicMaterial({ color: col, toneMapped: false }));
-      this.root.add(m);
+      into.add(m);
       return m;
     };
-    this.cosDot = dot(HOLO.cyan);
-    this.sinDot = dot(HOLO.gold);
+    view.cosDot = dot(HOLO.cyan);
+    view.sinDot = dot(HOLO.gold);
     // The curtains' frames: two posts at the lane's edges, as tall as the
     // curtain's top beam and then some.
     const gp = SECTION.gaps;
@@ -267,19 +347,22 @@ export class SineGauntlet {
         const m = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, top, 6).translate(0, top / 2, 0),
           new THREE.MeshBasicMaterial({ color: CURTAIN_COL, toneMapped: false }));
         m.position.set(q.x, q.y, q.z);
-        this.root.add(m);
+        into.add(m);
       }
     }
   }
 
   /** The stones: decks like any other, moved every frame. */
-  _buildStones() {
+  _buildStones(view) {
     /* A SINE stone is gold and a COSINE one cyan — the colours of the sin and
-       cos axes under the air sweeper, so the floor says which is which. */
-    this.stoneDecks = stones(LEVELS[0], 0).map((s) => {
+       cos axes under the air sweeper, so the floor says which is which.
+       Their drawing is moved into the course's group, so it swipes with it;
+       the deck (what she stands on) stays the sim's. */
+    view.stoneDecks = stones(LEVELS[0], 0).map((s) => {
       const q = this._w(s.a, s.b, s.y);
       const d = this.sim.addTempDisc({ x: q.x, z: q.z, r: s.r, y: q.y, colour: s.cos ? HOLO.cyan : HOLO.gold, name: 'sine-stone' });
-      d._y0 = q.y;
+      d._x0 = q.x; d._y0 = q.y; d._z0 = q.z;
+      if (d._grp) this._into.add(d._grp);
       return d;
     });
   }
@@ -300,14 +383,15 @@ export class SineGauntlet {
    * emitter to the floor, so the height is read against its own post as well
    * as off the floor. The curtains get no drop lines: their posts already are.
    */
-  _buildBeams() {
+  _buildBeams(view) {
+    const into = this._into;
     const list = beams(LEVELS[0], 0);
     const cyl = new THREE.CylinderGeometry(1, 1, 1, 12, 1, true).rotateX(Math.PI / 2);
     const cap = new THREE.SphereGeometry(1, 10, 8);
     const flat = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
     // Unit height, base at 0: scale.y IS the beam's height above the floor.
     const pole = new THREE.CylinderGeometry(0.05, 0.05, 1, 6, 1, true).translate(0, 0.5, 0);
-    this.beamFx = list.map((q) => {
+    view.beamFx = list.map((q) => {
       const col = q.high ? AIR_COL : q.sec === 'sweep' ? ARM_COL : q.sec === 'gaps' ? CURTAIN_COL : BAR_COL;
       const g = new THREE.Group();
       const core = new THREE.Mesh(cyl, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, toneMapped: false }));
@@ -316,7 +400,7 @@ export class SineGauntlet {
       const ends = [0, 1].map(() => {
         const m = new THREE.Mesh(cap, new THREE.MeshBasicMaterial({ color: col, toneMapped: false }));
         m.scale.setScalar(0.24);
-        this.root.add(m);
+        into.add(m);
         return m;
       });
       const shadow = new THREE.Mesh(flat, new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.5, depthWrite: false }));
@@ -327,10 +411,10 @@ export class SineGauntlet {
       foot.renderOrder = 2;
       const drops = q.sec === 'gaps' ? [] : [0, 1].map(() => {
         const m = new THREE.Mesh(pole, new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.7, toneMapped: false, depthWrite: false }));
-        this.root.add(m);
+        into.add(m);
         return m;
       });
-      this.root.add(g, shadow, foot);
+      into.add(g, shadow, foot);
       return { g, core, glow, ends, shadow, foot, drops, thick: q.thick, col, secI: secOf(q), look: 'live' };
     });
   }
@@ -344,7 +428,7 @@ export class SineGauntlet {
       cardH: 3.8,
       card: (p) => this._card(p),
       prompt: (p, key) => this._prompt(p, key),
-      interact: (p) => this.join(p),
+      interact: (p) => this.interact(p),
     });
     this.kiosks.push(this.kiosk);
     // 応援 THE STANDS: a deck up off the plaza, walled all round. Nobody walks
@@ -398,10 +482,24 @@ export class SineGauntlet {
 
   _name(p) { return p.style?.name ?? p.name; }
 
-  tier(p) {
+  /** The highest of L1-L3 she has opened on this course: two stars on one
+   *  opens the next. 秘 EXTRA HARD is never a tier — it is picked (`extraOpen`). */
+  tier(p, course = COURSE_ID) {
     let n = 0;
-    while (n < LEVELS.length - 1 && this.dream.progress.stars(this._name(p), `sine.L${n + 1}`) >= 2) n++;
+    while (n < HARD_L && this.dream.progress.stars(this._name(p), starsId(course, n)) >= 2) n++;
     return n;
+  }
+
+  /** 秘 EXTRA HARD on this course: three stars on its L3, or the debug panel's
+   *  *open 秘 EXTRA HARD in the Sine Gauntlet* (`game._debugSineExtra`). */
+  extraOpen(p, course = COURSE_ID) {
+    return !!this.dream.game?._debugSineExtra || this.dream.progress.stars(this._name(p), starsId(course, HARD_L)) >= 3;
+  }
+
+  /** Can she pick level `n` here? An instruction if not (non-negotiable 6). */
+  levelLock(p, n, course = COURSE_ID) {
+    if (n === EXTRA_L) return this.extraOpen(p, course) ? null : `Get ★★★ on L${HARD_L + 1} of ${courseById(course).name} to open 秘 EXTRA HARD`;
+    return n <= this.tier(p, course) ? null : `Get ★★ on L${n} of ${courseById(course).name} to open L${n + 1}`;
   }
 
   /** Is she in the session at all — running, queued, or done and watching? */
@@ -471,34 +569,176 @@ export class SineGauntlet {
 
   _prompt(p, key) {
     const S = this.session;
-    if (!S) return `[${key}]  RUN THE COURSE · L${this.tier(p) + 1}`;
+    if (!S) {
+      if (this.picking != null && this.picking !== p.index) return `${this._pickerName()} IS CHOOSING THE COURSE`;
+      return `[${key}]  CHOOSE A COURSE`;
+    }
     const ahead = (S.runner != null ? 1 : 0) + S.queue.length;
-    return `[${key}]  JOIN THE QUEUE · L${S.level + 1} · ${ahead} ahead`;
+    return `[${key}]  JOIN THE QUEUE · ${levelName(S.level)} · ${ahead} ahead`;
   }
 
   _card(p) {
     const S = this.session;
+    const C = this.course;
     const n = S ? S.level : this.tier(p);
     const row = LEVELS.map((_, i) => {
-      if (i > this.tier(p)) return `L${i + 1} locked`;
-      const best = this.dream.progress.best(this._name(p), `sine.L${i + 1}`);
-      return `L${i + 1} ${stars3(this.dream.progress.stars(this._name(p), `sine.L${i + 1}`))}${best != null ? ` ${best.toFixed(1)}s` : ''}`;
-    }).join('   ');
+      if (this.levelLock(p, i)) return i === EXTRA_L ? '' : `L${i + 1} locked`;
+      const best = this.dream.progress.best(this._name(p), starsId(C.id, i));
+      return `${i === EXTRA_L ? '秘' : `L${i + 1}`} ${stars3(this.dream.progress.stars(this._name(p), starsId(C.id, i)))}${best != null ? ` ${best.toFixed(1)}s` : ''}`;
+    }).filter(Boolean).join('   ');
     return [
-      { text: '正弦 SINE GAUNTLET', size: 1.9, color: HOLO.cyan, glow: true, jp: true },
-      { text: `${SECTIONS.length} obstacles, one runner at a time, best time wins`, size: 1.0, color: 0x9fefff },
-      { text: S ? `L${n + 1} · ${S.queue.length + (S.runner != null ? 1 : 0)} in the queue` : `your level: L${n + 1}`, size: 1.2, color: HOLO.gold },
+      { text: `${C.kanji} ${C.name}`, size: 1.9, color: HOLO.cyan, glow: true, jp: true },
+      { text: C.blurb, size: 1.0, color: 0x9fefff },
+      { text: S ? `${levelName(S.level)} · ${S.queue.length + (S.runner != null ? 1 : 0)} in the queue` : `your level: ${levelName(n)}`, size: 1.2, color: HOLO.gold },
       { text: 'no orbs, no clan in here: just you', size: 1.0, color: 0x9fefff },
       { text: row, size: 1.1, color: HOLO.gold },
     ];
   }
 
+  _pickerName() {
+    const p = this.dream.game.players?.[this.picking];
+    return (p?.name ?? `PLAYER ${(this.picking ?? 0) + 1}`).toUpperCase();
+  }
+
+  /**
+   * THE KIOSK, PRESSED: into the queue if somebody is running, and otherwise
+   * THE COURSE PICKER — course, level, RUN. Richard: "These levels/courses can
+   * be cycled/appear on top of the current location of the current course."
+   * Changing COURSE swipes it on the island there and then (`setCourse`),
+   * under the bird's eye (`cameraFocus`), so she sees what she is choosing.
+   * One kitten drives it; anybody else pressing is told who.
+   */
+  interact(p) {
+    if (this.session) return this.join(p);
+    if (this.picking != null && this.picking !== p.index) {
+      this.dream.hint?.(p, `${this._pickerName()} is choosing the course — wait for her to pick`);
+      this.dream.game.sfx?.('deny');
+      return false;
+    }
+    return this.openPicker(p);
+  }
+
+  openPicker(p) {
+    const D = this.dream;
+    const pick = (this._pick ??= {});
+    pick.level = Math.min(pick.level ?? this.tier(p), this.tier(p));
+    const cyc = (list, cur, sgn) => list[(list.indexOf(cur) + sgn + list.length) % list.length];
+    const rows = [
+      {
+        text: () => `COURSE  ◀ ${this.course.kanji} ${this.course.name} ▶`,
+        cycle: (sgn) => {
+          if (this.setCourse(cyc(COURSES.map((c) => c.id), COURSE_ID, sgn), sgn)) {
+            // Her level on the new course: kept if it is open there, else her tier there.
+            if (this.levelLock(p, pick.level)) pick.level = this.tier(p);
+          }
+        },
+      },
+      {
+        text: () => {
+          const lock = this.levelLock(p, pick.level);
+          return `LEVEL  ◀ ${lock ? '🔒 ' : ''}${levelName(pick.level)} ${stars3(D.progress.stars(this._name(p), starsId(COURSE_ID, pick.level)))} ▶`;
+        },
+        cycle: (sgn) => {
+          // Locked levels are passed over unless it is the secret: that one
+          // shows its lock, in words, so she knows it is there to be won.
+          const open = LEVELS.map((_, i) => i).filter((i) => !this.levelLock(p, i) || i === EXTRA_L);
+          pick.level = cyc(open, open.includes(pick.level) ? pick.level : 0, sgn);
+          const why = this.levelLock(p, pick.level);
+          if (why) { D.hint?.(p, why); D.game.sfx?.('deny'); }
+        },
+      },
+      { text: '▶ RUN!', act: () => this.begin(p, pick.level) },
+      { text: 'not now', dim: true, act: () => D.closeChoice(p) },
+    ];
+    /* ON HER LENS, low and to the left: read from the bird's eye, 74 back, a
+       menu beside the kiosk was a smudge, and one hung big over the far rim
+       sat under the HUD (both seen in the browser, 800x475). See PICK. */
+    D.openChoice(p, { title: `正弦 SINE GAUNTLET — ${p.name}`, rows, start: 2, lens: PICK });
+    this.picking = p.index;
+    this._pickChoice = D.choices?.[p.index] ?? null;
+    return true;
+  }
+
+  /** RUN: refused in words if the level is locked, or a swipe is still moving. */
+  begin(p, level) {
+    const why = this.levelLock(p, level);
+    if (why || this.swipe) {
+      this.dream.hint?.(p, why ?? 'Wait for the course to land!');
+      this.dream.game.sfx?.('deny');
+      return false;
+    }
+    this.dream.closeChoice(p);
+    this.picking = null;
+    return this.join(p, level);
+  }
+
+  /**
+   * LAY ANOTHER COURSE ON THE ISLAND, with the swipe. Refused while anybody
+   * is in a session — four sisters racing for a time all race one course.
+   * `dir` is the way the picker was pushed, so ◀ and ▶ swipe opposite ways.
+   */
+  setCourse(id, dir = 1, { instant = false } = {}) {
+    if (id === COURSE_ID || !courseById(id)) return false;
+    if (this.session) return false;
+    // A swipe still going: the old one is gone at once, and this one starts fresh.
+    if (this.swipe) this._endSwipe();
+    const out = this.view;
+    /* LIT on the way out, whatever the last run left grey: "The LED's
+       should be on of the course like normal when courses are being
+       selected". It is frozen from here, so what it wears now it wears out. */
+    for (const fx of out.beamFx) if (fx.look !== 'live') this._wear(fx, 'live');
+    for (const m of out.mats) { m.o0 = m.m.opacity; m.m.transparent = true; }
+    // Its stones are no longer anything to stand on; their drawing goes with it.
+    for (const d of out.stoneDecks) {
+      const i = this.sim.decks.indexOf(d);
+      if (i >= 0) this.sim.decks.splice(i, 1);
+    }
+    useCourse(id);
+    this.view = this._buildCourse();
+    for (const m of this.view.mats) m.m.transparent = true;
+    this.swipe = { t: 0, dir: dir < 0 ? -1 : 1, out };
+    this._stepSwipe(0);
+    if (instant) this._endSwipe();
+    this.dream.game.sfx?.('rez');
+    this._paintBoard();
+    return true;
+  }
+
+  /** One frame of the swipe: the old course out round the hub, the new one in. */
+  _stepSwipe(dt) {
+    const W = this.swipe;
+    if (!W) return;
+    W.t = Math.min(SWIPE.dur, W.t + dt);
+    const k = W.t / SWIPE.dur;
+    const e = k * k * (3 - 2 * k);
+    W.out.pivot.rotation.y = W.dir * SWIPE.ang * e;
+    this.view.pivot.rotation.y = -W.dir * SWIPE.ang * (1 - e);
+    W.out.fade = 1 - e;
+    this.view.fade = e;
+    for (const v of [W.out, this.view]) {
+      for (const m of v.mats) if (v === W.out || !v.painted.has(m.m)) m.m.opacity = (m.o0 ?? 1) * v.fade;
+    }
+    if (W.t >= SWIPE.dur) this._endSwipe();
+  }
+
+  _endSwipe() {
+    const W = this.swipe;
+    if (!W) return;
+    this.swipe = null;
+    for (const d of W.out.stoneDecks) d._grp?.removeFromParent();
+    W.out.pivot.traverse((o) => { o.geometry?.dispose?.(); });
+    W.out.pivot.removeFromParent();
+    this.view.pivot.rotation.y = 0;
+    this.view.fade = 1;
+    for (const m of this.view.mats) { m.m.opacity = m.o0; m.m.transparent = m.tr; }
+  }
+
   /** Into the queue — or, if nobody is running it, straight to the start. */
-  join(p) {
+  join(p, level = null) {
     if (this.inSession(p)) return false;
     const fresh = !this.session;
     if (fresh) {
-      this.session = { level: this.tier(p), runner: null, queue: [], stands: new Set(), results: [], gap: 0 };
+      this.session = { course: COURSE_ID, level: level ?? this.tier(p), runner: null, queue: [], stands: new Set(), results: [], gap: 0 };
     }
     const S = this.session;
     this.dream.bench(p, 'the course');
@@ -583,7 +823,7 @@ export class SineGauntlet {
     const S = this.session;
     if (!S) return;
     for (const p of this.dream.game.players ?? []) if (p && this.inSession(p)) this.dream.unbench(p, true);
-    this.last = S.results.length ? { level: S.level, results: S.results } : this.last;
+    this.last = S.results.length ? { course: S.course, level: S.level, results: S.results } : this.last;
     this.session = null;
     this.run = null;
     this._paintBoard();
@@ -600,7 +840,7 @@ export class SineGauntlet {
     const spec = COURSE(this, S.level);
     this.dream.startDrill(p, spec, { x: isle.x, y: isle.y, z: isle.z, r: isle.r, fwd: isle.fwd });
     this.run = { i: p.index, drill: this.dream.drills[p.index], sMax: 0, cp: 0, zaps: 0, zapT: 0 };
-    this.dream.game.toast?.(`${p.name} — on your mark! L${S.level + 1}`, p.index);
+    this.dream.game.toast?.(`${p.name} — on your mark! ${this.course.name} · ${levelName(S.level)}`, p.index);
   }
 
   /** A zap or a fall: back to the checkpoint she has earned — and nothing
@@ -612,6 +852,10 @@ export class SineGauntlet {
     r.zapT = 1.4;
     r.why = why;
     this.dream.game.sfx?.('zap');
+    /* 秘 EXTRA HARD: back to the START. "near impossible to beat unless the
+       player does everything perfectly" — the clock is still running, so a
+       zap late on is most of a run gone. */
+    if (LEVELS[this.session?.level]?.restart) { r.cp = 0; r.sMax = 0; r.restarted = true; }
     this._toCheckpoint(p, r.cp);
   }
 
@@ -662,7 +906,7 @@ export class SineGauntlet {
       this.dream.holoSay?.(`${ranked[0].name} wins the Sine Gauntlet — ${ranked[0].time.toFixed(1)} seconds!`, 6);
       this.dream.game.sfx?.('firework');
     }
-    this.last = { level: S.level, results: S.results };
+    this.last = { course: S.course, level: S.level, results: S.results };
     this.session = null;
     this.run = null;
     this._paintBoard();
@@ -729,6 +973,12 @@ export class SineGauntlet {
   update(dt) {
     const inside = idleIn(this.dream);
     for (const k of this.kiosks) k.update(dt, inside);
+    // The picker closed, however it closed: nobody is choosing.
+    if (this.picking != null && this.dream.choices?.[this.picking] !== this._pickChoice) {
+      this.picking = null;
+      this._pickChoice = null;
+    }
+    this._stepSwipe(dt);
     const S = this.session;
     // The runner's drill has gone: write her down, and on to the next.
     if (S && this.run && this.dream.drills[this.run.i] !== this.run.drill) {
@@ -763,6 +1013,7 @@ export class SineGauntlet {
     this._easeCamera(dt);
     const { L, t } = this._clock();
     this._paintCourse(L, t);
+    this._carry();
     this._boardT = (this._boardT ?? 0) - dt;
     if (this._boardT <= 0 && this.session) { this._boardT = 0.25; this._paintBoard(); }
   }
@@ -792,20 +1043,26 @@ export class SineGauntlet {
 
   /** Every beam, stone and dot, from course.js at `t`. The ONLY writer. */
   _paintCourse(L, t) {
+    const V = this.view;
+    const fade = V.fade;
     const list = beams(L, t);
     const I = this.isle;
     list.forEach((q, k) => {
-      const fx = this.beamFx[k];
+      const fx = V.beamFx[k];
       const a = this._w(q.a0, q.b0, q.y0); const b = this._w(q.a1, q.b1, q.y1);
       const len = Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
       fx.g.position.set((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
-      fx.g.lookAt(b.x + this.sim.root.position.x, b.y + this.sim.root.position.y, b.z + this.sim.root.position.z);
+      /* In the group's own frame, not `lookAt`: that aims at a WORLD point,
+         and while the course is swiping its group is turned under it. */
+      _dir.set(b.x - a.x, b.y - a.y, b.z - a.z).normalize();
+      fx.g.quaternion.setFromUnitVectors(_Z, _dir);
       fx.core.scale.set(q.thick * 0.35, q.thick * 0.35, len);
       fx.glow.scale.set(q.thick * 1.15, q.thick * 1.15, len);
       const look = this.beamLook(fx.secI);
       if (look !== fx.look) this._wear(fx, look);
       const B = look === 'ahead' ? BEAM_AHEAD : look === 'done' ? BEAM_DONE : null;
-      fx.glow.material.opacity = B ? B.glow : 0.42 + 0.12 * Math.sin((this.dream.t ?? 0) * 24 + k);
+      fx.glow.material.opacity = (B ? B.glow : 0.42 + 0.12 * Math.sin((this.dream.t ?? 0) * 24 + k)) * fade;
+      fx.core.material.opacity = (B ? B.core_o : 0.95) * fade;
       fx.ends[0].position.set(a.x, a.y, a.z);
       fx.ends[1].position.set(b.x, b.y, b.z);
       // The shadow: straight down, sharper and darker the lower the beam.
@@ -814,11 +1071,11 @@ export class SineGauntlet {
       fx.shadow.rotation.y = Math.atan2(b.x - a.x, b.z - a.z);
       const flen = Math.hypot(b.x - a.x, b.z - a.z);
       fx.shadow.scale.set(0.35 + h * 0.22, 1, flen);
-      fx.shadow.material.opacity = THREE.MathUtils.clamp(0.85 - h * 0.12, 0.3, 0.8);
+      fx.shadow.material.opacity = THREE.MathUtils.clamp(0.85 - h * 0.12, 0.3, 0.8) * fade;
       fx.foot.position.set(fx.shadow.position.x, I.y + 0.04, fx.shadow.position.z);
       fx.foot.rotation.y = fx.shadow.rotation.y;
       fx.foot.scale.set(0.12 + h * 0.07, 1, flen);
-      fx.foot.material.opacity = THREE.MathUtils.clamp(0.95 - h * 0.15, 0.25, 0.9) * (B ? B.foot : 1);
+      fx.foot.material.opacity = THREE.MathUtils.clamp(0.95 - h * 0.15, 0.25, 0.9) * (B ? B.foot : 1) * fade;
       fx.drops.forEach((m, n) => {
         const e = n ? b : a;
         const y = n ? q.y1 : q.y0;
@@ -827,29 +1084,55 @@ export class SineGauntlet {
       });
     });
     stones(L, t).forEach((s, n) => {
-      const d = this.stoneDecks[n];
+      const d = V.stoneDecks[n];
+      const q = this._w(s.a, s.b, s.y);
+      // Where it was, for `_carry`: a stone that slides takes her with it.
+      d._px = d.x; d._pz = d.z;
+      d.x = q.x; d.z = q.z;
       d.y = I.y + s.y;
-      if (d._grp) d._grp.position.y = d.y - d._y0;
+      if (d._grp) d._grp.position.set(d.x - d._x0, d.y - d._y0, d.z - d._z0);
     });
     const e = sweepEnds(MATH_ARM, t, L.speed);
     const c = this._w(e.p.a, MATH_ARM.pb, 0.12);
     const s2 = this._w(MATH_ARM.pa, e.p.b, 0.12);
-    this.cosDot.position.set(c.x, c.y, c.z);
-    this.sinDot.position.set(s2.x, s2.y, s2.z);
+    V.cosDot.position.set(c.x, c.y, c.z);
+    V.sinDot.position.set(s2.x, s2.y, s2.z);
     const live = this.run?.drill?.state === 'live';
-    this.zapFloor.material.opacity = live ? 0.22 + 0.1 * Math.sin((this.dream.t ?? 0) * 6) : 0.12;
+    V.zapFloor.material.opacity = (live ? 0.22 + 0.1 * Math.sin((this.dream.t ?? 0) * 6) : 0.12) * fade;
+  }
+
+  /**
+   * A STONE THAT SLIDES TAKES HER WITH IT. The sim's decks only ever had a
+   * height, so a kitten stood on a Riptide stone would have stayed where she
+   * was while it slid out from under her into the lava — which is a stone
+   * that drops you, not a stone that moves. Anybody whose feet are on a
+   * stone's top is moved by however far it moved this frame.
+   */
+  _carry() {
+    if (!SECTION.stones.stone.slide) return;
+    for (const p of this.dream.game.players ?? []) {
+      if (!p || this.dream.realmOf(p) !== 'sim') continue;
+      const x = p.position.x - SIM.dx; const z = p.position.z - SIM.dz;
+      for (const d of this.view.stoneDecks) {
+        if (d._px == null) continue;
+        if (Math.abs(p.position.y - d.y) > 0.3 || Math.hypot(x - d._px, z - d._pz) > d.r) continue;
+        p.position.x += d.x - d._px;
+        p.position.z += d.z - d._pz;
+        break;
+      }
+    }
   }
 
   /** The board's lines: this session, or the last one. */
   _paintBoard() {
     const S = this.session;
     const src = S ?? this.last;
-    const lines = [{ text: '正弦 THE COURSE', size: 1.7, color: HOLO.cyan, glow: true, jp: true }];
+    const lines = [{ text: `${this.course.kanji} ${this.course.name}`, size: 1.7, color: HOLO.cyan, glow: true, jp: true }];
     if (!src) {
       lines.push({ text: 'Nobody has run it yet.', size: 1.2 });
-      lines.push({ text: 'Step on the kiosk to start.', size: 1.0, color: 0x9fefff });
+      lines.push({ text: 'Step on the kiosk to choose a course.', size: 1.0, color: 0x9fefff });
     } else {
-      lines.push({ text: `${S ? 'NOW' : 'LAST TIME'} · L${src.level + 1}`, size: 1.1, color: HOLO.gold });
+      lines.push({ text: `${S ? 'NOW' : 'LAST TIME'} · ${courseById(src.course ?? 'gauntlet')?.name ?? ''} · ${levelName(src.level)}`, size: 1.1, color: HOLO.gold });
       rank(src.results).slice(0, 4).forEach((r, k) => {
         const what = r.time != null ? `${r.time.toFixed(1)}s ${stars3(r.stars)}` : `reached ${SECTIONS[r.cp].name}`;
         lines.push({ text: `${k + 1}. ${r.name}  ${what}`, size: 1.05, color: r.colour });
@@ -893,16 +1176,19 @@ export class SineGauntlet {
   _shoulder() {
     const r = this.run;
     const d = r?.drill;
-    if (!r || !d || (d.state !== 'live' && d.state !== 'ready')) return false;
-    return SECTIONS[nextSection(r.sMax)].key === 'gaps';
+    if (!r || !d || (d.state !== 'live' && d.state !== 'ready')) return null;
+    const sec = SECTIONS[nextSection(r.sMax)];
+    // The Riptide's stones slide ACROSS her lane — toward and away from a side-on lens.
+    return sec.key === 'gaps' || (sec.key === 'stones' && sec.stone.slide) ? sec : null;
   }
 
   /** The side-on yaw (see COURSE_CAM), or, behind her, the yaw that looks
    *  down her lane the way it runs. */
   _wantShot() {
-    if (!this._shoulder()) return { yaw: this._yaw(), dist: COURSE_CAM.dist, pitch: COURSE_CAM.pitch, lead: 0, lift: COURSE_CAM.lift };
+    const sec = this._shoulder();
+    if (!sec) return { yaw: this._yaw(), dist: COURSE_CAM.dist, pitch: COURSE_CAM.pitch, lead: 0, lift: COURSE_CAM.lift };
     const f = this.isle.fwd;
-    const sg = SECTION.gaps.lane % 2 ? -1 : 1;     // the way her lane runs, in b
+    const sg = sec.lane % 2 ? -1 : 1;     // the way her lane runs, in b
     return { yaw: Math.atan2(sg * f.z, -sg * f.x), dist: SHOULDER_CAM.dist, pitch: SHOULDER_CAM.pitch, lead: SHOULDER_CAM.lead, lift: SHOULDER_CAM.lift };
   }
 
@@ -950,6 +1236,7 @@ export class SineGauntlet {
   /** Her camera while she is in the session, or null — a focus with `aim`,
    *  so it is the runner who is framed, not her. */
   cameraFocus(p) {
+    if (this.picking === p?.index && !this.session) return this._birdsEye();
     if (!this.inSession(p)) return null;
     const f = (this._focus ??= { centre: new THREE.Vector3(), aim: true, dist: COURSE_CAM.dist, pitch: COURSE_CAM.pitch, yaw: 0 });
     const cam = this._cam ?? this._wantShot();
@@ -957,6 +1244,16 @@ export class SineGauntlet {
     f.yaw = cam.yaw;
     f.dist = cam.dist;
     f.pitch = cam.pitch;
+    return f;
+  }
+
+  /** The bird's eye over the whole course while she chooses (BIRD): on the
+   *  island's middle, swaying round it. */
+  _birdsEye() {
+    const f = (this._bird ??= { centre: new THREE.Vector3(), aim: true, dist: BIRD.dist, pitch: BIRD.pitch, yaw: 0 });
+    const c = this._w((COURSE_A[0] + COURSE_A[1]) / 2, 0, BIRD.lift);
+    f.centre.set(c.x + SIM.dx, c.y, c.z + SIM.dz);
+    f.yaw = this._yaw() + BIRD.sway * Math.sin((this.dream.t ?? 0) * BIRD.rate);
     return f;
   }
 
@@ -1003,9 +1300,10 @@ export function rank(results) {
  *  checkpoints and the finish are `SineGauntlet._tick`. */
 function COURSE(G, n) {
   const L = LEVELS[n];
+  const C = G.course;
   return {
-    id: `sine.L${n + 1}`, title: `THE COURSE · L${n + 1}`, kanji: '正弦',
-    goalText: `${SECTIONS.length} obstacles to the gold line`,
+    id: starsId(C.id, n), title: `${C.name} · ${levelName(n)}`, kanji: C.kanji,
+    goalText: L.restart ? 'one zap and it is back to the START' : `${SECTIONS.length} obstacles to the gold line`,
     goal: 1, showCount: false, bands: COURSE_BANDS[n], lowerIsBetter: true,
     grace: 3, leaveR: 60, noBar: true,
     caught: () => true,
@@ -1026,15 +1324,15 @@ function COURSE(G, n) {
       const r = G.run?.drill === d ? G.run : null;
       if (d.state === 'ready') {
         return [
-          { text: `正弦 THE COURSE · L${n + 1}`, size: 1.6, color: d.colour, glow: true, jp: true },
-          { text: 'zapped or fallen: back to the last line', size: 1.1 },
+          { text: `${C.kanji} ${C.name} · ${levelName(n)}`, size: 1.6, color: d.colour, glow: true, jp: true },
+          { text: L.restart ? 'zapped or fallen: back to the START' : 'zapped or fallen: back to the last line', size: 1.1 },
           { text: d.readyT > 2 ? '3' : d.readyT > 1 ? '2' : '1', size: 2.4, color: HOLO.gold, glow: true },
         ];
       }
       if (d.state !== 'live' || !r) return null;
       const sec = SECTIONS[Math.min(SECTIONS.length - 1, nextSection(r.sMax))];
       const lines = [{ text: `${sec.name}`, size: 1.5, color: d.colour, glow: true }];
-      if (r.zapT > 0) lines.push({ text: `ZAP! back to ${SECTIONS[r.cp].name}`, size: 1.4, color: 0xff8a8a });
+      if (r.zapT > 0) lines.push({ text: r.restarted && r.cp === 0 ? 'ZAP! back to the START' : `ZAP! back to ${SECTIONS[r.cp].name}`, size: 1.4, color: 0xff8a8a });
       else lines.push(working(sec, L, d.t, r));
       lines.push({ text: `${d.t.toFixed(1)}s   zaps ${r.zaps}`, size: 1.3, color: HOLO.cyan });
       lines.push({ text: `[${G.dream.key?.(d.p, 'interact') ?? 'E'}] to leave`, size: 0.8, color: 0x7f9fa8 });
@@ -1042,6 +1340,12 @@ function COURSE(G, n) {
     },
   };
 }
+
+/** A level as a kitten reads it: L1-L3, and the secret one by its name. */
+export function levelName(n) { return n === EXTRA_L ? '秘 EXTRA HARD' : `L${n + 1}`; }
+
+const _Z = new THREE.Vector3(0, 0, 1);
+const _dir = new THREE.Vector3();
 
 /** The section she is in or about to reach. */
 function nextSection(sMax) {
