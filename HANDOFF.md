@@ -648,6 +648,38 @@ quoted.
     by search, not by a child. The Riptide's carry is a per-frame delta, so a
     jump off a sliding stone keeps no sideways momentum.
 
+- **Richard's second October list** (2026-10-11; ten branches, each merged
+  `--no-ff` into local main, none pushed). [dreamdojo.md](docs/notes/dreamdojo.md)
+  quotes each note under *The second October list*, *Waypoints* and *The
+  Dragon Gate*:
+  - **記 The Kata Board** is on the Kata island's north-east corner (the
+    island grew to r 28), not a platform over a bridge.
+  - **A kiosk's circle outranks the bridge look-across**, and the look-across
+    triggers 12.5% closer.
+  - **Kata Trace's KO**: he lands on his feet and goes straight onto his
+    knees, rocked back by the hit.
+  - **The Turning Circle's quadrant names stand still** outside their
+    quarters and fade in, instead of following her.
+  - **The Riptide**: a stones shot that shows her feet and shadow, the Narrow
+    Gaps shot panned down, and five wider curtains instead of six.
+  - **Shadow Lionheart on HARD and up** moves before a blow 50–75% of the
+    time, sweeps from closer in, and draws his next blow at random (seeded).
+    **Beaten there**, the shadow bursts and Lionheart himself is knocked out
+    of it onto his knees, then stands for the prize.
+  - **記 The Sine Board**: the plaza board ranks best times by course and
+    level while nobody runs, with a kiosk for its filters.
+  - **道標 Waypoints**: mark a place on Lionheart's map, follow pyramids in
+    her colour (never more than 11 apart, a pointing cursor when the next is
+    off her frame); the minimap rings and pins it.
+  - **登竜 The Dragon Gate**, the fourth Sine course, built on skill: ledges
+    at four heights over floors that zap, a laser corridor, hurdles under
+    ceilings that never move.
+  - **Not built:** the Gate's "grab interactions or sword swings that trigger
+    events" (offered as a maybe).
+  - **Open:** nobody has played any of it. The Gate's bands are by search,
+    and its ledges are 2 across — measured landable, not measured fair for a
+    nine-year-old.
+
 - **Richard's thirteen-point fix list** (branch
   `mixed/dream-dojo-gauntlet-kata-fixes`).
   [dreamdojo.md](docs/notes/dreamdojo.md#fixes-from-the-latest-features-less-text-map-pins-the-gauntlets-way-out-and-kata-trace-grows-a-sword)
