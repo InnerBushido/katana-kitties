@@ -207,22 +207,35 @@ export function holoWear(dream, p, j) {
  * her own height, it is clear of the HUD, of her, and of Lionheart's bubble,
  * which takes the left.
  *
+ * PINNED TO THE PAD, WHEN IT HAS ONE (`anchor`). Richard: "sometimes when
+ * opening the menu to pick a song, the menu is being opened behind the player
+ * name menu that is in front of it, we should always open the menu from the
+ * same place, no matter where the player is standing ... to the right of the
+ * center of the circle the player stands on to open it." Beside HER, the card
+ * went wherever she happened to stop on the kiosk's 1.6 circle — a step to its
+ * left put it behind her floor's name plate. With an anchor it hangs off the
+ * circle's centre in the layer, so the same press opens it in the same place;
+ * and a menu is never drawn behind a sign (`depthTest` off, a later band).
+ *
  * UI FALL-THROUGH (docs/notes/gotchas.md): the INTERACT that opened it was
  * spent by the caller, and the STICK has to come back to the middle before
  * it moves anything — a kitten still walking onto the pedestal arrives with
  * it pushed, and that push is not a choice.
  */
 export class HoloChoice {
-  constructor(dream, p, { title, rows, start = 0 }) {
+  constructor(dream, p, { title, rows, start = 0, anchor = null }) {
     this.dream = dream;
     this.p = p;
     this.rows = rows;
     this.title = title;
+    this.anchor = anchor;
     this.i = Math.max(0, Math.min(rows.length - 1, start));
     this.armed = false;
-    this.panel = new HoloPanel({ w: 7.4, h: 3.4, px: 96, edge: p.style?.colour ?? HOLO.cyan });
+    this.panel = new HoloPanel({ w: 7.4, h: 3.4, px: 96, edge: p.style?.colour ?? HOLO.cyan, depthTest: false });
+    this.panel.mesh.renderOrder = 40;
     this.panel.position.y = this._y();
-    p.group.add(this.panel);
+    // Anchored: in the layer, where the pad is. Not: on her, wherever she is.
+    (anchor && dream.sim?.root ? dream.sim.root : p.group).add(this.panel);
     this._paint();
   }
 
@@ -280,8 +293,14 @@ export class HoloChoice {
     _side.set(1, 0, 0).applyQuaternion(camera.quaternion).setY(0);
     if (_side.lengthSq() < 1e-6) _side.set(1, 0, 0);
     _side.normalize().multiplyScalar(3.7 + 1.8);
-    if (this.p.group) _side.applyQuaternion(this.p.group.getWorldQuaternion(_pq).invert());
-    this.panel.position.set(_side.x, this._y(), _side.z);
+    const a = this.anchor;
+    if (a && this.panel.parent !== this.p.group) {
+      // The pad's centre, plus the same clearance: she stands within 1.6 of it.
+      this.panel.position.set(a.x + _side.x, (a.y ?? 0) + this._y(), a.z + _side.z);
+    } else {
+      if (this.p.group) _side.applyQuaternion(this.p.group.getWorldQuaternion(_pq).invert());
+      this.panel.position.set(_side.x, this._y(), _side.z);
+    }
     this.panel.faceCamera(camera);
   }
 

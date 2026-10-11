@@ -37210,6 +37210,34 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     ok('型 the song picker opens on DANCE, and ◀ ▶ turns the song and turns it back',
       /DANCE/.test(startOn) && turned !== before && pick.song === before, `${startOn} ${before}→${turned}→${pick.song}`);
     D.closeChoice(her);
+    /* Richard: "the menu is being opened behind the player name menu ... we
+       should always open the menu from the same place, no matter where the
+       player is standing ... to the right of the center of the circle the
+       player stands on". Opened from two ends of the PLAY kiosk's circle, the
+       card lands on one spot, off the circle's centre, and draws over signs. */
+    {
+      const cam = new THREE.PerspectiveCamera();
+      cam.position.set(fl.x, fl.y + 20, fl.z - 30);
+      cam.lookAt(fl.x, fl.y, fl.z);
+      const kio = D.kata.kiosks[fl.k * 2];
+      const spots = [];
+      for (const dx of [-1.4, 1.4]) {
+        her.position.set(kio.station.x + dx + SW.SIM.dx, fl.y, kio.station.z + SW.SIM.dz);
+        her.group.position.copy(her.position);
+        her.group.updateMatrixWorld(true);
+        D.kata.openPicker(her, fl);
+        const C = D.choices[0];
+        C.faceCamera(cam);
+        C.panel.updateMatrixWorld(true);
+        spots.push({ at: C.panel.getWorldPosition(new THREE.Vector3()), over: C.panel.mat.depthTest === false && C.panel.mesh.renderOrder > fl.plate.mesh.renderOrder });
+        D.closeChoice(her);
+      }
+      const centre = new THREE.Vector3(kio.station.x + SW.SIM.dx, 0, kio.station.z + SW.SIM.dz);
+      const off = Math.hypot(spots[0].at.x - centre.x, spots[0].at.z - centre.z);
+      ok('...and opens in ONE place wherever she stands on the kiosk: beside its centre, and over every sign',
+        spots[0].at.distanceTo(spots[1].at) < 1e-6 && Math.abs(off - 5.5) < 0.01 && spots.every((s) => s.over),
+        `${spots[0].at.distanceTo(spots[1].at).toFixed(3)} apart, ${off.toFixed(2)} off the centre`);
+    }
   }
 
   /* --- one floor each --- */
