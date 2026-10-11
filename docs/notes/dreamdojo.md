@@ -2298,6 +2298,63 @@ drawn only in panes she is in.
 for Hard / Extra Hard. It was offered as optional, and three courses on one
 floor with a secret level each already gives the ladder it was for.
 
+## The second October list
+
+Richard's list of 2026-10-11. Waypoints and the Dragon Gate have sections of
+their own below; the rest is here. Every item's commit message carries its
+numbers, and world-check carries its checks.
+
+**記 The Kata Board moves onto the island.** "the bridge looks bad, and the
+camera transitions are interfering with the Kata Board ... maybe let's put
+this at the North East section of the Kata Trace island." The island grew from
+r 22 to 28 — at 22 that corner was all Lionheart's attack spots — and the board
+stands in a gold ring 65° round from screen-right, 21.5 out: 6.2 from his
+nearest spot and 31 from the bridge's mouth.
+
+**A kiosk outranks the bridge.** "The interaction circle should have camera
+priority over any bridge zooming functionality ... make it 10 - 15% smaller."
+`stationFirst` (dream/peek.js) holds the look-across back while she is in a
+circle or walking at one nearer than the mouth, and lets go of one already up
+when she steps in. Radii 9.6/4.8/13 → 8.4/4.2/11.4.
+
+**Kata Trace's KO, again.** "just have him fall normally to the ground on his
+feet and when he hits the ground, have him play his kneeling animation as he
+falls back slightly from the momentum of the hit." No roll: a hop back of 1.8,
+onto his knees at 0.5s, a 0.7 skid, a 0.24 rad rock back that settles over
+0.6s. The roll onto his back is now only the fallback when the drawing is
+missing.
+
+**The quadrant names stand still.** "it is following the player around, lets
+just have it be static ... or can just be text that fades in and out in each
+quadrant." One name per quarter at 1.5 of the circle's radius, only the lit
+one showing, faded across the change. At 1.2 a name sat on her own (cos, sin)
+readout as she passed 45°.
+
+**The Riptide's lenses and gaps.** "the camera is too high up and maybe a bit
+too zoomed in that we can't see the players feet or shadow" — her feet were at
+NDC −1.07, under the frame. STONES_CAM is 18 back at pitch 0.55 with its
+look-at pinned to the stones' height, so a hop does not lift the frame (feet
+−0.48 standing, −0.12 at the top of a hop). The Narrow Gaps are five curtains
+of 1.35 instead of six of 1.05.
+
+**Shadow Lionheart, HARD and up.** He dashes to a new spot before a blow
+62.5% of the time (50% for a sweep, which he throws from 3.6 instead of 6.5),
+and his next blow is drawn by a seeded coin weighted by the level's order,
+never three of one kind running — the rota `order[n % length]` is gone.
+**Beaten there**, the shadow bursts and the entrance hologram's Lionheart is
+thrown out of it along the last blow, onto his knees (`Unmasked`), and gets up
+when the prize is told. He is never a target and never in the gate. Easy and
+medium burst and go as before.
+
+**記 The Sine Board** (`dream/sineboard.js`). "a leaderboard for the Sine
+Gauntlet as well, like the Kata Board, separated by course and difficulty."
+The plaza has no room for a ring of its own, so the board already standing
+there IS the leaderboard while nobody runs: the race while one does, LAST TIME
+for 40s after, then the page. It reads the bests the course already writes, so
+a sister's time from before the board existed is on it. The 記 kiosk changes
+course, level and who; 秘 is on the level row only for a kitten who has
+opened it.
+
 ## Waypoints on the Map of the Simulator (`dream/waypoint.js`)
 
 "Players can mark a destination on the Map of the Simulator and it shows the
