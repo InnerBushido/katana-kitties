@@ -231,8 +231,18 @@ NOCTIS, SURGE, PUGNA, HONOR). Generation ids are in `musicfiles.js` (`gen`).
 **They are not the theme re-orchestrated, and cannot be from a prompt.** The
 takes keep the tempo and the mood and ignore the chord loop: a bass-root-per-
 beat reading of the procedural theme comes out Dm–Bb–Gm–A clean, and the takes
-wander. The connector's music node has an **audio input port**, which might
-take the theme as a reference for a closer "upscale"; that is untried.
+wander. Measured per bar (triad template plus a 33–123 Hz bass chroma, best
+phase against the loop): the procedural theme fits 30/32 bars, the four takes
+4/31, 5/31, 10/31 and 7/29.
+
+**The audio reference port does not work (Oct 2026).** The connector's music
+node has an `audio` input, the obvious route to a 1:1 "upscale". Every run
+with the theme wired into it failed at once with "unexpected error processing
+this generation": as a mono WAV and as a stereo MP3, on v2.5, v2 and v1, with
+the long prompt and lyrics and with a short instrumental one. The same node
+with nothing on the port generated normally that minute, so it is the port and
+not the service. Failed runs were not charged. Flow `LRBTaBnKWB4SFA1bf00O`
+keeps the attempts; retry there if ElevenLabs ever documents the input.
 
 **The beat is measured, not trusted** (`tools/capture/music-beats.mjs`): an
 onset envelope, then a period-and-phase search. Unconstrained, the search
