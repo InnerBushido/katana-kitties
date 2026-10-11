@@ -304,6 +304,15 @@ added one more: **"Oof... good job."** (`lion_kata_ko`, `KATA_LINES.ko` in
 and it is written with no capitals and no "!" because he is down, not
 shouting.
 
+The secret opening at Kenshi 1st Class added one more (`lion_secret`,
+`SECRET_LINE` in `dream/rank.js`). Richard: "let's add an ElevenLabs voice
+announcement for the unlock ... mention that defeating him will unlock an extra
+secret hidden kotodama orb and a song in the Kata Trace dojo." The old card had
+her name in it, so it could never be recorded; her name moved to the toast and
+his card became a line for anybody. Mixed case, no "!", 11.7s after the cutter
+(14.1s raw), 2.6 words a second. Card and toast both hold 14s (`SECRET_HOLD`;
+`toast`'s fourth argument), against the toast's usual 7s cap.
+
 That made 26 new lines and 35 clips; with the wall yell gone, 34. They were made and cut the same
 way as the first nine (raw takes in `lionheart-takes/raw/`, then
 `lionheart-vo.mjs`). Payne's nine are the tour's five, the Dream Dojo card's

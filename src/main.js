@@ -9134,7 +9134,9 @@ class Game {
    *   this event's points, and `text` renders the folded line. Omit it and
    *   this is the toast it always was.
    */
-  toast(text, playerIndex = 0, combo = null) {
+  /** `holdMs`, when given, replaces the length rule (and its TOAST_MAX cap) for
+   *  the one announcement that is worth more than seven seconds. */
+  toast(text, playerIndex = 0, combo = null, holdMs = 0) {
     /* IN FRONT OF HER CARD WHILE SHE HAS ONE UP. A refusal from Lionheart's
        or Payne's card is a toast to the kitten reading that card, and the card
        is drawn over the HUD the toasts live in - so the one sentence that said
@@ -9181,7 +9183,7 @@ class Game {
         this._combos.set(key, live);
       }
     }
-    const hold = Math.min(
+    const hold = holdMs > 0 ? holdMs : Math.min(
       TOAST_MAX,
       Math.max(TOAST_MIN, TOAST_BASE + String(text).length * TOAST_PER_CHAR)
     );

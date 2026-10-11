@@ -425,8 +425,8 @@ export class Ranks {
       if (P.flag(n, 'secret') || !(atLeast(P, n, 'k1') || P.flag(n, 'extra'))) continue;
       P.setFlag(n, 'secret');
       this.dream.game.sfx?.('victory');
-      this.dream.game.toast?.(`${p.name} is KENSHI 1st CLASS! A SECRET is open: 秘 EXTRA HARD Shadow Lionheart, on his island. Beat it for a SPECIAL Kotodama!`, p.index);
-      this.dream.holoSay?.(`${p.name} — KENSHI 1st CLASS!\nMy SHADOW has a secret for you now…`, 7);
+      this.dream.game.toast?.(`${p.name} is KENSHI 1st CLASS! A SECRET is open: 秘 EXTRA HARD Shadow Lionheart, on his island. Beat it for a SECRET Kotodama AND a new song in Kata Trace!`, p.index, null, SECRET_HOLD * 1000);
+      this.dream.holoSay?.(SECRET_LINE.line, SECRET_HOLD);
     }
   }
 
@@ -467,3 +467,19 @@ export class Ranks {
 
 const _e = new THREE.Euler();
 export { stars3 };
+/**
+ * WHAT HE SAYS WHEN THE SECRET OPENS. Richard: "let's add an ElevenLabs voice
+ * announcement for the unlock ... mention that defeating him will unlock an
+ * extra secret hidden kotodama orb and a song in the Kata Trace dojo. Also
+ * let's keep the message on screen longer." The line used to carry her name,
+ * and a line with a name in it can never be recorded (voices.md) — so the name
+ * stays in the TOAST, and his card is a line that can be said to anybody.
+ * Barrett like the rest, mixed case and no "!" because capitals are this
+ * preset's shout. Both hold SECRET_HOLD seconds: the toast's own cap is 7s,
+ * which is a long time for "+1★" and too short for two prizes and a place.
+ */
+export const SECRET_LINE = {
+  line: 'Kenshi First Class... my Shadow has a secret for you now.\nBeat him on Extra Hard, and a hidden Kotodama is yours,\nwith a new song in the Kata Trace dojo.',
+  voice: 'lion_secret',
+};
+export const SECRET_HOLD = 14;
