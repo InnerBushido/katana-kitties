@@ -37375,9 +37375,130 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const F = D.kata.floors;
     let close = Infinity;
     for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) close = Math.min(close, Math.hypot(F[i].x - F[j].x, F[i].z - F[j].z));
-    const far = Math.max(...D.kata.kiosks.map((k) => Math.hypot(k.x - I.x, k.z - I.z) + k.r));
+    // The floors' kiosks: the 記 board's stands on its own platform, checked below.
+    const far = Math.max(...F.flatMap((fl) => fl.kiosks).map((k) => Math.hypot(k.x - I.x, k.z - I.z) + k.r));
     ok('型 four kata floors, each clear of the next', close > 2 * 5.4 + 1, close.toFixed(1));
     ok('...and every kiosk on the island', far < I.r - 0.5, `${far.toFixed(1)} of ${I.r}`);
+  }
+
+  /* --- 記 THE KATA BOARD. Richard: "a separate platform with leaderboards,
+     per player or all players. Organised mainly by song, with highest scores,
+     and filters for difficulty and speed/time. After the player plays a song,
+     keep the player's most recent score on their current scoreboard (the one
+     with their name) until they leave the area." --- */
+  {
+    const KB = await import('../src/systems/dream/kataboard.js');
+    const I = D.isles.kata;
+    const B = D.kata.board;
+    const F = D.kata.floors;
+    // A platform of its own: off the island, clear of every other deck, joined by a bridge you can stand on.
+    const decks = D.sim.decks.filter((k) => Number.isFinite(k.r) && k.name && k.name !== 'kataboard');
+    const gapTo = Math.min(...decks.map((k) => Math.hypot(k.x - B.x, k.z - B.z) - k.r - B.r));
+    const kioskIn = Math.hypot(B.kiosk.x - B.x, B.kiosk.z - B.z) + B.kiosk.r;
+    const mid = { x: (B.link.a.x + B.link.b.x) / 2, z: (B.link.a.z + B.link.b.z) / 2 };
+    const walk = [mid, { x: B.x, z: B.z }, { x: B.kiosk.x, z: B.kiosk.z }].map((q) => D.sim.heightAt(q.x + SW.SIM.dx, q.z + SW.SIM.dz)?.y);
+    ok('記 the Kata Board is a platform of its own, off the far rim, clear of every other deck, with its kiosk on it',
+      gapTo >= KB.BOARD.gap - 1e-6 && kioskIn < B.r - 0.5 && D.kata.stations.includes(B.kiosk.station)
+      // No pop-up card: in the first render it covered the board's right half.
+      && B.kiosk.o.card === null,
+      `${gapTo.toFixed(1)} clear of the nearest deck, kiosk ${kioskIn.toFixed(1)} of ${B.r}`);
+    ok('...and the bridge to it and its deck are ground she stands on, at the island\'s height',
+      walk.every((y) => Number.isFinite(y) && Math.abs(y - I.y) < 0.6), walk.map((y) => y?.toFixed?.(2)).join(' '));
+
+    // The ledger: her best BY SCORE for each song, level and speed.
+    const P = new (await import('../src/systems/dream/progress.js')).DreamProgress(null);
+    const run = (name, diff, speed, score, acc, at, song = 'vr') => P.kataRun(name, { song, diff, speed, score, acc, stars: 2 }, at);
+    const first = run('Ember', 'normal', 1, 5000, 80, 1);
+    const worse = run('Ember', 'normal', 1, 4000, 95, 2);
+    const better = run('Ember', 'normal', 1, 6000, 70, 3);
+    run('Ember', 'hard', 1, 9000, 60, 4);
+    run('Ember', 'normal', 1.25, 7000, 90, 5);
+    run('Frost', 'normal', 1, 6000, 85, 6);
+    run('Storm', 'normal', 1, 6000, 85, 7);
+    run('Frost', 'easy', 1, 3000, 99, 8, 'play');
+    const row = P.of('Ember').kata['vr|normal|1'];
+    ok('記 a song is filed by song, level AND speed, and only a HIGHER score replaces her row',
+      first.newBest && !worse.newBest && better.newBest && row.score === 6000 && row.acc === 70 && Object.keys(P.of('Ember').kata).length === 3,
+      JSON.stringify(P.of('Ember').kata));
+    const all = KB.boardRows(P, { song: 'vr', diff: 'all', speed: 'all', who: 'all' });
+    const nrm = KB.boardRows(P, { song: 'vr', diff: 'normal', speed: 1, who: 'all' });
+    const hers = KB.boardRows(P, { song: 'vr', diff: 'all', speed: 'all', who: 'Frost' });
+    const other = KB.boardRows(P, { song: 'play', diff: 'all', speed: 'all', who: 'all' });
+    const say = (rows) => rows.map((q) => `${q.name}:${q.diff}:${q.speed}:${q.score}`).join(' ');
+    ok('記 the board is one song, highest score first — a tie goes to higher accuracy, then to whoever got there first',
+      say(all) === 'Ember:hard:1:9000 Ember:normal:1.25:7000 Frost:normal:1:6000 Storm:normal:1:6000 Ember:normal:1:6000'
+      && say(other) === 'Frost:easy:1:3000', say(all));
+    ok('...and LEVEL, SPEED and WHO each narrow it: normal at 1× is three rows, "just Frost" is hers alone',
+      say(nrm) === 'Frost:normal:1:6000 Storm:normal:1:6000 Ember:normal:1:6000' && say(hers) === 'Frost:normal:1:6000', `${say(nrm)} / ${say(hers)}`);
+    const back = new (await import('../src/systems/dream/progress.js')).DreamProgress(null);
+    back.fromSave(P.toSave());
+    const old = new (await import('../src/systems/dream/progress.js')).DreamProgress(null);
+    old.fromSave({ v: 1, kittens: { Ember: { stars: { a: 1 }, best: {}, flags: {}, days: {}, weeks: {} } } });
+    ok('...the scores travel with the save row, and a save from before the board loads with an empty one',
+      say(KB.boardRows(back, { song: 'vr', diff: 'all', speed: 'all', who: 'all' })) === say(all)
+      && JSON.stringify(old.of('Ember').kata) === '{}' && KB.boardRows(old, { song: 'vr', diff: 'all', speed: 'all', who: 'all' }).length === 0);
+
+    // What the board SAYS, in the game, off the game's own ledger.
+    const keep = D.progress.toSave();
+    D.progress.fromSave({ v: 1, kittens: {} });
+    B.filter = { song: 'vr', diff: 'all', speed: 'all', who: 'all' };
+    const empty = B.lines().map((l) => l.text).join(' | ');
+    // A run that ended, handed to the hall the way onDrillEnd hands it.
+    const fl = F[0];
+    const chart = { title: 'TEST SONG', song: 'vr', difficulty: 'hard' };
+    const runOf = (o) => ({ spec: { kataFloor: fl }, chart, p: her, speed: 1.25, score: 12345, acc: 91, stars_: 3, custom: false, why: null, ...o });
+    her.realm = 'sim';
+    her.position.set(fl.x + SW.SIM.dx, fl.y, fl.z + SW.SIM.dz);
+    fl.last = null;
+    D.kata.ended(runOf({ why: 'Stopped — no score this time' }), 'failed');
+    const stoppedNone = fl.last === null;
+    D.kata.ended(runOf({ custom: true, score: 99999 }), 'won');
+    const customOff = B.lines().some((l) => /no scores here yet/.test(l.text));
+    D.kata.ended(runOf({}), 'won');
+    D.kata.update(0);
+    const plate = fl.plate.layout.rows.map((q) => q.text).join(' | ');
+    const board = B.lines().map((l) => l.text).join(' | ');
+    ok('記 an empty board says so and says how to get on it; a custom chart and a stopped run never reach it',
+      /no scores here yet/.test(empty) && /finish this song/.test(empty) && customOff && stoppedNone, empty);
+    ok('...and a finished song is on it: her name, the score, the accuracy, the stars, and which level and speed',
+      /1\. +EMBER +12,345 +91% ★★★ HARD +1\.25×/.test(board) && B.lines()[2].color === KB.nameColour('Ember'), board);
+    ok('記 her floor\'s plate keeps her most recent score under her name — the song, level, speed, stars and score',
+      /EMBER/.test(plate) && /last: TEST SONG · HARD · 1\.25×/.test(plate) && /★★★ +12,345 · 91%/.test(plate), plate);
+    D.kata.ended(runOf({ score: 4321, why: 'Lionheart caught you 4 times' }), 'failed');
+    D.kata.update(0);
+    const caught = fl.plate.layout.rows.map((q) => q.text).join(' | ');
+    ok('...a caught run replaces it with what she had, said as CAUGHT, and the board keeps her best',
+      /CAUGHT — 4,321/.test(caught) && /12,345/.test(B.lines().map((l) => l.text).join(' ')), caught);
+    // Over the bridge to the board, and onto it: still in the area.
+    her.position.set(B.x + SW.SIM.dx, B.y, B.z + SW.SIM.dz);
+    D.kata.update(0);
+    const onBoard = !!fl.last;
+    her.position.set(mid.x + SW.SIM.dx, B.y, mid.z + SW.SIM.dz);
+    D.kata.update(0);
+    const onBridge = !!fl.last;
+    // Back over the island's own bridge, towards the hub: gone.
+    her.position.set(I.x - I.fwd.x * (I.r + 4) + SW.SIM.dx, I.y, I.z - I.fwd.z * (I.r + 4) + SW.SIM.dz);
+    D.kata.update(0);
+    const gone = fl.last === null && !/last:/.test(fl.plate.layout.rows.map((q) => q.text).join(' '));
+    ok('...and keeps it while she walks over to the board and stands on it, and drops it when she leaves the area',
+      onBoard && onBridge && gone, `board ${onBoard}, bridge ${onBridge}, gone ${gone}`);
+    D.kata.ended(runOf({}), 'won');
+    her.realm = null;
+    D.kata.update(0);
+    const outOfSim = fl.last === null;
+    her.realm = 'sim';
+    ok('...or the simulator', outOfSim);
+    // One player drives it, and the menu says who.
+    B.openFilters(her);
+    const ch = D.choices[her.index];
+    const title = ch?.o?.title ?? ch?.title ?? '';
+    const songsSame = B._songs(her).join() === D.kata.songChoices(her).map((c) => c.S.id).join();
+    D.closeChoice(her);
+    ok('記 its filters are a menu with her name on it, over the same song list her picker shows — the secret song stays secret',
+      /KATA BOARD — Ember/.test(title) && songsSame, title);
+    D.progress.fromSave(keep);
+    B.update(Infinity);
+    her.position.set(I.x + SW.SIM.dx, I.y, I.z + SW.SIM.dz);
   }
   scene.remove(sim.root);
 }

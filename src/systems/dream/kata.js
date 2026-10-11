@@ -7,6 +7,7 @@ import { HoloPanel } from './holo.js';
 import { POSE, SHADOW_H, extraOpen } from './shadow.js';
 import * as BM from './beatmap.js';
 import { customCharts } from './chartstore.js';
+import { KataBoard } from './kataboard.js';
 import { kyoTexture } from '../crossfx.js';
 
 /* ---------------------------------------------------------------------------
@@ -220,6 +221,9 @@ export class KataHall {
       });
       for (const kiosk of [play, edit]) { this.kiosks.push(kiosk); fl.kiosks.push(kiosk); }
     }
+    // 記 The board, on its own platform off the far rim (dream/kataboard.js).
+    this.board = new KataBoard(this, isle);
+    this.kiosks.push(this.board.kiosk);
     this.stations = this.kiosks.map((k) => k.station);
     dream.sim.tickers.push((dt) => this.update(dt));
   }
@@ -260,9 +264,11 @@ export class KataHall {
     });
     this.dream.sim.root.add(g);
     fl.group = g;
-    fl.plate = new HoloPanel({ w: 4.4, h: 1.7, px: 80 });
+    /* Taller than its two lines need: her last score goes under her name
+       (`fl.last`) — and lifted by the same half, so its foot stays where it was. */
+    fl.plate = new HoloPanel({ w: 4.4, h: 2.5, px: 80 });
     const po = markOffset('S', PLATE_D);
-    fl.plate.position.set(fl.x + po.x, fl.y + 1.6, fl.z + po.z);
+    fl.plate.position.set(fl.x + po.x, fl.y + 2.0, fl.z + po.z);
     this.dream.sim.root.add(fl.plate);
     fl.paintKey = null;
   }
@@ -304,7 +310,8 @@ export class KataHall {
     const lit = !!(p || show);
     const colour = show ? show.colour : p ? (p.style?.colour ?? HOLO.cyan) : KIOSK_OFF;
     const name = show ? show.name : seat ? (seat.style?.name ?? seat.name) : null;
-    const key = `${lit}|${colour}|${name}`;
+    const last = p && fl.last ? fl.last : null;
+    const key = `${lit}|${colour}|${name}|${last?.n ?? ''}`;
     if (key === fl.paintKey) return;
     fl.paintKey = key;
     fl.lit = lit;
@@ -321,7 +328,13 @@ export class KataHall {
     for (const s of fl.spots) s.material.color.set(lit ? HOLO.gold : KIOSK_OFF);
     for (const k of fl.kiosks) k.setLit(lit);
     const kj = (name && FLOOR_KANJI[name]) ?? String(fl.k + 1);
-    fl.plate.set(lit ? [
+    fl.plate.set(lit && last ? [
+      { text: `${kj}  ${name.toUpperCase()}`, size: 2.0, color: colour, glow: true, jp: true },
+      { text: `last: ${last.title} · ${BM.DIFFS[last.diff]?.name ?? last.diff} · ${last.speed}×`, size: 0.95, color: 0x9fefff },
+      last.won
+        ? { text: `${stars3(last.stars)}  ${last.score.toLocaleString('en-US')} · ${last.acc}%`, size: 1.3, color: HOLO.gold }
+        : { text: `CAUGHT — ${last.score.toLocaleString('en-US')}`, size: 1.3, color: 0xff8a8a },
+    ] : lit ? [
       { text: `${kj}  ${name.toUpperCase()}`, size: 2.0, color: colour, glow: true, jp: true },
       { text: `player ${fl.k + 1}'s kata floor`, size: 1.1 },
     ] : [
@@ -518,15 +531,60 @@ export class KataHall {
     return d.chart.song;
   }
 
+  /**
+   * A RUN ENDED (dreamdojo `onDrillEnd`). Richard: "keep the player's most
+   * recent score on their current scoreboard (the one with their name) until
+   * they leave the area." So her floor's plate keeps it (`fl.last`) — a
+   * finished song with its stars, or a caught one with what she had — until
+   * `_keepLast` sees her leave. A run she STOPPED has no score to keep. A
+   * finished song on Lionheart's chart also goes to the 記 board.
+   */
+  ended(d, how) {
+    const fl = d.spec?.kataFloor;
+    if (!fl || !d.chart) return;
+    if (how !== 'won' && /^Stopped/.test(d.why ?? '')) return;
+    const won = how === 'won';
+    fl.last = {
+      owner: d.p.index, title: d.chart.title, diff: d.chart.difficulty, speed: d.speed,
+      score: d.score ?? 0, acc: won ? d.acc : null, stars: won ? (d.stars_ ?? 1) : 0, won,
+      n: (this._lastN = (this._lastN ?? 0) + 1),
+    };
+    if (won && !d.custom) {
+      this.dream.progress.kataRun(this._name(d.p), {
+        song: d.chart.song, diff: d.chart.difficulty, speed: d.speed, score: d.score, acc: d.acc, stars: d.stars_ ?? 1,
+      });
+      this.board.update(Infinity);
+    }
+  }
+
+  /** Is she in the Kata Trace area: its island, or the board's platform and the bridge to it? */
+  inArea(p) {
+    const x = p.position.x - SIM.dx;
+    const z = p.position.z - SIM.dz;
+    return Math.hypot(x - this.isle.x, z - this.isle.z) <= this.isle.r + 0.5 || this.board.covers(x, z);
+  }
+
+  /** "...until they leave the area": out of it, or out of the simulator, and it is gone. */
+  _keepLast() {
+    for (const fl of this.floors) {
+      if (!fl.last) continue;
+      const p = this.ownerOf(fl);
+      if (!p || p.index !== fl.last.owner || !this.inArea(p)) fl.last = null;
+    }
+  }
+
   update(dt) {
+    this._keepLast();
     for (const fl of this.floors) this._paint(fl);
     const inside = idleIn(this.dream);
     for (const k of this.kiosks) k.update(dt, inside);
+    this.board.update(dt);
   }
 
   faceCamera(camera) {
     for (const k of this.kiosks) k.faceCamera(camera);
     for (const fl of this.floors) fl.plate.faceCamera(camera);
+    this.board.faceCamera(camera);
   }
 }
 
