@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { SIM, HOLO } from '../../world/simworld.js';
 import { HoloPanel } from './holo.js';
 import { Kiosk, idleIn, isleSpot, stars3 } from './kiosk.js';
+import { SINE_BOARD, sineBoardLines, sineFilterRows } from './sineboard.js';
 import {
   LEVELS, LANES, HALVES, WALLS, START, START_LINE, SECTIONS, SECTION, FINISH_B, END_B, COURSE_A,
   ARMS, MATH_ARM, beams, stones, groundAt, hitAt, pathS, CP_S, FINISH_S, advance, laneOf,
@@ -67,6 +68,10 @@ export const PLAZA = {
   stands: { a: -21, b: 10, r: 4, lift: 2.2, wall: 3.75 },
   exit: { a: -21, b: 12.6 },
   board: { a: -20.5, b: -12, lift: 4.6 },
+  /* 記 the Sine Board's kiosk (dream/sineboard.js): past the board's far
+     corner, 2 in from the first wall and 1 inside the rim. At (-19.6, -9.4),
+     under the board, its sign was behind the board from the bridge. */
+  boardKiosk: { a: -19, b: -14.5 },
   out: [{ a: -20, b: 2 }, { a: -19, b: 4 }, { a: -20, b: 6 }, { a: -19, b: 0 }],
 };
 
@@ -220,6 +225,10 @@ export class SineGauntlet {
     this.picking = null;
     /** A swipe in progress: { t, dir, out } — `out` the old course's view. */
     this.swipe = null;
+    /** 記 What the board shows while nobody is running (dream/sineboard.js). */
+    this.boardFilter = { course: 'gauntlet', level: 0, who: 'all' };
+    /** When the last session ended, on the dream's clock: LAST TIME holds for SINE_BOARD.lastHold. */
+    this.lastAt = -Infinity;
     this._buildWalls();
     this._buildLines();
     this.view = this._buildCourse();
@@ -495,7 +504,28 @@ export class SineGauntlet {
     this.board = new HoloPanel({ w: 7.2, h: 4.6, px: 90, edge: HOLO.cyan });
     this.board.position.set(bq.x, bq.y, bq.z);
     this.root.add(this.board);
+    // 記 The leaderboard's filters (dream/sineboard.js) — the board above IS the leaderboard when idle.
+    const bk = this._w(PLAZA.boardKiosk.a, PLAZA.boardKiosk.b);
+    this.boardKiosk = new Kiosk(this.dream, {
+      x: bk.x, z: bk.z, y: I.y, r: 1.2, colour: HOLO.gold, kanji: '記', title: 'SINE BOARD', near: 3.5,
+      card: null,
+      prompt: (p, key) => `[${key}]  CHANGE WHAT THE BOARD SHOWS`,
+      interact: (p) => this.openBoardFilters(p),
+    });
+    this.kiosks.push(this.boardKiosk);
     this._paintBoard();
+  }
+
+  /** 記 One driver, whoever pressed; the page she leaves is what the next kitten sees. */
+  openBoardFilters(p) {
+    const name = p.style?.name ?? p.name;
+    // Whatever the board was saying, it shows the page she is changing.
+    this.lastAt = -Infinity;
+    const rows = sineFilterRows(this, p, this.boardFilter, () => this._paintBoard());
+    const k = this.boardKiosk;
+    this.dream.openChoice(p, { title: `記 SINE BOARD — ${name}`, rows, start: 0, anchor: { x: k.x, y: k.y, z: k.z } });
+    this._paintBoard();
+    return true;
   }
 
   /* ----------------------------- who is where ---------------------------- */
@@ -844,6 +874,7 @@ export class SineGauntlet {
     if (!S) return;
     for (const p of this.dream.game.players ?? []) if (p && this.inSession(p)) this.dream.unbench(p, true);
     this.last = S.results.length ? { course: S.course, level: S.level, results: S.results } : this.last;
+    if (S.results.length) this.lastAt = this.dream.t ?? 0;
     this.session = null;
     this.run = null;
     this._paintBoard();
@@ -927,6 +958,7 @@ export class SineGauntlet {
       this.dream.game.sfx?.('firework');
     }
     this.last = { course: S.course, level: S.level, results: S.results };
+    this.lastAt = this.dream.t ?? 0;
     this.session = null;
     this.run = null;
     this._paintBoard();
@@ -1035,7 +1067,9 @@ export class SineGauntlet {
     this._paintCourse(L, t);
     this._carry();
     this._boardT = (this._boardT ?? 0) - dt;
-    if (this._boardT <= 0 && this.session) { this._boardT = 0.25; this._paintBoard(); }
+    /* Idle, once a second: the leaderboard's page can change under it (a
+       loaded save, LAST TIME running out) without anybody telling it. */
+    if (this._boardT <= 0) { this._boardT = this.session ? 0.25 : 1; this._paintBoard(); }
   }
 
   /** 'live', 'ahead' or 'done' for section `i` — see BEAM_AHEAD. Live: her
@@ -1143,27 +1177,38 @@ export class SineGauntlet {
     }
   }
 
-  /** The board's lines: this session, or the last one. */
+  /** What the board is showing: the race on now, the last one for a while
+   *  after it ends, and otherwise the 記 leaderboard (dream/sineboard.js). */
+  boardMode() {
+    if (this.session) return 'now';
+    if (this.last && (this.dream.t ?? 0) - this.lastAt < SINE_BOARD.lastHold) return 'last';
+    return 'board';
+  }
+
+  /** The board's lines: this session, the last one, or the leaderboard. */
   _paintBoard() {
     const S = this.session;
     const src = S ?? this.last;
+    if (this.boardMode() === 'board') {
+      const lines = sineBoardLines(this.dream.progress, this.boardFilter);
+      const sig = `board|${lines.map((l) => l.text).join('|')}`;
+      if (sig === this._boardSig) return;
+      this._boardSig = sig;
+      this.board.set(lines, HOLO.gold);
+      return;
+    }
     const lines = [{ text: `${this.course.kanji} ${this.course.name}`, size: 1.7, color: HOLO.cyan, glow: true, jp: true }];
-    if (!src) {
-      lines.push({ text: 'Nobody has run it yet.', size: 1.2 });
-      lines.push({ text: 'Step on the kiosk to choose a course.', size: 1.0, color: 0x9fefff });
-    } else {
-      lines.push({ text: `${S ? 'NOW' : 'LAST TIME'} · ${courseById(src.course ?? 'gauntlet')?.name ?? ''} · ${levelName(src.level)}`, size: 1.1, color: HOLO.gold });
-      rank(src.results).slice(0, 4).forEach((r, k) => {
-        const what = r.time != null ? `${r.time.toFixed(1)}s ${stars3(r.stars)}` : `reached ${SECTIONS[r.cp].name}`;
-        lines.push({ text: `${k + 1}. ${r.name}  ${what}`, size: 1.05, color: r.colour });
-      });
-      if (S) {
-        const rp = this.runner();
-        const d = this.run?.drill;
-        if (rp && d) lines.push({ text: `RUNNING: ${rp.name}  ${d.state === 'ready' ? 'ready…' : `${d.t.toFixed(1)}s`}`, size: 1.05, color: HOLO.gold });
-        const players = this.dream.game.players ?? [];
-        if (S.queue.length) lines.push({ text: `NEXT: ${S.queue.map((i) => players[i]?.name ?? '?').join(', ')}`, size: 1.0, color: 0x9fefff });
-      }
+    lines.push({ text: `${S ? 'NOW' : 'LAST TIME'} · ${courseById(src.course ?? 'gauntlet')?.name ?? ''} · ${levelName(src.level)}`, size: 1.1, color: HOLO.gold });
+    rank(src.results).slice(0, 4).forEach((r, k) => {
+      const what = r.time != null ? `${r.time.toFixed(1)}s ${stars3(r.stars)}` : `reached ${SECTIONS[r.cp].name}`;
+      lines.push({ text: `${k + 1}. ${r.name}  ${what}`, size: 1.05, color: r.colour });
+    });
+    if (S) {
+      const rp = this.runner();
+      const d = this.run?.drill;
+      if (rp && d) lines.push({ text: `RUNNING: ${rp.name}  ${d.state === 'ready' ? 'ready…' : `${d.t.toFixed(1)}s`}`, size: 1.05, color: HOLO.gold });
+      const players = this.dream.game.players ?? [];
+      if (S.queue.length) lines.push({ text: `NEXT: ${S.queue.map((i) => players[i]?.name ?? '?').join(', ')}`, size: 1.0, color: 0x9fefff });
     }
     const sig = lines.map((l) => l.text).join('|');
     if (sig === this._boardSig) return;
