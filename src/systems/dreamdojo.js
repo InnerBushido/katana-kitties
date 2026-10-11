@@ -34,7 +34,7 @@ import { TOUR, GEAR_LINES, GEAR_VOICE } from './dream/stories.js';
 import { TourShadow } from './dream/tourshadow.js';
 import { TourCast } from './dream/tourcast.js';
 import { holoDojo } from './dream/holodojo.js';
-import { PeekTrigger } from './dream/peek.js';
+import { PeekTrigger, stationFirst } from './dream/peek.js';
 import { NAV, navGrid, navPath, padObstacles } from './dream/padnav.js';
 import { tickKeptPandas, dropKept } from './dream/pandatrial.js';
 import { enterHolo, leaveHolo, grantHolo, holoLeft, HoloChoice, HOLO_MAX_EACH } from './dream/holokit.js';
@@ -1822,10 +1822,16 @@ export class DreamDojo {
     const dr = this.drills[p.index];
     if (dr && (dr.state === 'ready' || dr.state === 'live')) { s.peek?.reset(); return null; }
     this._ends ??= this._peekEnds();
+    /* A KIOSK'S CIRCLE OUTRANKS A BRIDGE (dream/peek.js `stationFirst`):
+       standing in one, or walking at one nearer than the mouth, there is no
+       look across — "The interaction circle should have camera priority". */
+    const vel = p.velocity ?? { x: 0, z: 0 };
+    this._stationsW = (this.stations ?? []).map((st) => ({ x: st.x + SIM.dx, y: st.y, z: st.z + SIM.dz, r: st.r }));
+    if (stationFirst(p.position, vel, this._stationsW, this._ends)) { s.peek?.reset(); return null; }
     /* ON OR OFF, with a buffer (dream/peek.js `PeekTrigger`). The lens's own
        clock does the easing; this only says whether she is "definitely" there. */
     s.peek ??= new PeekTrigger();
-    const E = s.peek.step(this._dt ?? 1 / 60, p.position, p.velocity ?? { x: 0, z: 0 }, this._ends);
+    const E = s.peek.step(this._dt ?? 1 / 60, p.position, vel, this._ends);
     if (!E) return null;
     return { x: p.position.x, y: p.position.y, z: p.position.z, far: E.far, w: 1 };
   }

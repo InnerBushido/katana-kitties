@@ -41427,7 +41427,9 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
        area." */
     /* ...and then, third pass: "We should increase the area for looking down
        the bridge so that it happens sooner, so maybe 1.5x's - 2x's the radius
-       as it currently is." 1.75 times the 5.5. */
+       as it currently is." 1.75 times the 5.5. And the fourth: "the bridge
+       camera zooming before getting on the bridge radius is too big now, so
+       lets make it 10 - 15% smaller" — 12.5% off the 9.6. */
     const S0 = PK.PEEK.start;
     const far9 = tw(PK.PEEK.exit + 1, 60);
     const at7 = tw(S0 + 1.5, 60);
@@ -41435,8 +41437,8 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const at5once = tw(S0 - 0.5);
     const dwellN = Math.ceil(PK.PEEK.dwell / F) + 1;
     const at5dwell = tw(S0 - 0.5, dwellN);
-    ok('望 1.75 times the radius it was (9.6, not 5.5), and ON or OFF — never a dial on her distance',
-      fromHub && S0 === 9.6 && !far9 && !at7 && !at5once && at5dwell?.w === 1 && at5dwell.far === E.far,
+    ok('望 12.5% inside the 9.6 it was (8.4 — "10 - 15% smaller"), and ON or OFF — never a dial on her distance',
+      fromHub && S0 === 8.4 && Math.abs(S0 / 9.6 - 0.875) < 1e-9 && Math.abs(PK.PEEK.exit / 13 - 0.875) < 0.005 && !far9 && !at7 && !at5once && at5dwell?.w === 1 && at5dwell.far === E.far,
       `${PK.PEEK.exit + 1}: ${far9?.w ?? 0}, ${S0 + 1.5}: ${at7?.w ?? 0}, ${S0 - 0.5} once: ${at5once?.w ?? 0}, after ${dwellN} frames: ${at5dwell?.w ?? 0}`);
     D.st[0].peek = null;
     const deep = tw(2);
@@ -41463,6 +41465,37 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const back = ends.find((e) => e.road === E.road && e !== E);
     ok('...and from the island end of the same bridge it looks back at the hub',
       !!back && Math.hypot(back.far.x - dcW.x, back.far.z - dcW.z) < 1);
+
+    /* THE CIRCLE OUTRANKS THE BRIDGE. Richard: "If player is standing on an
+       interaction circle, let's not have the camera zoom in before crossing
+       the bridge ... The interaction circle should have camera priority" and
+       "if player is walking towards the interaction circle, it should not do
+       the camera zooming until they are approaching the bridge instead". A
+       kiosk circle is put down beside the mouth for the test. */
+    {
+      const keep = D.stations;
+      const L = (k, side = 0) => { const q = at(k); return { x: q.x - SW.SIM.dx - E.toward.z * side, y: E.mouth.y, z: q.z - SW.SIM.dz + E.toward.x * side, r: 1.6 }; };
+      D.stations = [...keep, L(S0 - 1)];
+      D.st[0].peek = null;
+      const inCircle = tw(S0 - 1, 60);
+      D.stations = keep;
+      D.st[0].peek = null;
+      const on = tw(4, dwellN);
+      D.stations = [...keep, L(3.6)];
+      const stepIn = tw(3.6, 1);
+      D.stations = [...keep, L(4.5)];
+      D.st[0].peek = null;
+      const toward = tw(S0 - 0.5, 60);
+      D.stations = [...keep, L(5, 4)];
+      D.st[0].peek = null;
+      const aside = tw(S0 - 0.5, 60);
+      D.stations = keep;
+      D.st[0].peek = null;
+      ok('望 standing in a kiosk\'s circle by a mouth there is NO look across, and one already up lets go as she steps into a circle',
+        !inCircle && on?.w === 1 && !stepIn, `in ${inCircle?.w ?? 0}, on ${on?.w ?? 0}, step in ${stepIn?.w ?? 0}`);
+      ok('...walking at a circle nearer than the mouth is going to the CIRCLE — no look across; a circle off to one side does not hold it back',
+        !toward && aside?.w === 1, `toward ${toward?.w ?? 0}, aside ${aside?.w ?? 0}`);
+    }
     // THE SHOT, measured through a lens: the island in the middle, her upper body in frame, below and beside it.
     const at4 = tw(4, dwellN);
     const cam = new THREE.PerspectiveCamera(38, 16 / 9, 0.1, 2000);

@@ -76,6 +76,20 @@ import * as THREE from 'three';
    the way a Snake Way bridge does — through the lens that drew her, and a
    push held while the camera swings keeps going the way it started.
 
+   THE CIRCLE BEFORE THE BRIDGE — RICHARD'S FOURTH PASS. "If player is
+   standing on an interaction circle, let's not have the camera zoom in
+   before crossing the bridge incase the interaction circle is near a
+   bridge. The interaction circle should have camera priority over any
+   bridge zooming functionality when player is in the interaction circle."
+   And: "the bridge camera zooming before getting on the bridge radius is too
+   big now, so lets make it 10 - 15% smaller. Or ... if player is walking
+   towards the interaction circle, it should not do the camera zooming until
+   they are approaching the bridge instead of the interaction circle."
+     · Both: the radius is 12.5% smaller (`start` 8.4, `inner` 4.2, `exit`
+       11.4), AND `stationFirst` says no look across while she stands in a
+       kiosk's circle, or is walking at one that is nearer than the mouth.
+       A look already up lets go the moment she steps into a circle.
+
    A LAYER, like `SnakeCam`: laid over whichever pose is already drawing.
    THE LENS IS BLENDED ROUND HER and the aim is blended separately, out to
    the island. Blending both as one orbit round the aim (SnakeCam's way) was
@@ -85,14 +99,15 @@ import * as THREE from 'three';
 
 export const PEEK = {
   /** Walking toward the mouth inside this (units from it) for `dwell`
-   *  seconds turns it on. ~~11~~, ~~5.5 ("half as big")~~, and 1.75× that:
-   *  "it happens sooner, so maybe 1.5x's - 2x's the radius". */
-  start: 9.6,
+   *  seconds turns it on. ~~11~~, ~~5.5 ("half as big")~~, ~~9.6, 1.75×
+   *  that ("1.5x's - 2x's the radius")~~, and 12.5% smaller again: "too big
+   *  now, so lets make it 10 - 15% smaller". */
+  start: 8.4,
   dwell: 0.35,
   /** Inside this, going toward it, turns it on at once. */
-  inner: 4.8,
+  inner: 4.2,
   /** The buffer: once on, it stays on out to here... */
-  exit: 13,
+  exit: 11.4,
   /** ...unless she walks away from the mouth for this long. */
   awayT: 0.25,
   /** The move's own clock, in seconds, in and out. At 1.2 the arc from the
@@ -174,6 +189,32 @@ export function peekZone(pos, vel, E) {
   const moving = sp >= PEEK.moving;
   const cos = !moving ? 0 : d > 0.3 ? -(dx * vel.x + dz * vel.z) / (d * sp) : 1;
   return { d, moving, toward: moving && cos >= PEEK.toward, away: moving && cos <= -PEEK.toward };
+}
+
+/** How a kiosk's circle outranks a mouth: inside it (plus `pad`), or walking
+ *  at it (a cosine of at least `cos` — narrower than a mouth's 0.35, so a
+ *  circle merely off to one side does not hold the look back) while it is
+ *  nearer than the nearest mouth. */
+export const STATION_FIRST = { pad: 0.6, cos: 0.8 };
+
+/**
+ * The kiosk circle that has the camera instead of a bridge, or null. Pure.
+ * `stations` are { x, y, z, r } and `ends` the mouths, both in the world.
+ */
+export function stationFirst(pos, vel, stations, ends) {
+  const near = stations.filter((s) => Math.abs(pos.y - s.y) < 2);
+  for (const s of near) if (Math.hypot(pos.x - s.x, pos.z - s.z) < s.r + STATION_FIRST.pad) return s;
+  const sp = Math.hypot(vel.x, vel.z);
+  if (sp < PEEK.moving) return null;
+  let mouth = Infinity;
+  for (const E of ends) mouth = Math.min(mouth, Math.hypot(pos.x - E.mouth.x, pos.z - E.mouth.z));
+  if (mouth > PEEK.exit) return null;
+  for (const s of near) {
+    const d = Math.hypot(s.x - pos.x, s.z - pos.z);
+    if (d >= mouth || d < 1e-6) continue;
+    if (((s.x - pos.x) * vel.x + (s.z - pos.z) * vel.z) / (d * sp) >= STATION_FIRST.cos) return s;
+  }
+  return null;
 }
 
 /**
