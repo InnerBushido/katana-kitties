@@ -216,6 +216,14 @@ const WORK = [
      past the left arm of the X (x 1992), so `findViewBoxes` gave cells 3 and
      4 a 20px overlap and each would have carried a sliver of the other. */
   { file: 'lionheart_shadow.png', out: 'lionheart/shadow.png', to: [1925, 768], chroma: true },
+  /* HIM, BEATEN, at the end of Kata Trace (dream/kata.js `KO`). Richard:
+     "on his knees, gasping for air and leaning on his sword which is stabbed
+     into the ground and using one hand to hold himself up while smirking
+     towards the player ... have him wink at the player after he says 'good
+     job'". Two cells, the same drawing: eyes open, and the wink. Generated off
+     `lionheart_shadow.png` (gpt_image_2_5, magenta); the first take crouched
+     instead of kneeling and was not used. */
+  { file: 'lionheart_defeated.png', out: 'lionheart/defeated.png', to: [1372, 768], chroma: true },
 ];
 
 /* ========================================================================== */

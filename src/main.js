@@ -2170,13 +2170,16 @@ class Game {
       this._loadSprite('/sprites/kittens/ember/vr.png', 'auto', 4, none),
       this._loadSprite('/sprites/kittens/frost/vr.png', 'auto', 4, none),
       this._loadSprite('/sprites/lionheart/shadow.png', 4, 1, none),
-    ]).then(([ember, frost, shadow]) => {
+      this._loadSprite('/sprites/lionheart/defeated.png', 2, 1, none),
+    ]).then(([ember, frost, shadow, beaten]) => {
       const base = { ember: real(ember), frost: real(frost) };
       this.simArt = PLAYER_STYLE.map((s) => {
         const b = base[s.sheet];
         return b && s.recolour ? recolourAtlas(b, s.recolour) : b;
       });
       this.shadowArt = real(shadow);
+      // Kata Trace's last pose; without it he stays down on his back, as he always did.
+      this.lionKoArt = real(beaten);
       this.players.forEach((p, i) => p?.setSimArt(this.simArt[this.roster[i]] ?? null));
       return this._loadSimPoses().then(() => this.simArt);
     });

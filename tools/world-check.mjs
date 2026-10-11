@@ -6251,6 +6251,8 @@ console.log('\n--- background removal keeps the drawn whites ---');
     'lionheart/town.png',
     // ...and the simulator's drawings: the two headset turnarounds and his Shadow.
     'kittens/ember/vr.png', 'kittens/frost/vr.png', 'lionheart/shadow.png',
+    // ...and him beaten at the end of Kata Trace (dream/kata.js `KO`).
+    'lionheart/defeated.png',
     // ...and her seven special poses in the headset, per sheet (`vr_<pose>.png`).
     ...['ember', 'frost'].flatMap((s) => ['eat', 'bless', 'warp', 'inhale', 'scared', 'sweep', 'riposte']
       .map((p) => `kittens/${s}/vr_${p}.png`)),
@@ -6420,8 +6422,11 @@ console.log('\n--- background removal keeps the drawn whites ---');
     /* TWENTY-FIVE SINCE THE STANCE WENT INTO THE HEADSET: Frost's
        `vr_riposte` closes the same pocket her home stance does. Ember's
        closes none, as at home. Not filled: `_loadSimPoses` does not ask. */
-    ok('turning the fill on for every sheet would repaint twenty-five of them',
-      touched.length === 25 && touched.includes('beasts/dragon_sheet.png')
+    /* TWENTY-SIX SINCE HE KNEELS: `lionheart/defeated.png` closes a gap
+       somewhere (measured by this loop, not looked for). Not filled:
+       `loadSimArt` → `_loadSprite`, which does not ask. */
+    ok('turning the fill on for every sheet would repaint twenty-six of them',
+      touched.length === 26 && touched.includes('lionheart/defeated.png') && touched.includes('beasts/dragon_sheet.png')
       && touched.filter((f) => /\/vr_/.test(f)).length === 8 && touched.includes('kittens/frost/vr_riposte.png')
       && touched.includes('lionheart/town.png') && touched.includes('kittens/frost/riposte.png')
       && touched.includes('kittens/frost/vr.png') && touched.includes('lionheart/shadow.png')
@@ -37111,6 +37116,62 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       ok('...and the finishing attack puts him DOWN: flung, wobbling, then flat over',
         h.ko && h.stage.koAt != null && Math.abs(h.stage.roll - Math.PI / 2) < 0.05, `ko ${h.ko} roll ${h.stage.roll.toFixed(2)}`);
       ok('...and once he is down he says it — "Oof... good job." — once', spoke === 1, `${spoke}`);
+      /* Richard: "When Lionheart is knocked over, he falls into the ground. We
+         should keep him above the ground." Measured off the sheet he is drawn
+         from: the guard cell's ink, middle of the cell to its left edge, in
+         world units — that is how much of him the roll put under the floor,
+         and KO.lift must be it. */
+      {
+        const SHP = await import('../src/systems/dream/shadow.js');
+        const sh = readPNG(new URL('../public/sprites/lionheart/shadow.png', import.meta.url));
+        const cw = sh.w / 4;
+        const inkBox = (x0, x1) => {
+          let a = [1e9, 1e9, -1, -1];
+          for (let y = 0; y < sh.h; y++) for (let x = Math.round(x0); x < Math.round(x1); x++) {
+            if (sh.d[(y * sh.w + x) * 4 + 3] > 128) a = [Math.min(a[0], x), Math.min(a[1], y), Math.max(a[2], x), Math.max(a[3], y)];
+          }
+          return a;
+        };
+        const cells = [0, 1, 2, 3].map((c) => inkBox(c * cw, (c + 1) * cw));
+        const tallest = Math.max(...cells.map((b) => b[3] - b[1]));
+        const g = cells[0];
+        const under = ((cw / 2 - g[0]) / tallest) * SHP.SHADOW_H;
+        const stF = h.stage;
+        ok('...and lying flat he is ON the floor, not half under it: lifted by the measured half of him that went down',
+          Math.abs(KT.KO.lift - under) < 0.06 && Math.abs(stF.roll - Math.PI / 2) < 0.05 && Math.abs(stF.lion.position.y - KT.KO.lift) < 0.05,
+          `measured ${under.toFixed(2)}, KO.lift ${KT.KO.lift}, y ${stF.lion.position.y.toFixed(2)}`);
+        /* "on his knees, gasping for air and leaning on his sword ... smirking
+           towards the player", and "wink at the player after he says 'good
+           job'". Handed the drawing, the same stage gets up onto his knees,
+           at floor level, the standing sheet hidden — and winks once, AFTER
+           the line (1.1s + lion_kata_ko's 2.16s), inside the won card's 7s. */
+        D.game.lionKoArt = { texture: new THREE.Texture(), cols: 2, rows: 1, contentScale: 0.8, pad: 0 };
+        stF.koAt = stF.clock;
+        stF.koPos = { x: stF.lion.position.x, z: stF.lion.position.z, y: 0 };
+        const cam = new THREE.PerspectiveCamera();
+        let kneelAt = null; let winkOn = null; let winkOff = null; let lowest = 9; let bothShown = 0;
+        for (let f = 0; f < 120 * 6.5; f++) {
+          stF.tickFx(1 / 120);
+          stF.update(h.songT, false);
+          stF.faceCamera(cam);
+          const kk = stF.clock - stF.koAt;
+          if (stF.kneel && kneelAt == null) kneelAt = kk;
+          if (stF.winking && winkOn == null) winkOn = kk;
+          if (winkOn != null && !stF.winking && winkOff == null) winkOff = kk;
+          if (kk > 0.35 && !stF.kneel) lowest = Math.min(lowest, stF.lion.position.y - KT.KO.lift * Math.abs(Math.sin(stF.roll)));
+          if (stF.koSprite?.visible && stF.sprite?.visible) bothShown++;
+        }
+        const ko = KT.KO;
+        const clip = 2.16;
+        ok('...then up onto his KNEES on his sword (lionheart/defeated.png), and a wink after "good job", all inside the won card',
+          stF.koSprite && kneelAt != null && Math.abs(kneelAt - ko.kneelAt) < 0.02 && stF.lion.position.y === 0 && bothShown === 0
+          && winkOn != null && winkOn >= 1.1 + clip && winkOff - winkOn > 0.5 && winkOff < 7 && !stF.winking,
+          `knees at ${kneelAt?.toFixed(2)}s, wink ${winkOn?.toFixed(2)}-${winkOff?.toFixed(2)}s, both drawn ${bothShown} frames`);
+        ok('...and the kneeling drawing is his height on his knees: 0.674 of standing, by the visor (73px vs 57px) and the ink (546 vs 633)',
+          Math.abs(ko.kneelH / (SHP.SHADOW_H * (cells[0][3] - cells[0][1]) / tallest) - 0.674) < 0.02,
+          `${ko.kneelH} / ${(SHP.SHADOW_H * (cells[0][3] - cells[0][1]) / tallest).toFixed(2)}`);
+        delete D.game.lionKoArt;
+      }
       ok('...on the won card too', h.spec.paint(h).some((l) => l.text.includes(KT.KATA_LINES.ko.line)));
       spoke = 0;
       const skip = dance([{ beat: 7, push: 'E' }, { beat: 9, push: 'W' }]);
