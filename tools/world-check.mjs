@@ -36049,16 +36049,22 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
          and ask its box against every other label on the floor. */
       let frames = 0; let clash = 0; let hops = 0; let worst = '';
       let last = null;
+      let jump = 0; let wasAt = null;
       for (const rad of [1, 1.3]) {
         for (let k = 0; k < 96; k++) {
           at((k / 96) * Math.PI * 2 + 0.01, rad);
           holo.update(1 / 60, [walker]);
-          fx.update(8 + k / 60, [walker]);
+          fx.update(8 + (rad - 1) * 20 + k / 60, [walker]);
           const mine = [X.quad.label].filter((l) => l.visible);
           const others = holo.labels.filter((l) => l.visible && !mine.includes(l));
           frames++;
-          const bad = mine.some((a, i) => others.some((b) => HD.boxesOverlap(HD.labelBox(a), HD.labelBox(b), 0))
-            || mine.some((b, j) => j > i && HD.boxesOverlap(HD.labelBox(a), HD.labelBox(b), 0)));
+          // Asked of the SPOT it is heading for: on its way there it glides (below).
+          const box = (a) => { const g = X.glide.quad; return HD.labelBox(a, g.tx, g.tz); };
+          const bad = mine.some((a, i) => others.some((b) => HD.boxesOverlap(box(a), HD.labelBox(b), 0))
+            || mine.some((b, j) => j > i && HD.boxesOverlap(box(a), HD.labelBox(b), 0)));
+          const pos = X.quad.label.position;
+          if (wasAt && k) jump = Math.max(jump, Math.hypot(pos.x - wasAt.x, pos.z - wasAt.z));
+          wasAt = { x: pos.x, z: pos.z };
           if (bad) { clash++; worst ||= `θ ${((k / 96) * 360).toFixed(0)}° at ${rad}`; }
           const now = JSON.stringify(X.spots);
           if (last && now !== last) hops++;
@@ -36067,6 +36073,11 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       }
       ok('...and no readout lands on another label, all the way round, on the circle and off it',
         clash === 0, `${clash} of ${frames} frames, first ${worst}; ${hops} spot changes`);
+      /* Richard: "the Quadrant text is jumping around". It changes spot on this
+         lap (a new quadrant is a new quarter), and it used to change in one
+         frame — up to 30 units. It glides now: no frame moves it 2 units. */
+      ok('...and the quadrant\'s name GLIDES to a new spot rather than jumping there',
+        hops > 0 && jump < 2, `${hops} spot changes, the most it moved in a frame ${jump.toFixed(2)}`);
       at(0.8, 1.3);
       holo.update(1 / 60, [walker]);
     }
@@ -37210,6 +37221,34 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     ok('型 the song picker opens on DANCE, and ◀ ▶ turns the song and turns it back',
       /DANCE/.test(startOn) && turned !== before && pick.song === before, `${startOn} ${before}→${turned}→${pick.song}`);
     D.closeChoice(her);
+    /* Richard: "the menu is being opened behind the player name menu ... we
+       should always open the menu from the same place, no matter where the
+       player is standing ... to the right of the center of the circle the
+       player stands on". Opened from two ends of the PLAY kiosk's circle, the
+       card lands on one spot, off the circle's centre, and draws over signs. */
+    {
+      const cam = new THREE.PerspectiveCamera();
+      cam.position.set(fl.x, fl.y + 20, fl.z - 30);
+      cam.lookAt(fl.x, fl.y, fl.z);
+      const kio = D.kata.kiosks[fl.k * 2];
+      const spots = [];
+      for (const dx of [-1.4, 1.4]) {
+        her.position.set(kio.station.x + dx + SW.SIM.dx, fl.y, kio.station.z + SW.SIM.dz);
+        her.group.position.copy(her.position);
+        her.group.updateMatrixWorld(true);
+        D.kata.openPicker(her, fl);
+        const C = D.choices[0];
+        C.faceCamera(cam);
+        C.panel.updateMatrixWorld(true);
+        spots.push({ at: C.panel.getWorldPosition(new THREE.Vector3()), over: C.panel.mat.depthTest === false && C.panel.mesh.renderOrder > fl.plate.mesh.renderOrder });
+        D.closeChoice(her);
+      }
+      const centre = new THREE.Vector3(kio.station.x + SW.SIM.dx, 0, kio.station.z + SW.SIM.dz);
+      const off = Math.hypot(spots[0].at.x - centre.x, spots[0].at.z - centre.z);
+      ok('...and opens in ONE place wherever she stands on the kiosk: beside its centre, and over every sign',
+        spots[0].at.distanceTo(spots[1].at) < 1e-6 && Math.abs(off - 5.5) < 0.01 && spots.every((s) => s.over),
+        `${spots[0].at.distanceTo(spots[1].at).toFixed(3)} apart, ${off.toFixed(2)} off the centre`);
+    }
   }
 
   /* --- one floor each --- */
@@ -37698,20 +37737,30 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         const looks = new Set();
         list0.forEach((q, k) => {
           const fx = G.beamFx[k];
-          const want = fx.secI < cp ? SN.BEAM_DONE.col : fx.secI > cp ? SN.BEAM_AHEAD.col : fx.col;
+          const lit = fx.secI === cp || (fx.secI > cp && CO.SECTIONS[fx.secI].lane === CO.SECTIONS[cp].lane);
+          const want = lit ? fx.col : SN.BEAM_DONE.col;
           looks.add(fx.look);
           if (fx.glow.material.color.getHex() !== want || fx.ends[0].material.color.getHex() !== want) wrong++;
         });
         if (cp === 3) seenAll = looks.size === 3;
       }
+      /* "make all the 'upcoming' lasers their normal colors if they are in
+         the same row or section that the player is ... not have to wait to
+         get past the checkpoint". Her checkpoint is still the TRAVELLING WAVE
+         (lane 0), but her feet have turned into lane 1: the twin and counter
+         waves are lit already, and the lanes past it are not. */
+      G.run = { cp: 1, lane: 1, drill: { state: 'live' } };
+      G._paintCourse(CO.LEVELS[0], 1);
+      const early = G.beamFx.every((fx) => (fx.look === 'live') === [1, 2, 3].includes(fx.secI));
       G.run = null;
       G._paintCourse(CO.LEVELS[0], 1);
       const back = G.beamFx.every((fx) => fx.look === 'live' && fx.glow.material.color.getHex() === fx.col && fx.core.material.color.getHex() === 0xffffff);
       G.run = keep;
-      ok('...and in a run only her own section wears its colours: the ones ahead dark green, the ones passed grey, and all of them back when nobody runs',
-        wrong === 0 && seenAll && back && G.beamFx.every((fx) => fx.secI >= 0)
-        && new Set([SN.BEAM_AHEAD.col, SN.BEAM_DONE.col, ...G.beamFx.map((fx) => fx.col)]).size === 2 + new Set(G.beamFx.map((fx) => fx.col)).size,
+      ok('...and in a run her section and what is left of her LANE wear their colours, everything else grey, and all of them back when nobody runs',
+        wrong === 0 && seenAll && back && G.beamFx.every((fx) => fx.secI >= 0) && SN.BEAM_AHEAD === SN.BEAM_DONE
+        && !G.beamFx.some((fx) => fx.col === SN.BEAM_DONE.col),
         `${wrong} wrong`);
+      ok('...and turning into the next lane lights it before she reaches its checkpoint line', early);
     }
     ok('...and the stones are real floors: standing on one stands her at its height',
       (() => {
@@ -37799,6 +37848,21 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     ok('...and the red floor zaps a kitten standing on it, and not one standing on a stone',
       CO.hitAt(CO.LEVELS[0], zc, (zl.stones[0] + zl.stones[1]) / 2, 0, 0, { list: [] }) === 'stones'
       && !CO.hitAt(CO.LEVELS[0], zc, zl.stones[0], CO.stoneHeight(zl, 0, 0), 0, { list: [] }));
+    /* Richard: "if the player falls on the 'lava' lazers under the floating
+       platforms, they will be invulnerable while touching the ground." Feet
+       on the floor UNDER a stone's edge, at every moment of a stone's swing. */
+    {
+      let safe = 0;
+      for (let t = 0; t < 10; t += 0.05) {
+        for (const [n, sb] of zl.stones.entries()) {
+          const s = CO.stones(CO.LEVELS[0], t)[n];
+          if (!CO.hitAt(CO.LEVELS[0], zc, sb + s.r * 0.7, 0, t, { list: [] })) safe++;
+        }
+      }
+      ok('...and the red floor zaps her UNDER a stone too — a stone over her head is not a floor under her feet',
+        safe === 0 && Math.min(...[...Array(200)].flatMap((_, k) => CO.stones(CO.LEVELS[0], k * 0.05).map((s) => s.y))) > 0.08,
+        `${safe} safe moments`);
+    }
     /* NO GRACE, SO THIS IS WHAT KEEPS A ZAP FAIR. With the 0.9s of
        invulnerability gone ("they should not have invulnerability as its like
        cheating"), a checkpoint a beam can reach would zap her the frame she
@@ -40807,21 +40871,25 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
        transition until the player is 'definitely' in the zone area, either
        by moving close enough quickly or by getting close enough within an
        area." */
-    const far9 = tw(9, 60);
-    const at7 = tw(7, 60);
+    /* ...and then, third pass: "We should increase the area for looking down
+       the bridge so that it happens sooner, so maybe 1.5x's - 2x's the radius
+       as it currently is." 1.75 times the 5.5. */
+    const S0 = PK.PEEK.start;
+    const far9 = tw(PK.PEEK.exit + 1, 60);
+    const at7 = tw(S0 + 1.5, 60);
     D.st[0].peek = null;
-    const at5once = tw(5);
+    const at5once = tw(S0 - 0.5);
     const dwellN = Math.ceil(PK.PEEK.dwell / F) + 1;
-    const at5dwell = tw(5, dwellN);
-    ok('望 HALF the radius it was (5.5, not 11), and ON or OFF — never a dial on her distance',
-      fromHub && PK.PEEK.start === 5.5 && !far9 && !at7 && !at5once && at5dwell?.w === 1 && at5dwell.far === E.far,
-      `9: ${far9?.w ?? 0}, 7: ${at7?.w ?? 0}, 5 once: ${at5once?.w ?? 0}, 5 after ${dwellN} frames: ${at5dwell?.w ?? 0}`);
+    const at5dwell = tw(S0 - 0.5, dwellN);
+    ok('望 1.75 times the radius it was (9.6, not 5.5), and ON or OFF — never a dial on her distance',
+      fromHub && S0 === 9.6 && !far9 && !at7 && !at5once && at5dwell?.w === 1 && at5dwell.far === E.far,
+      `${PK.PEEK.exit + 1}: ${far9?.w ?? 0}, ${S0 + 1.5}: ${at7?.w ?? 0}, ${S0 - 0.5} once: ${at5once?.w ?? 0}, after ${dwellN} frames: ${at5dwell?.w ?? 0}`);
     D.st[0].peek = null;
     const deep = tw(2);
     ok('...on after walking into it for a moment, or at once deep inside it going toward the mouth', deep?.w === 1);
-    const hold6 = tw(6.5, 30);
-    const still = walk(6.5, 0, 0, 120);
-    const out8 = walk(8, 0, 0);
+    const hold6 = tw(S0 + 1, 30);
+    const still = walk(S0 + 1, 0, 0, 120);
+    const out8 = walk(PK.PEEK.exit + 0.5, 0, 0);
     ok('...and the BUFFER: once on, it stays on out past where it started, standing still included, and only goes past the exit',
       hold6?.w === 1 && still?.w === 1 && !out8 && PK.PEEK.exit > PK.PEEK.start);
     D.st[0].peek = null;
@@ -40921,8 +40989,59 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const pl = read('../src/entities/player.js');
     const mn = read('../src/main.js');
     ok('...on her own camera and on a group\'s, and BEFORE the ride camera, which starts from wherever it left the lens',
-      /this\.bridgePeek\.apply\([^\n]*\n\s*this\.snakeCam\.apply/.test(pl)
-      && /rig\.bridgePeek\.apply\([^\n]*\n\s*rig\.snakeCam\.apply/.test(mn));
+      /this\.bridgePeek\.apply\([^\n]*peekHold\(this\.snakeCam, ride\)\);\r?\n\s*this\.snakeCam\.apply\(dt, ride,/.test(pl)
+      && /rig\.bridgePeek\.apply\([^\n]*peekHold\(rig\.snakeCam, ride\)\);\r?\n\s*rig\.snakeCam\.apply\(dt, ride,/.test(mn));
+    /* ONE MOVE ONTO THE BRIDGE. Richard: "the transition from looking down
+       the bridge to the bridge camera seems to not translate very well as the
+       easing seems a bit off. If the player just runs across the bridge ...
+       seems to be doing 2 transitions and a bit of a stutter". The two
+       layers as Player._updateCamera stacks them, at 60 Hz: the look across
+       comes on (fully, and — running — only part way), she steps on the
+       bridge, and the ride takes over. Measured: the lens's step and the
+       AIM's turn, frame to frame, and how many times the lens stops and
+       starts again (a second transition is a second start). */
+    {
+      const { SnakeCam } = await import('../src/systems/snakecam.js');
+      const R0 = E.road;
+      const s0 = 1.5;
+      const f0 = R0.frameAt(s0);
+      const dirOn = Math.sign((f0.tx * E.toward.x + f0.tz * E.toward.z)) || 1;
+      const runIn = (peekFrames) => {
+        const cam = new THREE.PerspectiveCamera(38, 16 / 9, 0.1, 2000);
+        const bp = new PK.BridgePeek();
+        const sc = new SnakeCam();
+        const look = new THREE.Vector3();
+        const pAt = { ...at4, x: f0.x, y: f0.y, z: f0.z };
+        let step = 0; let turn = 0; let starts = 0; let was = null; let dir0 = null; let moving = false;
+        for (let k = 0; k < peekFrames + 150; k++) {
+          const on = k < peekFrames;
+          const S = on ? { ...pAt, w: 1 } : null;
+          const ride = on ? null : { road: R0, s: s0, dir: dirOn, x: f0.x, y: f0.y, z: f0.z, spread: 0 };
+          const her3 = f0;
+          look.set(her3.x, her3.y + 1.4, her3.z);
+          cam.up.set(0, 1, 0);
+          cam.position.set(look.x + 17, look.y + 14, look.z + 17);
+          cam.lookAt(look);
+          bp.apply(F, S, cam, look, PK.peekHold(sc, ride));
+          sc.apply(F, ride, cam, look);
+          const d = new THREE.Vector3(); cam.getWorldDirection(d);
+          if (was) {
+            const st = was.distanceTo(cam.position);
+            if (k > 1) step = Math.max(step, st);
+            if (k > peekFrames) turn = Math.max(turn, THREE.MathUtils.radToDeg(d.angleTo(dir0)));
+            if (st > 0.02 && !moving) { starts++; moving = true; } else if (st < 0.005) moving = false;
+          }
+          was = cam.position.clone(); dir0 = d.clone();
+        }
+        return { step, turn, starts, gone: !bp.live && sc.w === 1 };
+      };
+      const full = runIn(Math.ceil(PK.PEEK.sweepIn / F) + 20);
+      const quick = runIn(Math.round(0.45 / F));
+      ok('...and onto the bridge it is ONE move: the look across finishes under the ride and never goes back, and the ride turns the aim from where it was, never a snap',
+        // The ride's own bar (the arena road's): two units and four degrees a frame at most.
+        [full, quick].every((m) => m.turn < 4 && m.step < 2 && m.gone) && full.starts <= 2 && quick.starts === 1,
+        `full: turn ${full.turn.toFixed(2)}deg/frame, ${full.starts} starts; running straight on: turn ${quick.turn.toFixed(2)}, step ${quick.step.toFixed(2)}, ${quick.starts} starts`);
+    }
     // In a drill, the drill keeps the camera.
     D.drills[0] = { state: 'live' };
     const inDrill = walk(4, E.toward.x * run, E.toward.z * run);
@@ -41236,6 +41355,19 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const lionClear = Math.min(...racks.map((r) => hyp(r.at, L.lion)));
     ok('...clear of every tube and of Lionheart', tubeClear > TUBE_R + GR.GRAB_R && lionClear > 3,
       `tubes ${tubeClear.toFixed(2)} · Lionheart ${lionClear.toFixed(2)}`);
+    /* Richard: "The VR equipment ... seem a bit too big, maybe we can scale
+       them down or scale up the platform they are floating above so that they
+       are not colliding with the mesh while it is spinning above it." Each
+       piece's swept circle, MEASURED off its mesh as built: inside its plinth,
+       clear of its backboard by SPIN_CLEAR, under a metre, and its lowest point
+       over the plinth's top at the bottom of its bob. */
+    ok('...and each piece turns clear of its own backboard, over a plinth as wide as it sweeps',
+      racks.every((r) => {
+        const now = GR.spinRadius(r.mesh);
+        return Math.abs(now.r - r.sweep) < 1e-6 && r.sweep < 1 && r.plinth >= r.sweep
+          && r.backD - 0.09 - r.sweep >= GR.SPIN_CLEAR - 1e-9 && r.baseY - 0.08 + r.low > r.floorY + 0.5;
+      }),
+      racks.map((r) => `${r.item.id} sweeps ${r.sweep.toFixed(2)}, board at ${(r.backD - 0.09).toFixed(2)}, low ${(r.baseY - 0.08 + r.low - r.floorY).toFixed(2)}`).join(' · '));
     /* THE WAY IN AND THE WAY OUT STAY OPEN. The gate's deck meets the pad's
        edge, and the walk out of a tube ends 3.2 toward the middle: a kitten
        (radius ~0.6) stands at every one of those without a prop's collider
@@ -41289,6 +41421,164 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         .filter(([, okk]) => !okk).map(([n]) => n);
       ok('...and every rack and the foot of every tube can still be walked to from the gate, round them',
         free(entry.x, entry.z) && lost.length === 0, lost.join(', ') || `${cells.length} cells reachable`);
+    }
+    /* THE WALK TO HER TUBE GOES ROUND THINGS. Richard: "when the player is
+       walking to the tubes automatically, they tend to get stuck on the
+       environment, mainly the omni-directional treadmills. We should try to
+       use some A* path finding". Walked, not reasoned: a body of 0.6 at
+       walking pace, pushed by the world's own `resolveSolids` every step,
+       from in front of every rack and from Lionheart to every tube — the old
+       way (the stick pointed straight at the tube) and the new (along
+       `navTo`, re-planned twice a second). */
+    {
+      const PN = await import('../src/systems/dream/padnav.js');
+      const walkTo = (from, k, nav) => {
+        const p = { index: k, position: new THREE.Vector3(from.x, ARCADE.y, from.z) };
+        const tube = L.tubes[k];
+        let path = null; let navT = 0; let t = 0;
+        const dt = 1 / 30;
+        for (; t < DD.SEQ.walkMax; t += dt) {
+          if (Math.hypot(tube.x - p.position.x, tube.z - p.position.z) < 0.35) return t;
+          let aim = tube;
+          if (nav) {
+            navT -= dt;
+            if (!path || navT <= 0) { path = D.navTo(p); navT = 0.5; }
+            while (path && path.length > 1 && Math.hypot(path[0].x - p.position.x, path[0].z - p.position.z) < PN.NAV.reach) path.shift();
+            aim = path?.[0] ?? tube;
+          }
+          const ax = aim.x - p.position.x; const az = aim.z - p.position.z; const ad = Math.hypot(ax, az) || 1;
+          const sp = 7 * Math.min(1, Math.hypot(tube.x - p.position.x, tube.z - p.position.z) / 1.2);
+          const q = world.resolveSolids(p.position.x + (ax / ad) * sp * dt, p.position.z + (az / ad) * sp * dt, 0.6);
+          p.position.x = q.x; p.position.z = q.z;
+        }
+        return null;
+      };
+      const starts = [...racks.map((rk) => {
+        const d0 = hyp(rk.at, ARCADE);
+        return { name: rk.item.id, x: rk.at.x + ((ARCADE.x - rk.at.x) / d0) * 1.9, z: rk.at.z + ((ARCADE.z - rk.at.z) / d0) * 1.9 };
+      }), (() => { const d0 = hyp(L.lion, ARCADE); return { name: 'Lionheart', x: L.lion.x + ((ARCADE.x - L.lion.x) / d0) * 2.4, z: L.lion.z + ((ARCADE.z - L.lion.z) / d0) * 2.4 }; })()];
+      const oldStuck = []; const newStuck = []; let slow = 0;
+      for (const s0 of starts) {
+        for (let k = 0; k < 4; k++) {
+          if (walkTo(s0, k, false) == null) oldStuck.push(`${s0.name}->${k + 1}`);
+          const tn = walkTo(s0, k, true);
+          if (tn == null) newStuck.push(`${s0.name}->${k + 1}`); else slow = Math.max(slow, tn);
+        }
+      }
+      line('the walk to the tubes, straight at them (the old way)', oldStuck.length ? `stuck: ${oldStuck.join(' ')}` : 'never stuck');
+      ok('型 the walk to her tube goes ROUND the treadmills and props: from every rack and from Lionheart, all four tubes, in time',
+        newStuck.length === 0 && slow < DD.SEQ.walkMax, newStuck.join(' ') || `slowest ${slow.toFixed(1)}s of ${DD.SEQ.walkMax}`);
+      // And the way it takes never runs through another kitten's tube, or a circle grown by her body.
+      const glassHit = [];
+      for (const s0 of starts) {
+        for (let k = 0; k < 4; k++) {
+          const path = D.navTo({ index: k, position: new THREE.Vector3(s0.x, ARCADE.y, s0.z) }) ?? [];
+          const pts = [s0, ...path];
+          const G = D._nav[k];
+          // A start inside a grown circle (in front of the headset's wide plinth,
+          // 1.9 out is inside 1.05 + 0.85) can only leave it: the first leg is exempt.
+          const startIn = G.grown.some((c) => hyp(s0, c) < c.r);
+          for (let i = 1; i < pts.length; i++) {
+            if (!(i === 1 && startIn) && !PN.clearLine(G, pts[i - 1], pts[i]) && i < pts.length - 1) glassHit.push(`${s0.name}->${k + 1}`);
+            for (const [j, t2] of L.tubes.entries()) {
+              if (j === k) continue;
+              const a = pts[i - 1]; const b = pts[i];
+              const ux = b.x - a.x; const uz = b.z - a.z; const ll = ux * ux + uz * uz || 1;
+              const u = Math.max(0, Math.min(1, ((t2.x - a.x) * ux + (t2.z - a.z) * uz) / ll));
+              if (Math.hypot(a.x + ux * u - t2.x, a.z + uz * u - t2.z) < TUBE_R) glassHit.push(`${s0.name}->${k + 1} through tube ${j + 1}`);
+            }
+          }
+        }
+      }
+      ok('...and the way it takes is clear of every grown circle and never goes through a sister\'s tube', glassHit.length === 0, glassHit.slice(0, 4).join(' | '));
+      /* "after a second or two, the player can regain control" — and not before. */
+      ok('...and the stick only takes the walk back after walkLock (1.5s), not 0.4', DD.SEQ.walkLock >= 1 && DD.SEQ.walkLock <= 2
+        && /s\.t > SEQ\.walkLock\)/.test(readD('../src/systems/dreamdojo.js')));
+    }
+    /* THE GEAR SHOTS, through a lens. "the camera rotates so that the player
+       sees the equipment ... After they receive it all, then have the camera
+       rotate around the players, in a sweeping circle, to face the tubes from
+       a fair distance showing most of the insides of the dojo area with
+       Lionheart in the back". Each shot's pose, built as `_updateCamera`
+       builds it, and asked: are the racks she still needs in it FROM THE
+       FRONT; are all four tubes and Lionheart in it, beyond her. */
+    {
+      const cam = new THREE.PerspectiveCamera(38, 16 / 9, 0.1, 2000);
+      const pose = (S) => {
+        const c = S.centre;
+        cam.position.set(c.x + Math.sin(S.yaw) * Math.cos(S.pitch) * S.dist, c.y + Math.sin(S.pitch) * S.dist, c.z + Math.cos(S.yaw) * Math.cos(S.pitch) * S.dist);
+        cam.lookAt(c);
+        cam.updateMatrixWorld(true);
+      };
+      const inF = (x, y, z) => { const v = new THREE.Vector3(x, y, z).project(cam); return Math.abs(v.x) < 0.95 && Math.abs(v.y) < 0.95 && v.z < 1; };
+      const st = (D.st[her.index] ??= { phase: null, t: 0 });
+      const keepS = { ...st };
+      const bad = [];
+      st.phase = null;
+      st.gather = new Set(GR.GEAR_ITEMS.map((x) => x.id));
+      for (const rk of racks) {
+        const d0 = hyp(rk.at, ARCADE);
+        stand(her, rk.at.x + ((ARCADE.x - rk.at.x) / d0) * 3, rk.at.z + ((ARCADE.z - rk.at.z) / d0) * 3);
+        const S = D._gearShot(her);
+        pose(S);
+        for (const want of racks.filter((q) => st.gather.has(q.item.id))) {
+          // In frame, and the lens on the side it faces (toward the pad's middle).
+          const facing = (cam.position.x - want.at.x) * (ARCADE.x - want.at.x) + (cam.position.z - want.at.z) * (ARCADE.z - want.at.z);
+          if (!inF(want.at.x, ARCADE.y + 1.6, want.at.z) || facing <= 0) bad.push(`racks shot from ${rk.item.id}: ${want.item.id}`);
+        }
+        if (!inF(her.position.x, her.position.y + 1, her.position.z)) bad.push(`racks shot from ${rk.item.id}: her`);
+        st.gather.delete(rk.item.id);
+      }
+      st.gather = null;
+      for (const ph of ['suit', 'walk']) {
+        st.phase = ph;
+        for (const rk of racks) {
+          const d0 = hyp(rk.at, ARCADE);
+          stand(her, rk.at.x + ((ARCADE.x - rk.at.x) / d0) * 2, rk.at.z + ((ARCADE.z - rk.at.z) / d0) * 2);
+          const S = D._gearShot(her);
+          pose(S);
+          for (const [n, q] of [...L.tubes.map((t, i) => [`tube ${i + 1}`, t]), ['Lionheart', L.lion]]) {
+            if (!inF(q.x, ARCADE.y + 2, q.z)) bad.push(`${ph} from ${rk.item.id}: ${n} out of frame`);
+          }
+          const tc = L.tubes.reduce((a, t) => ({ x: a.x + t.x / 4, z: a.z + t.z / 4 }), { x: 0, z: 0 });
+          if ((cam.position.x - ARCADE.x) * (tc.x - ARCADE.x) + (cam.position.z - ARCADE.z) * (tc.z - ARCADE.z) >= 0) bad.push(`${ph}: lens on the tubes' side`);
+        }
+      }
+      Object.assign(st, keepS);
+      ok('...and the gear shots: the racks she still needs, from the front, then all four tubes and Lionheart from the front of the pad',
+        bad.length === 0, bad.slice(0, 5).join(' | '));
+      /* "rotate around the players, in a sweeping circle" — not a cut. The
+         real cameraFocus, frame by frame from the dome's bearing into the
+         tubes shot: it turns, by no more than a few degrees a frame, and
+         arrives. */
+      {
+        const rk = racks[0];
+        const d0 = hyp(rk.at, ARCADE);
+        stand(her, rk.at.x + ((ARCADE.x - rk.at.x) / d0) * 2, rk.at.z + ((ARCADE.z - rk.at.z) / d0) * 2);
+        const keep2 = { ...st };
+        st.phase = null; st.gather = null;
+        D._cam = [];
+        D._dt = 1 / 60;
+        her.realm = 'real'; her.mount = null; her.rideAlong = null;
+        let f = null;
+        for (let i = 0; i < 180; i++) { f = D.cameraFocus(her); her.camYaw = f?.yaw ?? her.camYaw; }
+        const yaw0 = f?.yaw;
+        st.phase = 'suit';
+        let maxTurn = 0; let prev = yaw0;
+        for (let i = 0; i < 300; i++) {
+          f = D.cameraFocus(her);
+          her.camYaw = f.yaw;
+          maxTurn = Math.max(maxTurn, Math.abs(Math.atan2(Math.sin(f.yaw - prev), Math.cos(f.yaw - prev))));
+          prev = f.yaw;
+        }
+        const target = D._gearShot(her).yaw;
+        const off = Math.abs(Math.atan2(Math.sin(f.yaw - target), Math.cos(f.yaw - target)));
+        const swept = Math.abs(Math.atan2(Math.sin(target - yaw0), Math.cos(target - yaw0)));
+        Object.assign(st, keep2);
+        ok('...and it SWEEPS round her into the tubes shot: under 3 degrees a frame, and there in five seconds',
+          yaw0 != null && maxTurn < THREE.MathUtils.degToRad(3) && off < 0.02,
+          `swept ${THREE.MathUtils.radToDeg(swept).toFixed(0)}deg, most in a frame ${THREE.MathUtils.radToDeg(maxTurn).toFixed(2)}deg, ${THREE.MathUtils.radToDeg(off).toFixed(2)}deg short`);
+      }
     }
     /* THE POSTS MEET THE HOOP. "The poles on top of the VR treadmill model
        don't connect well to the ring": each post ran 0.1 past the hoop and
@@ -42947,7 +43237,20 @@ console.log('\n--- Shadow Lionheart\'s song: his theme, two 凶, and the finale 
   }
   const gaps = BM.resolveChart(BM.generateChart('shadow', 'hard')).filter((a) => a.kyo > 1).map((a, i, xs) => a.beat - (BM.resolveChart(BM.generateChart('shadow', 'hard')).find((b) => b.kyoG === a.kyoG && b.kyo === a.kyo - 1).beat));
   ok('every level of his song is fair, warns nothing, has two 凶 that each make her move, and ends in the air', !bad.length, bad.join(' | '));
-  ok('...and on HARD one 凶 comes a beat apart: two steps a beat', Math.min(...gaps) === 1 && BM.movesBetween(0, { beat: 1, tell: 0.75, kyo: 2 }) === 2, gaps.join(' '));
+  ok('...and his 凶 are two beats apart on every level: a beat on, a beat of rest', Math.min(...gaps) === BM.CROSS_REST && BM.movesBetween(0, { beat: 1, tell: 0.75, kyo: 2 }) === 2, gaps.join(' '));
+  /* Richard, playing Nightmare: "the cross-slash is executed on each beat, one
+     after another (for instance beats: 73, 74, and 75). This is too fast to be
+     playable, there needs to be at least a beat rest between each
+     cross-slash." HARD's 凶 was a beat apart in every one of his songs, and the
+     generator's one-beat gaps made X-X pairs in thirteen other HARD charts. */
+  {
+    const close = [];
+    for (const s of BM.SONGS) for (const d of BM.DIFF_IDS) {
+      const x = BM.generateChart(s.id, d).events.filter((e) => e.attack === 'cross').map((e) => e.beat);
+      for (let i = 1; i < x.length; i++) if (x[i] - x[i - 1] < BM.CROSS_REST) close.push(`${s.id} ${d} ${x[i - 1]}->${x[i]}`);
+    }
+    ok('...and no chart of any song at any level has two crosses closer than two beats', !close.length, close.slice(0, 6).join(' | '));
+  }
 }
 
 console.log('\n--- his recordings: one song per level, looped on the beat, won in the fight ---');

@@ -431,7 +431,9 @@ export class KataHall {
       { text: '▶ DANCE!', act: () => this.begin(p, fl) },
       { text: 'not now', dim: true, act: () => this.dream.closeChoice(p) },
     ];
-    this.dream.openChoice(p, { title: '型 KATA TRACE', rows, start: 4 });
+    // Off the PLAY kiosk's centre, not off her: the same place however she walked onto it.
+    const o = markOffset('SW', KIOSK_D);
+    this.dream.openChoice(p, { title: '型 KATA TRACE', rows, start: 4, anchor: { x: fl.x + o.x, y: fl.y, z: fl.z + o.z } });
     return true;
   }
 

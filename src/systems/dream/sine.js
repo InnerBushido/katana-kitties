@@ -120,9 +120,19 @@ const CURTAIN_COL = 0xb35cff;
  * are a dark holo green, and the ones she has passed are grey. They still
  * move and they still zap — this is paint, never the rule (`hitAt`). With
  * nobody running, all of them wear their own colours, for the stands.
+ *
+ * SECOND PASS: "let's make the lazers in the course ahead also gray so that
+ * it is easier for the player to see which lasers they need to worry about.
+ * We should make all the 'upcoming' lasers their normal colors if they are in
+ * the same row or section that the player is, so that the player knows what
+ * to expect next and not have to wait to get past the checkpoint before
+ * enabling their colors." So the dark green is gone — ahead is the same grey
+ * as done — and what is lit is her section AND everything still to come in
+ * the LANE SHE IS STANDING IN (`run.lane`, read off her feet every frame), so
+ * turning into a lane lights it before its checkpoint line.
  */
-export const BEAM_AHEAD = { col: 0x1f6b45, core: 0x3f9a6a, glow: 0.3, core_o: 0.55, foot: 0.4 };
 export const BEAM_DONE = { col: 0x4a4f57, core: 0x80858c, glow: 0.18, core_o: 0.35, foot: 0.25 };
+export const BEAM_AHEAD = BEAM_DONE;
 /** Which section a beam belongs to: the sweeper in the air is the stones'. */
 const secOf = (q) => SECTIONS.findIndex((s) => s.key === (q.sec === 'air' ? 'stones' : q.sec));
 
@@ -679,6 +689,7 @@ export class SineGauntlet {
     }
     r.sMax = go.sMax;
     r.cp = go.cp;
+    r.lane = laneOf(q.a);
     if (feet < -FALL) { this.zap(p, 'fell'); return; }
     const hit = hitAt(L, q.a, q.b, Math.max(0, feet), d.t, { height: p.height ?? 2.6 });
     if (hit) { this.zap(p, hit); return; }
@@ -756,11 +767,14 @@ export class SineGauntlet {
     if (this._boardT <= 0 && this.session) { this._boardT = 0.25; this._paintBoard(); }
   }
 
-  /** 'live', 'ahead' or 'done' for section `i` — see BEAM_AHEAD. */
+  /** 'live', 'ahead' or 'done' for section `i` — see BEAM_AHEAD. Live: her
+   *  section, and every one still ahead of her in the lane she is in. */
   beamLook(i) {
     const r = this.run;
     if (!r || r.drill?.state === 'done') return 'live';
-    return i < r.cp ? 'done' : i > r.cp ? 'ahead' : 'live';
+    const lane = r.lane ?? SECTIONS[r.cp]?.lane;
+    if (i === r.cp || (i > r.cp && SECTIONS[i]?.lane === lane)) return 'live';
+    return i < r.cp ? 'done' : 'ahead';
   }
 
   /** Repaint one beam's materials for a look. Only on a change of look. */

@@ -9,7 +9,7 @@ import { tune } from '../core/tuning.js';
 import { Label } from '../core/label.js';
 import { SNAKE } from '../world/snakeway.js';
 import { SnakeCam } from '../systems/snakecam.js';
-import { BridgePeek } from '../systems/dream/peek.js';
+import { BridgePeek, peekHold } from '../systems/dream/peek.js';
 
 /* ---------------------------------------------------------------------------
    A Katana Kitty and the camera that follows it.
@@ -6822,7 +6822,8 @@ export class Player {
        she is on it. Both are layers over the pose above, in that order, so
        the ride starts from wherever the look across left the lens and there
        is no cut between them — see dream/peek.js and `SnakeCam`. */
-    this.bridgePeek.apply(dt, this.peekAt, this.camera, this.camTarget);
-    this.snakeCam.apply(dt, this.snakeSubject(), this.camera, this.camTarget);
+    const ride = this.snakeSubject();
+    this.bridgePeek.apply(dt, this.peekAt, this.camera, this.camTarget, peekHold(this.snakeCam, ride));
+    this.snakeCam.apply(dt, ride, this.camera, this.camTarget);
   }
 }
