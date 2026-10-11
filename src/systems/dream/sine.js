@@ -5,7 +5,7 @@ import { Kiosk, idleIn, isleSpot, stars3 } from './kiosk.js';
 import { SINE_BOARD, sineBoardLines, sineFilterRows } from './sineboard.js';
 import {
   LEVELS, LANES, HALVES, WALLS, START, START_LINE, SECTIONS, SECTION, FINISH_B, END_B, COURSE_A,
-  ARMS, MATH_ARM, beams, stones, groundAt, hitAt, pathS, CP_S, FINISH_S, advance, laneOf,
+  ARMS, MATH_ARM, LEDGES, beams, stones, groundAt, hitAt, pathS, CP_S, FINISH_S, advance, laneOf,
   barWorking, waveText, sweepEnds, gapCentre, stoneHeight, stoneIsCos, COURSE_BANDS, COURSE_TIME,
   COURSES, COURSE_ID, courseById, useCourse, starsId, EXTRA_L, HARD_L,
 } from './course.js';
@@ -116,6 +116,12 @@ const BAR_COL = 0xff3b6b;
 const AIR_COL = 0x4fd8ff;
 const ARM_COL = 0xffa23b;
 const CURTAIN_COL = 0xb35cff;
+/* 登竜 THE DRAGON GATE'S TWO NEW THINGS, each a colour nothing else on any
+   course wears: a beam that never moves is lime and does not pulse (every
+   other beam's glow flickers), and a ledge — a floor that stands still at a
+   height — is pale, against the gold and cyan of the stones that ride a sine. */
+export const FIXED_COL = 0x9dff3b;
+export const LEDGE_COL = 0xe8f4ff;
 /**
  * WHICH BEAMS ARE HERS NOW. Richard: "it's a bit hard to see which lasers are
  * on the course section you are on ... future ones, not currently active in
@@ -244,6 +250,7 @@ export class SineGauntlet {
   get beamFx() { return this.view.beamFx; }
   get stoneDecks() { return this.view.stoneDecks; }
   get zapFloor() { return this.view.zapFloor; }
+  get ledgeDecks() { return this.view.ledgeDecks; }
   get cosDot() { return this.view.cosDot; }
   get sinDot() { return this.view.sinDot; }
   get course() { return courseById(COURSE_ID); }
@@ -326,7 +333,7 @@ export class SineGauntlet {
       const ms = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
       for (const m of ms) if (!view.mats.some((x) => x.m === m)) view.mats.push({ m, o0: m.opacity, tr: m.transparent });
     });
-    view.painted = new Set([view.zapFloor.material, ...view.beamFx.flatMap((fx) => [fx.glow.material, fx.shadow.material, fx.foot.material, fx.core.material])]);
+    view.painted = new Set([...view.zapFloors.map((z) => z.material), ...view.beamFx.flatMap((fx) => [fx.glow.material, fx.shadow.material, fx.foot.material, fx.core.material])]);
     return view;
   }
 
@@ -340,11 +347,15 @@ export class SineGauntlet {
       const c = lane(sec.lane); const h = HALVES[sec.lane];
       this._strip(c - h, sec.cp, c + h, sec.cp, 0.18, HOLO.cyan, 0.55);
     });
-    // The floor that zaps: red, and it pulses while a run is live.
-    const st = SECTION.stones;
-    const c = lane(st.lane); const sh = HALVES[st.lane];
-    view.zapFloor = this._strip(c, st.floor[0], c, st.floor[1], sh * 2 - 0.3, 0xff2a4a, 0.22, 0.03);
-    for (let b = st.floor[0] + 1; b < st.floor[1]; b += 1.5) this._strip(c - sh + 0.2, b, c + sh - 0.2, b, 0.06, 0xff6a80, 0.5, 0.035);
+    // Every floor that zaps: red, and it pulses while a run is live. The
+    // stones' always; any other stretch's that has one (the Dragon Gate's).
+    view.zapFloors = SECTIONS.filter((st) => st.floor).map((st) => {
+      const c = lane(st.lane); const sh = HALVES[st.lane];
+      const z = this._strip(c, st.floor[0], c, st.floor[1], sh * 2 - 0.3, 0xff2a4a, 0.22, 0.03);
+      for (let b = st.floor[0] + 1; b < st.floor[1]; b += 1.5) this._strip(c - sh + 0.2, b, c + sh - 0.2, b, 0.06, 0xff6a80, 0.5, 0.035);
+      if (st === SECTION.stones) view.zapFloor = z;
+      return z;
+    });
     // Every arm's circle on the floor under it.
     for (const arm of ARMS) {
       const pc = this._w(arm.pa, arm.pb, 0.05);
@@ -394,6 +405,25 @@ export class SineGauntlet {
       if (d._grp) this._into.add(d._grp);
       return d;
     });
+    /* The ledges: decks that never move (course.js LEDGES), drawn into the
+       course's group the same way — each on a POST down to the floor. Seen
+       in the browser without one, from the side-on lens, a ledge 4 up and a
+       ledge 1 up were the same white ring and the climb did not read as a
+       climb at all; a post as tall as the ledge is its height, read against
+       the next one's, which is what a jungle gym looks like. */
+    const post = new THREE.CylinderGeometry(0.16, 0.16, 1, 8, 1, true).translate(0, -0.5, 0);
+    view.ledgePosts = [];
+    view.ledgeDecks = LEDGES.map((s) => {
+      const q = this._w(s.a, s.b, s.y);
+      const d = this.sim.addTempDisc({ x: q.x, z: q.z, r: s.r, y: q.y, colour: LEDGE_COL, name: 'sine-ledge' });
+      if (d._grp) this._into.add(d._grp);
+      const m = new THREE.Mesh(post, new THREE.MeshBasicMaterial({ color: LEDGE_COL, transparent: true, opacity: 0.55, toneMapped: false, depthWrite: false }));
+      m.position.set(q.x, q.y - 0.05, q.z);
+      m.scale.y = Math.max(0.01, s.y - 0.05);
+      this._into.add(m);
+      view.ledgePosts.push(m);
+      return d;
+    });
   }
 
   /**
@@ -421,7 +451,7 @@ export class SineGauntlet {
     // Unit height, base at 0: scale.y IS the beam's height above the floor.
     const pole = new THREE.CylinderGeometry(0.05, 0.05, 1, 6, 1, true).translate(0, 0.5, 0);
     view.beamFx = list.map((q) => {
-      const col = q.high ? AIR_COL : q.sec === 'sweep' ? ARM_COL : q.sec === 'gaps' ? CURTAIN_COL : BAR_COL;
+      const col = q.fixed ? FIXED_COL : q.high ? AIR_COL : q.sec === 'sweep' ? ARM_COL : q.sec === 'gaps' ? CURTAIN_COL : BAR_COL;
       const g = new THREE.Group();
       const core = new THREE.Mesh(cyl, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, toneMapped: false }));
       const glow = new THREE.Mesh(cyl, new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.5, toneMapped: false, depthWrite: false }));
@@ -438,13 +468,14 @@ export class SineGauntlet {
         color: col, transparent: true, opacity: 0.6, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false,
       }));
       foot.renderOrder = 2;
-      const drops = q.sec === 'gaps' ? [] : [0, 1].map(() => {
+      // No drop lines on a curtain or a wall of light: their posts (or their rows) already say how high.
+      const drops = q.sec === 'gaps' || q.wall ? [] : [0, 1].map(() => {
         const m = new THREE.Mesh(pole, new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.7, toneMapped: false, depthWrite: false }));
         into.add(m);
         return m;
       });
       into.add(g, shadow, foot);
-      return { g, core, glow, ends, shadow, foot, drops, thick: q.thick, col, secI: secOf(q), look: 'live' };
+      return { g, core, glow, ends, shadow, foot, drops, thick: q.thick, col, secI: secOf(q), look: 'live', fixed: !!q.fixed };
     });
   }
 
@@ -738,8 +769,8 @@ export class SineGauntlet {
        selected". It is frozen from here, so what it wears now it wears out. */
     for (const fx of out.beamFx) if (fx.look !== 'live') this._wear(fx, 'live');
     for (const m of out.mats) { m.o0 = m.m.opacity; m.m.transparent = true; }
-    // Its stones are no longer anything to stand on; their drawing goes with it.
-    for (const d of out.stoneDecks) {
+    // Its stones and ledges are no longer anything to stand on; their drawing goes with it.
+    for (const d of [...out.stoneDecks, ...out.ledgeDecks]) {
       const i = this.sim.decks.indexOf(d);
       if (i >= 0) this.sim.decks.splice(i, 1);
     }
@@ -775,7 +806,7 @@ export class SineGauntlet {
     const W = this.swipe;
     if (!W) return;
     this.swipe = null;
-    for (const d of W.out.stoneDecks) d._grp?.removeFromParent();
+    for (const d of [...W.out.stoneDecks, ...W.out.ledgeDecks]) d._grp?.removeFromParent();
     W.out.pivot.traverse((o) => { o.geometry?.dispose?.(); });
     W.out.pivot.removeFromParent();
     this.view.pivot.rotation.y = 0;
@@ -1115,7 +1146,7 @@ export class SineGauntlet {
       const look = this.beamLook(fx.secI);
       if (look !== fx.look) this._wear(fx, look);
       const B = look === 'ahead' ? BEAM_AHEAD : look === 'done' ? BEAM_DONE : null;
-      fx.glow.material.opacity = (B ? B.glow : 0.42 + 0.12 * Math.sin((this.dream.t ?? 0) * 24 + k)) * fade;
+      fx.glow.material.opacity = (B ? B.glow : fx.fixed ? 0.5 : 0.42 + 0.12 * Math.sin((this.dream.t ?? 0) * 24 + k)) * fade;
       fx.core.material.opacity = (B ? B.core_o : 0.95) * fade;
       fx.ends[0].position.set(a.x, a.y, a.z);
       fx.ends[1].position.set(b.x, b.y, b.z);
@@ -1152,7 +1183,7 @@ export class SineGauntlet {
     V.cosDot.position.set(c.x, c.y, c.z);
     V.sinDot.position.set(s2.x, s2.y, s2.z);
     const live = this.run?.drill?.state === 'live';
-    V.zapFloor.material.opacity = (live ? 0.22 + 0.1 * Math.sin((this.dream.t ?? 0) * 6) : 0.12) * fade;
+    for (const z of V.zapFloors) z.material.opacity = (live ? 0.22 + 0.1 * Math.sin((this.dream.t ?? 0) * 6) : 0.12) * fade;
   }
 
   /**
@@ -1243,8 +1274,9 @@ export class SineGauntlet {
     const d = r?.drill;
     if (!r || !d || (d.state !== 'live' && d.state !== 'ready')) return null;
     const sec = SECTIONS[nextSection(r.sMax)];
-    // The Riptide's stones slide ACROSS her lane — toward and away from a side-on lens.
-    return sec.key === 'gaps' || (sec.key === 'stones' && sec.stone.slide) ? sec : null;
+    // The Riptide's stones slide ACROSS her lane — toward and away from a side-on lens —
+    // and the Dragon Gate's corridor walls run AWAY from it (`behind`).
+    return sec.key === 'gaps' || sec.behind || (sec.key === 'stones' && sec.stone.slide) ? sec : null;
   }
 
   /** The side-on yaw (see COURSE_CAM), or, behind her, the yaw that looks
@@ -1454,6 +1486,14 @@ function working(sec, L, t, r) {
     const i = q < 0 ? sec.curtains.length - 1 : q;
     const off = gapCentre(sec, t, i, sp) - lane;
     return { text: `gap ${i + 1} at ${sec.gap.A}·sin(…) = ${off >= 0 ? '+' : ''}${off.toFixed(1)}`, size: 1.15, color: HOLO.gold };
+  }
+  if (sec.ledges) {
+    // The next ledge, how far up it is from the one she is on, and what a hop reaches.
+    const q = sec.ledges.findIndex((l) => pathS(lane, l.b) > r.sMax);
+    const i = q < 0 ? sec.ledges.length - 1 : q;
+    const from = i > 0 ? sec.ledges[i - 1].y : 0;
+    const up = sec.ledges[i].y - from;
+    return { text: `ledge ${i + 1}: ${up >= 0 ? 'up' : 'down'} ${Math.abs(up).toFixed(1)} · a hop reaches 2.4 · ${(sec.ledges[i].r * 2).toFixed(1)} across`, size: 1.1, color: HOLO.gold };
   }
   return { text: waveText(SECTIONS[0].wave, sp), size: 1.1 };
 }

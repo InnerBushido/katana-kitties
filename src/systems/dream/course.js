@@ -241,8 +241,82 @@ const RIPTIDE = [
     wave: { A: 1.8, C: 2.0, w: 2.6, k: -1.0 } },
 ];
 
+/* 登竜 THE DRAGON GATE — the skill one. Richard: "a 4th Sine course built on
+   skill: verticality, precision landing, walls of lasers, static lasers that
+   force movement patterns ... multiple floor levels, Ninja Warrior / jungle
+   gym style." The carp that climbs the waterfall becomes a dragon (登竜門),
+   and this is the course you climb.
+
+   THE SAME EIGHT STRETCHES IN THE SAME LANES, like the other two, so every
+   wall, turn and checkpoint is shared and the run's bookkeeping is untouched.
+   What is new is three kinds of thing, all generic in this file:
+     LEDGES   static floors at a height (`ledges`), over a floor that zaps
+              (`floor`, now allowed on any stretch) — the climb, the levels;
+     FIXED    beams that do not move (`fixed`): a low hurdle, a ceiling over
+              the landing, and the corridor's two walls of light;
+     HOPS     how short a hop the search may try (`hops`) — a ledge 2 across
+              is landed on by a hop that is MEANT to be short, and the search
+              has to be allowed one to prove it can be done.
+   The sines are still the point: every moving thing on it is a wave, a sine
+   or cosine stone, or an arm going round its circle, as on the other three. */
+const GATE = [
+  /* A CORRIDOR OF LIGHT down the first lane, ±1.4 of its middle: the bars
+     still rise and fall, and now she has to stay in line while she times
+     them. Seen from behind her (`behind`, sine.js `_shoulder`) — a wall
+     running AWAY from a side-on lens is the one thing it cannot show. */
+  { key: 'stand', name: 'LASER CORRIDOR', lane: 0, cp: START.b, behind: true, bars: [-8, -1],
+    wave: { A: 1.5, C: 2.0, w: 1.7, k: 0 },
+    fixed: [-1.4, 1.4].flatMap((da) => [0.5, 1.4, 2.3, 3.2].map((y) => ({ a0: da, a1: da, b: -13, b1: 0, y, wall: true }))) },
+  /* HURDLE, THEN CEILING. A static bar to hop, and 2.6 past it a static bar
+     at head height over where she lands — so the hop has to be short and
+     low. And a second bar 2 over the ceiling: with only the one, a double
+     jump went clean OVER it (her feet top out at 4.2, which clears a 3.4 bar
+     by a hair — found by world-check's own double jump), so the pattern
+     could be skipped by the one move it exists to rule out. */
+  { key: 'travel', name: 'HURDLES AND CEILINGS', lane: 0, cp: 1.5, bars: [9, 15.5],
+    wave: { A: 1.6, C: 2.0, w: 1.9, k: 0.8 },
+    fixed: [4, 11.5].flatMap((b) => [{ b, y: 0.55 }, { b: b + 2.6, y: 3.4 }, { b: b + 2.6, y: 5.4 }])
+      .map((f) => ({ a0: -2.45, a1: 2.45, ...f })) },
+  /* THE HIGH STEPS: the first floor that zaps outside the stones, and
+     ledges up to a second level and back down — stepping stones that stand
+     still and ask for the landing instead of the timing. The middle ones are
+     2 across and 2.6 apart: a hop at half a walk carries 4 or more, so it
+     goes over the next one into the floor. The first cut (2.3 across, 2.9
+     apart) was landed by exactly that hop, which is not precision at all. */
+  { key: 'twin', name: 'THE HIGH STEPS', lane: 1, cp: 15.6, floor: [1.2, 14],
+    ledges: [{ da: 0.6, b: 12.6, y: 1.0, r: 1.2 }, { da: -0.5, b: 10.0, y: 2.0, r: 1.0 },
+      { da: 0.5, b: 7.4, y: 2.0, r: 1.0 }, { da: -0.5, b: 4.8, y: 2.0, r: 1.0 }, { da: 0.4, b: 2.4, y: 1.0, r: 1.1 }] },
+  { key: 'counter', name: 'COUNTER WAVE', lane: 1, cp: -1.5, bars: [-5, -8.5, -12, -15.5], twin: 4.8,
+    wave: { A: 1.7, C: 2.0, w: 2.3, k: -1.0 } },
+  /* THE DRAGON STAIR: four static ledges climbing a step at a time to a
+     landing 4 up, three sine and cosine stones riding at THAT height, a
+     ledge halfway down, and off. The arm in the air turns over the top
+     level, high enough to miss her while her stone is low. */
+  { key: 'stones', name: 'THE DRAGON STAIR', lane: 2, cp: -19.6,
+    stones: [-3.0, 0.2, 3.4], floor: [-17.8, 10.3],
+    stone: { H: 4.0, A: 0.6, w: 1.3, k: 1.1, r: 1.3 },
+    ledges: [{ da: 0.8, b: -15.8, y: 1.0, r: 1.2 }, { da: -0.6, b: -13.2, y: 2.0, r: 1.0 },
+      { da: 0.6, b: -10.6, y: 3.0, r: 1.0 }, { da: 0, b: -7.6, y: 4.0, r: 1.6 }, { da: 0, b: 6.6, y: 2.4, r: 1.4 }],
+    air: { a: 0, b: 0.2, R: 4.0, y: 6.7, w: 0.9, ph: 0 } },
+  { key: 'sweep', name: 'THE SWEEPERS', lane: 2, cp: 11,
+    arms: [
+      { a: -2.5, b: 14.2, R: 2.2, y: 0.9, w: 1.6, ph: 0 },
+      { a: 2.5, b: 14.2, R: 2.2, y: 0.9, w: -1.6, ph: Math.PI },
+      { a: -2.5, b: 18.8, R: 2.2, y: 0.9, w: -1.8, ph: Math.PI / 2 },
+      { a: 2.5, b: 18.8, R: 2.2, y: 0.9, w: 1.8, ph: -Math.PI / 2 },
+    ] },
+  /* LASER WALLS: the sliding-gap curtains, with a static hurdle in front of
+     three of them — hop, land, and be lined up with a gap that is moving. */
+  { key: 'gaps', name: 'LASER WALLS', lane: 3, cp: 20.4, curtains: [15, 9, 3, -3, -9],
+    gap: { half: 1.35, A: 1.0, w: 1.3, ph: [0, 1.7, 3.4, 5.1, 0.9] }, beams: [0.5, 1.4, 2.3, 3.2, 4.1, 5.0, 5.9],
+    fixed: [12, 6, 0].map((b) => ({ a0: -2.45, a1: 2.45, b, y: 0.55 })) },
+  { key: 'final', name: 'FINAL WAVE', lane: 4, cp: -19.2, bars: [-14, -9.5, -5, -0.5, 4, 8.5], twin: 4.8,
+    wave: { A: 1.7, C: 2.0, w: 2.5, k: -0.9 } },
+];
+
 /**
- * THE THREE COURSES, easiest first — the order the picker cycles them in.
+ * THE FOUR COURSES, easiest first and the Dragon Gate last — the order the
+ * picker cycles them in.
  * `ids(n)` is the progress key a level's stars go under: the Gauntlet keeps
  * the keys it always had (`sine.L1`...), so a save from before there were
  * three still has its stars on the course they were won on.
@@ -252,6 +326,8 @@ const RIPTIDE = [
  *   gauntlet  L1 26.90/19.70  L2 26.63/18.57  L3 25.87/16.63  L4 23.60/14.33
  *   riptide   L1 27.20/20.50  L2 26.47/21.33  L3 24.30/18.67  L4 24.83/16.60
  *             (re-measured with its Narrow Gaps widened: five curtains, half 1.35)
+ *   gate      L1 31.77/19.83  L2 27.03/19.77  L3 25.73/19.60  L4 23.37/17.03
+ *             (with its own finer hops; the sprinter has no way through without them)
  * and on every one of the twelve, nobody gets through without hopping.
  */
 export const COURSES = [
@@ -261,6 +337,9 @@ export const COURSES = [
     bands: [[240, 81, 40.5], [240, 80, 40], [240, 78, 39], [240, 20.1, 15.8]] },
   { id: 'riptide', name: 'THE RIPTIDE', kanji: '激流', blurb: 'the hard one: six stones that go round in circles', sections: RIPTIDE,
     bands: [[240, 81.6, 40.8], [240, 79.4, 39.7], [240, 72.9, 36.5], [240, 23.2, 18.3]] },
+  { id: 'gate', name: 'THE DRAGON GATE', kanji: '登竜', blurb: 'the skill one: climb, land small, stay in line', sections: GATE,
+    hops: [1, 0.75, 0.5, 0.4, 0.3, 0.22, 0.15, 0],
+    bands: [[240, 95.3, 47.7], [240, 81.1, 40.5], [240, 77.2, 38.6], [240, 23.8, 18.7]] },
 ];
 export const courseById = (id) => COURSES.find((c) => c.id === id) ?? null;
 /** Where a level's stars go: see COURSES. */
@@ -389,6 +468,9 @@ export function beams(L, t) {
         }
       });
     }
+    // The ones that never move: `a` across her lane from its middle, `b1` for one running along it.
+    (sec.fixed ?? []).forEach((f, i) => out.push({ sec: sec.key, n: i, fixed: true, wall: !!f.wall,
+      a0: c + f.a0, b0: f.b, y0: f.y, a1: c + f.a1, b1: f.b1 ?? f.b, y1: f.y, thick: BAR_THICK }));
   }
   return out;
 }
@@ -400,19 +482,30 @@ export function stones(L, t) {
   return sec.stones.map((b, n) => ({ a: c + stoneSlide(sec, t, n, L.speed), b, r: sec.stone.r, y: stoneHeight(sec, t, n, L.speed), cos: stoneIsCos(n) }));
 }
 
-/** Is (a, b) on the floor that zaps? */
-export function onZapFloor(a, b) {
-  const sec = SECTION.stones;
-  const c = LANES[sec.lane];
-  return Math.abs(a - c) < HALVES[sec.lane] && b > sec.floor[0] && b < sec.floor[1];
+/** The stretch whose floor zaps under (a, b), or null. Any stretch may have
+ *  one (`floor`, [from, to] in b) — the stones always have, and the Dragon
+ *  Gate's High Steps do too. */
+export function zapFloorAt(a, b) {
+  for (const sec of SECTIONS) {
+    if (!sec.floor) continue;
+    if (Math.abs(a - LANES[sec.lane]) < HALVES[sec.lane] && b > sec.floor[0] && b < sec.floor[1]) return sec.key;
+  }
+  return null;
 }
+/** Is (a, b) on a floor that zaps? */
+export function onZapFloor(a, b) { return zapFloorAt(a, b) != null; }
 
-/** The ground under (a, b) at `t`: the highest stone covering it, or the floor. */
+/** Every LEDGE on the course — a floor that stands still at a height — in
+ *  island coordinates: { a, b, r, y, sec }. `useCourse` lays them. */
+export let LEDGES = [];
+
+/** The ground under (a, b) at `t`: the highest stone or ledge covering it, or the floor. */
 export function groundAt(L, a, b, t) {
   let g = 0;
   if (Math.abs(a - LANES[SECTION.stones.lane]) < HALVES[SECTION.stones.lane]) {
     for (const s of stones(L, t)) if (Math.hypot(a - s.a, b - s.b) <= s.r && s.y > g) g = s.y;
   }
+  for (const s of LEDGES) if (s.y > g && Math.hypot(a - s.a, b - s.b) <= s.r) g = s.y;
   return g;
 }
 
@@ -533,7 +626,7 @@ export function hitAt(L, a, b, feet, t, { height = 2.6, list = null } = {}) {
      player falls on the 'lava' lazers under the floating platforms, they will
      be invulnerable while touching the ground." A stone's top never comes
      lower than H − A (0.3), so feet this low are never on one. */
-  if (feet < 0.08 && onZapFloor(a, b)) return 'stones';
+  if (feet < 0.08) return zapFloorAt(a, b);
   return null;
 }
 
@@ -552,6 +645,14 @@ export function hitAt(L, a, b, feet, t, { height = 2.6, list = null } = {}) {
  * It is the BEST case, not the typical one: the centre line, perfect timing,
  * and no double jump (which only adds ways through). Bands are set above it.
  *
+ * `hops` are the fractions of full speed a hop may carry forward: full, half
+ * and straight up on every course that had them — and finer on the Dragon
+ * Gate (`hops` in its row), whose ledges are 2 across: a hop at half a
+ * SPRINT goes 7 or more, over the ledge and into the lava (searched with
+ * only these three, its sprinter never finishes — world-check), and the only
+ * way to show a ledge can be landed on at speed is to let the search hop
+ * SHORT, which is what a kitten does with a touch of the stick.
+ *
  * `back` is how far behind the furthest point reached it still keeps
  * stepping. Every point behind it is reachable (she can always stand still)
  * but no fastest run waits further back than a section: 30, 12, 8 and 5 all
@@ -562,7 +663,7 @@ export function hitAt(L, a, b, feet, t, { height = 2.6, list = null } = {}) {
  * @returns {number|null} seconds from GO to the finish line, or null if
  *          there is no way through within `tMax`.
  */
-export function fastestRun(L, { v = 17, dt = 1 / 30, jumpV = 11.2, gravity = 26, height = 2.6, tMax = 120, back = 8 } = {}) {
+export function fastestRun(L, { v = 17, dt = 1 / 30, jumpV = 11.2, gravity = 26, height = 2.6, tMax = 120, back = 8, hops = HOPS } = {}) {
   const ds = v * dt;
   const N = Math.ceil(PATH_LEN / ds) + 1;
   const goal = Math.ceil(FINISH_S / ds);
@@ -579,7 +680,8 @@ export function fastestRun(L, { v = 17, dt = 1 / 30, jumpV = 11.2, gravity = 26,
     const b = pts[i].b; const a = pts[i].a;
     for (const sec of SECTIONS) {
       if (Math.abs(a - LANES[sec.lane]) > HALVES[sec.lane]) continue;
-      const zs = [...(sec.bars ?? []), ...(sec.stones ?? []), ...(sec.curtains ?? [])];
+      const zs = [...(sec.bars ?? []), ...(sec.stones ?? []), ...(sec.curtains ?? []),
+        ...(sec.ledges ?? []).map((l) => l.b), ...(sec.fixed ?? []).filter((f) => !f.wall).map((f) => f.b)];
       if (sec.floor) zs.push(...sec.floor);
       for (const m of ARMS) if (Math.abs(m.pa - a) < LANE_HALF + m.R) zs.push(m.pb - m.R, m.pb, m.pb + m.R);
       if (zs.some((z) => Math.abs(z - b) < 5)) return true;
@@ -612,7 +714,7 @@ export function fastestRun(L, { v = 17, dt = 1 / 30, jumpV = 11.2, gravity = 26,
         next[j] = 1;
       }
       if (!hopFrom[i]) continue;
-      for (const u of [1, 0.5, 0]) {
+      for (const u of hops) {
         let y = g0; let vy = jumpV; let si = i; let ok = true;
         for (let m = 1; m * dt < hopT; m++) {
           const tm = t + m * dt;
@@ -657,6 +759,8 @@ export function fastestRun(L, { v = 17, dt = 1 / 30, jumpV = 11.2, gravity = 26,
  *  hopping — the same search with no jump never finishes, which is the
  *  stones doing their job. */
 export let COURSE_BANDS = COURSES[1].bands;
+/** The hop fractions the search tries on the course laid (see `fastestRun`). */
+export let HOPS = [1, 0.5, 0];
 /** The clock: at this, the run ends where she got to. Doubled with the course. */
 export const COURSE_TIME = 240;
 
@@ -682,6 +786,8 @@ export function useCourse(id) {
   MATH_ARM = ARMS[0];
   CP_S = SECTIONS.map((sec) => pathS(LANES[sec.lane], sec.cp));
   COURSE_BANDS = C.bands;
+  HOPS = C.hops ?? [1, 0.5, 0];
+  LEDGES = SECTIONS.flatMap((sec) => (sec.ledges ?? []).map((l) => ({ a: LANES[sec.lane] + (l.da ?? 0), b: l.b, r: l.r, y: l.y, sec: sec.key })));
   return C;
 }
 useCourse('gauntlet');
