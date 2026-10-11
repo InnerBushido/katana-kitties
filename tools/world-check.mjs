@@ -40960,19 +40960,81 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
           if (wasDash && F.act.kind !== 'dash') {
             const rx = BX.local.x - hx; const rz = BX.local.z - hz;
             const want = SH.circleDir(before.spot, view);
-            landings.push({ r: Math.hypot(rx, rz), on: (rx * want.x + rz * want.z) / Math.hypot(rx, rz), up: rx * view.x + rz * view.z, next: F.act.kind });
+            landings.push({ r: Math.hypot(rx, rz), on: (rx * want.x + rz * want.z) / Math.hypot(rx, rz), up: rx * view.x + rz * view.z, next: F.act.kind, what: F.act.what });
             if (F.act.kind === 'tell') attackAt++;
           }
           wasDash = F.act.kind === 'dash';
           if (F.act.kind === 'recover' && F.act.t > 0.5) F.act.t = 0.5;
         }
-        const badLand = landings.filter((q) => Math.abs(q.r - SH.CIRCLE.r) > 0.05 || q.on < 0.999 || q.up < -1e-6);
+        // A sweep he dashes for is thrown from closer in (PICK.sweepR): "he shouldn't be so far away from the player".
+        const badLand = landings.filter((q) => Math.abs(q.r - (q.what === 'sweep' ? SH.PICK.sweepR : SH.CIRCLE.r)) > 0.05 || q.on < 0.999 || q.up < -1e-6);
         ok('円 on HARD he DASHES to one of her five spots, lands on it, and his blow\'s tell starts on the frame he lands',
-          dashes >= 6 && landings.length >= 6 && badLand.length === 0 && attackAt === landings.length && longest <= SH.CIRCLE.dashMax,
+          dashes >= 6 && landings.length >= 6 && badLand.length === 0 && attackAt === landings.length && longest <= SH.CIRCLE.dashMax
+          && landings.some((q) => q.what === 'sweep'),
           `${dashes} dashes, ${landings.length} landed, ${badLand.length} off their spot, ${attackAt} straight into a blow, longest ${longest.toFixed(2)}s`);
+        const whooshes = fakeGame.sounds.filter((s) => s === 'specter').length; // before the seeded runs below add theirs
+
+        /* NOT EVERY BLOW FROM A NEW SPOT, AND NOT IN A ROTA. Richard: "there
+           is a 50 - 75% chance he will move before attacking and sometimes,
+           he will just do a normal attack without needing to move ...
+           Circular attack should be 50% where he is standing without needing
+           to move ... there needs to be more randomness with which ability he
+           will do next, as currently, seems like it keeps alternating."
+           Twelve seeds, twenty seconds each, her standing close (so every
+           blow CAN reach from where he is and the coin is all that decides).
+           Measured over the twelve: the move share of slams and Xs and of
+           sweeps, as a pooled fraction, and the blows' order. */
+        {
+          const keepD = F._dashTo; const keepC = F._choose;
+          const picks = [];
+          let rows = [];
+          F._dashTo = function (tgt, then, rr) { if (this.act?.kind === 'idle') picks.push({ kind: then?.force, move: true }); return keepD.call(this, tgt, then, rr); };
+          F._choose = function (tgt, dd, force, chain) {
+            if (this.act?.kind === 'idle') picks.push({ kind: force, move: false });
+            const out = keepC.call(this, tgt, dd, force, chain);
+            if (!(this.act?.what === 'cross' && chain != null && chain < 3)) rows.push(this.act?.what);
+            return out;
+          };
+          const seqs = [];
+          for (let seed = 1; seed <= 12; seed++) {
+            F._rng = seed * 7919; F._recent = [];
+            rows = [];
+            F._clearTells();
+            F.phase = 2;
+            F.act = { kind: 'idle', t: 0.2 };
+            BX.local.x = hx + 2.5; BX.local.z = hz; BX.group.position.x = BX.local.x; BX.group.position.z = BX.local.z;
+            for (let f = 0; f < 60 * 20; f++) {
+              F._think(1 / 60);
+              D.st[0].iframes = 9;
+              // Keep him in reach of her whatever he did: this asks about the coin, not the floor.
+              if (F.act.kind === 'idle' && Math.hypot(BX.local.x - hx, BX.local.z - hz) > 3) { BX.local.x = hx + 2.5; BX.local.z = hz; BX.group.position.x = BX.local.x; BX.group.position.z = BX.local.z; }
+              if (F.act.kind === 'recover' && F.act.t > 0.4) F.act.t = 0.4;
+            }
+            seqs.push(rows.slice());
+          }
+          F._dashTo = keepD; F._choose = keepC;
+          const share = (fn) => { const xs = picks.filter(fn); return xs.length ? xs.filter((q) => q.move).length / xs.length : NaN; };
+          const mOther = share((q) => q.kind !== 'sweep');
+          const mSweep = share((q) => q.kind === 'sweep');
+          const all = seqs.flat();
+          let triple = 0;
+          for (const sq of seqs) for (let i = 2; i < sq.length; i++) if (sq[i] === sq[i - 1] && sq[i] === sq[i - 2]) triple++;
+          // A rota would make every seed's sequence the same; and the old
+          // alternation never threw one kind twice running.
+          const distinct = new Set(seqs.map((sq) => sq.slice(0, 6).join())).size;
+          let twice = 0;
+          for (const sq of seqs) for (let i = 1; i < sq.length; i++) if (sq[i] === sq[i - 1]) twice++;
+          ok('円 on HARD he moves before a slam or an X about 50-75% of the time, and before a sweep about half — the rest from where he stands',
+            mOther >= 0.5 && mOther <= 0.75 && mSweep >= 0.35 && mSweep <= 0.65 && picks.length > 100,
+            `slam/X ${(mOther * 100).toFixed(0)}% moved, sweep ${(mSweep * 100).toFixed(0)}% moved, of ${picks.length} decisions`);
+          ok('...and WHICH blow is drawn at random — no rota (the twelve seeds open twelve ways), sometimes one kind twice, never three running',
+            triple === 0 && twice > 0 && distinct >= 8 && new Set(all).size === 3,
+            `${distinct} different openings of 12, ${twice} pairs, ${triple} triples, kinds ${[...new Set(all)].join(' ')}`);
+          F._clearTells();
+        }
         ok('...with a whoosh each time ("a \'whoosh\' or specter sound effect"), a sound the synth has',
-          fakeGame.sounds.filter((s) => s === 'specter').length === dashes && read('../src/core/audio.js').includes("case 'specter':"),
-          `${fakeGame.sounds.filter((s) => s === 'specter').length} of ${dashes}`);
+          whooshes === dashes && read('../src/core/audio.js').includes("case 'specter':"),
+          `${whooshes} of ${dashes}`);
 
         /* "The cross-slash should be limited in distance, mainly in front of
            Shadow, and no longer follows a player who is far away." */
