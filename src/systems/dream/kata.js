@@ -97,6 +97,28 @@ export const WHIFF_COOL = 0.3;
 export const KATA_LINES = {
   ko: { line: 'Oof... good job.', voice: 'lion_kata_ko' },
 };
+/**
+ * HOW HE GOES DOWN, AND HOW HE STAYS DOWN. Richard: "When Lionheart is knocked
+ * over, he falls into the ground. We should keep him above the ground." He
+ * was rolled about his FEET, which is the quad's bottom-middle, so lying flat
+ * the half of him on the falling side was under the floor — 1.98 units of
+ * him, measured off the guard cell of `lionheart/shadow.png` (ink from the
+ * cell's middle to its left edge, 217px of the 681px the tallest cell is
+ * scaled to SHADOW_H). `lift` puts that back, in proportion to how far over
+ * he is.
+ *
+ * And then he does not stay on his back: "on his knees, gasping for air and
+ * leaning on his sword which is stabbed into the ground ... smirking towards
+ * the player", then "wink at the player after he says 'good job'". That is
+ * `lionheart/defeated.png`, two cells of one drawing (eyes open, the wink).
+ * `kneelH` is his height on his knees: the kneeling drawing is 1.28x the
+ * standing one per head (the visor's light, 73px against 57px) and its ink
+ * 546px tall against the guard's 633, so 0.674 of his standing 5.76.
+ * `wink` is after the line: it starts 1.1s after the blow and lion_kata_ko
+ * runs 2.16s. All of it falls inside the won card's 7s.
+ */
+export const KO = { lift: 1.98, kneelH: 3.88, kneelAt: 2.1, rise: 0.25, wink: 3.55, winkFor: 0.9 };
+
 /** PERFECT and GREAT, seconds off the beat. */
 export const GRADE_T = [0.10, 0.18];
 /** Accuracy (0-100) for one, two, three stars. */
@@ -584,6 +606,9 @@ export class KataStage {
     this.group.add(this.lion);
     this.posed = false;
     this.sprite = null;
+    this.koSprite = null;
+    this.kneel = false;
+    this.winking = false;
     this.pose = POSE.guard;
     this._dress();
     this.chart = null;
@@ -591,6 +616,15 @@ export class KataStage {
 
   /** His own four-pose sheet, as soon as it has loaded; a column of light before. */
   _dress() {
+    const ko = this.dream.game?.lionKoArt ?? null;
+    if (!this.koSprite && ko?.texture) {
+      const q = KO.kneelH / (ko.contentScale || 1);
+      this.koSprite = new Billboard(ko.texture, { cols: ko.cols ?? 2, rows: 1, width: q, height: q, footOffset: (ko.pad ?? 0) * q, mirror: false });
+      this.koSprite.mat.transparent = true;
+      this.koSprite.mat.opacity = 0.92;
+      this.koSprite.visible = false;
+      this.lion.add(this.koSprite);
+    }
     const art = this.dream.game?.shadowArt ?? null;
     if (this.posed || (this.sprite && !art?.texture)) return;
     if (this.sprite) { this.sprite.removeFromParent(); this.sprite.mat?.dispose?.(); }
@@ -787,6 +821,9 @@ export class KataStage {
        bounce where he lands. Played on his own clock, so it carries on past
        the song's last beat. */
     this.roll = 0;
+    this.kneel = false;
+    this.winking = false;
+    let pop = 1;
     if (this.koAt != null) {
       const kk = this.clock - this.koAt;
       const fly = Math.min(1, kk / 0.35);
@@ -803,19 +840,41 @@ export class KataStage {
         this.roll = (Math.PI / 2) * bounceOut(f);
         if (f >= 1) y = Math.max(0, Math.sin(Math.min(1, (kk - 1.5) / 0.3) * Math.PI) * 0.25);
       }
+      if (kk >= 0.35) pose = POSE.guard;
+      // Over on either side, the side going down stays above the floor.
+      y += KO.lift * Math.abs(Math.sin(this.roll));
+      /* Up onto his knees — only if the drawing is there; without it he stays
+         on his back, which is what he always did. */
+      if (kk >= KO.kneelAt && this.koSprite) {
+        this.kneel = true;
+        this.roll = 0;
+        y = 0;
+        pop = 1 + 0.14 * (1 - Math.min(1, (kk - KO.kneelAt) / KO.rise));
+        this.winking = kk >= KO.wink && kk < KO.wink + KO.winkFor;
+      }
     }
     this.lion.position.set(x, y, z);
+    if (this.koSprite) {
+      this.koSprite.visible = this.kneel;
+      this.koSprite.scale.set(1 / pop, pop, 1);
+    }
+    if (this.sprite) this.sprite.visible = !this.kneel;
     // A hit flashes him white; down, he goes a shade darker.
     const mat = this.sprite?.mat ?? this.sprite?.material;
     if (mat?.color) {
       const base = this.koAt != null && this.clock - this.koAt > 0.95 ? 0xc8b088 : 0xffe2a0;
       mat.color.setHex(hk >= 0 && hk < 0.18 ? 0xffffff : base);
     }
+    this.koSprite?.mat.color.setHex(0xffe2a0);
     this.pose = pose;
     this.lionSpot = L.spot;
   }
 
   faceCamera(camera) {
+    if (this.kneel && this.koSprite) {
+      this.koSprite.faceCamera(camera);
+      this.koSprite._setCell(this.winking ? 1 : 0, 0, false);
+    }
     if (this.sprite?.faceCamera) {
       this.sprite.faceCamera(camera);
       if (this.posed) this.sprite._setCell(this.pose, 0, false);
