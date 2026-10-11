@@ -78,6 +78,17 @@ import { holoFlicker } from './holo.js';
      · THE QUADRANT she is in is lit in its own neon, and named — I, II, III,
        IV and the two signs that make it — and it flares when she crosses
        into the next.
+     · ITS NAME STAYS PUT. Richard, the fifth pass: "The quadrant text in the
+       dojo of the turning circle is annoying as it is following the player
+       around, lets just have it be static somewhere near the circle ... or
+       can just be text that fades in and out in each quadrant." Both: four
+       names, one standing just OUTSIDE the circle on each quarter's middle
+       line (`QUAD_LABEL`), never moving, and only the lit one showing — it
+       fades in as she crosses into its quarter and the last one fades out.
+       Outside the circle it is never on the point, the legs or the triangle.
+       (It used to be ONE name, placed each frame by `placeReadouts` inside
+       the lit quarter, gliding off whatever walked into it — which is what
+       "following the player around" was.)
 
    THE MATHS IS NOT TOUCHED (non-negotiable 1). Every mesh keeps its place in
    the group and its place in `_liveBits`; `MathDojo.update` moves the point,
@@ -126,6 +137,12 @@ const VEC_Y = 0.9;
 /** One neon per quadrant, I to IV — none of them the axis or leg colours. */
 export const QUAD_C = [0x39ff14, 0xff2bd6, 0xffb300, 0x00e5ff];
 export const QUAD_NAME = ['I', 'II', 'III', 'IV'];
+/** Where each quadrant's name stands: on its quarter's middle line, `r` of
+ *  the circle's radius out (outside it, inside the floor's 1.75), `y` up;
+ *  and how fast it fades in and out (per second). At 1.2 it sat on the
+ *  point's own ( cos , sin ) readout as she passed 45° — that one rides at
+ *  1.2 of the point (mathdojo.js); 1.45 and 1.6 both measured clear. */
+export const QUAD_LABEL = { r: 1.5, y: 3.2, fade: 3 };
 /** How bright the lit quadrant sits, and how bright it flares on entry. */
 export const QUAD_A = 0.13;
 export const QUAD_FLASH = 0.42;
@@ -392,12 +409,19 @@ export function holoDojo(dojo) {
     dojo.group.add(m);
     return m;
   });
-  const quadLabel = readout('#ffffff', 'QUADRANT III · cos − · sin −', 2.8);
-  parts.quad = { meshes: quads, label: quadLabel, now: -1, flash: 0, at: -1 };
-  /** Where each readout went last frame (see placeReadouts). */
-  parts.spots = {};
-  /** ...and where it is DRAWN, easing toward that spot. */
-  parts.glide = {};
+  const quadLabels = QUAD_NAME.map((nm, k) => {
+    const l = readout('#ffffff', 'QUADRANT III · cos − · sin −', 2.8);
+    l.setText(`QUADRANT ${nm} · cos ${k === 1 || k === 2 ? '−' : '+'} · sin ${k >= 2 ? '−' : '+'}`);
+    const a = (k + 0.5) * (Math.PI / 2);
+    // The maths y is the world's −z here (ZS = −1), as the quarter-discs are.
+    l.position.set(Math.cos(a) * DOJO_RADIUS * QUAD_LABEL.r, QUAD_LABEL.y, -Math.sin(a) * DOJO_RADIUS * QUAD_LABEL.r);
+    l.visible = false;
+    l.mat.transparent = true;
+    l.mat.opacity = 0;
+    l.alpha = 0;
+    return l;
+  });
+  parts.quad = { meshes: quads, labels: quadLabels, label: quadLabels[0], now: -1, flash: 0, at: -1 };
 
   // THE PROJECTOR: a rim of light, and a ring that sweeps out from the origin.
   const rim = new THREE.Mesh(
@@ -509,14 +533,20 @@ export function holoDojo(dojo) {
       const Q = parts.quad;
       const q = quadrantOf(th);
       if (q !== Q.now) { Q.now = q; Q.flash = 1; }
-      Q.flash = Math.max(0, Q.flash - (Q.at < 0 ? 0 : Math.max(0, t - Q.at)) * 1.6);
+      const qdt = Q.at < 0 ? 0 : Math.max(0, t - Q.at);
+      Q.flash = Math.max(0, Q.flash - qdt * 1.6);
       Q.at = t;
       Q.meshes.forEach((mm, k) => { mm.material.opacity = k === q ? (QUAD_A + (QUAD_FLASH - QUAD_A) * Q.flash) * f : 0; });
       triMat.color.setHex(QUAD_C[q]);
-      Q.label.visible = show;
-      if (readable && show) {
-        Q.label.setText(`QUADRANT ${QUAD_NAME[q]} · cos ${q === 1 || q === 2 ? '−' : '+'} · sin ${q >= 2 ? '−' : '+'}`);
-      }
+      // Its name: the lit one fades in where it stands, the rest fade out. Nothing moves.
+      Q.label = Q.labels[q];
+      Q.labels.forEach((l, k) => {
+        const want = show && k === q ? 1 : 0;
+        const step = Math.min(0.1, qdt) * QUAD_LABEL.fade;
+        l.alpha = want > l.alpha ? Math.min(want, l.alpha + step) : Math.max(want, l.alpha - step);
+        l.mat.opacity = l.alpha * f;
+        l.visible = l.alpha > 0.01;
+      });
 
       // HER SPHERES: every kitten standing on the floor, in pool order.
       let n = 0;
@@ -547,45 +577,9 @@ export function holoDojo(dojo) {
         toHer.set(_a, _b);
       }
 
-      /* WHERE THE QUADRANT'S NAME GOES (see placeReadouts) — the one readout
-         left now the vectors' are gone, but it still has to miss the axis
-         names, the leg labels, the point and her. */
-      if (show) {
-        const mine = new Set([Q.label]);
-        const fixed = dojo.labels.filter((l) => l.visible && !mine.has(l)).map((l) => labelBox(l));
-        fixed.push({ x: P.x, z: P.z, hw: 1.6, hh: 1.6 });
-        if (toHer.group.visible) fixed.push({ x: _b.x, z: _b.z, hw: 1.6, hh: 1.6 });
-        const items = [];
-        const add = (key, l, spots) => items.push({ key, l, box: labelBox(l), spots, prev: parts.spots[key] });
-        // The quadrant's name: somewhere inside the lit quarter.
-        add('quad', Q.label, [0.62, 0.85, 0.4].flatMap((rk) => [0.5, 0.25, 0.75].map((fk) => {
-          const a = (q + fk) * (Math.PI / 2);
-          return { x: Math.cos(a) * R * rk, z: -Math.sin(a) * R * rk };
-        })));
-        placeReadouts(items, fixed);
-        const lift = { quad: 3.2 };
-        /* ...AND IT GLIDES THERE. Richard: "the Quadrant text is jumping
-           around, we should make it be more stationary or more smoothly
-           follow the player as they move around." The spot is still chosen
-           by placeReadouts — that is what keeps it off the other labels — but
-           a change of spot used to be a cut: the name jumped up to 30 units
-           in one frame whenever the point or her vector walked into it, and
-           across the floor at every new quadrant. Now the drawn label eases
-           to its spot (`GLIDE`, a third of a second), and snaps only when it
-           has been off screen. */
-        const dt = Math.min(0.1, Math.max(0, t - (parts.glideAt ?? -1)));
-        const fresh = parts.glideAt == null || t - parts.glideAt > 0.5;
-        parts.glideAt = t;
-        const e = 1 - Math.exp(-dt * GLIDE);
-        for (const it of items) {
-          parts.spots[it.key] = it.prev;
-          const s = it.spots[it.prev];
-          const g = (parts.glide[it.key] ??= { x: s.x, z: s.z });
-          if (fresh) { g.x = s.x; g.z = s.z; } else { g.x += (s.x - g.x) * e; g.z += (s.z - g.z) * e; }
-          g.tx = s.x; g.tz = s.z;
-          it.l.position.set(g.x, lift[it.key], g.z);
-        }
-      }
+      /* (The quadrant's name used to be placed here every frame by
+         `placeReadouts`, gliding after its spot — "following the player
+         around". It stands still now: see QUAD_LABEL.) */
     },
   };
 }

@@ -36046,43 +36046,48 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       ok('...and the quadrant she is in is lit in its own neon, named with its two signs, and flares on the way in',
         seen.every(Boolean) && new Set(HD.QUAD_C).size === 4
         && HD.QUAD_C.every((c) => !Object.values(HD.AXIS_C).includes(c)), seen.join());
-      /* AND NONE OF IT ON TOP OF ANYTHING ELSE. The first cut put each readout
-         at one fixed offset from its arrow, and at θ = 46° four of them were
-         stacked over the point. Only the quadrant's name is placed now (the
-         vectors' readouts are gone), and it still has to miss the axis names
-         and the leg labels. Walk two laps — on the circle and outside it —
-         and ask its box against every other label on the floor. */
-      let frames = 0; let clash = 0; let hops = 0; let worst = '';
-      let last = null;
-      let jump = 0; let wasAt = null;
+      /* ITS NAME STAYS PUT. Richard: "The quadrant text in the dojo of the
+         turning circle is annoying as it is following the player around,
+         lets just have it be static somewhere near the circle ... or can
+         just be text that fades in and out in each quadrant." Four names,
+         one per quarter, standing outside the circle on the quarter's middle
+         line. Walk two laps — on the circle and outside it — and ask: does
+         any name ever move, is the lit quarter's the one that shows (and
+         only it, once the fade has run), and is it ever on another label? */
+      const home = X.quad.labels.map((l) => l.position.clone());
+      let frames = 0; let clash = 0; let moved = 0; let wrong = 0; let worst = '';
+      let tt = 30;
       for (const rad of [1, 1.3]) {
         for (let k = 0; k < 96; k++) {
           at((k / 96) * Math.PI * 2 + 0.01, rad);
           holo.update(1 / 60, [walker]);
-          fx.update(8 + (rad - 1) * 20 + k / 60, [walker]);
-          const mine = [X.quad.label].filter((l) => l.visible);
-          const others = holo.labels.filter((l) => l.visible && !mine.includes(l));
+          // Half a second of frames a step, so every fade has finished before it is asked.
+          for (let n = 0; n < 30; n++) fx.update(tt += 1 / 60, [walker]);
+          const q = HD.quadrantOf(holo.theta);
+          const vis = X.quad.labels.map((l) => l.visible);
+          if (vis.filter(Boolean).length !== 1 || !vis[q] || X.quad.labels[q].mat.opacity < 0.5) { wrong++; worst ||= `θ ${((k / 96) * 360).toFixed(0)}°: ${vis}`; }
+          moved = Math.max(moved, ...X.quad.labels.map((l, i) => l.position.distanceTo(home[i])));
+          const mine = X.quad.labels.filter((l) => l.visible);
+          const others = holo.labels.filter((l) => l.visible && !X.quad.labels.includes(l));
           frames++;
-          // Asked of the SPOT it is heading for: on its way there it glides (below).
-          const box = (a) => { const g = X.glide.quad; return HD.labelBox(a, g.tx, g.tz); };
-          const bad = mine.some((a, i) => others.some((b) => HD.boxesOverlap(box(a), HD.labelBox(b), 0))
-            || mine.some((b, j) => j > i && HD.boxesOverlap(box(a), HD.labelBox(b), 0)));
-          const pos = X.quad.label.position;
-          if (wasAt && k) jump = Math.max(jump, Math.hypot(pos.x - wasAt.x, pos.z - wasAt.z));
-          wasAt = { x: pos.x, z: pos.z };
-          if (bad) { clash++; worst ||= `θ ${((k / 96) * 360).toFixed(0)}° at ${rad}`; }
-          const now = JSON.stringify(X.spots);
-          if (last && now !== last) hops++;
-          last = now;
+          const hit = others.find((b) => mine.some((a) => HD.boxesOverlap(HD.labelBox(a), HD.labelBox(b), 0)));
+          if (hit) { clash++; worst ||= `on "${want(hit)}" at θ ${((k / 96) * 360).toFixed(0)}° r ${rad}`; }
         }
       }
-      ok('...and no readout lands on another label, all the way round, on the circle and off it',
-        clash === 0, `${clash} of ${frames} frames, first ${worst}; ${hops} spot changes`);
-      /* Richard: "the Quadrant text is jumping around". It changes spot on this
-         lap (a new quadrant is a new quarter), and it used to change in one
-         frame — up to 30 units. It glides now: no frame moves it 2 units. */
-      ok('...and the quadrant\'s name GLIDES to a new spot rather than jumping there',
-        hops > 0 && jump < 2, `${hops} spot changes, the most it moved in a frame ${jump.toFixed(2)}`);
+      const outside = X.quad.labels.every((l, i) => {
+        const a = Math.atan2(-l.position.z, l.position.x);
+        return Math.hypot(l.position.x, l.position.z) > MD.DOJO_RADIUS && HD.quadrantOf(a) === i;
+      });
+      ok('...and the quadrant\'s name STAYS PUT: one per quarter, outside the circle, never moving all the way round',
+        moved === 0 && outside, `moved ${moved.toFixed(3)}`);
+      ok('...only the lit quarter\'s shows, faded in, and none is ever on another label',
+        wrong === 0 && clash === 0, `${wrong} wrong of ${frames}, first ${worst}; ${clash} clashes`);
+      // The fade itself: a step into the next quarter is not a cut.
+      at(0.3, 1); holo.update(1 / 60, [walker]); for (let n = 0; n < 60; n++) fx.update(tt += 1 / 60, [walker]);
+      at(1.9, 1); holo.update(1 / 60, [walker]); for (let n = 0; n < 6; n++) fx.update(tt += 1 / 60, [walker]);
+      const mid = [X.quad.labels[0].mat.opacity, X.quad.labels[1].mat.opacity];
+      ok('...and it FADES between them — a tenth of a second into the next quarter both are part-way',
+        mid[0] > 0.05 && mid[0] < 0.95 && mid[1] > 0.05 && mid[1] < 0.95, mid.map((x) => x.toFixed(2)).join(' '));
       at(0.8, 1.3);
       holo.update(1 / 60, [walker]);
     }
