@@ -416,6 +416,115 @@ export function inCross(c, yaw, x, z, A = CROSS) {
    34 keeps her readable and the whole ring in; the yaw is NEVER changed,
    because the staging above is measured off it. */
 export const SHOT = { dist: 34, pitch: 0.5, lift: 4, mix: 0.4 };
+
+/**
+ * THE MAN UNDER THE SHADOW, ON HARD AND EXTRA HARD. Richard: "When Shadow
+ * Lionheart is defeated on hard or extra hard difficulty, he explodes like
+ * he currently does, but then we should also show an image of him falling on
+ * his knees and getting knocked back during his speech, and then he can
+ * stand up for when he gives the awards and congratulations speech ... he
+ * shouldn't be fighting ... and he should look like regular Lionheart, like
+ * at the entrance of the simulator, not Shadow Lionheart."
+ *
+ * So the shards still burst and the shadow still goes (`breakNow`), and out
+ * of the burst comes LIONHEART — the entrance hologram's own tint and height
+ * (dreamdojo's `_buildHoloLion`: 0x9ff6ff, 0.85, 6.2) — thrown back along
+ * the last blow in a hop, landing at `land` straight onto his knees (Kata
+ * Trace's `lionheart/defeated.png`, the same knees-on-his-feet landing as
+ * kata.js's KO) and skidding `slide` more, rocked back `lean` and settling.
+ * He kneels through HANDOVER, and when the prize is told (`_tellPrize`) he
+ * gets up over `standUp` into the town drawing, for "a share of my HONOR".
+ * He is not the boss: a new object, never in the gate, so no blow can land
+ * on him and nothing of the fight runs while he is up.
+ *   · `kneelH` is 0.674 of his standing height, as KO's 3.88 of 5.76 (the
+ *     kneeling drawing's ink against the guard's, measured there).
+ *   · No kneeling drawing: he lands standing, in the town one. No town one
+ *     either: nobody comes out of the burst, as before (degrade, not vanish).
+ */
+export const UNMASK = {
+  tint: 0x9ff6ff, opacity: 0.85, h: 6.2, kneelH: 6.2 * 0.674,
+  land: 0.5, hop: 1.3, back: 1.8, slide: 0.7, lean: 0.24, settle: 0.6, pop: 0.25, standUp: 0.45,
+};
+
+/** Lionheart, knocked out of his own shadow (UNMASK). Layer coordinates. */
+export class Unmasked {
+  constructor(parent, at, push, kneelArt, standArt) {
+    this.group = new THREE.Group();
+    this.group.position.set(at.x, at.y, at.z);
+    parent?.add(this.group);
+    this.at = { ...at };
+    const n = Math.hypot(push?.x ?? 0, push?.z ?? 0);
+    this.push = n > 1e-6 ? { x: push.x / n, z: push.z / n } : { x: 0, z: -1 };
+    const make = (art, h, cols) => {
+      if (!art?.texture) return null;
+      const q = h / (art.contentScale || 1);
+      const b = new Billboard(art.texture, { cols, rows: 1, width: q, height: q, footOffset: (art.pad ?? 0) * q, mirror: false });
+      b.mat.color.set(UNMASK.tint);
+      b.mat.transparent = true;
+      b.mat.opacity = UNMASK.opacity;
+      b.visible = false;
+      this.group.add(b);
+      return b;
+    };
+    this.kneelSprite = make(kneelArt, UNMASK.kneelH, kneelArt?.cols ?? 2);
+    this.standSprite = make(standArt, UNMASK.h, 1);
+    this.t = 0;
+    this.standAt = null;
+    this.lean = 0;
+    this.kneel = false;
+    this.update(0);
+  }
+
+  /** On his feet, for the prize. */
+  stand() { if (this.standAt == null) this.standAt = this.t; }
+
+  /** Where he is, from his own clock. */
+  update(dt) {
+    this.t += dt;
+    const t = this.t;
+    const fly = Math.min(1, t / UNMASK.land);
+    const after = Math.max(0, t - UNMASK.land);
+    const skid = 1 - (1 - Math.min(1, after / UNMASK.settle)) ** 2;
+    const d = UNMASK.back * fly + UNMASK.slide * skid;
+    const y = t < UNMASK.land ? Math.sin(fly * Math.PI) * UNMASK.hop : 0;
+    this.group.position.set(this.at.x + this.push.x * d, this.at.y + y, this.at.z + this.push.z * d);
+    const up = this.standAt != null ? Math.min(1, (t - this.standAt) / UNMASK.standUp) : 0;
+    // Kneeling once he has landed and until he is up; with no kneeling drawing, standing throughout.
+    this.kneel = !!this.kneelSprite && t >= UNMASK.land && up < 1;
+    const u = Math.min(1, after / UNMASK.settle);
+    this.lean = this.kneel ? UNMASK.lean * Math.sin(u * Math.PI) * (1 - u) ** 0.5 : 0;
+    let pop = 1;
+    if (this.kneel) pop = 1 + 0.14 * (1 - Math.min(1, after / UNMASK.pop)) - 0.1 * Math.sin(up * Math.PI);
+    if (this.kneelSprite) {
+      this.kneelSprite.visible = this.kneel;
+      this.kneelSprite.scale.set(1 / pop, pop, 1);
+    }
+    if (this.standSprite) {
+      this.standSprite.visible = !this.kneel;
+      // Up off his knees: a stretch from the kneeling height into his own.
+      const s = this.standAt != null && up < 1 ? UNMASK.kneelH / UNMASK.h + (1 - UNMASK.kneelH / UNMASK.h) * up : 1;
+      this.standSprite.scale.set(1, s, 1);
+    }
+  }
+
+  faceCamera(camera) {
+    if (this.kneelSprite?.visible) {
+      this.kneelSprite.faceCamera(camera);
+      this.kneelSprite._setCell(0, 0, false);
+      /* Rocked BACK, away from the blow, as this lens sees it (kata.js's KO). */
+      _kr.set(1, 0, 0).applyQuaternion(camera.quaternion);
+      const side = Math.sign(this.push.x * _kr.x + this.push.z * _kr.z) || 1;
+      this.kneelSprite.mesh.rotation.order = 'YXZ';
+      this.kneelSprite.mesh.rotation.z = -side * this.lean;
+    }
+    if (this.standSprite?.visible) this.standSprite.faceCamera(camera);
+  }
+
+  dispose() {
+    this.group.removeFromParent();
+    for (const b of [this.kneelSprite, this.standSprite]) { b?.mat?.dispose?.(); b?.tex?.dispose?.(); }
+  }
+}
 /** His card, beside him: how big, and half its width plus a margin from his middle. */
 /* 1.6 reached 0.96 of the way to a side-by-side pane's edge (world-check
    measures every pane shape); 1.4 keeps a margin and still reads. */
@@ -1014,6 +1123,14 @@ export class ShadowFight {
           : !inherited(p) && left.length ? ` Beat him on ${left.join(' and ')} too, for his 凶 CROSS SLASH.` : '') });
     }
     this.dream.shards.burst(this.boss.local.x, this.boss.local.y + 4, this.boss.local.z, HOLO.gold, 160, 9, 10);
+    // HARD and EXTRA HARD: Lionheart himself, out of the burst (UNMASK).
+    if (L.circle) {
+      const b = this.boss;
+      const w = b.wobDir ?? {};
+      const push = Math.hypot(w.x ?? 0, w.z ?? 0) > 1e-6 ? w : this.view ?? { x: 0, z: 1 };
+      const un = new Unmasked(this.dream.sim.root, b.local, push, g.lionKoArt, this.dream.lionArt ?? g.lionArt);
+      if (un.kneelSprite || un.standSprite) this.unmask = un; else un.dispose();
+    }
   }
 
   /** The stars, after the hand-over line. The facts were settled in `_won`. */
@@ -1021,6 +1138,8 @@ export class ShadowFight {
     const g = this.dream.game;
     // Easy pays no HONOR, so he does not promise one: its own line was the whole of it.
     if (this.level >= 1) this._say(SHADOW_LINES.prize.line, 7);
+    // Up off his knees for the prize (UNMASK).
+    this.unmask?.stand();
     for (const { p, text } of this.paid) if (g.players?.includes(p)) g.toast?.(text, p.index);
     this.paid = [];
     /* 凶 IS EXPLAINED AFTER "a share of my HONOR", as Richard asked: queued
@@ -1045,6 +1164,8 @@ export class ShadowFight {
     this._clearTells();
     this.kyo = false;
     this.kyoT = 0;
+    this.unmask?.dispose();
+    this.unmask = null;
     if (this.boss) {
       this.dream.gate.remove(this.boss);
       this.boss.dispose();
@@ -1085,6 +1206,7 @@ export class ShadowFight {
     b.update(dt);
     b.open = Math.max(0, b.open - dt);
     b.pose = this.state === 'live' ? poseCell(this.act) : POSE.guard;
+    this.unmask?.update(dt);
     this._paint();
     if (this.state === 'won' && this.paid?.length && (this.payT -= dt) <= 0) this._tellPrize();
     if (this.kyoT > 0 && (this.kyoT -= dt) <= 0) { this.kyo = false; this._say(SHADOW_LINES.kyo.line, 6); }
@@ -1498,7 +1620,9 @@ export class ShadowFight {
         b.local.x - this.view.z * PANEL_SIDE, b.local.y + SHADOW_H * 0.62, b.local.z + this.view.x * PANEL_SIDE
       );
     } else this.panel.position.set(b.local.x, b.local.y + SHADOW_H + 2.6, b.local.z);
-    const lines = [{ text: '影 SHADOW LIONHEART', size: 1.9, color: 0xc89bff, glow: true, jp: true }];
+    // Unmasked, the card is his own name, in the entrance hologram's colour.
+    const lines = [this.unmask ? { text: 'LIONHEART', size: 1.9, color: UNMASK.tint, glow: true }
+      : { text: '影 SHADOW LIONHEART', size: 1.9, color: 0xc89bff, glow: true, jp: true }];
     if (this.say && (this.sayT > 0 || this.dream.voice?.saying(this.say))) {
       for (const l of this.say.split('\n')) lines.push({ text: l, size: 1.4 });
     } else if (this.state === 'live') {
@@ -1506,7 +1630,7 @@ export class ShadowFight {
       lines.push({ text: `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}  ·  ${this.L.name}  ·  ${this.who.size} fighting${this.phase === 2 ? '  ·  PHASE 2' : ''}`, size: 1.4 });
       if (b.open > 0) lines.push({ text: 'OPEN! ×2', size: 1.5, color: HOLO.gold, glow: true });
     }
-    this.panel.set(lines, b.open > 0 ? HOLO.gold : 0x9b4dff);
+    this.panel.set(lines, this.unmask ? UNMASK.tint : b.open > 0 ? HOLO.gold : 0x9b4dff);
   }
 
   /** Her camera while she is in the fight (and while it is being called), or
@@ -1545,6 +1669,7 @@ export class ShadowFight {
       this.panel.mat.opacity = veil;
     }
     this.boss?.faceCamera(camera, veil);
+    this.unmask?.faceCamera(camera);
   }
 
   /** Everybody out (a reset, the last one disconnecting): no fight left half-run. */
@@ -1553,3 +1678,4 @@ export class ShadowFight {
 
 const _e = new THREE.Euler();
 const _v = new THREE.Vector3();
+const _kr = new THREE.Vector3();
