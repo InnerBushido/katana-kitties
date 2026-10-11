@@ -20,7 +20,7 @@ import { SineGauntlet } from './dream/sine.js';
 import { HoloSentries } from './dream/sentries.js';
 import { BambooInfiltration } from './dream/bamboo.js';
 import { ArenaSchool } from './dream/school.js';
-import { Ranks } from './dream/rank.js';
+import { Ranks, SECRET_LINE } from './dream/rank.js';
 import { ShadowFight, SHADOW_LINES, HANDOVER } from './dream/shadow.js';
 import { LionVoice, VOICE_TAIL } from './dream/lionvoice.js';
 import { Rundown } from './dream/rundown.js';
@@ -890,6 +890,7 @@ export class DreamDojo {
       [HANDOVER.line, HANDOVER.voice],
       ...Object.entries(GEAR_VOICE).map(([k, id]) => [GEAR_LINES[k], id]),
       ...Object.values(KATA_LINES).map((l) => [l.line, l.voice]),
+      [SECRET_LINE.line, SECRET_LINE.voice],
     ]);
   }
 

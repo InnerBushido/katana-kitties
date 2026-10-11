@@ -30611,7 +30611,7 @@ console.log('\n=== NINE NOTES FROM A PHONE ===');
       /front\.style\.top = getComputedStyle\(under\)\.top;/.test(M));
   }
   ok('a repeat of the same news folds into the line already on screen',
-    /toast\(text, playerIndex = 0, combo = null\)/.test(M)
+    /toast\(text, playerIndex = 0, combo = null, holdMs = 0\)/.test(M)
     && /this\._combos \|\|= new Map\(\);/.test(M));
   ok('...and it counts, rather than being replaced by the newest one alone',
     /live\.n \+= 1;\s*live\.total \+= combo\.add \?\? 1;/.test(M));
@@ -40568,6 +40568,8 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     ...ST.STORY_ROWS.filter((r) => r.who === 'lion').map((r) => [r.text, r.voice, r.voice]),
     // Knocked down by a Kata Trace finishing attack (dream/kata.js).
     ...Object.entries((await import('../src/systems/dream/kata.js')).KATA_LINES).map(([k, l]) => [l.line, l.voice, `kata.${k}`]),
+    // The secret opening, at Kenshi 1st Class (dream/rank.js).
+    (({ SECRET_LINE: S }) => [S.line, S.voice, 'secret'])(await import('../src/systems/dream/rank.js')),
   ];
   ok('every recorded line of his is a line he actually has',
     Object.keys(DD.LION_VOICE).every((k) => typeof DD.LION_LINES[k] === 'string'));
@@ -43364,8 +43366,9 @@ console.log('\n--- his recordings: one song per level, looped on the beat, won i
     const PP = new DreamProgress(null);
     const said = [];
     const kitten = { name: 'Mittens', style: { name: 'Mittens' }, index: 0 };
-    const fake = { dream: { progress: PP, simKittens: () => [kitten], holoSay: (t) => said.push(`holo:${t}`),
-      game: { sfx: (s) => said.push(`sfx:${s}`), toast: (t) => said.push(`toast:${t}`) } } };
+    const holds = [];
+    const fake = { dream: { progress: PP, simKittens: () => [kitten], holoSay: (t, s) => { said.push(`holo:${t}`); holds.push(s * 1000); },
+      game: { sfx: (s) => said.push(`sfx:${s}`), toast: (t, i, c, h) => { said.push(`toast:${t}`); holds.push(h); } } } };
     Ranks.prototype._watchFirstClass.call(fake);
     const before = said.length;
     const closed = extraOpen(PP, kitten);
@@ -43374,8 +43377,21 @@ console.log('\n--- his recordings: one song per level, looped on the beat, won i
     Ranks.prototype._watchFirstClass.call(fake);
     ok('the debug "open EXTRA HARD" plays the 1st Class announcement — fanfare, toast, his line — once, and opens the fight',
       before === 0 && !closed && extraOpen(PP, kitten) && said.length === 3 && said[0] === 'sfx:victory'
-      && /KENSHI 1st CLASS! A SECRET is open/.test(said[1]) && /My SHADOW has a secret/.test(said[2]) && PP.flag('Mittens', 'secret'),
+      && /KENSHI 1st CLASS! A SECRET is open/.test(said[1]) && /my Shadow has a secret/.test(said[2]) && PP.flag('Mittens', 'secret'),
       said.map((s) => s.slice(0, 30)).join(' | '));
+    /* "mention that defeating him will unlock an extra secret hidden kotodama
+       orb and a song in the Kata Trace dojo. Also let's keep the message on
+       screen longer." Both prizes in both the toast and his recorded card, and
+       both held twice the toast's usual seven-second cap. */
+    const { SECRET_LINE, SECRET_HOLD } = await import('../src/systems/dream/rank.js');
+    ok('...and it names BOTH prizes, the Kotodama and the Kata Trace song, aloud and in the toast, and holds them 14s',
+      said[2] === `holo:${SECRET_LINE.line}` && /Kotodama/.test(said[1]) && /Kata Trace/.test(said[1])
+      && /Kotodama/.test(SECRET_LINE.line) && /Kata Trace/.test(SECRET_LINE.line)
+      // Three lines on his card, each short enough for the hologram's width (an escape once went missing and it was one).
+      && SECRET_LINE.line.split('\n').length === 3 && SECRET_LINE.line.split('\n').every((l) => l.length <= 60)
+      && holds.length === 2 && holds.every((h) => h >= 12000) && SECRET_HOLD * 1000 > 7000
+      && /const hold = holdMs > 0 \? holdMs/.test(readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')),
+      holds.join(' / '));
   }
   ok('...and "every song" lists and opens all of them, secret or not',
     KataHall.prototype.songChoices.call({ dream: { game: { _debugSongs: true }, progress: new DreamProgress(null) } }, none)
