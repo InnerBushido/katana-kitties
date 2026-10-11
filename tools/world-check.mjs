@@ -37375,8 +37375,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const F = D.kata.floors;
     let close = Infinity;
     for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) close = Math.min(close, Math.hypot(F[i].x - F[j].x, F[i].z - F[j].z));
-    // The floors' kiosks: the 記 board's stands on its own platform, checked below.
-    const far = Math.max(...F.flatMap((fl) => fl.kiosks).map((k) => Math.hypot(k.x - I.x, k.z - I.z) + k.r));
+    const far = Math.max(...D.kata.kiosks.map((k) => Math.hypot(k.x - I.x, k.z - I.z) + k.r));
     ok('型 four kata floors, each clear of the next', close > 2 * 5.4 + 1, close.toFixed(1));
     ok('...and every kiosk on the island', far < I.r - 0.5, `${far.toFixed(1)} of ${I.r}`);
   }
@@ -37391,19 +37390,30 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const I = D.isles.kata;
     const B = D.kata.board;
     const F = D.kata.floors;
-    // A platform of its own: off the island, clear of every other deck, joined by a bridge you can stand on.
-    const decks = D.sim.decks.filter((k) => Number.isFinite(k.r) && k.name && k.name !== 'kataboard');
-    const gapTo = Math.min(...decks.map((k) => Math.hypot(k.x - B.x, k.z - B.z) - k.r - B.r));
-    const kioskIn = Math.hypot(B.kiosk.x - B.x, B.kiosk.z - B.z) + B.kiosk.r;
-    const mid = { x: (B.link.a.x + B.link.b.x) / 2, z: (B.link.a.z + B.link.b.z) / 2 };
-    const walk = [mid, { x: B.x, z: B.z }, { x: B.kiosk.x, z: B.kiosk.z }].map((q) => D.sim.heightAt(q.x + SW.SIM.dx, q.z + SW.SIM.dz)?.y);
-    ok('記 the Kata Board is a platform of its own, off the far rim, clear of every other deck, with its kiosk on it',
-      gapTo >= KB.BOARD.gap - 1e-6 && kioskIn < B.r - 0.5 && D.kata.stations.includes(B.kiosk.station)
-      // No pop-up card: in the first render it covered the board's right half.
-      && B.kiosk.o.card === null,
-      `${gapTo.toFixed(1)} clear of the nearest deck, kiosk ${kioskIn.toFixed(1)} of ${B.r}`);
-    ok('...and the bridge to it and its deck are ground she stands on, at the island\'s height',
-      walk.every((y) => Number.isFinite(y) && Math.abs(y - I.y) < 0.6), walk.map((y) => y?.toFixed?.(2)).join(' '));
+    /* ON THE ISLAND, in its north-east corner AS SHE SEES IT. Richard: "the
+       bridge looks bad, and the camera transitions are interfering with the
+       Kata Board ... maybe let's put this at the North East section of the
+       Kata Trace island." No deck and no bridge of its own; clear of every
+       floor and every one of Lionheart's attack spots; and far from the hub
+       bridge's mouth, where the lens changes. */
+    const KA = await import('../src/systems/dream/kata.js');
+    const rel = { x: B.x - I.x, z: B.z - I.z };
+    const sR = rel.x * KA.SCREEN.right.x + rel.z * KA.SCREEN.right.z;
+    const sU = rel.x * KA.SCREEN.up.x + rel.z * KA.SCREEN.up.z;
+    const ownDeck = D.sim.decks.some((k) => /kataboard/.test(k.name ?? ''));
+    const reach = Math.max(Math.hypot(rel.x, rel.z) + B.r, Math.hypot(B.kiosk.x - I.x, B.kiosk.z - I.z) + B.kiosk.r);
+    const spots = F.flatMap((fl) => ['C', 'N', 'NE', 'NW', 'E', 'W'].map((s) => { const o = KA.markOffset(s, KA.LION_D); return { x: fl.x + o.x, z: fl.z + o.z }; }));
+    const toSpot = Math.min(...spots.map((q) => Math.hypot(q.x - B.x, q.z - B.z)));
+    const toFloor = Math.min(...F.map((fl) => Math.hypot(fl.x - B.x, fl.z - B.z) - KA.FLOOR_R - B.r));
+    const mouth = { x: I.x - I.fwd.x * I.r, z: I.z - I.fwd.z * I.r };
+    const toMouth = Math.hypot(mouth.x - B.x, mouth.z - B.z);
+    const ground = D.sim.heightAt(B.x + SW.SIM.dx, B.z + SW.SIM.dz)?.y;
+    ok('記 the Kata Board is ON the island, in its north-east corner as she sees it — no platform and no bridge of its own',
+      sR > 0 && sU > 0 && sU > sR && !ownDeck && reach < I.r - 0.5 && Math.abs(ground - I.y) < 0.6
+      && D.kata.stations.includes(B.kiosk.station) && B.kiosk.o.card === null,
+      `screen (${sR.toFixed(1)}, ${sU.toFixed(1)}), reaches ${reach.toFixed(1)} of ${I.r}`);
+    ok('...clear of every floor and of Lionheart\'s spots, and far from the bridge mouth where the lens changes',
+      toFloor > 0 && toSpot > 5 && toMouth > 25, `floor ${toFloor.toFixed(1)}, spot ${toSpot.toFixed(1)}, mouth ${toMouth.toFixed(1)}`);
 
     // The ledger: her best BY SCORE for each song, level and speed.
     const P = new (await import('../src/systems/dream/progress.js')).DreamProgress(null);
@@ -37469,19 +37479,17 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const caught = fl.plate.layout.rows.map((q) => q.text).join(' | ');
     ok('...a caught run replaces it with what she had, said as CAUGHT, and the board keeps her best',
       /CAUGHT — 4,321/.test(caught) && /12,345/.test(B.lines().map((l) => l.text).join(' ')), caught);
-    // Over the bridge to the board, and onto it: still in the area.
+    // Over to the board: still in the area.
     her.position.set(B.x + SW.SIM.dx, B.y, B.z + SW.SIM.dz);
     D.kata.update(0);
     const onBoard = !!fl.last;
-    her.position.set(mid.x + SW.SIM.dx, B.y, mid.z + SW.SIM.dz);
-    D.kata.update(0);
-    const onBridge = !!fl.last;
+    const onBridge = true;
     // Back over the island's own bridge, towards the hub: gone.
     her.position.set(I.x - I.fwd.x * (I.r + 4) + SW.SIM.dx, I.y, I.z - I.fwd.z * (I.r + 4) + SW.SIM.dz);
     D.kata.update(0);
     const gone = fl.last === null && !/last:/.test(fl.plate.layout.rows.map((q) => q.text).join(' '));
-    ok('...and keeps it while she walks over to the board and stands on it, and drops it when she leaves the area',
-      onBoard && onBridge && gone, `board ${onBoard}, bridge ${onBridge}, gone ${gone}`);
+    ok('...and keeps it while she walks over to the board, and drops it when she leaves the area',
+      onBoard && onBridge && gone, `board ${onBoard}, gone ${gone}`);
     D.kata.ended(runOf({}), 'won');
     her.realm = null;
     D.kata.update(0);

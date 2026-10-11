@@ -26,7 +26,9 @@ export const ISLANDS = {
   gallery: { ang: 38, dist: 128, r: 24, dy: 4, name: 'KOTODAMA GALLERY', kanji: '言霊' },
   hall: { ang: -38, dist: 128, r: 24, dy: 2, name: 'CLAN TRIAL HALL', kanji: '一族' },
   range: { ang: 78, dist: 138, r: 24, dy: 6, name: 'TAMESHIGIRI RANGE', kanji: '試斬' },
-  kata: { ang: -78, dist: 138, r: 22, dy: 8, name: 'KATA TRACE', kanji: '型' },
+  /* r 28, not 22: the 記 Kata Board stands in its north-east corner now
+     (kataboard.js), where at 22 there was only Lionheart's attack spots. */
+  kata: { ang: -78, dist: 138, r: 28, dy: 8, name: 'KATA TRACE', kanji: '型' },
   storm: { ang: 116, dist: 150, r: 24, dy: 3, name: 'KUDAMONO STORM', kanji: '果物' },
   sine: { ang: -116, dist: 150, r: 26, dy: 5, name: 'SINE GAUNTLET', kanji: '正弦' },
   sentries: { ang: 150, dist: 250, r: 26, dy: 10, name: 'HOLO-SENTRIES', kanji: '番兵', cycle: true },

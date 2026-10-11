@@ -221,7 +221,7 @@ export class KataHall {
       });
       for (const kiosk of [play, edit]) { this.kiosks.push(kiosk); fl.kiosks.push(kiosk); }
     }
-    // 記 The board, on its own platform off the far rim (dream/kataboard.js).
+    // 記 The board, in the island's north-east corner (dream/kataboard.js).
     this.board = new KataBoard(this, isle);
     this.kiosks.push(this.board.kiosk);
     this.stations = this.kiosks.map((k) => k.station);
@@ -557,7 +557,7 @@ export class KataHall {
     }
   }
 
-  /** Is she in the Kata Trace area: its island, or the board's platform and the bridge to it? */
+  /** Is she in the Kata Trace area: its island (the board is on it). */
   inArea(p) {
     const x = p.position.x - SIM.dx;
     const z = p.position.z - SIM.dz;
