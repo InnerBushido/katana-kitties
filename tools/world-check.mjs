@@ -40721,6 +40721,11 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     ok('...and the floor clears itself afterwards: no boss, nothing left in the gate', F.state === 'waiting' && !F.boss
       && ![...D.gate.targets].some((t) => t instanceof SH.ShadowBoss));
 
+    // Both of Lionheart's drawings, as loaded, from here on (UNMASK needs them; restored after HARD).
+    const keepLionArt = D.lionArt;
+    D.lionArt = { texture: new THREE.Texture(), cols: 1, rows: 1, contentScale: 0.9, pad: 0 };
+    fakeGame.lionKoArt = { texture: new THREE.Texture(), cols: 2, rows: 1, contentScale: 0.8, pad: 0 };
+
     // MEDIUM: his bar is medium's, and the win pays the tenth quest.
     put(her, F.kiosks[1]);
     put(sis, inside);
@@ -40738,6 +40743,8 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       && fakeGame.feats.delays.every((dl) => dl === SH.HANDOVER.secs)
       && fakeGame.toasts.filter((t) => /beat Shadow Lionheart/.test(t)).length === 0,
       `${F.say} ${fakeGame.feats.earned.join()}`);
+    ok('...and on MEDIUM he bursts and is gone, as he always did — the unmasking is HARD and EXTRA HARD\'s',
+      !F.unmask && !F.boss.group.visible);
     for (let f = 0; f < 60 * (SH.HANDOVER.secs + 0.2); f++) F.update(1 / 60);
     ok('...then the stars, the quest news and "a share of my HONOR", once his line has had its time',
       fakeGame.toasts.filter((t) => /Powerup Kotodama/.test(t)).length === 2 && /HONOR/.test(F.say) && !her.kyo,
@@ -40760,17 +40767,56 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     ok('影 beaten on HARD: the first thing anybody hears is his hand-over line, with nobody told their prize over it',
       F.level === 2 && F.say === SH.HANDOVER.line && fakeGame.toasts.filter((t) => /beat Shadow Lionheart/.test(t)).length === 0
       && her.kyo && !sis.kyo && sis.shadowBeat.hard, `${F.say}`);
-    for (let f = 0; f < 60 * (SH.HANDOVER.secs + 0.2); f++) F.update(1 / 60);
+
+    /* LIONHEART OUT OF THE BURST. Richard: "he explodes like he currently
+       does, but then we should also show an image of him falling on his knees
+       and getting knocked back during his speech, and then he can stand up for
+       when he gives the awards and congratulations speech ... he shouldn't be
+       fighting ... and he should look like regular Lionheart, like at the
+       entrance of the simulator, not Shadow Lionheart." Walked a frame at a
+       time through the hand-over line and into the prize. */
+    const UN = F.unmask;
+    const U = SH.UNMASK;
+    const from = { x: BH.local.x, z: BH.local.z };
+    const pushN = Math.hypot(blow.dir.x, blow.dir.z);
+    let kneelFrom = null; let maxLean = 0; let tells = 0; let standing = 0; let kneelWhenPrize = false; let promised = null;
+    // 1.5s past the line (not the 0.2 the checks after this one were timed on: kyoAt counts from here).
+    for (let f = 0; f < 60 * (SH.HANDOVER.secs + 1.5); f++) {
+      const said = F.say;
+      F.update(1 / 60);
+      if (F.say !== said && /HONOR/.test(F.say)) { promised = f / 60; kneelWhenPrize = UN.kneel; }
+      if (UN.kneel && kneelFrom == null) kneelFrom = f / 60;
+      maxLean = Math.max(maxLean, UN.lean);
+      tells += F.tells.length;
+      if (UN.standSprite.visible && !UN.kneelSprite.visible) standing++;
+    }
+    const gone = Math.hypot(UN.group.position.x - from.x, UN.group.position.z - from.z);
+    const along = ((UN.group.position.x - from.x) * blow.dir.x + (UN.group.position.z - from.z) * blow.dir.z) / pushN;
+    ok('影 ...and on HARD the shadow bursts as it did, and LIONHEART comes out of it — the entrance hologram\'s tint, both drawings',
+      !!UN && !BH.group.visible && !BH.live && UN.kneelSprite && UN.standSprite
+      && UN.kneelSprite.mat.color.getHex() === 0x9ff6ff && UN.standSprite.mat.color.getHex() === 0x9ff6ff
+      && U.h === 6.2 && ![...D.gate.targets].includes(UN), `${!!UN} ${BH.group.visible}`);
+    ok('...knocked BACK along the blow, landing on his knees and rocked back, on the floor',
+      kneelFrom != null && Math.abs(kneelFrom - U.land) < 0.05 && Math.abs(along - (U.back + U.slide)) < 0.02 && Math.abs(gone - along) < 1e-6
+      && maxLean > U.lean * 0.5 && UN.group.position.y === BH.local.y,
+      `knees at ${kneelFrom?.toFixed(2)}s, ${along.toFixed(2)} back along the blow, lean ${maxLean.toFixed(2)}`);
+    ok('...kneeling through his hand-over line, and UP for "a share of my HONOR" — the town drawing, his full height, no fight',
+      promised != null && Math.abs(promised - SH.HANDOVER.secs) < 0.1 && kneelWhenPrize && standing > 0
+      && UN.standSprite.visible && !UN.kneelSprite.visible && UN.standSprite.scale.y === 1 && tells === 0,
+      `prize at ${promised?.toFixed(2)}s, kneeling then: ${kneelWhenPrize}, standing frames ${standing}, tells ${tells}`);
+    ok('...and his card names LIONHEART, not his shadow', (F.panel._key ?? '').includes('"text":"LIONHEART"') && !(F.panel._key ?? '').includes('SHADOW LIONHEART'), String(F.panel._key).slice(0, 160));
     const honorFirst = /HONOR/.test(F.say);
     const told = fakeGame.toasts.some((t) => /Ember|inherit his 凶/.test(t)) && fakeGame.toasts.some((t) => /EASY and MEDIUM too/.test(t));
     let kyoAt = null;
     for (let f = 0; f < 60 * 12 && kyoAt == null; f++) { F.update(1 / 60); if (F.say === SH.SHADOW_LINES.kyo.line) kyoAt = f / 60; }
     ok('...then "a share of my HONOR", and only AFTER it, 凶 explained — told to her, and her sister told what she is missing',
-      honorFirst && told && kyoAt != null && kyoAt + 0.2 >= 6.95, `${honorFirst} ${told} ${kyoAt}`);
-    ok('...and the fight still clears itself, however long he talked', (() => {
+      honorFirst && told && kyoAt != null && kyoAt + 1.5 >= 6.95, `${honorFirst} ${told} ${kyoAt}`);
+    ok('...and the fight still clears itself, however long he talked — Lionheart with it', (() => {
       for (let f = 0; f < 60 * 15; f++) F.update(1 / 60);
-      return F.state === 'waiting' && !F.boss;
+      return F.state === 'waiting' && !F.boss && !F.unmask && !UN.group.parent;
     })());
+    D.lionArt = keepLionArt;
+    delete fakeGame.lionKoArt;
 
     /* ONE CARD AT A TIME. "the text above easy/med/hard is showing up for all
        of them at the same time and they are blocking each other". Standing
