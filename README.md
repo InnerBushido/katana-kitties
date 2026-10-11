@@ -431,7 +431,7 @@ his floor fights together. He comes in three levels, **EASY**, **MEDIUM** and
 Beat him on MEDIUM or HARD and everybody in the fight earns **Lionheart's
 Honor**, a free Powerup Kotodama. That's the only way to reach **1st Class**.
 On MEDIUM and HARD he does a Cross Slash of his own, three Xs in a row, and a
-red 凶 fills up in front of him. Beat **all three** levels and your own Cross
+red 凶 fills up in front of him. Beat him on **HARD** and your own Cross
 Slash draws **凶** instead of 十, and hits harder.
 
 ## Collect the seven dragon balls

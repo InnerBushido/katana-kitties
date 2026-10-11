@@ -1,6 +1,6 @@
 import { ISLANDS, ISLE_ABOUT } from './islands.js';
 import { featuredPool, picksFor } from './rank.js';
-import { SHADOW_LEVELS, inherited } from './shadow.js';
+import { SHADOW_LEVELS, inherited, kyoLeft } from './shadow.js';
 import { DESTS, destName, destShort } from './waypoint.js';
 
 /* ---------------------------------------------------------------------------
@@ -176,7 +176,7 @@ export function lionNext(progress, name, p = null) {
     };
   }
   if (!inherited(p)) {
-    const left = SHADOW_LEVELS.filter((L) => !b[L.id]).map((L) => L.name).join(' and ');
+    const left = kyoLeft(p).join(' and ');
     return {
       kind: 'kyo', key: 'shadow',
       text: `Beat my Shadow on ${left} too, and my 凶 CROSS SLASH is yours.`,
@@ -287,6 +287,15 @@ export class LionGuide {
     const g = this.game;
     if (typeof key === 'string' && key.startsWith('wp:')) {
       const W = this.dream.waypoints;
+      /* 道標 CHOSEN AGAIN, IT IS UNMARKED. Richard: "When selecting on the
+         Map where to go, there is no way to deselect the area, incase the
+         player no longer wants to go there". There was a CLEAR row — under
+         eight chips and the map, the last thing on the card, where nobody
+         went looking — and the place itself, chosen again, REFRESHED the
+         markers. A tap on a pin that is already in reads as "take it out",
+         so now it does; marking it again brings every marker back, which is
+         what refreshing was for. */
+      if (W?.of(p)?.target === key.slice(3)) return this.choose(p, 'wpClear');
       const res = W ? W.set(p, key.slice(3)) : { ok: false, text: 'Waypoints are not ready yet' };
       g.sfx?.(res.ok ? 'star' : 'deny');
       g.toast?.(res.text, p.index);
@@ -300,9 +309,9 @@ export class LionGuide {
       }
       case 'map':
         return 'lionMap';
-      /* 道標 A WAYPOINT, from the map (dream/waypoint.js). Marking the one
-         she has marked already is the REFRESH — every marker back — which is
-         the only way they come back. Both answers are said (non-negotiable 6). */
+      /* 道標 A WAYPOINT, from the map (dream/waypoint.js). Choosing the place
+         she has marked comes here too (see `wp:` above). Both answers are
+         said (non-negotiable 6). */
       case 'wpClear': {
         const W = this.dream.waypoints;
         const had = W?.of(p)?.target;
@@ -496,7 +505,7 @@ export class LionGuide {
       const chips = DESTS.map((key, k) => `<div class="pc-row pn-act ln-dest${k === cursor ? ' cursor' : ''}${wp === key ? ' wp' : ''}" data-side="${index}" data-row="${k}"><b>${wp === key ? '◆ ' : ''}${esc(destShort(key))}</b></div>`).join('');
       const tail = [...(wp ? ['✕ CLEAR MY WAYPOINT'] : []), '◀ BACK'].map((t, j) => act(t, DESTS.length + j)).join('');
       const say = aim
-        ? (wp === aim ? `JUMP to refresh your waypoint to the <b>${esc(destName(aim))}</b> — every marker back`
+        ? (wp === aim ? `JUMP to clear your waypoint to the <b>${esc(destName(aim))}</b>`
           : `JUMP to set a waypoint: the <b>${esc(destName(aim))}</b>`)
         : wp ? `Your waypoint: the <b>${esc(destName(wp))}</b>. Follow the markers in your colour.` : '';
       return `<div class="pc-inner pn-card ln-card">${head}

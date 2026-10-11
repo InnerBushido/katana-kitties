@@ -38474,6 +38474,97 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         G.run = keepRun;
         ok('...and the corridor is filmed from behind her, down the walls', behind);
       }
+      /* --- 登竜 THE NEXT PASS: the High Steps from behind, the sweepers as
+         walls, and an ending of its own. Each asked as a behaviour. --- */
+      {
+        const L2 = CO.LEVELS[1];
+        const keepRun = G.run;
+        const shotAt = (s) => { G.run = { sMax: s, cp: CO.checkpointFor(s), drill: { state: 'live' } }; return G._shoulder()?.key ?? null; };
+        // "the camera should go behind the player ... before the lava lazer area with the platforms"
+        const ti = CO.SECTIONS.findIndex((x) => x.key === 'twin');
+        const hs = CO.SECTION.twin;
+        const lavaS = CO.pathS(CO.LANES[hs.lane], hs.floor[1]);
+        const turnsAt = CO.CP_S[ti] - SN.SHOT_AHEAD + 0.1;
+        ok('登竜 the High Steps are filmed from BEHIND her, and the lens starts turning before she reaches them — half way round the U-turn, short of the lava',
+          shotAt(turnsAt) === 'twin' && shotAt(CO.CP_S[ti] - SN.SHOT_AHEAD - 0.5) !== 'twin' && shotAt(lavaS - 0.5) === 'twin'
+          && lavaS - turnsAt > 6 && CO.CP_S[ti] - CO.CP_S[ti - 1] > SN.SHOT_AHEAD,
+          `turns ${(lavaS - turnsAt).toFixed(1)} before the lava`);
+        /* "make the platforms ... more staggered ... and potentially reduce the
+           number of platforms". Four, not five, and swung far enough that NOT
+           ONE covers the lane's middle: the stagger is the route now, which
+           is what the search walks (`route`) and the camera shows. */
+        const hc = CO.LANES[hs.lane];
+        const hl = CO.LEDGES.filter((s) => s.sec === 'twin');
+        const swing = hl.map((s) => s.a - hc);
+        ok('...four ledges, not five, swung side to side so far that none covers the middle of the lane — every hop a diagonal one',
+          hl.length === 4 && hl.every((s) => Math.abs(s.a - hc) > s.r) && swing.every((v, i) => i === 0 || Math.sign(v) !== Math.sign(swing[i - 1]))
+          && hl.every((s) => Math.abs(s.a - hc) + s.r < CO.HALVES[hs.lane]),
+          swing.map((v) => v.toFixed(1)).join(' '));
+        // ...and the search's line really goes through them: every ledge centre is on its route.
+        ok('...and the search runs THROUGH them (`route`), each ledge\'s middle on its line, so its times are times over the ledges',
+          hl.every((s) => Math.abs(CO.weaveAt(s.a, s.b) - (s.a - hc)) < 1e-9));
+
+        /* THE SWEEPERS ARE WALLS. "lets make their lazers into lazer walls so
+           that the player can't just easily jump over them all". At every
+           height a double jump can carry her feet to, a body under a sweeper's
+           arm is hit — the old single arm at 0.9 was cleared by a hop. */
+        const sw = CO.SECTION.sweep;
+        const arm = CO.ARMS.find((m) => m.sec === 'sweep');
+        // At the pivot, whatever the angle: the arm always passes through it.
+        const tAcross = 0; const ma = arm.pa; const mb = arm.pb;
+        const dbl = 4.2;
+        const tooHigh = [];
+        for (let f = 0; f <= dbl + 1e-9; f += 0.05) if (!CO.hitAt(L2, ma, mb, f, tAcross)) tooHigh.push(f.toFixed(2));
+        const rows = CO.beams(L2, 0).filter((q) => q.sec === 'sweep');
+        ok('...the Sweepers are WALLS of light — five rows an arm, turning together — and no jump, double or single, goes over one',
+          rows.length === sw.arms.length * 5 && rows.every((q) => q.wall) && tooHigh.length === 0
+          // Over the top row needs her feet higher than it by its reach less the 0.2 her body starts above them.
+          && Math.max(...rows.map((q) => q.y0)) + (CO.BAR_THICK + CO.BODY_R) - 0.2 > dbl,
+          tooHigh.slice(0, 4).join(' ') || `hit at every height to ${dbl}`);
+        ok('...drawn as walls: no drop lines on the rows, the same as the corridor\'s',
+          G.beamFx.filter((fx, k) => CO.beams(L2, 0)[k].sec === 'sweep').every((fx) => fx.drops.length === 0));
+
+        /* 龍尾 THE DRAGON'S TAIL. "Let's make the ending run/section more
+           interesting as it is too similar to the Riptide course." It was the
+           Riptide's FINAL WAVE: twins, crest at her. Now: a climb over lava,
+           a slalom of walls, a wave between them — no twins at all. */
+        const fin = CO.SECTION.final;
+        const rip = CO.courseById('riptide').sections.find((x) => x.key === 'final');
+        const fc = CO.LANES[fin.lane];
+        const walls = [...new Set(fin.fixed.map((f) => f.b))];
+        // THE SLALOM: the middle of the lane is a wall at every height, and each wall leaves the OTHER side open to the last.
+        const blocked = walls.every((b) => [0, 1, 2, 3, 4].every((f) => !!CO.hitAt(L2, fc, b, f, 0, { list: CO.beams(L2, 0).filter((q) => q.fixed) })));
+        // The open side: a wall reaching only just past the middle on the + side is a wall on the − side.
+        const opens = walls.map((b) => (fin.fixed.find((f) => f.b === b).a1 < 1 ? 1 : -1));
+        const routeClear = walls.every((b) => !CO.hitAt(L2, fc + CO.weaveAt(fc, b), b, 0, 0, { list: CO.beams(L2, 0).filter((q) => q.fixed) }));
+        const finLedges = CO.LEDGES.filter((s) => s.sec === 'final');
+        ok('登竜 the Dragon\'s Tail is not the Riptide\'s ending: no twins, a climb of staggered ledges over lava, then walls from alternate sides that make the way down it a slalom',
+          fin.name !== rip.name && !fin.twin && rip.twin && finLedges.length >= 3 && finLedges.every((s) => Math.abs(s.a - fc) > s.r - 0.3)
+          && blocked && routeClear && opens.every((v, i) => i === 0 || v !== opens[i - 1]) && fin.bars.length >= 2 && !!fin.floor,
+          `${finLedges.length} ledges, ${walls.length} walls opening ${opens.join(' ')}`);
+        const fi = CO.SECTIONS.findIndex((x) => x.key === 'final');
+        ok('...filmed from behind her, because the stagger and the slalom are both side to side',
+          shotAt(CO.CP_S[fi] + 1) === 'final' && shotAt(CO.CP_S[fi] + 20) === 'final');
+
+        /* THE CARD OVER HER HEAD. "When the camera is pulling behind the
+           player ... the text UI appearing above their heads is too big and
+           taking up too much of the top half of the screen ... best to make it
+           smaller and more transparent". Eased with the lens: smaller, lower
+           and fainter behind her, and back to itself side-on. */
+        const panel = Object.assign(new THREE.Object3D(), { mat: { opacity: 1 } });
+        const drillFake = { state: 'live', p: { height: 2.6 }, panel };
+        G.run = { sMax: CO.CP_S[ti] + 1, cp: ti, drill: drillFake };
+        for (let k = 0; k < 600; k++) { G._easeCamera(1 / 60); G._fitCard(); }
+        const back = { s: panel.scale.x, y: panel.position.y, o: panel.mat.opacity };
+        G.run = { sMax: CO.CP_S[ti - 1] + 1, cp: ti - 1, drill: drillFake };
+        for (let k = 0; k < 600; k++) { G._easeCamera(1 / 60); G._fitCard(); }
+        const side = { s: panel.scale.x, y: panel.position.y, o: panel.mat.opacity };
+        ok('...and with the lens behind her, the card over her head is half the size, lower and fainter — and itself again side-on',
+          Math.abs(back.s - SN.CARD_BEHIND.scale) < 1e-3 && Math.abs(back.o - SN.CARD_BEHIND.opacity) < 1e-3 && back.y < side.y - 1
+          && Math.abs(side.s - 1) < 1e-3 && Math.abs(side.o - 1) < 1e-3 && Math.abs(side.y - (2.6 + 2.3)) < 1e-3,
+          JSON.stringify({ back, side }));
+        G.run = keepRun;
+      }
       // Swiping away takes its ledges out of the world with its stones.
       const gateLedges = G.ledgeDecks.slice();
       G.setCourse('gauntlet', 1, { instant: true });
@@ -38981,8 +39072,11 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
           inside(gFeet) && inside(gHead), `feet ${gFeet.toFixed(2)} head ${gHead.toFixed(2)}`);
         // "the gaps are too narrow ... either make it less narrow, add a checkpoint in between, or reduce the number of gaps"
         const rg = CO.courseById('riptide').sections.find((x) => x.key === 'gaps');
-        ok('激流 the Riptide\'s Narrow Gaps are wider and fewer: five curtains, not six, and gaps no narrower than the Gauntlet\'s',
-          rg.curtains.length === 5 && rg.gap.half >= CO.courseById('gauntlet').sections.find((x) => x.key === 'gaps').gap.half,
+        /* ...and then "a bit harder to get through, previously it was too hard,
+           now it is a bit too easy, so somewhere in between would be best":
+           strictly between the two cuts, 1.05 and 1.35, with the five kept. */
+        ok('激流 the Riptide\'s Narrow Gaps are five curtains, not six, and their doorways between the first cut\'s (1.05) and the second\'s (1.35)',
+          rg.curtains.length === 5 && rg.gap.half > 1.05 + 0.1 && rg.gap.half < 1.35 - 0.1,
           `${rg.curtains.length} curtains, half ${rg.gap.half}`);
       }
       G.leaveGauntlet(her);
@@ -40201,8 +40295,9 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         }), n.text);
       for (const k of KEYS) for (const id of LG.drillsOf(k)) pr.award('Testy', id, 3, 1);
       n = step();
-      ok('...all of it at three stars: the 凶, naming the levels still to beat',
-        n.kind === 'kyo' && /EASY and HARD/.test(n.text) && !/MEDIUM/.test(n.text), n.text);
+      // 凶 is HARD's alone now (shadow.js `inherited`), so with MEDIUM beaten the one level left is HARD.
+      ok('...all of it at three stars: the 凶, naming the one level still to beat — HARD',
+        n.kind === 'kyo' && /on HARD too/.test(n.text) && !/EASY|MEDIUM/.test(n.text), n.text);
       kid.shadowBeat = { easy: true, medium: true, hard: true };
       n = step();
       ok('...and with nothing left, come back tomorrow — never nothing to say', n.kind === 'daily' && n.text.length > 20, steps.join(' > '));
@@ -40218,12 +40313,12 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       her.shadowBeat = { easy: true };
       fakeGame.toasts.length = 0;
       const kyoRow = () => G.rows(her).find((r) => r.key === 'kyo');
-      ok('...his 凶 row is locked until all three of his levels are beaten, and says which are',
+      ok('...his 凶 row is locked until HARD is beaten, and its ticks say which levels are',
         kyoRow().locked && /EASY ✔/.test(kyoRow().blurb) && /HARD ·/.test(kyoRow().blurb));
       ok('...and choosing it locked is refused in words, on her card', G.choose(her, 'kyo') === 'lion'
         && fakeGame.toasts.some((t) => /^Not yet!/.test(t)), fakeGame.toasts.join(' | '));
-      her.shadowBeat = { easy: true, medium: true, hard: true };
-      ok('...and once it is hers it opens the card that shows it', !kyoRow().locked && G.choose(her, 'kyo') === 'lionKyo'
+      her.shadowBeat = { hard: true };
+      ok('...and once it is hers — HARD alone does it — it opens the card that shows it', !kyoRow().locked && G.choose(her, 'kyo') === 'lionKyo'
         && /凶/.test(G.markup(0, 'lionKyo', 0, () => '')));
       her.shadowBeat = keepBeat;
       D.st[0].holoWorn = [];
@@ -40294,41 +40389,44 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
             // Its own bridge's end — or, coming back from the island past it, that bridge's end on its rim: on its floor either way.
             if (b !== 'dojo' && !(near(last, L[b].to) || (L[a]?.parent === b && near(last, L[a].from)))) bad.push(`${a}>${b} ends off ${b}'s floor`);
             if (b === 'dojo' && Math.abs(Math.hypot(last.x - hubC.x, last.z - hubC.z) - WPm.WAYPOINT.hubR) > 0.5) bad.push(`${a}>${b} ends off the hub's rim`);
-            for (const m of rt) {
+            /* ONLY AT THE INTERSECTIONS. Richard: "there are too many waypoints
+               ... it should just be at the main intersections of where they
+               need to go to next, like before the bridge or half way between
+               bridges". So every marker is a bridge's end, or the ONE point
+               halfway round the ring between the mouth she came out of (or
+               where she stands) and the mouth she is going to — and only when
+               that walk is longer than `midIf`. (It was a marker every 11,
+               along bridges and across islands, so the next was always in
+               frame; that rule went with the spacing.) */
+            const angD = (p0, p1) => {
+              let d = Math.atan2(p1.z - hubC.z, p1.x - hubC.x) - Math.atan2(p0.z - hubC.z, p0.x - hubC.x);
+              while (d > Math.PI) d -= 2 * Math.PI;
+              while (d < -Math.PI) d += 2 * Math.PI;
+              return d;
+            };
+            const rings = rt.filter((m) => m.kind === 'ring');
+            if (rings.length > 1) bad.push(`${a}>${b} ${rings.length} ring markers`);
+            rt.forEach((m, i) => {
               if (m.kind === 'ring') {
                 ringSeen++;
                 if (Math.abs(Math.hypot(m.x - hubC.x, m.z - hubC.z) - WPm.WAYPOINT.ring) > 1e-6) bad.push(`${a}>${b} ring off the ring`);
-              } else if (m.kind === 'along') {
-                if (!Object.values(L).some((l) => segD(m, l.from, l.to) < 1e-6)) bad.push(`${a}>${b} an along marker on no bridge`);
-              } else if (m.kind === 'across') {
-                if (!Object.values(L).some((l) => Math.hypot(m.x - l.disc.x, m.z - l.disc.z) < l.disc.r)) bad.push(`${a}>${b} an across marker on no island`);
-              } else if (!ends.some((e) => near(e, m))) bad.push(`${a}>${b} a marker on no bridge end`);
-            }
-            /* NEVER MORE THAN A `gap` FROM ONE TO THE NEXT, anywhere: the
-               camera shows 12 units round her at the least (measured, see
-               WAYPOINT), and before this the Kata bridge's two ends were 65
-               apart and the Arena School crossed rim to rim with nothing on
-               it. The one leg allowed past `gap` is a hub mouth (47 out) to
-               the ring (44) at a `step` round — 11.7, still inside the 12. */
-            for (let i = 1; i < rt.length; i++) {
-              const d = Math.hypot(rt[i].x - rt[i - 1].x, rt[i].z - rt[i - 1].z);
-              if (d > 12) bad.push(`${a}>${b} ${d.toFixed(1)} from a ${rt[i - 1].kind} to a ${rt[i].kind}`);
+                const p0 = rt[i - 1] ?? st; const p1 = rt[i + 1];
+                if (!p1 || Math.abs(angD(p0, m) - angD(m, p1)) > 1e-6) bad.push(`${a}>${b} a ring marker not halfway`);
+                if (p1 && Math.abs(angD(p0, p1)) * WPm.WAYPOINT.ring <= WPm.WAYPOINT.midIf) bad.push(`${a}>${b} a ring marker on a short walk`);
+              } else if (!ends.some((e) => near(e, m))) bad.push(`${a}>${b} a ${m.kind} marker on no bridge end`);
               legs++;
-              longest = Math.max(longest, d);
+            });
+            // A walk round the hub with no halfway marker is a short one.
+            for (let i = 1; i < rt.length; i++) {
+              const atHub = (m) => m.kind !== 'ring' && Math.abs(Math.hypot(m.x - hubC.x, m.z - hubC.z) - WPm.WAYPOINT.hubR) < 0.5;
+              if (atHub(rt[i - 1]) && atHub(rt[i]) && Math.abs(angD(rt[i - 1], rt[i])) * WPm.WAYPOINT.ring > WPm.WAYPOINT.midIf) bad.push(`${a}>${b} a long walk round with no halfway marker`);
             }
-            // Ring steps never longer than `step` degrees (plus the mouth's own offset from the ring).
-            const pts = rt.filter((m) => m.kind === 'ring' || Math.abs(Math.hypot(m.x - hubC.x, m.z - hubC.z) - WPm.WAYPOINT.hubR) < 0.5);
-            for (let i = 1; i < pts.length; i++) {
-              let d = Math.atan2(pts[i].z - hubC.z, pts[i].x - hubC.x) - Math.atan2(pts[i - 1].z - hubC.z, pts[i - 1].x - hubC.x);
-              while (d > Math.PI) d -= 2 * Math.PI;
-              while (d < -Math.PI) d += 2 * Math.PI;
-              if (Math.abs(d) * 180 / Math.PI > WPm.WAYPOINT.step + 0.5) bad.push(`${a}>${b} a ${(Math.abs(d) * 180 / Math.PI).toFixed(0)}° gap on the ring`);
-            }
+            longest = Math.max(longest, rt.length);
           }
         }
-        ok('...a route from every place to every other, ending on the target\'s floor, every marker on a bridge, an island or the walking ring, and never more than 12 from one to the next — the next is always in her frame',
+        ok('...a route from every place to every other, ending on the target\'s floor, every marker a bridge end or the one halfway round the ring on a long walk — the intersections, and nothing between them',
           bad.length === 0 && pairs === WPm.DESTS.length * (WPm.DESTS.length - 1) && ringSeen > 0 && legs > 0,
-          bad.slice(0, 5).join(' | ') || `${pairs} routes, ${ringSeen} ring markers, ${legs} legs, the longest ${longest.toFixed(1)}`);
+          bad.slice(0, 5).join(' | ') || `${pairs} routes, ${legs} markers in all, ${ringSeen} on the ring, the longest route ${longest}`);
         // THROUGH THE ONE IN FRONT: the Shadow from the Gallery crosses the School.
         const gs = WPm.route(centreOf('gallery'), 'shadow', hubC, L);
         const seq = [L.gallery.to, L.gallery.from, L.school.from, L.school.to, L.shadow.from, L.shadow.to];
@@ -40350,25 +40448,26 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
           while (d < -Math.PI) d += 2 * Math.PI;
           return Math.sign(d) === Math.sign(dGH) && Math.abs(d) < Math.abs(dGH);
         });
-        ok(`...round the ring the SHORT way: the Gallery to the Trial Hall (${(Math.abs(dGH) * 180 / Math.PI).toFixed(0)}° apart) only through the arc between them`,
-          gh.length === Math.ceil(Math.abs(dGH) / (WPm.WAYPOINT.step * Math.PI / 180)) - 1 && gh.length > 0 && inArc, `${gh.length}`);
+        ok(`...round the ring the SHORT way: the Gallery to the Trial Hall (${(Math.abs(dGH) * 180 / Math.PI).toFixed(0)}° apart), its one marker inside the arc between them`,
+          gh.length === 1 && inArc, `${gh.length}`);
         // ON A BRIDGE.
         const mid = { x: (L.kata.from.x + L.kata.to.x) / 2, y: (L.kata.from.y + L.kata.to.y) / 2, z: (L.kata.from.z + L.kata.to.z) / 2 };
         const onTo = WPm.route(mid, 'kata', hubC, L);
         const onBack = WPm.route(mid, 'sine', hubC, L);
         const firstEnd = (rt) => rt.find((m) => m.kind !== 'along');
-        ok('...from the middle of a bridge: on to its island if that is where she is going, back to the hub if not',
-          onTo.at(-1) && near(onTo.at(-1), L.kata.to) && onTo.slice(0, -1).every((m) => m.kind === 'along')
+        ok('...from the middle of a bridge: on to its island if that is where she is going (its far end, and nothing before it), back to the hub if not',
+          onTo.length === 1 && near(onTo[0], L.kata.to)
             && near(firstEnd(onBack), L.kata.from) && near(onBack.at(-1), L.sine.to),
           `${onTo.length} / ${onBack.length}`);
 
         // HER WAYPOINT, set from the map card and walked.
         fakeGame.toasts.length = 0;
         put(her, { x: hubC.x + 30, y: hubC.y, z: hubC.z });
-        const nextKey = G.choose(her, 'wp:sine');
+        // The Shadow, through the Arena School: four bridge ends at the least, so a skip below is a real one.
+        const nextKey = G.choose(her, 'wp:shadow');
         const wpH = W.of(her);
         ok('...JUMP on a place on the map card sets her waypoint there, says so, and keeps the map open',
-          nextKey === 'lionMap' && wpH?.target === 'sine' && fakeGame.toasts.some((t) => /Waypoint set: the SINE GAUNTLET/.test(t))
+          nextKey === 'lionMap' && wpH?.target === 'shadow' && fakeGame.toasts.some((t) => t.includes(`Waypoint set: the ${WPm.destName('shadow')}`))
           && G.rowCount(her, 'lionMap') === WPm.DESTS.length + 2 && G.subAct('lionMap', WPm.DESTS.length, her) === 'wpClear',
           fakeGame.toasts.join(' | '));
         const lit = () => wpH.meshes.filter((m) => m.visible).length;
@@ -40389,7 +40488,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         put(her, { x: wpH.marks[0].x + SW.SIM.dx - SW.SIM.dx, y: wpH.marks[0].y, z: wpH.marks[0].z });
         W.update(1 / 60);
         const afterOne = { i: wpH.i, firstGone: !wpH.meshes[0].visible, nextUp: wpH.meshes[1].visible };
-        const skipTo = Math.min(3, n0 - 1);
+        const skipTo = Math.min(3, n0 - 2);
         put(her, { x: wpH.marks[skipTo].x, y: wpH.marks[skipTo].y, z: wpH.marks[skipTo].z });
         W.update(1 / 60);
         const afterSkip = wpH.i;
@@ -40400,53 +40499,92 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         put(her, { x: wpH.marks[0].x, y: wpH.marks[0].y, z: wpH.marks[0].z });
         W.update(1 / 60);
         const stayedGone = wpH.i === skipTo + 1 && !wpH.meshes[0].visible;
-        // Refreshing on the map brings them all back.
+        /* DESELECT. Richard: "there is no way to deselect the area, incase
+           the player no longer wants to go there". The place she has marked,
+           chosen again, is UNMARKED, and says so; chosen once more, it is a
+           fresh waypoint with every marker back (which is what choosing it
+           again used to do). */
         put(her, { x: hubC.x + 30, y: hubC.y, z: hubC.z });
-        G.choose(her, 'wp:sine');
-        const fresh = W.of(her);
+        fakeGame.toasts.length = 0;
+        const unKey = G.choose(her, 'wp:shadow');
+        const unmarked = unKey === 'lionMap' && !W.of(her) && !wpH.meshes[0].parent && !wpH.arrow.parent
+          && fakeGame.toasts.some((t) => t.includes(`Waypoint cleared: the ${WPm.destName('shadow')}`));
+        const say = G.markup(0, 'lionMap', WPm.DESTS.indexOf('shadow'), () => '');
+        G.choose(her, 'wp:shadow');
+        const again = W.of(her);
         W.update(1 / 60);
-        ok('...once gone a marker stays gone — and marking the same place again on the map brings every one back',
-          stayedGone && fresh !== wpH && fresh.i === 0 && fresh.meshes[0].visible && !wpH.meshes[0].parent && !wpH.arrow.parent, `${fresh.i}`);
-        /* THE POINTING CURSOR: up only while her next marker is out of her
-           frame, at her feet, aimed at it. Through a real lens: looking at the
-           marker, then the other way. Without a camera, never. */
+        const hint = /JUMP to clear your waypoint/.test(G.markup(0, 'lionMap', WPm.DESTS.indexOf('shadow'), () => '')) && !/refresh/.test(say);
+        ok('...once gone a marker stays gone — the marked place chosen again UNMARKS it, in words, and the card says JUMP will; chosen once more, every marker is back',
+          stayedGone && unmarked && hint && again && again !== wpH && again.i === 0 && again.meshes[0].visible,
+          fakeGame.toasts.join(' | '));
+        W.clear(her);
+        G.choose(her, 'wp:sine');
+        let fresh = W.of(her);
+        W.update(1 / 60);
+        /* A MARKER NEAR HER LENS is shrunk to the size of one `near` away; one far off is full size. */
         {
           const o = W.root.parent?.position ?? { x: 0, y: 0, z: 0 };
           const n = fresh.marks[0];
           const me = D._flatPos(her);
           const cam = new THREE.PerspectiveCamera(38, 1.8, 0.5, 2000);
-          const look = (sx) => {
-            const ux = n.x - me.x; const uz = n.z - me.z; const L0 = Math.hypot(ux, uz) || 1;
-            cam.position.set(me.x + o.x - (ux / L0) * 14 * sx, her.position.y + 30, me.z + o.z - (uz / L0) * 14 * sx);
-            cam.lookAt(me.x + o.x + (ux / L0) * 6 * sx, her.position.y, me.z + o.z + (uz / L0) * 6 * sx);
-            cam.updateMatrixWorld(); cam.updateProjectionMatrix();
-            W.update(1 / 60);
-            return fresh.arrow.visible;
-          };
           const keep = her.camera;
-          her.camera = null;
-          W.update(1 / 60);
-          const noCam = fresh.arrow.visible;
           her.camera = cam;
-          const facing = look(1);
-          const away = look(-1);
-          // ...and a marker near her lens is shrunk to the size of one `near` away; one far off is full size.
+          const ux = n.x - me.x; const uz = n.z - me.z; const L0 = Math.hypot(ux, uz) || 1;
+          cam.position.set(me.x + o.x - (ux / L0) * 14, her.position.y + 30, me.z + o.z - (uz / L0) * 14);
+          cam.lookAt(me.x + o.x + (ux / L0) * 6, her.position.y, me.z + o.z + (uz / L0) * 6);
+          cam.updateMatrixWorld(); cam.updateProjectionMatrix();
+          W.update(1 / 60);
           const m0 = fresh.meshes[0];
           const dCam = cam.position.distanceTo(new THREE.Vector3(m0.position.x + o.x, m0.position.y + o.y, m0.position.z + o.z));
           const farScale = m0.scale.x;
           cam.position.set(m0.position.x + o.x, m0.position.y + o.y + 6, m0.position.z + o.z + 6);
           W.update(1 / 60);
           const nearScale = m0.scale.x;
-          const a = fresh.arrow.position;
-          const aimErr = Math.abs(Math.atan2(n.x - me.x, n.z - me.z) - fresh.arrow.rotation.y);
-          const atFeet = Math.abs(Math.hypot(a.x - me.x, a.z - me.z) - WPm.WAYPOINT.pointR) < 1e-6;
           her.camera = keep;
-          ok('...and when her next marker is out of her frame, a pointing cursor at her feet aims at it — and only then',
-            !noCam && !facing && away && atFeet && aimErr < 1e-6 && fresh.arrow.parent === W.root,
-            `no camera ${noCam}, facing it ${facing}, facing away ${away}, at her feet ${atFeet}`);
           ok('...and a marker right under her lens is shrunk, never a kite across the bottom of the pane',
             Math.abs(farScale - Math.min(1, dCam / WPm.WAYPOINT.near)) < 0.05 && Math.abs(nearScale - Math.hypot(6, 6) / WPm.WAYPOINT.near) < 0.05,
             `${farScale.toFixed(2)} at ${dCam.toFixed(0)}, ${nearScale.toFixed(2)} at 8.5`);
+        }
+        /* THE POINTING CURSOR BLINKS, BRIEFLY, AND ONLY OFF A BRIDGE. Richard:
+           "remove the arrow next to the player pointing them to the direction
+           they need to go to as it is annoying for gameplay incase the player
+           decides to not go there anymore, or can just make it appear and blink
+           for a 2 - 3 seconds after they get off a bridge so they know which
+           direction to go." From the Kata Trace to the Sine Gauntlet: set, it
+           blinks for `blink`, then never — however long she stands there —
+           until she reaches the end of the Kata bridge, when it blinks again,
+           at her feet and aimed at the next marker, and then never again. */
+        {
+          const WP = WPm.WAYPOINT;
+          W.clear(her);
+          const kc = centreOf('kata');
+          put(her, { x: kc.x, y: kc.y, z: kc.z });
+          W.set(her, 'sine');
+          const cw = W.of(her);
+          const watch = (secs) => { let on = 0; let off = 0; for (let f = 0; f < secs * 60; f++) { W.update(1 / 60); if (cw.arrow.visible) on++; else off++; } return { on, off }; };
+          // Whole windows: `blink` plus a frame from the set, and from the reach (the aim loop's frames are inside it).
+          const atSet = watch(WP.blink + 0.05);
+          const after = watch(4);
+          const k = cw.marks.findIndex((m) => m.kind === 'end');
+          const e = cw.marks[k];
+          put(her, { x: e.x, y: e.y, z: e.z });
+          let aimed = null;
+          for (let f = 0; f < 60 && !aimed; f++) {
+            W.update(1 / 60);
+            if (!cw.arrow.visible) continue;
+            const me = D._flatPos(her); const nx = cw.marks[cw.i]; const a = cw.arrow.position;
+            aimed = { err: Math.abs(Math.atan2(nx.x - me.x, nx.z - me.z) - cw.arrow.rotation.y), feet: Math.abs(Math.hypot(a.x - me.x, a.z - me.z) - WP.pointR) };
+          }
+          const offBridge = watch(WP.blink);
+          const later = watch(4);
+          ok('...and the pointing cursor BLINKS for a couple of seconds as it is set and as she comes off a bridge — at her feet, aimed at her next marker — and is never up otherwise',
+            WP.blink >= 2 && WP.blink <= 3 && atSet.on > 0 && atSet.off > 0 && after.on === 0 && k >= 0 && cw.i === k + 1
+            && !!aimed && aimed.err < 1e-6 && aimed.feet < 1e-6 && offBridge.on > 0 && offBridge.off > 0 && later.on === 0 && cw.arrow.parent === W.root,
+            JSON.stringify({ atSet, after, k, i: cw.i, aimed, offBridge, later }));
+          W.clear(her);
+          put(her, { x: hubC.x + 30, y: hubC.y, z: hubC.z });
+          W.set(her, 'sine');
+          fresh = W.of(her);
         }
         // The minimap gets it, in WORLD coordinates and her colour, with the next marker.
         const mm = fakeGame.world.simWaypoints?.() ?? W.forMap(SW.SIM.dx, SW.SIM.dz);
@@ -41275,8 +41413,9 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       && !her.shadowBeat.medium && fakeGame.feats.earned.length === 0 && !D.progress.flag(nameOf(her), 'shadow'),
       `${F.state} ${st} ${F.say} ${fakeGame.feats.earned.join()}`);
     for (let f = 0; f < 60 * (SH.HANDOVER.secs + 0.2); f++) F.update(1 / 60);
-    ok('...and the toast says what is still to win; he promises no HONOR he is not paying',
-      !/HONOR/.test(F.say ?? '') && fakeGame.toasts.some((t) => /on EASY.*MEDIUM and HARD too/.test(t)),
+    ok('...and the toast says what is still to win — HARD, which is all 凶 asks now; he promises no HONOR he is not paying',
+      !/HONOR/.test(F.say ?? '') && fakeGame.toasts.some((t) => /on EASY.*Beat him on HARD too/.test(t))
+      && !fakeGame.toasts.some((t) => /MEDIUM and HARD too/.test(t)),
       fakeGame.toasts.join(' / '));
     ok('...and her catch cost her time on her score', D.progress.best(nameOf(her), 'shadow') === 120 + SH.CATCH_COST
       && D.progress.best(nameOf(sis), 'shadow') === 120, `${D.progress.best(nameOf(her), 'shadow')} ${D.progress.best(nameOf(sis), 'shadow')}`);
@@ -41327,9 +41466,12 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     /* "Have Lionheart say 'My honor, my dreams... they're yours now.' after
        defeating him and before receiving his reward" — and now "keep the
        current ending voice line for when he is defeated on hardest". */
-    ok('影 beaten on HARD: the first thing anybody hears is his hand-over line, with nobody told their prize over it',
+    /* AND 凶 TO EVERY KITTEN WHO BEAT HIM ON HARD — her sister too, on her
+       first win at anything. Richard: "to unlock Lionhearts cross-slash, you
+       need to just beat him on the hard difficulty". It used to be her alone. */
+    ok('影 beaten on HARD: the first thing anybody hears is his hand-over line, with nobody told their prize over it — and 凶 is both of theirs',
       F.level === 2 && F.say === SH.HANDOVER.line && fakeGame.toasts.filter((t) => /beat Shadow Lionheart/.test(t)).length === 0
-      && her.kyo && !sis.kyo && sis.shadowBeat.hard, `${F.say}`);
+      && her.kyo && sis.kyo && sis.shadowBeat.hard && !sis.shadowBeat.easy && !sis.shadowBeat.medium, `${F.say}`);
 
     /* LIONHEART OUT OF THE BURST. Richard: "he explodes like he currently
        does, but then we should also show an image of him falling on his knees
@@ -41369,10 +41511,10 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       `prize at ${promised?.toFixed(2)}s, kneeling then: ${kneelWhenPrize}, standing frames ${standing}, tells ${tells}`);
     ok('...and his card names LIONHEART, not his shadow', (F.panel._key ?? '').includes('"text":"LIONHEART"') && !(F.panel._key ?? '').includes('SHADOW LIONHEART'), String(F.panel._key).slice(0, 160));
     const honorFirst = /HONOR/.test(F.say);
-    const told = fakeGame.toasts.some((t) => /Ember|inherit his 凶/.test(t)) && fakeGame.toasts.some((t) => /EASY and MEDIUM too/.test(t));
+    const told = fakeGame.toasts.filter((t) => /inherit his 凶/.test(t)).length === 2 && !fakeGame.toasts.some((t) => /too, for his 凶/.test(t));
     let kyoAt = null;
     for (let f = 0; f < 60 * 12 && kyoAt == null; f++) { F.update(1 / 60); if (F.say === SH.SHADOW_LINES.kyo.line) kyoAt = f / 60; }
-    ok('...then "a share of my HONOR", and only AFTER it, 凶 explained — told to her, and her sister told what she is missing',
+    ok('...then "a share of my HONOR", and only AFTER it, 凶 explained — and both of them told it is theirs',
       honorFirst && told && kyoAt != null && kyoAt + 1.5 >= 6.95, `${honorFirst} ${told} ${kyoAt}`);
     ok('...and the fight still clears itself, however long he talked — Lionheart with it', (() => {
       for (let f = 0; f < 60 * 15; f++) F.update(1 / 60);
@@ -41743,14 +41885,23 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         && /kind === 'tri' \? triDmgK\(attacker\)/.test(mSrc) && /kind === 'tri' \? triDmgK\(attacker\)/.test(tSrc)
         && !/power\?\.tri\?\.dmgK/.test(stripComments(mSrc) + stripComments(tSrc)));
       const fresh = new Player({ texture: new THREE.Texture(), index: 0, cols: 8, rows: 4, mirror: false, spawn: new THREE.Vector3(), name: 'Ember' });
-      const half = { ...fresh.shadowBeat, easy: true, hard: true };
-      fresh.shadowBeat = half;
+      /* 凶 IS HARD'S. It was all three; Richard: "you need to just beat him on
+         the hard difficulty, not necessary to beat him on Medium or Easy".
+         Easy and Medium together are not enough, Hard alone is, and 秘 EXTRA
+         HARD counts by the same argument. And `Player.kyo` (the damage, the
+         seal) and shadow.js `inherited` (the cards, the guide, the toasts)
+         give the same answer for every one of the sixteen records. */
+      fresh.shadowBeat = { ...fresh.shadowBeat, easy: true, medium: true };
       const notYet = fresh.kyo;
-      fresh.shadowBeat = { ...half, medium: true };
+      const { inherited: inh } = await import('../src/systems/dream/shadow.js');
+      const lvls = ['easy', 'medium', 'hard', 'extra'];
+      const agree = Array.from({ length: 16 }, (_, m) => Object.fromEntries(lvls.map((l, i) => [l, !!(m & (1 << i))])))
+        .every((sb) => { fresh.shadowBeat = sb; return fresh.kyo === inh(fresh) && fresh.kyo === (sb.hard || sb.extra); });
+      fresh.shadowBeat = { easy: false, medium: false, hard: true, extra: false };
       const SG = await import('../src/systems/savegame.js');
       const row = SG.castRow ? SG.castRow(fresh, fakeGame) : null;
-      ok('凶 is all three levels, not the hardest alone; and it is saved in her row',
-        !notYet && fresh.kyo && (row ? row.shadow?.hard === true && row.shadow?.medium === true : /shadow: \{ easy: !!p\.shadowBeat/.test(read('../src/systems/savegame.js'))));
+      ok('凶 is HARD\'s (or EXTRA HARD\'s): EASY and MEDIUM together are not enough, HARD alone is, the two rules agree on all sixteen records, and it is saved in her row',
+        !notYet && fresh.kyo && agree && (row ? row.shadow?.hard === true : /shadow: \{ easy: !!p\.shadowBeat/.test(read('../src/systems/savegame.js'))));
       const CF = read('../src/systems/crossfx.js');
       ok('凶 her seal draws 凶 instead of 十, brushed like it, chosen per technique',
         /const glyph = p\.kyo \? kyoTexture\(\) : kanjiTexture\(\);/.test(CF) && /export function kyoTexture\(\) \{ return glyphTexture\('凶', KYO_STROKES\); \}/.test(CF)

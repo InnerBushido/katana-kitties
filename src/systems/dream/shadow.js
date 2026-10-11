@@ -309,10 +309,26 @@ export function shadowPrize(level) {
 }
 
 /** A FACT ABOUT THIS GAME, like her gear: `p.shadowBeat`, saved in her row
- *  (savegame.js `castRow`). True once she has beaten all three. */
+ *  (savegame.js `castRow`). True once she has beaten him on HARD.
+ *
+ *  IT WAS ALL THREE. Richard: "to unlock Lionhearts cross-slash, you need to
+ *  just beat him on the hard difficulty, not necessary to beat him on Medium
+ *  or Easy, so that the voice dialog plays after beating him on Hard ...
+ *  assuming player can win on Hard, they can win on the easier
+ *  difficulties." So the hand-over line and the 凶 line now play on the
+ *  first Hard win, whatever came before it. 秘 EXTRA HARD counts too, by the
+ *  same argument. `Player.kyo` asks the same question (player.js cannot
+ *  import this file), and world-check holds the two together. The voiced
+ *  lines and the words that say "all three" are untouched, as asked; the
+ *  lists that are WORKED OUT ("beat him on X too") are `kyoLeft`, so they
+ *  name what is actually left. */
 export function inherited(p) {
   const b = p?.shadowBeat;
-  return !!(b?.easy && b?.medium && b?.hard);
+  return !!(b?.hard || b?.extra);
+}
+/** The levels still between her and 凶, by name: HARD, or nothing. */
+export function kyoLeft(p) {
+  return inherited(p) ? [] : SHADOW_LEVELS.filter((L) => L.id === 'hard').map((L) => L.name);
 }
 /**
  * HIS DRAWING, ONE CELL PER THING HE IS DOING — `lionheart/shadow.png`, one
@@ -1107,7 +1123,7 @@ export class ShadowFight {
       if (pay.rank) this.dream.progress.setFlag(n, 'shadow');
       const had = inherited(p);
       p.shadowBeat = { easy: false, medium: false, hard: false, ...p.shadowBeat, [L.id]: true };
-      // Hard counts for medium's prize, but not for medium's tick: 凶 asks for all three.
+      // Hard counts for medium's prize, but not for medium's tick. 凶 is Hard's (see `inherited`).
       const earned = pay.quest ? g.feats?.earn?.(p, 'shadow', { delay: HANDOVER.secs }) : false;
       const kyo = !had && inherited(p);
       if (kyo) this.kyo = true;
@@ -1115,7 +1131,7 @@ export class ShadowFight {
          1st Class yet may stand in the ring and help, and earns the stars. */
       const secret = pay.secret && extraOpen(this.dream.progress, p)
         ? g.feats?.earn?.(p, 'secret', { delay: HANDOVER.secs }) : false;
-      const left = SHADOW_LEVELS.filter((q) => !p.shadowBeat[q.id]).map((q) => q.name);
+      const left = kyoLeft(p);
       this.paid.push({ p, text: `${p.name} beat Shadow Lionheart on ${L.name}! ${'★'.repeat(stars)}`
         + (earned ? (g.feats.open ? ' A Powerup Kotodama waits for you at the award ceremony!' : ' A Powerup Kotodama is on its way!') : '')
         + (secret ? ' SECRET MISSION complete — a SPECIAL Kotodama is yours!' : '')
