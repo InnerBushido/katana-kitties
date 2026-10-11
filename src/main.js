@@ -27,7 +27,7 @@ import { clusterPlayers, MERGE_IN, MERGE_OUT } from './core/cluster.js';
 import { SNAKE, COIN_CANES } from './world/snakeway.js';
 import { BAMBOO_POINTS } from './entities/prop.js';
 import { SnakeCam } from './systems/snakecam.js';
-import { BridgePeek } from './systems/dream/peek.js';
+import { BridgePeek, peekHold } from './systems/dream/peek.js';
 import { Dragon, BREEDS } from './entities/dragon.js';
 import { Panda, PANDA, PANDA_TIERS, tierFor, toNextTier } from './entities/panda.js';
 import { ClanLeader, LEADERS } from './entities/leader.js';
@@ -13048,8 +13048,9 @@ class Game {
       /* THE RIDE CAMERA, when everybody this rig frames is on one road. A
          group of one draws with her own camera instead (`_cameraFor`), and
          hers carries the same layer — see `Player._updateCamera`. */
-      rig.bridgePeek.apply(dt, members.length > 1 ? this._peekGroup(members) : null, rig.camera, rig.target);
-      rig.snakeCam.apply(dt, members.length > 1 ? this._snakeGroup(members) : null,
+      const ride = members.length > 1 ? this._snakeGroup(members) : null;
+      rig.bridgePeek.apply(dt, members.length > 1 ? this._peekGroup(members) : null, rig.camera, rig.target, peekHold(rig.snakeCam, ride));
+      rig.snakeCam.apply(dt, ride,
         rig.camera, rig.target, this.world.islands);
       /* AFTER `lookAt`, so the shake moves the camera without re-aiming it.
          Offsetting before would have `lookAt` cancel most of it out — the

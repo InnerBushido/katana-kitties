@@ -47,6 +47,28 @@ import * as THREE from 'three';
        looking at her, and the aim pans out to the island after (`turn`).
        Out again it runs backwards: the aim comes home, then the lens.
 
+   ONE MOVE ONTO THE BRIDGE, NOT TWO — RICHARD'S THIRD PASS. "the transition
+   from looking down the bridge to the bridge camera seems to not translate
+   very well as the easing seems a bit off. If the player just runs across
+   the bridge going from regular camera to bridge camera quickly, seems to be
+   doing 2 transitions and a bit of a stutter ... We should increase the area
+   for looking down the bridge so that it happens sooner, so maybe 1.5x's -
+   2x's the radius as it currently is."
+     · Two layers were moving at once. Stepping on turned the look across OFF,
+       so it ran its 1.1 s home while the ride blended in over it — the ride's
+       "start" was a pose still sliding back to the ordinary one: two moves.
+       Now, while the ride takes over (`apply`'s `hold`), the look across
+       never goes back: it finishes its own sweep, at its own pace, and lets
+       go once the ride has the whole picture. FINISHES rather than freezes:
+       frozen mid-sweep (a kitten who ran straight on) the lens stopped dead
+       for the frames the ride's ease takes to get going — a stop and a
+       start, the stutter itself, measured.
+     · And the ride's first frame snapped the AIM from the island back to her:
+       it blended its aim from `look` (her), and the look across had the lens
+       pointed 130 units out. `SnakeCam` now blends from the aim the lens
+       actually has.
+     · The radius is 1.75× the 5.5 it was: `start` 9.6, `inner` 4.8, `exit` 13.
+
    AND THE STICK IS READ THROUGH IT. "when the camera changes, it should use
    the movement system for the bridge at this point": with the look across
    up, the screen faces the island, and a stick read through her ordinary
@@ -63,13 +85,14 @@ import * as THREE from 'three';
 
 export const PEEK = {
   /** Walking toward the mouth inside this (units from it) for `dwell`
-   *  seconds turns it on. Half the 11 it was. */
-  start: 5.5,
+   *  seconds turns it on. ~~11~~, ~~5.5 ("half as big")~~, and 1.75× that:
+   *  "it happens sooner, so maybe 1.5x's - 2x's the radius". */
+  start: 9.6,
   dwell: 0.35,
   /** Inside this, going toward it, turns it on at once. */
-  inner: 2.75,
+  inner: 4.8,
   /** The buffer: once on, it stays on out to here... */
-  exit: 7.5,
+  exit: 13,
   /** ...unless she walks away from the mouth for this long. */
   awayT: 0.25,
   /** The move's own clock, in seconds, in and out. At 1.2 the arc from the
@@ -99,6 +122,13 @@ export const PEEK = {
 };
 
 const ss = (x) => x * x * (3 - 2 * x);
+
+/** What the look across should do while the ride camera `snake` comes in for
+ *  `riding` (her ride subject, or null): hold still under it, then go. */
+export function peekHold(snake, riding) {
+  if (!riding) return null;
+  return snake && snake.w >= 1 ? 'gone' : 'hold';
+}
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 
 /**
@@ -201,12 +231,17 @@ export class BridgePeek {
   /**
    * Lay the look across over `camera`, which already holds the ordinary
    * pose looking at `look`. `subject` is null, or { x, y, z, far, w, spread }.
+   * `hold`: the ride camera is taking the picture over from this one — stay
+   * exactly where it is, so the ride starts from ONE still pose, and drop
+   * out once the ride has all of it (see the head of this file).
    */
-  apply(dt, subject, camera, look) {
+  apply(dt, subject, camera, look, hold = null) {
     const want = subject ? subject.w : 0;
+    if (hold === 'gone') this.w = 0;
     // ITS OWN CLOCK: once triggered it runs to the end at one speed, whatever
     // her feet do — "it should just move into place when triggered".
-    if (want > this.w) this.w = Math.min(want, this.w + dt / PEEK.sweepIn);
+    else if (hold === 'hold' && !subject && this.w > 0.002) this.w = Math.min(1, this.w + dt / PEEK.sweepIn);
+    else if (want > this.w) this.w = Math.min(want, this.w + dt / PEEK.sweepIn);
     else this.w = Math.max(want, this.w - dt / PEEK.sweepOut);
     if (subject) this.last = subject;
     if (!subject && this.w < 0.002) {

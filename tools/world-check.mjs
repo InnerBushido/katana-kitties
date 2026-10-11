@@ -40846,21 +40846,25 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
        transition until the player is 'definitely' in the zone area, either
        by moving close enough quickly or by getting close enough within an
        area." */
-    const far9 = tw(9, 60);
-    const at7 = tw(7, 60);
+    /* ...and then, third pass: "We should increase the area for looking down
+       the bridge so that it happens sooner, so maybe 1.5x's - 2x's the radius
+       as it currently is." 1.75 times the 5.5. */
+    const S0 = PK.PEEK.start;
+    const far9 = tw(PK.PEEK.exit + 1, 60);
+    const at7 = tw(S0 + 1.5, 60);
     D.st[0].peek = null;
-    const at5once = tw(5);
+    const at5once = tw(S0 - 0.5);
     const dwellN = Math.ceil(PK.PEEK.dwell / F) + 1;
-    const at5dwell = tw(5, dwellN);
-    ok('望 HALF the radius it was (5.5, not 11), and ON or OFF — never a dial on her distance',
-      fromHub && PK.PEEK.start === 5.5 && !far9 && !at7 && !at5once && at5dwell?.w === 1 && at5dwell.far === E.far,
-      `9: ${far9?.w ?? 0}, 7: ${at7?.w ?? 0}, 5 once: ${at5once?.w ?? 0}, 5 after ${dwellN} frames: ${at5dwell?.w ?? 0}`);
+    const at5dwell = tw(S0 - 0.5, dwellN);
+    ok('望 1.75 times the radius it was (9.6, not 5.5), and ON or OFF — never a dial on her distance',
+      fromHub && S0 === 9.6 && !far9 && !at7 && !at5once && at5dwell?.w === 1 && at5dwell.far === E.far,
+      `${PK.PEEK.exit + 1}: ${far9?.w ?? 0}, ${S0 + 1.5}: ${at7?.w ?? 0}, ${S0 - 0.5} once: ${at5once?.w ?? 0}, after ${dwellN} frames: ${at5dwell?.w ?? 0}`);
     D.st[0].peek = null;
     const deep = tw(2);
     ok('...on after walking into it for a moment, or at once deep inside it going toward the mouth', deep?.w === 1);
-    const hold6 = tw(6.5, 30);
-    const still = walk(6.5, 0, 0, 120);
-    const out8 = walk(8, 0, 0);
+    const hold6 = tw(S0 + 1, 30);
+    const still = walk(S0 + 1, 0, 0, 120);
+    const out8 = walk(PK.PEEK.exit + 0.5, 0, 0);
     ok('...and the BUFFER: once on, it stays on out past where it started, standing still included, and only goes past the exit',
       hold6?.w === 1 && still?.w === 1 && !out8 && PK.PEEK.exit > PK.PEEK.start);
     D.st[0].peek = null;
@@ -40960,8 +40964,59 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const pl = read('../src/entities/player.js');
     const mn = read('../src/main.js');
     ok('...on her own camera and on a group\'s, and BEFORE the ride camera, which starts from wherever it left the lens',
-      /this\.bridgePeek\.apply\([^\n]*\n\s*this\.snakeCam\.apply/.test(pl)
-      && /rig\.bridgePeek\.apply\([^\n]*\n\s*rig\.snakeCam\.apply/.test(mn));
+      /this\.bridgePeek\.apply\([^\n]*peekHold\(this\.snakeCam, ride\)\);\r?\n\s*this\.snakeCam\.apply\(dt, ride,/.test(pl)
+      && /rig\.bridgePeek\.apply\([^\n]*peekHold\(rig\.snakeCam, ride\)\);\r?\n\s*rig\.snakeCam\.apply\(dt, ride,/.test(mn));
+    /* ONE MOVE ONTO THE BRIDGE. Richard: "the transition from looking down
+       the bridge to the bridge camera seems to not translate very well as the
+       easing seems a bit off. If the player just runs across the bridge ...
+       seems to be doing 2 transitions and a bit of a stutter". The two
+       layers as Player._updateCamera stacks them, at 60 Hz: the look across
+       comes on (fully, and — running — only part way), she steps on the
+       bridge, and the ride takes over. Measured: the lens's step and the
+       AIM's turn, frame to frame, and how many times the lens stops and
+       starts again (a second transition is a second start). */
+    {
+      const { SnakeCam } = await import('../src/systems/snakecam.js');
+      const R0 = E.road;
+      const s0 = 1.5;
+      const f0 = R0.frameAt(s0);
+      const dirOn = Math.sign((f0.tx * E.toward.x + f0.tz * E.toward.z)) || 1;
+      const runIn = (peekFrames) => {
+        const cam = new THREE.PerspectiveCamera(38, 16 / 9, 0.1, 2000);
+        const bp = new PK.BridgePeek();
+        const sc = new SnakeCam();
+        const look = new THREE.Vector3();
+        const pAt = { ...at4, x: f0.x, y: f0.y, z: f0.z };
+        let step = 0; let turn = 0; let starts = 0; let was = null; let dir0 = null; let moving = false;
+        for (let k = 0; k < peekFrames + 150; k++) {
+          const on = k < peekFrames;
+          const S = on ? { ...pAt, w: 1 } : null;
+          const ride = on ? null : { road: R0, s: s0, dir: dirOn, x: f0.x, y: f0.y, z: f0.z, spread: 0 };
+          const her3 = f0;
+          look.set(her3.x, her3.y + 1.4, her3.z);
+          cam.up.set(0, 1, 0);
+          cam.position.set(look.x + 17, look.y + 14, look.z + 17);
+          cam.lookAt(look);
+          bp.apply(F, S, cam, look, PK.peekHold(sc, ride));
+          sc.apply(F, ride, cam, look);
+          const d = new THREE.Vector3(); cam.getWorldDirection(d);
+          if (was) {
+            const st = was.distanceTo(cam.position);
+            if (k > 1) step = Math.max(step, st);
+            if (k > peekFrames) turn = Math.max(turn, THREE.MathUtils.radToDeg(d.angleTo(dir0)));
+            if (st > 0.02 && !moving) { starts++; moving = true; } else if (st < 0.005) moving = false;
+          }
+          was = cam.position.clone(); dir0 = d.clone();
+        }
+        return { step, turn, starts, gone: !bp.live && sc.w === 1 };
+      };
+      const full = runIn(Math.ceil(PK.PEEK.sweepIn / F) + 20);
+      const quick = runIn(Math.round(0.45 / F));
+      ok('...and onto the bridge it is ONE move: the look across finishes under the ride and never goes back, and the ride turns the aim from where it was, never a snap',
+        // The ride's own bar (the arena road's): two units and four degrees a frame at most.
+        [full, quick].every((m) => m.turn < 4 && m.step < 2 && m.gone) && full.starts <= 2 && quick.starts === 1,
+        `full: turn ${full.turn.toFixed(2)}deg/frame, ${full.starts} starts; running straight on: turn ${quick.turn.toFixed(2)}, step ${quick.step.toFixed(2)}, ${quick.starts} starts`);
+    }
     // In a drill, the drill keeps the camera.
     D.drills[0] = { state: 'live' };
     const inDrill = walk(4, E.toward.x * run, E.toward.z * run);

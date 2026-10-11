@@ -393,6 +393,7 @@ export class SnakeCam {
     this._pos = new THREE.Vector3();
     this._v = new THREE.Vector3();
     this._r = new THREE.Vector3();
+    this._a = new THREE.Vector3();
     this.seeded = false;
   }
 
@@ -409,9 +410,12 @@ export class SnakeCam {
    * @param islands the world's islands, so the lens never goes into rock.
    */
   apply(dt, subject, camera, look, islands = null) {
-    const want = subject ? 1 : 0;
-    const rate = subject ? 1 / SNAKE_IN : 1 / SNAKE_OUT;
-    this.w += (want - this.w) * Math.min(1, dt * rate * 2.2);
+    /* ON A CLOCK, eased at both ends by `ss` below. It was a first-order
+       chase (`w += (want - w) * dt * rate`) under the smoothstep, which
+       starts quick and creeps the last few percent for a second or more —
+       Richard, coming off the look across onto a sim bridge: "the easing
+       seems a bit off". */
+    this.w = subject ? Math.min(1, this.w + dt / SNAKE_IN) : Math.max(0, this.w - dt / SNAKE_OUT);
     if (subject) this.last = subject;
     if (!subject && this.w < 0.002) {
       this.w = 0;
@@ -432,6 +436,12 @@ export class SnakeCam {
     const tz = (f.tz / hl) * S.dir;
     const behind = Math.atan2(-tx, -tz);
 
+    /* WHERE THE LENS IS ACTUALLY AIMED, as a point as far off as she is. On
+       an ordinary pose that is `look` itself; under the look across
+       (dream/peek.js) it is out toward the island, and blending the aim from
+       `look` snapped it back to her on the ride's first frame. */
+    const aimFrom = this._a.set(0, 0, -1).applyQuaternion(camera.quaternion)
+      .multiplyScalar(camera.position.distanceTo(look)).add(camera.position);
     // The ordinary pose, as bearing / pitch / distance round what it looks at.
     const ox = camera.position.x - look.x;
     const oy = camera.position.y - look.y;
@@ -473,6 +483,7 @@ export class SnakeCam {
     const p = np + (pitch - np) * w;
     const d = nd + (dist - nd) * w;
     const L = this._v.copy(look).lerp(this._look, w);
+    const aim = aimFrom.lerp(this._look, w);
     const want3 = this._r.set(
       L.x + Math.sin(b) * Math.cos(p) * d,
       L.y + Math.sin(p) * d,
@@ -494,9 +505,9 @@ export class SnakeCam {
     /* THE BANK. Up is tipped round the line of sight by the roll, weighted
        like everything else so it is never there when the ride is not. */
     const roll = P.roll * w * banks;
-    const vx = L.x - this._pos.x;
-    const vy = L.y - this._pos.y;
-    const vz = L.z - this._pos.z;
+    const vx = aim.x - this._pos.x;
+    const vy = aim.y - this._pos.y;
+    const vz = aim.z - this._pos.z;
     const vl = Math.hypot(vx, vy, vz) || 1;
     // right = view x worldUp
     let rx = -vz / vl;
@@ -505,7 +516,7 @@ export class SnakeCam {
     rx /= rl; rz /= rl;
     camera.up.set(rx * Math.sin(roll), Math.cos(roll), rz * Math.sin(roll));
     this.rolled = true;
-    camera.lookAt(L);
+    camera.lookAt(aim);
     return true;
   }
 }
