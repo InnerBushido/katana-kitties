@@ -75,8 +75,14 @@ import { MUSIC_FILES } from '../../core/musicfiles.js';
    dodge all 3 it should add to the combo individually." Three crosses marked
    `kyo` 1, 2, 3; he moves a quarter-beat after each, to a spot whose cross
    takes the OTHER four marks, so every X is a trip through the middle: two
-   moves. Between the Xs of a 凶 she gets two moves a beat (`movesBetween`) —
-   which on HARD, a beat apart, is a step every 0.22s.
+   moves. Between the Xs of a 凶 she gets two moves a beat (`movesBetween`).
+   ~~On HARD one 凶 came a beat apart, a step every 0.22s.~~ Richard, playing
+   Nightmare: "the cross-slash is executed on each beat, one after another
+   (for instance beats: 73, 74, and 75). This is too fast to be playable,
+   there needs to be at least a beat rest between each cross-slash." So no two
+   crosses are ever closer than TWO beats (`CROSS_REST`), on any level of any
+   song; HARD's 凶 are two beats apart like NORMAL's, and HARD stays harder by
+   everything around them.
 --------------------------------------------------------------------------- */
 
 export const FORMAT = 'kata-beatmap/1';
@@ -89,6 +95,8 @@ export const LION_START = 'N';
 export const ATTACKS = ['cut', 'cross', 'sweep'];
 /** The most slashes in one combo, and the shortest step between two: a half-beat. */
 export const SLASH_COMBO = 3;
+/** The fewest beats between two crosses: one beat on, at least one beat of rest. */
+export const CROSS_REST = 2;
 
 /** A mark or spot as a unit vector on the SCREEN: x right, y UP. */
 export function dirVec(name) {
@@ -437,6 +445,7 @@ export function generateChart(songId, difficulty) {
   let her = 'C';
   let prev = -Infinity;
   let prevBeat = 0;
+  let lastCross = -Infinity;
   const seen = [];
   let t = D.lead;
   /* AN OPENING FOR HER: `n` slashes from `t0`, a beat or (HARD) a half-beat
@@ -476,7 +485,8 @@ export function generateChart(songId, difficulty) {
     const can = [...expand([her], n)];
     const twice = seen.length >= 2 && seen[seen.length - 1] === seen[seen.length - 2] ? seen[seen.length - 1] : null;
     // Each attack, the marks she could reach that it leaves standing.
-    const opts = ATTACKS.filter((a) => a !== twice).map((a) => ({
+    // ...and never a cross within CROSS_REST of the last one: HARD's one-beat gaps made X-X pairs.
+    const opts = ATTACKS.filter((a) => a !== twice && !(a === 'cross' && t - lastCross < CROSS_REST)).map((a) => ({
       a, safe: a === 'sweep' ? can : can.filter((m) => safeMarks(a, spot).includes(m)),
     })).filter((o) => o.safe.length);
     // A gap of one beat after a non-sweep leaves no time to cross: only what she can take standing.
@@ -499,6 +509,7 @@ export function generateChart(songId, difficulty) {
       her = o.safe.includes(her) && !away.length ? her : pick(away.length ? away : o.safe);
     }
     events.push({ beat: t, attack: a });
+    if (a === 'cross') lastCross = t;
     seen.push(a);
     prev = t;
     prevBeat = t;
@@ -602,13 +613,13 @@ function shadowChart(S, difficulty) {
     L(16.5, 'NE'); A(19, 'cut'); A(21, 'cross'); A(23, 'sweep'); X(26); X(26.5); X(27);
     L(28.5, 'W'); A(31, 'cross'); A(33, 'cut'); L(34.5, 'N'); A(37, 'sweep'); A(39, 'cut'); X(42);
     A(45, 'cross');
-    kyo(50, 1.5, ['N', 'NW', 'E']);
+    kyo(50, 2, ['N', 'NW', 'E']);
     X(56); X(56.5); X(57);
     L(58.5, 'NW'); A(61, 'cross'); A(63, 'cut'); A(65, 'sweep'); X(68); X(69);
     L(70.5, 'N'); A(73, 'cross'); A(75, 'sweep'); L(76.5, 'W'); A(79, 'cut'); A(81, 'cross'); X(84);
     A(87, 'sweep'); L(88.5, 'NE'); A(91, 'cross'); A(93, 'cut'); A(95, 'sweep');
-    kyo(101, 1, ['NE', 'N', 'NW']);
-    X(106); X(106.5); X(107);
+    kyo(101, 2, ['NE', 'N', 'NW']);
+    X(107); X(107.5); X(108);
     A(111, 'sweep'); L(112.5, 'N'); A(115, 'cut'); X(118); X(119); A(122, 'sweep'); X(124, true);
   }
   // Where the march starts and the finale starts, in the 128-beat layout.

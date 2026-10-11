@@ -42947,7 +42947,20 @@ console.log('\n--- Shadow Lionheart\'s song: his theme, two 凶, and the finale 
   }
   const gaps = BM.resolveChart(BM.generateChart('shadow', 'hard')).filter((a) => a.kyo > 1).map((a, i, xs) => a.beat - (BM.resolveChart(BM.generateChart('shadow', 'hard')).find((b) => b.kyoG === a.kyoG && b.kyo === a.kyo - 1).beat));
   ok('every level of his song is fair, warns nothing, has two 凶 that each make her move, and ends in the air', !bad.length, bad.join(' | '));
-  ok('...and on HARD one 凶 comes a beat apart: two steps a beat', Math.min(...gaps) === 1 && BM.movesBetween(0, { beat: 1, tell: 0.75, kyo: 2 }) === 2, gaps.join(' '));
+  ok('...and his 凶 are two beats apart on every level: a beat on, a beat of rest', Math.min(...gaps) === BM.CROSS_REST && BM.movesBetween(0, { beat: 1, tell: 0.75, kyo: 2 }) === 2, gaps.join(' '));
+  /* Richard, playing Nightmare: "the cross-slash is executed on each beat, one
+     after another (for instance beats: 73, 74, and 75). This is too fast to be
+     playable, there needs to be at least a beat rest between each
+     cross-slash." HARD's 凶 was a beat apart in every one of his songs, and the
+     generator's one-beat gaps made X-X pairs in thirteen other HARD charts. */
+  {
+    const close = [];
+    for (const s of BM.SONGS) for (const d of BM.DIFF_IDS) {
+      const x = BM.generateChart(s.id, d).events.filter((e) => e.attack === 'cross').map((e) => e.beat);
+      for (let i = 1; i < x.length; i++) if (x[i] - x[i - 1] < BM.CROSS_REST) close.push(`${s.id} ${d} ${x[i - 1]}->${x[i]}`);
+    }
+    ok('...and no chart of any song at any level has two crosses closer than two beats', !close.length, close.slice(0, 6).join(' | '));
+  }
 }
 
 console.log('\n--- his recordings: one song per level, looped on the beat, won in the fight ---');
