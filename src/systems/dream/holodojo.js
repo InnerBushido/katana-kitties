@@ -170,6 +170,9 @@ export function boxesOverlap(a, b, pad = 0.4) {
  * way round. `items` are `{ box: {hw, hh}, spots: [{x, z}], prev }`; `prev`
  * comes back set to the spot chosen.
  */
+/** How fast a readout's drawn place catches up with its spot, per second. */
+export const GLIDE = 3;
+
 export function placeReadouts(items, fixed) {
   const down = fixed.slice();
   for (const it of items) {
@@ -393,6 +396,8 @@ export function holoDojo(dojo) {
   parts.quad = { meshes: quads, label: quadLabel, now: -1, flash: 0, at: -1 };
   /** Where each readout went last frame (see placeReadouts). */
   parts.spots = {};
+  /** ...and where it is DRAWN, easing toward that spot. */
+  parts.glide = {};
 
   // THE PROJECTOR: a rim of light, and a ring that sweeps out from the origin.
   const rim = new THREE.Mesh(
@@ -559,10 +564,26 @@ export function holoDojo(dojo) {
         })));
         placeReadouts(items, fixed);
         const lift = { quad: 3.2 };
+        /* ...AND IT GLIDES THERE. Richard: "the Quadrant text is jumping
+           around, we should make it be more stationary or more smoothly
+           follow the player as they move around." The spot is still chosen
+           by placeReadouts — that is what keeps it off the other labels — but
+           a change of spot used to be a cut: the name jumped up to 30 units
+           in one frame whenever the point or her vector walked into it, and
+           across the floor at every new quadrant. Now the drawn label eases
+           to its spot (`GLIDE`, a third of a second), and snaps only when it
+           has been off screen. */
+        const dt = Math.min(0.1, Math.max(0, t - (parts.glideAt ?? -1)));
+        const fresh = parts.glideAt == null || t - parts.glideAt > 0.5;
+        parts.glideAt = t;
+        const e = 1 - Math.exp(-dt * GLIDE);
         for (const it of items) {
           parts.spots[it.key] = it.prev;
           const s = it.spots[it.prev];
-          it.l.position.set(s.x, lift[it.key], s.z);
+          const g = (parts.glide[it.key] ??= { x: s.x, z: s.z });
+          if (fresh) { g.x = s.x; g.z = s.z; } else { g.x += (s.x - g.x) * e; g.z += (s.z - g.z) * e; }
+          g.tx = s.x; g.tz = s.z;
+          it.l.position.set(g.x, lift[it.key], g.z);
         }
       }
     },

@@ -36049,16 +36049,22 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
          and ask its box against every other label on the floor. */
       let frames = 0; let clash = 0; let hops = 0; let worst = '';
       let last = null;
+      let jump = 0; let wasAt = null;
       for (const rad of [1, 1.3]) {
         for (let k = 0; k < 96; k++) {
           at((k / 96) * Math.PI * 2 + 0.01, rad);
           holo.update(1 / 60, [walker]);
-          fx.update(8 + k / 60, [walker]);
+          fx.update(8 + (rad - 1) * 20 + k / 60, [walker]);
           const mine = [X.quad.label].filter((l) => l.visible);
           const others = holo.labels.filter((l) => l.visible && !mine.includes(l));
           frames++;
-          const bad = mine.some((a, i) => others.some((b) => HD.boxesOverlap(HD.labelBox(a), HD.labelBox(b), 0))
-            || mine.some((b, j) => j > i && HD.boxesOverlap(HD.labelBox(a), HD.labelBox(b), 0)));
+          // Asked of the SPOT it is heading for: on its way there it glides (below).
+          const box = (a) => { const g = X.glide.quad; return HD.labelBox(a, g.tx, g.tz); };
+          const bad = mine.some((a, i) => others.some((b) => HD.boxesOverlap(box(a), HD.labelBox(b), 0))
+            || mine.some((b, j) => j > i && HD.boxesOverlap(box(a), HD.labelBox(b), 0)));
+          const pos = X.quad.label.position;
+          if (wasAt && k) jump = Math.max(jump, Math.hypot(pos.x - wasAt.x, pos.z - wasAt.z));
+          wasAt = { x: pos.x, z: pos.z };
           if (bad) { clash++; worst ||= `θ ${((k / 96) * 360).toFixed(0)}° at ${rad}`; }
           const now = JSON.stringify(X.spots);
           if (last && now !== last) hops++;
@@ -36067,6 +36073,11 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       }
       ok('...and no readout lands on another label, all the way round, on the circle and off it',
         clash === 0, `${clash} of ${frames} frames, first ${worst}; ${hops} spot changes`);
+      /* Richard: "the Quadrant text is jumping around". It changes spot on this
+         lap (a new quadrant is a new quarter), and it used to change in one
+         frame — up to 30 units. It glides now: no frame moves it 2 units. */
+      ok('...and the quadrant\'s name GLIDES to a new spot rather than jumping there',
+        hops > 0 && jump < 2, `${hops} spot changes, the most it moved in a frame ${jump.toFixed(2)}`);
       at(0.8, 1.3);
       holo.update(1 / 60, [walker]);
     }
