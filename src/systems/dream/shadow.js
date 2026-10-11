@@ -111,6 +111,30 @@ export const CROSS = { tell: 1.2, len: 14, half: 1.3, dmg: 22, open: 2.2, chain:
  * 凶 he dashes again, so the next one comes from a new side.
  */
 export const CIRCLE = { r: 6.5, dashV: 30, dashMin: 0.14, dashMax: 0.45, crossReach: 7 };
+
+/**
+ * NOT EVERY BLOW FROM A NEW SPOT, AND NOT IN A ROTA. Richard: "currently, he
+ * will always move to a position when attacking on hard/very hard, instead
+ * let's make it that there is a 50 - 75% chance he will move before attacking
+ * and sometimes, he will just do a normal attack without needing to move or
+ * reposition. When moving and doing the circular attack, he shouldn't be so
+ * far away from the player. Circular attack should be 50% where he is
+ * standing without needing to move ... Also, there needs to be more
+ * randomness with which ability he will do next, as currently, seems like it
+ * keeps alternating."
+ *   · `move`: the chance he dashes before a slam or a Cross Slash (0.625, the
+ *     middle of 50-75%); `moveSweep` the chance before a sweep (0.5).
+ *   · `sweepR`: a sweep he dashes for lands him this close to her — inside
+ *     the sweep's own 6.5, where it can catch her — not out at CIRCLE.r.
+ *   · Standing still is only allowed when the blow can reach her from where
+ *     he is: a slam needs her within its 11, a sweep within its ring. Else he
+ *     dashes anyway — a blow that cannot land teaches nothing.
+ *   · WHICH blow: drawn at random (seeded — house style), weighted by how
+ *     often the level's `order` names it, so a level keeps its character
+ *     (HARD is still mostly Cross Slashes), and never `repeat` of one in a
+ *     row. It used to be `order[n % length]`: a rota she could learn.
+ */
+export const PICK = { move: 0.625, moveSweep: 0.5, sweepR: 3.6, repeat: 2 };
 export const CIRCLE_SPOTS = ['W', 'NW', 'N', 'NE', 'E'];
 
 /** Unit vector from her to spot `s`, off a lens looking along `view`. */
@@ -1176,7 +1200,16 @@ export class ShadowFight {
     if (a.kind === 'idle' && this.L.circle) {
       const n = d || 1;
       b.facing = { x: (tx - o.x) / n, z: (tz - o.z) / n };
-      if (a.t <= 0) { this._dashTo(tgt, null); return; }
+      if (a.t <= 0) {
+        // Which blow, and whether he moves for it (PICK).
+        const kind = this._pickKind();
+        const reach = kind === 'slam' ? d <= SLAM.len : kind === 'sweep' ? d <= SWEEP.r - 0.5 : true;
+        const move = !reach || this._roll() < (kind === 'sweep' ? PICK.moveSweep : PICK.move);
+        this.lastMove = move;
+        if (move) this._dashTo(tgt, { force: kind }, kind === 'sweep' ? PICK.sweepR : CIRCLE.r);
+        else this._choose(tgt, d, kind);
+        return;
+      }
       // Between blows: keep his spot round her, at walking pace.
       this.spot ??= this._nearestSpot(tx, tz);
       const goal = circleSpot(tx, tz, this.spot, this.view, this.centre) ?? upstageSpot(tx, tz, this.view ?? { x: 0, z: 1 }, this.centre, CIRCLE.r);
@@ -1261,18 +1294,37 @@ export class ShadowFight {
     return best;
   }
 
-  /** Off to another of her five spots, fast; `then` is the blow to throw on landing. */
-  _dashTo(tgt, then) {
+  /** A number in [0, 1). SEEDED, not Math.random: what he does must replay,
+   *  or a check that walks the fight is a coin flip (house style). */
+  _roll() {
+    this._rng = ((this._rng ?? 7) * 1103515245 + 12345) % 2147483648;
+    return this._rng / 2147483648;
+  }
+
+  /** The next blow (PICK): weighted by the level's `order`, at random, and
+   *  never more than `repeat` of one kind in a row. Phase one is slams and
+   *  sweeps only, as it always was. */
+  _pickKind() {
+    const order = this.phase === 2 ? this.L.order : ['slam', 'sweep'];
+    const recent = this._recent ?? [];
+    const banned = recent.length >= PICK.repeat && recent.slice(-PICK.repeat).every((k) => k === recent[recent.length - 1])
+      ? recent[recent.length - 1] : null;
+    const pool = order.filter((k) => k !== banned);
+    const kind = (pool.length ? pool : order)[Math.floor(this._roll() * (pool.length || order.length))];
+    return kind;
+  }
+
+  /** Off to another of her five spots, fast; `then` is the blow to throw on
+   *  landing; `r` how far from her (a sweep is thrown from closer in). */
+  _dashTo(tgt, then, r = CIRCLE.r) {
     const b = this.boss;
     const o = b.local;
     const tx = tgt.position.x - SIM.dx; const tz = tgt.position.z - SIM.dz;
     const open = CIRCLE_SPOTS.filter((s) => s !== this.spot)
-      .map((s) => ({ s, q: circleSpot(tx, tz, s, this.view, this.centre) })).filter((c) => c.q);
-    /* SEEDED, not Math.random: the order he picks sides in must replay, or a
-       check that walks the fight is a coin flip (house style). */
-    this._rng = ((this._rng ?? 7) * 1103515245 + 12345) % 2147483648;
-    const pick = open.length ? open[Math.floor((this._rng / 2147483648) * open.length)]
-      : { s: this.spot, q: upstageSpot(tx, tz, this.view ?? { x: 0, z: 1 }, this.centre, CIRCLE.r) };
+      .map((s) => ({ s, q: circleSpot(tx, tz, s, this.view, this.centre, r) })).filter((c) => c.q);
+    const roll = this._roll();
+    const pick = open.length ? open[Math.floor(roll * open.length)]
+      : { s: this.spot, q: upstageSpot(tx, tz, this.view ?? { x: 0, z: 1 }, this.centre, r) };
     const dist = Math.hypot(pick.q.x - o.x, pick.q.z - o.z);
     const len = Math.max(CIRCLE.dashMin, Math.min(CIRCLE.dashMax, dist / CIRCLE.dashV));
     this.act = { kind: 'dash', t: 0, u: 0, len, from: { x: o.x, z: o.z }, to: pick.q, spot: pick.s, then };
@@ -1287,11 +1339,12 @@ export class ShadowFight {
     const y = this.isle.y;
     const L = this.L;
     const K = this._party();
-    const order = this.phase === 2 ? L.order : ['slam', 'sweep'];
     this.n = (this.n ?? -1) + 1;
-    let kind = force ?? order[this.n % order.length];
+    let kind = force ?? this._pickKind();
     // A sweep with nobody near it is a wasted lesson: slam instead.
     if (!force && kind === 'sweep' && d > SWEEP.r + 1) kind = 'slam';
+    // What he threw, for `_pickKind`'s no-three-in-a-row (a 凶's later Xs are one blow).
+    if (!(kind === 'cross' && chain != null && chain < 3)) this._recent = [...(this._recent ?? []).slice(-3), kind];
     const meshes = [];
     let tell;
     let say;

@@ -1,6 +1,15 @@
 /* ---------------------------------------------------------------------------
-   記 THE KATA BOARD — every kitten's best Kata Trace scores, on a platform of
-   its own off the far rim of the Kata Trace island.
+   記 THE KATA BOARD — every kitten's best Kata Trace scores, in the
+   north-east corner of the Kata Trace island.
+
+   ON THE ISLAND, NOT OFF IT. It was a platform of its own off the far rim,
+   over a short bridge, and Richard: "the bridge looks bad, and the camera
+   transitions are interfering with the Kata Board as it is too close to the
+   camera transition area which is overriding the camera and cant see the
+   board as a result. Instead of having a separate island for this, maybe
+   let's put this at the North East section of the Kata Trace island." The
+   island grew from r 22 to 28 to make the room (islands.js): at 22 the
+   corner was all Lionheart's attack spots for the top-right floor.
 
    Richard, 2026-10-10: "a separate platform with leaderboards, per player or
    all players. Organised mainly by song, with highest scores, and filters for
@@ -32,14 +41,21 @@ import { Kiosk } from './kiosk.js';
 import { HoloPanel } from './holo.js';
 import * as BM from './beatmap.js';
 // A cycle (kata.js builds the board), safe because it is only read in the constructor.
-import { markOffset } from './kata.js';
+import { markOffset, SCREEN } from './kata.js';
+import * as THREE from 'three';
 
 /**
- * Where it floats, off the Kata island's far rim along its `fwd` (the line
- * from the hub across the island): `gap` of void and a short bridge, so it
- * reads as somewhere you go, not a corner of the floors. `r` is its own disc.
+ * Where it stands: `ang` degrees anticlockwise from screen-right, `dist` from
+ * the island's middle — the corner as she SEES it, since the camera never
+ * turns (kata.js `SCREEN`). 65° at 21.5 is measured: 6.2 from the top-right
+ * floor's nearest attack spot, 10.9 from the top-left's, its kiosk 24.4 out on
+ * a rim of 28, and 31 from the hub bridge's mouth, where the lens changes.
+ * `r` is the gold ring on the floor that says where the board's area is.
  */
-export const BOARD = { r: 8, gap: 6, rows: 8, kioskOff: 5.6, panelOff: 3.2, panelY: 3.6, menuOff: 2 };
+export const BOARD = { r: 5.5, ang: 65, dist: 21.5, rows: 8, kioskOff: 5.6, panelOff: 2.4, panelY: 3.0, menuOff: 2 };
+/* panelOff 2.4 / panelY 3.0, not 3.2 / 3.6: on the island the lens follows
+   her a little lower than it did on the old platform, and the board's title
+   went under the HUD (browser, 800x475, standing in the ring). */
 
 /** The key a score is filed under. Speed as written in `BM.SPEEDS`. */
 export const runKey = (song, diff, speed) => `${song}|${diff}|${speed}`;
@@ -94,27 +110,25 @@ export class KataBoard {
   constructor(hall, isle) {
     this.hall = hall;
     this.dream = hall.dream;
-    const f = isle.fwd;
-    const d = isle.r + BOARD.gap + BOARD.r;
-    this.x = isle.x + f.x * d;
-    this.z = isle.z + f.z * d;
+    const a = (BOARD.ang * Math.PI) / 180;
+    const v = { x: Math.cos(a), y: Math.sin(a) };
+    this.x = isle.x + (SCREEN.right.x * v.x + SCREEN.up.x * v.y) * BOARD.dist;
+    this.z = isle.z + (SCREEN.right.z * v.x + SCREEN.up.z * v.y) * BOARD.dist;
     this.y = isle.y;
     this.r = BOARD.r;
     this.isle = isle;
     const sim = this.dream.sim;
-    sim.addDisc({ x: this.x, z: this.z, r: BOARD.r, y: this.y, name: 'kataboard', grid: 2, colour: HOLO.cyan, rim: HOLO.gold });
-    this.link = {
-      a: { x: isle.x + f.x * (isle.r - 2), z: isle.z + f.z * (isle.r - 2), y: isle.y },
-      b: { x: this.x - f.x * (BOARD.r - 2), z: this.z - f.z * (BOARD.r - 2), y: this.y },
-    };
-    sim.addBridge(this.link.a, this.link.b, { wobble: 0.6, waves: 1, name: 'kataboard bridge' });
+    // A gold ring and a faint fill on the island's own floor: the area, without a deck of its own.
+    const mat = (c, o) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: o, depthWrite: false, toneMapped: false });
+    this.ring = new THREE.Mesh(new THREE.RingGeometry(BOARD.r - 0.3, BOARD.r, 64).rotateX(-Math.PI / 2), mat(HOLO.gold, 0.75));
+    this.fill = new THREE.Mesh(new THREE.CircleGeometry(BOARD.r - 0.3, 64).rotateX(-Math.PI / 2), mat(HOLO.gold, 0.08));
+    for (const m of [this.ring, this.fill]) { m.position.set(this.x, this.y + 0.05, this.z); sim.root.add(m); }
     this.filter = { song: 'vr', diff: 'all', speed: 'all', who: 'all' };
-    /* PLACED BY THE SCREEN, NOT BY THE ISLAND: the simulator's camera never
-       turns (kata.js `SCREEN`), so the board stands on the platform's far
-       side as she sees it and the kiosk out to its RIGHT. Laid out along the
-       bridge instead, the kiosk's sign sat square across the foot of the
-       board in the first render; at 5.0 up and 6.6 tall the board's title
-       was off the top of her pane, standing on the platform. */
+    /* PLACED BY THE SCREEN: the simulator's camera never turns (kata.js
+       `SCREEN`), so the board stands on the ring's far side as she sees it
+       and the kiosk out to its RIGHT. Laid out the other way, the kiosk's
+       sign sat square across the foot of the board in the first render; at
+       5.0 up and 6.6 tall the board's title was off the top of her pane. */
     const po = markOffset('N', BOARD.panelOff);
     const ko = markOffset('E', BOARD.kioskOff);
     this.panel = new HoloPanel({ w: 9.4, h: 5.6, px: 76, edge: HOLO.gold });
@@ -176,20 +190,16 @@ export class KataBoard {
       { text: () => `WHO  ◀ ${f.who === 'all' ? 'everybody' : `just ${f.who}`} ▶`, cycle: () => { f.who = f.who === 'all' ? name : 'all'; this._paint(); } },
       { text: 'done', dim: true, act: () => this.dream.closeChoice(p) },
     ];
-    /* Off the platform's near middle, not the kiosk: the kiosk is out on the
+    /* Off the ring's near middle, not the kiosk: the kiosk is out on the
        right, and a menu hung off it opened under the corner minimap. */
     const m = markOffset('S', BOARD.menuOff);
     this.dream.openChoice(p, { title: `記 KATA BOARD — ${name}`, rows, start: 0, anchor: { x: this.x + m.x, y: this.y, z: this.z + m.z } });
     return true;
   }
 
-  /** Is this spot on the board's platform or the bridge to it (in the layer)? */
+  /** Is this spot inside the board's ring (in the layer)? */
   covers(x, z, pad = 0.5) {
-    if (Math.hypot(x - this.x, z - this.z) <= this.r + pad) return true;
-    const { a, b } = this.link;
-    const vx = b.x - a.x; const vz = b.z - a.z;
-    const t = Math.max(0, Math.min(1, ((x - a.x) * vx + (z - a.z) * vz) / (vx * vx + vz * vz)));
-    return Math.hypot(x - (a.x + vx * t), z - (a.z + vz * t)) <= 2.2 + 1 + pad;
+    return Math.hypot(x - this.x, z - this.z) <= this.r + pad;
   }
 
   /** Repainted on a filter change, on a new score, and once a second besides —

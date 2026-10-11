@@ -36046,43 +36046,48 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       ok('...and the quadrant she is in is lit in its own neon, named with its two signs, and flares on the way in',
         seen.every(Boolean) && new Set(HD.QUAD_C).size === 4
         && HD.QUAD_C.every((c) => !Object.values(HD.AXIS_C).includes(c)), seen.join());
-      /* AND NONE OF IT ON TOP OF ANYTHING ELSE. The first cut put each readout
-         at one fixed offset from its arrow, and at θ = 46° four of them were
-         stacked over the point. Only the quadrant's name is placed now (the
-         vectors' readouts are gone), and it still has to miss the axis names
-         and the leg labels. Walk two laps — on the circle and outside it —
-         and ask its box against every other label on the floor. */
-      let frames = 0; let clash = 0; let hops = 0; let worst = '';
-      let last = null;
-      let jump = 0; let wasAt = null;
+      /* ITS NAME STAYS PUT. Richard: "The quadrant text in the dojo of the
+         turning circle is annoying as it is following the player around,
+         lets just have it be static somewhere near the circle ... or can
+         just be text that fades in and out in each quadrant." Four names,
+         one per quarter, standing outside the circle on the quarter's middle
+         line. Walk two laps — on the circle and outside it — and ask: does
+         any name ever move, is the lit quarter's the one that shows (and
+         only it, once the fade has run), and is it ever on another label? */
+      const home = X.quad.labels.map((l) => l.position.clone());
+      let frames = 0; let clash = 0; let moved = 0; let wrong = 0; let worst = '';
+      let tt = 30;
       for (const rad of [1, 1.3]) {
         for (let k = 0; k < 96; k++) {
           at((k / 96) * Math.PI * 2 + 0.01, rad);
           holo.update(1 / 60, [walker]);
-          fx.update(8 + (rad - 1) * 20 + k / 60, [walker]);
-          const mine = [X.quad.label].filter((l) => l.visible);
-          const others = holo.labels.filter((l) => l.visible && !mine.includes(l));
+          // Half a second of frames a step, so every fade has finished before it is asked.
+          for (let n = 0; n < 30; n++) fx.update(tt += 1 / 60, [walker]);
+          const q = HD.quadrantOf(holo.theta);
+          const vis = X.quad.labels.map((l) => l.visible);
+          if (vis.filter(Boolean).length !== 1 || !vis[q] || X.quad.labels[q].mat.opacity < 0.5) { wrong++; worst ||= `θ ${((k / 96) * 360).toFixed(0)}°: ${vis}`; }
+          moved = Math.max(moved, ...X.quad.labels.map((l, i) => l.position.distanceTo(home[i])));
+          const mine = X.quad.labels.filter((l) => l.visible);
+          const others = holo.labels.filter((l) => l.visible && !X.quad.labels.includes(l));
           frames++;
-          // Asked of the SPOT it is heading for: on its way there it glides (below).
-          const box = (a) => { const g = X.glide.quad; return HD.labelBox(a, g.tx, g.tz); };
-          const bad = mine.some((a, i) => others.some((b) => HD.boxesOverlap(box(a), HD.labelBox(b), 0))
-            || mine.some((b, j) => j > i && HD.boxesOverlap(box(a), HD.labelBox(b), 0)));
-          const pos = X.quad.label.position;
-          if (wasAt && k) jump = Math.max(jump, Math.hypot(pos.x - wasAt.x, pos.z - wasAt.z));
-          wasAt = { x: pos.x, z: pos.z };
-          if (bad) { clash++; worst ||= `θ ${((k / 96) * 360).toFixed(0)}° at ${rad}`; }
-          const now = JSON.stringify(X.spots);
-          if (last && now !== last) hops++;
-          last = now;
+          const hit = others.find((b) => mine.some((a) => HD.boxesOverlap(HD.labelBox(a), HD.labelBox(b), 0)));
+          if (hit) { clash++; worst ||= `on "${want(hit)}" at θ ${((k / 96) * 360).toFixed(0)}° r ${rad}`; }
         }
       }
-      ok('...and no readout lands on another label, all the way round, on the circle and off it',
-        clash === 0, `${clash} of ${frames} frames, first ${worst}; ${hops} spot changes`);
-      /* Richard: "the Quadrant text is jumping around". It changes spot on this
-         lap (a new quadrant is a new quarter), and it used to change in one
-         frame — up to 30 units. It glides now: no frame moves it 2 units. */
-      ok('...and the quadrant\'s name GLIDES to a new spot rather than jumping there',
-        hops > 0 && jump < 2, `${hops} spot changes, the most it moved in a frame ${jump.toFixed(2)}`);
+      const outside = X.quad.labels.every((l, i) => {
+        const a = Math.atan2(-l.position.z, l.position.x);
+        return Math.hypot(l.position.x, l.position.z) > MD.DOJO_RADIUS && HD.quadrantOf(a) === i;
+      });
+      ok('...and the quadrant\'s name STAYS PUT: one per quarter, outside the circle, never moving all the way round',
+        moved === 0 && outside, `moved ${moved.toFixed(3)}`);
+      ok('...only the lit quarter\'s shows, faded in, and none is ever on another label',
+        wrong === 0 && clash === 0, `${wrong} wrong of ${frames}, first ${worst}; ${clash} clashes`);
+      // The fade itself: a step into the next quarter is not a cut.
+      at(0.3, 1); holo.update(1 / 60, [walker]); for (let n = 0; n < 60; n++) fx.update(tt += 1 / 60, [walker]);
+      at(1.9, 1); holo.update(1 / 60, [walker]); for (let n = 0; n < 6; n++) fx.update(tt += 1 / 60, [walker]);
+      const mid = [X.quad.labels[0].mat.opacity, X.quad.labels[1].mat.opacity];
+      ok('...and it FADES between them — a tenth of a second into the next quarter both are part-way',
+        mid[0] > 0.05 && mid[0] < 0.95 && mid[1] > 0.05 && mid[1] < 0.95, mid.map((x) => x.toFixed(2)).join(' '));
       at(0.8, 1.3);
       holo.update(1 / 60, [walker]);
     }
@@ -37149,18 +37154,38 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         stF.koAt = stF.clock;
         stF.koPos = { x: stF.lion.position.x, z: stF.lion.position.z, y: 0 };
         const cam = new THREE.PerspectiveCamera();
-        let kneelAt = null; let winkOn = null; let winkOff = null; let lowest = 9; let bothShown = 0;
+        let kneelAt = null; let winkOn = null; let winkOff = null; let bothShown = 0;
+        let maxRoll = 0; let lowest = 9; let peakLean = 0; let peakAt = null; let leanEnd = 9; let landPos = null; let endPos = null;
+        const ax0 = { x: stF.lion.position.x, z: stF.lion.position.z };
         for (let f = 0; f < 120 * 6.5; f++) {
           stF.tickFx(1 / 120);
           stF.update(h.songT, false);
           stF.faceCamera(cam);
           const kk = stF.clock - stF.koAt;
-          if (stF.kneel && kneelAt == null) kneelAt = kk;
+          maxRoll = Math.max(maxRoll, Math.abs(stF.roll));
+          lowest = Math.min(lowest, stF.lion.position.y);
+          if (stF.kneel && kneelAt == null) { kneelAt = kk; landPos = { x: stF.lion.position.x, z: stF.lion.position.z }; }
+          if (stF.lean > peakLean) { peakLean = stF.lean; peakAt = kk; }
+          if (kk > KT.KO.land + KT.KO.settle + 0.05) leanEnd = Math.min(leanEnd, stF.lean === 0 ? 0 : stF.lean);
           if (stF.winking && winkOn == null) winkOn = kk;
           if (winkOn != null && !stF.winking && winkOff == null) winkOff = kk;
-          if (kk > 0.35 && !stF.kneel) lowest = Math.min(lowest, stF.lion.position.y - KT.KO.lift * Math.abs(Math.sin(stF.roll)));
           if (stF.koSprite?.visible && stF.sprite?.visible) bothShown++;
         }
+        endPos = { x: stF.lion.position.x, z: stF.lion.position.z };
+        const skid = landPos ? Math.hypot(endPos.x - landPos.x, endPos.z - landPos.z) : 0;
+        const tilt = (stF.koSprite.mesh ?? stF.koSprite).rotation.z;
+        /* Richard: "instead of having Lionheart fall sideways to the ground
+           after being defeated, just have him fall normally to the ground on
+           his feet and when he hits the ground, have him play his kneeling
+           animation as he falls back slightly from the momentum of the hit." */
+        ok('...with his kneeling drawing he NEVER goes over sideways: a hop back, onto his feet, and straight onto his knees as he lands',
+          maxRoll === 0 && lowest >= 0 && kneelAt != null && Math.abs(kneelAt - KT.KO.land) < 0.02,
+          `roll ${maxRoll.toFixed(3)}, lowest ${lowest.toFixed(2)}, knees at ${kneelAt?.toFixed(2)}s`);
+        ok('...rocked back by the momentum — a lean that peaks just after he lands and settles to upright — and skidding on a little the way the blow sent him',
+          peakLean > KT.KO.lean * 0.5 && peakAt > KT.KO.land && peakAt < KT.KO.land + KT.KO.settle && leanEnd === 0 && tilt === 0
+          && Math.abs(skid - KT.KO.slide) < 0.05,
+          `lean ${peakLean.toFixed(3)} at ${peakAt?.toFixed(2)}s, after ${leanEnd}, skid ${skid.toFixed(2)}`);
+        void ax0;
         const ko = KT.KO;
         const clip = 2.16;
         ok('...then up onto his KNEES on his sword (lionheart/defeated.png), and a wink after "good job", all inside the won card',
@@ -37375,8 +37400,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const F = D.kata.floors;
     let close = Infinity;
     for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) close = Math.min(close, Math.hypot(F[i].x - F[j].x, F[i].z - F[j].z));
-    // The floors' kiosks: the 記 board's stands on its own platform, checked below.
-    const far = Math.max(...F.flatMap((fl) => fl.kiosks).map((k) => Math.hypot(k.x - I.x, k.z - I.z) + k.r));
+    const far = Math.max(...D.kata.kiosks.map((k) => Math.hypot(k.x - I.x, k.z - I.z) + k.r));
     ok('型 four kata floors, each clear of the next', close > 2 * 5.4 + 1, close.toFixed(1));
     ok('...and every kiosk on the island', far < I.r - 0.5, `${far.toFixed(1)} of ${I.r}`);
   }
@@ -37391,19 +37415,30 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const I = D.isles.kata;
     const B = D.kata.board;
     const F = D.kata.floors;
-    // A platform of its own: off the island, clear of every other deck, joined by a bridge you can stand on.
-    const decks = D.sim.decks.filter((k) => Number.isFinite(k.r) && k.name && k.name !== 'kataboard');
-    const gapTo = Math.min(...decks.map((k) => Math.hypot(k.x - B.x, k.z - B.z) - k.r - B.r));
-    const kioskIn = Math.hypot(B.kiosk.x - B.x, B.kiosk.z - B.z) + B.kiosk.r;
-    const mid = { x: (B.link.a.x + B.link.b.x) / 2, z: (B.link.a.z + B.link.b.z) / 2 };
-    const walk = [mid, { x: B.x, z: B.z }, { x: B.kiosk.x, z: B.kiosk.z }].map((q) => D.sim.heightAt(q.x + SW.SIM.dx, q.z + SW.SIM.dz)?.y);
-    ok('記 the Kata Board is a platform of its own, off the far rim, clear of every other deck, with its kiosk on it',
-      gapTo >= KB.BOARD.gap - 1e-6 && kioskIn < B.r - 0.5 && D.kata.stations.includes(B.kiosk.station)
-      // No pop-up card: in the first render it covered the board's right half.
-      && B.kiosk.o.card === null,
-      `${gapTo.toFixed(1)} clear of the nearest deck, kiosk ${kioskIn.toFixed(1)} of ${B.r}`);
-    ok('...and the bridge to it and its deck are ground she stands on, at the island\'s height',
-      walk.every((y) => Number.isFinite(y) && Math.abs(y - I.y) < 0.6), walk.map((y) => y?.toFixed?.(2)).join(' '));
+    /* ON THE ISLAND, in its north-east corner AS SHE SEES IT. Richard: "the
+       bridge looks bad, and the camera transitions are interfering with the
+       Kata Board ... maybe let's put this at the North East section of the
+       Kata Trace island." No deck and no bridge of its own; clear of every
+       floor and every one of Lionheart's attack spots; and far from the hub
+       bridge's mouth, where the lens changes. */
+    const KA = await import('../src/systems/dream/kata.js');
+    const rel = { x: B.x - I.x, z: B.z - I.z };
+    const sR = rel.x * KA.SCREEN.right.x + rel.z * KA.SCREEN.right.z;
+    const sU = rel.x * KA.SCREEN.up.x + rel.z * KA.SCREEN.up.z;
+    const ownDeck = D.sim.decks.some((k) => /kataboard/.test(k.name ?? ''));
+    const reach = Math.max(Math.hypot(rel.x, rel.z) + B.r, Math.hypot(B.kiosk.x - I.x, B.kiosk.z - I.z) + B.kiosk.r);
+    const spots = F.flatMap((fl) => ['C', 'N', 'NE', 'NW', 'E', 'W'].map((s) => { const o = KA.markOffset(s, KA.LION_D); return { x: fl.x + o.x, z: fl.z + o.z }; }));
+    const toSpot = Math.min(...spots.map((q) => Math.hypot(q.x - B.x, q.z - B.z)));
+    const toFloor = Math.min(...F.map((fl) => Math.hypot(fl.x - B.x, fl.z - B.z) - KA.FLOOR_R - B.r));
+    const mouth = { x: I.x - I.fwd.x * I.r, z: I.z - I.fwd.z * I.r };
+    const toMouth = Math.hypot(mouth.x - B.x, mouth.z - B.z);
+    const ground = D.sim.heightAt(B.x + SW.SIM.dx, B.z + SW.SIM.dz)?.y;
+    ok('記 the Kata Board is ON the island, in its north-east corner as she sees it — no platform and no bridge of its own',
+      sR > 0 && sU > 0 && sU > sR && !ownDeck && reach < I.r - 0.5 && Math.abs(ground - I.y) < 0.6
+      && D.kata.stations.includes(B.kiosk.station) && B.kiosk.o.card === null,
+      `screen (${sR.toFixed(1)}, ${sU.toFixed(1)}), reaches ${reach.toFixed(1)} of ${I.r}`);
+    ok('...clear of every floor and of Lionheart\'s spots, and far from the bridge mouth where the lens changes',
+      toFloor > 0 && toSpot > 5 && toMouth > 25, `floor ${toFloor.toFixed(1)}, spot ${toSpot.toFixed(1)}, mouth ${toMouth.toFixed(1)}`);
 
     // The ledger: her best BY SCORE for each song, level and speed.
     const P = new (await import('../src/systems/dream/progress.js')).DreamProgress(null);
@@ -37469,19 +37504,17 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const caught = fl.plate.layout.rows.map((q) => q.text).join(' | ');
     ok('...a caught run replaces it with what she had, said as CAUGHT, and the board keeps her best',
       /CAUGHT — 4,321/.test(caught) && /12,345/.test(B.lines().map((l) => l.text).join(' ')), caught);
-    // Over the bridge to the board, and onto it: still in the area.
+    // Over to the board: still in the area.
     her.position.set(B.x + SW.SIM.dx, B.y, B.z + SW.SIM.dz);
     D.kata.update(0);
     const onBoard = !!fl.last;
-    her.position.set(mid.x + SW.SIM.dx, B.y, mid.z + SW.SIM.dz);
-    D.kata.update(0);
-    const onBridge = !!fl.last;
+    const onBridge = true;
     // Back over the island's own bridge, towards the hub: gone.
     her.position.set(I.x - I.fwd.x * (I.r + 4) + SW.SIM.dx, I.y, I.z - I.fwd.z * (I.r + 4) + SW.SIM.dz);
     D.kata.update(0);
     const gone = fl.last === null && !/last:/.test(fl.plate.layout.rows.map((q) => q.text).join(' '));
-    ok('...and keeps it while she walks over to the board and stands on it, and drops it when she leaves the area',
-      onBoard && onBridge && gone, `board ${onBoard}, bridge ${onBridge}, gone ${gone}`);
+    ok('...and keeps it while she walks over to the board, and drops it when she leaves the area',
+      onBoard && onBridge && gone, `board ${onBoard}, gone ${gone}`);
     D.kata.ended(runOf({}), 'won');
     her.realm = null;
     D.kata.update(0);
@@ -38567,6 +38600,58 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       const off = Math.hypot(her.position.x - SW.SIM.dx - d.x, her.position.z - SW.SIM.dz - d.z);
       ok('激流 a Riptide stone that slides takes her with it, and the camera is behind her for them ("we need to have the camera go behind the player")',
         moved > 0.01 && off < 1e-6 && shoulder === 'stones', `stone moved ${moved.toFixed(3)}, she is ${off.toFixed(4)} off it, shot ${shoulder}`);
+
+      /* ...AND SHE CAN SEE HER FEET AND HER SHADOW. Richard: "the camera is
+         too high up and maybe a bit too zoomed in that we can't see the
+         players feet or shadow, making it very difficult to land on the
+         platform when jumping." Through the player's own lens (38°, 1.9:1,
+         placed off the focus the way player.js places it), standing on a
+         stone and at the top of a hop: her feet and the stone under her
+         inside the frame, clear of the controls strip at the bottom (−0.82)
+         and the HUD at the top (0.8). */
+      {
+        const lensFrom = (fo) => {
+          const cam = new THREE.PerspectiveCamera(38, 1.9, 0.5, 4000);
+          cam.position.set(fo.centre.x + fo.dist * Math.sin(fo.yaw) * Math.cos(fo.pitch), fo.centre.y + fo.dist * Math.sin(fo.pitch),
+            fo.centre.z + fo.dist * Math.cos(fo.yaw) * Math.cos(fo.pitch));
+          cam.lookAt(fo.centre); cam.updateMatrixWorld(true);
+          return cam;
+        };
+        const ndcY = (cam, x, y, z) => new THREE.Vector3(x, y, z).project(cam).y;
+        for (let k = 0; k < 600; k++) G._easeCamera(1 / 60);
+        const top = d.y;
+        const apex = 11.2 ** 2 / (2 * 26);
+        const rows = [];
+        const centres = [];
+        for (const up of [0, apex]) {
+          her.position.set(d.x + SW.SIM.dx, top + up, d.z + SW.SIM.dz);
+          const fo = G.cameraFocus(her);
+          centres.push(fo.centre.y);
+          const cam = lensFrom(fo);
+          rows.push({ feet: ndcY(cam, her.position.x, top + up, her.position.z), shadow: ndcY(cam, her.position.x, top, her.position.z), head: ndcY(cam, her.position.x, top + up + 2.6, her.position.z) });
+        }
+        const inside = (v) => v > -0.8 && v < 0.75;
+        ok('激流 ...and behind her on the stones she can SEE HER FEET AND HER SHADOW, standing and at the top of a hop — the look-at pinned to the stones, not riding up with her',
+          rows.every((q) => inside(q.feet) && inside(q.shadow) && inside(q.head)) && Math.abs(centres[0] - centres[1]) < 1e-6
+          && Math.abs(G.cameraFocus(her).dist - SN.STONES_CAM.dist) < 0.05,
+          rows.map((q) => `feet ${q.feet.toFixed(2)} shadow ${q.shadow.toFixed(2)} head ${q.head.toFixed(2)}`).join(' | '));
+        // The Narrow Gaps' shot, panned down: "camera should be panned down a bit so we can see the players feet".
+        const gi = CO.SECTIONS.findIndex((x) => x.key === 'gaps');
+        G.run.sMax = CO.CP_S[gi] + 0.5; G.run.cp = gi;
+        const gq = isleSpot(I, CO.LANES[CO.SECTION.gaps.lane], CO.SECTION.gaps.cp - 0.5);
+        her.position.set(gq.x + SW.SIM.dx, I.y, gq.z + SW.SIM.dz);
+        for (let k = 0; k < 600; k++) G._easeCamera(1 / 60);
+        const gcam = lensFrom(G.cameraFocus(her));
+        const gFeet = ndcY(gcam, her.position.x, I.y, her.position.z);
+        const gHead = ndcY(gcam, her.position.x, I.y + 2.6, her.position.z);
+        ok('...and in the Narrow Gaps her feet are in the frame too (they were at −1.07, under it)',
+          inside(gFeet) && inside(gHead), `feet ${gFeet.toFixed(2)} head ${gHead.toFixed(2)}`);
+        // "the gaps are too narrow ... either make it less narrow, add a checkpoint in between, or reduce the number of gaps"
+        const rg = CO.courseById('riptide').sections.find((x) => x.key === 'gaps');
+        ok('激流 the Riptide\'s Narrow Gaps are wider and fewer: five curtains, not six, and gaps no narrower than the Gauntlet\'s',
+          rg.curtains.length === 5 && rg.gap.half >= CO.courseById('gauntlet').sections.find((x) => x.key === 'gaps').gap.half,
+          `${rg.curtains.length} curtains, half ${rg.gap.half}`);
+      }
       G.leaveGauntlet(her);
       D.drills[0]?.fail?.('test');
       D.drills[0]?.dispose?.(); D.drills[0] = null;
@@ -40875,19 +40960,81 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
           if (wasDash && F.act.kind !== 'dash') {
             const rx = BX.local.x - hx; const rz = BX.local.z - hz;
             const want = SH.circleDir(before.spot, view);
-            landings.push({ r: Math.hypot(rx, rz), on: (rx * want.x + rz * want.z) / Math.hypot(rx, rz), up: rx * view.x + rz * view.z, next: F.act.kind });
+            landings.push({ r: Math.hypot(rx, rz), on: (rx * want.x + rz * want.z) / Math.hypot(rx, rz), up: rx * view.x + rz * view.z, next: F.act.kind, what: F.act.what });
             if (F.act.kind === 'tell') attackAt++;
           }
           wasDash = F.act.kind === 'dash';
           if (F.act.kind === 'recover' && F.act.t > 0.5) F.act.t = 0.5;
         }
-        const badLand = landings.filter((q) => Math.abs(q.r - SH.CIRCLE.r) > 0.05 || q.on < 0.999 || q.up < -1e-6);
+        // A sweep he dashes for is thrown from closer in (PICK.sweepR): "he shouldn't be so far away from the player".
+        const badLand = landings.filter((q) => Math.abs(q.r - (q.what === 'sweep' ? SH.PICK.sweepR : SH.CIRCLE.r)) > 0.05 || q.on < 0.999 || q.up < -1e-6);
         ok('円 on HARD he DASHES to one of her five spots, lands on it, and his blow\'s tell starts on the frame he lands',
-          dashes >= 6 && landings.length >= 6 && badLand.length === 0 && attackAt === landings.length && longest <= SH.CIRCLE.dashMax,
+          dashes >= 6 && landings.length >= 6 && badLand.length === 0 && attackAt === landings.length && longest <= SH.CIRCLE.dashMax
+          && landings.some((q) => q.what === 'sweep'),
           `${dashes} dashes, ${landings.length} landed, ${badLand.length} off their spot, ${attackAt} straight into a blow, longest ${longest.toFixed(2)}s`);
+        const whooshes = fakeGame.sounds.filter((s) => s === 'specter').length; // before the seeded runs below add theirs
+
+        /* NOT EVERY BLOW FROM A NEW SPOT, AND NOT IN A ROTA. Richard: "there
+           is a 50 - 75% chance he will move before attacking and sometimes,
+           he will just do a normal attack without needing to move ...
+           Circular attack should be 50% where he is standing without needing
+           to move ... there needs to be more randomness with which ability he
+           will do next, as currently, seems like it keeps alternating."
+           Twelve seeds, twenty seconds each, her standing close (so every
+           blow CAN reach from where he is and the coin is all that decides).
+           Measured over the twelve: the move share of slams and Xs and of
+           sweeps, as a pooled fraction, and the blows' order. */
+        {
+          const keepD = F._dashTo; const keepC = F._choose;
+          const picks = [];
+          let rows = [];
+          F._dashTo = function (tgt, then, rr) { if (this.act?.kind === 'idle') picks.push({ kind: then?.force, move: true }); return keepD.call(this, tgt, then, rr); };
+          F._choose = function (tgt, dd, force, chain) {
+            if (this.act?.kind === 'idle') picks.push({ kind: force, move: false });
+            const out = keepC.call(this, tgt, dd, force, chain);
+            if (!(this.act?.what === 'cross' && chain != null && chain < 3)) rows.push(this.act?.what);
+            return out;
+          };
+          const seqs = [];
+          for (let seed = 1; seed <= 12; seed++) {
+            F._rng = seed * 7919; F._recent = [];
+            rows = [];
+            F._clearTells();
+            F.phase = 2;
+            F.act = { kind: 'idle', t: 0.2 };
+            BX.local.x = hx + 2.5; BX.local.z = hz; BX.group.position.x = BX.local.x; BX.group.position.z = BX.local.z;
+            for (let f = 0; f < 60 * 20; f++) {
+              F._think(1 / 60);
+              D.st[0].iframes = 9;
+              // Keep him in reach of her whatever he did: this asks about the coin, not the floor.
+              if (F.act.kind === 'idle' && Math.hypot(BX.local.x - hx, BX.local.z - hz) > 3) { BX.local.x = hx + 2.5; BX.local.z = hz; BX.group.position.x = BX.local.x; BX.group.position.z = BX.local.z; }
+              if (F.act.kind === 'recover' && F.act.t > 0.4) F.act.t = 0.4;
+            }
+            seqs.push(rows.slice());
+          }
+          F._dashTo = keepD; F._choose = keepC;
+          const share = (fn) => { const xs = picks.filter(fn); return xs.length ? xs.filter((q) => q.move).length / xs.length : NaN; };
+          const mOther = share((q) => q.kind !== 'sweep');
+          const mSweep = share((q) => q.kind === 'sweep');
+          const all = seqs.flat();
+          let triple = 0;
+          for (const sq of seqs) for (let i = 2; i < sq.length; i++) if (sq[i] === sq[i - 1] && sq[i] === sq[i - 2]) triple++;
+          // A rota would make every seed's sequence the same; and the old
+          // alternation never threw one kind twice running.
+          const distinct = new Set(seqs.map((sq) => sq.slice(0, 6).join())).size;
+          let twice = 0;
+          for (const sq of seqs) for (let i = 1; i < sq.length; i++) if (sq[i] === sq[i - 1]) twice++;
+          ok('円 on HARD he moves before a slam or an X about 50-75% of the time, and before a sweep about half — the rest from where he stands',
+            mOther >= 0.5 && mOther <= 0.75 && mSweep >= 0.35 && mSweep <= 0.65 && picks.length > 100,
+            `slam/X ${(mOther * 100).toFixed(0)}% moved, sweep ${(mSweep * 100).toFixed(0)}% moved, of ${picks.length} decisions`);
+          ok('...and WHICH blow is drawn at random — no rota (the twelve seeds open twelve ways), sometimes one kind twice, never three running',
+            triple === 0 && twice > 0 && distinct >= 8 && new Set(all).size === 3,
+            `${distinct} different openings of 12, ${twice} pairs, ${triple} triples, kinds ${[...new Set(all)].join(' ')}`);
+          F._clearTells();
+        }
         ok('...with a whoosh each time ("a \'whoosh\' or specter sound effect"), a sound the synth has',
-          fakeGame.sounds.filter((s) => s === 'specter').length === dashes && read('../src/core/audio.js').includes("case 'specter':"),
-          `${fakeGame.sounds.filter((s) => s === 'specter').length} of ${dashes}`);
+          whooshes === dashes && read('../src/core/audio.js').includes("case 'specter':"),
+          `${whooshes} of ${dashes}`);
 
         /* "The cross-slash should be limited in distance, mainly in front of
            Shadow, and no longer follows a player who is far away." */
@@ -41419,7 +41566,9 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
        area." */
     /* ...and then, third pass: "We should increase the area for looking down
        the bridge so that it happens sooner, so maybe 1.5x's - 2x's the radius
-       as it currently is." 1.75 times the 5.5. */
+       as it currently is." 1.75 times the 5.5. And the fourth: "the bridge
+       camera zooming before getting on the bridge radius is too big now, so
+       lets make it 10 - 15% smaller" — 12.5% off the 9.6. */
     const S0 = PK.PEEK.start;
     const far9 = tw(PK.PEEK.exit + 1, 60);
     const at7 = tw(S0 + 1.5, 60);
@@ -41427,8 +41576,8 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const at5once = tw(S0 - 0.5);
     const dwellN = Math.ceil(PK.PEEK.dwell / F) + 1;
     const at5dwell = tw(S0 - 0.5, dwellN);
-    ok('望 1.75 times the radius it was (9.6, not 5.5), and ON or OFF — never a dial on her distance',
-      fromHub && S0 === 9.6 && !far9 && !at7 && !at5once && at5dwell?.w === 1 && at5dwell.far === E.far,
+    ok('望 12.5% inside the 9.6 it was (8.4 — "10 - 15% smaller"), and ON or OFF — never a dial on her distance',
+      fromHub && S0 === 8.4 && Math.abs(S0 / 9.6 - 0.875) < 1e-9 && Math.abs(PK.PEEK.exit / 13 - 0.875) < 0.005 && !far9 && !at7 && !at5once && at5dwell?.w === 1 && at5dwell.far === E.far,
       `${PK.PEEK.exit + 1}: ${far9?.w ?? 0}, ${S0 + 1.5}: ${at7?.w ?? 0}, ${S0 - 0.5} once: ${at5once?.w ?? 0}, after ${dwellN} frames: ${at5dwell?.w ?? 0}`);
     D.st[0].peek = null;
     const deep = tw(2);
@@ -41455,6 +41604,37 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const back = ends.find((e) => e.road === E.road && e !== E);
     ok('...and from the island end of the same bridge it looks back at the hub',
       !!back && Math.hypot(back.far.x - dcW.x, back.far.z - dcW.z) < 1);
+
+    /* THE CIRCLE OUTRANKS THE BRIDGE. Richard: "If player is standing on an
+       interaction circle, let's not have the camera zoom in before crossing
+       the bridge ... The interaction circle should have camera priority" and
+       "if player is walking towards the interaction circle, it should not do
+       the camera zooming until they are approaching the bridge instead". A
+       kiosk circle is put down beside the mouth for the test. */
+    {
+      const keep = D.stations;
+      const L = (k, side = 0) => { const q = at(k); return { x: q.x - SW.SIM.dx - E.toward.z * side, y: E.mouth.y, z: q.z - SW.SIM.dz + E.toward.x * side, r: 1.6 }; };
+      D.stations = [...keep, L(S0 - 1)];
+      D.st[0].peek = null;
+      const inCircle = tw(S0 - 1, 60);
+      D.stations = keep;
+      D.st[0].peek = null;
+      const on = tw(4, dwellN);
+      D.stations = [...keep, L(3.6)];
+      const stepIn = tw(3.6, 1);
+      D.stations = [...keep, L(4.5)];
+      D.st[0].peek = null;
+      const toward = tw(S0 - 0.5, 60);
+      D.stations = [...keep, L(5, 4)];
+      D.st[0].peek = null;
+      const aside = tw(S0 - 0.5, 60);
+      D.stations = keep;
+      D.st[0].peek = null;
+      ok('望 standing in a kiosk\'s circle by a mouth there is NO look across, and one already up lets go as she steps into a circle',
+        !inCircle && on?.w === 1 && !stepIn, `in ${inCircle?.w ?? 0}, on ${on?.w ?? 0}, step in ${stepIn?.w ?? 0}`);
+      ok('...walking at a circle nearer than the mouth is going to the CIRCLE — no look across; a circle off to one side does not hold it back',
+        !toward && aside?.w === 1, `toward ${toward?.w ?? 0}, aside ${aside?.w ?? 0}`);
+    }
     // THE SHOT, measured through a lens: the island in the middle, her upper body in frame, below and beside it.
     const at4 = tw(4, dwellN);
     const cam = new THREE.PerspectiveCamera(38, 16 / 9, 0.1, 2000);

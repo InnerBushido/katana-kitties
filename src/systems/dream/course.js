@@ -229,8 +229,14 @@ const RIPTIDE = [
       { a: -2.5, b: 18.8, R: 2.2, y: 0.9, w: -2.0, ph: Math.PI / 2 },
       { a: 2.5, b: 18.8, R: 2.2, y: 0.9, w: 2.0, ph: -Math.PI / 2 },
     ] },
-  { key: 'gaps', name: 'NARROW GAPS', lane: 3, cp: 20.4, curtains: [15, 10, 5, 0, -5, -10],
-    gap: { half: 1.05, A: 1.1, w: 1.4, ph: [0, 1.6, 3.2, 4.8, 0.8, 2.4] }, beams: [0.5, 1.4, 2.3, 3.2, 4.1, 5.0, 5.9] },
+  /* FIVE CURTAINS, NOT SIX, AND WIDER GAPS. Richard: "on the Narrow Gaps on
+     Riptide, the gaps are too narrow and makes it very difficult to pass
+     through, either make it less narrow, add a checkpoint in between, or
+     reduce the number of gaps". Two of the three: half 1.05 -> 1.35 and one
+     curtain fewer, spread over the same lane. A hair wider than the
+     Gauntlet's 1.25, because these move further (A 1.1) and faster (w 1.4). */
+  { key: 'gaps', name: 'NARROW GAPS', lane: 3, cp: 20.4, curtains: [15, 9, 3, -3, -9],
+    gap: { half: 1.35, A: 1.1, w: 1.4, ph: [0, 1.6, 3.2, 4.8, 0.8] }, beams: [0.5, 1.4, 2.3, 3.2, 4.1, 5.0, 5.9] },
   { key: 'final', name: 'FINAL WAVE', lane: 4, cp: -19.2, bars: [-15, -11, -7, -3, 1, 5, 9], twin: 4.8,
     wave: { A: 1.8, C: 2.0, w: 2.6, k: -1.0 } },
 ];
@@ -244,7 +250,8 @@ const RIPTIDE = [
  * `useCourse`. Measured 2026-10-11 (walker / sprinter, seconds):
  *   ripple    L1 23.63/16.77  L2 23.27/16.03  L3 22.10/15.53  L4 22.43/14.23
  *   gauntlet  L1 26.90/19.70  L2 26.63/18.57  L3 25.87/16.63  L4 23.60/14.33
- *   riptide   L1 28.63/22.83  L2 27.80/23.27  L3 25.50/19.93  L4 25.33/16.60
+ *   riptide   L1 27.20/20.50  L2 26.47/21.33  L3 24.30/18.67  L4 24.83/16.60
+ *             (re-measured with its Narrow Gaps widened: five curtains, half 1.35)
  * and on every one of the twelve, nobody gets through without hopping.
  */
 export const COURSES = [
@@ -253,7 +260,7 @@ export const COURSES = [
   { id: 'gauntlet', name: 'THE GAUNTLET', kanji: '正弦', blurb: 'the course: eight obstacles to the gold line', sections: GAUNTLET,
     bands: [[240, 81, 40.5], [240, 80, 40], [240, 78, 39], [240, 20.1, 15.8]] },
   { id: 'riptide', name: 'THE RIPTIDE', kanji: '激流', blurb: 'the hard one: six stones that go round in circles', sections: RIPTIDE,
-    bands: [[240, 85.9, 42.9], [240, 83.4, 41.7], [240, 76.5, 38.3], [240, 23.2, 18.3]] },
+    bands: [[240, 81.6, 40.8], [240, 79.4, 39.7], [240, 72.9, 36.5], [240, 23.2, 18.3]] },
 ];
 export const courseById = (id) => COURSES.find((c) => c.id === id) ?? null;
 /** Where a level's stars go: see COURSES. */
