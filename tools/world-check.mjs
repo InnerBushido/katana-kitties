@@ -38600,6 +38600,58 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       const off = Math.hypot(her.position.x - SW.SIM.dx - d.x, her.position.z - SW.SIM.dz - d.z);
       ok('激流 a Riptide stone that slides takes her with it, and the camera is behind her for them ("we need to have the camera go behind the player")',
         moved > 0.01 && off < 1e-6 && shoulder === 'stones', `stone moved ${moved.toFixed(3)}, she is ${off.toFixed(4)} off it, shot ${shoulder}`);
+
+      /* ...AND SHE CAN SEE HER FEET AND HER SHADOW. Richard: "the camera is
+         too high up and maybe a bit too zoomed in that we can't see the
+         players feet or shadow, making it very difficult to land on the
+         platform when jumping." Through the player's own lens (38°, 1.9:1,
+         placed off the focus the way player.js places it), standing on a
+         stone and at the top of a hop: her feet and the stone under her
+         inside the frame, clear of the controls strip at the bottom (−0.82)
+         and the HUD at the top (0.8). */
+      {
+        const lensFrom = (fo) => {
+          const cam = new THREE.PerspectiveCamera(38, 1.9, 0.5, 4000);
+          cam.position.set(fo.centre.x + fo.dist * Math.sin(fo.yaw) * Math.cos(fo.pitch), fo.centre.y + fo.dist * Math.sin(fo.pitch),
+            fo.centre.z + fo.dist * Math.cos(fo.yaw) * Math.cos(fo.pitch));
+          cam.lookAt(fo.centre); cam.updateMatrixWorld(true);
+          return cam;
+        };
+        const ndcY = (cam, x, y, z) => new THREE.Vector3(x, y, z).project(cam).y;
+        for (let k = 0; k < 600; k++) G._easeCamera(1 / 60);
+        const top = d.y;
+        const apex = 11.2 ** 2 / (2 * 26);
+        const rows = [];
+        const centres = [];
+        for (const up of [0, apex]) {
+          her.position.set(d.x + SW.SIM.dx, top + up, d.z + SW.SIM.dz);
+          const fo = G.cameraFocus(her);
+          centres.push(fo.centre.y);
+          const cam = lensFrom(fo);
+          rows.push({ feet: ndcY(cam, her.position.x, top + up, her.position.z), shadow: ndcY(cam, her.position.x, top, her.position.z), head: ndcY(cam, her.position.x, top + up + 2.6, her.position.z) });
+        }
+        const inside = (v) => v > -0.8 && v < 0.75;
+        ok('激流 ...and behind her on the stones she can SEE HER FEET AND HER SHADOW, standing and at the top of a hop — the look-at pinned to the stones, not riding up with her',
+          rows.every((q) => inside(q.feet) && inside(q.shadow) && inside(q.head)) && Math.abs(centres[0] - centres[1]) < 1e-6
+          && Math.abs(G.cameraFocus(her).dist - SN.STONES_CAM.dist) < 0.05,
+          rows.map((q) => `feet ${q.feet.toFixed(2)} shadow ${q.shadow.toFixed(2)} head ${q.head.toFixed(2)}`).join(' | '));
+        // The Narrow Gaps' shot, panned down: "camera should be panned down a bit so we can see the players feet".
+        const gi = CO.SECTIONS.findIndex((x) => x.key === 'gaps');
+        G.run.sMax = CO.CP_S[gi] + 0.5; G.run.cp = gi;
+        const gq = isleSpot(I, CO.LANES[CO.SECTION.gaps.lane], CO.SECTION.gaps.cp - 0.5);
+        her.position.set(gq.x + SW.SIM.dx, I.y, gq.z + SW.SIM.dz);
+        for (let k = 0; k < 600; k++) G._easeCamera(1 / 60);
+        const gcam = lensFrom(G.cameraFocus(her));
+        const gFeet = ndcY(gcam, her.position.x, I.y, her.position.z);
+        const gHead = ndcY(gcam, her.position.x, I.y + 2.6, her.position.z);
+        ok('...and in the Narrow Gaps her feet are in the frame too (they were at −1.07, under it)',
+          inside(gFeet) && inside(gHead), `feet ${gFeet.toFixed(2)} head ${gHead.toFixed(2)}`);
+        // "the gaps are too narrow ... either make it less narrow, add a checkpoint in between, or reduce the number of gaps"
+        const rg = CO.courseById('riptide').sections.find((x) => x.key === 'gaps');
+        ok('激流 the Riptide\'s Narrow Gaps are wider and fewer: five curtains, not six, and gaps no narrower than the Gauntlet\'s',
+          rg.curtains.length === 5 && rg.gap.half >= CO.courseById('gauntlet').sections.find((x) => x.key === 'gaps').gap.half,
+          `${rg.curtains.length} curtains, half ${rg.gap.half}`);
+      }
       G.leaveGauntlet(her);
       D.drills[0]?.fail?.('test');
       D.drills[0]?.dispose?.(); D.drills[0] = null;

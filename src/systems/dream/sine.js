@@ -147,8 +147,28 @@ const secOf = (q) => SECTIONS.findIndex((s) => s.key === (q.sec === 'air' ? 'sto
  *    10 / 0.36 / lift 1.6 / lead 5 — right shape, but the card was cut off
  *      under the HUD.
  *  13 / 0.36 / lift 1.6 / lead 5: card at the top, the next three curtains
- *  and their gaps in the middle, her head at the bottom. */
-export const SHOULDER_CAM = { dist: 13, pitch: 0.36, lift: 1.6, lead: 5 };
+ *  and their gaps in the middle, her head at the bottom.
+ *  ...and her FEET under the bottom edge: Richard, "With the Narrow Gaps
+ *  camera, it is okay, but camera should be panned down a bit so we can see
+ *  the players feet." Measured through the 38° lens at 1.9:1, her feet were
+ *  at −1.07 in NDC — off the frame. 14 / 0.42 / lift 0.8 / lead 4 puts them
+ *  at −0.64 and her head at 0.00, the curtain ahead at −0.08. */
+export const SHOULDER_CAM = { dist: 14, pitch: 0.42, lift: 0.8, lead: 4 };
+/**
+ * THE STONES FROM BEHIND HER (the Riptide's, which slide). Richard: "the
+ * camera is too high up and maybe a bit too zoomed in that we can't see the
+ * players feet or shadow, making it very difficult to land on the platform
+ * when jumping. This camera can be more zoomed out since we need to see the
+ * players feet and shadow when they are jumping." It was the Gaps' shot, and
+ * its look-at rode up with her jump, so at the top of a hop the stone she
+ * was coming down on — and her shadow on it — were under the frame (−1.65).
+ * So this one is further back and steeper, and its look-at is PINNED to the
+ * stones' own height (`pin`) instead of her: she rises in the frame and the
+ * stones stay put. Measured (38°, 1.9:1): standing, feet and shadow at
+ * −0.44; at the top of a jump her feet −0.07, her head 0.40, her shadow still
+ * −0.44; the next stone 0.01 and the one after 0.31.
+ */
+export const STONES_CAM = { dist: 18, pitch: 0.55, lift: 1.0, lead: 3 };
 /** How fast the lens swings between the side-on shot and that one (1/s). */
 const CAM_EASE = 2.5;
 
@@ -1186,10 +1206,11 @@ export class SineGauntlet {
    *  down her lane the way it runs. */
   _wantShot() {
     const sec = this._shoulder();
-    if (!sec) return { yaw: this._yaw(), dist: COURSE_CAM.dist, pitch: COURSE_CAM.pitch, lead: 0, lift: COURSE_CAM.lift };
+    if (!sec) return { yaw: this._yaw(), dist: COURSE_CAM.dist, pitch: COURSE_CAM.pitch, lead: 0, lift: COURSE_CAM.lift, pin: 0 };
     const f = this.isle.fwd;
     const sg = sec.lane % 2 ? -1 : 1;     // the way her lane runs, in b
-    return { yaw: Math.atan2(sg * f.z, -sg * f.x), dist: SHOULDER_CAM.dist, pitch: SHOULDER_CAM.pitch, lead: SHOULDER_CAM.lead, lift: SHOULDER_CAM.lift };
+    const S = sec.key === 'stones' ? STONES_CAM : SHOULDER_CAM;
+    return { yaw: Math.atan2(sg * f.z, -sg * f.x), dist: S.dist, pitch: S.pitch, lead: S.lead, lift: S.lift, pin: S === STONES_CAM ? 1 : 0 };
   }
 
   /** The shot, eased: a cut from side-on to behind her would be a quarter
@@ -1202,7 +1223,7 @@ export class SineGauntlet {
     while (dy < -Math.PI) dy += Math.PI * 2;
     const k = 1 - Math.exp(-dt * CAM_EASE);
     c.yaw += dy * k;
-    for (const key of ['dist', 'pitch', 'lead', 'lift']) c[key] += (w[key] - c[key]) * k;
+    for (const key of ['dist', 'pitch', 'lead', 'lift', 'pin']) c[key] = (c[key] ?? 0) + (w[key] - (c[key] ?? 0)) * k;
     return c;
   }
 
@@ -1215,7 +1236,10 @@ export class SineGauntlet {
     if (p && this.run?.drill) {
       const f = this.isle.fwd;
       const sg = laneOf(this.laneCoords(p).a) % 2 ? -1 : 1;
-      return c.set(p.position.x - f.z * sg * cam.lead, p.position.y + cam.lift, p.position.z + f.x * sg * cam.lead);
+      // Pinned (STONES_CAM): the look-at's height is the stones' middle, not her — she rises in the frame.
+      const pinY = this.isle.y + (SECTION.stones.stone.H ?? 0);
+      const y = p.position.y + ((pinY - p.position.y) * (cam.pin ?? 0));
+      return c.set(p.position.x - f.z * sg * cam.lead, y + cam.lift, p.position.z + f.x * sg * cam.lead);
     }
     const q = this._w(START.a, START.b, COURSE_CAM.lift);
     return c.set(q.x + SIM.dx, q.y, q.z + SIM.dz);
