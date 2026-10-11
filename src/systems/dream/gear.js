@@ -52,6 +52,41 @@ export const GEAR_ITEMS = [
 export const GRAB_R = 2.3;
 /** A rack's solid, so she walks UP to it rather than into it. */
 export const RACK_R = 0.85;
+/**
+ * HOW BIG EACH PIECE FLOATS, and what it floats over. Richard: "The VR
+ * equipment in the Dream Dojo island currently seem a bit too big, maybe we
+ * can scale them down or scale up the platform they are floating above so
+ * that they are not colliding with the mesh while it is spinning above it."
+ * Measured off the models (`spinRadius`): at 1.5 / 1.5 / 1.15 the headset
+ * swept a circle 1.31 out, the gloves 0.77 and the suit 0.67, round an upright
+ * whose face was 0.36 behind the axis — every one of them turned through its
+ * own backboard, and the suit's feet sat in the plinth. Both: the pieces are
+ * smaller, the backboard stands `SPIN_CLEAR` behind the circle each one
+ * actually sweeps, and the plinth is as wide as that circle.
+ */
+export const GEAR_SCALE = { headset: 1.1, gloves: 1.25, suit: 1.0 };
+export const GEAR_LIFT = { headset: 1.6, gloves: 1.6, suit: 1.75 };
+export const SPIN_CLEAR = 0.2;
+
+/** The circle a model sweeps turning about its own Y, and its lowest point
+ *  below its own origin — both in the world's units, wherever it is parented. */
+export function spinRadius(g) {
+  g.updateWorldMatrix(true, true);
+  const o = g.getWorldPosition(new THREE.Vector3());
+  let r = 0;
+  let lo = Infinity;
+  const v = new THREE.Vector3();
+  g.traverse((m) => {
+    const p = m.geometry?.attributes?.position;
+    if (!p) return;
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld);
+      r = Math.max(r, Math.hypot(v.x - o.x, v.z - o.z));
+      lo = Math.min(lo, v.y - o.y);
+    }
+  });
+  return { r, lo };
+}
 
 /** The pad, laid out. `at(a, b)` -> {x, z}. */
 export function gearLayout(at) {
@@ -338,22 +373,27 @@ export class GearRoom {
     for (const item of GEAR_ITEMS) {
       const p = this.layout.racks[item.id];
       const yaw = this._yawIn(p);
-      cyl(RACK_R, RACK_R + 0.1, 0.5, p.x, y + 0.25, p.z, 0x2f3446, 16);
-      const back = rel(p, yaw, 0, -0.45);
+      const g = gearModel(item.id, item.colour);
+      g.scale.setScalar(GEAR_SCALE[item.id]);
+      const sweep = spinRadius(g);
+      const lift = GEAR_LIFT[item.id];
+      g.position.set(p.x, y + lift, p.z);
+      g.rotation.y = yaw;
+      // The plinth under the whole circle it turns through; the backboard behind it.
+      const plinth = Math.max(RACK_R, sweep.r + 0.1);
+      cyl(plinth, plinth + 0.1, 0.5, p.x, y + 0.25, p.z, 0x2f3446, 20);
+      const backD = sweep.r + SPIN_CLEAR + 0.09;
+      const back = rel(p, yaw, 0, -backD);
       // The gloves' panel is taller: the Hi5 mark hangs over the pair, not behind it.
       const tall = item.id === 'gloves' ? 3.4 : 2.6;
       box(1.5, tall, 0.18, back.x, y + tall / 2, back.z, yaw, 0x3b4152);
-      const g = gearModel(item.id, item.colour);
-      g.position.set(p.x, y + 1.6, p.z);
-      g.rotation.y = yaw;
-      g.scale.setScalar(item.id === 'suit' ? 1.15 : 1.5);
       this.root.add(g);
       if (item.id === 'gloves') {
         const tex = hi5Logo();
         if (tex) {
           const logo = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.65),
             new THREE.MeshBasicMaterial({ map: tex, toneMapped: false }));
-          const lp = rel(p, yaw, 0, -0.35);
+          const lp = rel(p, yaw, 0, -(backD - 0.1));
           logo.position.set(lp.x, y + 2.92, lp.z);
           logo.rotation.y = yaw;
           this.root.add(logo);
@@ -375,8 +415,8 @@ export class GearRoom {
       ring.visible = false;
       col.visible = false;
       this.root.add(ring, col);
-      W?.solids?.push({ x: p.x, z: p.z, r: RACK_R });
-      this.racks.push({ item, at: p, mesh: g, ring, col, baseY: y + 1.6 });
+      W?.solids?.push({ x: p.x, z: p.z, r: Math.max(RACK_R, plinth) });
+      this.racks.push({ item, at: p, mesh: g, ring, col, baseY: y + lift, sweep: sweep.r, low: sweep.lo, plinth, backD, floorY: y });
     }
 
     /* --- the practice swords: a stand of bokken and shinai --------------- */

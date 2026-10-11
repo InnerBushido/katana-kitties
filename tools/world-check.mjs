@@ -41355,6 +41355,19 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const lionClear = Math.min(...racks.map((r) => hyp(r.at, L.lion)));
     ok('...clear of every tube and of Lionheart', tubeClear > TUBE_R + GR.GRAB_R && lionClear > 3,
       `tubes ${tubeClear.toFixed(2)} · Lionheart ${lionClear.toFixed(2)}`);
+    /* Richard: "The VR equipment ... seem a bit too big, maybe we can scale
+       them down or scale up the platform they are floating above so that they
+       are not colliding with the mesh while it is spinning above it." Each
+       piece's swept circle, MEASURED off its mesh as built: inside its plinth,
+       clear of its backboard by SPIN_CLEAR, under a metre, and its lowest point
+       over the plinth's top at the bottom of its bob. */
+    ok('...and each piece turns clear of its own backboard, over a plinth as wide as it sweeps',
+      racks.every((r) => {
+        const now = GR.spinRadius(r.mesh);
+        return Math.abs(now.r - r.sweep) < 1e-6 && r.sweep < 1 && r.plinth >= r.sweep
+          && r.backD - 0.09 - r.sweep >= GR.SPIN_CLEAR - 1e-9 && r.baseY - 0.08 + r.low > r.floorY + 0.5;
+      }),
+      racks.map((r) => `${r.item.id} sweeps ${r.sweep.toFixed(2)}, board at ${(r.backD - 0.09).toFixed(2)}, low ${(r.baseY - 0.08 + r.low - r.floorY).toFixed(2)}`).join(' · '));
     /* THE WAY IN AND THE WAY OUT STAY OPEN. The gate's deck meets the pad's
        edge, and the walk out of a tube ends 3.2 toward the middle: a kitten
        (radius ~0.6) stands at every one of those without a prop's collider
