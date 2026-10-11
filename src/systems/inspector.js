@@ -467,7 +467,7 @@ export class Inspector {
     const L = this.game.dream?.guide;
     if (!p || !L) return;
     if (c.state === 'lionKyo') return;
-    const key = c.state === 'lion' ? L.rows(p)[c.i]?.key : L.subAct(c.state, c.i);
+    const key = c.state === 'lion' ? L.rows(p)[c.i]?.key : L.subAct(c.state, c.i, p);
     if (!key) return;
     if (key === 'back') { this._back(index); return; }
     if (key === 'holo') {

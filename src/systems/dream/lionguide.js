@@ -1,6 +1,7 @@
 import { ISLANDS, ISLE_ABOUT } from './islands.js';
 import { featuredPool, picksFor } from './rank.js';
 import { SHADOW_LEVELS, inherited } from './shadow.js';
+import { DESTS, destName, destShort } from './waypoint.js';
 
 /* ---------------------------------------------------------------------------
    LIONHEART, THE SIMULATOR'S QUEST-GIVER.
@@ -244,7 +245,7 @@ export class LionGuide {
     const s = this.dream.st[p.index];
     const at = this.dream._flatPos?.(p);
     return [this.speaking(p) ?? '', r, (s?.holoWorn ?? []).length, inherited(p),
-      at ? `${Math.round(at.x / 4)},${Math.round(at.z / 4)}` : ''].join('|');
+      at ? `${Math.round(at.x / 4)},${Math.round(at.z / 4)}` : '', this.dream.waypoints?.of(p)?.target ?? ''].join('|');
   }
 
   rows(p) {
@@ -284,6 +285,13 @@ export class LionGuide {
    *  `holo` is the Inspector's, which owns the hand-over to the profile. */
   choose(p, key) {
     const g = this.game;
+    if (typeof key === 'string' && key.startsWith('wp:')) {
+      const W = this.dream.waypoints;
+      const res = W ? W.set(p, key.slice(3)) : { ok: false, text: 'Waypoints are not ready yet' };
+      g.sfx?.(res.ok ? 'star' : 'deny');
+      g.toast?.(res.text, p.index);
+      return 'lionMap';
+    }
     switch (key) {
       case 'next': {
         this._say(p, this.next(p).text, false);
@@ -292,6 +300,18 @@ export class LionGuide {
       }
       case 'map':
         return 'lionMap';
+      /* 道標 A WAYPOINT, from the map (dream/waypoint.js). Marking the one
+         she has marked already is the REFRESH — every marker back — which is
+         the only way they come back. Both answers are said (non-negotiable 6). */
+      case 'wpClear': {
+        const W = this.dream.waypoints;
+        const had = W?.of(p)?.target;
+        W?.clear(p);
+        g.sfx?.('menu');
+        g.toast?.(had ? `Waypoint cleared: the ${destName(had)}` : 'No waypoint to clear', p.index);
+        return 'lionMap';
+      }
+
       case 'orbs': {
         if (!(this.dream.st[p.index]?.holoWorn ?? []).length) {
           g.sfx?.('deny');
@@ -318,14 +338,19 @@ export class LionGuide {
 
   rowCount(p, state) {
     if (state === 'lionQuests') return 2;
-    if (state === 'lionMap') return 1;
+    // Every place a waypoint can go, CLEAR while she has one, and BACK.
+    if (state === 'lionMap') return DESTS.length + (this.dream.waypoints?.of(p) ? 1 : 0) + 1;
     if (state === 'lionKyo') return 0;
     return this.rows(p).length;
   }
 
-  /** A sub-card's row, as an action key. */
-  subAct(state, row) {
+  /** A sub-card's row, as an action key. `p` for the map, whose rows depend on her waypoint. */
+  subAct(state, row, p = null) {
     if (state === 'lionQuests') return row === 0 ? 'map' : 'back';
+    if (state === 'lionMap') {
+      if (row < DESTS.length) return `wp:${DESTS[row]}`;
+      if (row === DESTS.length && p && this.dream.waypoints?.of(p)) return 'wpClear';
+    }
     return 'back';
   }
 
@@ -351,7 +376,7 @@ export class LionGuide {
    * which way is which. Her own island's name in gold, the one he suggests
    * ringed, and a dot where she stands.
    */
-  mapSvg(p, { next = null, w = 520 } = {}) {
+  mapSvg(p, { next = null, w = 520, aim = null, wp = null, side = null } = {}) {
     const D = this.dream;
     const isles = D.isles ?? {};
     const dc = D.game.world?.dojoCentre ?? { x: 0, z: 0 };
@@ -369,6 +394,13 @@ export class LionGuide {
     // A label's size, as a fraction of the map. /30 was tried first and read
     // at about 8px on a 1280-wide window, under the card's own text.
     const f = Math.max(vw, vh) / 24;
+    /* 道標 A PLACE YOU CAN TAP (data-row, the inspector's own tap path), the
+       one her cursor is on ringed in white, and her waypoint in her colour
+       with a pin over it. */
+    const tap = (key) => (side != null && DESTS.includes(key) ? ` data-side="${side}" data-row="${DESTS.indexOf(key)}"` : '');
+    const marks = (key, x, z, r) => (aim === key ? `<circle cx="${x}" cy="${z}" r="${r + f * 0.85}" class="ln-aim"/>` : '')
+      + (wp === key ? `<circle cx="${x}" cy="${z}" r="${r + f * 0.5}" class="ln-wp"/>`
+        + `<path d="M ${x} ${z - r * 0.15} l ${-f * 0.6} ${-f * 1.4} a ${f * 0.6} ${f * 0.6} 0 1 1 ${f * 1.2} 0 z" class="ln-pin"/>` : '');
     const roads = [];
     for (const [key, I] of Object.entries(isles)) {
       const from = ISLANDS[key]?.from ? isles[ISLANDS[key].from] : { x: dc.x, z: dc.z };
@@ -383,13 +415,14 @@ export class LionGuide {
       const lx = I.x + ((I.x - dc.x) / out) * (I.r + f * 1.1);
       const lz = I.z + ((I.z - dc.z) / out) * (I.r + f * 1.1) + f * 0.35;
       const stars = r?.max ? ` ${r.got}/${r.max}★` : r?.got ? ` ${r.got}★` : '';
-      return `<circle cx="${I.x}" cy="${I.z}" r="${I.r}" class="${cls}"/>`
+      return `<g${tap(key)}><circle cx="${I.x}" cy="${I.z}" r="${I.r}" class="${cls}"/>`
         + (next === key ? `<circle cx="${I.x}" cy="${I.z}" r="${I.r + f * 0.5}" class="ln-ring"/>` : '')
+        + marks(key, I.x, I.z, I.r)
         + `<text x="${lx}" y="${lz}" font-size="${f}" class="ln-lbl${next === key ? ' next' : ''}">${esc(r?.short ?? key)}`
-        + `<tspan class="ln-st" font-size="${f * 0.8}">${stars}</tspan></text>`;
+        + `<tspan class="ln-st" font-size="${f * 0.8}">${stars}</tspan></text></g>`;
     }).join('');
-    const hub = `<circle cx="${dc.x}" cy="${dc.z}" r="50" class="ln-hub"/>`
-      + `<text x="${dc.x}" y="${dc.z + f * 0.35}" font-size="${f * 0.85}" class="ln-lbl hub">DOJO</text>`;
+    const hub = `<g${tap('dojo')}><circle cx="${dc.x}" cy="${dc.z}" r="50" class="ln-hub"/>${marks('dojo', dc.x, dc.z, 50)}`
+      + `<text x="${dc.x}" y="${dc.z + f * 0.35}" font-size="${f * 0.85}" class="ln-lbl hub">DOJO</text></g>`;
     /* The tubes' name OUTBOARD of the pad, away from the hub, like every
        island's: under it, it sat on her own YOU while she stood in her tube. */
     let pd = '';
@@ -397,8 +430,8 @@ export class LionGuide {
       const po = Math.hypot(port.x - dc.x, port.z - dc.z) || 1;
       const tx = port.x + ((port.x - dc.x) / po) * (port.r + f * 2.2);
       const tz = port.z + ((port.z - dc.z) / po) * (port.r + f * 2.2) + f * 0.3;
-      pd = `<circle cx="${port.x}" cy="${port.z}" r="${port.r}" class="ln-port"/>`
-        + `<text x="${tx}" y="${tz}" font-size="${f * 0.8}" class="ln-lbl hub">YOUR TUBES</text>`;
+      pd = `<g${tap('port')}><circle cx="${port.x}" cy="${port.z}" r="${port.r}" class="ln-port"/>${marks('port', port.x, port.z, port.r)}`
+        + `<text x="${tx}" y="${tz}" font-size="${f * 0.8}" class="ln-lbl hub">YOUR TUBES</text></g>`;
     }
     // The map kiosks, as on the corner minimap: one wherever there is a map.
     const kiosks = (D.mapKiosks ?? []).map((k) => k.group.position)
@@ -455,12 +488,24 @@ export class LionGuide {
 
     if (state === 'lionMap') {
       const n = this.next(p);
+      const wp = this.dream.waypoints?.of(p)?.target ?? null;
+      const aim = cursor < DESTS.length ? DESTS[cursor] : null;
+      /* 道標 THE PLACES AS A ROW OF CHIPS, so a pad's cursor has something to
+         stand on (the map itself is tappable too). Her waypoint's chip is
+         marked ◆; the one under the cursor says what JUMP will do. */
+      const chips = DESTS.map((key, k) => `<div class="pc-row pn-act ln-dest${k === cursor ? ' cursor' : ''}${wp === key ? ' wp' : ''}" data-side="${index}" data-row="${k}"><b>${wp === key ? '◆ ' : ''}${esc(destShort(key))}</b></div>`).join('');
+      const tail = [...(wp ? ['✕ CLEAR MY WAYPOINT'] : []), '◀ BACK'].map((t, j) => act(t, DESTS.length + j)).join('');
+      const say = aim
+        ? (wp === aim ? `JUMP to refresh your waypoint to the <b>${esc(destName(aim))}</b> — every marker back`
+          : `JUMP to set a waypoint: the <b>${esc(destName(aim))}</b>`)
+        : wp ? `Your waypoint: the <b>${esc(destName(wp))}</b>. Follow the markers in your colour.` : '';
       return `<div class="pc-inner pn-card ln-card">${head}
-        <div class="ln-map-box">${this.mapSvg(p, { next: n.key })}</div>
+        <div class="ln-map-box">${this.mapSvg(p, { next: n.key, aim, wp, side: index })}</div>
         <div class="pn-next"><b>NEXT:</b> the ${esc(ISLANDS[n.key]?.name ?? '')} — ringed in gold.
-          <span class="pc-dim">Every island's name is on a sign at its bridge, too.</span></div>
-        <div class="pn-acts">${act('◀ BACK', 0)}</div>
-        <div class="pc-foot">${backButton(index, 'BACK')}<span>INTERACT <b>back</b></span></div>
+          <span class="pc-dim">${say || 'Every island\'s name is on a sign at its bridge, too.'}</span></div>
+        <div class="pn-acts ln-dests">${chips}</div>
+        <div class="pn-acts">${tail}</div>
+        <div class="pc-foot">${backButton(index, 'BACK')}<span>JUMP <b>mark it</b> · INTERACT <b>back</b></span></div>
       </div>`;
     }
 
