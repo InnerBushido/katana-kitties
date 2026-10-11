@@ -235,14 +235,20 @@ wander. Measured per bar (triad template plus a 33–123 Hz bass chroma, best
 phase against the loop): the procedural theme fits 30/32 bars, the four takes
 4/31, 5/31, 10/31 and 7/29.
 
-**The audio reference port does not work (Oct 2026).** The connector's music
-node has an `audio` input, the obvious route to a 1:1 "upscale". Every run
-with the theme wired into it failed at once with "unexpected error processing
-this generation": as a mono WAV and as a stereo MP3, on v2.5, v2 and v1, with
-the long prompt and lyrics and with a short instrumental one. The same node
-with nothing on the port generated normally that minute, so it is the port and
-not the service. Failed runs were not charged. Flow `LRBTaBnKWB4SFA1bf00O`
-keeps the attempts; retry there if ElevenLabs ever documents the input.
+**The Flows music node's `audio` input is not Audio Reference (Oct 2026).** It
+looks like the obvious route to a 1:1 "upscale" and it is not. Every run with
+an UPLOADED theme on it failed at once with "unexpected error processing this
+generation" — mono WAV, stereo MP3, 57s, 28s (under the documented ~30s
+reference limit), 44.1 and 48 kHz; v2.5, v2 and v1; a "keep the melody" prompt
+and a neutral "in the style of" one. Failed runs were not charged. With
+ElevenLabs' OWN generation on the input it "succeeds" and hands the input back:
+waveform correlation 1.000 at lag 0, same RMS, and the 10s length of the
+input rather than the 15s asked for. That is the inpainting path — a stored
+song id plus edit ranges — and an upload has no song id (the API's
+`music/upload`, which makes one, is documented for inpainting and said to be
+enterprise-only). The real References feature (`conditioning_ref`,
+`condition_strength`) is on the ElevenMusic / ElevenCreative Music page, not
+this connector. Flow `LRBTaBnKWB4SFA1bf00O` keeps every attempt.
 
 **The beat is measured, not trusted** (`tools/capture/music-beats.mjs`): an
 onset envelope, then a period-and-phase search. Unconstrained, the search
