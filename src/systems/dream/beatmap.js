@@ -1,4 +1,5 @@
 import { MUSIC } from '../../core/audio.js';
+import { MUSIC_FILES } from '../../core/musicfiles.js';
 
 /* ---------------------------------------------------------------------------
    THE BEAT MAP — what Lionheart does in a Kata Trace run, written down.
@@ -191,6 +192,8 @@ export const MIN_SPB = 0.42;
 const SONG_BEATS = { shadow: 128 };
 
 export function songSpb(key) {
+  // A recording's beat is MEASURED (tools/capture/shadow-music.mjs), not chosen.
+  if (MUSIC_FILES[key]) return { spb: MUSIC_FILES[key].spb, steps: 1 };
   const b = MUSIC[key]?.beat ?? MUSIC.play.beat;
   let k = 1;
   while (b * k < MIN_SPB) k *= 2;
@@ -218,6 +221,7 @@ export function rng32(seed) {
 export const SONG_SECS = [30, 90];
 function songBeats(key, spb) {
   if (SONG_BEATS[key]) return SONG_BEATS[key];
+  if (MUSIC_FILES[key]) return MUSIC_FILES[key].beats;
   const secs = SONG_SECS[0] + (hash(`len:${key}`) % 7) * ((SONG_SECS[1] - SONG_SECS[0]) / 6);
   let n = Math.max(16, Math.round(secs / spb / 4) * 4);
   // Rounding to a bar can carry a 90s piece to 90.5 (The Crossing did): back inside by whole bars.
@@ -226,10 +230,43 @@ function songBeats(key, spb) {
   return n;
 }
 
-export const SONGS = Object.keys(MUSIC).map((id) => {
+/** song → the Shadow level she must have beaten (`p.shadowBeat[level]`) to dance to it. */
+const SONG_LOCKS = Object.fromEntries(Object.entries(MUSIC_FILES).map(([id, f]) => [id, f.level]));
+export const SONGS = [...Object.keys(MUSIC), ...Object.keys(MUSIC_FILES)].map((id) => {
   const { spb, steps } = songSpb(id);
-  return { id, name: SONG_NAMES[id] ?? id, spb, steps, bpm: Math.round(60 / spb), beats: songBeats(id, spb) };
+  return {
+    id, name: MUSIC_FILES[id]?.name ?? SONG_NAMES[id] ?? id, spb, steps, bpm: Math.round(60 / spb), beats: songBeats(id, spb),
+    lock: SONG_LOCKS[id] ?? null,
+  };
 });
+
+/* ------------------------------ his songs ---------------------------------- */
+
+/* SHADOW LIONHEART'S FOUR SONGS. Richard: "keep the original procedurally
+   generated Shadow theme song ... use it for Shadow Lionheart's fight on Easy
+   mode. ... Orchestral 1 the Medium boss fight music ..., Electronic 1 is the
+   Hard ..., and Electronic 2 is the Extra Hard". In the fight: `SHADOW_TRACK`,
+   by the level being fought. In Kata Trace: "After the player beats Shadow
+   Lionheart on the set difficulty, then the song should be added to the Kata
+   Trace ... with the Easy song being the exception that can be played there
+   right away" — and Electronic 2's long cut, unlocked with it. */
+export const SHADOW_TRACK = { easy: 'shadow', medium: 'shadowOrch', hard: 'shadowSynth', extra: 'shadowNight' };
+/** Every song his hand-written chart is written for. */
+export const SHADOW_SONGS = ['shadow', ...Object.keys(MUSIC_FILES)];
+/** How a lock is SAID — an instruction, never just "locked" (non-negotiable 6). */
+export const LEVEL_WORDS = { easy: 'EASY', medium: 'MEDIUM', hard: 'HARD', extra: '秘 EXTRA HARD' };
+
+/**
+ * May this kitten dance to this song? Every song but his recordings is open;
+ * a recording opens on her own win at its level — the level exactly, so each
+ * song is the trophy of one fight. `all` is the debug row's "unlock every
+ * song". Returns null if open, or the sentence that says what it wants.
+ */
+export function songLocked(id, p, all = false) {
+  const lv = SONG_LOCKS[id];
+  if (!lv || all || p?.shadowBeat?.[lv]) return null;
+  return `Beat Shadow Lionheart on ${LEVEL_WORDS[lv]} to unlock this song!`;
+}
 export const songById = (id) => SONGS.find((s) => s.id === id) ?? null;
 
 /** " · by <author>" for a chart somebody signed, '' for an unsigned one. */
@@ -392,7 +429,7 @@ function weighted(r, w) {
 export function generateChart(songId, difficulty) {
   const S = songById(songId) ?? songById('play');
   const D = DIFFS[difficulty] ?? DIFFS.normal;
-  if (S.id === 'shadow') return shadowChart(S, difficulty);
+  if (SHADOW_SONGS.includes(S.id)) return shadowChart(S, difficulty);
   const r = rng32(hash(`kata:${S.id}:${difficulty}`));
   const pick = (a) => a[Math.floor(r() * a.length) % a.length];
   const events = [];
@@ -508,6 +545,17 @@ export function generateChart(songId, difficulty) {
  *                     (alternating which four marks a cross takes); he moves
  *                     a quarter-beat after each X, and each next X's tell runs
  *                     from that move.
+ *
+ * ONE CHART FOR ALL FOUR OF HIS SONGS, FITTED TO EACH ONE'S LENGTH. It is
+ * written for the 128 beats of the procedural theme, in three parts: the
+ * OPENING (to just after the first 凶), the MARCH (to just after the second)
+ * and the FINALE (the last sixteen-odd beats, ending on the air finish). A
+ * recording is however long the model made it — 120 beats, or 336 for the
+ * long cut — so the opening stays where it is, the finale is pinned to the
+ * song's END, and the march fills the gap between: as many whole marches as
+ * fit, and before them the TAIL of one more, cut on a clean line (never
+ * inside a 凶, never within two beats of the opening). At 128 beats that is
+ * exactly one march and the chart is the one that shipped, event for event.
  */
 function shadowChart(S, difficulty) {
   const diff = DIFFS[difficulty] ? difficulty : 'normal';
@@ -563,6 +611,8 @@ function shadowChart(S, difficulty) {
     X(106); X(106.5); X(107);
     A(111, 'sweep'); L(112.5, 'N'); A(115, 'cut'); X(118); X(119); A(122, 'sweep'); X(124, true);
   }
+  // Where the march starts and the finale starts, in the 128-beat layout.
+  const [c0, fin] = { easy: [61, 110], normal: [60, 112], hard: [58, 110] }[diff];
   return {
     format: FORMAT,
     title: `${S.name} (${D.name.toLowerCase()})`,
@@ -570,8 +620,35 @@ function shadowChart(S, difficulty) {
     difficulty: diff,
     beats: S.beats,
     author: 'Lionheart',
-    events: sortedEvents(ev),
+    events: sortedEvents(fitShadow(ev, c0, fin, S.beats)),
   };
+}
+
+/** The 128-beat chart, fitted to `B` beats — see `shadowChart`. */
+export function fitShadow(ev, c0, fin, B) {
+  if (B === 128) return ev;
+  const W = fin - c0;
+  const open = ev.filter((e) => e.beat < c0);
+  const body = ev.filter((e) => e.beat >= c0 && e.beat < fin);
+  const end = ev.filter((e) => e.beat >= fin).map((e) => ({ ...e, beat: e.beat + B - 128 }));
+  const avail = fin + B - 128 - c0;
+  const n = Math.floor(avail / W);
+  const rem = avail - n * W;
+  // The tail's cut: past any 凶 it would land inside (from his move into the first X, to the third).
+  let cut = W - rem;
+  const kyos = body.filter((e) => e.kyo);
+  for (let i = 0; i + 2 < kyos.length; i += 3) {
+    const from = body.filter((e) => e.lion && e.beat < kyos[i].beat).reduce((m, e) => Math.max(m, e.beat), -1);
+    if (cut > from - c0 && cut <= kyos[i + 2].beat - c0) cut = kyos[i + 2].beat - c0 + 0.01;
+  }
+  const out = [...open];
+  for (const e of body) {
+    const r = e.beat - c0;
+    const at = c0 + (r - (W - rem));
+    if (r >= cut && at >= c0 + 2) out.push({ ...e, beat: at });
+  }
+  for (let k = 0; k < n; k++) for (const e of body) out.push({ ...e, beat: e.beat + rem + k * W });
+  return [...out, ...end];
 }
 
 /* ------------------------------ text in, text out --------------------------- */

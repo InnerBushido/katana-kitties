@@ -13,7 +13,17 @@
 
    Browsers refuse to start audio without a user gesture, so nothing exists
    until resume() is called from a real click or button press.
+
+   EXCEPT WHERE A RECORDING IS BETTER, and is worth what it costs. Richard:
+   "not everything needs to be procedural! ... if we can get better quality
+   not doing something procedurally, such as, having high quality generated
+   voices and music, then we will choose the higher quality route where
+   possible and affordable." So: the voices (`speak`, `sample`), and Shadow
+   Lionheart's generated boss music (`MUSIC_FILES`, see `startMusic`). Every
+   file still degrades — a missing voice is blips, a missing music file is
+   his procedural theme.
 --------------------------------------------------------------------------- */
+import { MUSIC_FILES } from './musicfiles.js';
 
 /* Hirajoshi — the scale that makes five notes sound unmistakably Japanese.
    Semitone offsets from the root. */
@@ -1572,7 +1582,7 @@ export class Audio {
   /* ------------------------------- music --------------------------------- */
 
   /** @param {'play'|'intro'} mode which piece to generate — see MUSIC. */
-  startMusic(mode = 'play', rate = 1) {
+  startMusic(mode = 'play', rate = 1, { loop = true } = {}) {
     if (!this.ready) return;
     // Switching pieces tears the old schedule down first, or the two run
     // together and the intro plays underneath the game theme.
@@ -1585,6 +1595,22 @@ export class Audio {
     this.musicBus.gain.setTargetAtTime(this.musicVolume * this.musicLevel, this.ctx.currentTime, 0.8);
     this._nextNote = this.ctx.currentTime + 0.1;
     this._step = 0;
+    /* A RECORDED PIECE KEEPS THE SAME CLOCK. The timer below still ticks its
+       beat grid (`_nextNote`, `_step`) — it just plucks nothing — so
+       `musicGrid`, `shiftMusic` and Kata Trace's `keepTime` work on a file
+       exactly as on a tune. `_beat0` is beat 0 on the audio clock; the file
+       is placed against it by `_fileStart`, which is also what lets a file
+       still decoding come in LATE and ON THE BEAT rather than late and wrong.
+       `loop` is the boss fight's (the measured loop, forever) and not Kata
+       Trace's (`restartMusic`: the song once, as charted). */
+    const FM = MUSIC_FILES[mode];
+    if (FM) {
+      this._beat0 = this._nextNote + FM.first / rate;
+      this._nextNote = this._beat0;
+      this._fileLoop = loop && !!FM.loop;
+      this._dropOtherFiles(mode);
+      this._fileStart();
+    }
     // Schedule ahead on a timer rather than per-frame: audio timing must not
     // depend on the render loop, or it stutters whenever the GPU does.
     this._musicTimer = setInterval(() => this._schedule(), 120);
@@ -1602,14 +1628,14 @@ export class Audio {
   restartMusic(mode, rate = 1) {
     if (!this.ready) return null;
     this.stopMusic();
-    this.startMusic(mode, rate);
+    this.startMusic(mode, rate, { loop: false });
     return this._nextNote;
   }
 
   /** The next step's time on the audio clock, its index, and the step length. */
   musicGrid() {
     if (!this._musicTimer) return null;
-    const beat = (MUSIC[this._mode] ?? MUSIC.play).beat / (this.musicRate || 1);
+    const beat = this._stepLen();
     return { next: this._nextNote, step: this._step, beat, now: this.ctx.currentTime };
   }
 
@@ -1617,7 +1643,14 @@ export class Audio {
    *  earlier step would be in the past, and the scheduler plays the past all
    *  at once. */
   shiftMusic(secs) {
-    if (this._musicTimer && secs > 0) this._nextNote += secs;
+    if (!this._musicTimer || !(secs > 0)) return;
+    this._nextNote += secs;
+    // A recording cannot have its future notes pushed: it is re-placed, later.
+    if (MUSIC_FILES[this._mode]) {
+      this._beat0 += secs;
+      this._fileStop(0.03);
+      this._fileStart();
+    }
   }
 
   /** Which piece is playing, or null if none is. Read by Game._updateMusic,
@@ -1629,6 +1662,137 @@ export class Audio {
     clearInterval(this._musicTimer);
     this._musicTimer = null;
     this.musicBus.gain.setTargetAtTime(0, this.ctx.currentTime, 0.4);
+    this._fileStop(0.4);
+  }
+
+  /* ------------------------- recorded music ------------------------------ */
+
+  /** One step of the playing piece, in seconds at its current rate. */
+  _stepLen() {
+    const FM = MUSIC_FILES[this._mode];
+    return (FM ? FM.spb : (MUSIC[this._mode] ?? MUSIC.play).beat) / (this.musicRate || 1);
+  }
+
+  /**
+   * FETCH (NOT DECODE) the recorded pieces, ahead of need. Bytes are ~1.4MB a
+   * piece and cost nothing to hold; DECODED, a minute of stereo is ~20MB, so
+   * that waits for `_fileStart` and only one piece is kept decoded at a time
+   * (`_dropOtherFiles`). Safe before `resume` — fetch needs no context.
+   * Failure is per file and silent: the piece's fallback plays instead.
+   */
+  prefetchMusic(ids = Object.keys(MUSIC_FILES)) {
+    this._fileBytes ??= {};
+    for (const id of ids) {
+      const FM = MUSIC_FILES[id];
+      if (!FM || this._fileBytes[id]) continue;
+      this._fileBytes[id] = fetch(`/${FM.file}`)
+        .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
+        .catch(() => null);
+    }
+  }
+
+  /** Decode one piece (once). Resolves to the AudioBuffer, or null — and null is remembered. */
+  _decodeFile(id) {
+    this._fileBuf ??= {};
+    this._fileDecoding ??= {};
+    if (this._fileBuf[id] !== undefined) return Promise.resolve(this._fileBuf[id]);
+    if (this._fileDecoding[id]) return this._fileDecoding[id];
+    this.prefetchMusic([id]);
+    this._fileDecoding[id] = this._fileBytes[id]
+      // decodeAudioData DETACHES its input: hand it a copy, so a second decode later has bytes left.
+      .then((b) => (b ? this.ctx.decodeAudioData(b.slice(0)) : null))
+      .catch(() => null)
+      .then((buf) => { this._fileBuf[id] = buf; this._fileDecoding[id] = null; return buf; });
+    return this._fileDecoding[id];
+  }
+
+  /** Let go of every decoded piece but this one. */
+  _dropOtherFiles(keep) {
+    for (const id of Object.keys(this._fileBuf ?? {})) {
+      if (id !== keep && this._fileBuf[id]) { delete this._fileBuf[id]; delete this._fileLoopBuf?.[id]; }
+    }
+  }
+
+  /**
+   * THE LOOP, WITHOUT A CLICK. `loopStart`/`loopEnd` jump the playhead
+   * sample-accurately, but the waveform either side of the jump does not
+   * meet, and that is a click every 21 seconds. So the last 25ms before
+   * `loopEnd` are crossfaded (equal power) into the 25ms before `loopStart`:
+   * by the time the playhead jumps, it is already playing what comes just
+   * before the place it lands. On a COPY — Kata Trace plays the same piece
+   * straight through, past `loopEnd`, and must not hear the seam.
+   */
+  _loopBuffer(id, buf) {
+    this._fileLoopBuf ??= {};
+    if (this._fileLoopBuf[id]) return this._fileLoopBuf[id];
+    const FM = MUSIC_FILES[id];
+    const sr = buf.sampleRate;
+    const out = this.ctx.createBuffer(buf.numberOfChannels, buf.length, sr);
+    const F = Math.round(0.025 * sr);
+    const iA = Math.round(FM.loop[0] * sr), iB = Math.round(FM.loop[1] * sr);
+    for (let c = 0; c < buf.numberOfChannels; c++) {
+      const s = buf.getChannelData(c);
+      const d = out.getChannelData(c);
+      d.set(s);
+      for (let i = 0; i < F; i++) {
+        const w = (i / F) * Math.PI / 2;
+        d[iB - F + i] = s[iB - F + i] * Math.cos(w) + s[iA - F + i] * Math.sin(w);
+      }
+    }
+    this._fileLoopBuf[id] = out;
+    return out;
+  }
+
+  /**
+   * PUT THE RECORDING ON THE GRID, from wherever the grid now is: the file's
+   * own time is `first + (now - _beat0) × rate`. Called on start, again by
+   * the scheduler if the decode was still running then, and after a
+   * `shiftMusic`. A Kata Trace song past its end stays silent; a boss loop
+   * wraps into its loop.
+   */
+  _fileStart() {
+    const id = this._mode;
+    const FM = MUSIC_FILES[id];
+    if (!FM || this._fileSrc || !this._musicTimer) return;
+    const buf = this._fileBuf?.[id];
+    if (!buf) {
+      if (buf === undefined) this._decodeFile(id);
+      return;
+    }
+    const rate = this.musicRate || 1;
+    let at = this.ctx.currentTime + 0.05;
+    let off = FM.first + (at - this._beat0) * rate;
+    if (off < 0) { at -= off / rate; off = 0; }
+    if (this._fileLoop) {
+      const [a, b] = FM.loop;
+      if (off >= b) off = a + ((off - a) % (b - a));
+    } else if (off >= buf.duration) {
+      return;
+    }
+    const src = this.ctx.createBufferSource();
+    src.buffer = this._fileLoop ? this._loopBuffer(id, buf) : buf;
+    src.playbackRate.value = rate;
+    if (this._fileLoop) {
+      src.loop = true;
+      src.loopStart = FM.loop[0];
+      src.loopEnd = FM.loop[1];
+    }
+    const g = this.ctx.createGain();
+    g.gain.value = FM.mix;
+    src.connect(g).connect(this.musicBus);
+    src.start(at, off);
+    this._fileSrc = src;
+    this._fileGain = g;
+  }
+
+  _fileStop(fade) {
+    const src = this._fileSrc;
+    if (!src) return;
+    const t = this.ctx.currentTime;
+    this._fileGain.gain.setTargetAtTime(0, t, fade / 3);
+    try { src.stop(t + fade + 0.05); } catch { /* not started yet */ }
+    this._fileSrc = null;
+    this._fileGain = null;
   }
 
   /** Duck the music (pause menu) without tearing the schedule down. */
@@ -1640,9 +1804,12 @@ export class Audio {
   }
 
   _schedule() {
-    const beat = (MUSIC[this._mode] ?? MUSIC.play).beat / (this.musicRate || 1);
+    const beat = this._stepLen();
+    const file = !!MUSIC_FILES[this._mode];
+    // A recording still decoding joins the grid the first tick it can.
+    if (file && !this._fileSrc) this._fileStart();
     while (this._nextNote < this.ctx.currentTime + 0.6) {
-      this._pluck(this._nextNote, this._step);
+      if (!file) this._pluck(this._nextNote, this._step);
       this._nextNote += beat;
       this._step++;
     }

@@ -1082,9 +1082,18 @@ git push origin alpha</code></pre>
       </tr>
       <tr>
         <td><b>Sound &amp; music</b></td>
-        <td>Fully synthesised in code — a sound set, and a piece of music per island. The MP3s are
-          the only audio <em>files</em>, and the game falls back to synthesised blips without them.</td>
+        <td>Synthesised in code — a sound set, and a piece of music per island. The audio
+          <em>files</em> are the voice lines (they fall back to synthesised blips) and Shadow
+          Lionheart's generated boss music (it falls back to his procedural theme).</td>
         <td><code>core/audio.js</code></td>
+      </tr>
+      <tr>
+        <td><b>Shadow Lionheart's recordings</b></td>
+        <td>Three ElevenLabs Music takes — Requiem on MEDIUM, Darksynth on HARD, Nightmare on
+          秘 EXTRA HARD — and Nightmare's 2½-minute long cut. Each one's beat is measured, a loop on
+          whole bars is found by self-similarity, and the fight plays that loop forever; Kata Trace
+          plays the song once, and a song opens there when she beats him at its level.</td>
+        <td><code>capture/shadow-music.mjs</code></td>
       </tr>
       <tr>
         <td><b>The 1:08 trailer</b></td>
@@ -1205,8 +1214,10 @@ git push origin alpha</code></pre>
           — at three lines on 3 Oct — so submit two at a time; nothing is charged for a submission
           that failed. <b>Richard also has his own ElevenLabs account</b> (Starter, since Oct 2026),
           made to clone his voice for Lionheart. The clone works through its own connector, not
-          through Higgsfield, and he turned it down as not sounding like him — so nothing in the
-          game uses that account. Lionheart is the Barrett preset.</td>
+          through Higgsfield, and he turned it down as not sounding like him, so Lionheart is the
+          Barrett preset. <b>That account does make the music</b>: ElevenLabs Music, about 900
+          credits (≈$0.18) a minute-long take — Shadow Lionheart's three recordings came from it.
+          Higgsfield cannot make standalone music.</td>
         <td>0.30 credits a line; own account ≈$6/month</td>
       </tr>
       <tr>
@@ -1258,8 +1269,10 @@ git push origin alpha</code></pre>
       sticks and mash, and Space is the key an elbow finds. Confirm dialogs deliberately have no
       primary button, so the cursor opens on cancel.</li>
     <li><b>Sprite sheets are measured, not assumed.</b> Never settle a facing by reasoning.</li>
-    <li><b>Everything is procedural or generated.</b> No engine, no physics library, no asset store,
-      no character meshes, no new dependencies.</li>
+    <li><b>Procedural by default; generated where it is better and affordable.</b> No engine, no
+      physics library, no asset store, no character meshes, no new dependencies. A generated
+      recording (voices, Shadow Lionheart's boss music) may replace a procedural one when it is
+      clearly better — price it first — and every file falls back to the procedural thing.</li>
   </ol>
 
   <div class="note gold">

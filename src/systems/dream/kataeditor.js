@@ -190,6 +190,14 @@ export class KataEditor {
     this.game.menuNav?.undive?.('panel-kata-editor');
     this.p = p;
     this.speed = speed;
+    /* HER song list, not everybody's: the EXTRA HARD songs are hidden until
+       the secret is open to her, and a locked one is listed (so she knows it
+       is there to win) but cannot be chosen. Same rule as the picker. */
+    const kata = this.game.dream?.kata;
+    const choices = kata?.songChoices?.(p) ?? BM.SONGS.map((S) => ({ S, locked: null }));
+    if (!choices.some((c) => c.S.id === song && !c.locked)) song = 'vr';
+    this.$('ke-song').innerHTML = choices.map(({ S, locked }) => `<option value="${S.id}"${locked ? ' disabled' : ''}>${
+      locked ? `🔒 ${esc(S.name)} — ${esc(locked)}` : `${esc(S.name)} · ${S.bpm} BPM`}</option>`).join('');
     const saved = custom ? customCharts().find((c) => c.id === custom) : null;
     this._load(saved ? saved.chart : BM.generateChart(song, difficulty), saved ? saved.id : null, false);
     const g = this.game;

@@ -6143,6 +6143,13 @@ body.touch-ui .trailer-hint .menu-btn.small {
    as the pause menu reads as another page of it rather than as something that
    has stopped you. */
 #panel-confirm { z-index: 58; }
+/* ...EXCEPT OVER THE DEBUG PANEL (z 90), whose keyless rows are the ones that
+   ask: wipe the record board, wipe the saved games, open Shadow Lionheart's
+   songs and his secret. At 58 every one of those questions opened UNDER the
+   panel that asked it, its NO button behind a column of rows — found by
+   clicking them in a 418px-tall pane. Only while the panel exists (it is
+   removed when closed), so nothing else's stacking moves. */
+body:has(#debug-panel) #panel-confirm { z-index: 91; }
 .confirm-panel { max-width: 520px; }
 
 /* The yes button on a confirm dialog. Vermillion like `.primary` but it is

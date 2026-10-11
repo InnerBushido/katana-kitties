@@ -4,7 +4,7 @@ import { PLAYER_STYLE } from '../../core/palette.js';
 import { SIM, HOLO } from '../../world/simworld.js';
 import { Kiosk, idleIn, stars3, KIOSK_OFF } from './kiosk.js';
 import { HoloPanel } from './holo.js';
-import { POSE, SHADOW_H } from './shadow.js';
+import { POSE, SHADOW_H, extraOpen } from './shadow.js';
 import * as BM from './beatmap.js';
 import { customCharts } from './chartstore.js';
 import { kyoTexture } from '../crossfx.js';
@@ -319,6 +319,21 @@ export class KataHall {
 
   /* ------------------------------ the picker ------------------------------ */
 
+  /**
+   * THE SONGS SHE IS SHOWN, and which of them are locked (`BM.songLocked`).
+   * His recordings are trophies: each opens on her win at its level. The
+   * EXTRA HARD ones are not even LISTED until the secret is open to her —
+   * "Beat him on 秘 EXTRA HARD" on a nine-year-old's song list would give
+   * away the one thing in the game that is meant to be found. The debug
+   * panel's *unlock every Shadow song* opens them all (`game._debugSongs`).
+   */
+  songChoices(p) {
+    const all = !!this.dream.game?._debugSongs;
+    return BM.SONGS
+      .filter((s) => s.lock !== 'extra' || all || extraOpen(this.dream.progress, p))
+      .map((s) => ({ S: s, locked: BM.songLocked(s.id, p, all) }));
+  }
+
   /** What she last chose — kept on her for the visit, so a second go is one press. */
   pickOf(p) {
     p._kataPick ??= { song: 'vr', diff: 'normal', speed: 1, custom: null };
@@ -360,14 +375,31 @@ export class KataHall {
       return false;
     }
     const k = this.pickOf(p);
-    const songs = BM.SONGS;
+    const choices = this.songChoices(p);
+    // A song she can no longer see (a save from a debug session) is not where the picker opens.
+    if (!choices.some((c) => c.S.id === k.song)) k.song = 'vr';
+    const lockOf = (id) => choices.find((c) => c.S.id === id)?.locked ?? null;
+    const audio = this.dream.game?.audio;
+    // His recordings are fetched when she LOOKS at one, so DANCE is not kept waiting on the network.
+    const fetchSong = () => { if (!lockOf(k.song)) audio?.prefetchMusic?.([k.song]); };
+    fetchSong();
     const cyc = (list, cur, s) => list[(list.indexOf(cur) + s + list.length) % list.length];
     const customs = () => customCharts().filter((c) => c.chart.song === k.song);
     const custom = () => customs().find((c) => c.id === k.custom) ?? null;
     const rows = [
       {
-        text: () => { const S = BM.songById(k.song); return `SONG  ◀ ${S.name} · ${Math.round(S.bpm * k.speed)} BPM ▶`; },
-        cycle: (s) => { k.song = cyc(songs.map((x) => x.id), k.song, s); k.custom = null; },
+        text: () => {
+          const S = BM.songById(k.song);
+          return lockOf(k.song) ? `SONG  ◀ 🔒 ${S.name} ▶` : `SONG  ◀ ${S.name} · ${Math.round(S.bpm * k.speed)} BPM ▶`;
+        },
+        cycle: (s) => {
+          k.song = cyc(choices.map((c) => c.S.id), k.song, s);
+          k.custom = null;
+          // A lock says what it wants, as an instruction, the moment she lands on it.
+          const why = lockOf(k.song);
+          if (why) this.dream.hint(p, why);
+          fetchSong();
+        },
       },
       {
         text: () => {
@@ -425,6 +457,13 @@ export class KataHall {
     }
     const k = this.pickOf(p);
     const c = k.custom ? customCharts().find((x) => x.id === k.custom) : null;
+    // Locked is locked for a custom chart of it too — a map is not a way round a trophy.
+    const why = BM.songLocked(c ? c.chart.song : k.song, p, !!this.dream.game?._debugSongs);
+    if (why) {
+      this.dream.hint(p, why);
+      this.dream.game.sfx?.('deny');
+      return false;
+    }
     const chart = c ? c.chart : BM.generateChart(k.song, k.diff);
     const id = BM.chartId(chart, !!c);
     this.dream.startDrill(p, KATA(this, fl, chart, { speed: k.speed, id, custom: !!c }),

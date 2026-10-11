@@ -421,7 +421,8 @@ export class Ranks {
     const P = this.dream.progress;
     for (const p of this.dream.simKittens()) {
       const n = p.style?.name ?? p.name;
-      if (P.flag(n, 'secret') || !atLeast(P, n, 'k1')) continue;
+      // `extra` is the debug panel's "open EXTRA HARD" — announced exactly as the rank would be.
+      if (P.flag(n, 'secret') || !(atLeast(P, n, 'k1') || P.flag(n, 'extra'))) continue;
       P.setFlag(n, 'secret');
       this.dream.game.sfx?.('victory');
       this.dream.game.toast?.(`${p.name} is KENSHI 1st CLASS! A SECRET is open: 秘 EXTRA HARD Shadow Lionheart, on his island. Beat it for a SPECIAL Kotodama!`, p.index);

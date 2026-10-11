@@ -180,9 +180,12 @@ export const FIGHT_LEVELS = [...SHADOW_LEVELS, SHADOW_EXTRA];
 export const EXTRA = FIGHT_LEVELS.length - 1;
 export const LEVEL_BY_ID = Object.fromEntries(FIGHT_LEVELS.map((L, k) => [L.id, k]));
 
-/** May she take the secret fight? KENSHI 1st Class, in THIS game's ledger. */
+/** May she take the secret fight? KENSHI 1st Class, in THIS game's ledger —
+ *  or the debug panel's `extra` flag, which opens it without the climb. */
 export function extraOpen(progress, p) {
-  return !!p && !!progress && atLeast(progress, p.style?.name ?? p.name, 'k1');
+  if (!p || !progress) return false;
+  const n = p.style?.name ?? p.name;
+  return atLeast(progress, n, 'k1') || !!progress.flag(n, 'extra');
 }
 
 /**

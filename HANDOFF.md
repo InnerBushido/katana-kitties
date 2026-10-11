@@ -138,9 +138,10 @@ buys the map.
 `systems/lasthunt.js`, and [docs/notes/endgame.md](docs/notes/endgame.md) for
 why the three help each other in that order.
 
-**Sound.** Every effect and every piece of music is synthesised at runtime — a
-piece per island, one per dragon, one for the arena. The only audio files in the
-project are the recorded voice lines in `public/voice/`.
+**Sound.** Every effect and nearly every piece of music is synthesised at
+runtime — a piece per island, one per dragon, one for the arena. The audio files
+are the recorded voice lines in `public/voice/` and Shadow Lionheart's generated
+boss music in `public/music/`; both fall back to the procedural thing.
 
 **The Cross Slash holds you.** The orb's three cuts used to knock the target
 away on the first one and swing at empty air for the other two. They now freeze
@@ -604,6 +605,20 @@ quoted.
   - **Open:** nobody has played any of it. Party scaling and EXTRA HARD are
     first numbers. The Gauntlet's bands are measured by search, not by a
     child.
+
+- **Shadow Lionheart's recordings** (branch `feature/shadow-boss-music`).
+  [audio.md](docs/notes/audio.md#shadow-lionhearts-recordings) and
+  [dreamdojo.md](docs/notes/dreamdojo.md) quote the brief:
+  - **The rule changed**: procedural by default, generated where it is better
+    and affordable (non-negotiable 9).
+  - EASY keeps the procedural theme. MEDIUM, HARD and 秘 EXTRA HARD play
+    Requiem, Darksynth and Nightmare: ElevenLabs Music takes, beat-measured and
+    looped on whole bars with a crossfaded seam.
+  - Each opens in Kata Trace when she beats him at its level. The EXTRA HARD
+    ones (and Nightmare's 2:27 long cut) are hidden until the secret is open.
+  - Debug rows: open every song; open EXTRA HARD as if 1st Class.
+  - **Open:** nobody has played it. The takes do not follow the theme's chords,
+    and Kata Trace speed raises their pitch.
 
 - **Richard's thirteen-point fix list** (branch
   `mixed/dream-dojo-gauntlet-kata-fixes`).

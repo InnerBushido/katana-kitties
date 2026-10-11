@@ -44,6 +44,7 @@ import { DodgeFx } from './systems/dodgefx.js';
 import { ClanFx } from './systems/clanfx.js';
 import { Confirm } from './systems/confirm.js';
 import { KataEditor } from './systems/dream/kataeditor.js';
+import { SHADOW_TRACK } from './systems/dream/beatmap.js';
 import { onTap } from './core/tap.js';
 import { ShrineScene, SCENE_RADIUS } from './systems/shrinescene.js';
 import { StoryScene } from './systems/dream/storyscene.js';
@@ -5078,6 +5079,14 @@ class Game {
        already has four kittens' worth of hands on it. See
        `Tournament._paintHud`, which is the only thing that reads the flag. */
     if (code === 'OverflowDbg') this._toggleOverflowDbg();
+    /* SHADOW LIONHEART'S UNLOCKS, FOR TESTING. Richard: "add this as a debug
+       option that I can unlock all the songs to be played in the Kata Trace as
+       well as unlock the Extra Hard Shadow Lionheart battle without needing to
+       be Kenshi 1st Class (but unlocking it as if I had just become Kenshi 1st
+       Class so that any text or voice is played". No keys: the second writes
+       into the save, so both ask, like every keyless row. */
+    if (code === 'DreamSongs') this._debugShadowSongs();
+    if (code === 'DreamExtra') this._debugOpenExtra();
     /* --- the scene viewer ---
        Every cutscene in the game is gated behind hours of play and fires ONCE
        per session, which makes the last thing anybody writes also the hardest
@@ -6075,6 +6084,50 @@ class Game {
    * appears to do nothing — sixth non-negotiable, and the toast is cheaper
    * than the confusion.
    */
+  /** Every Shadow song open in Kata Trace, for this session (`KataHall.songChoices`). */
+  _debugShadowSongs() {
+    if (this._debugSongs) { this.toast('[debug] every Shadow song is already open in Kata Trace', 0); return; }
+    this.confirm.ask({
+      title: 'OPEN EVERY SHADOW SONG?',
+      body: 'Requiem, Darksynth, Nightmare and Nightmare (long) become playable in Kata Trace '
+        + 'for every kitten, without beating him. Until the tab is closed.',
+      no: 'NO, KEEP THEM LOCKED',
+      yes: 'YES, OPEN ALL FOUR',
+      onYes: () => {
+        this._debugSongs = true;
+        this.toast('[debug] every Shadow song is open in Kata Trace', 0);
+        this._refreshDebugPanel();
+      },
+    });
+  }
+
+  /**
+   * 秘 EXTRA HARD open for every kitten playing, AS IF she had just made
+   * KENSHI 1st Class: the `extra` flag (`extraOpen`), and then the rank's own
+   * announcement fires on its own (`Ranks._watchFirstClass` polls for it),
+   * toast, fanfare, his line and all — the thing being tested is that
+   * announcement, so it is not faked here. Her rank does not change. Written
+   * into the save with the rest of the ledger.
+   */
+  _debugOpenExtra() {
+    const P = this.dream?.progress;
+    if (!P) { this.toast('[debug] no Dream Dojo yet — start a game first', 0); return; }
+    const who = this.players.filter((p) => !P.flag(p.style?.name ?? p.name, 'extra'));
+    if (!who.length) { this.toast('[debug] EXTRA HARD is already open for every kitten playing', 0); return; }
+    this.confirm.ask({
+      title: 'OPEN 秘 EXTRA HARD?',
+      body: `Shadow Lionheart's secret fight opens for ${who.map((p) => p.name).join(', ')} without KENSHI 1st Class, `
+        + 'and the 1st Class announcement plays as it would have. It is kept in the save.',
+      no: 'NO, LEAVE IT SECRET',
+      yes: `YES, OPEN IT FOR ${who.length}`,
+      onYes: () => {
+        for (const p of who) P.setFlag(p.style?.name ?? p.name, 'extra');
+        this.toast('[debug] 秘 EXTRA HARD is open — the announcement plays in the simulator', 0);
+        this._refreshDebugPanel();
+      },
+    });
+  }
+
   _toggleOverflowDbg() {
     this._overflowDbg = !this._overflowDbg;
     this.toast(this._overflowDbg
@@ -6277,6 +6330,9 @@ class Game {
       ${row('KeyR', `WASD &#8594; ${this._keyboardHeldBy(0)}`)}
       ${row('KeyU', `${KEYSETS[1].name} &#8594; ${this._keyboardHeldBy(1)}`)}
       ${TUNING_ROW}
+      <div class="dbg-sep">SHADOW LIONHEART — his songs and his secret</div>
+      ${row('DreamSongs', 'open every Shadow song in Kata Trace', this._debugSongs)}
+      ${row('DreamExtra', 'open 秘 EXTRA HARD — as if 1st Class')}
       <div class="dbg-sep">THIS DEVICE — what outlives the tab</div>
       ${row('BoardWipe', `wipe the RECORD BOARD (${this._boardRows()} results)`)}
       ${row('SaveWipe', `wipe the SAVED GAMES (${listSaves().length} of ${saveCap()})`)}
@@ -8904,9 +8960,18 @@ class Game {
     const kata = this.dream?.kata?.musicTrack?.();
     if (kata) { this._vrLevel = 1; return kata; }
     /* SHADOW LIONHEART'S FIGHT HAS HIS OWN THEME — "darker music, more
-       gothic" (`MUSIC.shadow`) — while a round of it is live. */
-    if (this.dream?.shadow?.state === 'live') { this._vrLevel = 1; return 'shadow'; }
+       gothic" — while a round of it is live, and a different one per level
+       (`SHADOW_TRACK`): the procedural theme on EASY, then the three
+       recordings, Requiem, Darksynth and Nightmare. A recording plays its
+       measured loop for as long as the fight lasts. */
+    if (this.dream?.shadow?.state === 'live') {
+      this._vrLevel = 1;
+      return SHADOW_TRACK[this.dream.shadow.L?.id] ?? 'shadow';
+    }
     this._vrLevel = this.dream?.musicLevel?.(this.players) ?? 0;
+    /* HIS RECORDINGS ARE FETCHED ON THE WAY IN — bytes only, ~1.4MB each, so
+       the fight's music does not wait on the network (Audio.prefetchMusic). */
+    if (this._vrLevel > 0 && !this._shadowFetched) { this._shadowFetched = true; this.audio?.prefetchMusic?.(Object.values(SHADOW_TRACK)); }
     if (this._vrLevel > 0) return 'vr';
     const isl = this._islandTrack(dt);
     if (isl === 'arena' && !this.inMatch) return 'saucer';
