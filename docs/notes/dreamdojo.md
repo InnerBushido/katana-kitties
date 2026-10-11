@@ -2250,6 +2250,54 @@ walk to her tube goes round the treadmills on an A* path over the pad
 none). The stick takes it back after 1.5s. *Show the Dream Dojo walk paths* in
 the debug panel draws the grown obstacles and the live paths.
 
+**小波 正弦 激流 Three Sine courses, and a secret level** (`dream/course.js`,
+`dream/sine.js`). "2 more extra courses, maybe an easier course and a harder
+course ... less platforms to jump on with the 'ground is lava' and maybe have
+the platforms moving in different directions". Course.js holds three section
+tables — **The Ripple** (easy: fewer bars, bigger and calmer stones, three
+curtains with wider gaps), **The Gauntlet** (the one there was) and **The
+Riptide** (six stones instead of eight, and they slide ACROSS the lane as well
+as rising: `slide·cos`, with `H + A·sin` up, so each stone goes round a unit
+circle stood on its edge). `useCourse(id)` re-lays the module's live bindings
+(`SECTIONS`, `SECTION`, `ARMS`, `CP_S`, `COURSE_BANDS`), so everything that
+read the one course reads whichever is down. Every check made of the Gauntlet
+— no checkpoint in a hazard, a clean way through, no way through without
+hopping, bands off the search, drawn == model — is made again of the other
+two. The Gauntlet keeps its old star keys (`sine.L1`), so old saves keep their
+stars; the others are `sine.<id>.L<n>`.
+
+A stone that moves sideways carries her (`_carry`, by its delta per frame), and
+for it the lens goes over her shoulder — "we need to have the camera go behind
+the player ... just like with the front camera change when going between the
+door way lazers": `_shoulder()` now answers for the stones whenever they slide.
+
+**秘 EXTRA HARD** is L4 of each course: open on three stars on THAT course's L3,
+or the debug panel's *open 秘 EXTRA HARD in the Sine Gauntlet* row. Faster
+(1.55), a zap is back to the START rather than the checkpoint, and its bands are
+off the SPRINTER (three stars within 1.05–1.15x the fastest clean run there is)
+— "near impossible to beat unless the player does everything perfectly". It is
+never anybody's tier, so the picker never opens on it.
+
+**Choosing.** The kiosk with nobody running opens a picker (COURSE ◀▶, LEVEL
+◀▶, RUN); one kitten drives it and anybody else pressing is told who. ◀▶ on
+COURSE **swipes**: each course is drawn in its own group off a pivot at the
+HUB's centre — "as if the circular center of the swipe away direction is the
+center of the dojo of the turning circle" — and the old one turns 0.36 rad out
+and fades while the new one turns in from the other side (`SWIPE`, 1.6s), beams
+LIT the whole way ("The LED's should be on"). Its stones leave the physics the
+moment the swipe starts, so nobody stands on a fading course. While she
+chooses her lens is the **bird's eye** (`BIRD`): over the course's middle, 74
+back, swaying ±0.7 rad round it rather than spinning, because the player camera
+eases yaw back with a straight lerp and a yaw wound round twice would unwind
+twice. The picker itself rides **her lens** (HoloChoice `lens`, `PICK`): beside
+the kiosk it was a smudge from 74 back, and hung 2.6x over the far rim it sat
+under the HUD; on the lens it is 0.32 of the frame tall, left of centre, and
+drawn only in panes she is in.
+
+*Not built:* "multiple levels ... or possibly can connect to multiple islands"
+for Hard / Extra Hard. It was offered as optional, and three courses on one
+floor with a secret level each already gives the ladder it was for.
+
 ## Voice
 
 Lionheart is **Barrett** (`d603a8cd-3fe1-55e0-9245-617a2589131e`), nine clips

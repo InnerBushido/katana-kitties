@@ -66,12 +66,25 @@ import { segSegDist } from './targets.js';
    sisters racing for a time all face the same course at the same moments.
 --------------------------------------------------------------------------- */
 
-/** How fast everything moves, per level. The waves keep their shapes. */
+/** How fast everything moves, per level. The waves keep their shapes.
+ *
+ *  L4 IS 秘 EXTRA HARD. Richard: "just for fun, lets make an 'Extra hard'
+ *  difficulty that can be unlocked if the player beats the 'Hard' difficulty
+ *  level with 3 stars ... designed to be near impossible to beat unless the
+ *  player does everything perfectly." So it is faster than L3 again AND
+ *  `restart`: a zap is back to the START, not the last checkpoint. It is
+ *  never somebody's tier — only picked, once it is open (`extraOpen` in
+ *  sine.js) — and world-check holds that a kitten who sprints and hops
+ *  perfectly can still finish it. */
 export const LEVELS = [
   { speed: 0.8 },
   { speed: 1.0 },
   { speed: 1.3 },
+  { speed: 1.55, extra: true, restart: true },
 ];
+/** The index of 秘 EXTRA HARD, and of the level that opens it with three stars. */
+export const EXTRA_L = 3;
+export const HARD_L = 2;
 
 /** The five lanes' middles (a) and half-widths. Edge to edge they tile
  *  a −17 to 13 exactly: 5 + 5 + 10 + 5 + 5. */
@@ -141,7 +154,7 @@ export function laneOf(a) {
  *  sends her back to (in her lane, at that b). Bars are listed in the order
  *  she reaches them, so `n` counts the way she runs. `twin` is the height of
  *  a bar's twin above it. */
-export const SECTIONS = [
+const GAUNTLET = [
   { key: 'stand', name: 'STANDING WAVE', lane: 0, cp: START.b, bars: [-11, -6.5, -2], wave: { A: 1.6, C: 2.0, w: 1.6, k: 0 } },
   { key: 'travel', name: 'TRAVELLING WAVE', lane: 0, cp: 1.5, bars: [5, 9, 13], wave: { A: 1.6, C: 2.0, w: 1.8, k: 0.8 } },
   { key: 'twin', name: 'TWIN WAVE', lane: 1, cp: 15.6, bars: [11, 6.5, 2], twin: 5, wave: { A: 1.6, C: 2.0, w: 1.8, k: 0.6 } },
@@ -162,16 +175,102 @@ export const SECTIONS = [
   { key: 'final', name: 'FINAL WAVE', lane: 4, cp: -19.2, bars: [-14, -9.5, -5, -0.5, 4, 8.5], twin: 5,
     wave: { A: 1.7, C: 2.0, w: 2.4, k: -0.9 } },
 ];
-export const SECTION = Object.fromEntries(SECTIONS.map((s) => [s.key, s]));
 
-/** Every turning arm on the course — the four on the floor and the one in the
+/* THE RIPPLE — the easy one. Richard: "add in 2 more extra courses, maybe an
+   easier course and a harder course". The same eight stretches in the same
+   lanes, so every wall, checkpoint and turn is the Gauntlet's and only the
+   things that zap change: fewer bars on gentler waves, bigger and calmer
+   stones, two sweepers instead of four, three curtains with wide gaps, and a
+   final wave of three. */
+const RIPPLE = [
+  { key: 'stand', name: 'LITTLE WAVE', lane: 0, cp: START.b, bars: [-9, -2], wave: { A: 1.2, C: 1.9, w: 1.3, k: 0 } },
+  { key: 'travel', name: 'ROLLING WAVE', lane: 0, cp: 1.5, bars: [6, 12], wave: { A: 1.2, C: 1.9, w: 1.4, k: 0.8 } },
+  { key: 'twin', name: 'TWIN RIPPLE', lane: 1, cp: 15.6, bars: [10, 3], twin: 5.4, wave: { A: 1.2, C: 1.9, w: 1.4, k: 0.6 } },
+  { key: 'counter', name: 'BACK RIPPLE', lane: 1, cp: -1.5, bars: [-6, -13], twin: 5.4, wave: { A: 1.3, C: 1.9, w: 1.6, k: -0.9 } },
+  { key: 'stones', name: 'STEPPING STONES', lane: 2, cp: -19.6,
+    stones: [-15.8, -12.4, -9, -5.6, -2.2, 1.2, 4.6, 8], floor: [-17.8, 10.3],
+    stone: { H: 1.2, A: 0.6, w: 1.1, k: 1.1, r: 1.8 },
+    air: { a: 0, b: -3.8, R: 4.6, y: 5.6, w: 0.6, ph: 0 } },
+  { key: 'sweep', name: 'TWO SWEEPERS', lane: 2, cp: 11,
+    arms: [
+      { a: 0, b: 14.2, R: 2.2, y: 0.9, w: 1.1, ph: 0 },
+      { a: 0, b: 18.8, R: 2.2, y: 0.9, w: -1.1, ph: Math.PI / 2 },
+    ] },
+  { key: 'gaps', name: 'WIDE GAPS', lane: 3, cp: 20.4, curtains: [12, 3, -6],
+    gap: { half: 1.6, A: 0.8, w: 0.9, ph: [0, 2.1, 4.2] }, beams: [0.5, 1.4, 2.3, 3.2, 4.1, 5.0, 5.9] },
+  { key: 'final', name: 'LAST RIPPLE', lane: 4, cp: -19.2, bars: [-12, -4, 4], twin: 5.4,
+    wave: { A: 1.3, C: 1.9, w: 1.6, k: -0.9 } },
+];
+
+/* THE RIPTIDE — the hard one. "We can make it so that there are less
+   platforms to jump on with the 'ground is lava' and maybe have the platforms
+   moving in different directions as well to make it more challenging."
+   SIX STONES, NOT EIGHT, AND EACH ONE GOES ROUND A CIRCLE: up and down by
+   A·sin θ as before, and across the lane by `slide`·cos θ — so a stone is a
+   point going round the unit circle, stood on its edge across her lane, and
+   the sine stones and the cosine stones are going round a quarter-turn apart.
+   Which is why the camera goes BEHIND her for them (sine.js `_shoulder`):
+   "if we make the platforms move left and right, not just up and down, then
+   we need to have the camera go behind the player". Everything else is the
+   Gauntlet tightened: more bars, faster crests, curtains with narrow gaps. */
+const RIPTIDE = [
+  { key: 'stand', name: 'STANDING WAVE', lane: 0, cp: START.b, bars: [-12, -8, -4, 0], wave: { A: 1.7, C: 2.0, w: 1.9, k: 0 } },
+  { key: 'travel', name: 'TRAVELLING WAVE', lane: 0, cp: 1.5, bars: [5, 8.5, 12, 15.5], wave: { A: 1.7, C: 2.0, w: 2.0, k: 0.9 } },
+  { key: 'twin', name: 'TWIN WAVE', lane: 1, cp: 15.6, bars: [11, 7, 3], twin: 4.8, wave: { A: 1.6, C: 2.0, w: 2.0, k: 0.7 } },
+  { key: 'counter', name: 'COUNTER WAVE', lane: 1, cp: -1.5, bars: [-5, -8.5, -12, -15.5], twin: 4.8, wave: { A: 1.7, C: 2.0, w: 2.4, k: -1.0 } },
+  { key: 'stones', name: 'CIRCLING STONES', lane: 2, cp: -19.6,
+    stones: [-15.6, -10.8, -6, -1.2, 3.6, 8.4], floor: [-17.8, 10.3],
+    stone: { H: 1.4, A: 0.9, w: 1.1, k: 1.3, r: 1.7, slide: 2.0 },
+    air: { a: 0, b: -3.8, R: 4.6, y: 5.6, w: 1.0, ph: 0 } },
+  { key: 'sweep', name: 'THE SWEEPERS', lane: 2, cp: 11,
+    arms: [
+      { a: -2.5, b: 14.2, R: 2.2, y: 0.9, w: 1.8, ph: 0 },
+      { a: 2.5, b: 14.2, R: 2.2, y: 0.9, w: -1.8, ph: Math.PI },
+      { a: -2.5, b: 18.8, R: 2.2, y: 0.9, w: -2.0, ph: Math.PI / 2 },
+      { a: 2.5, b: 18.8, R: 2.2, y: 0.9, w: 2.0, ph: -Math.PI / 2 },
+    ] },
+  { key: 'gaps', name: 'NARROW GAPS', lane: 3, cp: 20.4, curtains: [15, 10, 5, 0, -5, -10],
+    gap: { half: 1.05, A: 1.1, w: 1.4, ph: [0, 1.6, 3.2, 4.8, 0.8, 2.4] }, beams: [0.5, 1.4, 2.3, 3.2, 4.1, 5.0, 5.9] },
+  { key: 'final', name: 'FINAL WAVE', lane: 4, cp: -19.2, bars: [-15, -11, -7, -3, 1, 5, 9], twin: 4.8,
+    wave: { A: 1.8, C: 2.0, w: 2.6, k: -1.0 } },
+];
+
+/**
+ * THE THREE COURSES, easiest first — the order the picker cycles them in.
+ * `ids(n)` is the progress key a level's stars go under: the Gauntlet keeps
+ * the keys it always had (`sine.L1`...), so a save from before there were
+ * three still has its stars on the course they were won on.
+ * `bands` are per level, [one, two, three] seconds — see COURSE_BANDS and
+ * `useCourse`. Measured 2026-10-11 (walker / sprinter, seconds):
+ *   ripple    L1 23.63/16.77  L2 23.27/16.03  L3 22.10/15.53  L4 22.43/14.23
+ *   gauntlet  L1 26.90/19.70  L2 26.63/18.57  L3 25.87/16.63  L4 23.60/14.33
+ *   riptide   L1 28.63/22.83  L2 27.80/23.27  L3 25.50/19.93  L4 25.33/16.60
+ * and on every one of the twelve, nobody gets through without hopping.
+ */
+export const COURSES = [
+  { id: 'ripple', name: 'THE RIPPLE', kanji: '小波', blurb: 'the easy one: fewer beams, calmer stones', sections: RIPPLE,
+    bands: [[240, 70.9, 35.4], [240, 69.8, 34.9], [240, 66.3, 33.2], [240, 19.9, 15.7]] },
+  { id: 'gauntlet', name: 'THE GAUNTLET', kanji: '正弦', blurb: 'the course: eight obstacles to the gold line', sections: GAUNTLET,
+    bands: [[240, 81, 40.5], [240, 80, 40], [240, 78, 39], [240, 20.1, 15.8]] },
+  { id: 'riptide', name: 'THE RIPTIDE', kanji: '激流', blurb: 'the hard one: six stones that go round in circles', sections: RIPTIDE,
+    bands: [[240, 85.9, 42.9], [240, 83.4, 41.7], [240, 76.5, 38.3], [240, 23.2, 18.3]] },
+];
+export const courseById = (id) => COURSES.find((c) => c.id === id) ?? null;
+/** Where a level's stars go: see COURSES. */
+export const starsId = (course, n) => (course === 'gauntlet' ? `sine.L${n + 1}` : `sine.${course}.L${n + 1}`);
+
+/* THE COURSE BEING RUN — LIVE BINDINGS. Everything below reads these, and
+   `useCourse` reassigns them, so sine.js (which imports them) and the checks
+   see the swap without either being handed a course. One course is laid on
+   the island at a time, which is the only reason this can be module state. */
+export let COURSE_ID = 'gauntlet';
+export let SECTIONS = GAUNTLET;
+export let SECTION = {};
+/** Every turning arm on the course — the ones on the floor and the one in the
  *  air over the stones — with its pivot worked out in island coordinates.
  *  The AIR one is the one whose cos and sin are drawn on the floor. */
-export const ARMS = [
-  { ...SECTION.stones.air, sec: 'air', pa: LANES[SECTION.stones.lane] + SECTION.stones.air.a, pb: SECTION.stones.air.b },
-  ...SECTION.sweep.arms.map((m) => ({ ...m, sec: 'sweep', pa: LANES[SECTION.sweep.lane] + m.a, pb: m.b })),
-];
-export const MATH_ARM = ARMS[0];
+export let ARMS = [];
+export let MATH_ARM = null;
 
 /** A bar stands this thick, and hits a body within this much more of it —
  *  `Laser.distTo` against `thick + 0.45`. */
@@ -216,6 +315,18 @@ export function stoneHeight(sec, t, n, speed = 1) {
   const s = sec.stone;
   const th = s.w * speed * t - s.k * n;
   return s.H + s.A * (stoneIsCos(n) ? Math.cos(th) : Math.sin(th));
+}
+
+/** Stone `n`'s offset ACROSS the lane (a), for a course whose stones slide
+ *  (`stone.slide`, the Riptide). The cos of the same angle whose sin is its
+ *  height — so the stone goes round a circle on its edge — and for a cosine
+ *  stone, the angle a quarter-turn on, the same as its height. 0 on a course
+ *  whose stones only bob. */
+export function stoneSlide(sec, t, n, speed = 1) {
+  const s = sec.stone;
+  if (!s.slide) return 0;
+  const th = s.w * speed * t - s.k * n + (stoneIsCos(n) ? Math.PI / 2 : 0);
+  return s.slide * Math.cos(th);
 }
 
 /** An arm's angle, and its two ends — (R·cos θ, R·sin θ) about the pivot,
@@ -279,7 +390,7 @@ export function beams(L, t) {
 export function stones(L, t) {
   const sec = SECTION.stones;
   const c = LANES[sec.lane];
-  return sec.stones.map((b, n) => ({ a: c, b, r: sec.stone.r, y: stoneHeight(sec, t, n, L.speed), cos: stoneIsCos(n) }));
+  return sec.stones.map((b, n) => ({ a: c + stoneSlide(sec, t, n, L.speed), b, r: sec.stone.r, y: stoneHeight(sec, t, n, L.speed), cos: stoneIsCos(n) }));
 }
 
 /** Is (a, b) on the floor that zaps? */
@@ -345,8 +456,8 @@ export function pathS(a, b) {
   return best.s;
 }
 
-/** Each checkpoint's distance along the route, and the finish line's. */
-export const CP_S = SECTIONS.map((sec) => pathS(LANES[sec.lane], sec.cp));
+/** Each checkpoint's distance along the route (`useCourse` sets it), and the finish line's. */
+export let CP_S = [];
 export const FINISH_S = pathS(LANES[LANES.length - 1], FINISH_B);
 
 /** The checkpoint she has earned, having got as far as `sMax`. */
@@ -538,6 +649,32 @@ export function fastestRun(L, { v = 17, dt = 1 / 30, jumpV = 11.2, gravity = 26,
  *  of the walker, and 2★ at 2.5x or more. Nobody gets through WITHOUT
  *  hopping — the same search with no jump never finishes, which is the
  *  stones doing their job. */
-export const COURSE_BANDS = [[240, 81, 40.5], [240, 80, 40], [240, 78, 39]];
+export let COURSE_BANDS = COURSES[1].bands;
 /** The clock: at this, the run ends where she got to. Doubled with the course. */
 export const COURSE_TIME = 240;
+
+/**
+ * LAY COURSE `id` ON THE ISLAND: every live binding above, from its table.
+ * Returns the course, or null for an id that is not one (and changes nothing).
+ * THE BANDS OF THE OTHER TWO COURSES ARE MEASURED THE SAME WAY as the
+ * Gauntlet's — `fastestRun` per level, 3★ at 1.5x the walker and 2★ at 2.5x —
+ * and EXTRA HARD's off the SPRINTER, since it is a level for a kitten doing
+ * everything right: 3★ at 1.1x the sprinter and 2★ at 1.4x. world-check
+ * re-runs every search and holds every band to it.
+ */
+export function useCourse(id) {
+  const C = courseById(id);
+  if (!C) return null;
+  COURSE_ID = C.id;
+  SECTIONS = C.sections;
+  SECTION = Object.fromEntries(SECTIONS.map((s) => [s.key, s]));
+  ARMS = [
+    { ...SECTION.stones.air, sec: 'air', pa: LANES[SECTION.stones.lane] + SECTION.stones.air.a, pb: SECTION.stones.air.b },
+    ...SECTION.sweep.arms.map((m) => ({ ...m, sec: 'sweep', pa: LANES[SECTION.sweep.lane] + m.a, pb: m.b })),
+  ];
+  MATH_ARM = ARMS[0];
+  CP_S = SECTIONS.map((sec) => pathS(LANES[sec.lane], sec.cp));
+  COURSE_BANDS = C.bands;
+  return C;
+}
+useCourse('gauntlet');

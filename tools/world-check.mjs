@@ -38084,11 +38084,89 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     ok('正弦 every level can be run clean by a kitten who walks and hops', runs.every((r) => r.walk != null),
       runs.map((r, i) => `L${i + 1} walk ${r.walk}s sprint ${r.sprint}s`).join(' | '));
     ok('...and NOBODY gets through without hopping: the stones ask for a different move', runs.every((r) => r.noHop == null));
-    ok('...and three stars is 1.4-1.6x that walker, two at 2.5x or more, one is just finishing',
-      runs.every((r, i) => r.walk && CO.COURSE_BANDS[i][2] >= r.walk * 1.4 && CO.COURSE_BANDS[i][2] <= r.walk * 1.6
-        && CO.COURSE_BANDS[i][1] >= r.walk * 2.5 && CO.COURSE_BANDS[i][0] === CO.COURSE_TIME),
-      runs.map((r, i) => `L${i + 1} ${CO.COURSE_BANDS[i].join('/')} vs ${r.walk}`).join(' | '));
+    /* 秘 EXTRA HARD (L4) is a level for a kitten doing everything right, so
+       its bands are off the SPRINTER: three stars within 1.05-1.15x the
+       fastest clean run there is, two within 1.3-1.5x. */
+    const bandsOk = (bands, rs) => rs.every((r, i) => (i === CO.EXTRA_L
+      ? r.sprint && bands[i][2] >= r.sprint * 1.05 && bands[i][2] <= r.sprint * 1.15 && bands[i][1] >= r.sprint * 1.3 && bands[i][1] <= r.sprint * 1.5
+      : r.walk && bands[i][2] >= r.walk * 1.4 && bands[i][2] <= r.walk * 1.6 && bands[i][1] >= r.walk * 2.5)
+      && bands[i][0] === CO.COURSE_TIME);
+    ok('...and three stars is 1.4-1.6x that walker, two at 2.5x or more, one is just finishing (秘 EXTRA HARD: off the sprinter)',
+      bandsOk(CO.COURSE_BANDS, runs),
+      runs.map((r, i) => `L${i + 1} ${CO.COURSE_BANDS[i].join('/')} vs ${r.walk}/${r.sprint}`).join(' | '));
     ok('...and sprinting beats walking on every level, so the button is worth knowing', runs.every((r) => r.sprint < r.walk));
+
+    /* --- 小波 激流 THE OTHER TWO COURSES. Richard: "let's also add in 2 more
+       extra courses, maybe an easier course and a harder course. We can make
+       it so that there are less platforms to jump on with the 'ground is
+       lava' and maybe have the platforms moving in different directions as
+       well". Every claim above that is about the COURSE is made again for
+       each of them: a checkpoint is never inside a hazard, there is a clean
+       way through, hopping is required, the bands are off the search, and
+       what is drawn is the model. --- */
+    {
+      const others = CO.COURSES.filter((C) => C.id !== 'gauntlet');
+      const per = {};
+      for (const C of others) {
+        G.setCourse(C.id, 1, { instant: true });
+        let bad = null;
+        for (const L of CO.LEVELS) {
+          for (let t = 0; t < 40 && !bad; t += 0.05) {
+            const list = CO.beams(L, t);
+            for (const sec of CO.SECTIONS) if (CO.hitAt(L, CO.LANES[sec.lane], sec.cp, 0, t, { list })) { bad = `${sec.key} at ${t.toFixed(2)}s`; break; }
+          }
+        }
+        const rs = CO.LEVELS.map((L) => ({
+          walk: CO.fastestRun(L, { v: walk, jumpV: jv, gravity: gr }),
+          sprint: CO.fastestRun(L, { v: sprint, jumpV: jv, gravity: gr }),
+          noHop: CO.fastestRun(L, { v: walk, jumpV: 0.001, gravity: gr, tMax: 40 }),
+        }));
+        let drawn = 0;
+        for (const L of CO.LEVELS) {
+          for (const t of [0, 1.3, 4.7]) {
+            G._paintCourse(L, t);
+            CO.beams(L, t).forEach((q, k) => {
+              const e = G.beamFx[k].ends; const a = isleSpot(I, q.a0, q.b0);
+              drawn = Math.max(drawn, Math.hypot(e[0].position.x - a.x, e[0].position.y - (I.y + q.y0), e[0].position.z - a.z));
+            });
+            CO.stones(L, t).forEach((s, n) => {
+              const at = isleSpot(I, s.a, s.b); const d = G.stoneDecks[n];
+              drawn = Math.max(drawn, Math.abs(d.y - (I.y + s.y)), Math.hypot(d.x - at.x, d.z - at.z));
+            });
+          }
+        }
+        per[C.id] = { bad, rs, drawn, beams: CO.beams(CO.LEVELS[0], 0).length, stones: CO.SECTION.stones.stones.length,
+          slide: CO.SECTION.stones.stone.slide ?? 0, n: CO.SECTIONS.length };
+        ok(`${C.kanji} ${C.name}: no checkpoint is ever inside a hazard on any of its four levels, and what is drawn is course.js, stones and all`,
+          !bad && drawn < 0.01, `${bad ?? 'clear'}, drawn off by ${drawn.toFixed(4)}`);
+        ok(`...it can be run clean by a walker on L1-L3 and a sprinter on 秘 EXTRA HARD, never without hopping, with its bands off the search`,
+          rs.every((q, i) => (i === CO.EXTRA_L ? q.sprint : q.walk) != null && q.noHop == null) && bandsOk(C.bands, rs),
+          rs.map((q, i) => `L${i + 1} ${q.walk}/${q.sprint} vs ${C.bands[i].join('/')}`).join(' | '));
+      }
+      G.setCourse('gauntlet', 1, { instant: true });
+      const gBeams = CO.beams(CO.LEVELS[0], 0).length;
+      const gStones = CO.SECTION.stones.stones.length;
+      ok('小波 the Ripple is the easy one: fewer beams than the Gauntlet, the same eight stretches, and its stones bigger and calmer',
+        per.ripple.beams < gBeams && per.ripple.n === 8 && CO.courseById('ripple').sections[4].stone.r > CO.SECTION.stones.stone.r
+        && CO.courseById('ripple').sections[4].stone.A < CO.SECTION.stones.stone.A, `${per.ripple.beams} beams to ${gBeams}`);
+      ok('激流 the Riptide has FEWER stones over the lava, and they move a different way: across the lane as well as up',
+        per.riptide.stones < gStones && per.riptide.slide > 0 && !CO.SECTION.stones.stone.slide, `${per.riptide.stones} stones to ${gStones}`);
+
+      // Its stones go round a circle on its edge: (side/S)² + ((y−H)/A)² = 1, the cosine one a quarter-turn on.
+      const rt = CO.courseById('riptide').sections.find((x) => x.key === 'stones');
+      let circ = 0; let quarter = 0;
+      for (const t of [0.2, 1.1, 2.9, 5.3]) {
+        for (let n = 0; n < rt.stones.length; n++) {
+          const side = CO.stoneSlide(rt, t, n, 1) / rt.stone.slide;
+          const up = (CO.stoneHeight(rt, t, n, 1) - rt.stone.H) / rt.stone.A;
+          circ = Math.max(circ, Math.abs(side * side + up * up - 1));
+        }
+        const th = rt.stone.w * t - rt.stone.k * 1;
+        quarter = Math.max(quarter, Math.abs(CO.stoneSlide(rt, t, 1, 1) - rt.stone.slide * Math.cos(th + Math.PI / 2)));
+      }
+      ok('激流 each Riptide stone goes round the unit circle stood on its edge — sin up, cos across — and a cosine stone a quarter-turn ahead',
+        circ < 1e-9 && quarter < 1e-9, `${circ.toExponential(1)} ${quarter.toExponential(1)}`);
+    }
 
     /* THE SESSION. Two kittens: she runs, her sister waits in the stands. */
     her.name = her.name ?? 'HER'; sis.name = sis.name ?? 'SIS';
@@ -38099,9 +38177,13 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     her.clan = clanA;
     D._applyKit(her, true); D._applyKit(sis, true);
     const kioskQ = { x: G.kiosk.x, z: G.kiosk.z, y: I.y };
+    /* The kiosk with nobody running opens the COURSE PICKER now; RUN is
+       what starts the session. A press here is the kiosk and then RUN at
+       the level the picker opened on (her tier). */
+    const press = (p) => { D.stationAt(p)?.interact(p); if (G.picking === p.index) G.begin(p, G._pick.level); };
     put(her, kioskQ);
     fakeGame.toasts.length = 0;
-    D.stationAt(her)?.interact(her);
+    press(her);
     const d0 = D.drills[0];
     ok('正弦 the kiosk opens a session and puts her on the start, at her level', !!G.session && G.session.runner === 0
       && d0?.spec.id === 'sine.L1' && Math.abs(lc(her.position.x - SW.SIM.dx, her.position.z - SW.SIM.dz).b - CO.START.b) < 0.01);
@@ -38109,7 +38191,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       her.clan === null && (her.wornOrbs?.length ?? 0) === 0 && D.st[0].holoWorn.join() === `${OI[0]},${OI[1]}`
       && fakeGame.toasts.some((t) => /rack/.test(t)), fakeGame.toasts.join(' | '));
     put(sis, kioskQ);
-    D.stationAt(sis)?.interact(sis);
+    press(sis);
     const sq = lc(sis.position.x - SW.SIM.dx, sis.position.z - SW.SIM.dz);
     ok('...and her sister joins the queue and is put in the stands, kit racked too',
       G.session.queue.join() === '1' && G.inStands(sis) && Math.hypot(sq.a - PLZ().a, sq.b - PLZ().b) < CO.LANE_HALF
@@ -38285,8 +38367,8 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const hq = lc(her.position.x - SW.SIM.dx, her.position.z - SW.SIM.dz);
     ok('...onto the plaza, outside the course walls', hq.a < -17 && Math.hypot(hq.a, hq.b) < I.r, `${hq.a.toFixed(1)},${hq.b.toFixed(1)}`);
     // Leaving the stands gives up the place; leaving the sim takes her out of it.
-    put(her, kioskQ); D.stationAt(her)?.interact(her);
-    put(sis, kioskQ); D.stationAt(sis)?.interact(sis);
+    put(her, kioskQ); press(her);
+    put(sis, kioskQ); press(sis);
     const ex = G.exitKiosk;
     put(sis, { x: ex.x, z: ex.z, y: ex.y });
     D.stationAt(sis)?.interact(sis);
@@ -38296,7 +38378,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     D.drills[0]?.dispose(); D.drills[0] = null;
     ok('...and a runner who leaves the simulator ends the session cleanly, kit back on', !G.session && !D.st[0].benched && her.clan === clanA);
     // A scene pulls everybody out: no session survives it.
-    put(her, kioskQ); D.stationAt(her)?.interact(her);
+    put(her, kioskQ); press(her);
     G.reset();
     D.drills[0]?.dispose(); D.drills[0] = null;
     ok('...and a reset (a scene, the tournament) drops the session and unracks everybody', !G.session && !D.st[0].benched);
@@ -38325,7 +38407,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const sq3 = lc(sis.position.x - SW.SIM.dx, sis.position.z - SW.SIM.dz);
     ok('...and a kitten who got into the course with nobody running it is walked out to the plaza after STRAY_T, in words',
       stillIn && !G.inCourse(sis) && sq3.a < -17 && fakeGame.toasts.some((t) => /THE COURSE/.test(t)), fakeGame.toasts.join(' | '));
-    put(her, kioskQ); D.stationAt(her)?.interact(her);
+    put(her, kioskQ); press(her);
     const runQ = isleSpot(I, CO.START.a, CO.START.b);
     put(her, { x: runQ.x, z: runQ.z, y: I.y });
     for (let t = 0; t < SN.STRAY_T * 2; t += 1 / 30) G.update(1 / 30);
@@ -38349,6 +38431,151 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       && /_leaveSim\(p, keepSuit = false\) \{[\s\S]{0,300}this\.sine\?\.forget\(p\);\s*this\._hushHolo\(p\);/.test(DS2)
       && /exitAll\(\) \{\s*this\.sine\?\.reset\(\);/.test(DS2)
       && /this\.sine\?\.cheerPad\?\./.test(DS2));
+    /* --- CHOOSING A COURSE: the picker, the swipe, the bird's eye, the
+       secret level. Richard: "These levels/courses can be cycled/appear on top
+       of the current location of the current course ... swiped away ... in a
+       circular rotation ... as if the circular center of the swipe away
+       direction is the center of the dojo of the turning circle ... The
+       camera should zoom out in such a way that we get a decent birds eye view
+       of the entire course. The camera can be rotating around the center of
+       the island". --- */
+    {
+      G.reset();
+      for (const p of [her, sis]) { D.closeChoice(p); D.unbench?.(p, true); }
+      const kioskQ = { x: G.kiosk.x, z: G.kiosk.z, y: I.y };
+      put(her, kioskQ);
+      fakeGame.toasts.length = 0;
+      D.stationAt(her)?.interact(her);
+      const ch = D.choices[0];
+      const title = ch?.o?.title ?? ch?.title ?? '';
+      ok('選 with nobody running, the kiosk opens the COURSE PICKER — with her name on it — and starts nothing yet',
+        G.picking === 0 && /SINE GAUNTLET — /.test(title) && !G.session && !D.drills[0], title);
+      put(sis, kioskQ);
+      D.stationAt(sis)?.interact(sis);
+      ok('...one kitten drives it: her sister pressing is told who is choosing, in words, and gets no menu of her own',
+        !D.choices[1] && fakeGame.toasts.some((t) => /is choosing the course/.test(t)), fakeGame.toasts.join(' | '));
+
+      /* Read from the bird's eye, 74 back, the picker is pinned to HER LENS:
+         beside the kiosk it was a smudge, and hung big over the far rim it sat
+         under the HUD (browser). So: in front of her camera, PICK.h of the
+         frame tall whatever the fov, and not on her sister's glass. */
+      {
+        const cam = new THREE.PerspectiveCamera(50, 16 / 9, 0.1, 500);
+        cam.position.set(SW.SIM.dx + 10, 60, SW.SIM.dz + 40); cam.lookAt(SW.SIM.dx, 0, SW.SIM.dz); cam.updateMatrixWorld(true);
+        ch.faceCamera(cam, [0]);
+        ch.panel.updateMatrixWorld(true);
+        const wpos = ch.panel.getWorldPosition(new THREE.Vector3());
+        const ndc = wpos.clone().project(cam);
+        const ws = ch.panel.getWorldScale(new THREE.Vector3()).y;
+        const frac = (3.4 * ws) / (2 * SN.PICK.d * Math.tan(THREE.MathUtils.degToRad(25)));
+        const mine = ch.panel.visible;
+        ch.faceCamera(cam, [1]);
+        const theirs = ch.panel.visible;
+        ok('鳥 the course picker rides HER lens: where PICK puts it on the frame, PICK.h of it tall, and hidden in a pane she is not in',
+          ch.lens === SN.PICK && Math.abs(ndc.x - SN.PICK.nx) < 1e-6 && Math.abs(ndc.y - SN.PICK.ny) < 1e-6
+          && Math.abs(frac - SN.PICK.h) < 1e-6 && mine && !theirs, `ndc ${ndc.x.toFixed(3)},${ndc.y.toFixed(3)} h ${frac.toFixed(3)}`);
+        ch.faceCamera(cam, [0]);
+      }
+
+      // The bird's eye while she chooses: the island's middle, pulled right back, swaying round it.
+      const yaws = [];
+      for (const t of [0, 3, 7, 11, 20]) { D.t = t; yaws.push(G.cameraFocus(her).yaw - G._yaw()); }
+      const bf = G.cameraFocus(her);
+      const mid = isleSpot(I, (CO.COURSE_A[0] + CO.COURSE_A[1]) / 2, 0);
+      ok('鳥 while she chooses her camera is the bird\'s eye: over the course\'s middle, pulled back to see all of it, swaying round it',
+        bf.dist === SN.BIRD.dist && Math.hypot(bf.centre.x - SW.SIM.dx - mid.x, bf.centre.z - SW.SIM.dz - mid.z) < 1e-6
+        && Math.max(...yaws) - Math.min(...yaws) > SN.BIRD.sway && yaws.every((y) => Math.abs(y) <= SN.BIRD.sway + 1e-9)
+        && G.cameraFocus(sis) === null, yaws.map((y) => y.toFixed(2)).join(' '));
+
+      // ▶ on COURSE: the swipe. The old course turns OUT round the hub and fades; the new one turns IN.
+      const hub = D.game.world.dojoCentre;
+      const oldV = G.view;
+      const oldDecks = oldV.stoneDecks.slice();
+      const probe = oldV.beamFx[0].ends[0];
+      const r0 = Math.hypot(probe.position.x - hub.x, probe.position.z - hub.z);
+      const wp = new THREE.Vector3();
+      ch.o?.rows?.[0]?.cycle?.(1) ?? G.setCourse('riptide', 1);
+      const swiping = !!G.swipe && G.view !== oldV && CO.COURSE_ID === 'riptide';
+      G._stepSwipe(SN.SWIPE.dur / 2);
+      oldV.pivot.updateMatrixWorld(true);
+      probe.getWorldPosition(wp);
+      wp.sub(D.sim.root.position);
+      const r1 = Math.hypot(wp.x - hub.x, wp.z - hub.z);
+      const turned = oldV.pivot.rotation.y; const turnedIn = G.view.pivot.rotation.y;
+      const midFade = [oldV.fade, G.view.fade];
+      const decksGone = oldDecks.every((d) => !D.sim.decks.includes(d)) && G.stoneDecks.every((d) => D.sim.decks.includes(d));
+      const lit = oldV.beamFx.every((fx) => fx.look === 'live');
+      G._stepSwipe(SN.SWIPE.dur);
+      ok('↻ COURSE ◀▶ swipes it: the old course turns out round the HUB\'s centre (its beams keep their distance from it) while the new one turns in from the other side',
+        swiping && Math.abs(r1 - r0) < 1e-6 && turned > 0 && turnedIn < 0 && Math.abs(turned + turnedIn) < 1e-9,
+        `r ${r0.toFixed(2)}→${r1.toFixed(2)}, out ${turned.toFixed(3)} in ${turnedIn.toFixed(3)}`);
+      ok('...fading out as the other fades in, its beams still LIT on the way, and nothing of it left to stand on',
+        Math.abs(midFade[0] + midFade[1] - 1) < 1e-9 && midFade[0] > 0 && midFade[0] < 1 && lit && decksGone,
+        `${midFade.map((x) => x.toFixed(2)).join(' ')} lit ${lit} decks gone ${decksGone}`);
+      ok('...and when it lands there is one course, square on the island, at full strength',
+        !G.swipe && !oldV.pivot.parent && G.view.pivot.rotation.y === 0 && G.view.fade === 1
+        && G.view.mats.every((m) => m.m.opacity === m.o0));
+
+      // 秘 EXTRA HARD: never a tier, locked in words, opened by L3's three stars — or the debug row.
+      const name = her.style?.name ?? her.name;
+      const keep = D.progress.toSave();
+      D.progress.fromSave({ v: 1, kittens: {} });
+      const locked = G.levelLock(her, CO.EXTRA_L);
+      D.progress.award(name, CO.starsId('riptide', 0), 2);
+      D.progress.award(name, CO.starsId('riptide', 1), 2);
+      const tierTop = G.tier(her);
+      D.progress.award(name, CO.starsId('riptide', 2), 2);
+      const twoNot = !G.extraOpen(her);
+      D.progress.award(name, CO.starsId('riptide', 2), 3);
+      const threeOpen = G.extraOpen(her) && !G.extraOpen(her, 'ripple');
+      D.progress.fromSave({ v: 1, kittens: {} });
+      D.game._debugSineExtra = true;
+      const dbg = G.extraOpen(her, 'ripple') && G.extraOpen(her, 'gauntlet');
+      D.game._debugSineExtra = false;
+      ok('秘 EXTRA HARD is locked with an instruction, opens on THREE stars on that course\'s L3 (two is not enough), and is never anybody\'s tier',
+        /★★★ on L3 of THE RIPTIDE/.test(locked ?? '') && tierTop === CO.HARD_L && twoNot && threeOpen, locked);
+      ok('...and the debug panel\'s row opens it on every course ("Add a debug unlock for this Extra hard level so I can test it")',
+        dbg && /row\('SineExtra', 'open 秘 EXTRA HARD in the Sine Gauntlet'/.test(MS2) && /code === 'SineExtra'\) this\._toggleSineExtra\(\)/.test(MS2));
+      ok('...and the Gauntlet keeps the star keys it always had, so an old save\'s stars are still on it; the others have their own',
+        CO.starsId('gauntlet', 0) === 'sine.L1' && CO.starsId('riptide', 3) === 'sine.riptide.L4');
+      D.progress.fromSave(keep);
+
+      // RUN on EXTRA HARD (debug-open), then a zap: back to the START, not the checkpoint.
+      D.game._debugSineExtra = true;
+      fakeGame.toasts.length = 0;
+      const ran = G.begin(her, CO.EXTRA_L);
+      D.game._debugSineExtra = false;
+      const sp = D.drills[0]?.spec;
+      G.run.cp = 3; G.run.sMax = CO.CP_S[3] + 1;
+      G.zap(her, 'test');
+      const back = lc(her.position.x - SW.SIM.dx, her.position.z - SW.SIM.dz);
+      ok('秘 a zap on EXTRA HARD is back to the START — "near impossible to beat unless the player does everything perfectly"',
+        ran && sp?.id === 'sine.riptide.L4' && G.run.cp === 0 && G.run.sMax === 0
+        && Math.abs(back.b - CO.START.b) < 0.01 && Math.abs(back.a - CO.LANES[0]) < 0.01, sp?.id);
+      ok('...and while anybody is in a session the course cannot be swapped under them', G.setCourse('ripple', 1) === false && CO.COURSE_ID === 'riptide');
+
+      // The Riptide's stones carry her, and the camera goes behind her for them.
+      G.run.sMax = CO.CP_S[4] + 0.5; G.run.cp = 4;
+      G.drillCam = null;
+      const shoulder = G._shoulder()?.key;
+      const d = G.stoneDecks[2];
+      G._paintCourse(CO.LEVELS[1], 2.0);
+      her.position.set(d.x + SW.SIM.dx, d.y, d.z + SW.SIM.dz);
+      G._paintCourse(CO.LEVELS[1], 2.05);
+      const moved = Math.hypot(d.x - d._px, d.z - d._pz);
+      G._carry();
+      const off = Math.hypot(her.position.x - SW.SIM.dx - d.x, her.position.z - SW.SIM.dz - d.z);
+      ok('激流 a Riptide stone that slides takes her with it, and the camera is behind her for them ("we need to have the camera go behind the player")',
+        moved > 0.01 && off < 1e-6 && shoulder === 'stones', `stone moved ${moved.toFixed(3)}, she is ${off.toFixed(4)} off it, shot ${shoulder}`);
+      G.leaveGauntlet(her);
+      D.drills[0]?.fail?.('test');
+      D.drills[0]?.dispose?.(); D.drills[0] = null;
+      G.update(1 / 60);
+      G.reset();
+      G.setCourse('gauntlet', 1, { instant: true });
+      ok('...and the Gauntlet, swapped back, is the course every check above was made on', CO.COURSE_ID === 'gauntlet' && CO.SECTIONS.length === 8 && CO.SECTION.stones.stones.length === 8);
+    }
+
     ok('...and nothing in the course calls hurt()', !/hurt\(/.test(readFileSync(new URL('../src/systems/dream/sine.js', import.meta.url), 'utf8'))
       && !/hurt\(/.test(readFileSync(new URL('../src/systems/dream/course.js', import.meta.url), 'utf8')));
     function PLZ() { return SN.PLAZA.stands; }
