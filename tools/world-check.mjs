@@ -38399,6 +38399,59 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       && (her.wornOrbs?.length ?? 0) === 2 && fakeGame.toasts.some((t) => /\(HOLO\) PLAYER PROFILE/.test(t)), fakeGame.toasts.join(' | '));
     const hq = lc(her.position.x - SW.SIM.dx, her.position.z - SW.SIM.dz);
     ok('...onto the plaza, outside the course walls', hq.a < -17 && Math.hypot(hq.a, hq.b) < I.r, `${hq.a.toFixed(1)},${hq.b.toFixed(1)}`);
+
+    /* 記 THE SINE BOARD. Richard: "we should have a leaderboard for the Sine
+       Gauntlet as well, like the Kata Board, separated by course and
+       difficulty." The plaza's board shows LAST TIME for a while, and then
+       the leaderboard page — the times the course already writes down. */
+    {
+      const SBm = await import('../src/systems/dream/sineboard.js');
+      const lastMode = G.boardMode();
+      const lastSaid = G.board._key ?? '';
+      G.boardFilter.course = G.last.course ?? 'gauntlet'; G.boardFilter.level = G.last.level; G.boardFilter.who = 'all';
+      D.t = (D.t ?? 0) + SBm.SINE_BOARD.lastHold + 1;
+      G._boardT = 0;
+      G.update(1 / 60);
+      const page = G.board._key ?? '';
+      ok('記 the plaza board shows the race just run for a while, and then the LEADERBOARD — her sister\'s 18.0s on it, from the save row',
+        lastMode === 'last' && /LAST TIME/.test(lastSaid) && G.boardMode() === 'board'
+        && page.includes((sis.style?.name ?? sis.name).toUpperCase().slice(0, 8)) && page.includes('18.0s') && !/LAST TIME/.test(page),
+        `${lastMode} → ${G.boardMode()}`);
+      // Pure over a ledger: by course AND level, fastest first, a tie by name, WHO filters.
+      const led = { data: { kittens: {
+        Ember: { best: { 'sine.L1': 20.5, 'sine.riptide.L1': 30 }, stars: { 'sine.L1': 2 } },
+        Frost: { best: { 'sine.L1': 18 }, stars: { 'sine.L1': 3 } },
+        Aiko: { best: { 'sine.L1': 18, 'sine.L2': 12 }, stars: { 'sine.L1': 3 } },
+      } } };
+      const rows = SBm.sineRows(led, { course: 'gauntlet', level: 0, who: 'all' });
+      const rip = SBm.sineRows(led, { course: 'riptide', level: 0, who: 'all' });
+      const mine = SBm.sineRows(led, { course: 'gauntlet', level: 0, who: 'Ember' });
+      ok('...one page per COURSE and LEVEL, fastest first — a tie stays put — and WHO narrows it to her',
+        rows.map((q) => q.name).join() === 'Aiko,Frost,Ember' && rip.map((q) => q.name).join() === 'Ember' && rip[0].time === 30
+        && mine.length === 1 && SBm.sineRows(led, { course: 'gauntlet', level: 1, who: 'all' }).map((q) => q.name).join() === 'Aiko',
+        rows.map((q) => `${q.name} ${q.time}`).join(', '));
+      ok('...and an empty page says how to get on it, not nothing',
+        SBm.sineBoardLines({ data: { kittens: {} } }, { course: 'ripple', level: 2, who: 'all' }).some((l) => /no times here yet/.test(l.text)));
+      // The kiosk: on the plaza, one driver, and the filters move the page.
+      const bkq = lc(G.boardKiosk.x, G.boardKiosk.z);
+      put(her, { x: G.boardKiosk.x, z: G.boardKiosk.z, y: I.y });
+      const st = D.stationAt(her);
+      st?.interact(her);
+      const ch = D.choices?.[her.index];
+      const before = G.boardFilter.course;
+      ch?.rows?.[0]?.cycle?.(1);
+      G._boardT = 0; G.update(1 / 60);
+      const moved = G.boardFilter.course !== before && (G.board._key ?? '').includes(CO.courseById(G.boardFilter.course).name);
+      const lvls = [];
+      for (let k = 0; k < CO.LEVELS.length + 1; k++) { ch?.rows?.[1]?.cycle?.(1); lvls.push(G.boardFilter.level); }
+      const extraHidden = !G.extraOpen(her, G.boardFilter.course) ? !lvls.includes(CO.EXTRA_L) : true;
+      D.closeChoice(her);
+      ok('...its 記 kiosk is on the plaza, clear of the course and the course\'s kiosk; it opens her filters and the page follows them; 秘 stays secret',
+        st === G.boardKiosk.station && !!ch && moved && extraHidden && !ins(bkq.a) && Math.hypot(bkq.a, bkq.b) + G.boardKiosk.r < I.r
+        && Math.hypot(G.boardKiosk.x - G.kiosk.x, G.boardKiosk.z - G.kiosk.z) > G.kiosk.r + G.boardKiosk.r + 2,
+        `${bkq.a.toFixed(1)},${bkq.b.toFixed(1)} course ${before}→${G.boardFilter.course} levels ${lvls.join('')}`);
+      G.boardFilter.course = 'gauntlet'; G.boardFilter.level = 0;
+    }
     // Leaving the stands gives up the place; leaving the sim takes her out of it.
     put(her, kioskQ); press(her);
     put(sis, kioskQ); press(sis);
