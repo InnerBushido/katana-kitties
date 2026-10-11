@@ -40,6 +40,7 @@ import { tickKeptPandas, dropKept } from './dream/pandatrial.js';
 import { enterHolo, leaveHolo, grantHolo, holoLeft, HoloChoice, HOLO_MAX_EACH } from './dream/holokit.js';
 import { LionGuide, LOST_AFTER, LOST_AGAIN, LOST_MAX } from './dream/lionguide.js';
 import { Kiosk, idleIn, isleSpot } from './dream/kiosk.js';
+import { Waypoints } from './dream/waypoint.js';
 
 /** Her single-cell pose billboards, which the tube puppet mirrors. */
 const PUPPET_POSES = ['eatPose', 'blessPose', 'warpPose', 'breathPose', 'scaredPose', 'sweepPose'];
@@ -1631,6 +1632,12 @@ export class DreamDojo {
       ...this.highway.stations];
     this._buildMapKiosk();
     g.world.simSite = this.simSite();
+    /* 道標 WAYPOINTS, set on the Map of the Simulator (dream/waypoint.js),
+       drawn on the corner minimap through `simWaypoints`. */
+    this.waypoints?.dispose();
+    this.waypoints = new Waypoints(this);
+    this.sim.tickers.push((dt) => this.waypoints?.update(dt));
+    g.world.simWaypoints = () => this.waypoints?.forMap(SIM.dx, SIM.dz) ?? [];
   }
 
   /**

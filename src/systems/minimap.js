@@ -768,7 +768,58 @@ export class Minimap {
     // The map kiosks (DreamDojo.simSite `maps`): a gold board with a fold, the
     // kiosks' own 地図 too small to read at this size.
     for (const q of site.maps ?? []) this._mapPin(this._px(q.x), this._py(q.z));
+    this._drawWaypoints(mine);
     this._drawKittens(players);
+  }
+
+  /**
+   * 道標 HER WAYPOINT (dream/waypoint.js): a ring round the place in her
+   * colour, a pin over it, and a dotted line from her to the marker she is
+   * walking to — the one bouncing in the world. Only the kittens this map is
+   * drawn for: a sister's waypoint is on her own pane's map.
+   */
+  _drawWaypoints(mine) {
+    const list = this.world.simWaypoints?.() ?? [];
+    if (!list.length) return;
+    const c = this.ctx;
+    const dpr = this.dpr;
+    for (const w of list) {
+      const p = mine.find((q) => q.index === w.index);
+      if (!p) continue;
+      const x = this._px(w.x);
+      const y = this._py(w.z);
+      const col = cssFor(p.style);
+      if (w.next) {
+        c.setLineDash([3 * dpr, 3 * dpr]);
+        c.beginPath();
+        c.moveTo(this._px(p.position.x), this._py(p.position.z));
+        c.lineTo(this._px(w.next.x), this._py(w.next.z));
+        c.strokeStyle = col;
+        c.lineWidth = 1.6 * dpr;
+        c.globalAlpha = 0.9;
+        c.stroke();
+        c.setLineDash([]);
+        c.globalAlpha = 1;
+      }
+      const pulse = 1 + 0.15 * Math.sin((this._t ?? 0) * 3);
+      c.beginPath();
+      c.arc(x, y, Math.max(5 * dpr, w.r * this.scale + 3 * dpr) * pulse, 0, Math.PI * 2);
+      c.lineWidth = 2.4 * dpr;
+      c.strokeStyle = col;
+      c.stroke();
+      // The pin: a drop with its point on the place.
+      const s = 4.5 * dpr;
+      c.beginPath();
+      c.moveTo(x, y);
+      c.lineTo(x - s, y - s * 1.9);
+      c.arc(x, y - s * 2.2, s, Math.PI * 0.85, Math.PI * 0.15);
+      c.closePath();
+      c.fillStyle = col;
+      c.fill();
+      c.lineWidth = 1.2 * dpr;
+      c.strokeStyle = 'rgba(4,16,24,0.95)';
+      c.stroke();
+    }
   }
 
   /** One map kiosk: a little folded map, gold on the dark of the floor. */

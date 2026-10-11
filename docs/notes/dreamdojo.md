@@ -2298,6 +2298,63 @@ drawn only in panes she is in.
 for Hard / Extra Hard. It was offered as optional, and three courses on one
 floor with a secret level each already gives the ladder it was for.
 
+## Waypoints on the Map of the Simulator (`dream/waypoint.js`)
+
+"Players can mark a destination on the Map of the Simulator and it shows the
+waypoint on the minimap. It will also show floating 3D holographic markers
+(upside down pyramids or a pointing cursor) bouncing above the next area to
+reach ... Once she reaches a marker it disappears and the next should be in
+view ... Reaching the waypoint removes it and all its markers."
+
+**Setting one.** Lionheart's 地図 MAP card now lists every place as a row of
+chips (the Dojo, her tubes, every island) under the map, and every place on
+the map is a tap. JUMP on one sets her waypoint and says so; JUMP on the one
+she has already marked is the **refresh**, the only way her markers come back.
+✕ CLEAR MY WAYPOINT appears while she has one. The map rings the place under
+her cursor in white and her waypoint in her colour, with a pin. The corner
+minimap draws the same ring and pin, plus a dotted line from her to the marker
+she is walking to (`world.simWaypoints`, read by `Minimap._drawWaypoints`).
+
+**The route is the real one** (`route`), solved over the bridges the layer was
+built from (`links`: the same `from`/`to` arithmetic as `_raiseIsland` and the
+port bridge). It walks up from wherever she is, to the hub or to the first
+island both journeys share, round the hub's walking ring (r 44) the short way,
+and down the target's chain. So the Shadow is reached THROUGH the Arena School.
+It also works from the middle of a bridge.
+
+**Spacing is set by what the camera sees.** The first cut put markers only at
+bridge ends and every 40° of ring. Walking it marker by marker in the browser,
+the next was off the frame at five stops of eleven. Measured through her lens,
+a marker is in frame out to 14.5 units ahead and only 12 toward the camera. So
+no marker is more than `gap` (11) from the one before it:
+
+- round the ring;
+- `along` a bridge;
+- `across` an island she walks through (the School, rim to rim, was 56 units
+  with nothing on it).
+
+The world-check bounds every leg of all 132 routes at 12; the longest is 11.7,
+from a hub mouth to the ring. `along` markers sit on the deck, not on the
+straight line between a bridge's ends: the bridges climb in an S, 2.6 off the
+line on the Shadow's.
+
+**The pointing cursor** is the other half of Richard's sentence. The camera
+keeps one yaw, so spacing alone cannot reach every direction. Re-walking four
+routes, the next marker still sat 0.0–0.2 past the frame's edge at 12 stops of
+75, all of them toward the camera or out to the side. A flat arrow at her
+feet, in her colour, aims at the marker only while it is out of her frame. On
+re-walking it was up at every one of those stops.
+
+A marker close to her lens is shrunk to the size of one 24 away. Before that,
+a marker 11 toward the camera was 6 from the lens and filled the bottom of the
+pane.
+
+**What she sees** is the next two markers only: the one she is going to,
+bright, and the one after, faint. Markers are in her colour, so four sisters
+can each go somewhere else. Reaching a later marker takes the ones before it,
+so cutting a corner never sends her back. Gone stays gone. Arriving anywhere
+on the target's floor clears it and every marker, with a toast saying so.
+
 ## Voice
 
 Lionheart is **Barrett** (`d603a8cd-3fe1-55e0-9245-617a2589131e`), nine clips

@@ -39932,6 +39932,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       /* HIS ROWS. The 凶 row is Payne's trick row: locked until it is hers,
          and saying what it wants when it is chosen. */
       const G = D.guide;
+      const WPm = await import('../src/systems/dream/waypoint.js');
       const nm = nameOf(her);
       const keepBeat = her.shadowBeat;
       her.shadowBeat = { easy: true };
@@ -39952,7 +39953,8 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       D.st[0].holoWorn = null;
       ok('...a sub-card has the rows the Inspector counts, and its last one is BACK',
         G.rowCount(her, 'lionQuests') === 2 && G.subAct('lionQuests', 0) === 'map' && G.subAct('lionQuests', 1) === 'back'
-        && G.rowCount(her, 'lionMap') === 1 && G.subAct('lionMap', 0) === 'back');
+        && G.rowCount(her, 'lionMap') === WPm.DESTS.length + 1 && G.subAct('lionMap', 0) === 'wp:dojo'
+        && G.subAct('lionMap', WPm.DESTS.length, her) === 'back');
 
       /* THE MAP: one circle and one name per island, in the same short names
          the minimap uses, the suggestion ringed, and her dot. */
@@ -39969,6 +39971,234 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       ok('...its strokes are screen pixels, not world units, and the labels keep their own sizes',
         /\.ln-map \* \{ vector-effect: non-scaling-stroke; \}/.test(css) && !/\.ln-map \.ln-lbl \{[^}]*font-size/.test(css)
         && /body\.touch-ui \.ln-map-box \{ max-height: 38vh; \}/.test(css));
+
+      /* 道標 WAYPOINTS. Richard: "Players can mark a destination on the Map of
+         the Simulator and it shows the waypoint on the minimap. It will also
+         show floating 3D holographic markers (upside down pyramids or a
+         pointing cursor) bouncing above the next area to reach, at major
+         intersections: the start and end of bridges, and the main walking
+         path around the Dojo of the Turning Circle. Once she reaches a marker
+         it disappears and the next should be in view; gone, they don't come
+         back unless the waypoint is refreshed on the map. Reaching the
+         waypoint removes it and all its markers." */
+      {
+        D.waypoints ??= new WPm.Waypoints(D);
+        const W = D.waypoints;
+        const L = W.links();
+        const hubC = D.game.world.dojoCentre;
+        const near = (a, b, e = 0.6) => Math.hypot(a.x - b.x, a.z - b.z) < e;
+        // THE LINKS ARE THE BRIDGES: each walkable bridge's road starts and ends on its link's two ends.
+        const roads = (D.sim.bridges ?? []).map((B) => [B.road.pts[0], B.road.pts.at(-1)].map((q) => ({ x: q.x - SW.SIM.dx, z: q.z - SW.SIM.dz })));
+        const walk = Object.values(L).filter((l) => l.key === 'port' || !ISL.ISLANDS[l.key].cycle);
+        const unmatched = walk.filter((l) => !roads.some(([a, b]) => (near(a, l.from, 3) && near(b, l.to, 3)) || (near(b, l.from, 3) && near(a, l.to, 3))));
+        ok('道標 every waypoint link is a real bridge: its two ends are where that bridge\'s road starts and finishes',
+          walk.length >= 8 && unmatched.length === 0 && !!L.port, unmatched.map((l) => l.key).join() || `${walk.length} bridges`);
+        // EVERY PLACE TO EVERY PLACE: a route, ending where it should, through bridge ends and the ring.
+        const centreOf = (k) => (k === 'dojo' ? { x: hubC.x, y: hubC.y, z: hubC.z } : { ...L[k].disc });
+        const ends = Object.values(L).flatMap((l) => [l.from, l.to]);
+        const bad = [];
+        let pairs = 0; let ringSeen = 0; let legs = 0; let longest = 0;
+        const segD = (q, s0, s1) => {
+          const dx = s1.x - s0.x; const dz = s1.z - s0.z; const L2 = dx * dx + dz * dz || 1;
+          const t = Math.max(0, Math.min(1, ((q.x - s0.x) * dx + (q.z - s0.z) * dz) / L2));
+          return Math.hypot(q.x - (s0.x + dx * t), q.z - (s0.z + dz * t));
+        };
+        for (const a of WPm.DESTS) {
+          for (const b of WPm.DESTS) {
+            if (a === b) continue;
+            const st = centreOf(a);
+            const rt = WPm.route(st, b, hubC, L);
+            pairs++;
+            if (!rt?.length) { bad.push(`${a}>${b} none`); continue; }
+            const last = rt.at(-1);
+            // Its own bridge's end — or, coming back from the island past it, that bridge's end on its rim: on its floor either way.
+            if (b !== 'dojo' && !(near(last, L[b].to) || (L[a]?.parent === b && near(last, L[a].from)))) bad.push(`${a}>${b} ends off ${b}'s floor`);
+            if (b === 'dojo' && Math.abs(Math.hypot(last.x - hubC.x, last.z - hubC.z) - WPm.WAYPOINT.hubR) > 0.5) bad.push(`${a}>${b} ends off the hub's rim`);
+            for (const m of rt) {
+              if (m.kind === 'ring') {
+                ringSeen++;
+                if (Math.abs(Math.hypot(m.x - hubC.x, m.z - hubC.z) - WPm.WAYPOINT.ring) > 1e-6) bad.push(`${a}>${b} ring off the ring`);
+              } else if (m.kind === 'along') {
+                if (!Object.values(L).some((l) => segD(m, l.from, l.to) < 1e-6)) bad.push(`${a}>${b} an along marker on no bridge`);
+              } else if (m.kind === 'across') {
+                if (!Object.values(L).some((l) => Math.hypot(m.x - l.disc.x, m.z - l.disc.z) < l.disc.r)) bad.push(`${a}>${b} an across marker on no island`);
+              } else if (!ends.some((e) => near(e, m))) bad.push(`${a}>${b} a marker on no bridge end`);
+            }
+            /* NEVER MORE THAN A `gap` FROM ONE TO THE NEXT, anywhere: the
+               camera shows 12 units round her at the least (measured, see
+               WAYPOINT), and before this the Kata bridge's two ends were 65
+               apart and the Arena School crossed rim to rim with nothing on
+               it. The one leg allowed past `gap` is a hub mouth (47 out) to
+               the ring (44) at a `step` round — 11.7, still inside the 12. */
+            for (let i = 1; i < rt.length; i++) {
+              const d = Math.hypot(rt[i].x - rt[i - 1].x, rt[i].z - rt[i - 1].z);
+              if (d > 12) bad.push(`${a}>${b} ${d.toFixed(1)} from a ${rt[i - 1].kind} to a ${rt[i].kind}`);
+              legs++;
+              longest = Math.max(longest, d);
+            }
+            // Ring steps never longer than `step` degrees (plus the mouth's own offset from the ring).
+            const pts = rt.filter((m) => m.kind === 'ring' || Math.abs(Math.hypot(m.x - hubC.x, m.z - hubC.z) - WPm.WAYPOINT.hubR) < 0.5);
+            for (let i = 1; i < pts.length; i++) {
+              let d = Math.atan2(pts[i].z - hubC.z, pts[i].x - hubC.x) - Math.atan2(pts[i - 1].z - hubC.z, pts[i - 1].x - hubC.x);
+              while (d > Math.PI) d -= 2 * Math.PI;
+              while (d < -Math.PI) d += 2 * Math.PI;
+              if (Math.abs(d) * 180 / Math.PI > WPm.WAYPOINT.step + 0.5) bad.push(`${a}>${b} a ${(Math.abs(d) * 180 / Math.PI).toFixed(0)}° gap on the ring`);
+            }
+          }
+        }
+        ok('...a route from every place to every other, ending on the target\'s floor, every marker on a bridge, an island or the walking ring, and never more than 12 from one to the next — the next is always in her frame',
+          bad.length === 0 && pairs === WPm.DESTS.length * (WPm.DESTS.length - 1) && ringSeen > 0 && legs > 0,
+          bad.slice(0, 5).join(' | ') || `${pairs} routes, ${ringSeen} ring markers, ${legs} legs, the longest ${longest.toFixed(1)}`);
+        // THROUGH THE ONE IN FRONT: the Shadow from the Gallery crosses the School.
+        const gs = WPm.route(centreOf('gallery'), 'shadow', hubC, L);
+        const seq = [L.gallery.to, L.gallery.from, L.school.from, L.school.to, L.shadow.from, L.shadow.to];
+        let at = 0;
+        for (const m of gs) if (at < seq.length && near(m, seq[at])) at++;
+        ok('...the Shadow is reached THROUGH the Arena School: out over the Gallery\'s bridge, round, over the School\'s, over the Shadow\'s',
+          at === seq.length, `${at} of ${seq.length} in order, ${gs.length} markers`);
+        // THE SHORT WAY ROUND.
+        const gh = WPm.route(centreOf('gallery'), 'hall', hubC, L).filter((m) => m.kind === 'ring');
+        const angG = Math.atan2(L.gallery.from.z - hubC.z, L.gallery.from.x - hubC.x);
+        const angH = Math.atan2(L.hall.from.z - hubC.z, L.hall.from.x - hubC.x);
+        // The short way is the one whose markers all sit inside the smaller arc between the two mouths.
+        let dGH = angH - angG;
+        while (dGH > Math.PI) dGH -= 2 * Math.PI;
+        while (dGH < -Math.PI) dGH += 2 * Math.PI;
+        const inArc = gh.every((m) => {
+          let d = Math.atan2(m.z - hubC.z, m.x - hubC.x) - angG;
+          while (d > Math.PI) d -= 2 * Math.PI;
+          while (d < -Math.PI) d += 2 * Math.PI;
+          return Math.sign(d) === Math.sign(dGH) && Math.abs(d) < Math.abs(dGH);
+        });
+        ok(`...round the ring the SHORT way: the Gallery to the Trial Hall (${(Math.abs(dGH) * 180 / Math.PI).toFixed(0)}° apart) only through the arc between them`,
+          gh.length === Math.ceil(Math.abs(dGH) / (WPm.WAYPOINT.step * Math.PI / 180)) - 1 && gh.length > 0 && inArc, `${gh.length}`);
+        // ON A BRIDGE.
+        const mid = { x: (L.kata.from.x + L.kata.to.x) / 2, y: (L.kata.from.y + L.kata.to.y) / 2, z: (L.kata.from.z + L.kata.to.z) / 2 };
+        const onTo = WPm.route(mid, 'kata', hubC, L);
+        const onBack = WPm.route(mid, 'sine', hubC, L);
+        const firstEnd = (rt) => rt.find((m) => m.kind !== 'along');
+        ok('...from the middle of a bridge: on to its island if that is where she is going, back to the hub if not',
+          onTo.at(-1) && near(onTo.at(-1), L.kata.to) && onTo.slice(0, -1).every((m) => m.kind === 'along')
+            && near(firstEnd(onBack), L.kata.from) && near(onBack.at(-1), L.sine.to),
+          `${onTo.length} / ${onBack.length}`);
+
+        // HER WAYPOINT, set from the map card and walked.
+        fakeGame.toasts.length = 0;
+        put(her, { x: hubC.x + 30, y: hubC.y, z: hubC.z });
+        const nextKey = G.choose(her, 'wp:sine');
+        const wpH = W.of(her);
+        ok('...JUMP on a place on the map card sets her waypoint there, says so, and keeps the map open',
+          nextKey === 'lionMap' && wpH?.target === 'sine' && fakeGame.toasts.some((t) => /Waypoint set: the SINE GAUNTLET/.test(t))
+          && G.rowCount(her, 'lionMap') === WPm.DESTS.length + 2 && G.subAct('lionMap', WPm.DESTS.length, her) === 'wpClear',
+          fakeGame.toasts.join(' | '));
+        const lit = () => wpH.meshes.filter((m) => m.visible).length;
+        W.update(1 / 60);
+        const firstLit = lit();
+        const colourOk = wpH.meshes[0].userData.mats[0].color.getHex() === (her.style?.colour ?? 0xffd24a);
+        const pyr = wpH.meshes[0].children[0].geometry;
+        pyr.computeBoundingBox();
+        // Point DOWN: the cone's tip is its lowest vertex.
+        const tipDown = (() => { const pos = pyr.attributes.position; let lo = Infinity; let loR = 0; for (let k = 0; k < pos.count; k++) { const y = pos.getY(k); if (y < lo) { lo = y; loR = Math.hypot(pos.getX(k), pos.getZ(k)); } } return loR < 1e-6; })();
+        ok('...her markers are upside-down pyramids in HER colour, and only the next two of them are up',
+          firstLit === WPm.WAYPOINT.show && colourOk && tipDown, `${firstLit} lit of ${wpH.meshes.length}`);
+        // Walk to each in turn: it goes, the next is up; skipping one takes it too.
+        const n0 = wpH.marks.length;
+        const y0 = wpH.meshes[0].position.y;
+        for (let f = 0; f < 20; f++) W.update(1 / 60);
+        const bobbed = Math.abs(wpH.meshes[0].position.y - y0) > 0.01;
+        put(her, { x: wpH.marks[0].x + SW.SIM.dx - SW.SIM.dx, y: wpH.marks[0].y, z: wpH.marks[0].z });
+        W.update(1 / 60);
+        const afterOne = { i: wpH.i, firstGone: !wpH.meshes[0].visible, nextUp: wpH.meshes[1].visible };
+        const skipTo = Math.min(3, n0 - 1);
+        put(her, { x: wpH.marks[skipTo].x, y: wpH.marks[skipTo].y, z: wpH.marks[skipTo].z });
+        W.update(1 / 60);
+        const afterSkip = wpH.i;
+        ok('...they BOB, and reaching one takes it away and puts the next up; reaching a later one takes the ones she skipped',
+          bobbed && afterOne.i === 1 && afterOne.firstGone && afterOne.nextUp && afterSkip === skipTo + 1 && n0 >= 4,
+          `${n0} markers, i ${afterOne.i} then ${afterSkip}`);
+        // Gone stays gone: back at the first, nothing comes back.
+        put(her, { x: wpH.marks[0].x, y: wpH.marks[0].y, z: wpH.marks[0].z });
+        W.update(1 / 60);
+        const stayedGone = wpH.i === skipTo + 1 && !wpH.meshes[0].visible;
+        // Refreshing on the map brings them all back.
+        put(her, { x: hubC.x + 30, y: hubC.y, z: hubC.z });
+        G.choose(her, 'wp:sine');
+        const fresh = W.of(her);
+        W.update(1 / 60);
+        ok('...once gone a marker stays gone — and marking the same place again on the map brings every one back',
+          stayedGone && fresh !== wpH && fresh.i === 0 && fresh.meshes[0].visible && !wpH.meshes[0].parent && !wpH.arrow.parent, `${fresh.i}`);
+        /* THE POINTING CURSOR: up only while her next marker is out of her
+           frame, at her feet, aimed at it. Through a real lens: looking at the
+           marker, then the other way. Without a camera, never. */
+        {
+          const o = W.root.parent?.position ?? { x: 0, y: 0, z: 0 };
+          const n = fresh.marks[0];
+          const me = D._flatPos(her);
+          const cam = new THREE.PerspectiveCamera(38, 1.8, 0.5, 2000);
+          const look = (sx) => {
+            const ux = n.x - me.x; const uz = n.z - me.z; const L0 = Math.hypot(ux, uz) || 1;
+            cam.position.set(me.x + o.x - (ux / L0) * 14 * sx, her.position.y + 30, me.z + o.z - (uz / L0) * 14 * sx);
+            cam.lookAt(me.x + o.x + (ux / L0) * 6 * sx, her.position.y, me.z + o.z + (uz / L0) * 6 * sx);
+            cam.updateMatrixWorld(); cam.updateProjectionMatrix();
+            W.update(1 / 60);
+            return fresh.arrow.visible;
+          };
+          const keep = her.camera;
+          her.camera = null;
+          W.update(1 / 60);
+          const noCam = fresh.arrow.visible;
+          her.camera = cam;
+          const facing = look(1);
+          const away = look(-1);
+          // ...and a marker near her lens is shrunk to the size of one `near` away; one far off is full size.
+          const m0 = fresh.meshes[0];
+          const dCam = cam.position.distanceTo(new THREE.Vector3(m0.position.x + o.x, m0.position.y + o.y, m0.position.z + o.z));
+          const farScale = m0.scale.x;
+          cam.position.set(m0.position.x + o.x, m0.position.y + o.y + 6, m0.position.z + o.z + 6);
+          W.update(1 / 60);
+          const nearScale = m0.scale.x;
+          const a = fresh.arrow.position;
+          const aimErr = Math.abs(Math.atan2(n.x - me.x, n.z - me.z) - fresh.arrow.rotation.y);
+          const atFeet = Math.abs(Math.hypot(a.x - me.x, a.z - me.z) - WPm.WAYPOINT.pointR) < 1e-6;
+          her.camera = keep;
+          ok('...and when her next marker is out of her frame, a pointing cursor at her feet aims at it — and only then',
+            !noCam && !facing && away && atFeet && aimErr < 1e-6 && fresh.arrow.parent === W.root,
+            `no camera ${noCam}, facing it ${facing}, facing away ${away}, at her feet ${atFeet}`);
+          ok('...and a marker right under her lens is shrunk, never a kite across the bottom of the pane',
+            Math.abs(farScale - Math.min(1, dCam / WPm.WAYPOINT.near)) < 0.05 && Math.abs(nearScale - Math.hypot(6, 6) / WPm.WAYPOINT.near) < 0.05,
+            `${farScale.toFixed(2)} at ${dCam.toFixed(0)}, ${nearScale.toFixed(2)} at 8.5`);
+        }
+        // The minimap gets it, in WORLD coordinates and her colour, with the next marker.
+        const mm = fakeGame.world.simWaypoints?.() ?? W.forMap(SW.SIM.dx, SW.SIM.dz);
+        const mine = mm.find((q) => q.index === her.index);
+        ok('...and the corner minimap is handed it: the place, in world coordinates, and the marker she is walking to',
+          !!mine && mine.key === 'sine' && Math.abs(mine.x - (L.sine.disc.x + SW.SIM.dx)) < 1e-6 && !!mine.next
+          && /_drawWaypoints\(mine\)/.test(read('../src/systems/minimap.js')), JSON.stringify(mine ?? {}));
+        // The map card shows it.
+        const card = G.markup(0, 'lionMap', 7, () => '');
+        ok('...the map card rings her waypoint and the place under her cursor, every place is a tap, and the chips say which is hers',
+          /class="ln-wp"/.test(card) && /class="ln-aim"/.test(card) && /class="ln-pin"/.test(card)
+          && (card.match(/<g data-side="0" data-row="\d+"/g) ?? []).length === WPm.DESTS.length
+          && (card.match(/ln-dest/g) ?? []).length >= WPm.DESTS.length && /◆ SINE/.test(card), '');
+        // Arriving clears the lot.
+        fakeGame.toasts.length = 0;
+        const sd = L.sine.disc;
+        put(her, { x: sd.x, y: sd.y, z: sd.z });
+        W.update(1 / 60);
+        ok('...and reaching the place clears the waypoint and every marker, and says so',
+          !W.of(her) && fresh.meshes.every((m) => !m.parent) && fakeGame.toasts.some((t) => /reached the SINE GAUNTLET! Waypoint cleared/.test(t)),
+          fakeGame.toasts.join(' | '));
+        // Refused in words: already there; and clearing says what it did.
+        fakeGame.toasts.length = 0;
+        G.choose(her, 'wp:sine');
+        const already = fakeGame.toasts.some((t) => /already on the SINE GAUNTLET/.test(t)) && !W.of(her);
+        put(her, { x: hubC.x + 30, y: hubC.y, z: hubC.z });
+        G.choose(her, 'wp:kata');
+        fakeGame.toasts.length = 0;
+        G.choose(her, 'wpClear');
+        ok('...marking the place she is standing on is refused in words, and CLEAR MY WAYPOINT says what it cleared',
+          already && !W.of(her) && fakeGame.toasts.some((t) => /Waypoint cleared: the KATA TRACE/.test(t)), fakeGame.toasts.join(' | '));
+      }
 
       /* A VISIT IS STANDING ON IT, and it is written into her row. */
       const flagged = () => KEYS.filter((k) => D.progress.flag(nm, `visit.${k}`));

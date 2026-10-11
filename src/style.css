@@ -6362,6 +6362,15 @@ body.touch-ui .pn-dd { display: grid; grid-template-columns: 1fr 1fr; gap: calc(
 .ln-map .ln-lbl { fill: #c8fdff; }
 .ln-map .ln-lbl.next { fill: #ffd24a; }
 .ln-map .ln-st { fill: #ffd24a; }
+/* 道標 WAYPOINTS (dream/waypoint.js): the place under her cursor in white,
+   her waypoint in her own colour with a pin. A place on the map is a tap. */
+.ln-map .ln-aim { fill: none; stroke: #ffffff; stroke-width: 2.4; stroke-dasharray: 3 3; }
+.ln-map .ln-wp { fill: none; stroke: var(--me, var(--gold)); stroke-width: 3.2; }
+.ln-map .ln-pin { fill: var(--me, var(--gold)); stroke: #041018; stroke-width: 1.2; }
+.ln-map g[data-row] { cursor: pointer; }
+.ln-dests { gap: calc(0.4 * var(--u)); }
+.ln-dests .ln-dest { flex: 1 1 22%; padding: calc(0.25 * var(--u)) calc(0.4 * var(--u)); font-size: 0.82em; }
+.ln-dests .ln-dest.wp b { color: var(--me, var(--gold)); }
 /* HIS 凶, where Payne's card has her trip drawing: a glyph, since the move
    is hers already and the mark is the only thing that changed. */
 .ln-kyo-mark {
@@ -6376,6 +6385,10 @@ body.touch-ui .pn-dd { display: grid; grid-template-columns: 1fr 1fr; gap: calc(
 /* A LANDSCAPE PHONE IS SHORT: the map gives up height before the buttons
    under it fall off the card. */
 body.touch-ui .ln-map-box { max-height: 38vh; }
+/* ...and with the twelve places under it, it gives up more: 30vh still
+   shows every island, and the chips are the row a thumb is aiming at. */
+body.touch-ui .ln-dests ~ .pn-acts, body.touch-ui .ln-dests { font-size: 0.9em; }
+body.touch-ui .ln-card:has(.ln-dests) .ln-map-box { max-height: 30vh; }
 body.touch-ui .ln-kyo-mark { font-size: calc(6 * var(--u)); }
 
 /* --- Payne in Help: her picture beside four short lines --------------------
