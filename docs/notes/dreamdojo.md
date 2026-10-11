@@ -2183,6 +2183,52 @@ Kata Trace ... with the Easy song being the exception":
 - None of it has been played by the kids. The slash rates (`DIFFS.slash`) and
   the HARD 凶's beat-apart spacing are first numbers.
 
+## The October list: the Shadow circles, has a body, and the gear room walks itself
+
+Richard's long list of 2026-10-10. What each became, and the numbers that pin it.
+
+**円 Hard and up, he fights from five spots round her** (`CIRCLE` in
+`dream/shadow.js`). "move around the selected player in the 5 different
+directions, similar to Kata Trace: W, NW, N, NE, and E relative to the player.
+He moves quickly into place, and then does his attack." The spots are read off
+HER lens (`view`), so N is into the screen and none is downstage — he still
+never stands between her and the camera, which is what the upstage staging was
+for. Between blows he walks to keep his spot at the level's own speed (the
+`speed` knob and its check are unchanged); to throw a blow he dashes, 30 u/s,
+and the tell starts on the frame he lands (world-check: 14 of 14). The Cross
+Slash on these two levels is drawn in front of HIM at most 7 out — "no longer
+follows a player who is far away" — and between the Xs of the 凶 he dashes to a
+new side. The pick of side is seeded, not `Math.random`, so the checks replay.
+Easy and medium are untouched.
+
+**体 His body, every level** (`BODY`). "players shouldn't be able to run
+through Shadow." Leaning on him sets her on his edge (2.0 from his middle);
+running into him faster than 1.5 u/s throws her off at 9 and frightens her for
+0.5s. Fright is a new state on the player, `spook` / `spookT`: the scared
+drawing (`vr_scared` in the sim) and a frozen stick, which is the same pair the
+triple slash's hold uses — and no stars and no lockout, which is what `daze`
+would have added. When HE dashes through HER he goes two-thirds see-through and
+pale (`spectre`; his billboard's alphaTest drops to 0.04 while he is one, or a
+figure that faint is cut to nothing), she is frozen until he lands (+0.12s),
+and every dash plays `specter`, a rush with a falling hollow moan under it.
+
+**The KO in Kata Trace.** "he falls into the ground" — rolled about his feet,
+the half of him on the falling side went under the floor: 1.98 units, measured
+off the guard cell, and `KO.lift` puts it back. Then he gets up onto his knees
+on his sword (`lionheart/defeated.png`, Higgsfield off his own Shadow sheet; a
+first take crouched instead of kneeling and was not used) and winks at 3.56s,
+after "Oof... good job." ends.
+
+**The EXTRA HARD unlock** is said aloud now (`lion_secret`, voices.md) and
+names both prizes; it and its toast hold 14s.
+
+**The gear room** — the camera turns to the racks she still needs, then sweeps
+round to face the tubes and Lionheart once she is suited (`GEAR_CAM`), and the
+walk to her tube goes round the treadmills on an A* path over the pad
+(`dream/padnav.js`; straight at the tube stuck on 3 of 16 routes, the path on
+none). The stick takes it back after 1.5s. *Show the Dream Dojo walk paths* in
+the debug panel draws the grown obstacles and the live paths.
+
 ## Voice
 
 Lionheart is **Barrett** (`d603a8cd-3fe1-55e0-9245-617a2589131e`), nine clips

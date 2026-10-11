@@ -503,6 +503,9 @@ export class Player {
      *  control, and a ring of stars — see `daze`. */
     this.stunT = 0;
     this.stunLockT = 0;
+    /** Seconds of fright left: the scared pose, and no stick. Shadow
+     *  Lionheart's body (dream/shadow.js `BODY`) — see `spook`. */
+    this.spookT = 0;
     /** Seconds of invulnerability left. Stops a fast blade chain-locking her. */
     this.invulnT = 0;
     /** Seconds of "she is off the ground because Mr. Satan put her there".
@@ -1297,6 +1300,16 @@ export class Player {
    *
    * @returns {boolean} true if it landed — the caller uses it for the toast.
    */
+  /** FRIGHTENED STILL for `seconds`: her scared drawing and a frozen stick, no
+   *  stars and no lockout after (that is `daze`, a sister's). Shadow
+   *  Lionheart's — run into him, or have him pass through you. Extends, never
+   *  shortens, so a ghost that is still crossing her holds her to its end. */
+  spook(seconds) {
+    if (this.ko || this.angel) return false;
+    this.spookT = Math.max(this.spookT ?? 0, seconds);
+    return true;
+  }
+
   daze(seconds = DAZE_TIME) {
     if (this.ko || this.angel) return false;
     if (this.stunT > 0 || this.stunLockT > 0) return false;
@@ -2101,7 +2114,7 @@ export class Player {
     /* AND SO DOES BEING CAUGHT. Same one line again, for the same reason: a
        kitten held in the middle of a triple slash may not act, and no movement
        mode has to learn what a triple slash is to know that. */
-    if (this.hitT > 0 || this.stunT > 0 || this.ko || this.heldBy) pad = FROZEN_PAD;
+    if (this.hitT > 0 || this.stunT > 0 || this.ko || this.heldBy || this.spookT > 0) pad = FROZEN_PAD;
     /* ...AND GOING OVER THE ARENA'S STANDS. The throw that started it is what
        carries her over, and the hit-stun that came with it is shorter than
        the trip: with the stick back in her paws halfway up the inside of the
@@ -2640,6 +2653,7 @@ export class Player {
     this.hitT = Math.max(0, this.hitT - dt);
     this.stunT = Math.max(0, (this.stunT ?? 0) - dt);
     this.stunLockT = Math.max(0, (this.stunLockT ?? 0) - dt);
+    this.spookT = Math.max(0, (this.spookT ?? 0) - dt);
     this._updateDaze(dt);
     this.invulnT = Math.max(0, this.invulnT - dt);
     /* THE CEILING ON IT. It is normally spent by the arena picking her up
@@ -6353,7 +6367,8 @@ export class Player {
        than to a number invented here, and three cuts read as three hits
        instead of as one long stillness. */
     if (this.scaredPose) {
-      const held = !!this.heldBy && !this.ko;
+      // ...and frightened by Shadow Lionheart's body (`spook`), the same drawing.
+      const held = (!!this.heldBy || this.spookT > 0) && !this.ko;
       this.scaredPose.visible = held;
       if (held) {
         this.sprite.mesh.visible = false;
