@@ -37149,18 +37149,38 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         stF.koAt = stF.clock;
         stF.koPos = { x: stF.lion.position.x, z: stF.lion.position.z, y: 0 };
         const cam = new THREE.PerspectiveCamera();
-        let kneelAt = null; let winkOn = null; let winkOff = null; let lowest = 9; let bothShown = 0;
+        let kneelAt = null; let winkOn = null; let winkOff = null; let bothShown = 0;
+        let maxRoll = 0; let lowest = 9; let peakLean = 0; let peakAt = null; let leanEnd = 9; let landPos = null; let endPos = null;
+        const ax0 = { x: stF.lion.position.x, z: stF.lion.position.z };
         for (let f = 0; f < 120 * 6.5; f++) {
           stF.tickFx(1 / 120);
           stF.update(h.songT, false);
           stF.faceCamera(cam);
           const kk = stF.clock - stF.koAt;
-          if (stF.kneel && kneelAt == null) kneelAt = kk;
+          maxRoll = Math.max(maxRoll, Math.abs(stF.roll));
+          lowest = Math.min(lowest, stF.lion.position.y);
+          if (stF.kneel && kneelAt == null) { kneelAt = kk; landPos = { x: stF.lion.position.x, z: stF.lion.position.z }; }
+          if (stF.lean > peakLean) { peakLean = stF.lean; peakAt = kk; }
+          if (kk > KT.KO.land + KT.KO.settle + 0.05) leanEnd = Math.min(leanEnd, stF.lean === 0 ? 0 : stF.lean);
           if (stF.winking && winkOn == null) winkOn = kk;
           if (winkOn != null && !stF.winking && winkOff == null) winkOff = kk;
-          if (kk > 0.35 && !stF.kneel) lowest = Math.min(lowest, stF.lion.position.y - KT.KO.lift * Math.abs(Math.sin(stF.roll)));
           if (stF.koSprite?.visible && stF.sprite?.visible) bothShown++;
         }
+        endPos = { x: stF.lion.position.x, z: stF.lion.position.z };
+        const skid = landPos ? Math.hypot(endPos.x - landPos.x, endPos.z - landPos.z) : 0;
+        const tilt = (stF.koSprite.mesh ?? stF.koSprite).rotation.z;
+        /* Richard: "instead of having Lionheart fall sideways to the ground
+           after being defeated, just have him fall normally to the ground on
+           his feet and when he hits the ground, have him play his kneeling
+           animation as he falls back slightly from the momentum of the hit." */
+        ok('...with his kneeling drawing he NEVER goes over sideways: a hop back, onto his feet, and straight onto his knees as he lands',
+          maxRoll === 0 && lowest >= 0 && kneelAt != null && Math.abs(kneelAt - KT.KO.land) < 0.02,
+          `roll ${maxRoll.toFixed(3)}, lowest ${lowest.toFixed(2)}, knees at ${kneelAt?.toFixed(2)}s`);
+        ok('...rocked back by the momentum — a lean that peaks just after he lands and settles to upright — and skidding on a little the way the blow sent him',
+          peakLean > KT.KO.lean * 0.5 && peakAt > KT.KO.land && peakAt < KT.KO.land + KT.KO.settle && leanEnd === 0 && tilt === 0
+          && Math.abs(skid - KT.KO.slide) < 0.05,
+          `lean ${peakLean.toFixed(3)} at ${peakAt?.toFixed(2)}s, after ${leanEnd}, skid ${skid.toFixed(2)}`);
+        void ax0;
         const ko = KT.KO;
         const clip = 2.16;
         ok('...then up onto his KNEES on his sword (lionheart/defeated.png), and a wink after "good job", all inside the won card',

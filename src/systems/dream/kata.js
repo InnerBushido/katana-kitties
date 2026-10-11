@@ -117,8 +117,22 @@ export const KATA_LINES = {
  * 546px tall against the guard's 633, so 0.674 of his standing 5.76.
  * `wink` is after the line: it starts 1.1s after the blow and lion_kata_ko
  * runs 2.16s. All of it falls inside the won card's 7s.
+ *
+ * ON HIS FEET, NOT ON HIS SIDE — RICHARD'S NEXT PASS: "instead of having
+ * Lionheart fall sideways to the ground after being defeated, just have him
+ * fall normally to the ground on his feet and when he hits the ground, have
+ * him play his kneeling animation as he falls back slightly from the
+ * momentum of the hit." So with the kneeling drawing there is no roll at
+ * all: flung back in a hop, he lands at `kneelAt` (`land`) straight onto his
+ * knees, skids another `slide` the way the blow sent him, and his kneeling
+ * drawing rocks back `lean` radians from its foot and settles over `settle`.
+ * The roll onto his back (and `lift`) is now only the fallback for a load
+ * where the drawing is missing.
  */
-export const KO = { lift: 1.98, kneelH: 3.88, kneelAt: 2.1, rise: 0.25, wink: 3.55, winkFor: 0.9 };
+export const KO = {
+  lift: 1.98, kneelH: 3.88, kneelAt: 0.5, rise: 0.25, wink: 3.55, winkFor: 0.9,
+  land: 0.5, hop: 1.3, slide: 0.7, lean: 0.24, settle: 0.6,
+};
 
 /** PERFECT and GREAT, seconds off the beat. */
 export const GRADE_T = [0.10, 0.18];
@@ -867,6 +881,8 @@ export class KataStage {
     const len = Math.hypot(x, z) || 1;
     const ax = x / len;
     const az = z / len;
+    (this._push ??= { x: 0, z: 0 }).x = ax;
+    this._push.z = az;
     // A hit: shoved back off her blade, and springing in again.
     const hk = this.clock - this.hitAt;
     if (hk >= 0 && hk < 0.4) {
@@ -879,10 +895,32 @@ export class KataStage {
        bounce where he lands. Played on his own clock, so it carries on past
        the song's last beat. */
     this.roll = 0;
+    this.lean = 0;
     this.kneel = false;
     this.winking = false;
     let pop = 1;
-    if (this.koAt != null) {
+    if (this.koAt != null && this.koSprite) {
+      // ON HIS FEET (see KO): a hop back, a landing, and onto his knees with the momentum.
+      const kk = this.clock - this.koAt;
+      const fly = Math.min(1, kk / KO.land);
+      const after = Math.max(0, kk - KO.land);
+      const skid = 1 - (1 - Math.min(1, after / KO.settle)) ** 2;
+      x += ax * (1.8 * fly + KO.slide * skid);
+      z += az * (1.8 * fly + KO.slide * skid);
+      const from = (this.koPos.y ?? 0) * (1 - fly);
+      if (kk < KO.land) {
+        y = from + Math.sin(fly * Math.PI) * KO.hop;
+        pose = POSE.sweep;
+      } else {
+        this.kneel = true;
+        pose = POSE.guard;
+        pop = 1 + 0.14 * (1 - Math.min(1, after / KO.rise));
+        // Rocked back by the blow, then settled: up fast, down slower, never past upright.
+        const u = Math.min(1, after / KO.settle);
+        this.lean = KO.lean * Math.sin(u * Math.PI) * (1 - u) ** 0.5;
+        this.winking = kk >= KO.wink && kk < KO.wink + KO.winkFor;
+      }
+    } else if (this.koAt != null) {
       const kk = this.clock - this.koAt;
       const fly = Math.min(1, kk / 0.35);
       x += ax * 1.8 * fly;
@@ -900,16 +938,8 @@ export class KataStage {
       }
       if (kk >= 0.35) pose = POSE.guard;
       // Over on either side, the side going down stays above the floor.
+      // (No kneeling drawing loaded: he stays on his back, as he always did.)
       y += KO.lift * Math.abs(Math.sin(this.roll));
-      /* Up onto his knees — only if the drawing is there; without it he stays
-         on his back, which is what he always did. */
-      if (kk >= KO.kneelAt && this.koSprite) {
-        this.kneel = true;
-        this.roll = 0;
-        y = 0;
-        pop = 1 + 0.14 * (1 - Math.min(1, (kk - KO.kneelAt) / KO.rise));
-        this.winking = kk >= KO.wink && kk < KO.wink + KO.winkFor;
-      }
     }
     this.lion.position.set(x, y, z);
     if (this.koSprite) {
@@ -932,6 +962,15 @@ export class KataStage {
     if (this.kneel && this.koSprite) {
       this.koSprite.faceCamera(camera);
       this.koSprite._setCell(this.winking ? 1 : 0, 0, false);
+      /* Rocked BACK: away from where the blow came from, as this lens sees
+         the shove — the shove's sideways part on screen picks the side. */
+      const km = this.koSprite.mesh ?? this.koSprite;
+      if (km?.rotation) {
+        _kr.set(1, 0, 0).applyQuaternion(camera.quaternion);
+        const side = Math.sign(this._push.x * _kr.x + this._push.z * _kr.z) || 1;
+        km.rotation.order = 'YXZ';
+        km.rotation.z = -side * (this.lean ?? 0);
+      }
     }
     if (this.sprite?.faceCamera) {
       this.sprite.faceCamera(camera);
@@ -959,6 +998,7 @@ export class KataStage {
  * before each sweep. The tour's holo-kittens are put here every frame.
  * Returns a layer offset from the floor's middle, and `y`.
  */
+const _kr = new THREE.Vector3();
 const bounceOut = (x) => {
   const n = 7.5625;
   const d = 2.75;
