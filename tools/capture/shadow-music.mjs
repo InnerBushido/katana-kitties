@@ -54,10 +54,21 @@ const XF = 0.025; // the seam crossfade, seconds
 const TAKES = [
   { id: 'shadowOrch', raw: 'shadow_orch1.mp3', name: 'Shadow Lionheart: Requiem', level: 'medium', gen: 'QmFpkWfxZoSc30YCrEDg' },
   { id: 'shadowSynth', raw: 'shadow_elec1.mp3', name: 'Shadow Lionheart: Darksynth', level: 'hard', gen: '3kFbSIA305fvUrXLT5l1' },
-  { id: 'shadowNight', raw: 'shadow_elec2.mp3', name: 'Shadow Lionheart: Nightmare', level: 'extra', gen: 'SYnjWzQKDgQggaArOr3o', long: 'shadowNightLong' },
+  /* NIGHTMARE'S LOOP IS CHOSEN BY ITS SECTIONS, not by the search. Richard,
+     of the first long cut: "isn't looping very well and sound awkward,
+     especially since it only says HONOR once ... we should loop at the
+     originals 49 seconds before it fades out". The search had picked 20-92,
+     which jumps out mid-section and leaves the choir (beats 64-96) and the
+     outro to play once, at the very end. Read off per-beat band energy: the
+     drums enter at 16; every section is announced by ONE beat with the sub
+     dropped out (31 before section 2, 63 before the choir); 112 is the
+     closing hit and the fade starts at 113 (49.6s). So the loop runs to the
+     end of the outro's last full bar (111) and jumps into the song's own
+     break beat at 31 — a transition the music already makes once. 80 beats. */
+  { id: 'shadowNight', raw: 'shadow_elec2.mp3', name: 'Shadow Lionheart: Nightmare', level: 'extra', gen: 'SYnjWzQKDgQggaArOr3o', long: 'shadowNightLong', loopBeats: [31, 111] },
 ];
-/** The long one's length: about two and a half minutes. */
-const LONG_SECS = 150;
+/** The long one's length: two to three minutes ("potentially be 2 - 3 minutes long"). */
+const LONG_SECS = [120, 180];
 
 function decodeStereo(file) {
   const buf = execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-ac', '2', '-ar', String(SR), '-f', 'f32le', '-'], { maxBuffer: 1 << 30 });
@@ -128,6 +139,70 @@ function findLoop(f, beatsEnd) {
   return { best: near[0], top5: cands.slice(0, 5) };
 }
 
+/**
+ * THE SEAM'S LAG — how far the music at A sits from where the straight grid
+ * says it is, measured against the music at B. The takes CREEP: a 0.1% tempo
+ * wander is invisible to the chart (±30ms over a minute) but a loop cut
+ * exactly on the grid joins two places that are 30-60ms out of step, and
+ * that is a stumble in the groove at every seam — measured on all three of
+ * the first loops: Requiem -43ms, Darksynth -61ms, Nightmare -29ms.
+ *
+ * Measured by cross-correlating an onset envelope in eight bands over the
+ * four beats before each side, at 1ms, ±110ms. ONE band does not work: the
+ * kick-and-bass envelope alone (tried first) pumps in sixteenths, so its
+ * peaks sit a sixteenth (55ms) apart and the search picks one at random; and
+ * a kick-onset detector read this track's sustained reese bass, not its
+ * kicks. Eight bands see the snare-and-kick pattern, which is different at
+ * every sixteenth. Requiem's peak is sharp (0.69 against a 0.31 floor);
+ * Nightmare's is shallow, but the same -33ms came out of the 31-111 and
+ * 32-112 pairs, over 4 and over 8 beats, and agreed with two cruder reads.
+ */
+function bandOnsets(mono) {
+  const HOP = Math.round(SR / 1000);
+  const edges = [40, 90, 180, 400, 900, 2000, 4500, 9000, 16000];
+  const nb = edges.length - 1, nf = Math.floor(mono.length / HOP);
+  const env = Array.from({ length: nb }, () => new Float32Array(nf));
+  const lps = edges.map((hz) => Math.exp(-2 * Math.PI * hz / SR));
+  const st = new Float64Array(edges.length), sm = new Float64Array(nb), dec = Math.exp(-1 / (0.004 * SR));
+  for (let i = 0, fr = 0; i < mono.length; i++) {
+    for (let j = 0; j < edges.length; j++) st[j] = (1 - lps[j]) * mono[i] + lps[j] * st[j];
+    for (let b = 0; b < nb; b++) sm[b] = Math.max(Math.abs(st[b + 1] - st[b]), sm[b] * dec);
+    if (i % HOP === HOP - 1 && fr < nf) { for (let b = 0; b < nb; b++) env[b][fr] = Math.log(1e-6 + sm[b]); fr++; }
+  }
+  for (const e of env) { for (let fr = nf - 1; fr > 0; fr--) e[fr] = Math.max(0, e[fr] - e[fr - 1]); e[0] = 0; }
+  return env;
+}
+
+function seamLag(env, tA, tB, spb) {
+  const n = Math.round(4 * spb * 1000), fB = Math.round(tB * 1000) - n;
+  let best = -1, lag = 0;
+  for (let d = -110; d <= 110; d++) {
+    const fA = Math.round(tA * 1000) + d - n;
+    let ab = 0, aa = 0, bb = 0;
+    for (const e of env) for (let i = 0; i < n; i++) { const p = e[fA + i], q = e[fB + i]; ab += p * q; aa += p * p; bb += q * q; }
+    const c = ab / Math.sqrt(aa * bb);
+    if (c > best) { best = c; lag = d / 1000; }
+  }
+  return { lag, corr: best };
+}
+
+/**
+ * WHERE TO CUT, given the aligned pair: the quietest moment, on BOTH sides,
+ * in the 70ms before the beat. A cut that lands a few ms after a drum hit
+ * plays a sliver of it and then the other side's hit — a flam — so the cut
+ * goes in the gap before the transient, where there is only decay to join.
+ */
+function seamCut(mono, tA, tB) {
+  const W = Math.round(0.004 * SR);
+  const loud = (t) => { const i = Math.round(t * SR); let s = 0; for (let j = 0; j < W; j++) s += mono[i + j] ** 2; return s; };
+  let best = Infinity, off = -0.02;
+  for (let o = -0.07; o <= -0.004; o += 0.001) {
+    const v = loud(tA + o) + loud(tB + o);
+    if (v < best) { best = v; off = o; }
+  }
+  return off;
+}
+
 function rmsOf(mono, t0, t1) {
   let s = 0;
   const i0 = Math.floor(t0 * SR), i1 = Math.floor(t1 * SR);
@@ -135,28 +210,64 @@ function rmsOf(mono, t0, t1) {
   return Math.sqrt(s / Math.max(1, i1 - i0));
 }
 
-/** Concatenate [0,B) + (A,B)×n + [A,end) with equal-power crossfades at each seam, all on the grid. */
-function renderLong(st, tA, tB, passes) {
-  const iA = Math.round(tA * SR), iB = Math.round(tB * SR);
+/**
+ * Concatenate [0,cutB) + [cutA,cutB)×n + [cutA,end), with an equal-power
+ * crossfade ENDING at each seam (over the F samples before the cut on both
+ * sides — the jump itself lands on the music just before A's beat).
+ *
+ * THE BODY IS RESAMPLED TO WHOLE BEATS. cutB - cutA is (B-A) beats plus the
+ * seam's lag, so played as-is every pass would shift the music `lag` against
+ * the chart's grid — three passes of Nightmare is 100ms, a whole PERFECT
+ * window. Stretched by 0.1% it is exactly (B-A) beats: about 1.6 cents of
+ * pitch, which nobody can hear, and the grid survives any number of passes.
+ */
+function renderLong(st, cutA, cutB, gridLen, passes) {
+  const iA = cutA * SR, iB = Math.round(cutB * SR);
   const F = Math.round(XF * SR);
-  const body = iB - iA;
-  const total = iB + passes * body + (st.n - iA);
+  const bodyOut = Math.round(gridLen * SR);
+  const rate = (cutB - cutA) * SR / bodyOut;
+  const tail = st.n - Math.round(iA);
+  const total = iB + passes * bodyOut + tail;
   const L = new Float32Array(total), R = new Float32Array(total);
-  // Copy src[s0..s1) to out at o; the first F samples crossfade over what is already there.
-  const put = (o, s0, s1, fadeIn) => {
-    for (let i = 0; i < s1 - s0; i++) {
-      const g = fadeIn && i < F ? Math.sin((i / F) * Math.PI / 2) : 1;
-      const h = fadeIn && i < F ? Math.cos((i / F) * Math.PI / 2) : 0;
-      L[o + i] = L[o + i] * h + st.L[s0 + i] * g;
-      R[o + i] = R[o + i] * h + st.R[s0 + i] * g;
+  // Cubic (Catmull-Rom) read at a fractional sample.
+  const at = (ch, p) => {
+    const i = Math.floor(p), f = p - i;
+    const y0 = ch[i - 1] ?? 0, y1 = ch[i] ?? 0, y2 = ch[i + 1] ?? 0, y3 = ch[i + 2] ?? 0;
+    return y1 + 0.5 * f * (y2 - y0 + f * (2 * y0 - 5 * y1 + 4 * y2 - y3 + f * (3 * (y1 - y2) + y3 - y0)));
+  };
+  // Write n samples to out at o, reading src from s0 at `step` per sample; the
+  // F samples BEFORE o are crossfaded from what is there into src[s0 - F*step ..].
+  const put = (o, s0, n, step) => {
+    for (let i = -F; i < n; i++) {
+      const p = s0 + i * step;
+      if (o + i < 0 || p < 1) continue;
+      const vL = at(st.L, p), vR = at(st.R, p);
+      if (i < 0) {
+        const w = ((i + F) / F) * Math.PI / 2;
+        L[o + i] = L[o + i] * Math.cos(w) + vL * Math.sin(w);
+        R[o + i] = R[o + i] * Math.cos(w) + vR * Math.sin(w);
+      } else { L[o + i] = vL; R[o + i] = vR; }
     }
   };
-  // Each segment runs F samples PAST its seam, so the next one fades in over real music, not silence.
-  put(0, 0, Math.min(st.n, iB + F), false);
+  put(0, 0, iB, 1);
   let o = iB;
-  for (let p = 0; p < passes; p++) { put(o, iA, Math.min(st.n, iB + F), true); o += body; }
-  put(o, iA, st.n, true);
+  for (let p = 0; p < passes; p++) { put(o, iA, bodyOut, rate); o += bodyOut; }
+  put(o, iA, tail, 1);
   return { L, R, n: total };
+}
+
+/** How much later `file` plays the same audio as `mono` (44.1k): best waveform match, ±50ms, over 6-10s. */
+function encoderDelay(mono, file) {
+  const b = decodeStereo(file);
+  const y = b.L.map((v, i) => 0.5 * (v + b.R[i]));
+  const i0 = 6 * SR, n = 4 * SR, R = Math.round(0.05 * SR);
+  let best = -Infinity, lag = 0;
+  for (let d = -R; d <= R; d++) {
+    let s = 0;
+    for (let i = 0; i < n; i += 2) s += mono[i0 + i] * y[i0 + i + d];
+    if (s > best) { best = s; lag = d; }
+  }
+  return lag / SR;
 }
 
 function encode(st, out) {
@@ -178,33 +289,52 @@ for (const T of TAKES) {
   const beatsEnd = Math.floor((m.soundEnd - m.firstBeat) / m.spb);
   const beats = Math.floor(beatsEnd / 4) * 4;
   const f = beatFeatures(mono, m.firstBeat, m.spb, beatsEnd);
-  const { best, top5 } = findLoop(f, beatsEnd);
+  const { best: found, top5 } = findLoop(f, beatsEnd);
+  const best = T.loopBeats ? { A: T.loopBeats[0], B: T.loopBeats[1], score: NaN } : found;
   const tA = m.firstBeat + best.A * m.spb;
   const tB = m.firstBeat + best.B * m.spb;
+  // Align the seam to the music, then cut in the gap before the beat (see seamLag, seamCut).
+  const { lag, corr } = seamLag(bandOnsets(mono), tA, tB, m.spb);
+  const off = seamCut(mono, tA + lag, tB);
+  const cutA = tA + lag + off, cutB = tB + off;
   const rms = rmsOf(mono, tA, tB);
   console.log(`${T.id} (${T.raw}): ${m.bpm} BPM, first beat ${m.firstBeat}s, ${beats} beats, drift span ${m.driftSpan}ms [${m.drift.join(' ')}]`);
-  console.log(`  loop beats ${best.A}-${best.B} (${(tB - tA).toFixed(2)}s), score ${best.score.toFixed(3)}; top: ${top5.map((c) => `${c.A}-${c.B}:${c.score.toFixed(3)}`).join(' ')}`);
+  console.log(`  loop beats ${best.A}-${best.B}${T.loopBeats ? ' (chosen by its sections)' : ''} (${(tB - tA).toFixed(2)}s), score ${best.score.toFixed(3)}; search top: ${top5.map((c) => `${c.A}-${c.B}:${c.score.toFixed(3)}`).join(' ')}`);
+  console.log(`  seam lag ${(lag * 1000).toFixed(0)}ms (corr ${corr.toFixed(3)}), cut ${(off * 1000).toFixed(0)}ms before the beat: ${cutA.toFixed(4)}s -> ${cutB.toFixed(4)}s`);
   console.log(`  body RMS ${rms.toFixed(4)} -> mix ${(TARGET_RMS / rms).toFixed(2)}`);
   meta[T.id] = {
     file: `music/${T.id}.mp3`, name: T.name, level: T.level, gen: T.gen,
-    spb: m.spb, first: m.firstBeat, beats, loop: [+tA.toFixed(4), +tB.toFixed(4)], loopBeats: [best.A, best.B],
-    mix: +(TARGET_RMS / rms).toFixed(3), drift: m.driftSpan,
+    spb: m.spb, first: m.firstBeat, beats, loop: [+cutA.toFixed(4), +cutB.toFixed(4)], loopBeats: [best.A, best.B],
+    lag: +lag.toFixed(3), mix: +(TARGET_RMS / rms).toFixed(3), drift: m.driftSpan,
   };
   if (!dry) copyFileSync(src, P(`public/${meta[T.id].file}`));
   if (T.long) {
-    const passes = Math.max(1, Math.round((LONG_SECS - (st.n / SR)) / (tB - tA)));
+    // As many passes as keep it inside two-to-three minutes, the longest that fits.
+    const gridLen = (best.B - best.A) * m.spb;
+    const lenOf = (n) => cutB + n * gridLen + (st.n / SR - cutA);
+    let passes = 1;
+    while (lenOf(passes + 1) <= LONG_SECS[1]) passes++;
+    if (lenOf(passes) < LONG_SECS[0]) console.log(`  !! ${T.long} is only ${lenOf(passes).toFixed(1)}s`);
     const out = P(`public/music/${T.long}.mp3`);
     if (!dry) {
-      encode(renderLong(st, tA, tB, passes), out);
+      encode(renderLong(st, cutA, cutB, gridLen, passes), out);
       const m2 = measure(out, RANGE);
-      const beats2 = beats + passes * (best.B - best.A);
-      /* The measured first beat is modulo a beat: the encoder's few ms of
-         delay can tip it round to the NEXT beat (0.0002s came back 0.4355s —
-         the same grid, 3.5ms early, read as one beat late). Fold it back to
-         the nearest whole-beat shift; what is left is the encoder's delay. */
-      const shift = ((m2.firstBeat - m.firstBeat) % m.spb + 1.5 * m.spb) % m.spb - 0.5 * m.spb;
-      const first2 = +(m.firstBeat + shift).toFixed(4);
-      console.log(`  ${T.long}: ${passes} extra passes, ${beats2} beats, re-measured ${m2.bpm} BPM, beat 0 moved ${(shift * 1000).toFixed(1)}ms, drift ${m2.driftSpan}ms, ${(statSync(out).size / 1e6).toFixed(2)} MB`);
+      /* Intro to B, `passes` bodies, then A to the end — and that tail is ONE
+         MORE time round the loop. The first long cut counted `passes` bodies
+         and not `passes + 1`: its chart was 147.5s over 182s of music and
+         stopped 35 seconds before the song did. */
+      const beats2 = beats + (passes + 1) * (best.B - best.A);
+      /* BEAT 0 IS THE ORIGINAL'S, MOVED BY THE ENCODER'S DELAY ONLY. The long
+         cut's first 48 seconds ARE the original, sample for sample, and every
+         pass is placed on the original's grid (renderLong), so the grid is
+         the original's. Re-measuring the beat phase was the first way, and it
+         was wrong twice: modulo a beat it read one beat late (0.0002s came
+         back 0.4355s), and once the seams were aligned it moved 33ms, because
+         the fit then saw mostly repeated sections with their own drift. The
+         delay is measured instead by lining the two waveforms up. */
+      const delay = encoderDelay(mono, out);
+      const first2 = +(m.firstBeat + delay).toFixed(4);
+      console.log(`  ${T.long}: ${passes} extra passes, ${beats2} beats (${(beats2 * m.spb).toFixed(1)}s), re-measured ${m2.bpm} BPM, encoder delay ${(delay * 1000).toFixed(1)}ms, drift ${m2.driftSpan}ms, ${(statSync(out).size / 1e6).toFixed(2)} MB`);
       meta[T.long] = {
         file: `music/${T.long}.mp3`, name: `${T.name} (long)`, level: T.level, gen: T.gen, longOf: T.id,
         spb: m.spb, first: first2, beats: beats2, loop: null, loopBeats: null, passes,

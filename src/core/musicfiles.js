@@ -13,13 +13,14 @@ export const MUSIC_FILES = {
     "first": 0.1527,
     "beats": 120,
     "loop": [
-      17.7907,
-      38.9563
+      17.6897,
+      38.8983
     ],
     "loopBeats": [
       40,
       88
     ],
+    "lag": -0.043,
     "mix": 0.371,
     "drift": 62.4
   },
@@ -32,13 +33,14 @@ export const MUSIC_FILES = {
     "first": 0.3804,
     "beats": 120,
     "loop": [
-      23.3098,
-      44.4754
+      23.2318,
+      44.4584
     ],
     "loopBeats": [
       52,
       100
     ],
+    "lag": -0.061,
     "mix": 0.2,
     "drift": 52.2
   },
@@ -51,14 +53,15 @@ export const MUSIC_FILES = {
     "first": 0.0002,
     "beats": 120,
     "loop": [
-      8.7802,
-      40.3882
+      13.5562,
+      48.7092
     ],
     "loopBeats": [
-      20,
-      92
+      31,
+      111
     ],
-    "mix": 0.281,
+    "lag": -0.033,
+    "mix": 0.284,
     "drift": 56.6
   },
   "shadowNightLong": {
@@ -68,12 +71,12 @@ export const MUSIC_FILES = {
     "gen": "SYnjWzQKDgQggaArOr3o",
     "longOf": "shadowNight",
     "spb": 0.439,
-    "first": -0.0035,
-    "beats": 336,
+    "first": 0.0002,
+    "beats": 360,
     "loop": null,
     "loopBeats": null,
-    "passes": 3,
-    "mix": 0.281,
-    "drift": 62.4
+    "passes": 2,
+    "mix": 0.284,
+    "drift": 98.7
   }
 };
