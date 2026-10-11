@@ -42971,15 +42971,24 @@ console.log('\n--- his recordings: one song per level, looped on the beat, won i
     if (!existsSync(path)) { bad.push(`${id}: no file`); continue; }
     // 0.40-0.48s is the band the measurement is held to; outside it, it locked onto a multiple of the beat.
     if (!(f.spb > 0.40 && f.spb < 0.48)) bad.push(`${id}: spb ${f.spb}`);
-    // The long cut's beat 0 measures 3.5ms BEFORE its first sample (encoder padding, folded to the
-    // nearest whole beat by the tool); `_fileStart` delays a negative offset rather than clipping it.
+    // A few ms either side of the file's start is allowed: `_fileStart` delays a negative offset rather than clipping it.
     if (!(f.first > -0.01 && f.first < f.spb)) bad.push(`${id}: first beat ${f.first}`);
     if (!(f.mix > 0 && f.mix <= 1)) bad.push(`${id}: mix ${f.mix}`);
     if (f.loop) {
       const [A, B] = f.loopBeats;
-      // Whole BARS apart, and the seconds ARE those beats — a loop off the grid drifts a beat a lap.
+      // Whole BARS apart, so the jump lands on the same beat of the bar.
       if ((B - A) % 4 || A < 8 || B > f.beats + 8) bad.push(`${id}: loop beats ${A}-${B}`);
-      if (Math.abs(f.loop[0] - (f.first + A * f.spb)) > 0.002 || Math.abs(f.loop[1] - (f.first + B * f.spb)) > 0.002) bad.push(`${id}: loop off its beats`);
+      /* ...and the seconds are those beats MOVED BY THE SEAM'S MEASURED LAG,
+         cut in the gap before the beat (shadow-music.mjs `seamLag`, `seamCut`).
+         Exactly on the grid was the first way, and every one of the three
+         stumbled at its seam — the takes creep 0.1%, so beat A and beat B are
+         30-60ms out of step with each other (Requiem -43ms, Darksynth -61ms).
+         So: within 80ms of the beat on each side, and the length is the
+         beats less the lag to the millisecond — the music's own A-to-B. */
+      const lag = f.lag ?? NaN;
+      if (!(Math.abs(lag) < 0.11)) bad.push(`${id}: seam lag ${lag}`);
+      else if (Math.abs(f.loop[0] - (f.first + A * f.spb + lag)) > 0.08 || Math.abs(f.loop[1] - (f.first + B * f.spb)) > 0.08
+        || Math.abs((f.loop[1] - f.loop[0]) - ((B - A) * f.spb - lag)) > 0.0015) bad.push(`${id}: loop off its beats`);
       if (f.loop[1] - f.loop[0] < 20) bad.push(`${id}: loop only ${(f.loop[1] - f.loop[0]).toFixed(1)}s`);
     }
   }
@@ -42994,6 +43003,24 @@ console.log('\n--- his recordings: one song per level, looped on the beat, won i
     && MUSIC_FILES[long[0]].loop === null && MUSIC_FILES[long[0]].beats * MUSIC_FILES[long[0]].spb >= 120
     && MUSIC_FILES[long[0]].beats * MUSIC_FILES[long[0]].spb <= 180,
     long.map((id) => `${id} ${(MUSIC_FILES[id].beats * MUSIC_FILES[id].spb).toFixed(1)}s`).join(''));
+  /* Richard, of the first long cut: "isn't looping very well and sound
+     awkward, especially since it only says HONOR once". The search had looped
+     beats 20-92, which leaves the choir's second half and the outro out of
+     every pass. The loop is chosen by the song's sections now: from the
+     break beat before section 2 (31) to the end of the outro's last bar
+     (111), so the WHOLE choir (64-96) is in every pass. */
+  {
+    const N = MUSIC_FILES.shadowNight, L = MUSIC_FILES.shadowNightLong;
+    ok('...and Nightmare loops the whole choir every pass: from the break at 31 to the outro\'s end at 111, before the fade',
+      N.loopBeats[0] <= 31 && N.loopBeats[1] >= 111 && N.loopBeats[0] < 64 && N.loopBeats[1] > 96 && N.loop[1] < 49.6,
+      `${N.loopBeats.join('-')} -> ${N.loop.map((s) => s.toFixed(2)).join('-')}s`);
+    /* AND ITS CHART ENDS WHERE ITS MUSIC DOES. Intro to B, `passes` bodies,
+       then A to the end — which is one MORE time round. The first long cut
+       counted `passes` and its chart stopped 35 seconds before the song. */
+    const [A, B] = N.loopBeats;
+    ok('...and the long cut\'s chart covers all of it: the original, plus one more loop than it has extra passes',
+      L.beats === N.beats + (L.passes + 1) * (B - A), `${L.beats} beats for ${L.passes} passes`);
+  }
 
   /* THE LOCKS. A kitten who has won nothing; then one fight at a time. */
   const kit = (beat = {}) => ({ name: 'Mittens', style: { name: 'Mittens' }, shadowBeat: beat });

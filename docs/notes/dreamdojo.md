@@ -2162,7 +2162,8 @@ Kata Trace ... with the Easy song being the exception":
   this song!"), in the picker, on DANCE and in the Beat Map editor's list. A
   custom chart of a locked song is locked too. **The EXTRA HARD songs are not
   even listed** until the secret is open to her — the list would give it away.
-  Nightmare has a 2:27 long cut that opens with it.
+  Nightmare has a 2:38 long cut that opens with it — the whole choir every
+  pass, after Richard heard the first one "only says HONOR once".
 - **Debug panel, SHADOW LIONHEART section**, both keyless and both ask:
   *open every Shadow song in Kata Trace* (this tab only), and *open 秘 EXTRA
   HARD — as if 1st Class*, which sets an `extra` flag in the save; `extraOpen`

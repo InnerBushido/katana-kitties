@@ -262,17 +262,43 @@ Trace's ±100 ms PERFECT.
 chord loop (which the takes do not play). Per beat: chroma plus band energies;
 every pair of beats whole bars apart (A ≥ 16, B ≤ end−8, B−A ≥ 48 and a multiple
 of 4) is scored over ±4 beats, and the longest loop within 0.01 of the best
-score wins. Requiem loops beats 40–88 (21.2 s), Darksynth 52–100 (21.2 s),
-Nightmare 20–92 (31.6 s).
+score wins. Requiem loops beats 40–88 (21.2 s), Darksynth 52–100 (21.2 s).
+
+**Except Nightmare, whose loop is chosen by its sections.** Richard, of the
+first long cut: "isn't looping very well and sound awkward, especially since it
+only says HONOR once ... we should loop at the originals 49 seconds before it
+fades out". The search had picked 20–92, which jumps out mid-section and leaves
+the choir's second half and the outro to play once, at the end. Per-beat band
+energy reads the song's shape exactly: bells to beat 15, drums in at 16, and
+every section announced by ONE beat with the sub dropped out — 31 before
+section 2, 63 before the choir (64–96); the outro runs to 111, 112 is the
+closing hit and the fade starts at 113 (49.6 s). So it loops **31→111** (80
+beats, 35.1 s): to the end of the outro's last full bar, then into the song's
+own break beat — a transition the music already makes once — with the whole
+choir in every pass.
+
+**And no seam is cut on the grid.** The takes creep about 0.1% — invisible to a
+chart, but it puts beat A and beat B 30–60 ms out of step with each other, so a
+loop cut exactly on the grid stumbles at every seam. All three first loops did:
+**Requiem −43 ms, Darksynth −61 ms, Nightmare −29 ms**. `seamLag` measures it
+by cross-correlating an onset envelope in eight bands over the four beats before
+each side (±110 ms, 1 ms steps), and A is moved by it. Then `seamCut` puts the
+cut at the quietest moment on both sides in the 70 ms before the beat, so a
+drum hit is never split — a cut a few ms after a hit plays a sliver of it and
+then the other side's hit, which is a flam. Requiem's peak is sharp (0.69
+against a 0.31 floor); Nightmare's is shallow, but the same −33 ms came out of
+two seam pairs at two window lengths and agreed with two cruder reads.
+`tools/capture/.out/seam-preview.mjs` renders every seam for listening.
 
 **Playing it** (`startMusic` / `_fileStart`):
 - **The scheduler's clock is kept.** The timer still ticks `_nextNote` and
   `_step`, it just plucks nothing, and `_beat0` is beat 0 on the audio clock.
   So `musicGrid`, `shiftMusic` and Kata Trace's `keepTime` work unchanged, and
   a file still decoding comes in late *on the beat* rather than late and wrong.
-- **The fight loops** with `loopStart`/`loopEnd` on a COPY of the buffer whose
-  last 25 ms before `loopEnd` are crossfaded (equal power) into the 25 ms before
-  `loopStart` — no click every 21 s. Kata Trace plays the original straight
+- **The fight loops** with `loopStart`/`loopEnd` (the lag-aligned cuts, so its
+  period is the music's own A-to-B, not whole grid beats — nothing reads the
+  grid in a fight) on a COPY of the buffer whose last 25 ms before `loopEnd` are
+  crossfaded (equal power) into the 25 ms before `loopStart` — no click. Kata Trace plays the original straight
   through (`restartMusic` passes `loop: false`) and never hears the seam.
 - **Fetched, then decoded on demand**: bytes (~1.4 MB each) are prefetched when
   a kitten nears the Dream Dojo; only the playing piece is kept decoded (~20 MB
@@ -282,12 +308,16 @@ Nightmare 20–92 (31.6 s).
 - **Level-matched**: each file's `mix` brings it to 0.050 RMS, the procedural
   pieces' level.
 
-**Nightmare's long cut** (`shadowNightLong.mp3`, 336 beats, 2:27): the take
-with its loop played three extra times, seams crossfaded offline, re-encoded at
-192k and **re-measured**. The encoder's padding moved beat 0 by a whole beat
-modulo the grid (it read a beat late); the tool folds the shift to the nearest
-whole beat, leaving beat 0 3.5 ms before the first sample, which `_fileStart`
-handles by delaying rather than clipping.
+**Nightmare's long cut** (`shadowNightLong.mp3`, 360 beats, 2:38): the take to
+its seam at 48.7 s, the 31→111 body twice more, then 31 to the end — so the
+choir is sung four times. Each pass's body is **resampled by 0.1%** (about 1.6
+cents) to exactly 80 beats, so the chart's grid survives every pass; played
+as-is, the 33 ms lag would add up to 100 ms, a whole PERFECT window, by the
+end. Beat 0 is the original's plus the encoder's delay, measured by lining the
+waveforms up (0.0 ms — ffmpeg trims LAME's padding).
+**The first long cut's chart stopped 35 seconds early**: intro, N passes and a
+tail from A to the end is N+1 times round the loop, and it counted N (147.5 s of
+chart over 182 s of music).
 
 **His chart fits every song** (`fitShadow`): the hand-written 128-beat chart is
 opening / march / finale; the finale is pinned to the song's end and the march
@@ -296,4 +326,10 @@ fills the gap with whole copies plus the tail of one, never cut inside a 凶. At
 
 **Tried and failed:** an unconstrained beat search (multiples of the beat);
 finding the loop from the prompt's chord progression (the takes ignore it);
-taking the long cut's re-measured beat 0 at face value (one beat late).
+taking the long cut's re-measured beat 0 at face value (one beat late, and
+after the seams were aligned, 33 ms off — the fit then sees mostly repeated
+sections); Nightmare's loop by self-similarity alone (20–92: the choir once);
+seams cut exactly on the grid (a 30–60 ms stumble); measuring the seam lag on
+the kick-and-bass envelope alone (it pumps in sixteenths, so its peaks sit 55 ms
+apart and it picks one at random) or from per-beat kick onsets (this track's
+"kick band" is a sustained reese bass).

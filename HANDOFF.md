@@ -613,9 +613,11 @@ quoted.
     and affordable (non-negotiable 9).
   - EASY keeps the procedural theme. MEDIUM, HARD and 秘 EXTRA HARD play
     Requiem, Darksynth and Nightmare: ElevenLabs Music takes, beat-measured and
-    looped on whole bars with a crossfaded seam.
+    looped on whole bars, each seam cut on the music's own beat (they creep
+    30–60 ms against the grid). Nightmare loops 31→111, the whole choir every
+    pass, after Richard heard the first long cut "only says HONOR once".
   - Each opens in Kata Trace when she beats him at its level. The EXTRA HARD
-    ones (and Nightmare's 2:27 long cut) are hidden until the secret is open.
+    ones (and Nightmare's 2:38 long cut) are hidden until the secret is open.
   - Debug rows: open every song; open EXTRA HARD as if 1st Class.
   - **Open:** nobody has played it. The takes do not follow the theme's chords,
     and Kata Trace speed raises their pitch.
