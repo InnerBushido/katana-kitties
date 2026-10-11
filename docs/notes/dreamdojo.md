@@ -2355,6 +2355,67 @@ can each go somewhere else. Reaching a later marker takes the ones before it,
 so cutting a corner never sends her back. Gone stays gone. Arriving anywhere
 on the target's floor clears it and every marker, with a toast saying so.
 
+## 登竜 The Dragon Gate, the fourth course (`GATE` in `dream/course.js`)
+
+"a 4th Sine course built on skill: verticality, precision landing, walls of
+lasers, static lasers that force movement patterns ... multiple floor levels,
+Ninja Warrior / jungle gym style." The carp that climbs the waterfall becomes a
+dragon (登竜門), and this is the course you climb. It comes last in the picker.
+
+**The same eight stretches in the same lanes** as the other three, so every
+wall, turn and checkpoint is shared and the run's bookkeeping is untouched.
+What is new is three generic things in course.js, which any course can now use:
+
+- **`ledges`**: floors that stand still at a height, over a zap floor.
+- **`floor`**: a zap floor is now allowed on any stretch, not only the stones
+  (`zapFloorAt`).
+- **`fixed`**: beams that never move. They are lime and do not pulse, where
+  every other beam's glow flickers.
+
+| stretch | what it asks |
+| --- | --- |
+| LASER CORRIDOR | Two walls of light ±1.4 down the first lane, with the standing wave's bars still rising and falling inside. Filmed from behind her (`behind`): a wall running away from the side-on lens cannot be read. |
+| HURDLES AND CEILINGS | A static hurdle, then 2.6 on a ceiling at 3.4 with a second bar at 5.4. A short low hop goes; a full hop or a double jump is a zap. |
+| THE HIGH STEPS | Five ledges, 1 → 2 → 2 → 2 → 1 up, the middle three 2 across and 2.6 apart, over a floor that zaps. |
+| COUNTER WAVE | As the Riptide's. |
+| THE DRAGON STAIR | Four ledges a step at a time to a landing 4 up, three sine and cosine stones riding at that height (H 4, A 0.6), a ledge halfway down, and off. The air arm turns at 6.7, missing her while her stone is low. |
+| THE SWEEPERS, LASER WALLS, FINAL WAVE | The sweepers; the sliding-gap curtains with a static hurdle in front of three of them; the final twins. |
+
+**Every ledge stands on a post** as tall as it is. Without posts, seen
+side-on in the browser, a ledge 4 up and a ledge 1 up were the same white ring.
+
+**What world-check found while it was built.** Both of these are now checks:
+
+- **The ceiling was one bar.** A double jump went clean over it: her feet top
+  out at 4.2, which clears a 3.4 bar by a hair. So the one move the pattern
+  exists to rule out could skip it.
+- **The first ledges (2.3 across, 2.9 apart) were landed by a half-speed
+  hop**, which is not precision. With the middle ledges 2 across, a
+  **sprinter** searched with only full and half hops never finishes, where
+  the Gauntlet's does (18.57s).
+
+The walker cannot be held to the same claim. A half-walk hop carries 4–4.5,
+so some ledge two on sits under it, at both spacings tried (2.9 and 2.6).
+
+**The search hops short here** (`hops` in its row: 1, 0.75, 0.5, 0.4, 0.3,
+0.22, 0.15, 0). Without that the sprinter has no way through, and the
+EXTRA HARD bands come off the sprinter.
+
+**Bands**, measured as the other courses' are:
+
+| level | walker | sprinter |
+| --- | --- | --- |
+| L1 | 31.77 | 19.83 |
+| L2 | 27.03 | 19.77 |
+| L3 | 25.73 | 19.60 |
+| 秘 L4 | 23.37 | 17.03 |
+
+Nobody gets through without hopping.
+
+*Not built:* "possibly grab interactions or sword swings that trigger events".
+It was offered as a possibility, and both need a new verb on the player that
+the course's search cannot model yet.
+
 ## Voice
 
 Lionheart is **Barrett** (`d603a8cd-3fe1-55e0-9245-617a2589131e`), nine clips

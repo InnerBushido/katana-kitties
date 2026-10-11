@@ -38199,6 +38199,100 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       }
       ok('激流 each Riptide stone goes round the unit circle stood on its edge — sin up, cos across — and a cosine stone a quarter-turn ahead',
         circ < 1e-9 && quarter < 1e-9, `${circ.toExponential(1)} ${quarter.toExponential(1)}`);
+
+      /* --- 登竜 THE DRAGON GATE. Richard: "a 4th Sine course built on skill:
+         verticality, precision landing, walls of lasers, static lasers that
+         force movement patterns ... multiple floor levels". Each of those is
+         asked of the course as a behaviour, not as a number being set. --- */
+      G.setCourse('gate', 1, { instant: true });
+      {
+        const L2 = CO.LEVELS[1];
+        // MULTIPLE FLOOR LEVELS: every ledge is a real deck at its height, and drawn where course.js says.
+        let ledgeOff = 0;
+        for (const s of CO.LEDGES) {
+          const q = isleSpot(I, s.a, s.b);
+          const h = floorAt(q.x, q.z, I.y + s.y + 0.1);
+          ledgeOff = Math.max(ledgeOff, h ? Math.abs(h.y - (I.y + s.y)) : 99);
+        }
+        const tops = CO.LEDGES.map((s) => s.y);
+        ok('登竜 the Dragon Gate has floors at four heights besides the ground — ledges that are real decks where course.js puts them, the top 4 up',
+          ledgeOff < 1e-6 && new Set(tops).size >= 4 && Math.max(...tops) >= 4 && G.ledgeDecks.length === CO.LEDGES.length
+          && G.ledgeDecks.every((d) => d._grp.children[1].material.color.getHex() === SN.LEDGE_COL)
+          // ...each on a post that reaches from it to the floor, which is what makes a height read as a height
+          && G.view.ledgePosts.length === CO.LEDGES.length
+          && G.view.ledgePosts.every((m, k) => Math.abs(m.position.y - m.scale.y - I.y) < 0.06 && Math.abs(m.position.y - (I.y + CO.LEDGES[k].y)) < 0.06),
+          `${CO.LEDGES.length} ledges at ${[...new Set(tops)].join(', ')}, off by ${ledgeOff.toFixed(4)}`);
+        // VERTICALITY: no ledge can be walked up to, and every one is in reach of ONE hop from the floor before it.
+        const rises = [];
+        for (const sec of CO.SECTIONS) {
+          let from = 0;
+          for (const l of sec.ledges ?? []) { if (l.y > from) rises.push(l.y - from); from = l.y; }
+        }
+        ok('...every climb is a hop: more than a step up (0.4) and inside one hop\'s reach, with room to land',
+          rises.length >= 4 && rises.every((u) => u > 0.4 && u <= apex - 0.3), `rises ${rises.map((u) => u.toFixed(1)).join(' ')} vs a hop of ${apex.toFixed(2)}`);
+        /* PRECISION LANDING: at a sprint, with only the full and half hops
+           every other course is searched with, there is NO way through — every
+           hop overshoots a 2-across ledge into the lava — where the Gauntlet's
+           sprinter, searched the same way, finishes. She has to slow down to
+           land. (Asked of the WALKER this is not true and cannot be made true:
+           a half-walk hop carries 4–4.5, and whatever the spacing, some ledge
+           two on sits under it. The first cut of this check asked that, and
+           it failed at both spacings tried, 2.9 and 2.6.) */
+        const coarse = CO.fastestRun(L2, { v: sprint, jumpV: jv, gravity: gr, hops: [1, 0.5, 0], tMax: 60 });
+        const fine = CO.fastestRun(L2, { v: sprint, jumpV: jv, gravity: gr });
+        ok('...and the landings are small enough to make her slow down: a sprinter with only full and half hops never gets through, where the Gauntlet\'s does',
+          coarse == null && fine != null && runs[1].sprint != null && CO.LEDGES.every((s) => s.r <= 1.6), `coarse ${coarse}, fine ${fine}, the Gauntlet's ${runs[1].sprint}`);
+        // ZAP FLOOR UNDER THE HIGH STEPS: between two ledges is a zap, on one is not.
+        const hs = CO.SECTION.twin;
+        const hc = CO.LANES[hs.lane];
+        const l0 = CO.LEDGES.find((s) => s.sec === 'twin');
+        ok('...the High Steps stand over a floor that zaps, as the stones do, and a ledge is safe',
+          CO.hitAt(L2, hc, (hs.ledges[0].b + hs.ledges[1].b) / 2, 0, 0, { list: [] }) === 'twin'
+          && !CO.hitAt(L2, l0.a, l0.b, l0.y, 0, { list: [] }));
+        // WALLS OF LASERS: the corridor. Down its middle is clear; 0.7 off it is a wall.
+        const cs = CO.SECTION.stand;
+        const walls = CO.beams(L2, 0).filter((q) => q.sec === 'stand' && q.wall);
+        const cc = CO.LANES[cs.lane];
+        const at = -11;
+        ok('...the Laser Corridor is two walls of light down the first lane: her middle is clear of them, 0.7 to either side is a zap',
+          walls.length >= 8 && !CO.hitAt(L2, cc, at, 0, 0, { list: walls }) && !!CO.hitAt(L2, cc + 0.7, at, 0, 0, { list: walls })
+          && !!CO.hitAt(L2, cc - 0.7, at, 0, 0, { list: walls }), `${walls.length} beams`);
+        // STATIC LASERS THAT FORCE A PATTERN: hurdle, then ceiling. A short hop goes; a big one, or a double, hits the ceiling.
+        const fixedT = CO.beams(L2, 0).filter((q) => q.sec === 'travel' && q.fixed);
+        const still = JSON.stringify(fixedT) === JSON.stringify(CO.beams(L2, 7.3).filter((q) => q.sec === 'travel' && q.fixed));
+        const hop = (vb, b0, push2 = false) => {
+          let y = 0; let vy = jv; let b = b0; let second = !push2;
+          for (let t = 0; t < 2; t += 1 / 120) {
+            vy -= gr / 120; y += vy / 120; b += vb / 120;
+            if (!second && vy <= 0) { vy = jv * 0.86; second = true; }
+            if (y <= 0 && t > 0.1) return null;
+            const hit = CO.hitAt(L2, CO.LANES[0], b, y, 0, { list: fixedT });
+            if (hit) return `${b.toFixed(1)}@${y.toFixed(1)}`;
+          }
+          return null;
+        };
+        const hurdle = CO.SECTION.travel.fixed[0].b;
+        const shortHop = hop(walk * 0.3, hurdle - 1.3);
+        const bigHop = hop(walk, hurdle - 2.2);
+        const dbl = hop(walk * 0.5, hurdle - 1.5, true);
+        ok('...Hurdles and Ceilings never move, and they force the move: a short low hop clears the hurdle, a full one or a double jump meets the ceiling',
+          still && shortHop == null && bigHop != null && dbl != null, `short ${shortHop ?? 'clear'}, full ${bigHop}, double ${dbl}`);
+        ok('...a beam that never moves is lime and steady, and every one of them is in a lane',
+          G.beamFx.filter((fx) => fx.fixed).length === CO.beams(L2, 0).filter((q) => q.fixed).length
+          && G.beamFx.filter((fx) => fx.fixed).every((fx) => fx.col === SN.FIXED_COL)
+          && CO.beams(L2, 0).filter((q) => q.fixed).every((q) => { const k = CO.laneOf((q.a0 + q.a1) / 2); return Math.abs(q.a0 - CO.LANES[k]) <= CO.HALVES[k] && Math.abs(q.a1 - CO.LANES[k]) <= CO.HALVES[k]; }));
+        // The corridor is seen from BEHIND her: a wall running away from a side-on lens cannot be read.
+        const keepRun = G.run;
+        G.run = { sMax: 0, cp: 0, drill: { state: 'live' } };
+        const behind = G._shoulder()?.key === 'stand';
+        G.run = keepRun;
+        ok('...and the corridor is filmed from behind her, down the walls', behind);
+      }
+      // Swiping away takes its ledges out of the world with its stones.
+      const gateLedges = G.ledgeDecks.slice();
+      G.setCourse('gauntlet', 1, { instant: true });
+      ok('登竜 swiping the Dragon Gate away takes its ledges out of the world, and the Gauntlet has none',
+        gateLedges.length > 0 && gateLedges.every((d) => !D.sim.decks.includes(d) && !d._grp?.parent) && G.ledgeDecks.length === 0 && CO.LEDGES.length === 0);
     }
 
     /* THE SESSION. Two kittens: she runs, her sister waits in the stands. */
