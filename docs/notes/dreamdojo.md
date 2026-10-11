@@ -2219,6 +2219,27 @@ on his sword (`lionheart/defeated.png`, Higgsfield off his own Shadow sheet; a
 first take crouched instead of kneeling and was not used) and winks at 3.56s,
 after "Oof... good job." ends.
 
+**記 The Kata Board** (`dream/kataboard.js`). "a separate platform with
+leaderboards, per player or all players. Organised mainly by song, with highest
+scores, and filters for difficulty and speed/time." A disc of its own (r 8) six
+units off the Kata island's far rim, over a short bridge. One song at a time,
+highest score first (ties: accuracy, then whoever got there first); filters
+LEVEL, SPEED (read as the speed multiplier — the one clock) and WHO (everybody /
+just the kitten driving). Only finished songs on Lionheart's chart go on it — a
+custom chart can be eight blows long. Scores live in the progress ledger
+(`kataRun`, keyed song|level|speed, best by score), so they travel with the
+save row like the stars. The kiosk has NO card (`card: null`): the card covered
+the board's right half in the first render, and the board says it all anyway.
+Board and kiosk are placed by `SCREEN`, not by the island, because the camera
+never turns.
+
+"keep the player's most recent score on their current scoreboard (the one with
+their name) until they leave the area" — her floor's plate is taller now and
+holds `fl.last`: the song, level, speed, stars and score, or CAUGHT and what she
+had. A run she stopped has nothing to keep. The area is the island plus the
+board's platform and bridge (`KataHall.inArea`), so walking over to read the
+board does not wipe it.
+
 **The EXTRA HARD unlock** is said aloud now (`lion_secret`, voices.md) and
 names both prizes; it and its toast hold 14s.
 

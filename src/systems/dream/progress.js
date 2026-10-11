@@ -76,10 +76,29 @@ export class DreamProgress {
   /** Her row, made on first touch. */
   of(name) {
     const k = this.data.kittens;
-    k[name] ??= { stars: {}, best: {}, flags: {}, days: {}, weeks: {} };
+    k[name] ??= { stars: {}, best: {}, flags: {}, days: {}, weeks: {}, kata: {} };
     const r = k[name];
-    r.stars ??= {}; r.best ??= {}; r.flags ??= {}; r.days ??= {}; r.weeks ??= {};
+    r.stars ??= {}; r.best ??= {}; r.flags ??= {}; r.days ??= {}; r.weeks ??= {}; r.kata ??= {};
     return r;
+  }
+
+  /**
+   * A FINISHED KATA TRACE SONG, for the 記 Kata Board (dream/kataboard.js).
+   * Kept apart from `best`, which is one number per chart and has no speed in
+   * it: the board's filters are song, level AND speed, so a row is keyed by
+   * all three and holds the run's score, accuracy and stars together — her
+   * best there BY SCORE, the number the board ranks on. `at` is when, so a
+   * tie keeps whoever got there first.
+   */
+  kataRun(name, { song, diff, speed, score, acc = 0, stars = 1 }, at = Date.now()) {
+    if (!Number.isFinite(score)) return { newBest: false };
+    const r = this.of(name);
+    const key = `${song}|${diff}|${speed}`;
+    const b = r.kata[key];
+    const newBest = !b || score > b.score;
+    if (newBest) r.kata[key] = { score, acc, stars, at };
+    this.save();
+    return { newBest };
   }
 
   stars(name, id) { return this.data.kittens[name]?.stars?.[id] ?? 0; }

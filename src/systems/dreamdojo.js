@@ -2559,6 +2559,7 @@ export class DreamDojo {
    * pedestal's to give, after three stars.
    */
   onDrillEnd(d, how) {
+    this.kata?.ended?.(d, how);
     if (how !== 'won') return;
     const m = /^gallery\.(\w+)$/.exec(d.spec.id ?? '');
     if (!m || !ORB_BY_ID[m[1]]) return;

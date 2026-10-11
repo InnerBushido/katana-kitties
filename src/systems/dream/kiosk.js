@@ -67,8 +67,10 @@ export class Kiosk {
       const d = Math.hypot(p.position.x - SIM.dx - this.x, p.position.z - SIM.dz - this.z);
       if (d < nd) { nd = d; near = p; }
     }
-    if (near) this.card.set(this.o.card(near), this.o.colour ?? HOLO.cyan);
-    this.show += ((near ? 1 : 0) - this.show) * Math.min(1, dt * 6);
+    // A kiosk with no card (`card` null): the thing it stands beside IS the card.
+    const lines = near && this.o.card ? this.o.card(near) : null;
+    if (lines) this.card.set(lines, this.o.colour ?? HOLO.cyan);
+    this.show += ((lines ? 1 : 0) - this.show) * Math.min(1, dt * 6);
     this.card.visible = this.show > 0.03;
     this.card.mat.opacity = this.show;
     this.pad.material.opacity = this.lit === false ? 0.2 : 0.45 + 0.25 * Math.sin(this.dream.t * 3 + this.x);
