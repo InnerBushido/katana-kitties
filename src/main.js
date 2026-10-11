@@ -5087,6 +5087,9 @@ class Game {
        into the save, so both ask, like every keyless row. */
     if (code === 'DreamSongs') this._debugShadowSongs();
     if (code === 'DreamExtra') this._debugOpenExtra();
+    /* THE WALK TO THE TUBES, DRAWN: what it goes round, and the way it is
+       taking (dream/padnav.js). Paint only — it changes nothing a kitten does. */
+    if (code === 'DreamNav') this._toggleDreamNav();
     /* --- the scene viewer ---
        Every cutscene in the game is gated behind hours of play and fires ONCE
        per session, which makes the last thing anybody writes also the hardest
@@ -6085,6 +6088,13 @@ class Game {
    * than the confusion.
    */
   /** Every Shadow song open in Kata Trace, for this session (`KataHall.songChoices`). */
+  _toggleDreamNav() {
+    if (!this.dream) { this.toast('[debug] no Dream Dojo yet — it is built on PLAY', 0); return; }
+    this.dream.navDebug = !this.dream.navDebug;
+    this.toast(`[debug] Dream Dojo walk paths ${this.dream.navDebug ? 'SHOWN' : 'hidden'}`, 0);
+    this._refreshDebugPanel();
+  }
+
   _debugShadowSongs() {
     if (this._debugSongs) { this.toast('[debug] every Shadow song is already open in Kata Trace', 0); return; }
     this.confirm.ask({
@@ -6333,6 +6343,7 @@ class Game {
       <div class="dbg-sep">SHADOW LIONHEART — his songs and his secret</div>
       ${row('DreamSongs', 'open every Shadow song in Kata Trace', this._debugSongs)}
       ${row('DreamExtra', 'open 秘 EXTRA HARD — as if 1st Class')}
+      ${row('DreamNav', 'show the Dream Dojo walk paths', !!this.dream?.navDebug)}
       <div class="dbg-sep">THIS DEVICE — what outlives the tab</div>
       ${row('BoardWipe', `wipe the RECORD BOARD (${this._boardRows()} results)`)}
       ${row('SaveWipe', `wipe the SAVED GAMES (${listSaves().length} of ${saveCap()})`)}

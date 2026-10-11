@@ -41422,6 +41422,164 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       ok('...and every rack and the foot of every tube can still be walked to from the gate, round them',
         free(entry.x, entry.z) && lost.length === 0, lost.join(', ') || `${cells.length} cells reachable`);
     }
+    /* THE WALK TO HER TUBE GOES ROUND THINGS. Richard: "when the player is
+       walking to the tubes automatically, they tend to get stuck on the
+       environment, mainly the omni-directional treadmills. We should try to
+       use some A* path finding". Walked, not reasoned: a body of 0.6 at
+       walking pace, pushed by the world's own `resolveSolids` every step,
+       from in front of every rack and from Lionheart to every tube — the old
+       way (the stick pointed straight at the tube) and the new (along
+       `navTo`, re-planned twice a second). */
+    {
+      const PN = await import('../src/systems/dream/padnav.js');
+      const walkTo = (from, k, nav) => {
+        const p = { index: k, position: new THREE.Vector3(from.x, ARCADE.y, from.z) };
+        const tube = L.tubes[k];
+        let path = null; let navT = 0; let t = 0;
+        const dt = 1 / 30;
+        for (; t < DD.SEQ.walkMax; t += dt) {
+          if (Math.hypot(tube.x - p.position.x, tube.z - p.position.z) < 0.35) return t;
+          let aim = tube;
+          if (nav) {
+            navT -= dt;
+            if (!path || navT <= 0) { path = D.navTo(p); navT = 0.5; }
+            while (path && path.length > 1 && Math.hypot(path[0].x - p.position.x, path[0].z - p.position.z) < PN.NAV.reach) path.shift();
+            aim = path?.[0] ?? tube;
+          }
+          const ax = aim.x - p.position.x; const az = aim.z - p.position.z; const ad = Math.hypot(ax, az) || 1;
+          const sp = 7 * Math.min(1, Math.hypot(tube.x - p.position.x, tube.z - p.position.z) / 1.2);
+          const q = world.resolveSolids(p.position.x + (ax / ad) * sp * dt, p.position.z + (az / ad) * sp * dt, 0.6);
+          p.position.x = q.x; p.position.z = q.z;
+        }
+        return null;
+      };
+      const starts = [...racks.map((rk) => {
+        const d0 = hyp(rk.at, ARCADE);
+        return { name: rk.item.id, x: rk.at.x + ((ARCADE.x - rk.at.x) / d0) * 1.9, z: rk.at.z + ((ARCADE.z - rk.at.z) / d0) * 1.9 };
+      }), (() => { const d0 = hyp(L.lion, ARCADE); return { name: 'Lionheart', x: L.lion.x + ((ARCADE.x - L.lion.x) / d0) * 2.4, z: L.lion.z + ((ARCADE.z - L.lion.z) / d0) * 2.4 }; })()];
+      const oldStuck = []; const newStuck = []; let slow = 0;
+      for (const s0 of starts) {
+        for (let k = 0; k < 4; k++) {
+          if (walkTo(s0, k, false) == null) oldStuck.push(`${s0.name}->${k + 1}`);
+          const tn = walkTo(s0, k, true);
+          if (tn == null) newStuck.push(`${s0.name}->${k + 1}`); else slow = Math.max(slow, tn);
+        }
+      }
+      line('the walk to the tubes, straight at them (the old way)', oldStuck.length ? `stuck: ${oldStuck.join(' ')}` : 'never stuck');
+      ok('型 the walk to her tube goes ROUND the treadmills and props: from every rack and from Lionheart, all four tubes, in time',
+        newStuck.length === 0 && slow < DD.SEQ.walkMax, newStuck.join(' ') || `slowest ${slow.toFixed(1)}s of ${DD.SEQ.walkMax}`);
+      // And the way it takes never runs through another kitten's tube, or a circle grown by her body.
+      const glassHit = [];
+      for (const s0 of starts) {
+        for (let k = 0; k < 4; k++) {
+          const path = D.navTo({ index: k, position: new THREE.Vector3(s0.x, ARCADE.y, s0.z) }) ?? [];
+          const pts = [s0, ...path];
+          const G = D._nav[k];
+          // A start inside a grown circle (in front of the headset's wide plinth,
+          // 1.9 out is inside 1.05 + 0.85) can only leave it: the first leg is exempt.
+          const startIn = G.grown.some((c) => hyp(s0, c) < c.r);
+          for (let i = 1; i < pts.length; i++) {
+            if (!(i === 1 && startIn) && !PN.clearLine(G, pts[i - 1], pts[i]) && i < pts.length - 1) glassHit.push(`${s0.name}->${k + 1}`);
+            for (const [j, t2] of L.tubes.entries()) {
+              if (j === k) continue;
+              const a = pts[i - 1]; const b = pts[i];
+              const ux = b.x - a.x; const uz = b.z - a.z; const ll = ux * ux + uz * uz || 1;
+              const u = Math.max(0, Math.min(1, ((t2.x - a.x) * ux + (t2.z - a.z) * uz) / ll));
+              if (Math.hypot(a.x + ux * u - t2.x, a.z + uz * u - t2.z) < TUBE_R) glassHit.push(`${s0.name}->${k + 1} through tube ${j + 1}`);
+            }
+          }
+        }
+      }
+      ok('...and the way it takes is clear of every grown circle and never goes through a sister\'s tube', glassHit.length === 0, glassHit.slice(0, 4).join(' | '));
+      /* "after a second or two, the player can regain control" — and not before. */
+      ok('...and the stick only takes the walk back after walkLock (1.5s), not 0.4', DD.SEQ.walkLock >= 1 && DD.SEQ.walkLock <= 2
+        && /s\.t > SEQ\.walkLock\)/.test(readD('../src/systems/dreamdojo.js')));
+    }
+    /* THE GEAR SHOTS, through a lens. "the camera rotates so that the player
+       sees the equipment ... After they receive it all, then have the camera
+       rotate around the players, in a sweeping circle, to face the tubes from
+       a fair distance showing most of the insides of the dojo area with
+       Lionheart in the back". Each shot's pose, built as `_updateCamera`
+       builds it, and asked: are the racks she still needs in it FROM THE
+       FRONT; are all four tubes and Lionheart in it, beyond her. */
+    {
+      const cam = new THREE.PerspectiveCamera(38, 16 / 9, 0.1, 2000);
+      const pose = (S) => {
+        const c = S.centre;
+        cam.position.set(c.x + Math.sin(S.yaw) * Math.cos(S.pitch) * S.dist, c.y + Math.sin(S.pitch) * S.dist, c.z + Math.cos(S.yaw) * Math.cos(S.pitch) * S.dist);
+        cam.lookAt(c);
+        cam.updateMatrixWorld(true);
+      };
+      const inF = (x, y, z) => { const v = new THREE.Vector3(x, y, z).project(cam); return Math.abs(v.x) < 0.95 && Math.abs(v.y) < 0.95 && v.z < 1; };
+      const st = (D.st[her.index] ??= { phase: null, t: 0 });
+      const keepS = { ...st };
+      const bad = [];
+      st.phase = null;
+      st.gather = new Set(GR.GEAR_ITEMS.map((x) => x.id));
+      for (const rk of racks) {
+        const d0 = hyp(rk.at, ARCADE);
+        stand(her, rk.at.x + ((ARCADE.x - rk.at.x) / d0) * 3, rk.at.z + ((ARCADE.z - rk.at.z) / d0) * 3);
+        const S = D._gearShot(her);
+        pose(S);
+        for (const want of racks.filter((q) => st.gather.has(q.item.id))) {
+          // In frame, and the lens on the side it faces (toward the pad's middle).
+          const facing = (cam.position.x - want.at.x) * (ARCADE.x - want.at.x) + (cam.position.z - want.at.z) * (ARCADE.z - want.at.z);
+          if (!inF(want.at.x, ARCADE.y + 1.6, want.at.z) || facing <= 0) bad.push(`racks shot from ${rk.item.id}: ${want.item.id}`);
+        }
+        if (!inF(her.position.x, her.position.y + 1, her.position.z)) bad.push(`racks shot from ${rk.item.id}: her`);
+        st.gather.delete(rk.item.id);
+      }
+      st.gather = null;
+      for (const ph of ['suit', 'walk']) {
+        st.phase = ph;
+        for (const rk of racks) {
+          const d0 = hyp(rk.at, ARCADE);
+          stand(her, rk.at.x + ((ARCADE.x - rk.at.x) / d0) * 2, rk.at.z + ((ARCADE.z - rk.at.z) / d0) * 2);
+          const S = D._gearShot(her);
+          pose(S);
+          for (const [n, q] of [...L.tubes.map((t, i) => [`tube ${i + 1}`, t]), ['Lionheart', L.lion]]) {
+            if (!inF(q.x, ARCADE.y + 2, q.z)) bad.push(`${ph} from ${rk.item.id}: ${n} out of frame`);
+          }
+          const tc = L.tubes.reduce((a, t) => ({ x: a.x + t.x / 4, z: a.z + t.z / 4 }), { x: 0, z: 0 });
+          if ((cam.position.x - ARCADE.x) * (tc.x - ARCADE.x) + (cam.position.z - ARCADE.z) * (tc.z - ARCADE.z) >= 0) bad.push(`${ph}: lens on the tubes' side`);
+        }
+      }
+      Object.assign(st, keepS);
+      ok('...and the gear shots: the racks she still needs, from the front, then all four tubes and Lionheart from the front of the pad',
+        bad.length === 0, bad.slice(0, 5).join(' | '));
+      /* "rotate around the players, in a sweeping circle" — not a cut. The
+         real cameraFocus, frame by frame from the dome's bearing into the
+         tubes shot: it turns, by no more than a few degrees a frame, and
+         arrives. */
+      {
+        const rk = racks[0];
+        const d0 = hyp(rk.at, ARCADE);
+        stand(her, rk.at.x + ((ARCADE.x - rk.at.x) / d0) * 2, rk.at.z + ((ARCADE.z - rk.at.z) / d0) * 2);
+        const keep2 = { ...st };
+        st.phase = null; st.gather = null;
+        D._cam = [];
+        D._dt = 1 / 60;
+        her.realm = 'real'; her.mount = null; her.rideAlong = null;
+        let f = null;
+        for (let i = 0; i < 180; i++) { f = D.cameraFocus(her); her.camYaw = f?.yaw ?? her.camYaw; }
+        const yaw0 = f?.yaw;
+        st.phase = 'suit';
+        let maxTurn = 0; let prev = yaw0;
+        for (let i = 0; i < 300; i++) {
+          f = D.cameraFocus(her);
+          her.camYaw = f.yaw;
+          maxTurn = Math.max(maxTurn, Math.abs(Math.atan2(Math.sin(f.yaw - prev), Math.cos(f.yaw - prev))));
+          prev = f.yaw;
+        }
+        const target = D._gearShot(her).yaw;
+        const off = Math.abs(Math.atan2(Math.sin(f.yaw - target), Math.cos(f.yaw - target)));
+        const swept = Math.abs(Math.atan2(Math.sin(target - yaw0), Math.cos(target - yaw0)));
+        Object.assign(st, keep2);
+        ok('...and it SWEEPS round her into the tubes shot: under 3 degrees a frame, and there in five seconds',
+          yaw0 != null && maxTurn < THREE.MathUtils.degToRad(3) && off < 0.02,
+          `swept ${THREE.MathUtils.radToDeg(swept).toFixed(0)}deg, most in a frame ${THREE.MathUtils.radToDeg(maxTurn).toFixed(2)}deg, ${THREE.MathUtils.radToDeg(off).toFixed(2)}deg short`);
+      }
+    }
     /* THE POSTS MEET THE HOOP. "The poles on top of the VR treadmill model
        don't connect well to the ring": each post ran 0.1 past the hoop and
        was a different grey. Every post now stands on the drum and stops on

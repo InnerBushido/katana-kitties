@@ -35,6 +35,7 @@ import { TourShadow } from './dream/tourshadow.js';
 import { TourCast } from './dream/tourcast.js';
 import { holoDojo } from './dream/holodojo.js';
 import { PeekTrigger } from './dream/peek.js';
+import { NAV, navGrid, navPath, padObstacles } from './dream/padnav.js';
 import { tickKeptPandas, dropKept } from './dream/pandatrial.js';
 import { enterHolo, leaveHolo, grantHolo, holoLeft, HoloChoice, HOLO_MAX_EACH } from './dream/holokit.js';
 import { LionGuide, LOST_AFTER, LOST_AGAIN, LOST_MAX } from './dream/lionguide.js';
@@ -177,6 +178,30 @@ export const JUMP_CAM = { dist: 18, pitch: 0.5, near: 10, far: 20, lift: 1.4 };
 export const DOME_CAM = { dist: 50, pitch: 0.6, lift: 3.5 };
 const WALK_CAM = { dist: 26, pitch: 0.66, yaw: -Math.PI * 0.25 };
 /**
+ * THE GEAR SHOTS — inside the dome, while she is being kitted out.
+ * Richard: "when the player needs to pick up their VR equipment, that the
+ * camera rotates so that the player sees the equipment. After they receive it
+ * all, then have the camera rotate around the players, in a sweeping circle,
+ * to face the tubes from a fair distance showing most of the insides of the
+ * dojo area with Lionheart in the back and then when the player starts moving
+ * towards the tube, then the camera will follow behind the player from that
+ * set distance."
+ *   RACKS — while she still has pieces to fetch: the lens on the pad side of
+ *     the racks she still needs, so it sees their fronts (they face the
+ *     middle), framing her and them.
+ *   TUBES — from the suit-up to the tube: round HER, to the bearing that looks
+ *     from the front of the pad over her at the tubes and Lionheart behind
+ *     them, and it stays on her at that distance as she walks.
+ * The bearing turns at `turn` per second (eased, the short way round), from
+ * wherever the lens was, so the move is a sweep round her and not a cut.
+ */
+export const GEAR_CAM = {
+  racks: { dist: 24, pitch: 0.52, lift: 1.4 },
+  tubes: { dist: 27, pitch: 0.46, lift: 1.6 },
+  turn: 1.5,
+};
+const wrapA = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+/**
  * THE MUSIC'S SWELL (`DreamDojo.musicLevel`). "starts playing quietly, from a
  * distance, as the user is jumping/commuting to the island and starts getting
  * louder as they get closer, maybe about 50% volume when near it and then full
@@ -198,7 +223,15 @@ const CAM_BLEND = 1.6;
 
 /** The sequence, in seconds. Named so a check can read them. */
 export const SEQ = {
-  walkMax: 7,      // auto-walk gives up and places her after this
+  walkMax: 9,      // auto-walk gives up and places her after this (7 before the path went round things)
+  /* The stick is hers again after this. Richard: "the player will lose
+     control of the character and when the player starts walking, then after
+     a second or two, the player can regain control of the player, but the
+     player will continue walking towards the tube even if player can override
+     the input ... but once overridden, then the player is in full control".
+     It was 0.4: a stick still held from walking to the last rack took the
+     walk off her before it had started. */
+  walkLock: 1.5,
   suit: 1.9,       // the poof: she turns to the lens and comes out of it in her gear
   unsuit: 1.2,     // the poof on the way out: her own clothes again
   walkOutMax: 4,   // out of the tube on her own legs, then the poof
@@ -2028,21 +2061,33 @@ export class DreamDojo {
           const dz = tube.z - p.position.z;
           const d = Math.hypot(dx, dz);
           const own = g.input?.players?.[p.index];
-          if (own && Math.hypot(own.mx ?? 0, own.my ?? 0) > 0.6 && s.t > 0.4) {
+          if (own && Math.hypot(own.mx ?? 0, own.my ?? 0) > 0.6 && s.t > SEQ.walkLock) {
             // She took the stick back. Fine — the tube will wait.
             s.phase = null;
             s.walkPad = null;
+            s.path = null;
             break;
           }
           if (d < 0.35 || s.t > SEQ.walkMax) {
             if (s.t > SEQ.walkMax) p.position.set(tube.x, ARCADE.y, tube.z);
             s.walkPad = null;
+            s.path = null;
             this._begin(p, 'rise');
             break;
           }
+          /* ROUND THINGS, NOT INTO THEM (dream/padnav.js). The way is worked
+             out again twice a second, so a sister or a shove that puts her
+             off it is walked back round from where she is. */
+          s.navT = (s.navT ?? 0) - dt;
+          if (!s.path || s.navT <= 0) { s.path = this.navTo(p); s.navT = 0.5; }
+          while (s.path && s.path.length > 1 && Math.hypot(s.path[0].x - p.position.x, s.path[0].z - p.position.z) < NAV.reach) s.path.shift();
+          const aim = s.path?.[0] ?? tube;
+          const ax = aim.x - p.position.x;
+          const az = aim.z - p.position.z;
+          const ad = Math.hypot(ax, az) || 1;
           const { fwd, right } = p._basis();
-          const wx = dx / d;
-          const wz = dz / d;
+          const wx = ax / ad;
+          const wz = az / ad;
           const slow = Math.min(1, d / 1.2);
           s.walkPad = {
             mx: (wx * right.x + wz * right.z) * slow,
@@ -2188,6 +2233,7 @@ export class DreamDojo {
     }
 
     this._updateGear(dt);
+    this._drawNav();
     this._updateSign();
     this._updateTraining(dt);
     tickKeptPandas(this, dt);
@@ -2934,7 +2980,15 @@ export class DreamDojo {
     const k = Math.min(1, dt * CAM_BLEND);
     c.j += (wantJ - c.j) * k;
     c.d += (wantD - c.d) * k;
-    if (c.j + c.d < 0.005) { c.y = pos.y; return null; }
+    /* THE GEAR SHOTS (GEAR_CAM), over the dome's, by their own weight. */
+    const gs = wantD ? this._gearShot(p) : null;
+    if (gs && c.g < 0.01) c.gy = p.camYaw ?? WALK_CAM.yaw;
+    c.g = (c.g ?? 0) + ((gs ? 1 : 0) - (c.g ?? 0)) * k;
+    if (gs) {
+      c.gs = gs;
+      c.gy = (c.gy ?? gs.yaw) + wrapA(gs.yaw - (c.gy ?? gs.yaw)) * Math.min(1, dt * GEAR_CAM.turn);
+    }
+    if (c.j + c.d < 0.005) { c.y = pos.y; c.g = 0; return null; }
     // Her height moves on landing only — the lens does not bob with the jump.
     if (p.onGround) c.y = pos.y;
     /* The fixed bearing: from the launch toward the middle stone and the last
@@ -2956,13 +3010,131 @@ export class DreamDojo {
     let dy = yawJ - WALK_CAM.yaw;
     while (dy > Math.PI) dy -= 2 * Math.PI;
     while (dy < -Math.PI) dy += 2 * Math.PI;
-    return {
+    const out = {
       centre: c.centre,
       aim: true,
       dist: WALK_CAM.dist * w + JUMP_CAM.dist * c.j + DOME_CAM.dist * c.d,
       pitch: WALK_CAM.pitch * w + JUMP_CAM.pitch * c.j + DOME_CAM.pitch * c.d,
       yaw: WALK_CAM.yaw + dy * c.j,
     };
+    const G = c.g ?? 0;
+    if (G > 0.002 && c.gs) {
+      // Mixed by the gear shot's weight; its bearing the short way round from the dome's.
+      c.centre.lerp(c.gs.centre, G);
+      out.dist += (c.gs.dist - out.dist) * G;
+      out.pitch += (c.gs.pitch - out.pitch) * G;
+      out.yaw += wrapA(c.gy - out.yaw) * G;
+    }
+    return out;
+  }
+
+  /**
+   * Which gear shot she is in, if any, as a target: { centre, dist, pitch,
+   * yaw } — see GEAR_CAM. The bearing here is where the lens is GOING;
+   * `cameraFocus` turns to it.
+   */
+  _gearShot(p) {
+    const s = this.st[p.index];
+    const L = this.layout;
+    if (!s || !L) return null;
+    const pos = p.position;
+    const bearing = (fx, fz) => {
+      // The lens on the far side of (fx, fz) from what it looks at: from the pad's middle, away from it.
+      const vx = ARCADE.x - fx;
+      const vz = ARCADE.z - fz;
+      return Math.atan2(vx, vz);
+    };
+    if (!s.phase && s.gather?.size && this.gear?.racks) {
+      const want = this.gear.racks.filter((r) => s.gather.has(r.item.id));
+      if (!want.length) return null;
+      const cx = want.reduce((a, r) => a + r.at.x, 0) / want.length;
+      const cz = want.reduce((a, r) => a + r.at.z, 0) / want.length;
+      const C = GEAR_CAM.racks;
+      return {
+        centre: new THREE.Vector3((pos.x + cx) / 2, ARCADE.y + C.lift, (pos.z + cz) / 2),
+        dist: C.dist, pitch: C.pitch, yaw: bearing(cx, cz), kind: 'racks',
+      };
+    }
+    if (s.phase === 'suit' || s.phase === 'walk') {
+      const pts = [...L.tubes, L.lion];
+      const tx = pts.reduce((a, q) => a + q.x, 0) / pts.length;
+      const tz = pts.reduce((a, q) => a + q.z, 0) / pts.length;
+      const C = GEAR_CAM.tubes;
+      return {
+        centre: new THREE.Vector3(pos.x, pos.y + C.lift, pos.z),
+        dist: C.dist, pitch: C.pitch, yaw: bearing(tx, tz), kind: 'tubes',
+      };
+    }
+    return null;
+  }
+
+  /**
+   * THE DEBUG PANEL'S *show the Dream Dojo walk paths*: every circle the walk
+   * goes round, grown by her body (what the path actually avoids), and the
+   * way each walking kitten is on. "can manually show the points that the
+   * player can get stuck on". Built while the flag is on, gone when it is off.
+   */
+  _drawNav() {
+    const on = !!this.navDebug && !!this.layout;
+    if (!on) {
+      if (this._navFx) { this._navFx.removeFromParent(); this._navFx.traverse((m) => m.geometry?.dispose?.()); this._navFx = null; }
+      return;
+    }
+    const y = ARCADE.y + 0.12;
+    if (!this._navFx) {
+      this._navFx = new THREE.Group();
+      this._navFx.name = 'dream-nav-debug';
+      const pad = { x: ARCADE.x, z: ARCADE.z, r: ARCADE.r };
+      const obs = padObstacles(this.game.world?.solids, pad, this.layout.tubes, -1, TUBE_R);
+      const mat = new THREE.LineBasicMaterial({ color: 0xff3b6b, depthTest: false, transparent: true });
+      for (const s of obs) {
+        const pts = [];
+        for (let k = 0; k <= 32; k++) {
+          const a = (k / 32) * Math.PI * 2;
+          pts.push(new THREE.Vector3(s.x + Math.cos(a) * (s.r + NAV.body), y, s.z + Math.sin(a) * (s.r + NAV.body)));
+        }
+        const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat);
+        l.renderOrder = 50;
+        this._navFx.add(l);
+      }
+      this._navLines = [];
+      this.game.scene?.add(this._navFx);
+    }
+    for (const p of this.game.players ?? []) {
+      if (!p) continue;
+      const s = this.st[p.index];
+      const path = s?.phase === 'walk' ? s.path : null;
+      let l = this._navLines[p.index];
+      if (!l) {
+        l = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: p.style?.colour ?? 0x5ff6ff, depthTest: false }));
+        l.renderOrder = 51;
+        this._navLines[p.index] = l;
+        this._navFx.add(l);
+      }
+      l.visible = !!path?.length;
+      if (l.visible) {
+        l.geometry.dispose();
+        l.geometry = new THREE.BufferGeometry().setFromPoints([p.position, ...path].map((q) => new THREE.Vector3(q.x, y, q.z)));
+      }
+    }
+  }
+
+  /**
+   * HER WAY TO HER TUBE round everything on the pad (dream/padnav.js), from
+   * where she stands. The grid is built once per tube — the obstacles are the
+   * pad's solids, which do not move — and kept for the debug panel's drawing.
+   */
+  navTo(p) {
+    const L = this.layout;
+    const tube = L?.tubes?.[p.index];
+    if (!tube) return null;
+    const pad = { x: ARCADE.x, z: ARCADE.z, r: ARCADE.r };
+    this._nav ??= [];
+    const G = (this._nav[p.index] ??= navGrid(pad, padObstacles(this.game.world?.solids, pad, L.tubes, p.index, TUBE_R)));
+    const path = navPath(G, p.position, tube);
+    this._navPaths ??= [];
+    this._navPaths[p.index] = path;
+    return path ? path.map((q) => ({ ...q })) : null;
   }
 
   /** The suit-up's cloud, on her (dream/gear.js). */
