@@ -1192,8 +1192,14 @@ one stop long, and no number of presses can reach it. `pad-check` pins that.
 `keysetOwners` returns a **list** for the same reason, and it is a list of one
 in every ordinary game — which is what lets `read` and `describe` ask it
 unconditionally without the two-player game being able to tell it changed shape.
-The ring is always `share.length + 1` stops, so three kittens on the arrows (a
-tablet: the touch pad owns WASD) gives four stops, ending on all three together.
+The ring is always `share.length + 1` stops, so a three-way share would give
+four stops, ending on all three together. It used to happen on a tablet — the
+touch pad owned WASD, so the arrows were the only set in the ring and P2, P3
+and P4 all landed on them. Richard: *"player 1 and player 3 should go to WASD,
+like it is on web/pc."* Now the touch pad's WASD is back in the force-spawn's
+ring (`_shadowPass`), `keysetOf` counts the touch slot as WASD's, and the table
+comes out as the keyboard's: touch + WASD, arrows, WASD\*, arrows\*. While `R`
+has passed WASD to P3, the touch pad reads the glass and not the keys.
 
 It is a **counter, not a boolean**, for the same reason the ring is not always
 two, and the modulus is the difference between a control that cycles and one

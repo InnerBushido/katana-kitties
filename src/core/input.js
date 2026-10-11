@@ -1811,7 +1811,19 @@ export class InputManager {
    */
   _shadowPass(next, n) {
     if (!this.forceSeats) return;
-    const ring = this._freeKeysets();
+    /* WITH THE TOUCH PAD UP, WASD IS BACK IN THE RING — shared with the touch
+       player, who reads it through her pad. "On mobile, seems that when there
+       are 4 players on keyboard, player 1 goes to WASD and all 3 others go to
+       OKL; but player 1 and player 3 should go to WASD, like it is on
+       web/pc." It was `_freeKeysets()` here, which leaves WASD out whenever
+       touch is up because touch OWNS it — right for the dealer, where nobody
+       else may be handed it, and wrong for the share, whose whole job is to
+       hand somebody a set that is already somebody's. With only the arrows in
+       the ring, P2, P3 and P4 all landed on them.
+       WASD FIRST, so the table comes out as the desktop's: P1 touch + WASD,
+       P2 arrows (the ordinary pass), P3 WASD*, P4 arrows*. `keysetShare`
+       counts the touch slot as WASD's, so `R` passes it between P1 and P3. */
+    const ring = this.touch ? KEYSETS.map((_, k) => k) : this._freeKeysets();
     if (!ring.length) return;
     let k = 0;
     for (let i = 0; i < n; i++) {
@@ -1832,10 +1844,28 @@ export class InputManager {
   keysetShare(k) {
     const out = [];
     for (let i = 0; i < Math.min(this.slots, MAX_SLOTS); i++) {
-      const b = this.bindings[i];
-      if (b && !b.touch && b.pad == null && b.keyset === k) out.push(i);
+      if (this.keysetOf(i) === k) out.push(i);
     }
     return out;
+  }
+
+  /**
+   * The keyboard set slot `i` reads, or null — INCLUDING the touch pad's WASD.
+   *
+   * A touch slot's binding has `keyset: null` (it is not padless; see
+   * `_assign`), but the pad reads `TOUCH_KEYSET` through itself every frame,
+   * so for the question "who is on WASD" the touch player is. That stayed
+   * true and invisible until the force-spawn could deal WASD to a SECOND
+   * slot alongside her (`_shadowPass`), and then `R` had to know she was on
+   * it to pass it on. One slot is ever the touch slot, so in an ordinary game
+   * this is the same answer `bindings[i].keyset` always gave, plus WASD for
+   * the one set nobody else could have been dealt.
+   */
+  keysetOf(i) {
+    const b = this.bindings[i];
+    if (!b) return null;
+    if (b.touch) return this.touch ? TOUCH_KEYSET : null;
+    return b.pad == null ? b.keyset ?? null : null;
   }
 
   /**
@@ -2228,7 +2258,13 @@ export class InputManager {
            is no keyboard and this contributes nothing; on a tablet with one
            attached, or on the desktop test mode, it is player 1's second hand.
            `_freeKeysets` is what stops anybody else being dealt the same set. */
-        const r = this.touch.read({ keyset: KEYSETS[TOUCH_KEYSET], keys: this.keys });
+        /* ...UNLESS THE FORCE-SPAWN HAS PASSED WASD TO A SISTER. Then her keys
+           are the sister's this frame and the touch pad reads glass only — the
+           same rule `read` applies to two padless slots on one set. With
+           nobody sharing, `keysetDrives` is true for her and this is the
+           merge it always was. */
+        const ks = this.keysetDrives(TOUCH_KEYSET, i) ? KEYSETS[TOUCH_KEYSET] : null;
+        const r = this.touch.read({ keyset: ks, keys: this.keys });
         mx = dead(r.ax);
         my = dead(r.ay);
         rawx = r.ax;

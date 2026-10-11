@@ -100,6 +100,25 @@ const isPayne = (state) => PAYNE_STATES.has(state);
 const LION_STATES = new Set(['lion', 'lionQuests', 'lionMap', 'lionKyo']);
 const isLion = (state) => LION_STATES.has(state);
 
+/* THE CARDS WHOSE LIST THE CURSOR NEVER VISITS. "Lionheart's quest is not
+   appearing on the 'What's my next quest?' screen. I think we need to add a
+   scroll list to that screen ... may be good to have scrolling capability on
+   this screen regardless incase of more future quests." Payne's quest list
+   and Lionheart's island list are READ, not chosen from: the cursor only has
+   the two buttons under them (MARK IT / BACK, side by side), so walking the
+   cursor into view could never bring the end of the list with it — and the
+   card was `overflow: hidden`, so a fourth Dream Dojo quest was simply under
+   the floor. On these, a controller's stick UP/DOWN scrolls the card and
+   LEFT/RIGHT moves between the two buttons; a thumb drags it. */
+export const STICK_SCROLLS = new Set(['payneQuests', 'lionQuests']);
+
+/** px a second a full stick scrolls one of those cards. A card is about 300px
+ *  tall on a phone, so a second of stick is about one card's worth. */
+const STICK_SCROLL_PX = 420;
+
+/** The element on a card that scrolls: the shelf, or a talking card itself. */
+export const CARD_SCROLLER = '.pc-list, .pn-card';
+
 /** One player's card. Never shared; there is one of these per seat. */
 class Card {
   constructor() {
@@ -274,7 +293,14 @@ export class Inspector {
     if (!pad) return;
     const rows = this._rowCount(index);
 
-    const raw = Math.abs(pad.my) > NAV_DEAD ? Math.sign(pad.my)
+    /* A READING CARD: up/down is the scroll, and only left/right is the
+       cursor. See STICK_SCROLLS. */
+    const reads = STICK_SCROLLS.has(c.state);
+    if (reads && Math.abs(pad.my) > NAV_DEAD) {
+      const el = c.el?.querySelector?.(CARD_SCROLLER);
+      if (el) el.scrollTop += pad.my * STICK_SCROLL_PX * dt;
+    }
+    const raw = !reads && Math.abs(pad.my) > NAV_DEAD ? Math.sign(pad.my)
       : Math.abs(pad.mx) > NAV_DEAD ? Math.sign(pad.mx) : 0;
     let step = 0;
     if (raw === 0) c.hold = 0;
@@ -591,6 +617,16 @@ export class Inspector {
     ].join('#');
     if (sig === c._sig) return;
     c._sig = sig;
+    /* THE SCROLL SURVIVES A REPAINT. The card is rebuilt from scratch whenever
+       anything on it changes — and what changes most is the line she is
+       SAYING — so a list scrolled down to its last quest went back to the top
+       mid-sentence, under the thumb that had just put it there. Kept when the
+       card is still the card it was; a new card opens at its top. */
+    const was = c._paintedState === c.state
+      ? c.el.querySelector(CARD_SCROLLER)?.scrollTop ?? 0 : 0;
+    const moved = c._paintedState !== c.state || c._paintedI !== c.i;
+    c._paintedState = c.state;
+    c._paintedI = c.i;
     c.el.innerHTML = isLion(c.state) && L
       ? L.markup(index, c.state, c.i, (i, w) => this._backButton(i, w))
       : isPayne(c.state) && P
@@ -602,8 +638,18 @@ export class Inspector {
        at a readable size (see `.pc-list` in style.css), and the markup is
        rebuilt from scratch on every change — so the list is scrolled to the
        top again on the very frame her cursor moved off the bottom of it.
-       `block: 'nearest'` so a cursor already on screen does not jump. */
-    c.el.querySelector('.cursor')?.scrollIntoView({ block: 'nearest' });
+       `block: 'nearest'` so a cursor already on screen does not jump.
+       ONLY WHEN IT MOVED, which is what lets the scroll above survive: a
+       repaint with the cursor where it was would otherwise drag a reading
+       card back down to its buttons on every line she speaks. And never on a
+       reading card's first paint, which opens at the TOP — the list is the
+       point of it, and its buttons are under it. */
+    const sc = c.el.querySelector(CARD_SCROLLER);
+    if (sc && was) sc.scrollTop = was;
+    if (moved && !(STICK_SCROLLS.has(c.state) && c._openedAt !== c.state)) {
+      c.el.querySelector('.cursor')?.scrollIntoView({ block: 'nearest' });
+    }
+    c._openedAt = c.state;
   }
 
   _chooseMarkup(index) {

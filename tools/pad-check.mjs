@@ -32,7 +32,8 @@ globalThis.localStorage = {
 import { readFileSync } from 'node:fs';
 
 const { InputManager, ACTIONS, KEYSETS, BOUND_KEYS, DOUBLE_TAP_MS, PROMPTS } = await import('../src/core/input.js');
-const { wardLatchExpired } = await import('../src/core/touchpad.js');
+const { wardLatchExpired, clusterSpot, CLUSTER_SHIFT, CLUSTER_SHIFT_RANGE } = await import('../src/core/touchpad.js');
+const { PREF_RANGES, prefOk } = await import('../src/core/prefs.js');
 
 const line = (l, v) => console.log(String(l).padEnd(46) + v);
 let fails = 0;
@@ -1081,31 +1082,41 @@ console.log('\n--- force-spawn: four kittens on one keyboard ---');
   ok('...leaving the extra slots holding nothing again',
     layout(back, 4) === 'WASD Arrows - -', layout(back, 4));
 
-  /* --- THREE ON ONE SET: THE RING IS NOT ALWAYS TWO --- */
-  /* On a tablet the touch pad owns WASD (`_freeKeysets`), so the arrows can be
-     the only set left and three slots can want it. A boolean "swapped" flag
-     would make the third kitten unreachable; the turn counter cycles. */
+  /* --- TOUCH PLUS FORCE-SPAWN: THE DESKTOP'S TABLE, NOT THREE ON THE ARROWS ---
+     "On mobile, seems that when there are 4 players on keyboard, player 1 goes
+     to WASD and all 3 others go to OKL; but player 1 and player 3 should go to
+     WASD, like it is on web/pc." This block used to PIN the three-on-the-arrows
+     answer as the ring-of-four case; it was the bug. The touch pad owns WASD
+     for the dealer, and the share hands WASD back out alongside her. */
+  const touchReads = [];
   const tab = drive([]);
-  tab.attachTouch({ read: () => ({ ax: 0, ay: 0, cx: 0, cy: 0, dpad: [0, 0] }) });
+  tab.attachTouch({ read: (o) => { touchReads.push(o?.keyset ?? null); return { ax: 0, ay: 0, cx: 0, cy: 0, dpad: [0, 0] }; } });
   tab.forceSeats = true;
   tab.slots = 4; tab.update();
-  ok('touch plus force-spawn puts three kittens on the arrows',
-    JSON.stringify(tab.keysetShare(1)) === '[1,2,3]',
-    JSON.stringify(tab.keysetShare(1)));
-  ok('...and the touch player is not dealt a shared set either',
-    tab.bindings[0].touch === true && tab.bindings[0].keyset === null,
+  ok('touch plus force-spawn: P2 and P4 on the arrows, P3 on WASD with the touch player',
+    JSON.stringify(tab.keysetShare(1)) === '[1,3]' && JSON.stringify(tab.keysetShare(0)) === '[0,2]'
+      && tab.bindings[2].keyset === 0,
+    `arrows ${JSON.stringify(tab.keysetShare(1))}, WASD ${JSON.stringify(tab.keysetShare(0))}`);
+  ok('...and the touch player is still not DEALT a set — she reads WASD through her pad',
+    tab.bindings[0].touch === true && tab.bindings[0].keyset === null && tab.keysetOf(0) === 0,
     JSON.stringify(tab.bindings[0]));
-  /* FOUR STOPS, NOT THREE — the ring is always one longer than the share, so a
-     three-way share ends on all three of them at once. A boolean "swapped"
-     flag would make the third kitten unreachable; a ring hard-coded at three
-     would skip her too. */
-  ok('...and passing it cycles all three rather than flipping two',
-    JSON.stringify(tab.swapKeyset(1)) === '[2]'
-    && JSON.stringify(tab.swapKeyset(1)) === '[3]');
-  ok('...then puts all three on the arrows together',
-    JSON.stringify(tab.swapKeyset(1)) === '[1,2,3]');
-  ok('...and comes back round to the first of them',
-    JSON.stringify(tab.swapKeyset(1)) === '[1]');
+  ok('...and at first the WASD keys are hers',
+    tab.keysetDrives(0, 0) && !tab.keysetDrives(0, 2) && touchReads.at(-1) != null);
+  /* THE SAME RING AS ANY OTHER SHARE: her, her sister, both — and while it is
+     the sister's turn, the touch pad reads the glass and not the keys. */
+  ok('...and R passes WASD to P3, and the touch pad stops reading the keys',
+    JSON.stringify(tab.swapKeyset(0)) === '[2]' && (tab.update(), touchReads.at(-1) === null));
+  ok('...then puts P1 and P3 on it together',
+    JSON.stringify(tab.swapKeyset(0)) === '[0,2]' && (tab.update(), touchReads.at(-1) != null));
+  ok('...and comes back round to P1',
+    JSON.stringify(tab.swapKeyset(0)) === '[0]');
+  /* WITH THE SHARE OFF, NOTHING MOVED: the touch player's WASD is her own. */
+  const touchSolo = drive([]);
+  touchSolo.attachTouch({ read: () => ({ ax: 0, ay: 0, cx: 0, cy: 0, dpad: [0, 0] }) });
+  touchSolo.slots = 2; touchSolo.update();
+  ok('...and without force-spawn a touch game is what it was: P1 touch + WASD, P2 arrows',
+    touchSolo.keysetDrives(0, 0) && JSON.stringify(touchSolo.keysetShare(0)) === '[0]'
+      && touchSolo.bindings[1].keyset === 1);
 
   /* --- AND THE KEYS ARE REACHABLE AND DO NOT COLLIDE --- */
   /* `R` and `U` break the digits-and-punctuation convention on purpose, because
@@ -2399,6 +2410,46 @@ console.log('\n--- the d-pad, kept apart from the stick (Help steps between butt
   ok('a keyboard held down is a stick, not an arrow button',
     kb.players[0].my > 0.9 && kb.players[0].dpadY === 0,
     `my=${kb.players[0].my} dpadY=${kb.players[0].dpadY}`);
+}
+
+console.log('\n--- the face cluster, moved in off the right thumb ---');
+{
+  /* "the buttons on the right side of the screen may be too far to the right
+     and hurts my right thumb ... move them about 3x's the gap width between
+     the right most button and the right side, to the left. The default
+     y-position is okay." Measured on a 1-player phone at 844x390: the stick
+     rests at (118, 272) in a 844x390 pad and the cluster is 208x156, so the
+     mirror lands off the screen and the clamp held it at 16px. */
+  const phone = { x: 0, y: 0, w: 844, h: 390 };
+  const rest = { x: 118, y: 272 };
+  const c = { width: 208, height: 156 };
+  const was = clusterSpot(rest, phone, c, { x: 0, y: 0 });
+  const now = clusterSpot(rest, phone, c);
+  ok('with no shift the phone gap is the 16px clamp it was measured at', was.right === 16, JSON.stringify(was));
+  ok('the default moves it in three gaps (16 -> 64), and not up', now.right === 16 + 3 * 16 && now.bottom === was.bottom,
+    JSON.stringify(now));
+  /* THE STICK'S CATCHMENT IS NOT FOR SALE: the slider's far end must stop
+     at the edge of the left 46%, or a thumb on the stick lands a slash. */
+  const far = clusterSpot(rest, phone, c, { x: 9999, y: 9999 });
+  ok('...and no shift drags it into the stick zone or off the top',
+    phone.w - far.right - c.width >= phone.w * 0.46 && far.bottom + c.height <= phone.h - 16, JSON.stringify(far));
+  ok('...and garbage in the shift falls back to the default rather than NaN',
+    JSON.stringify(clusterSpot(rest, phone, c, { x: NaN, y: undefined })) === JSON.stringify(now));
+  /* THREE PLACES SAY THE RANGE: touchpad.js, prefs.js and the markup. */
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const attr = (id) => {
+    const m = html.match(new RegExp(`id="${id}"[^>]*min="(-?\\d+)" max="(-?\\d+)"[^>]*value="(-?\\d+)"`));
+    return m ? m.slice(1).map(Number) : null;
+  };
+  const px = attr('set-padx'), py = attr('set-pady');
+  ok('Settings sliders, prefs and the pad agree on the range and the default',
+    JSON.stringify(PREF_RANGES.padx) === JSON.stringify(CLUSTER_SHIFT_RANGE.x)
+      && JSON.stringify(PREF_RANGES.pady) === JSON.stringify(CLUSTER_SHIFT_RANGE.y)
+      && px && py && px[0] === PREF_RANGES.padx[0] && px[1] === PREF_RANGES.padx[1] && px[2] === CLUSTER_SHIFT.x
+      && py[0] === PREF_RANGES.pady[0] && py[1] === PREF_RANGES.pady[1] && py[2] === CLUSTER_SHIFT.y,
+    `${JSON.stringify(px)} ${JSON.stringify(py)}`);
+  ok('...and a stored shift outside it is refused on load',
+    prefOk('padx', 48) && !prefOk('padx', 999) && !prefOk('pady', -100) && !prefOk('padx', 'x'));
 }
 
 console.log('');

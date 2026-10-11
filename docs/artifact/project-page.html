@@ -736,6 +736,7 @@ git push origin alpha</code></pre>
       <thead><tr><th>Devices</th><th>P1</th><th>P2</th><th>P3</th><th>P4</th></tr></thead>
       <tbody>
         <tr><td>Keyboard only</td><td>WASD</td><td>Arrows</td><td>WASD*</td><td>Arrows*</td></tr>
+        <tr><td>Touch pad (phone, tablet)</td><td>glass + WASD</td><td>Arrows</td><td>WASD*</td><td>Arrows*</td></tr>
         <tr><td>1 controller</td><td>pad</td><td>WASD</td><td>Arrows</td><td>WASD*</td></tr>
         <tr><td>2 controllers</td><td>pad</td><td>pad</td><td>WASD</td><td>Arrows</td></tr>
       </tbody>
@@ -872,6 +873,11 @@ git push origin alpha</code></pre>
     default — players three and four get their own, and the zoom button turns the map in the pane you
     are looking at) or <b>only two, shared</b>, which is what the game did before. At two players the
     two settings produce the same screen, bit for bit.</p>
+
+  <p><b>So is where a phone's buttons sit.</b> <i>Settings ▸ Buttons — further in</i> and
+    <i>Buttons — higher</i> move the face cluster in from the spot the stick's mirror puts it, in px
+    (shown only with the pad up). The default is 48px in — three times the 16px gap a landscape phone
+    left at the right edge — and no setting can put a button over the stick's catchment.</p>
 
   <p style="font-size:14px;color:var(--text-dim)"><b>Both tables are generated out of
     <code>src/core/input.js</code></b> by the same tool that writes the balance numbers, for the same

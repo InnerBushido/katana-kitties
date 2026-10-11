@@ -303,6 +303,7 @@ the world, animals home — rather than leaving cats nobody can move.
 | devices | P1 | P2 | P3 | P4 |
 | --- | --- | --- | --- | --- |
 | keyboard only | WASD | Arrows | WASD\* | Arrows\* |
+| touch pad (phone, tablet) | glass + WASD | Arrows | WASD\* | Arrows\* |
 | 1 controller | pad | WASD | Arrows | WASD\* |
 | 2 controllers | pad | pad | WASD | Arrows |
 
@@ -434,6 +435,12 @@ takes WASD even while it is walking somebody else.
 the map in the pane you are looking at) or **only two, shared**, which is what
 the game did before. At two players the two settings produce the same screen,
 bit for bit.
+
+**So is where a phone's buttons sit.** *Settings ▸ Buttons — further in* and
+*Buttons — higher* move the face cluster in from the spot the stick's mirror
+puts it, in px (shown only with the pad up). The default is 48px in — three
+times the 16px gap a landscape phone left at the right edge — and no setting
+can put a button over the stick's catchment.
 
 **Both tables below are generated out of `src/core/input.js`** by the same
 `npm run docs` that writes the balance numbers, for the same reason: the

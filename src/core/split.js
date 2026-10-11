@@ -1269,8 +1269,10 @@ export function mapSpot({
  * why the merged phone map already lives top-left. So a phone half does what
  * the merged phone map does: the TOP corner on its own outside edge.
  *
- * `avoid` IS WHAT IS ALREADY IN A CORNER, MEASURED BY THE CALLER: the pause
- * button in the top-right and the scoreboard across the top middle. A map
+ * `avoid` IS WHAT IS ALREADY IN A CORNER, MEASURED BY THE CALLER: the
+ * scoreboard across the top middle. It used to be the pause button too, and
+ * that is what left the right half's map beside the corner instead of in it —
+ * the button now steps aside for the map, see `pauseBeside`. A map
  * that would land on one slides inward past it, and if that runs out of pane
  * it drops below it instead. Measured at 844x390: the pause button is
  * 790-832 x 10-52, so the right half's map lands at 653-782 beside it, level
@@ -1320,6 +1322,42 @@ export function cornerSpot({ v, W, H, size, pad = 8, avoid = [] }) {
     down = r.bottom + pad;
   }
   return null;
+}
+
+/**
+ * How far IN from its home the pause button moves so a corner map can have
+ * the corner — px, 0 when nothing is in its way.
+ *
+ * "on mobile, when there are 2 players in split screen, the minimap on the
+ * right side is to the left of the 'Menu' button instead of being in the
+ * corner. I think we can either move the menu button to the left of the
+ * minimap and have the minimap in the corner". `cornerSpot` used to be handed
+ * the pause button to avoid, and slid the right half's map in beside it — so
+ * the two maps were level but only one was in a corner. Now the MAP is
+ * placed first, in the true corner, and the button steps left of it.
+ * THE BUTTON MOVES AND NOT THE MAP because the button is 42px and the map is
+ * 129: moving the small thing costs the screen 50px of top bar, moving the
+ * big one cost it a corner. And the other way round Richard offered — the
+ * map in the bottom-left — is the stick's catchment (bottom-left 46% x 78%).
+ *
+ * PURE. `home` is the button's rect where the stylesheet puts it; `maps` are
+ * the corner maps actually placed. Only a map that would be under the button
+ * (with `pad` round it) moves it, so a single merged map in the top-LEFT, or
+ * a stacked split whose upper map is on the left, leaves it home.
+ */
+export function pauseBeside({ home, maps = [], pad = 8 }) {
+  if (!home) return 0;
+  let shift = 0;
+  /* MORE THAN ONCE ROUND, in case stepping past one map lands it on another
+     — a quadrant layout can put two maps along the top. */
+  for (let k = 0; k <= maps.length; k++) {
+    const l = home.left - shift; const r = home.right - shift;
+    const m = maps.find((b) => b && l < b.right + pad && r > b.left - pad
+      && home.top < b.bottom && home.bottom > b.top);
+    if (!m) return shift;
+    shift = home.right - (m.left - pad);
+  }
+  return shift;
 }
 
 /** How wide the minimap box is, in CSS pixels. Pure, so `world-check` can
