@@ -133,14 +133,23 @@ Each one degrades: delete the file and the game draws the stand-in.
 
 | what | the stand-in | to finish it |
 | --- | --- | --- |
-| **Roshi's sprite** | drawn on a canvas at load (`drawRoshi`) | a generated sheet on magenta → `public/sprites/roshi/roshi.png` (`ROSHI_SHEET`), baked with `sprite-bake --proof`. It loads by itself when it exists. **Price to be stated before generating** |
-| **Roshi's voice** | toasts only | a preset per [voices.md](voices.md) and lines for `ROSHI_LINES` |
-| **Her statue** | a drawn sitting cat in stone, sash and headband in her colour | `node tools/statue-bake.mjs --go` — Tripo image-to-3D off `docs/art-masters/<sheet>_champion.png`, ~60 Tripo credits for both. **Not run: the price is said first** |
-| **Kendo gear and the kiai** | a men-helmet sprite and a shinai mesh; the kiai hex is a drawn kanji | kendo sprite sheets for **all four kittens** on magenta — shinai, hidden face, kiai. **Price to be stated before generating** |
-| **The animals** | chick, bunny and goat in primitive geometry | sprites or models |
+| **Her statue** | a drawn sitting cat in stone, sash and headband in her colour | `node tools/statue-bake.mjs --go` — Tripo image-to-3D off `docs/art-masters/<sheet>_champion.png`, ~60 Tripo credits for both. **Not run.** Richard authorised it, but the agent's permission check blocks a Tripo spend from an agent session. He runs it himself |
 | **The storage chest** | a card that says so | a real inventory |
 | **Cook, volleyball, nap, soak, climb, pray, bell, drum** | one line each (`_fun`) | the activities themselves |
 | **The Bushido Blade forest** | shown, locked, "later" | Richard's later feature |
+
+### Done, and what each still falls back to
+
+These were placeholders and are now generated (Oct 2026: about 12 Higgsfield
+credits of `gpt_image_2_5` and 1 of `text2speech_v2`). The stand-in is still
+in the code, and deleting the file brings it back.
+
+| what | the file | its fallback |
+| --- | --- | --- |
+| **Roshi's sprite** | `sprites/roshi/roshi.png`, one 768 pose. Sized by `ROSHI_INK` (0.961) and stood on `ROSHI_FOOT` (0.0195), both measured off the baked sheet | `drawRoshi`'s canvas |
+| **Roshi's voice** | five clips in `voice/roshi/`, Arthur ([voices.md](voices.md)) | the toast alone |
+| **Kendo** | `kittens/<sheet>/kendo.png` (the guard) and `kiai.png` (the men strike, held for `KIAI_T` after every swing in the bogu), recoloured by STYLE for Storm and Blossom. `kendo.js` only sets `kendoGeared` and `kiaiT`; `Player` draws them. They MIRROR like the Riposte stance, and world-check measures the shinai reaching right | the drawn men and shinai |
+| **The animals** | `farm/{chick,bunny,goat}.png`, side-on, head LEFT (measured), turned along the circle they walk | the primitive bodies |
 
 ## Known rough edges
 

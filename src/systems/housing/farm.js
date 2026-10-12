@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { toonVertexMat, paint } from '../../core/gfx.js';
+import { toonVertexMat, paint, Billboard } from '../../core/gfx.js';
 
 /* ---------------------------------------------------------------------------
    THE FARM AND THE PEN — the two things on her island that run on the
@@ -138,8 +138,26 @@ export class Farm {
     const H = I.home;
     for (const [k, A] of (H.pen?.animals ?? []).entries()) {
       const def = ANIMALS.find((d) => d.id === A.kind) ?? ANIMALS[0];
-      /* PLACEHOLDER BODIES: a body, a head and two ears, in the animal's
-         colour. Sprites for them are a follow-up. */
+      /* HER DRAWING WHEN THERE IS ONE: `sprites/farm/<id>.png`, side-on and
+         facing LEFT, on a Billboard that mirrors by the way it is walking.
+         Sized to the height the primitive body stood at, so a pen looks the
+         same size either way. */
+      const art = this.H.game.farmArt?.[def.id];
+      if (art?.texture) {
+        const q = (def.size * 2.2) / (art.contentScale || 1);
+        const bb = new Billboard(art.texture, {
+          cols: 1, rows: 1, mirror: true, artFacesRight: false,
+          width: q, height: q, footOffset: (art.pad ?? 0) * q,
+        });
+        const g = new THREE.Group();
+        g.add(bb);
+        g.userData = { a: k * 2.1, r: 1 + k * 0.9, P, A, bb };
+        view.group.add(g);
+        view.animals.push(g);
+        continue;
+      }
+      /* THE FALLBACK, for a build without the drawings: a body, a head and two
+         ears, in the animal's colour. */
       const parts = [];
       const body = new THREE.SphereGeometry(0.55, 10, 8);
       body.scale(1.2, 0.9, 0.9);
@@ -193,9 +211,19 @@ export class Farm {
         const a = hungry ? u.a : u.a + t * 0.35;
         const r = hungry ? u.P.r - 2.4 : Math.min(u.r, u.P.r - 2);
         g.position.set(u.P.x + Math.cos(a) * r, u.P.y + (hungry ? 0 : Math.abs(Math.sin(t * 6 + u.a)) * 0.25), u.P.z + Math.sin(a) * r);
-        g.rotation.y = -a + (hungry ? 0 : -Math.PI / 2);
+        if (u.bb) {
+          // Walking round the circle: the tangent, (-sin a, cos a).
+          if (!hungry) u.bb.facing = Math.atan2(-Math.sin(a), Math.cos(a));
+        } else {
+          g.rotation.y = -a + (hungry ? 0 : -Math.PI / 2);
+        }
       }
     }
+  }
+
+  /** Square every drawn animal up to this pane's camera. */
+  faceCamera(camera) {
+    for (const v of this.views.values()) for (const g of v.animals) g.userData.bb?.faceCamera(camera);
   }
 
   /** INTERACT at the bamboo: cut every stalk, sell it to Roshi on the spot. */

@@ -24,6 +24,10 @@ import { JUKEBOX_FILES } from '../../src/systems/housing/jukeboxfiles.js';
 import { rollFish, FISH } from '../../src/systems/housing/fishing.js';
 import { PLAYER_STYLE } from '../../src/core/palette.js';
 import { worldSig } from '../../src/systems/savegame.js';
+import { ROSHI_LINES, ROSHI_VOICE } from '../../src/systems/housing/roshi.js';
+import { Kendo, KIAI_T } from '../../src/systems/housing/kendo.js';
+import { voicePath } from '../../src/core/audio.js';
+import { existsSync } from 'node:fs';
 
 const DAY = 24 * 3600 * 1000;
 
@@ -258,6 +262,39 @@ export async function housingChecks({ ok, world }) {
     ok('...and a tournament forgets the way home rather than taking it', at() === 500 && !kit.homeReturn);
     game.tournament = null;
     game.dream = null;
+  }
+
+  /* ROSHI'S VOICE: every clip is a render of a line he actually shows, and is
+     on disk. A card and a recording that are two strings is the bug voices.md
+     is about; a clip nobody can find is silence nobody reports. */
+  {
+    const shown = [...ROSHI_LINES.hello, ROSHI_LINES.bought, ROSHI_LINES.sold];
+    ok('every Roshi clip is the exact text of one of his lines',
+      Object.keys(ROSHI_VOICE).every((t) => shown.includes(t)) && shown.every((t) => ROSHI_VOICE[t]));
+    ok('...filed in his own folder, and on disk', Object.values(ROSHI_VOICE).every((id) => voicePath(id) === `/voice/roshi/${id}.mp3`
+      && existsSync(new URL(`../../public${voicePath(id)}`, import.meta.url))));
+    const csrc = readFileSync(new URL('../../src/systems/housing/cards.js', import.meta.url), 'utf8');
+    ok('...and the cards say his lines through him, not as a second copy', !/ROSHI: Ohoho|bridge is growing/.test(csrc));
+  }
+
+  /* KENDO'S DRAWINGS: a swing in the bogu shows the kiai whether or not it
+     lands, an un-geared swing does not, and taking the gear off takes the
+     guard pose off with it. Without art, the drawn men is the fallback. */
+  {
+    const K = new Kendo({ isles: [], game: { players: [], toast() {}, audio: null, scene: { add() {} } } });
+    const a = fakePlayer(0);
+    a.kendoPose = {};
+    K.toggleGear(a);
+    ok('putting the bogu on sets her guard pose', a.kendoGeared === true && K.geared(a));
+    K.sparStrike(a, 'stand', { x: 1, y: 0 });
+    ok('...a swing in it shows the kiai, landed or not', a.kiaiT === KIAI_T);
+    const b = fakePlayer(1);
+    K.sparStrike(b, 'stand', { x: 1, y: 0 });
+    ok('...an un-geared swing shows nothing', !b.kiaiT);
+    K._unwear(0);
+    ok('...and hanging it up takes the pose off', a.kendoGeared === false && !K.geared(a));
+    const ksrc = readFileSync(new URL('../../src/systems/housing/kendo.js', import.meta.url), 'utf8');
+    ok('...with the drawn men kept for a build without the drawings', /menTexture\(\)/.test(ksrc) && /p\.kendoPose \|\| p\.kiaiPose/.test(ksrc));
   }
 
   localStorage.removeItem(HOME_KEY);

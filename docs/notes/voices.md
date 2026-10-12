@@ -42,7 +42,7 @@ the `voice_id` below. About **0.15 credits a line**.
 | **the trailer voice** | not in the game at all. The straight narrator Mr. Satan interrupts — and the one who has to say "right meow" with a straight face. | **Desmond** | `563f728c-e249-5a85-97ab-8461e8c09da6` | **six trailer lines** — 4-8 and the sign-off |
 | **Ryuuseki** | the dragon the seven stars call. | **unresolved — see below** | — | `summon1` `summon2` |
 | **Lionheart** | the Dream Dojo's arcade owner, and his Shadow. Cool, confident, a showman about his sword — **and never seductive**, which is a rule about the WORDS ([below](#lionheart-is-barrett-and-the-wording-is-half-the-casting)). | **Barrett** | `d603a8cd-3fe1-55e0-9245-617a2589131e` | all nine `lion_*`: `idle` `honor` `sim` `simidle` `islands` in the arcade, `shadow_hello` `shadow_cross` `handover` `prize` in his Shadow's fight |
-| **Roshi** | the island realtor, a cat-ified old turtle master on holiday — [housing.md](housing.md). Loud, jolly, "Ohoho!" | **not cast yet** — toasts only | — | — (his lines are `ROSHI_LINES` in `systems/housing/roshi.js`) |
+| **Roshi** | the island realtor, a cat-ified old turtle master on holiday — [housing.md](housing.md). Loud, jolly, "Ohoho!" | **Arthur** | `30fc8796-ceb6-4a66-b3a7-4a145ef7f346` | `roshi_hello1`–`hello3` `roshi_bought` `roshi_sold` — the five lines in `ROSHI_VOICE` (`systems/housing/roshi.js`). The shop's closed sign is narration and stays a toast |
 | *(the thing in the dark)* | three seconds of the trailer — and, since the Cross Slash rebalance, four sounds in the game | **not a voice at all** | [tools/kitten-cackle.mjs](../../tools/kitten-cackle.mjs) | trailer line 12, `cross0`-`cross3` |
 
 [tools/trailer-vo.mjs](../../tools/trailer-vo.mjs) carries the same four ids it
@@ -64,6 +64,7 @@ voice/
   kittens/     4 — `cross0`-`cross3`, the Cross Slash's verdict
   payne/      45 — every `payne_*`: quests, hints, teases, the trick, the names, the Very Last One's temper
   lionheart/  37 — every `lion_*`: the arcade, the hologram in the sim, and his Shadow
+  roshi/       5 — every `roshi_*`: the three hellos, bought and sold
 ```
 
 Asked for after play: *"we have a lot of art, voices, sprites, help assets and
@@ -325,6 +326,26 @@ drift into a voice that sounds intimate, so it stays a coach to a nine-year-old:
 "toughness, patience, and practice — again, and again, and again." The tour's
 last line keeps Richard's own "(or is it tangible?)" as Lionheart's joke on
 himself, answered with "BOTH! They all matter."
+
+## Roshi is Arthur, and Richard has not heard him yet
+
+Two auditions of `roshi_hello1`, kept in `tools/capture/roshi-takes/audition/`:
+**Grady** and **Arthur**, both old and warm. Measured with
+`voice-measure.mjs`: Grady 147 Hz median over an 11.3-semitone range, Arthur
+149 Hz over 19.5. The range is the whole brief, because Roshi is loud and
+jolly and an "Ohoho!" said flat is a different man. Arthur was cast on that
+number. **Richard has not listened yet.** If it is Grady, re-render the
+five and change this table and nothing else.
+
+They are made exactly like Lionheart's: the take is the `ROSHI_VOICE` key's
+string exactly, it goes in `tools/capture/roshi-takes/raw/`, and
+`node tools/capture/lionheart-vo.mjs roshi` cuts it into `public/voice/roshi/`.
+The cutter takes the character as its one argument. With none it is
+Lionheart, as it always was.
+
+**He never talks over anybody.** `_line` toasts every seat and plays the clip
+once, and only if no other character's clip is playing. Four kittens buying
+at once get four toasts and one "Ohoho!".
 
 ## The castings were checked, not copied
 

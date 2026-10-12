@@ -3484,6 +3484,45 @@ console.log('\n--- the panda in the ring ---');
         && /p\.setRiposteArt\(this\.riposteArt\?\.\[this\.roster\[p\.index\]\] \?\? null\);/.test(m));
     }
     {
+      /* KENDO AND THE PEN, MEASURED THE SAME WAY. `setKendoArt` tells both
+         Billboards `artFacesRight: true` and the pen tells its animals `false`,
+         and neither is worth anything unless the baked drawing agrees.
+         The shinai, in the top 35% of the rows: right minus left reach measured
+         0.254 / 0.199 for Ember's and Frost's guard and 0.092 / 0.116 for the
+         kiai, whose shinai is raised overhead and so reaches less. The bars
+         are 0.1 and 0.05.
+         An animal has no blade, so it is asked where its HEAD is: the centre
+         of the top 35% of its ink against the centre of all of it. Measured
+         -0.086 chick, -0.024 bunny, -0.201 goat. The bunny's is thin because
+         its ears stand straight up over its back. The bar is -0.015, and a
+         redrawn bunny that fails it should be looked at, not have the bar
+         moved. */
+      const ink = (f) => {
+        const { w, h, d } = readPNG(new URL(`../public/sprites/${f}.png`, import.meta.url));
+        let lo = w; let hi = -1; let sx = 0; let n = 0; let ax = 0; let an = 0;
+        for (let y = 0; y < h; y++) {
+          for (let x = 0; x < w; x++) {
+            if (d[(y * w + x) * 4 + 3] <= 128) continue;
+            ax += x; an++;
+            if (y < Math.floor(h * 0.35)) { lo = Math.min(lo, x); hi = Math.max(hi, x); sx += x; n++; }
+          }
+        }
+        return { f, reach: (hi / w - 0.5) - (0.5 - lo / w), head: (sx / n - ax / an) / w };
+      };
+      const psrc = readFileSync(new URL('../src/entities/player.js', import.meta.url), 'utf8');
+      const guard = ['ember', 'frost'].map((s) => ink(`kittens/${s}/kendo`));
+      const kiai = ['ember', 'frost'].map((s) => ink(`kittens/${s}/kiai`));
+      ok('剣 both kendo guards and both kiai hold the shinai out to the RIGHT, which is what the Billboard is told',
+        guard.every((r) => r.reach > 0.1) && kiai.every((r) => r.reach > 0.05)
+        && /setKendoArt\(art\) \{[\s\S]{0,500}mirror: true,\s*artFacesRight: true,/.test(psrc),
+        [...guard, ...kiai].map((r) => `${r.f} ${r.reach.toFixed(3)}`).join(' '));
+      const fsrc = readFileSync(new URL('../src/systems/housing/farm.js', import.meta.url), 'utf8');
+      const pen = ['chick', 'bunny', 'goat'].map((a) => ink(`farm/${a}`));
+      ok('...and every animal in the pen has its head on the LEFT, which is what the pen tells its Billboards',
+        pen.every((r) => r.head < -0.015) && /mirror: true, artFacesRight: false,/.test(fsrc),
+        pen.map((r) => `${r.f} ${r.head.toFixed(3)}`).join(' '));
+    }
+    {
       /* IN THE AIR: "velocity of player is zero and gravity is turned off
          until the technique is finished". */
       const { k, hud } = kid(['parry']);
@@ -6258,6 +6297,10 @@ console.log('\n--- background removal keeps the drawn whites ---');
       .map((p) => `kittens/${s}/vr_${p}.png`)),
     // ...and 返 Riposte's stance.
     'kittens/ember/riposte.png', 'kittens/frost/riposte.png',
+    // ...and Custom Housing's: Roshi, kendo's guard and kiai, the pen's animals.
+    'roshi/roshi.png',
+    'kittens/ember/kendo.png', 'kittens/frost/kendo.png', 'kittens/ember/kiai.png', 'kittens/frost/kiai.png',
+    'farm/chick.png', 'farm/bunny.png', 'farm/goat.png',
   ];
   {
     const dir = new URL('../public/sprites/', import.meta.url);
@@ -6425,8 +6468,14 @@ console.log('\n--- background removal keeps the drawn whites ---');
     /* TWENTY-SIX SINCE HE KNEELS: `lionheart/defeated.png` closes a gap
        somewhere (measured by this loop, not looked for). Not filled:
        `loadSimArt` → `_loadSprite`, which does not ask. */
-    ok('turning the fill on for every sheet would repaint twenty-six of them',
-      touched.length === 26 && touched.includes('lionheart/defeated.png') && touched.includes('beasts/dragon_sheet.png')
+    /* THIRTY-ONE SINCE CUSTOM HOUSING: Roshi (the paw on his stick), both
+       kiai strikes (arms over the helmet), the chick's wing and the goat's
+       legs. Measured by this loop. Not filled: Roshi is a plain sprite, the
+       kiai a single-pose billboard and the animals load without `fillHoles`. */
+    ok('turning the fill on for every sheet would repaint thirty-one of them',
+      touched.length === 31 && touched.includes('roshi/roshi.png')
+      && touched.includes('kittens/ember/kiai.png') && touched.includes('kittens/frost/kiai.png')
+      && touched.includes('lionheart/defeated.png') && touched.includes('beasts/dragon_sheet.png')
       && touched.filter((f) => /\/vr_/.test(f)).length === 8 && touched.includes('kittens/frost/vr_riposte.png')
       && touched.includes('lionheart/town.png') && touched.includes('kittens/frost/riposte.png')
       && touched.includes('kittens/frost/vr.png') && touched.includes('lionheart/shadow.png')
@@ -6702,10 +6751,12 @@ console.log('\n--- the art that ships is smaller than the art that made it ---')
        trick Payne teaches. EIGHT SINCE 返 RIPOSTE: `riposte.png` is her guard. */
     /* FOURTEEN SINCE THE HEADSET: each of the six special poses again with
        the VR gear on (`vr_<pose>.png`), worn in the tube and in the sim.
-       FIFTEEN SINCE 返 RIPOSTE WENT INTO THE HEADSET (`vr_riposte.png`). */
-    ok('...with the same fifteen poses drawn for each of them',
+       FIFTEEN SINCE 返 RIPOSTE WENT INTO THE HEADSET (`vr_riposte.png`).
+       SEVENTEEN SINCE KENDO: `kendo.png`, the guard in the bogu, and
+       `kiai.png`, the men strike (systems/housing/kendo.js). */
+    ok('...with the same seventeen poses drawn for each of them',
       posesOf('ember') === posesOf('frost')
-      && posesOf('ember').split(' ').length === 15, posesOf('ember'));
+      && posesOf('ember').split(' ').length === 17, posesOf('ember'));
   }
 
   /* --- and nothing else in public/ is quietly enormous ----------------------

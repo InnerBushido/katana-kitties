@@ -29,6 +29,8 @@
 
    RUN IT:
      node tools/capture/lionheart-vo.mjs
+     node tools/capture/lionheart-vo.mjs roshi   # the same cut, for Roshi's
+                                               # takes (roshi-takes/raw)
 --------------------------------------------------------------------------- */
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, readdirSync } from 'node:fs';
@@ -36,8 +38,11 @@ import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const RAW = join(ROOT, 'tools', 'capture', 'lionheart-takes', 'raw');
-const OUT = join(ROOT, 'public', 'voice', 'lionheart');
+/** Whose takes. Lionheart by default; any character filed the same way —
+ *  `<who>-takes/raw/` in, `public/voice/<who>/` out — can borrow the cut. */
+const WHO = process.argv[2] ?? 'lionheart';
+const RAW = join(ROOT, 'tools', 'capture', `${WHO}-takes`, 'raw');
+const OUT = join(ROOT, 'public', 'voice', WHO);
 
 /* Quieter than this is a pause. Barrett's takes sit around -20dB while he
    talks and below -50 between phrases, so -35 is well clear of both. */

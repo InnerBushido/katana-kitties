@@ -326,7 +326,7 @@ export class HousingCards {
     const buyers = seats.map((k) => ({ p: this.game.players[k], share: top.share }));
     const r = this.H.buy(top.site, top.house, buyers, top.preset);
     if (!r.ok) { this.game.toast(r.why, index); return null; }
-    for (const k of seats) this.game.toast(`ROSHI: ${'A fine choice! Your bridge is growing as we speak!'}`, k);
+    this.H.roshi.say('bought', seats);
     return 'close';
   }
 
@@ -352,7 +352,7 @@ export class HousingCards {
               return this._askOthers(index, { kind: 'sell', site: top.site, with: seats.filter((k) => k !== index) });
             }
             this.H.sell(top.site);
-            this.game.toast('ROSHI: Ohoho, back on the market it goes!', index);
+            this.H.roshi.say('sold', [index]);
             return 'close';
           },
         },
@@ -412,7 +412,7 @@ export class HousingCards {
       if (!r.ok) { for (const k of P.seats) this.game.toast(r.why, k); }
     } else {
       this.H.sell(P.site);
-      for (const k of P.seats) this.game.toast('ROSHI: Ohoho, back on the market it goes!', k);
+      this.H.roshi.say('sold', P.seats);
     }
     for (const k of P.seats) if (this.game.inspector.extOf(k) === this) this.game.inspector.closeOne(k);
   }

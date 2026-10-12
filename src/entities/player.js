@@ -1696,6 +1696,35 @@ export class Player {
     if (this.simLook) this.setSimLook(true);
   }
 
+  /**
+   * KENDO, in a home's dojo room (systems/housing/kendo.js): the guard she
+   * stands in while she wears the bogu, and the men strike she shouts the
+   * kiai on. `{ guard, kiai }`, either may be null.
+   *
+   * BOTH MIRROR, like the Riposte stance and for the same reason: the shinai
+   * points one way and which way is the point. Both drawings reach to the
+   * RIGHT as generated. Housing owns WHEN (`kendoGeared`, `kiaiT`); this
+   * only draws it, and with no art kendo.js keeps its drawn men and shinai.
+   */
+  setKendoArt(art) {
+    for (const [key, a] of [['kendoPose', art?.guard], ['kiaiPose', art?.kiai]]) {
+      if (this[key]) { this.group.remove(this[key]); this[key] = null; }
+      if (!a?.texture) continue;
+      const quad = this.height / (a.contentScale || 1);
+      this[key] = new Billboard(a.texture, {
+        cols: 1,
+        rows: 1,
+        mirror: true,
+        artFacesRight: true,
+        width: quad,
+        height: quad,
+        footOffset: (a.pad ?? 0) * quad,
+      });
+      this[key].visible = false;
+      this.group.add(this[key]);
+    }
+  }
+
   /* ------------------------ Powerup Kotodama ---------------------------- */
 
   /**
@@ -2026,6 +2055,8 @@ export class Player {
     if (this.scaredPose?.visible) this.scaredPose.faceCamera(camera);
     if (this.sweepPose?.visible) this.sweepPose.faceCamera(camera);
     if (this.ripostePose?.visible) this.ripostePose.faceCamera(camera);
+    if (this.kendoPose?.visible) this.kendoPose.faceCamera(camera);
+    if (this.kiaiPose?.visible) this.kiaiPose.faceCamera(camera);
 
     /* THE HEALTH BAR IS A FLAT QUAD AND HAS TO BE TURNED, like the leaders'
        speech bubbles are. It is parented to `group`, which never rotates, so
@@ -6347,6 +6378,31 @@ export class Player {
         this.ripostePose.mesh.rotation.z = Math.sin(this.parryT * 70) * 0.012;
         this.ripostePose.mat.color.copy(mat.color);
         this.ripostePose.mat.opacity = mat.opacity;
+      }
+    }
+
+    /* --- kendo: the bogu on, and the kiai ---
+       Only on a home's dojo floor, where `Kendo` sets `kendoGeared` and, on
+       every swing, `kiaiT`. The guard bobs while she walks so a still drawing
+       does not read as the frame having stuck. BEFORE THE FRIGHT, like the
+       others. */
+    if (this.kendoPose || this.kiaiPose) {
+      if (this.kiaiT > 0) this.kiaiT -= dt;
+      const geared = !!this.kendoGeared && !this.ko && !this.mount && !this.rideAlong;
+      const kiai = geared && this.kiaiT > 0 && !!this.kiaiPose;
+      const guard = geared && !kiai && !!this.kendoPose;
+      if (this.kendoPose) this.kendoPose.visible = guard;
+      if (this.kiaiPose) this.kiaiPose.visible = kiai;
+      const pose = kiai ? this.kiaiPose : guard ? this.kendoPose : null;
+      if (pose) {
+        this.sprite.mesh.visible = false;
+        pose.facing = this.facing;
+        const moving = Math.hypot(this.velocity.x, this.velocity.z) > 0.5;
+        this._kendoBob = (this._kendoBob ?? 0) + dt * (moving ? 14 : 3);
+        pose.mesh.position.y = kiai ? 0 : Math.abs(Math.sin(this._kendoBob)) * (moving ? 0.12 : 0.03);
+        pose.mesh.rotation.z = 0;
+        pose.mat.color.copy(mat.color);
+        pose.mat.opacity = mat.opacity;
       }
     }
 

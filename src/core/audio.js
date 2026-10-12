@@ -486,6 +486,8 @@ const VOICE_FOLDERS = [
   /* Lionheart, the Dream Dojo's owner — Barrett, cut by
      tools/capture/lionheart-vo.mjs. Same rule as Payne: his prefix, his folder. */
   [/^lion_/, 'lionheart'],
+  /* Roshi, the island realtor (systems/housing/roshi.js) — Arthur. */
+  [/^roshi_/, 'roshi'],
 ];
 
 export const voicePath = (id) => {

@@ -1891,6 +1891,18 @@ class Game {
          stance, then they will do the counter attack". */
       ['ember_riposte', 'kittens/ember/riposte.png', false],
       ['frost_riposte', 'kittens/frost/riposte.png', false],
+      /* KENDO, in a home's dojo room — the guard she stands in with the bogu
+         on, and the kiai strike. Two files a pose, four kittens. A missing
+         file leaves kendo.js's drawn men and shinai. */
+      ['ember_kendo', 'kittens/ember/kendo.png', false],
+      ['frost_kendo', 'kittens/frost/kendo.png', false],
+      ['ember_kiai', 'kittens/ember/kiai.png', false],
+      ['frost_kiai', 'kittens/frost/kiai.png', false],
+      /* THE PEN'S ANIMALS (housing/farm.js). Side-on, facing LEFT. A missing
+         one keeps its primitive body. */
+      ['farm_chick', 'farm/chick.png', false],
+      ['farm_bunny', 'farm/bunny.png', false],
+      ['farm_goat', 'farm/goat.png', false],
       /* THE CONJURED INSECT. Loaded with the other animals because it is one,
          and kept out of the ordinary lottery by a flag on its spec rather than
          by anything here — see `Menagerie.species`. No `_shock` sheet: a
@@ -1954,6 +1966,7 @@ class Game {
       mantis: critterArt.mantis && { calm: critterArt.mantis, shock: critterArt.mantis },
     };
     this.critterArt.wings = critterArt.angel_wings;
+    this.farmArt = { chick: critterArt.farm_chick, bunny: critterArt.farm_bunny, goat: critterArt.farm_goat };
 
     /* THE EATING POSE IS PER STYLE, RECOLOURED, AND IT USED TO BE PER SLOT.
        `p.index === 0 ? ember_eat : frost_eat` is the same mistake `palette.js`
@@ -2039,6 +2052,15 @@ class Game {
       const a = recolourAtlas(base, s.recolour);
       console.log(`[art] ${s.name} riposte pose ← ${s.sheet}_riposte recoloured`);
       return a;
+    });
+    /* AND AN EIGHTH AND NINTH, FOR KENDO. By STYLE, never by slot. */
+    this.kendoArt = PLAYER_STYLE.map((s) => {
+      const guard = s.sheet === 'ember' ? critterArt.ember_kendo : critterArt.frost_kendo;
+      const kiai = s.sheet === 'ember' ? critterArt.ember_kiai : critterArt.frost_kiai;
+      if (!guard && !kiai) return null;
+      if (!s.recolour) return { guard, kiai };
+      console.log(`[art] ${s.name} kendo poses ← ${s.sheet}_kendo/kiai recoloured`);
+      return { guard: guard && recolourAtlas(guard, s.recolour), kiai: kiai && recolourAtlas(kiai, s.recolour) };
     });
 
     /* --- one emblem per clan, shown over her head when she swears ---
@@ -2382,6 +2404,7 @@ class Game {
     p.setScaredArt(this.scaredArt?.[this.roster[p.index]] ?? null);
     p.setSweepArt(this.sweepArt?.[this.roster[p.index]] ?? null);
     p.setRiposteArt(this.riposteArt?.[this.roster[p.index]] ?? null);
+    p.setKendoArt(this.kendoArt?.[this.roster[p.index]] ?? null);
   }
 
   /**
@@ -13609,6 +13632,7 @@ class Game {
     this.satan?.faceCamera(camera);
     this.griffin?.faceCamera(camera);
     this.arenaExit?.faceCamera(camera);
+    this.housing?.farm?.faceCamera(camera);
     /* THE FLASH STEP'S FIGURE, and only its three readouts: everything else it
        draws is a `THREE.Sprite`, which three.js turns during each pane's own
        render and so needs nothing from here. A `Label` is a quad on a mesh and

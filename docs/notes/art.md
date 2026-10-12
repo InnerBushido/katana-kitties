@@ -471,6 +471,29 @@ described in words and never used as a reference; her likeness is hers.
   closes a sealed pocket (both paws on the hilt against her robe). It is
   recorded in the fill inventory and not filled.
 
+## Custom Housing — Roshi, kendo and the pen
+
+Higgsfield `gpt_image_2_5` on flat magenta, baked `chroma: true` like the
+rest. The kittens' were each prompted with their own `bless.png`; Roshi and
+the animals were described in words. [housing.md](housing.md) says what each
+replaced.
+
+- `roshi.png` → `roshi/roshi.png`, 768. One pose, facing camera, so it does
+  not mirror. His height and foot are read off the baked sheet as constants
+  in `roshi.js` (ink rows 14–752 of 768).
+- `ember_kendo.png` / `frost_kendo.png` → `kittens/<sheet>/kendo.png`, and
+  `ember_kiai.png` / `frost_kiai.png` → `kiai.png`, all 768. Bogu with the men
+  hiding the face, and a shinai. **These MIRROR**, like the Riposte stance
+  and for the same reason. world-check measures the shinai reaching right:
+  0.254 / 0.199 for the guards, and 0.092 / 0.116 for the kiai, whose blade
+  is overhead. Both kiai close a sealed pocket and are in the fill inventory.
+- `chick.png` `bunny.png` `goat.png` → `farm/<id>.png`, 512, side-on facing
+  LEFT. Measured by where the head is rather than a reach, since an animal
+  has no blade. The chick and the goat close pockets.
+
+`sprite-bake` now makes a job's output folder when it is new (`roshi/` and
+`farm/` were the first). Before that it threw ENOENT.
+
 ## The simulator's drawings — headset turnarounds and the Shadow
 
 These are three Higgsfield `gpt_image_2_5` masters on flat magenta. Each was

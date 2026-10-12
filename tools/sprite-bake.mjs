@@ -66,6 +66,7 @@
 
 import { mkdirSync, writeFileSync, statSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { dirname } from 'node:path';
 import { readPNG, writePNG } from './png.mjs';
 import {
   floodBackground, clearSealedPockets, chromaKey, CHROMA_MAGENTA,
@@ -224,6 +225,22 @@ const WORK = [
      `lionheart_shadow.png` (gpt_image_2_5, magenta); the first take crouched
      instead of kneeling and was not used. */
   { file: 'lionheart_defeated.png', out: 'lionheart/defeated.png', to: [1372, 768], chroma: true },
+  /* CUSTOM HOUSING (docs/notes/housing.md). All gpt_image_2_5 on magenta,
+     Oct 2026. ROSHI, the island realtor, prompted off the elder (`leaders/
+     elder.png`) as the only reference so he is drawn by the same hand as the
+     other grown-up cats; one front-facing cell, like the leaders. */
+  { file: 'roshi.png', out: 'roshi/roshi.png', to: [768, 768], chroma: true },
+  /* KENDO: the guard she stands in while geared (`kendo`) and the men strike
+     she shouts the kiai on (`kiai`). One per SHEET, off her own `bless.png`;
+     Storm and Blossom are these recoloured, like every single pose. The men
+     hides the face, so the ears, the tail and the paws are what say who she
+     is. 768, drawn at her full height. */
+  ...['ember', 'frost'].flatMap((s) => ['kendo', 'kiai'].map((p) => (
+    { file: `${s}_${p}.png`, out: `kittens/${s}/${p}.png`, to: [768, 768], chroma: true }))),
+  /* THE PEN'S THREE ANIMALS (housing/farm.js), side-on facing LEFT like the
+     critters, prompted off `critters/rabbit.png` for the style. 512: they are
+     a metre tall at most. */
+  ...['chick', 'bunny', 'goat'].map((a) => ({ file: `${a}.png`, out: `farm/${a}.png`, to: [512, 512], chroma: true })),
 ];
 
 /* ========================================================================== */
@@ -350,6 +367,8 @@ for (const job of WORK) {
   const [nw, nh] = job.to ?? [w, h];
   const out = nw === w && nh === h ? d : resample(d, w, h, nw, nh);
   const png = writePNG(nw, nh, out);
+  // A new subject is a new folder (roshi/, farm/); make it rather than throw.
+  mkdirSync(dirname(`${SHIP}/${job.out ?? job.file}`), { recursive: true });
   writeFileSync(`${SHIP}/${job.out ?? job.file}`, png);
 
   let clear = 0;

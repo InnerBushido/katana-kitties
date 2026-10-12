@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { voicePath } from '../../core/audio.js';
 
 /* ---------------------------------------------------------------------------
    ROSHI — the realtor. A cat-ified old turtle master on holiday: a stick, a
@@ -6,17 +7,33 @@ import * as THREE from 'three';
    market under a FOR SALE sign. He is to the islands what Mr. Satan is to the
    arena: a loud grown-up who sells you the thing.
 
-   PLACEHOLDER ART. He is drawn here, on a canvas, at load — a stand-in until
-   a generated sheet is baked the way every other character is (docs/notes/
-   art.md: on magenta, measured, `sprite-bake --proof`). `ROSHI_SHEET` is the
-   file that will replace this drawing; when it exists it is used instead and
-   the drawing is never made. See docs/notes/housing.md, Placeholders.
+   HIS DRAWING is `ROSHI_SHEET` — gpt_image_2_5 on magenta off the elder's
+   sheet, baked by `sprite-bake` (docs/notes/art.md). The canvas drawing below
+   is the FALLBACK, shown until the file arrives and forever if it is
+   deleted: ninth non-negotiable.
 --------------------------------------------------------------------------- */
 
 export const ROSHI_TOWN = { x: 22, z: 30 };
 export const ROSHI_TALK_R = 5;
 export const ROSHI_HEIGHT = 5.4;
 export const ROSHI_SHEET = '/sprites/roshi/roshi.png';
+/** MEASURED off the baked 768² sheet: ink from y 14 to 752, so he is 0.961 of
+ *  the square tall and his sandals stand 15px (0.0195) off its bottom edge. */
+export const ROSHI_INK = 0.961;
+export const ROSHI_FOOT = 0.0195;
+
+/* HIS VOICE is Arthur, an ElevenLabs preset (docs/notes/voices.md has the
+   row), and every clip is a render of EXACTLY the string beside its id — the
+   card and the recording are one string, so they cannot drift. `closed` is
+   the narrator describing him, not him talking, and stays a toast. A missing
+   clip costs the sound and nothing else. */
+export const ROSHI_VOICE = {
+  'Ohoho! Looking for a little place of your own, eh?': 'roshi_hello1',
+  'Welcome, welcome! Every island comes with a sea view. Ohoho!': 'roshi_hello2',
+  'Sunglasses on, prices down! Well... prices sideways.': 'roshi_hello3',
+  'A fine choice! Your bridge is growing as we speak!': 'roshi_bought',
+  'Ohoho, back on the market it goes!': 'roshi_sold',
+};
 
 export const ROSHI_LINES = {
   hello: [
@@ -122,6 +139,10 @@ export class Roshi {
       t.colorSpace = THREE.SRGBColorSpace;
       mat.map = t;
       mat.needsUpdate = true;
+      // A square sheet, not the canvas's 4:5; the same height on screen.
+      const s = ROSHI_HEIGHT / ROSHI_INK;
+      this.sprite.scale.set(s, s, 1);
+      this.sprite.center.set(0.5, ROSHI_FOOT);
     }, undefined, () => {});
     this._sign(scene);
   }
@@ -162,7 +183,34 @@ export class Roshi {
 
   greet(p) {
     const L = ROSHI_LINES.hello;
-    this.game.toast(`ROSHI: ${L[this._said++ % L.length]}`, p.index);
+    this._line(L[this._said++ % L.length], [p.index]);
+  }
+
+  /** One of his fixed lines (`bought`, `sold`), to every seat in `seats`. */
+  say(key, seats) {
+    this._line(ROSHI_LINES[key], seats);
+  }
+
+  /* The toast, and the clip once however many seats read it. NEVER OVER
+     ANYBODY: `Audio.speak` is one speaker and cuts whoever is on, and a
+     shopkeeper talking over Patchfur or Mr. Satan is worse than silence. */
+  _line(text, seats) {
+    for (const k of seats) this.game.toast(`ROSHI: ${text}`, k);
+    const id = ROSHI_VOICE[text];
+    const A = this.game.audio;
+    if (!id || !A?.speak || typeof window === 'undefined' || !window.Audio) return;
+    const on = A._speaking;
+    if (on && !on.paused && !on.ended && !this._clips?.has(on)) return;
+    this._voice ??= new Map();
+    this._clips ??= new Set();
+    let el = this._voice.get(id);
+    if (!el) {
+      el = new window.Audio(voicePath(id));
+      el.preload = 'auto';
+      this._voice.set(id, el);
+      this._clips.add(el);
+    }
+    A.speak(el);
   }
 
   update(dt, players) {

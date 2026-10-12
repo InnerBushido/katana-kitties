@@ -14,14 +14,17 @@ import { ATTACKS } from '../../entities/player.js';
    and only when that says no does it ask `Housing.sparStrike`, which says yes
    only on the tape.
 
-   PLACEHOLDER LOOK. The asked-for version is new kendo sprite sheets for all
-   four kittens (bogu armour, men hiding the face, a shinai) generated on
-   magenta and baked like every other sheet. Until they exist she wears a
-   drawn men (helmet grille) over her head and a pale shinai — a billboard
-   riding with her — so the gear reads and the feature plays.
+   THE LOOK IS HER OWN DRAWING. `kittens/<sheet>/kendo.png` (the guard, worn
+   while geared) and `kiai.png` (the men strike, worn for KIAI_T on every
+   swing), recoloured for Storm and Blossom and drawn by `Player` — this
+   file only sets `kendoGeared` and `kiaiT`. THE FALLBACK, for a build with
+   neither file: a drawn men (helmet grille) over her head and a pale shinai
+   riding with her, so the gear still reads and the feature still plays.
 --------------------------------------------------------------------------- */
 
 export const IPPON_COOL = 0.9;
+/** How long the kiai drawing is held after a swing in the bogu. */
+export const KIAI_T = 0.4;
 
 /** Each kitten's spirit animal, for the kiai — her hex badge. */
 export const SPIRITS = {
@@ -109,7 +112,13 @@ export class Kendo {
       G.toast(`${p.name} hangs the bogu back on the rack.`, p.index);
       return;
     }
-    if (typeof document === 'undefined') return;
+    p.kendoGeared = true;
+    if (p.kendoPose || p.kiaiPose || typeof document === 'undefined') {
+      this.gear.set(p.index, { men: null, shinai: null, p });
+      G.audio?.play?.('wardup');
+      G.toast(`${p.name} puts on the bogu! Spar on the red square — a clean hit is IPPON!`, p.index);
+      return;
+    }
     this._men ??= menTexture();
     const men = new THREE.Sprite(new THREE.SpriteMaterial({ map: this._men, transparent: true, depthTest: true }));
     men.scale.set(1.5, 1.5, 1);
@@ -126,8 +135,9 @@ export class Kendo {
   _unwear(i) {
     const g = this.gear.get(i);
     if (!g) return;
-    g.men.parent?.remove(g.men);
-    g.shinai.parent?.remove(g.shinai);
+    g.p.kendoGeared = false;
+    g.men?.parent?.remove(g.men);
+    g.shinai?.parent?.remove(g.shinai);
     this.gear.delete(i);
   }
 
@@ -141,6 +151,8 @@ export class Kendo {
    */
   sparStrike(attacker, kind, dir) {
     if (!this.geared(attacker)) return false;
+    // The kiai is drawn on every swing in the bogu, a hit or not.
+    attacker.kiaiT = KIAI_T;
     const zone = this.zoneOf(attacker);
     if (!zone) return false;
     const A = ATTACKS[kind] ?? ATTACKS.stand;
@@ -198,6 +210,7 @@ export class Kendo {
         this._unwear(i);
         continue;
       }
+      if (!g.men) continue;
       g.men.position.set(p.position.x, p.position.y + 2.05, p.position.z);
       const f = p.facing ?? 0;
       g.shinai.position.set(p.position.x + Math.sin(f) * 0.9, p.position.y + 1.3, p.position.z + Math.cos(f) * 0.9);
