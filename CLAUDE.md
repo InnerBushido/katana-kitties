@@ -18,6 +18,7 @@ look. Everything else is one level down and read on demand.
 | how the Help clips are filmed out of the running game | [docs/notes/help.md](docs/notes/help.md) |
 | how a cutscene, camera move or recorded clip is directed and checked | the `game-cutscene-director` skill, [.claude/skills/](.claude/skills/game-cutscene-director/SKILL.md) — loads itself when the work is a scene |
 | how it runs under Steam, and its artwork | [docs/notes/steam.md](docs/notes/steam.md) |
+| Roshi's islands — homes, bridges, the jukebox, and **the placeholders left** | [docs/notes/housing.md](docs/notes/housing.md) |
 | which voice belongs to which character | [docs/notes/voices.md](docs/notes/voices.md) |
 | why it lags or stutters, and what is measured NOT to be why | [docs/notes/performance.md](docs/notes/performance.md) |
 | when a change earns a line in PROJECT.md, and how its tables generate themselves | [docs/notes/docs.md](docs/notes/docs.md) |
@@ -75,7 +76,10 @@ Break any of these and the thing stops being the game it is. Each is enforced by
 3. **No combat outside the ring.** The katana exists to knock scenery over.
    `Game.strikePlayers` is the only gate and it asks one question —
    `Tournament.fighting`, meaning *is a round live this frame*. Enemies in the
-   world have been rejected repeatedly and on purpose.
+   world have been rejected repeatedly and on purpose. **One relaxation (Oct
+   2026):** when the gate says no it hands the blow to `kendo.sparStrike` — two
+   GEARED kittens on the same taped square in a home's kendo room get a shove
+   and an IPPON point, and `kendo.js` never calls `hurt`. `world-check` pins both.
 4. **Nothing regrows and nothing is lost.** A prop knocked over stays knocked
    over, so the MISCHIEF counter is honest. A dragon can never be stranded, a
    pet can never be lost, and there is one rideable animal per player on the
@@ -232,6 +236,14 @@ src/
                side she is covering, and a burst when it catches — over
                Player.parrySeq / parryHitSeq. The half-disc IS the rule: a
                blow from that side is caught, from the flat side it is not)
+  systems/housing/  Custom Housing — Roshi's four sky islands (`game.housing`):
+             catalog (THE DATA: sites, houses, rooms, furniture, prices as
+               multiples of an orb) housing (the orchestrator) cards (every
+               screen, one inspector provider) homestore (localStorage + save
+               row + JSON) homeisle homehouse homebridge statue purchasescene
+               editor roshi jukebox farm koi fishing kendo models.
+               docs/notes/housing.md — read it, its placeholder list is the
+               work that is left
   entities/  player  dragon  ryuuseki  panda  critter  angel  leader  satan
              griffin  orb  powerorb  dragonball  prop  shrine  stall
              clanpower (what an OATH is worth in the ring — 盗 Steal Mischief
@@ -301,6 +313,10 @@ tools/       world-check.mjs  pad-check.mjs  png.mjs (dependency-free codec)
              trailer-score.mjs  trailer-vo.mjs  trailer-cut.sh
              brush-kanji.mjs  voice-measure.mjs
              steam-capsules.sh (the trailer and the store art — docs/notes/trailer.md)
+             statue-bake.mjs (Tripo statues for the home bridges; prints the
+               price and stops unless --go; TRIPO_API_KEY from env only)
+  capture/   jukebox-music.mjs (Roshi's jukebox takes -> looped, via the
+               shared music-loop.mjs that shadow-music.mjs uses too)
 docs/notes/  the design notes — why things are the way they are
 ```
 

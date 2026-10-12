@@ -2117,6 +2117,12 @@ export class World {
       if (fromY + (p.step ?? 0.4) < py) continue;
       if (best == null || py > best.y) best = { y: py, platform: p, island: over };
     }
+    /* THE KITTENS' OWN ISLANDS AND THEIR BRIDGES (systems/housing). Not in
+       `islands` or `platforms`, on purpose: they come and go with a purchase,
+       and every count, seed and check over those two lists — `worldSig` among
+       them — must not move because somebody bought a house. */
+    const hg = this.homeGround?.heightAt(x, z, fromY);
+    if (hg && (best == null || hg.y > best.y)) best = { ...hg, island: hg.island ?? over };
     return best;
   }
 

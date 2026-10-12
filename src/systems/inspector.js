@@ -224,10 +224,36 @@ export class Inspector {
     if (state === 'lion') L.greet(p);
   }
 
+  /**
+   * Open a card whose rows, markup and answers belong to somebody else — the
+   * housing cards (Roshi, her home, the jukebox, the koi, the rod). Same seat,
+   * same pane, same three buttons; `provider` is asked everything the dealer's
+   * card answers from tables here. See systems/housing/cards.js for the
+   * interface, and `isExt` below for every place it is asked.
+   */
+  openExt(index, provider, state = 'ext') {
+    const c = this.cards[index];
+    if (!c || c.state || !this.game.players[index] || !provider) return false;
+    c.state = state;
+    c.ext = provider;
+    c.i = provider.startRow?.(index) ?? 0;
+    c._sig = '';
+    this.game.audio?.play('menu');
+    provider.opened?.(index, c);
+    return true;
+  }
+
+  /** The provider holding this seat's card, or null. */
+  extOf(index) {
+    const c = this.cards[index];
+    return c?.state && c.ext ? c.ext : null;
+  }
+
   closeOne(index) {
     const c = this.cards[index];
     if (!c?.state) return;
     this._leftPayne(index);
+    if (c.ext) { const e = c.ext; c.ext = null; e.closed?.(index); }
     if (isLion(c.state)) { const p = this.game.players?.[index]; if (p) this.game.dream?.guide?.leave?.(p); }
     c.direct = false;
     c.state = null;
@@ -256,6 +282,7 @@ export class Inspector {
   closeAll() {
     for (const [i, c] of this.cards.entries()) {
       this._leftPayne(i);
+      if (c.ext) { const e = c.ext; c.ext = null; e.closed?.(i); }
       c.state = null;
       c.i = 0;
       c._sig = '';
@@ -291,6 +318,13 @@ export class Inspector {
   _drive(index, pad, dt) {
     const c = this.cards[index];
     if (!pad) return;
+    /* A PROVIDER THAT PLAYS A GAME TAKES THE WHOLE PAD (the fishing rod's
+       cast and reel, the editor's ghost). It still gets START from here
+       first, so the way out is the same on every card. */
+    if (c.ext?.drive) {
+      if (pad.pressed('start')) { pad.consume?.('start'); this.closeOne(index); return; }
+      if (c.ext.drive(index, pad, dt, c)) { c._sig = ''; return; }
+    }
     const rows = this._rowCount(index);
 
     /* A READING CARD: up/down is the scroll, and only left/right is the
@@ -357,6 +391,13 @@ export class Inspector {
   _back(index) {
     const c = this.cards[index];
     if (!c?.state) return;
+    if (c.ext) {
+      /* The provider says whether BACK stepped up a level (true: stay open)
+         or ran out of levels (false: close). */
+      if (c.ext.back?.(index, c)) { c._sig = ''; this.game.audio?.play('menu'); return; }
+      this.closeOne(index);
+      return;
+    }
     /* Which of her main rows each sub-card was opened from. By KEY, not
        index: the hints row comes and goes, and an index that was right before
        the Dream Dojo row arrived is one row off. Inline, not a module table,
@@ -407,6 +448,13 @@ export class Inspector {
   /** JUMP, or a tap on a row. */
   _choose(index) {
     const c = this.cards[index];
+    if (c.ext) {
+      const r = c.ext.choose(index, c);
+      if (r === 'close') this.closeOne(index);
+      else if (r === 'all') this.closeAll();
+      else c._sig = '';
+      return;
+    }
     if (isPayne(c.state)) { this._choosePayne(index); return; }
     if (isLion(c.state)) { this._chooseLion(index); return; }
     if (c.state !== 'choose') return;
@@ -517,6 +565,7 @@ export class Inspector {
 
   _rowCount(index) {
     const c = this.cards[index];
+    if (c.ext) return c.ext.rowCount(index, c);
     if (isLion(c.state)) {
       const p = this.game.players[index];
       const L = this.game.dream?.guide;
@@ -614,6 +663,7 @@ export class Inspector {
     const sig = [
       c.state, c.i, p.powerOrbs.join(','), (p.orbBag ?? []).join(','), p.score,
       POWER_ORBS.map((s) => K?.stock?.[s.id] ?? 0).join(','), pay, lion,
+      c.ext ? c.ext.sig?.(index, c) ?? '' : '',
     ].join('#');
     if (sig === c._sig) return;
     c._sig = sig;
@@ -627,13 +677,16 @@ export class Inspector {
     const moved = c._paintedState !== c.state || c._paintedI !== c.i;
     c._paintedState = c.state;
     c._paintedI = c.i;
-    c.el.innerHTML = isLion(c.state) && L
+    c.el.innerHTML = c.ext
+      ? c.ext.markup(index, c, (i, w) => this._backButton(i, w))
+      : isLion(c.state) && L
       ? L.markup(index, c.state, c.i, (i, w) => this._backButton(i, w))
       : isPayne(c.state) && P
         ? P.markup(index, c.state, c.i, (i, w) => this._backButton(i, w))
         : c.state === 'choose' ? this._chooseMarkup(index) : this._lookMarkup(index);
     if (isPayne(c.state)) P?.drawFace(c.el.querySelector('.pn-face'));
     if (isLion(c.state)) L?.drawFace(c.el.querySelector('.pn-face'));
+    c.ext?.painted?.(index, c, c.el);
     /* WALK THE CURSOR BACK INTO VIEW. Nine orbs do not fit in a quarter pane
        at a readable size (see `.pc-list` in style.css), and the markup is
        rebuilt from scratch on every change — so the list is scrolled to the
@@ -796,6 +849,15 @@ export class Inspector {
         if (this.cards[i]?.state) { this._back(i); if (this.cards[i].state) this._paintCard(i); }
         return;
       }
+      /* A PROVIDER'S OWN BUTTONS (the editor's arrows, the rod's REEL):
+         handed straight to it, with the seat. */
+      const act = target.closest?.('[data-hact]');
+      if (act) {
+        const i = Number(act.dataset.side);
+        const c = this.cards[i];
+        if (c?.ext?.tap) { c.ext.tap(i, act.dataset.hact, c); c._sig = ''; this._paintCard(i); }
+        return;
+      }
       const row = target.closest?.('[data-row]');
       if (!row) return;
       const i = Number(row.dataset.side);
@@ -803,7 +865,7 @@ export class Inspector {
       const c = this.cards[i];
       if (!c?.state || !Number.isFinite(k)) return;
       if (c.i !== k) { c.i = k; this.game.audio?.play('menu'); }
-      if (c.state === 'choose' || isPayne(c.state) || isLion(c.state)) this._choose(i);
+      if (c.state === 'choose' || isPayne(c.state) || isLion(c.state) || c.ext) this._choose(i);
       this._paintCard(i);
     });
   }

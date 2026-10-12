@@ -661,6 +661,11 @@ export function snapshot(game) {
        has been played at somebody" and gates the menu row. See
        `Game._endingSeen`. */
     watched: !!game._endingWatched,
+    /* THE HOMES. They live in their own localStorage row too, and outlive
+       any one game (systems/housing/homestore.js); a save carries a copy so
+       an afternoon moved to another browser brings its houses with it.
+       `Housing.restore` keeps whichever of the two is newer. */
+    homes: game.housing?.snapshot?.() ?? null,
   };
 }
 
@@ -770,6 +775,7 @@ export function restore(game, snap) {
      row in the list, brought up to date, rather than a second afternoon
      sitting beside the one it continues. */
   game.sessionId = snap.session ?? newSessionId();
+  game.housing?.restore?.(snap.homes);
 
   /* --- the world, first: everybody's positions are on it ---------------- */
   const W = snap.world ?? {};

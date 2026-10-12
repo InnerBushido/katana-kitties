@@ -1505,6 +1505,32 @@ export class DreamDojo {
     return true;
   }
 
+  /**
+   * IN FROM HOME — her house's holodeck (systems/housing). The same way in as
+   * her own tube, and nothing cheaper: she is stood at tube N, suited the
+   * usual way if she is not already (the poof, then the rise — a kitten who
+   * has never met Lionheart is handed the gear, since the holodeck IS the
+   * gear), and the sim takes her from there. `homeReturn` is what
+   * Housing.update reads to put her back in her house once she has been in
+   * and come out; nothing in here knows a house exists.
+   */
+  enterFrom(p, spot) {
+    if (!this.built || !this.layout || !p) return false;
+    const why = this._refusal(p);
+    if (why) {
+      this.game.toast?.(`${p.name} — ${why}`, p.index);
+      return true;
+    }
+    if (this.st[p.index]?.phase || this.realmOf(p) === 'sim') return false;
+    const tube = this.layout.tubes[p.index];
+    p.position.set(tube.x, ARCADE.y, tube.z);
+    p.velocity?.set?.(0, 0, 0);
+    p.homeReturn = { x: spot.x, y: spot.y, z: spot.z, seen: false };
+    p.dreamGeared = true;
+    this._begin(p, p.simLook ? 'rise' : 'suit');
+    return true;
+  }
+
   /* ----------------------------- the sequence ----------------------------- */
 
   _begin(p, phase) {

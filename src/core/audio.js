@@ -1700,6 +1700,12 @@ export class Audio {
     }
   }
 
+  /** True once a recorded piece has been tried and is NOT there — the
+   *  jukebox then plays its procedural stand-in (non-negotiable 9). */
+  fileMissing(id) {
+    return !!MUSIC_FILES[id] && this._fileBuf?.[id] === null;
+  }
+
   /** Decode one piece (once). Resolves to the AudioBuffer, or null — and null is remembered. */
   _decodeFile(id) {
     this._fileBuf ??= {};

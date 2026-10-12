@@ -89,6 +89,7 @@ import { ProfileScreen } from './systems/profile.js';
 import { Feats } from './systems/feats.js';
 import { Inspector } from './systems/inspector.js';
 import { Payne, PAYNE_CLIPS, PAYNE_TOWN } from './systems/payne.js';
+import { Housing } from './systems/housing/housing.js';
 import { DreamDojo } from './systems/dreamdojo.js';
 import { SIM } from './world/simworld.js';
 
@@ -1194,6 +1195,8 @@ class Game {
       const dp = this.dream?.prompt(p, this.input.promptFor(p.index, 'interact'));
       if (dp) { p.setCallout(dp); continue; }
       if (this.dream?.realmOf(p) === 'sim') { p.setCallout(null); continue; }
+      const hp = this.housing?.prompt(p, this.input.promptFor(p.index, 'interact'));
+      if (hp) { p.setCallout(hp); continue; }
       if (this.payne?.canTalk(p)) {
         const pk = this.input.promptFor(p.index, 'interact');
         p.setCallout(pk ? `[${pk}]  TALK TO PAYNE` : null);
@@ -1586,6 +1589,11 @@ class Game {
     this._spawnLeaders();
     this._spawnPayne();
     this.dream.build(this.lionArt);
+    /* CUSTOM HOUSING — Roshi's islands, the homes the kittens buy, and the
+       bridges out to them. After the Dream Dojo, because the home roads wind
+       round every other road in the sky. See systems/housing/housing.js. */
+    this.housing = new Housing(this);
+    this.housing.build();
 
     setLoad('Writing the story…');
     await frame();
@@ -3336,11 +3344,43 @@ class Game {
     );
   }
 
+  /** Debug: Roshi's shop open, purses filled, everybody at his counter. */
+  _debugHousing() {
+    const H = this.housing;
+    if (!H?.built) return;
+    /* It moves every kitten and rewrites every purse, so it asks — the
+       keyless-row rule world-check holds every panel-only row to. */
+    this.confirm.ask({
+      title: "OPEN ROSHI'S ISLAND SHOP?",
+      body: 'Every kitten is topped up to 40,000 points and stood at his counter. '
+        + 'The shop stays open until the tab is closed.',
+      no: 'NO, LEAVE EVERYONE BE',
+      yes: 'YES, OPEN THE SHOP',
+      onYes: () => this._debugHousingNow(),
+    });
+  }
+
+  _debugHousingNow() {
+    const H = this.housing;
+    H.debugOpen = true;
+    H._roadsAsked = true;
+    for (const [k, p] of this.players.entries()) {
+      p.score = Math.max(p.score, 40000);
+      this.onScoreChanged(p);
+      const x = H.roshi.x + 3 + k * 1.6;
+      const z = H.roshi.z + 3;
+      const g = this.world.heightAt(x, z);
+      p.position.set(x, (g?.y ?? 0) + 0.2, z);
+      p.velocity?.set(0, 0, 0);
+    }
+    this.toast("Roshi's island shop is open — walk up and press INTERACT.", 0);
+  }
+
   /** True while any full-screen story scene owns the screen. */
   _sceneActive() {
     return !!(this.cutscene?.active || this.summonScene?.active
       || this.shrineScene?.active || this.finaleScene?.active || this.arenaExit?.active
-      || this.storyScene?.active);
+      || this.storyScene?.active || this.housing?.purchase?.active);
   }
 
   /** Skip whichever scene is up. Harmless if none is. */
@@ -3351,6 +3391,7 @@ class Game {
     if (this.finaleScene?.active) this.finaleScene.skip();
     if (this.arenaExit?.active) this.arenaExit.skip();
     if (this.storyScene?.active) this.storyScene.skip();
+    if (this.housing?.purchase?.active) this.housing.purchase.skip();
     if (this.travel) this.griffin?.skip();
   }
 
@@ -5146,6 +5187,10 @@ class Game {
        Class so that any text or voice is played". No keys: the second writes
        into the save, so both ask, like every keyless row. */
     if (code === 'DreamSongs') this._debugShadowSongs();
+    /* CUSTOM HOUSING: open Roshi's shop before the ending, give every kitten
+       enough for a castle share, and stand them at his counter. A flag for
+       the tab, never saved. */
+    if (code === 'HousingOpen') this._debugHousing();
     if (code === 'DreamExtra') this._debugOpenExtra();
     /* 秘 EXTRA HARD in the Sine Gauntlet, on every course, for every kitten.
        Richard: "Add a debug unlock for this Extra hard level so I can test
@@ -6417,6 +6462,8 @@ class Game {
       ${row('DreamExtra', 'open 秘 EXTRA HARD — as if 1st Class')}
       ${row('DreamNav', 'show the Dream Dojo walk paths', !!this.dream?.navDebug)}
       ${row('SineExtra', 'open 秘 EXTRA HARD in the Sine Gauntlet', !!this._debugSineExtra)}
+      <div class="dbg-sep">ROSHI'S ISLANDS</div>
+      ${row('HousingOpen', 'open the island shop, 40,000 each, go to Roshi', !!this.housing?.debugOpen)}
       <div class="dbg-sep">THIS DEVICE — what outlives the tab</div>
       ${row('BoardWipe', `wipe the RECORD BOARD (${this._boardRows()} results)`)}
       ${row('SaveWipe', `wipe the SAVED GAMES (${listSaves().length} of ${saveCap()})`)}
@@ -6630,7 +6677,15 @@ class Game {
    * island. See Tournament.fighting.
    */
   strikePlayers(attacker, kind, reach, dir, spent = null) {
-    if (!this.tournament?.fighting) return;
+    /* THE ONE GATE, AND ITS ONE EXCEPTION. No round live means no blow lands
+       — except on a kendo dojo's taped square, between two kittens in the
+       gear, where a blow is an IPPON: a shove and a point, never damage.
+       Non-negotiable 3, relaxed by Richard for designated zones (Oct 2026).
+       See systems/housing/kendo.js. */
+    if (!this.tournament?.fighting) {
+      this.housing?.kendo?.sparStrike(attacker, kind, dir);
+      return;
+    }
     const A = ATTACKS[kind] ?? ATTACKS.stand;
     /* The clan buff still multiplies, and the round card shows both badges so
        the asymmetry is visible rather than mysterious. Riverclaw really does
@@ -6661,7 +6716,7 @@ class Game {
        its own — see `ATTACKS.claw`, which has no `dmg`, and `PANDA.dmgK`. This
        is the one place that can do that multiplication, because it is the one
        place holding both tables. */
-    const base = kind === 'claw' ? ATTACKS.stand.dmg * PANDA.dmgK : A.dmg;
+    const base = kind === 'claw' ? ATTACKS.stand.dmg * PANDA.dmgK * (attacker.pandaCare?.dmg ?? 1) : A.dmg;
     const dmg = base * (kind === 'tri' ? triDmgK(attacker) : 1);
 
     /* --- DOES THIS SWING REACH THAT BODY? ---------------------------------
@@ -9008,6 +9063,12 @@ class Game {
        would read as the game not knowing which way round it is. */
     if (this.travel) return this.travel === 'out' ? 'griffin' : 'flight';
     if (!this.players?.length) return null;
+    /* HER BRIDGE'S JUKEBOX, over the dragons. Richard: "the most recent
+       kitten onto a bridge picks the track, overriding other music including
+       dragon music." Below the ending, the tour and the griffin, which are
+       scenes, not places. See Housing._trackMusic. */
+    const homeTrack = this.housing?.musicTrack?.();
+    if (homeTrack) return homeTrack;
     if (this.ryu?.ridden
       && this.players.some((p) => p.mount === this.ryu || p.rideAlong === this.ryu)) {
       return 'ryu';
@@ -9987,6 +10048,17 @@ class Game {
       return;
     }
 
+    /* THE PURCHASE SCENE — already true when it starts (Housing.buy), so
+       a skip snaps it to the end and loses nothing. */
+    if (this.housing?.purchase?.active) {
+      if (this._skipPressed()) this.housing.purchase.skip();
+      this.housing.update(dt);
+      this.world.update(dt, this.players[0].position);
+      this._renderView(this.housing.purchase.camera, 0, 0,
+        ...this.renderer.getSize(new THREE.Vector2()).toArray(), null, true);
+      return;
+    }
+
     if (this.shrineScene?.active) {
       if (this._skipPressed()) {
         this.shrineScene.skip();
@@ -10084,6 +10156,16 @@ class Game {
         const pad = this.input.players[p.index];
         if (!pad?.pressed('interact') || this.inspector.busy(p.index)) continue;
         if (this.dream.interact(p)) pad.consume('interact');
+      }
+    }
+    /* HOUSING NEXT — Roshi, her door, the jukebox, the pond, the pen. Its
+       spots are on islands nothing else is on, bar Roshi in the market. */
+    if (!this.paused && this.housing?.built && !this.tournament?.active && !this._sceneActive()) {
+      for (const p of this.players) {
+        const pad = this.input.players[p.index];
+        if (!pad?.pressed('interact') || this.inspector.busy(p.index)) continue;
+        if (this.dream?.realmOf(p) === 'sim') continue;
+        if (this.housing.interact(p)) pad.consume('interact');
       }
     }
     if (!this.paused && this.payne && !this.tournament?.active && !this._sceneActive()) {
@@ -10360,6 +10442,7 @@ class Game {
     /* After the players, the arcade: it reads where they ended up, and it is
        the thing that pins a kitten in her tube for the NEXT frame. */
     this.dream?.update(dt);
+    this.housing?.update(dt);
     for (const pk of this.pickups) {
       if (pk.taken) continue;
       pk.update(dt);
@@ -10598,7 +10681,10 @@ class Game {
          bubble. Never on the Dojo floor itself — `near` wins, so the maths
          camera is exactly what it was. */
       const dreamShot = near || simDojoC || shadowShot ? null : this.dream?.cameraFocus?.(p) ?? null;
-      if (shadowShot) p.setFocus(shadowShot);
+      /* ROSHI'S TOUR flies her pane out to the island she is looking at. */
+      const homeShot = this.housing?.cameraFocus?.(p) ?? null;
+      if (homeShot) p.setFocus(homeShot);
+      else if (shadowShot) p.setFocus(shadowShot);
       else if (dreamShot) p.setFocus(dreamShot);
       else if (near || simDojoC) {
         p.setFocus({
@@ -13820,6 +13906,7 @@ class Game {
     camera.updateProjectionMatrix();
     this._faceAll(camera, members);
     this._aimXray(camera, members, scene);
+    this.housing?.aimView(camera, members, scene);
     // Can this lens see the big screen? Its fireworks only go off if one can.
     this.arenaBoard?.see(camera);
     this.renderer.setViewport(x, y, w, h);

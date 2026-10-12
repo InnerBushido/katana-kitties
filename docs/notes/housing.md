@@ -1,0 +1,150 @@
+# Custom Housing — Roshi's islands
+
+*Read this before touching anything in `src/systems/housing/`.* Built October
+2026 on `feature/custom-housing`, from Richard's full spec in one pass ("build it
+all ... put in placeholders ... keep a note of all the placeholders"). **The
+placeholder list is at the bottom and is the work that is left.**
+
+## What it is
+
+After the ending, Roshi — a cat-ified old turtle master on holiday, flowered
+shirt, sunglasses, shell — stands in the market under an ISLANDS FOR SALE sign.
+He sells four sky islands. Each has a house on it (a minka, a dojo house, or a
+sky castle for up to four co-owners), a garden, and a Snake Way road of its own
+from the town, grown in her colours when she buys.
+
+| file | what it owns |
+| --- | --- |
+| `catalog.js` | **the data, and only the data**: the four sites, the three houses and their rooms, the room kinds, the furniture, the presets, the prices. Everything else reads these rows, so the card, the editor, the save and `world-check` cannot disagree |
+| `housing.js` | the orchestrator — building the islands, the roads, collision, locks, money, music, interaction, persistence. `game.housing` |
+| `homeisle.js` `homehouse.js` `homebridge.js` `statue.js` | the island, the house (with its cutaway roof and x-ray walls), the bridge (deck, torii, speed strip, glass door, name plate) and her statue |
+| `homestore.js` | the store: `localStorage` + the save row + JSON export/import |
+| `cards.js` | **every screen**, as one inspector ext-provider with a per-seat view stack |
+| `editor.js` | the tatami grid, footprints, `fits`, `autoLayout` |
+| `purchasescene.js` | the purchase cutscene |
+| `roshi.js` `jukebox.js` `farm.js` `koi.js` `fishing.js` `kendo.js` `models.js` | the realtor, the boombox, the bamboo farm and the animals, the koi, fishing, kendo, the vendored models |
+
+## Decisions, with the reason
+
+**Prices are multiples of one orb, never points** — 8×, 12×, 20× (Richard). The
+orb's price already follows world size and party size (`orbPrice`), so a home
+costs the same *amount of play* at two players and at four.
+
+**Selling pays 75%**, behind `confirm.ask` with no `.primary` — non-negotiable 7.
+**A castle sells only with every owner present and saying yes**, through the
+consent flow in `cards.js` (`pending` / `_askOthers` / `_answer`); a co-owner who
+is not in the game is refunded through her `sessionCast` row, and if she has none,
+the bank (`pay`).
+
+**State changes on ACCEPT, never at the end of a scene.** `buy()` deducts, writes,
+saves and only then starts the purchase scene; skipping it with Escape/Start
+(`finish()`) snaps every animated thing to its end state. A scene that is skipped
+cannot leave a half-bought island.
+
+**The islands are far — a minute's walk.** The four sites were MEASURED: a probe
+wound a Snake Way road from the home island to each candidate against every road
+already in the sky and kept the ones with no fault. Two candidates touched the
+bamboo/ash roads and were rejected. The sites and the reasons are in the comment
+on `HOME_SITES`. **Each site has one fixed bridge slot** — so no purchase order
+can make two roads cross; they are solved in one canonical order (`solveNow`).
+
+**The 2× strip** is a stretch of each road whose `boost` multiplies `glideK`
+in `player.js`. It is a property of the road, so dragons and mounts are untouched.
+
+**An unbought bridge is not ground.** `heightAt` answers for a bridge only once
+its home exists — `world-check` pins it — so nobody can walk out onto a road
+that was never built.
+
+**Locks are one fact, shown twice.** The glass door on the bridge and the door
+of the house read the same `home.open`. The owner always passes; anyone else is
+pushed back by the cloudy-glass bubble (radius 57), **including on a dragon or a
+griffin** — a passenger never runs `Player.wall`, so `_mounts` pushes the animal.
+Every refusal toasts *with the owner's name and an instruction* (non-negotiable 6).
+**A castle is open if ANY owner has opened it** — one front door, four keys.
+**Castle rooms are claimed by walking in first**, and each owner opens or shuts
+her own (`_roomWall`).
+
+**The music: the newest kitten onto a bridge picks it**, and it beats everything,
+dragon music included (`_wantedTrack` asks housing first). What plays is **that
+bridge's owner's choice** on her jukebox; a kitten on a home island with nobody
+on a bridge hears that island's. Six tracks, **ElevenLabs Music recordings with a
+procedural stand-in each** (non-negotiable 9) — see *Music* below.
+
+**Interiors** cut the roof away and x-ray the walls in the pane of whoever is
+inside (`aimView` → `xrayVertexMat.setCuts`). Furniture sits on a **tatami grid**;
+a room's kind decides what may go in it, and a preset furnishes the whole house
+in one go (`autoLayout`).
+
+**The holodeck** is the Dream Dojo's own way in, not a copy:
+`DreamDojo.enterFrom(p, spot)` stands her at her tube, suits her up if she is
+not already (the poof) and rises her in. `Housing._holoHome` puts her back in
+her holodeck room **only after she has been in the sim AND the walk-out and
+un-suit are done**; a kitten who walked off before the rise is left at the
+arcade, and a tournament forgets the way home rather than taking it.
+`world-check` walks a stand-in through the real phase names.
+
+**The animals never die.** `careLevel` counts visits in the last seven days, with
+a bonus for two visits ≥24h apart; neglect only lowers the buff. The buff is the
+panda's: health ×1.2, claw ×1.15, an extra jump, and **the Goblin Sweep via
+`ATTACKS.sweep`** — the row that already exists, not a second sweep.
+
+**The bamboo farm and the koi run on the real clock** (`Date.now()`), not game
+time: 2h a stalk, feeding every 12h, rare colours at 12%. A home is something to
+come back to.
+
+### Non-negotiable 3, relaxed — on purpose, and only here
+
+**Kendo sparring in a taped square inside a kendo room** is the one place a
+blow lands outside the ring. It is not combat: `strikePlayers` still asks
+`Tournament.fighting` first, and when that says no it hands the blow to
+`kendo.sparStrike`, which needs **both kittens geared, on the same square, in
+reach and in the arc** — and then **shoves and scores an IPPON point. It never
+calls `hurt`.** `world-check` pins both: the gate's regex, and that `kendo.js`
+contains no `.hurt(`. Nothing outside that square changed.
+
+## Persistence
+
+`homestore.js` keeps one store: in `localStorage` (`HOME_KEY`), in the save row
+(`snapshot.homes`, so a loaded game has its homes), and as JSON a player can
+export and import from the home card. **On restore the newer copy wins**, by its
+own timestamp — a save from yesterday does not un-buy a house bought today.
+`worldSig` is unchanged by buying (checked): homes are what the players did, not
+the world.
+
+## Music
+
+`tools/capture/jukebox-music.mjs` does to the six takes what `shadow-music.mjs`
+does to the boss music — **the same code**, moved into
+`tools/capture/music-loop.mjs` (shadow-music's `--dry` output was byte-identical
+before and after the move): measure the beat in ±12% of the BPM the prompt asked
+for, find a loop on whole bars by self-similarity, cut the seam on the music,
+match the level. Raw takes in `tools/capture/music-takes/jukebox/`, the prompts
+in `jukebox.js`, the generation ids in the tool, ElevenLabs flow
+`LRBTaBnKWB4SFA1bf00O`. 5,400 credits (~$1.08) for the six, Oct 2026.
+
+Measured: every take landed on its asked tempo except MOSS GARDEN (asked 70,
+measured 73.5, drift 83ms — it is ambient and has almost no onsets to measure).
+**TATAMI LO-FI's best loop scored 0.55** where the others score 0.75–0.98 — a
+seam that may be heard; **listen to it before deciding it is fine.**
+
+## Placeholders — the work that is left
+
+Each one degrades: delete the file and the game draws the stand-in.
+
+| what | the stand-in | to finish it |
+| --- | --- | --- |
+| **Roshi's sprite** | drawn on a canvas at load (`drawRoshi`) | a generated sheet on magenta → `public/sprites/roshi/roshi.png` (`ROSHI_SHEET`), baked with `sprite-bake --proof`. It loads by itself when it exists. **Price to be stated before generating** |
+| **Roshi's voice** | toasts only | a preset per [voices.md](voices.md) and lines for `ROSHI_LINES` |
+| **Her statue** | a drawn sitting cat in stone, sash and headband in her colour | `node tools/statue-bake.mjs --go` — Tripo image-to-3D off `docs/art-masters/<sheet>_champion.png`, ~60 Tripo credits for both. **Not run: the price is said first** |
+| **Kendo gear and the kiai** | a men-helmet sprite and a shinai mesh; the kiai hex is a drawn kanji | kendo sprite sheets for **all four kittens** on magenta — shinai, hidden face, kiai. **Price to be stated before generating** |
+| **The animals** | chick, bunny and goat in primitive geometry | sprites or models |
+| **The storage chest** | a card that says so | a real inventory |
+| **Cook, volleyball, nap, soak, climb, pray, bell, drum** | one line each (`_fun`) | the activities themselves |
+| **The Bushido Blade forest** | shown, locked, "later" | Richard's later feature |
+
+## Known rough edges
+
+- The tour camera frames each island partly behind the card — try `dist ~130`.
+- The bubble tints a whole pane when that pane's camera is outside it.
+- The Roshi shop opens after the ending (`world.snakeOpen`) or from the debug
+  panel's *open the island shop* row — the ending is what builds Snake Way.

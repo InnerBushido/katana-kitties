@@ -45034,6 +45034,12 @@ console.log('\n--- the beat-map grid is one stop, then its lines, then a line\'s
     && /typingIn\(e\.target\)\) \{\s*e\.preventDefault\(\);\s*e\.stopImmediatePropagation\(\);\s*e\.target\.blur\(\);/.test(esrc));
 }
 
+/* CUSTOM HOUSING — its own file, against this World. */
+{
+  const { housingChecks } = await import('./checks/housing.mjs');
+  await housingChecks({ ok, world });
+}
+
 console.log(fails
   ? `\n${fails} of ${checks} CHECK(S) FAILED`
   : `\nall ${checks} checks passed`);

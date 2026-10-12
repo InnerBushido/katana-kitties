@@ -2969,7 +2969,10 @@ export class Player {
     const rideK = this.pandaMount ? PANDA_SPEED : 1;
     /* THE GLIDE. On a road, and only with her feet on it — a kitten jumping
        off the side leaves at the speed she was running, not at the road's. */
-    const glideK = this.snakeRide && this.onGround ? SNAKE.glide : 1;
+    const glideK = this.snakeRide && this.onGround ? SNAKE.glide
+      /* A HOME BRIDGE'S SPEED STRIP — 2x down the middle of it, because her
+         island is a minute's walk out (systems/housing, `SPEED_STRIP`). */
+      * (this.snakeRide.road.boost?.(this.position.x, this.position.z, this.position.y) ?? 1) : 1;
     const target = wish.multiplyScalar(
       moving ? (sprinting ? SPRINT_SPEED : WALK_SPEED) * speedK * rideK * glideK : 0
     );
@@ -3043,7 +3046,9 @@ export class Player {
     /* Leap orbs ADD to whatever the clan gave her, so a Shadowtail kitten
        wearing three of them has six. The count is read wherever jumps are
        refilled, so landing restores all of them however many that is. */
-    this.maxJumps = (buff?.jumps ?? 2) + this.power.jumps;
+    this.maxJumps = (buff?.jumps ?? 2) + this.power.jumps
+      /* A panda cared for at home jumps once more (housing/farm.js). */
+      + (this.pandaMount && this.pandaCare?.jump ? 1 : 0);
     if (pad.pressed('jump') && !this.busy && !this.dodgePlanted && !this.arenaBreathAt && !this.parryAt) {
       if (this.coyote > 0 || this.jumpsLeft > 1) {
         this.velocity.y = JUMP_V * jumpK;
@@ -3147,7 +3152,7 @@ export class Player {
            sprint attack is the one two kids already know from the barrels. */
         this.attackTimer = 0.26;
         this._startCharge(hud);
-      } else if (this.payne?.sweep && this.sweepCool <= 0 && this.onGround && pad.down('sprint')
+      } else if ((this.payne?.sweep || (this.pandaMount && this.pandaCare?.sweep)) && this.sweepCool <= 0 && this.onGround && pad.down('sprint')
           && Math.abs(pad.mx) + Math.abs(pad.my) <= 0.2) {
         /* THE GOBLIN SWEEP: SPRINT HELD, STICK STILL, ATTACK. Payne's line:
            "Hold run, stand really still... and swing!" It sits below the
@@ -3299,6 +3304,8 @@ export class Player {
     this.position.x = fixed.x;
     this.position.z = fixed.z;
     this._arenaWall(world, wasX, wasZ, hud);
+    /* Locked doors, the cloud-glass bubble, house walls (systems/housing). */
+    world.homeWall?.(this, wasX, wasZ, hud);
 
     /* How far we actually travelled across the ground this frame â€” including
        any shove out of a tree or a wall, which can be a lot further than

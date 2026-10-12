@@ -485,7 +485,7 @@ footer b { color: var(--text); }
 <div class="wrap">
 
 <header class="mast">
-  <div class="stamp">Last updated <span>·</span> 10 Oct 2026</div>
+  <div class="stamp">Last updated <span>·</span> 12 Oct 2026</div>
   <h1>Katana Kitties<em>The whole project on one page</em></h1>
   <p class="lede">A <b>split-screen co-op browser game for up to four players</b>: samurai kittens
     knocking over a chain of floating Japanese islands, riding storm dragons between them, and
@@ -695,6 +695,7 @@ git push origin alpha</code></pre>
       <tr><td><kbd>R</kbd><kbd>U</kbd></td><td>Step WASD · step the arrows round the kittens sharing that set — her, her sister, then <b>both at once</b></td></tr>
       <tr><td><i>no key</i></td><td><b>Wipe the RECORD BOARD</b> — every league, on this device</td></tr>
       <tr><td><i>no key</i></td><td><b>Wipe the SAVED GAMES</b> — every saved play session, kept ones included</td></tr>
+      <tr><td><i>no key</i></td><td><b>Open Roshi's island shop</b> — before the ending, every purse at 40,000 and every kitten at his counter. Asks first</td></tr>
     </tbody>
   </table></div>
 
@@ -1103,6 +1104,27 @@ git push origin alpha</code></pre>
         <td><code>capture/shadow-music.mjs</code></td>
       </tr>
       <tr>
+        <td><b>Roshi's jukebox recordings</b></td>
+        <td>Six ElevenLabs Music takes, one a minute (≈900 credits each, Oct 2026), the prompts
+          kept beside the tracks. Looped by <b>the same code as the boss music</b>, now shared in
+          <code>capture/music-loop.mjs</code>; each falls back to a procedural piece.</td>
+        <td><code>capture/jukebox-music.mjs</code></td>
+      </tr>
+      <tr>
+        <td><b>Her statue at the bridge</b></td>
+        <td>Tripo image-to-3D off her champion drawing, magenta keyed out first, scaled by its own
+          bounding box and tinted to her colour — two runs, four statues. <b>Not yet run</b>: the
+          drawn statue stands until it is, and without <code>--go</code> the tool only prints the
+          plan and the price.</td>
+        <td><code>statue-bake.mjs</code></td>
+      </tr>
+      <tr>
+        <td><b>The houses' furniture</b></td>
+        <td>Vendored Polyfork models — 25 files, 3.3 MB, under Richard's Lifetime plan, never
+          hotlinked. Each has a drawn stand-in that shows first and stays if the file is missing.</td>
+        <td><code>public/models/polyfork/</code></td>
+      </tr>
+      <tr>
         <td><b>The 1:08 trailer</b></td>
         <td>Twelve five-second generated shots and an eight-second title card, a synthesised
           orchestra over the game's own music, a brush-drawn 十, and ffmpeg. 20 MB, and <b>opt-in</b>
@@ -1228,6 +1250,18 @@ git push origin alpha</code></pre>
         <td>0.30 credits a line; own account ≈$6/month</td>
       </tr>
       <tr>
+        <td><b>Tripo</b></td>
+        <td>Image-to-3D, for the statues at the foot of each home bridge. The key is a user
+          environment variable and lives nowhere else.</td>
+        <td>≈30 credits a textured model; the tool says the total first</td>
+      </tr>
+      <tr>
+        <td><b>Polyfork</b></td>
+        <td>Low-poly 3D models for the houses and gardens, vendored into the repo. Its connector is
+          installed for the user only, never in the project.</td>
+        <td>Lifetime plan, one-off</td>
+      </tr>
+      <tr>
         <td><b>Steam</b></td>
         <td>A non-Steam shortcut on one machine, for controller support and Steam Link. No
           Steamworks account.</td>
@@ -1263,7 +1297,8 @@ git push origin alpha</code></pre>
       would be worse than no orb.</li>
     <li><b>The art is the kids'.</b> Don't redesign the cat-head menu or the six clan leaders.</li>
     <li><b>No combat outside the ring.</b> One gate, asking one question. Enemies in the world have
-      been rejected repeatedly and on purpose.</li>
+      been rejected repeatedly and on purpose. <b>One relaxation, Oct 2026:</b> kendo sparring in a
+      taped square inside a home's kendo room — a shove and an IPPON point, never damage.</li>
     <li><b>Nothing regrows and nothing is lost.</b> A prop knocked over stays knocked over, so the
       mischief counter is honest. A dragon can never be stranded; a pet can never be lost.</li>
     <li><b>Two players must keep the game they know.</b> Everything four-player is additive, and the
@@ -1353,6 +1388,7 @@ git push origin alpha</code></pre>
     <div><code>voices.md</code><span>The voice registry — which preset is which character, with ids</span></div>
     <div><code>payne.md</code><span>Payne, the quest-giver: her quest chain, opt-in hints, the Goblin Sweep, her script — a real person's likeness; her lines and voice approved</span></div>
     <div><code>dreamdojo.md</code><span>The Dream Dojo, Lionheart's VR arcade: the simulator as a second reality in the same place, the tubes, the training gate that lets a blade in there find holograms only, the Gallery and Trial Hall, the holo kit (she goes in with a copy of her ring and no clan, earns orbs in there, and her real kit is never touched) and its (HOLO) PLAYER PROFILE, Lionheart as the simulator's quest-giver (WHERE NEXT, five map kiosks, the sim on the minimap, and waypoints marked on his map and followed by markers in her colour), its progress carried in the save row (<code>snapshot.dream</code>), the unit-circle overlays in its Dojo (the right triangle and its three angles, the lit quadrant — no vector text), the Tameshigiri Range and Kata Trace (Lionheart attacks from the top of her floor with Shadow's cut, cross and sweep, on the beat of any song in the game, at three levels and four speeds; its beat maps are human-readable JSON, <code>kata-beatmap/1</code>, with an in-game beat-map editor and custom charts kept in <code>localStorage</code>; optional slashes she may land on him for combo, a finishing attack that knocks him flat, and Shadow Lionheart's own song with its 凶 triple crosses and a finale in the air; and the Kata Board, a ring on its island's north-east corner ranking every finished song by score, filtered by level, speed and kitten, with her last score kept on her floor's plate until she leaves), the far islands (light-cycle highways, Kudamono Storm, the Sine Gauntlet (four courses — the Ripple, the Gauntlet, the Riptide, whose stones slide across the lane and carry her, and the Dragon Gate, the skill one, with ledges at four heights over floors that zap and lasers that never move — chosen at its kiosk under a bird's-eye lens, the old course swiped away round the hub as the new one turns in, each run one kitten at a time against the clock — five snaking lanes, no grace after a zap and no line that can be skipped, an over-the-shoulder lens through the Sliding Gaps and the sliding stones — with a secret 秘 EXTRA HARD on each, opened by three stars on its HARD or the debug panel, where a zap is back to the start; the queue in cheering stands, one shared pane, a way out that asks first, and the Sine Board, the plaza board ranking every kitten's best time by course and level whenever nobody is running), Holo-Sentries and Bamboo Infiltration, every star band measured by a search), the Arena School (a practice round per tournament mode, under the tournament's own rules), KENSHI ranks, the foil Fighter Card, the daily and weekly training, and Shadow Lionheart on three levels, quicker and harder with more kittens on the island, the co-op boss whose MEDIUM or HARD win is the tenth quest and the only one that counts after the Awakening, and a HARD win her 凶 — plus a secret EXTRA HARD opened at KENSHI 1st Class, whose win is the veiled eleventh; and what is still to build. Lionheart is Richard, likeness approved</span></div>
+    <div><code>housing.md</code><span>Custom Housing — Roshi's islands: the four sky sites and how they were measured, the bridges and the 2× strip, prices as multiples of an orb, locks and the bubble, the castle's co-owners, the jukebox and its recordings, interiors and the tatami grid, the farm, the koi, fishing, the holodeck, the one place the no-combat rule is relaxed (kendo), and the placeholders still to finish</span></div>
     <div><code>consent.md</code><span>Why nothing irreversible happens on one press</span></div>
     <div><code>rules.md</code><span>The gameplay invariants in full, with the measurements behind them</span></div>
     <div><code>gotchas.md</code><span>The traps that cost real time and are not obvious from the code</span></div>

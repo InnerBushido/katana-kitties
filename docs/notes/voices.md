@@ -42,6 +42,7 @@ the `voice_id` below. About **0.15 credits a line**.
 | **the trailer voice** | not in the game at all. The straight narrator Mr. Satan interrupts — and the one who has to say "right meow" with a straight face. | **Desmond** | `563f728c-e249-5a85-97ab-8461e8c09da6` | **six trailer lines** — 4-8 and the sign-off |
 | **Ryuuseki** | the dragon the seven stars call. | **unresolved — see below** | — | `summon1` `summon2` |
 | **Lionheart** | the Dream Dojo's arcade owner, and his Shadow. Cool, confident, a showman about his sword — **and never seductive**, which is a rule about the WORDS ([below](#lionheart-is-barrett-and-the-wording-is-half-the-casting)). | **Barrett** | `d603a8cd-3fe1-55e0-9245-617a2589131e` | all nine `lion_*`: `idle` `honor` `sim` `simidle` `islands` in the arcade, `shadow_hello` `shadow_cross` `handover` `prize` in his Shadow's fight |
+| **Roshi** | the island realtor, a cat-ified old turtle master on holiday — [housing.md](housing.md). Loud, jolly, "Ohoho!" | **not cast yet** — toasts only | — | — (his lines are `ROSHI_LINES` in `systems/housing/roshi.js`) |
 | *(the thing in the dark)* | three seconds of the trailer — and, since the Cross Slash rebalance, four sounds in the game | **not a voice at all** | [tools/kitten-cackle.mjs](../../tools/kitten-cackle.mjs) | trailer line 12, `cross0`-`cross3` |
 
 [tools/trailer-vo.mjs](../../tools/trailer-vo.mjs) carries the same four ids it

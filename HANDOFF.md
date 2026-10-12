@@ -516,6 +516,15 @@ WATCH AGAIN gains **WATCH THE ENDING AGAIN** once this game's ending has played.
 **Nothing is known broken.** Both check suites pass and the build is clean. What
 is listed here is untested-by-players, not untested-by-machine.
 
+**Custom Housing — Roshi's islands (Oct 2026), on `feature/custom-housing`,
+NOT merged.** The whole spec, built in one pass and machine-checked
+(`tools/checks/housing.mjs`, run by world-check), walked through in a browser
+for buy → scene → bridge → lock → jukebox → interior → editor → holodeck and
+back. **Never played by the kids.** The placeholders still to finish, and the
+places it departs from the spec, are listed in
+[housing.md](docs/notes/housing.md). The published PROJECT page is **not**
+republished for it yet — that waits for the merge.
+
 **The Dream Dojo, Lionheart's VR arcade — stage 5 of 5.** Each stage is on its
 own branch:
 

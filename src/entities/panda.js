@@ -668,7 +668,7 @@ export class Panda {
    * the kittens get: nothing carries a wound between rounds.
    */
   resetHp() {
-    this.maxHp = Math.max(1, Math.round((this.owner?.maxHp ?? 100) * PANDA.hpFrac));
+    this.maxHp = Math.max(1, Math.round((this.owner?.maxHp ?? 100) * PANDA.hpFrac * (this.care?.hp ?? 1)));
     this.hp = this.maxHp;
   }
 
