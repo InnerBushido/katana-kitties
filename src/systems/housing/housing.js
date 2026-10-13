@@ -15,6 +15,8 @@ import { Kendo } from './kendo.js';
 import { autoLayout } from './editor.js';
 import { HousingCards } from './cards.js';
 import { BuildMode } from './build.js';
+import { HomeBoons } from './boons.js';
+import { HomeActivities } from './activities.js';
 
 /* ---------------------------------------------------------------------------
    CUSTOM HOUSING — the one object the game talks to.
@@ -83,6 +85,9 @@ export class Housing {
     /** Build mode's ghosts, camera and corner map (`build.js`). Not `build`:
      *  that is the method that puts the islands in the sky. */
     this.builder = new BuildMode(this);
+    /** What home is worth in the next battle, and the things that earn it. */
+    this.boons = new HomeBoons(this);
+    this.activities = new HomeActivities(this);
     this.built = false;
   }
 
@@ -430,6 +435,9 @@ export class Housing {
   /* ------------------------------ per frame ----------------------------- */
 
   update(dt) {
+    /* THE BOONS RUN WHETHER OR NOT THE ISLANDS ARE UP: the wings and the
+       auras are drawn in the RING, and a battle needs no house built. */
+    this.boons.update(dt, this.game.players ?? [], this.game.scene);
     if (!this.built) return;
     this.time += dt;
     this._pumpRoads();
@@ -453,6 +461,7 @@ export class Housing {
     this.farm.update(dt);
     this.kendo.update(dt, players);
     this.builder.update(dt, this.time);
+    this.activities.update(dt, players);
     if (this.purchase?.active) this.purchase.update(dt);
     // Roshi's preview fades in on whichever island is being looked at
     if (this.preview) {
@@ -548,6 +557,10 @@ export class Housing {
 
   /** The jukebox's track for `_wantedTrack`, or null. */
   musicTrack() {
+    /* THE SHRINE'S SONG OUTRANKS THE BOOMBOX while it plays — "stop all
+       music; temple music while she prays and on to the song's end". */
+    const prayer = this.musicSite ? this.activities?.prayerTrack() : null;
+    if (prayer) return prayer;
     /* A kitten browsing the boombox hears the row under her cursor (cards.js
        `drive`), and only for as long as the card is open. */
     const id = this.audition?.id ?? (this.musicSite ? this.store.jukebox?.[this.musicSite] ?? JUKEBOX[0].id : null);
@@ -571,7 +584,7 @@ export class Housing {
       (b.centre ??= new THREE.Vector3()).set(I.x, I.groundY + 6, I.z);
       return { centre: b.centre, aim: true, dist: 95, pitch: 0.42, yaw: I.ry + Math.PI + Math.sin(t) * 0.7 };
     }
-    return this.builder.camera(p) ?? this._doorShot(p) ?? this.koi.cameraFocus?.(p) ?? null;
+    return this.builder.camera(p) ?? this.activities.cameraFocus(p) ?? this._doorShot(p) ?? this.koi.cameraFocus?.(p) ?? null;
   }
 
   /**
@@ -817,6 +830,9 @@ export class Housing {
       soak: 'SOAK',
       volley: 'VOLLEYBALL',
       pray: 'PRAY',
+      sit: 'SIT AT THE KOTATSU',
+      look: 'LOOK OUT',
+      trophies: 'TROPHIES',
     }[s.act];
     return words ? `[${key}]  ${words}` : null;
   }
@@ -866,26 +882,21 @@ export class Housing {
         else G.toast('That chest is not yours to open!', p.index);
         return true;
       default:
+        if (this.activities.start(p, s)) return true;
         this._fun(p, s);
         return true;
     }
   }
 
-  /** The small things — a line and a sound each. PLACEHOLDER behaviour. */
+  /** What is left with no activity of its own — a line and a sound.
+   *  PLACEHOLDER behaviour; everything else is `activities.js`. */
   _fun(p, s) {
     const G = this.game;
     const lines = {
-      nap: `${p.name} curls up for a nap… zzz. (Fully rested!)`,
-      cook: `${p.name} makes onigiri! Delicious. (Cooking mini-game coming soon.)`,
-      drum: 'DON! DON! DOKO-DON!',
-      bell: 'GONNNNG…',
-      soak: `${p.name} sinks into the onsen. Ahhh, rosy cheeks.`,
       volley: `${p.name} bats the ball over the net! (Volleyball match coming soon.)`,
-      pray: `${p.name} claps twice and makes a wish.`,
     };
     G.toast(lines[s.act] ?? 'Hmm.', p.index);
-    G.audio?.play?.(s.act === 'drum' || s.act === 'bell' ? 'land' : 'menu');
-    if (s.act === 'nap' || s.act === 'soak') { p.hp = p.maxHp ?? p.hp; }
+    G.audio?.play?.('menu');
   }
 
   /**

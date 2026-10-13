@@ -26,7 +26,7 @@ export const HOME_KEY = 'kk.homes.v1';
 export const HOME_VERSION = 1;
 
 export function emptyStore() {
-  return { v: HOME_VERSION, at: 0, homes: {}, bank: {}, records: {}, jukebox: {} };
+  return { v: HOME_VERSION, at: 0, homes: {}, bank: {}, records: {}, jukebox: {}, boons: {} };
 }
 
 /** A fresh home row: who owns which site, and what is in it. */
@@ -97,6 +97,8 @@ export function normalise(s) {
   for (const [k, v] of Object.entries(s.bank ?? {})) if (Number.isFinite(v) && v > 0) out.bank[k] = v;
   out.records = s.records && typeof s.records === 'object' ? s.records : {};
   out.jukebox = s.jukebox && typeof s.jukebox === 'object' ? s.jukebox : {};
+  /* What each kitten earned at home for her NEXT battle (housing/boons.js). */
+  out.boons = s.boons && typeof s.boons === 'object' ? s.boons : {};
   return out;
 }
 

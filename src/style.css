@@ -6669,3 +6669,8 @@ body.touch-ui .pc-inner.hs-buildcard { max-width: 78%; }
 body.touch-ui .hs-buildrow canvas.hs-map { width: 30cqh; height: 30cqh; }
 body.touch-ui .hs-keys { display: none; }
 body.touch-ui .hs-card canvas.hs-prev { height: 18cqh; }
+
+/* THE NAP'S FADE — one black box per pane, over the game and under every card
+   (housing/activities.js `layoutPanes`). Never takes a click. */
+#nap-fades { position: fixed; inset: 0; pointer-events: none; z-index: 4; }
+.nap-fade { position: absolute; background: #000; opacity: 0; pointer-events: none; }

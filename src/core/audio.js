@@ -513,6 +513,10 @@ export const SAMPLES = {
   cross1: voicePath('cross1'),
   cross2: voicePath('cross2'),
   cross3: voicePath('cross3'),
+  /* The home shrine's bell (systems/housing/boons.js + housing.js `pray`):
+     ElevenLabs SFX, a bonsho struck once and left to ring, trimmed to 7.2s.
+     Its stand-in is the FIGHT gong struck slow and low. */
+  templeGong: '/sfx/templeGong.mp3',
 };
 
 export class Audio {
@@ -1109,6 +1113,22 @@ export class Audio {
         this._tone({ type: 'sine', from: 110, to: 42, dur: 0.3, gain: 0.16 * v });
         this._noise({ from: 1500, to: 300, dur: 0.4, gain: 0.11 * v, q: 0.7 });
         this._noise({ from: 3200, to: 2000, dur: 0.08, gain: 0.03 * v, q: 2, delay: 0.16 });
+        break;
+      case 'templeGong':
+        /* THE SHRINE BELL'S STAND-IN — see SAMPLES. Lower and far longer than
+           the fight gong, because nothing is starting: it is a prayer. */
+        this._noise({ from: 900, to: 200, dur: 0.2, gain: 0.18 * v, q: 0.6 });
+        this._tone({ type: 'sine', from: semi(-19), dur: 6.5, gain: 0.26 * v });
+        this._tone({ type: 'sine', from: semi(-12), dur: 5.0, gain: 0.12 * v, detune: 4 });
+        this._tone({ type: 'sine', from: semi(-7), dur: 3.6, gain: 0.07 * v, detune: -6 });
+        break;
+      case 'angel':
+        /* THE SHRINE'S WINGS OPENING (boons.js): a rising shimmer of three
+           bright partials, so a ring-out that did NOT happen sounds like
+           something good rather than like nothing. */
+        for (let k = 0; k < 4; k++) {
+          this._tone({ type: 'sine', from: semi(7 + k * 5), to: semi(19 + k * 5), dur: 0.5, gain: 0.08 * v, delay: k * 0.07 });
+        }
         break;
       case 'gong':
         /* FIGHT. The one sound in the game that starts something. A big

@@ -135,10 +135,40 @@ Each one degrades: delete the file and the game draws the stand-in.
 | --- | --- | --- |
 | **Her statue** | a drawn sitting cat in stone, sash and headband in her colour | `node tools/statue-bake.mjs --go` — Tripo image-to-3D off `docs/art-masters/<sheet>_champion.png`, ~60 Tripo credits for both. **Not run.** Richard authorised it, but the agent's permission check blocks a Tripo spend from an agent session. He runs it himself |
 | **The storage chest** | a card that says so | a real inventory |
-| **Cook, volleyball, nap, soak, climb, pray, bell, drum** | one line each (`_fun`) | the activities themselves |
+| **The prayer's drawing** | the star's reach pose (`homePose = 'bless'`) at the shrine AND for ITADAKIMASU | a prayer sheet: four directions × 3–4 frames, all four kittens |
+| **Bathing suits** | a puff of steam, and the eating crouch in the water | an onsen pose per kitten |
+| **Lying down** | the nap HIDES her (`homePose = 'hidden'`) and fades the pane if everyone in it is asleep | a futon pose |
+| **The angel wings** | two white fans drawn in `boons.js`, flapping | a wing sprite or model |
+| **Taiko, the cups game, volleyball** | a line and a sound | the mini-games |
 | **The Bushido Blade forest** | shown, locked, "later" | Richard's later feature |
 
-### Done, and what each still falls back to
+## Boons — what home is worth in the ring
+
+`boons.js` decides what is paid, `activities.js` when it is earned. Banked by
+name in `store.boons`, moved onto the kittens at `Tournament.begin`, gone at
+`finish` — **the next battle only**. Nothing here is a second combat path:
+
+- **meal** (kitchen → plate overhead → kotatsu, everybody who brings one eats
+  together): +5/10/15% of her ORDINARY bar as green, by diners, on round one
+  and after every round she LOST — the two moments `_nextRound` already heals
+  her. Added to the feast's banked green with `setRoundBonus`, so it stacks.
+- **onsen**: ×2 on `strikePlayers`' damage number for the first 15s of each
+  round — a multiplier read after the gate, never the gate.
+- **bless** (shrine): the first ring-out of a round is wings instead: lifted
+  `wingRise` above the RING (not above her — she is on the floor below it),
+  `wingGravity` gravity and jumps refilled for `wingT`, blinking for the last
+  second. The ring-out code skips her while `wingT > 0`, and charges her
+  normally if she has not made it back.
+- **The aura**: one orbiting spark per boon (red / white / green), faint while
+  banked at home, bright while live; two or three read as one swirling orb.
+
+The shrine's song (`music/shrinePrayer.mp3`, ElevenLabs Music, 45s with its own
+ending, $0.18) outranks the boombox from the first kitten's prayer to its end;
+`sfx/templeGong.mp3` (ElevenLabs SFX, trimmed to 7.2s) rings at both ends and
+on the bell tower. Delete either and the procedural `dojo` tune and a synthesised
+gong play instead.
+
+## Placeholders that are done, and what each still falls back to
 
 These were placeholders and are now generated (Oct 2026: about 12 Higgsfield
 credits of `gpt_image_2_5` and 1 of `text2speech_v2`). The stand-in is still

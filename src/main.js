@@ -6770,7 +6770,10 @@ class Game {
        is the one place that can do that multiplication, because it is the one
        place holding both tables. */
     const base = kind === 'claw' ? ATTACKS.stand.dmg * PANDA.dmgK * (attacker.pandaCare?.dmg ?? 1) : A.dmg;
-    const dmg = base * (kind === 'tri' ? triDmgK(attacker) : 1);
+    /* × the ONSEN's red, for the first seconds of a round (housing/boons.js).
+       After the gate, on the number — it never decides WHETHER a blow lands. */
+    const dmg = base * (kind === 'tri' ? triDmgK(attacker) : 1)
+      * (this.housing?.boons?.dmgK?.(attacker) ?? 1);
 
     /* --- DOES THIS SWING REACH THAT BODY? ---------------------------------
        Pulled out of the loop because there are now TWO bodies to ask it about
@@ -10465,7 +10468,8 @@ class Game {
          her own pane and must not also walk her into the stall. Only hers —
          that is the whole point of the thing. */
       let pad = (frozen || picking || this.leaguePicking || this.teamPicking
-        || this.menagerie?.eating(i) || this.inspector?.busy(i))
+        || this.menagerie?.eating(i) || this.inspector?.busy(i)
+        || this.housing?.activities?.holds(i))
         ? DEAD_PAD : this.input.players[i];
       /* THE DREAM DOJO MAY DRIVE HER — walking her to her tube, holding her
          still in it — and hands a kitten in the simulator the simulator to
@@ -14028,6 +14032,8 @@ class Game {
     /* THE SAME RECTANGLES, so a card and the frame around it can never
        disagree about where a pane is. */
     this.inspector.layout(panes, groups, W, H);
+    // a nap fades a pane whose every kitten is asleep (housing/activities.js)
+    this.housing?.activities?.layoutPanes(panes, groups, W, H);
   }
 
   /**

@@ -5885,8 +5885,12 @@ console.log('\n--- Mr. Satan has a voice ---');
      which is the thing that drifts. */
   const audioSrc = readFileSync(new URL('../src/core/audio.js', import.meta.url), 'utf8');
   const names = Object.keys(SAMPLES);
+  /* The RUNGS are the cross* keys; SAMPLES holds other recorded effects too
+     now (the home shrine's bell), and every one of them is still held to the
+     stand-in and on-disk rules below. */
+  const rungs = names.filter((n) => /^cross\d$/.test(n));
   ok('the cross slash has a rung for every outcome, whiff included',
-    names.length === CROSS.cuts + 1, names.join(' '));
+    rungs.length === CROSS.cuts + 1, rungs.join(' '));
   const unsynth = names.filter((n) => !audioSrc.includes(`case '${n}':`));
   ok('...and every recorded one has a synthesised stand-in',
     unsynth.length === 0, unsynth.join(' ') || 'all covered');

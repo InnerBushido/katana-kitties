@@ -1088,6 +1088,9 @@ export class Tournament {
 
     this.state = 'card';
     this.round = 0;
+    /* WHAT THEY EARNED AT HOME goes on them now, and comes out of the store:
+       a boon is for the NEXT battle, which is this one. housing/boons.js. */
+    this.game.housing?.boons?.arm?.(this.game.players);
     this.wins = Array.from({ length: Math.max(...this.sides) + 1 }, () => 0);
     /* A NEW MATCH HAS NO LAST ROUND. Left over, the first round of the second
        tournament of an afternoon would heal whoever lost the last round of the
@@ -1166,6 +1169,8 @@ export class Tournament {
   /** Tear it all down — used on restart, and when the girls go home. */
   finish() {
     this.state = 'off';
+    // ...and off again: a home boon was for one battle (housing/boons.js)
+    this.game.housing?.boons?.disarm?.(this.game.players);
     /* AND A TOURNAMENT TORN DOWN HALFWAY STILL GIVES THE ORBS BACK. This is
        the restart path, the going-home path and the debug path; a kitten who
        had her 守 stolen in a match that was abandoned must not be walking round
@@ -1457,7 +1462,15 @@ export class Tournament {
          rather than healing everybody. A DRAW heals nobody, because nobody
          lost — `_lastWinner` is -1 and no side matches it. */
       const lost = this._lastWinner >= 0 && this.sides[i] !== this._lastWinner;
-      const carried = (p.angel || lost) ? null : p.hp;
+      /* A MEAL AT HOME is green ON TOP of the feast's, at exactly the two
+         moments this function already heals her: round one, and after a round
+         she lost. On top — `bonusHp` already holds the feast's banked share —
+         so the two stack into one green slice. And a kitten given it is filled
+         to it, which is what makes it something she can see at the gong.
+         housing/boons.js `mealHp`. */
+      const meal = this.game.housing?.boons?.mealHp?.(p, this.round === 1 || lost) ?? 0;
+      if (meal > 0) p.setRoundBonus?.((p.bonusHp ?? 0) + meal);
+      const carried = (p.angel || lost || meal > 0) ? null : p.hp;
       // Facing is atan2(x, z) in this game — 0 is +Z. Point her at the other.
       const facing = Math.atan2(other.x - post.x, other.z - post.z);
       p.resetForRound(post.x, post.y, post.z, facing, carried);
@@ -2045,6 +2058,10 @@ export class Tournament {
          own account a moment later if that is where she lands — which is the
          same order of events a kid watching would expect. */
       if (p.heldBy) { p.nearEdge = false; p.outT = 0; continue; }
+      /* NOR IS A KITTEN ON ANGEL WINGS (housing/boons.js): the whole of the
+         shrine's blessing is three seconds of flying back from out here. When
+         they fade the rule is waiting for her exactly as before. */
+      if (p.wingT > 0) { p.nearEdge = false; p.outT = 0; continue; }
       /* MR. SATAN'S DOING, NOT HERS — AND THE PRICE IS PER PLAYER BECAUSE OF
          IT. A kitten still in the air on his account, or newly down from it,
          gets the FEAST'S deal instead of the round's: put back on the stone,
@@ -2102,6 +2119,10 @@ export class Tournament {
 
       p.outT = 0;
       const R = this.world.arenaRing;
+      /* BLESSED AT HOME: the first ring-out of a round is wings instead — she
+         is lifted to the ring's height and then some, and flies. Asked only
+         when this would COST her something; a free return is still free. */
+      if (price > 0 && this.game.housing?.boons?.wings?.(p, R?.y)) continue;
       /* Thrown back toward the MIDDLE, not to her post. Her post is on one
          side of a 56-unit square and she went off some other edge; sending
          her there can drop her straight back out of the far side, and it also

@@ -19,6 +19,25 @@ import { JUKEBOX_FILES } from './jukeboxfiles.js';
    generated file is an empty table, which is the procedural game. */
 Object.assign(MUSIC_FILES, JUKEBOX_FILES);
 
+/* THE SHRINE'S SONG (activities.js `_pray`) — not a jukebox track, so it is
+   not in the generated table: it plays ONCE, start to end, while a kitten
+   prays, and the second gong goes when it is over. ElevenLabs Music,
+   eleven_music_v2_5, Oct 2026: "Calm Japanese Shinto shrine music ...
+   shakuhachi over soft koto, wind chimes, a low temple bowl ... 60 BPM ... a
+   complete piece with a real ending". 45.0s; the last 3.2s are its own
+   ring-out. Measured -15.7 LUFS against MOSS GARDEN's -14.9 at mix 0.5,
+   hence 0.55. Delete the mp3 and the prayer plays `dojo` instead. */
+MUSIC_FILES.shrinePrayer = {
+  file: 'music/shrinePrayer.mp3',
+  name: 'SHRINE PRAYER',
+  level: 'home',
+  spb: 1,
+  first: 0,
+  loop: [0, 45],
+  length: 45,
+  mix: 0.55,
+};
+
 export const JUKEBOX = [
   {
     id: 'homeSurf', name: 'TURTLE BEACH', fallback: 'saucer',

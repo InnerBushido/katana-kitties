@@ -31,6 +31,8 @@ import { ROSHI_LINES, ROSHI_VOICE } from '../../src/systems/housing/roshi.js';
 import { Kendo, KIAI_T } from '../../src/systems/housing/kendo.js';
 import { voicePath } from '../../src/core/audio.js';
 import { existsSync } from 'node:fs';
+import { mealPct, BOON } from '../../src/systems/housing/boons.js';
+import { napFade } from '../../src/systems/housing/activities.js';
 
 const DAY = 24 * 3600 * 1000;
 
@@ -362,6 +364,112 @@ export async function housingChecks({ ok, world }) {
     ok('...and the island stands her ON it: heightAt over the cabin is the roof', Math.abs(h.y - (I.groundY + roof.y)) < 0.01, `${h?.y} vs ${I.groundY + roof.y}`);
     ok('...with its four trunks as obstacles and the cabin as walls', I.obstacles.length >= 4 && I.walls.length > (I.houseWalls?.length ?? 0) + 4);
     I.setHome(null);
+  }
+
+  /* HOME BOONS. Each one is checked for the BEHAVIOUR it promises — the green
+     is the right size at the right moments, the red is live for exactly the
+     first fifteen seconds, the wings come once a round and lift her clear of
+     the stone — and that the tournament actually asks for each. */
+  {
+    ok('a meal pays 5/10/15% by how many sat down, and never more than 15',
+      [1, 2, 3, 4].map(mealPct).join() === '5,10,15,15');
+    const B = H.boons;
+    const a = { ...fakePlayer(0), baseMaxHp: 100, maxHp: 100, hp: 100, jumpsLeft: 0 };
+    const b = { ...fakePlayer(1), baseMaxHp: 120, maxHp: 120, hp: 120, jumpsLeft: 0 };
+    H.store.boons = {};
+    B.grant(a, 'meal', 10);
+    B.grant(a, 'meal', 5);
+    B.grant(a, 'onsen');
+    B.grant(b, 'bless');
+    ok('a smaller second meal does not take green away', H.store.boons[a.name].meal === 10);
+    B.arm([a, b]);
+    ok('a battle beginning puts each kitten\'s boons ON her and empties the store',
+      a.homeBoon?.meal === 10 && a.homeBoon.onsen && b.homeBoon?.bless && Object.keys(H.store.boons).length === 0);
+    ok('the meal\'s green is a share of her ORDINARY bar, and only when the arena heals her',
+      B.mealHp(a, true) === 10 && B.mealHp(a, false) === 0 && B.mealHp(b, true) === 0);
+    const T = { state: 'live', fighting: true, t: 5, round: 1 };
+    game.tournament = T;
+    const k5 = B.dmgK(a);
+    T.t = 15.01;
+    const k15 = B.dmgK(a);
+    T.fighting = false; T.t = 1;
+    const kOff = B.dmgK(a);
+    T.fighting = true;
+    ok('the onsen doubles her blows for the first 15 seconds of a live round, and not after, and not for her sister',
+      k5 === 2 && k15 === 1 && kOff === 1 && B.dmgK(b) === 1, `${k5} ${k15} ${kOff}`);
+    const ringY = 10;
+    b.position.y = 0;
+    const w1 = B.wings(b, ringY);
+    const peak = b.position.y + (b.velocity.y ** 2) / (2 * 26 * BOON.wingGravity);
+    const w2 = B.wings(b, ringY);
+    T.round = 2;
+    const w3 = B.wings(b, ringY);
+    ok('the wings come once a ROUND, and only to the blessed',
+      w1 && !w2 && w3 && !B.wings(a, ringY) && b.wingT === BOON.wingT);
+    ok('...and lift her clear above the ring, from the floor below it', peak >= ringY + BOON.wingRise - 0.01, peak.toFixed(2));
+    B.disarm([a, b]);
+    ok('...and a finished battle takes every boon off again', !a.homeBoon && !b.homeBoon && !b.wingT);
+    game.tournament = null;
+    const tsrc = readFileSync(new URL('../../src/systems/tournament.js', import.meta.url), 'utf8');
+    const ringOut = tsrc.slice(tsrc.indexOf('const price = p.blastT > 0 ? 0 : damage;'));
+    ok('the tournament arms them at begin and disarms at finish',
+      /this\.round = 0;[\s\S]{0,300}boons\?\.arm\?\.\(this\.game\.players\)/.test(tsrc)
+      && /finish\(\) \{\s*this\.state = 'off';[\s\S]{0,200}boons\?\.disarm/.test(tsrc));
+    ok('...adds the meal\'s green on top of the feast\'s, on round one and after a loss',
+      /mealHp\?\.\(p, this\.round === 1 \|\| lost\)[\s\S]{0,120}setRoundBonus\?\.\(\(p\.bonusHp \?\? 0\) \+ meal\)/.test(tsrc));
+    ok('...and asks for the wings BEFORE a ring-out is charged, never instead of a free return',
+      ringOut.indexOf('boons?.wings?.(p') > 0 && ringOut.indexOf('boons?.wings?.(p') < ringOut.indexOf('p.hurt(')
+      && /price > 0 && this\.game\.housing\?\.boons\?\.wings/.test(ringOut));
+    const msrc = readFileSync(new URL('../../src/main.js', import.meta.url), 'utf8');
+    ok('the red is a multiplier on the damage number, after the gate',
+      /const dmg = base \* \(kind === 'tri' \? triDmgK\(attacker\) : 1\)\s*\* \(this\.housing\?\.boons\?\.dmgK\?\.\(attacker\) \?\? 1\)/.test(msrc));
+    ok('a kitten held by a home activity is handed a dead pad', /inspector\?\.busy\(i\)\s*\|\| this\.housing\?\.activities\?\.holds\(i\)\)/.test(msrc));
+  }
+
+  /* THINGS TO DO AT HOME. Every hold ends by itself, and pays what it says. */
+  {
+    const A = H.activities;
+    ok('the nap fades in, holds black, and fades out', napFade(0) === 0 && napFade(2) === 1 && Math.abs(napFade(3.5) - 0.5) < 1e-9 && napFade(4) === 0);
+    const ps = [0, 1, 2].map((i) => ({ ...fakePlayer(i), hp: 50, maxHp: 100, baseMaxHp: 100 }));
+    game.players = ps;
+    H.store.boons = {};
+    const isle = { spots: [{ act: 'sit', item: 'kotatsu' }], x: 0, z: 0 };
+    const home = { site: 'test', owners: ps.map((p) => p.name) };
+    A.start(ps[0], { act: 'nap', x: 0, z: 0, y: 0, isle, home });
+    ok('a nap holds her still and hides her under the covers', A.holds(0) && ps[0].homePose === 'hidden');
+    A.start(ps[1], { act: 'pray', x: 0, z: 0, y: 0, isle, home });
+    H.musicSite = 'test';
+    ok('praying starts the shrine\'s song, and it outranks the boombox', !!A.prayer && H.musicTrack() === 'shrinePrayer');
+    for (let k = 0; k < 60; k++) A.update(0.1, ps);
+    ok('...the nap ends by itself and she wakes fully rested', !A.holds(0) && ps[0].hp === 100 && !ps[0].homePose);
+    ok('...and the prayer ends by itself, BLESSED', !A.holds(1) && H.store.boons[ps[1].name]?.bless === true);
+    for (let k = 0; k < 400; k++) A.update(0.1, ps);
+    ok('...and the song gives way again once it is over', !A.prayer && H.musicTrack() !== 'shrinePrayer');
+    H.musicSite = null;
+    // the meal: two cook, both sit at the same kotatsu
+    const kitchen = { act: 'cook', x: 0, z: 0, y: 0, isle, home };
+    const table = { act: 'sit', item: 'kotatsu', x: 0, z: 0, y: 0, isle, home, room: 'r', k: 0 };
+    A.start(ps[0], kitchen);
+    A.start(ps[0], kitchen);
+    ok('one plate each — cooking a second says why it will not', /already carrying/.test(toasts.at(-1)?.[1] ?? ''));
+    A.start(ps[2], kitchen);
+    A.start(ps[0], table);
+    A.start(ps[2], table);
+    ok('two kittens with plates sit at one table, held', A.holds(0) && A.holds(2) && A.meals.size === 1);
+    for (let k = 0; k < 100; k++) A.update(0.1, ps);
+    ok('...pray ITADAKIMASU, eat, and each gets the two-diner green',
+      !A.holds(0) && !A.holds(2) && H.store.boons[ps[0].name]?.meal === 10 && H.store.boons[ps[2].name]?.meal === 10
+      && toasts.some(([, t]) => /ITADAKIMASU/.test(t)));
+    const noTable = { act: 'cook', x: 0, z: 0, y: 0, isle: { spots: [] }, home };
+    A.start(ps[1], noTable);
+    ok('a kitchen with no kotatsu says what to buy rather than doing nothing', /KOTATSU/.test(toasts.at(-1)?.[1] ?? ''));
+    game.tournament = { state: 'card' };
+    A.start(ps[1], { act: 'soak', x: 0, z: 0, y: 0, isle, home });
+    A.update(0.1, ps);
+    ok('a battle starting lets go of every kitten held at home', !A.holds(1) && !ps[1].homePose);
+    game.tournament = null;
+    game.players = [];
+    H.store.boons = {};
   }
 
   /* THE TROPHY SHELF counts arena wins by name, shared by a home's owners. */

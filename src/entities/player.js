@@ -10,6 +10,7 @@ import { Label } from '../core/label.js';
 import { SNAKE } from '../world/snakeway.js';
 import { SnakeCam } from '../systems/snakecam.js';
 import { BridgePeek, peekHold } from '../systems/dream/peek.js';
+import { BOON } from '../systems/housing/boons.js';
 
 /* ---------------------------------------------------------------------------
    A Katana Kitty and the camera that follows it.
@@ -1933,6 +1934,9 @@ export class Player {
     if (this.heldBy) return 0;
     if (this.warded) return WARD.gravity;
     if (this.triAt && !this.onGround) return CROSS.gravity;
+    /* THE SHRINE'S WINGS (housing/boons.js): light enough to FLY on jumps,
+       not so light she cannot come down onto the stone again. */
+    if (this.wingT > 0) return BOON.wingGravity;
     return 1;
   }
 
@@ -6032,7 +6036,7 @@ export class Player {
        this the eat reads as the game having frozen rather than as her eating.
        It is deliberately the same squash-and-stretch the jump and the landing
        use, one octave up: the vocabulary is already established. */
-    const chew = this.eatT > 0 ? Math.sin(this.idlePhase * 9) * 0.09 : 0;
+    const chew = (this.eatT > 0 || this.homePose === 'eat') ? Math.sin(this.idlePhase * 9) * 0.09 : 0;
 
     /* THE CROSS SLASH'S WIND-UP, AS A CROUCH. She plants for CROSS.wind before
        the first cut and there is no drawn pose for it — and "stood perfectly
@@ -6256,8 +6260,14 @@ export class Player {
        the two drawings is on screen. The colour and opacity are copied across
        so anything the material is doing — a hit flash landing on the frame the
        meal is interrupted — carries onto the pose instead of popping. */
+    /* `homePose` — HOUSING BORROWS THESE TWO DRAWINGS (housing/activities.js):
+       'eat' at the kotatsu and in the onsen, 'bless' at the shrine, and
+       'hidden' under a futon. It is a name, not a timer, and the activity
+       that set it is the one that clears it. PLACEHOLDER: the prayer has no
+       drawing of its own yet, so it wears the star's reach. */
+    if (this.homePose === 'hidden') this.sprite.mesh.visible = false;
     if (this.eatPose) {
-      const eating = this.eatT > 0;
+      const eating = this.eatT > 0 || this.homePose === 'eat';
       this.eatPose.visible = eating;
       if (eating) {
         this.sprite.mesh.visible = false;
@@ -6281,13 +6291,13 @@ export class Player {
        frame one would read as a sprite swap, which is exactly what it is and
        exactly what it must not look like. */
     if (this.blessPose) {
-      const blessed = this.aloftT > 0 && this.eatT <= 0
-        && this.onGround && !this.mount && !this.rideAlong && !this.ko;
+      const blessed = (this.aloftT > 0 || this.homePose === 'bless') && this.eatT <= 0
+        && this.homePose !== 'eat' && this.onGround && !this.mount && !this.rideAlong && !this.ko;
       this.blessPose.visible = blessed;
       if (blessed) {
         this.sprite.mesh.visible = false;
         const dur = this.aloftDur || 2;
-        const t = 1 - this.aloftT / dur;
+        const t = this.aloftT > 0 ? 1 - this.aloftT / dur : 0.5;
         const rise = Math.sin(Math.min(1, t / 0.22) * Math.PI * 0.5);
         const sway = Math.sin(t * 7.5) * 0.02 * rise;
         this.blessPose.mesh.scale.set(1 - rise * 0.04, 1 + rise * 0.07, 1);
