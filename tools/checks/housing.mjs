@@ -34,6 +34,7 @@ import { existsSync } from 'node:fs';
 import { mealPct, BOON } from '../../src/systems/housing/boons.js';
 import { DOOR_SWING } from '../../src/systems/housing/homebridge.js';
 import { napFade } from '../../src/systems/housing/activities.js';
+import { holoLayout, HOLO_GRAB } from '../../src/systems/housing/holodeck.js';
 
 const DAY = 24 * 3600 * 1000;
 
@@ -639,30 +640,107 @@ export async function housingChecks({ ok, world }) {
   const ksrc = readFileSync(new URL('../../src/systems/housing/kendo.js', import.meta.url), 'utf8');
   ok('...and the kendo strike never calls hurt', !/\.hurt\(/.test(ksrc));
 
-  /* THE HOLODECK'S WAY HOME, against a stand-in Dream Dojo that walks her
-     through the real phase names. Home only once she has BEEN in, and only
-     once the walk-out and the un-suit are done; a kitten who walked off
-     before the rise is left at the arcade, and a tournament forgets the way. */
+  /* THE HOLODECK, AT HOME. "Grab all 3 items to poof into their VR gear, then
+     walk to the tube and press interact ... if they leave their island, they
+     automatically remove the gear ... their equipment is automatically
+     respawned where they grabbed it from." Against a stand-in Dream Dojo that
+     records what it was asked to do; the crossing itself is the real
+     DreamDojo's, and its source is read below. */
   {
-    const fake = { realm: null, phase: null };
-    game.dream = { realmOf: () => fake.realm, stateOf: () => ({ phase: fake.phase }) };
-    const kit = { name: 'Ember', index: 0, position: new THREE.Vector3(500, 0, 500), velocity: new THREE.Vector3() };
-    const at = () => Math.round(kit.position.x);
-    const step = (realm, phase) => { fake.realm = realm; fake.phase = phase; H._holoHome([kit]); return at(); };
-    kit.homeReturn = { x: 7, y: 0, z: 9, seen: false };
-    const trail = [step(null, 'suit'), step(null, 'rise'), step('sim', 'sim'), step(null, 'walkout'), step(null, 'unsuit'), step(null, null)];
-    ok('the holodeck sends her home only after the sim AND the un-suit', trail.join() === '500,500,500,500,500,7' && !kit.homeReturn,
-      trail.join());
-    kit.position.set(500, 0, 500);
-    kit.homeReturn = { x: 7, y: 0, z: 9, seen: false };
-    step(null, null);
-    ok('...and leaves her at the arcade if she walked off before going in', at() === 500 && !kit.homeReturn);
-    kit.homeReturn = { x: 7, y: 0, z: 9, seen: true };
-    game.tournament = { active: true };
-    step(null, null);
-    ok('...and a tournament forgets the way home rather than taking it', at() === 500 && !kit.homeReturn);
-    game.tournament = null;
+    const fits = [];
+    for (const h of HOUSES) {
+      for (const room of h.rooms) {
+        const L = holoLayout(room);
+        const inside = [L.tube, ...L.racks].every((q) => Math.abs(q.x) <= room.w / 2 - 0.8 && Math.abs(q.z) <= room.d / 2 - 0.8);
+        let gap = Infinity;
+        for (let a = 0; a < L.racks.length; a++) {
+          for (let b = a + 1; b < L.racks.length; b++) gap = Math.min(gap, Math.hypot(L.racks[a].x - L.racks[b].x, L.racks[a].z - L.racks[b].z));
+        }
+        const toTube = Math.min(...L.racks.map((r) => Math.hypot(r.x - L.tube.x, r.z - L.tube.z)));
+        fits.push({ n: `${h.id}/${room.id}`, ok: inside && gap >= 1.9 && toTube > HOLO_GRAB + 2.2, gap, toTube });
+      }
+    }
+    ok('a holodeck fits in every room it can be bought for: inside the walls, racks apart, the tube clear of them',
+      fits.every((f) => f.ok), fits.filter((f) => !f.ok).map((f) => `${f.n} gap ${f.gap.toFixed(2)} tube ${f.toTube.toFixed(2)}`).join('; ') || `${fits.length} rooms`);
+
+    const I = H.isles[2];
+    const Hm = newHome(I.site.id, 'minka', ['Ember']);
+    Hm.rooms = { main: { type: 'holodeck', items: [] } };
+    I.setHome(Hm, null);
+    const R = I.holoRooms[0];
+    const tube = I.spots.find((s) => s.act === 'holodeck');
+    ok('a holodeck room has three racks and her tube, with a way out of it',
+      I.holoRooms.length === 1 && R.racks.length === 3 && !!tube && Math.abs(Math.hypot(tube.out.x, tube.out.z) - 1) < 1e-6);
+    const calls = [];
+    const st = [];
+    game.dream = {
+      stateOf: (i) => st[i] ?? null,
+      realmOf: (p) => (p.realm === 'sim' ? 'sim' : null),
+      suitAt: (p) => { calls.push('suit'); p.simLook = true; return true; },
+      unsuitAt: (p) => { calls.push('unsuit'); p.simLook = false; return true; },
+      enterFrom: (p, spot) => { calls.push(spot); return true; },
+    };
+    const kit = fakePlayer(0);
+    const sis = fakePlayer(1);
+    const put = (p, q) => p.position.set(q.x, q.y ?? tube.y, q.z);
+    const tick = (...ps) => H.holo.update(0.1, ps);
+    put(kit, tube);
+    let n0 = toasts.length;
+    H.interact(kit);
+    ok('her tube refuses her without the gear, and says what it wants',
+      calls.length === 0 && toasts.slice(n0).some(([i, t]) => i === 0 && /all three pieces of VR gear first \(0 of 3\)/.test(t)));
+    put(kit, R.racks[0]);
+    tick(kit);
+    ok('walking into a rack picks its piece up, and the rack is empty after',
+      H.holo.bagOf(0)?.items.size === 1 && !R.racks[0].mesh.visible && R.racks[1].mesh.visible);
+    put(sis, R.racks[0]);
+    n0 = toasts.length;
+    tick(kit, sis);
+    ok('...and a sister at the empty rack is told who has it',
+      !H.holo.bagOf(1) && toasts.slice(n0).some(([i, t]) => i === 1 && /Ember has the VR HEADSET/.test(t)));
+    put(sis, { x: I.x + 400, z: I.z });
+    put(kit, R.racks[1]);
+    tick(kit);
+    put(kit, R.racks[2]);
+    tick(kit);
+    ok('all three, and she poofs into the gear on the spot', calls.join() === 'suit' && kit.simLook && H.holo.bagOf(0)?.suited);
+    put(kit, tube);
+    ok('...her tube now offers the simulator', /INTO THE SIMULATOR/.test(H.prompt(kit, 'E') ?? ''));
+    H.interact(kit);
+    const sent = calls[1];
+    ok('...and ACTION there sends her in from HER tube, with the way out of it',
+      sent && Math.hypot(sent.x - tube.x, sent.z - tube.z) < 1e-6 && sent.out === tube.out);
+    st[0] = { phase: 'sim' };
+    kit.realm = 'sim';
+    tick(kit);
+    ok('...the racks stay empty while she is inside', R.racks.every((r) => !r.mesh.visible));
+    st[0] = { phase: null };
+    kit.realm = null;
+    kit.simLook = false;
+    tick(kit);
+    ok('back out and un-suited, every piece is back on its rack', !H.holo.bagOf(0) && R.racks.every((r) => r.mesh.visible));
+    for (const r of R.racks) { put(kit, r); tick(kit); }
+    put(kit, { x: I.x + I.radius + 30, z: I.z });
+    calls.length = 0;
+    tick(kit);
+    tick(kit);
+    ok('suited and off her island, the gear comes off and goes back',
+      calls.join() === 'unsuit' && !kit.simLook && !H.holo.bagOf(0) && R.racks.every((r) => r.mesh.visible));
+    put(kit, R.racks[0]);
+    tick(kit);
+    put(kit, { x: I.x + I.radius + 30, z: I.z });
+    tick(kit);
+    ok('...and so does a half-gathered set', !H.holo.bagOf(0) && R.racks[0].mesh.visible);
+    I.setHome(null);
     game.dream = null;
+    const dsrc = readFileSync(new URL('../../src/systems/dreamdojo.js', import.meta.url), 'utf8');
+    ok('the Dream Dojo rises, floats her puppet and lets her down in HER tube, and crosses through the arcade\'s',
+      /const tube = s\.home \?\? this\.layout\.tubes\[p\.index\]/.test(dsrc)
+      && /if \(s\.home\) this\._shift\(p, arc\.x - tube\.x/.test(dsrc)
+      && /this\._cross\(p, false, true\);\s*if \(s\.home\) this\._shift\(p, tube\.x - arc\.x/.test(dsrc)
+      && /const port = toSim\(arc\.x, arc\.z\)/.test(dsrc));
+    ok('...and the arcade does not take off gear she put on at home', /!s\?\.homeSuit && \(h > ARCADE\.r \+ 2/.test(dsrc));
+    ok('...and no longer stands her at the arcade to go in', !/enterFrom[\s\S]{0,900}p\.position\.set\(tube\.x, ARCADE\.y, tube\.z\)/.test(dsrc));
   }
 
   /* ROSHI'S VOICE: every clip is a render of a line he actually shows, and is

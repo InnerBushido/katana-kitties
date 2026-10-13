@@ -183,6 +183,27 @@ both doorways while they are shut. `doorSegments()` is what the push-back reads,
 so a shut door blocks at both ends. A visitor who presses ACTION is told whose
 gates they are (non-negotiable 6), and nothing happens.
 
+## The holodeck
+
+`holodeck.js` handles the room. A holodeck room has three racks (the arcade's
+own `gearModel`s, at 0.7 scale) and her tube, which `holoLayout` places along
+the room's long axis. She walks into a rack to pick up its piece. With all three
+she poofs into the suit using the arcade's own poof (`DreamDojo.suitAt`).
+ACTION at the tube calls `enterFrom` with `s.home`. The rise, the puppet, the
+descent and the walk out all happen in HER tube. Only the crossing goes through
+the arcade's tube, for one frame, because the sim's ports are the arcade's
+tubes moved by `SIM`.
+
+Before this, the holodeck stood her at the arcade, ran the arcade's sequence,
+and then teleported her home afterwards (`_holoHome`, now gone).
+
+The racks belong to the room, not to any one kitten. A piece that has been
+picked up stays off its rack until whoever has it takes the gear off. That
+happens when she comes back out of the sim, leaves the island (`unsuitAt`), or
+a scene or the arena pulls her out. A sister who walks up to an empty rack is
+told who has the piece. The arcade's own "gear off away from the pad" rule
+skips her while `s.homeSuit` is set.
+
 ## Placeholders that are done, and what each still falls back to
 
 These were placeholders and are now generated (Oct 2026: about 12 Higgsfield

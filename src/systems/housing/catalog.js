@@ -124,7 +124,7 @@ export const ROOM_TYPES = [
   },
   {
     id: 'holodeck', name: 'HOLODECK', mult: 6,
-    blurb: 'Gear up in the pod and step straight into the simulator. Come out and you are home again.',
+    blurb: 'Three racks of VR gear and your own tube. Put on all three, step in, and you are in the simulator. Come out and you are home again.',
   },
 ];
 export const ROOM_TYPE_BY_ID = Object.fromEntries(ROOM_TYPES.map((r) => [r.id, r]));

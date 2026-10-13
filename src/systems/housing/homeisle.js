@@ -7,6 +7,8 @@ import { HOUSE_BY_ID, ITEM_BY_ID } from './catalog.js';
 import { placeModel, drawItem } from './models.js';
 import { wallSlots, yardR } from './editor.js';
 import { buildTreehouse } from './treehouse.js';
+import { holoLayout, HOLO_GEAR_SCALE } from './holodeck.js';
+import { GEAR_ITEMS, GEAR_SCALE, GEAR_LIFT, gearModel } from '../dream/gear.js';
 
 /* ---------------------------------------------------------------------------
    One sky site: its island, the house on it, the yard, the doors and the
@@ -91,6 +93,8 @@ export class HomeIsle {
     this.obstacles = [];
     /** What INTERACT means where: rebuilt with the house and the yard. */
     this.spots = [];
+    /** The holodeck rooms' racks (`holodeck.js` reads them). */
+    this.holoRooms = [];
     /** Outdoor things by place id ('o' + uid): world centre, ground, radius. */
     this.places = new Map();
     /** Who has won how many arena battles — Housing hands this in, for the
@@ -328,6 +332,7 @@ export class HomeIsle {
     this.itemGroup.clear();
     this.obstacles = [];
     this.spots = [];
+    this.holoRooms = [];
     this.places = new Map();
     /* The house's colliders and decks, then whatever the yard adds (the
        treehouse is a level of its own). Two lists joined, so moving a tree
@@ -574,16 +579,55 @@ export class HomeIsle {
       const rackW = this.local(room.cx - room.w / 2 + 1.6, room.cz - room.d / 2 + 1.4);
       this.spots.push({ x: rackW.x, z: rackW.z, y, r: 2.4, act: 'kendo', room: room.id });
     } else if (type === 'holodeck') {
-      const floor = new THREE.CylinderGeometry(Math.min(room.w, room.d) / 2 - 1, Math.min(room.w, room.d) / 2 - 1, 0.1, 6);
+      /* HER TUBE AND THE THREE RACKS (holodeck.js): the arcade's, smaller.
+         The floor is a dark plate the size of the room; the tube is the
+         arcade's glass, with a base and a cap; each rack is a plinth with
+         its piece floating over it and a ring on the floor while it is there. */
+      const L = holoLayout(room);
+      const floor = new THREE.BoxGeometry(room.w - 1, 0.08, room.d - 1);
       paint(floor, 0x1a2a3a);
       floor.translate(0, 0.1, 0);
-      const pod = new THREE.CylinderGeometry(1.1, 1.3, 3.2, 12, 1, true);
+      const hard = [floor];
+      const base = new THREE.CylinderGeometry(1.45, 1.55, 0.3, 16);
+      paint(base, 0x2f3446);
+      base.translate(L.tube.x, 0.25, L.tube.z);
+      const cap = new THREE.CylinderGeometry(1.45, 1.35, 0.3, 16);
+      paint(cap, 0x2f3446);
+      cap.translate(L.tube.x, 3.75, L.tube.z);
+      hard.push(base, cap);
+      const pod = new THREE.CylinderGeometry(1.25, 1.25, 3.3, 16, 1, true);
       paint(pod, 0x7fe6ff);
-      pod.translate(0, 1.7, 0);
-      g.add(new THREE.Mesh(floor, toonVertexMat()));
-      const podM = new THREE.Mesh(pod, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false }));
-      g.add(podM);
-      this.spots.push({ x: c.x, z: c.z, y, r: 2.4, act: 'holodeck', room: room.id });
+      pod.translate(L.tube.x, 2.05, L.tube.z);
+      const R = { room: room.id, racks: [] };
+      for (const r of L.racks) {
+        const pl = new THREE.CylinderGeometry(0.7, 0.8, 0.45, 14);
+        paint(pl, 0x2f3446);
+        pl.translate(r.x, 0.32, r.z);
+        hard.push(pl);
+      }
+      g.add(new THREE.Mesh(mergeParts(hard), toonVertexMat()));
+      g.add(new THREE.Mesh(pod, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.4, side: THREE.DoubleSide, depthWrite: false })));
+      for (const [k, r] of L.racks.entries()) {
+        const item = GEAR_ITEMS.find((x) => x.id === r.id);
+        const m = gearModel(r.id, item.colour);
+        m.scale.setScalar((GEAR_SCALE[r.id] ?? 1) * HOLO_GEAR_SCALE);
+        const lift = 0.55 + 0.6 * (GEAR_LIFT[r.id] ?? 1.6) * HOLO_GEAR_SCALE;
+        m.position.set(r.x, lift, r.z);
+        g.add(m);
+        const ring = new THREE.Mesh(new THREE.RingGeometry(0.85, 1.0, 32),
+          new THREE.MeshBasicMaterial({ color: item.colour, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.set(r.x, 0.16, r.z);
+        g.add(ring);
+        const w = this.local(room.cx + r.x, room.cz + r.z);
+        // No collider: walking INTO the rack is how she picks the piece up.
+        R.racks.push({ id: r.id, x: w.x, z: w.z, y, mesh: m, ring, baseY: lift, yaw: 0, phase: k * 2.1 });
+      }
+      this.holoRooms.push(R);
+      const t = this.local(room.cx + L.tube.x, room.cz + L.tube.z);
+      // The way out of the tube, in the world: the room's own axis, turned like the house.
+      const o = this.local(room.cx + L.tube.x + L.out.x, room.cz + L.tube.z + L.out.z);
+      this.spots.push({ x: t.x, z: t.z, y, r: 2.2, act: 'holodeck', room: room.id, out: { x: o.x - t.x, z: o.z - t.z } });
     }
     return g;
   }

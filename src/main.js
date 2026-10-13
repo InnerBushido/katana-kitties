@@ -8047,6 +8047,7 @@ class Game {
        simulator leaves from her TUBE — her row was already written there by
        `castRow`, via `dreamAnchor` — and takes her puppet with her. */
     if (this.dream?.stateOf(p.index)) this.dream.drop(p.index);
+    this.housing?.holo?.drop?.(p.index);
     this.scene.remove(p.group);
     if (p.orbRoot) this.scene.remove(p.orbRoot);
   }

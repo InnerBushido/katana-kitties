@@ -1506,13 +1506,20 @@ export class DreamDojo {
   }
 
   /**
-   * IN FROM HOME — her house's holodeck (systems/housing). The same way in as
-   * her own tube, and nothing cheaper: she is stood at tube N, suited the
-   * usual way if she is not already (the poof, then the rise — a kitten who
-   * has never met Lionheart is handed the gear, since the holodeck IS the
-   * gear), and the sim takes her from there. `homeReturn` is what
-   * Housing.update reads to put her back in her house once she has been in
-   * and come out; nothing in here knows a house exists.
+   * IN FROM HOME — her house's holodeck (systems/housing/holodeck.js).
+   * Richard: "it should rather immerse them straight into the simulator,
+   * bypassing the Dream Dojo island altogether." It used to stand her at her
+   * arcade tube and run the arcade's sequence, so a kitten who pressed her
+   * own tube at home watched the Dream Dojo island go by on the way in and
+   * walked out onto it on the way back. Now the tube is HER house's (`s.home`):
+   * she rises in it, her puppet floats in it while she is inside, and she
+   * comes down and walks out of it. Only the crossing goes through the
+   * arcade's tube, for a single frame, because the sim's ports are the arcade's
+   * tubes moved by SIM, and the sim should not have a second set.
+   *
+   * The gear is the holodeck's to hand out (`suitAt`, after the three racks),
+   * so this refuses a kitten who has not got it on, and says so.
+   * `spot.out` is the way she walks out, a unit vector on the floor.
    */
   enterFrom(p, spot) {
     if (!this.built || !this.layout || !p) return false;
@@ -1522,13 +1529,41 @@ export class DreamDojo {
       return true;
     }
     if (this.st[p.index]?.phase || this.realmOf(p) === 'sim') return false;
-    const tube = this.layout.tubes[p.index];
-    p.position.set(tube.x, ARCADE.y, tube.z);
+    if (!p.simLook) return false;
     p.velocity?.set?.(0, 0, 0);
-    p.homeReturn = { x: spot.x, y: spot.y, z: spot.z, seen: false };
     p.dreamGeared = true;
-    this._begin(p, p.simLook ? 'rise' : 'suit');
+    const s = (this.st[p.index] ??= { phase: null, t: 0 });
+    s.home = { x: spot.x, y: spot.y, z: spot.z, out: spot.out ?? { x: 0, z: 1 } };
+    this._begin(p, 'rise');
     return true;
+  }
+
+  /** The holodeck's poof INTO the gear, on the spot — the arcade's suit-up
+   *  without Lionheart's send-off or the walk to a tube after it. */
+  suitAt(p) {
+    if (!this.built || !p || p.simLook) return false;
+    if (this._refusal(p) || this.st[p.index]?.phase || this.realmOf(p) === 'sim') return false;
+    this._begin(p, 'suit');
+    this.st[p.index].stay = true;
+    this.st[p.index].homeSuit = true;
+    return true;
+  }
+
+  /** ...and back out of it: she left her island in it. */
+  unsuitAt(p) {
+    if (!this.built || !p?.simLook) return false;
+    if (this.st[p.index]?.phase || this.realmOf(p) === 'sim') return false;
+    this._begin(p, 'unsuit');
+    return true;
+  }
+
+  /** Move her and her camera by a fixed offset, the way `_cross` does. */
+  _shift(p, dx, dy, dz) {
+    p.position.x += dx; p.position.y += dy; p.position.z += dz;
+    p.camTarget.x += dx; p.camTarget.y += dy; p.camTarget.z += dz;
+    p.camera.position.x += dx; p.camera.position.y += dy; p.camera.position.z += dz;
+    if (p.pinnedAt) { p.pinnedAt.x += dx; p.pinnedAt.y += dy; p.pinnedAt.z += dz; }
+    p.group.position.copy(p.position);
   }
 
   /* ----------------------------- the sequence ----------------------------- */
@@ -1573,7 +1608,9 @@ export class DreamDojo {
       const dx = ARCADE.x - tube.x;
       const dz = ARCADE.z - tube.z;
       const d = Math.hypot(dx, dz) || 1;
-      s.outTo = new THREE.Vector3(tube.x + (dx / d) * 3.2, ARCADE.y, tube.z + (dz / d) * 3.2);
+      s.outTo = s.home
+        ? new THREE.Vector3(s.home.x + s.home.out.x * 3.2, s.home.y, s.home.z + s.home.out.z * 3.2)
+        : new THREE.Vector3(tube.x + (dx / d) * 3.2, ARCADE.y, tube.z + (dz / d) * 3.2);
     }
     if (phase === 'derez') {
       const port = toSim(tube.x, tube.z);
@@ -2029,14 +2066,19 @@ export class DreamDojo {
          through survives it. A half-gathered set is gathered again from the
          start, which costs three short walks and can never lose anything. */
       if (p.simLook && this.realmOf(p) !== 'sim') p.setSimLook?.(false);
-      if (s) s.gather = null;
+      if (s) { s.gather = null; s.homeSuit = false; }
       if (!s?.phase) continue;
       if (this.realmOf(p) === 'sim') {
         const tube = this.layout.tubes[p.index];
         p.position.set(tube.x + SIM.dx, ARCADE.y, tube.z + SIM.dz);
         this._cross(p, false);
+        // In from her holodeck: out at her own house, not at the arcade.
+        if (s.home) this._shift(p, s.home.x - tube.x, s.home.y - ARCADE.y, s.home.z - tube.z);
         p.camTarget.copy(p.position);
       }
+      s.home = null;
+      s.stay = false;
+      s.homeSuit = false;
       p.pinnedAt = null;
       this._hidePuppet(p);
       this._rezOff(p);
@@ -2089,9 +2131,16 @@ export class DreamDojo {
       const s = this.st[p.index];
       if (!s?.phase) continue;
       s.t += dt;
-      const tube = this.layout.tubes[p.index];
+      /* HER HOME TUBE, when she came in from her holodeck (`enterFrom`): the
+         rise, the descent, the walk out and the puppet floating while she is
+         inside all happen THERE, and only the crossing itself is lifted to the
+         arcade's tube for the one frame it takes — so the sim's ports, which
+         are the arcade's tubes moved by SIM, are still where she lands. */
+      const tube = s.home ?? this.layout.tubes[p.index];
+      const baseY = s.home ? s.home.y : ARCADE.y;
+      const arc = this.layout.tubes[p.index];
       s.anchor ??= new THREE.Vector3();
-      s.anchor.set(tube.x, ARCADE.y + FLOAT_H, tube.z);
+      s.anchor.set(tube.x, baseY + FLOAT_H, tube.z);
       switch (s.phase) {
         case 'walk': {
           /* THE WALK IS HER OWN LEGS on a pad that points at her tube. A
@@ -2141,7 +2190,7 @@ export class DreamDojo {
           // Drawn into the middle of the tube as she rises.
           p.pinnedAt.set(
             THREE.MathUtils.lerp(s.from.x, tube.x, Math.min(1, s.t / 0.5)),
-            ARCADE.y + FLOAT_H * k,
+            baseY + FLOAT_H * k,
             THREE.MathUtils.lerp(s.from.z, tube.z, Math.min(1, s.t / 0.5))
           );
           p.facing = THREE.MathUtils.lerp(p.facing, Math.atan2(-this.layout.u.x, -this.layout.u.z), Math.min(1, dt * 4));
@@ -2159,6 +2208,7 @@ export class DreamDojo {
             /* THE CROSSING, at the top of the rain. Her puppet takes her place
                in the tube on this same frame, so the real world never shows an
                empty tube with a kitten-shaped gap in the story. */
+            if (s.home) this._shift(p, arc.x - tube.x, ARCADE.y - baseY, arc.z - tube.z);
             this._showPuppet(p);
             this._cross(p, true);
             s.phase = 'rez';
@@ -2175,7 +2225,7 @@ export class DreamDojo {
         case 'rez': {
           s.fx = 1 - ease(Math.min(1, s.t / 0.8));
           // Float down onto the ring as she resolves.
-          const port = toSim(tube.x, tube.z);
+          const port = toSim(arc.x, arc.z);
           p.pinnedAt.set(port.x, ARCADE.y + FLOAT_H * (1 - ease(Math.min(1, s.t / SEQ.rez))), port.z);
           if (s.t >= SEQ.rez) {
             p.pinnedAt = null;
@@ -2197,6 +2247,7 @@ export class DreamDojo {
           if (s.t >= SEQ.derez) {
             p.position.copy(s.to);
             this._cross(p, false, true);
+            if (s.home) this._shift(p, tube.x - arc.x, baseY - ARCADE.y, tube.z - arc.z);
             p.pinnedAt = p.position.clone();
             this._hidePuppet(p);
             s.phase = 'descend';
@@ -2207,7 +2258,7 @@ export class DreamDojo {
         }
         case 'descend': {
           const k = ease(Math.min(1, s.t / SEQ.descend));
-          p.pinnedAt.set(tube.x, ARCADE.y + FLOAT_H * (1 - k), tube.z);
+          p.pinnedAt.set(tube.x, baseY + FLOAT_H * (1 - k), tube.z);
           s.fx = 1 - ease(Math.min(1, s.t / 0.7));
           if (s.t >= SEQ.descend) {
             p.pinnedAt = null;
@@ -2239,11 +2290,17 @@ export class DreamDojo {
           }
           if (s.t >= (s.phase === 'suit' ? SEQ.suit : SEQ.unsuit)) {
             p.pinnedAt = null;
-            if (s.phase === 'suit') {
+            if (s.phase === 'suit' && s.stay) {
+              // Suited at home: no Lionheart, no walk — her tube is hers to find.
+              s.stay = false;
+              s.phase = null;
+            } else if (s.phase === 'suit') {
               this.say(LION_LINES.send.replace('%n', p.name).replace('%t', String(p.index + 1)), 5);
               this._begin(p, 'walk');
             } else {
               s.phase = null;
+              s.home = null;
+              s.homeSuit = false;
             }
           }
           break;
@@ -3220,7 +3277,8 @@ export class DreamDojo {
           }
         }
       }
-      if (p.simLook && !s?.phase && (h > ARCADE.r + 2 || g.tournament?.active)) {
+      // Suited at her holodeck: the holodeck takes it off (housing/holodeck.js).
+      if (p.simLook && !s?.phase && !s?.homeSuit && (h > ARCADE.r + 2 || g.tournament?.active)) {
         this.poof(p, 'small');
         p.setSimLook?.(false);
       }

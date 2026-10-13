@@ -17,6 +17,7 @@ import { HousingCards } from './cards.js';
 import { BuildMode } from './build.js';
 import { HomeBoons } from './boons.js';
 import { HomeActivities } from './activities.js';
+import { HoloDeck } from './holodeck.js';
 
 /** Roshi's tour: turn to the next island, then fly there; and the map's
  *  zoom-out. Seconds. */
@@ -99,6 +100,8 @@ export class Housing {
     /** What home is worth in the next battle, and the things that earn it. */
     this.boons = new HomeBoons(this);
     this.activities = new HomeActivities(this);
+    /** The holodeck's racks and her tube (`holodeck.js`). */
+    this.holo = new HoloDeck(this);
     this.built = false;
   }
 
@@ -469,7 +472,7 @@ export class Housing {
       B?.update?.(dt, this.time);
     }
     this._mounts(players);
-    this._holoHome(players);
+    this.holo.update(dt, players);
     this._payBank(players);
     this._trackMusic(players);
     this.roshi?.update(dt, players);
@@ -903,7 +906,7 @@ export class Housing {
       harvest: 'HARVEST BAMBOO',
       animals: 'THE ANIMALS',
       kendo: 'KENDO GEAR',
-      holodeck: 'HOLODECK',
+      holodeck: p.simLook ? 'INTO THE SIMULATOR' : 'HOLODECK',
       chest: 'STORAGE CHEST',
       nap: 'NAP',
       cook: 'COOK',
@@ -971,7 +974,7 @@ export class Housing {
         this.kendo.toggleGear(p);
         return true;
       case 'holodeck':
-        this.holodeck(p, s);
+        this.holo.enter(p, s);
         return true;
       case 'chest':
         if (s.home.owners.includes(p.style.name)) C.open(p.index, 'home', { site: s.home.site, state: 'chest' });
@@ -993,48 +996,6 @@ export class Housing {
     };
     G.toast(lines[s.act] ?? 'Hmm.', p.index);
     G.audio?.play?.('menu');
-  }
-
-  /**
-   * THE HOLODECK: gear up and go — the Dream Dojo's own way in, from home.
-   * "Enters the simulator where players normally spawn, and returns to her
-   * house on exit." The Dream Dojo owns the simulator; this asks it to take
-   * her from here, and remembers where to put her back.
-   */
-  holodeck(p, s) {
-    const D = this.game.dream;
-    if (!D?.enterFrom) {
-      this.game.toast('The holodeck is warming up… (needs the Dream Dojo built — PLACEHOLDER)', p.index);
-      return;
-    }
-    const ok = D.enterFrom(p, { x: s.x, y: s.y, z: s.z });
-    if (!ok) this.game.toast('The holodeck will not start right now.', p.index);
-  }
-
-  /**
-   * BACK HOME FROM THE HOLODECK: once she has been in the sim (`seen`) and
-   * the Dream Dojo has finished walking her out and un-suiting her (no
-   * phase), she is stood back in her holodeck room. A tournament or a story
-   * scene that pulled her out wins: the arena wants her where it put her,
-   * so the way home is forgotten rather than taken mid-scene.
-   */
-  _holoHome(players) {
-    const D = this.game.dream;
-    for (const p of players) {
-      const R = p?.homeReturn;
-      if (!R) continue;
-      if (this.game.tournament?.active) { p.homeReturn = null; continue; }
-      if (D?.realmOf?.(p) === 'sim') { R.seen = true; continue; }
-      const s = D?.stateOf?.(p.index);
-      if (s?.phase) continue;
-      if (this.game._sceneActive?.()) continue;
-      p.homeReturn = null;
-      // Never in: she walked off before the rise. Leave her at the arcade.
-      if (!R.seen) continue;
-      p.position.set(R.x, R.y + 0.2, R.z);
-      p.velocity?.set?.(0, 0, 0);
-      this.game.toast(`${p.name} — back home from the holodeck.`, p.index);
-    }
   }
 
   /** Is a seat's pad being driven by housing outside of a card? */
