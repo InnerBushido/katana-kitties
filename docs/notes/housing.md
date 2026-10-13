@@ -146,6 +146,11 @@ Each one degrades: delete the file and the game draws the stand-in.
 
 | what | the stand-in | to finish it |
 | --- | --- | --- |
+| **Kendo: kneeling, reaching for the shinai, the bow** | the guard drawing squashed to 66% (seiza) or 80% (reaching), and tipped 0.42 rad toward her opponent for the rei (`Player`, the `kendoStance` block) | three drawings per kitten sheet — seiza, the reach, the rei |
+| **Each kitten's kiai** | one synthesised shout (`audio.js 'kiai'`), pitched per kitten by `KIAI_PITCH` | four recorded kiai, a voice each ([voices.md](voices.md)) |
+| **The kendo scoreboard** | ONE `#kendo-board` at the top of the whole screen, for the first match on | per pane, if two matches in two houses ever run at once |
+| **Polyfork knobs** | ITEM CUSTOMIZATION offers size and the model's colourways only | its geometry knobs (`remixable`), with the same "never through the roof" cap |
+| **Set plates** | plates on a kotatsu are not saved: a reload clears the table | a field on the room row, if it matters to anyone |
 | **The storage chest** | a card that says so | a real inventory |
 | **The prayer's drawing** | the star's reach pose (`homePose = 'bless'`) at the shrine AND for ITADAKIMASU | a prayer sheet: four directions × 3–4 frames, all four kittens |
 | **Bathing suits** | a puff of steam, and the eating crouch in the water | an onsen pose per kitten |
@@ -164,8 +169,9 @@ Each one degrades: delete the file and the game draws the stand-in.
 name in `store.boons`, moved onto the kittens at `Tournament.begin`, gone at
 `finish` — **the next battle only**. Nothing here is a second combat path:
 
-- **meal** (kitchen → plate overhead → kotatsu, everybody who brings one eats
-  together): +5/10/15% of her ORDINARY bar as green, by diners, on round one
+- **meal** (kitchen → plate overhead → SET THE TABLE at the kotatsu, one plate
+  per diner → ACTION with no plate asks "eat with everyone?", NO first → every
+  kitten round the table sits, ITADAKIMASU, eats): +5/10/15% of her ORDINARY bar as green, by diners, on round one
   and after every round she LOST — the two moments `_nextRound` already heals
   her. Added to the feast's banked green with `setRoundBonus`, so it stacks.
 - **onsen**: ×2 on `strikePlayers`' damage number for the first 15s of each
@@ -240,6 +246,64 @@ happens when she comes back out of the sim, leaves the island (`unsuitAt`), or
 a scene or the arena pulls her out. A sister who walks up to an empty rack is
 told who has the piece. The arcade's own "gear off away from the pad" rule
 skips her while `s.homeSuit` is set.
+
+## A kendo match
+
+Two GEARED kittens on one taped square for `BOUT.gather` (1.2s) start a match.
+Richard's spec is quoted over `BOUT` in `kendo.js`, and the beats are all
+there in seconds:
+
+- **The ceremony.** Both kneel on marks along the room's long axis, facing.
+  Then, one at a time: reach for the shinai, stand, KIAI (her own pitch,
+  her spirit animal's hex). Then both bow. HAJIME. Through all of it her pad
+  is DEAD (`Housing.kendoHolds` in the pad gate) and `pinnedAt` holds her on
+  her mark. A swing in the ceremony is answered and does nothing.
+- **The rounds.** Two IPPONS take a round. The round is `roundT` (60s) and
+  the one ahead at time takes it; level is a draw and nobody's round. Best of
+  three. Every ippon is YAME: both are held where they stand, then HAJIME.
+  The shove from an ippon is along the floor (vy 2, not 5), so nobody leaves
+  the square for being hit.
+- **Jogai.** Off the square in a live round is a warning for `jogai` (1.5s),
+  then the match is off and says why. So is a kitten leaving or hanging up the
+  gear.
+- **No kotodama.** `p.power = aggregate([])` for the match. Her orbs stay on
+  her, and `_end` gives them back from `powerOrbs`.
+- **JUMP is a dodge** (`KENDO_DODGE` in player.js, which is why it is there
+  and not here: the two files would import each other). It fires on HELD jump
+  plus a direction, once per hold. A press with no direction is nothing, and
+  a thumb drifting a frame later is not a dodge either. `kendoDodgeT` is the
+  immunity, read by `sparStrike`.
+- **The camera** (`shotFor`) is per PANE, through the same `groupShot` the
+  front door uses, so the shared rig and every stick in it turn together. It
+  is closer than the house's shot and square to the line between the marks.
+  **The walls** of that house are cut to `HALF_WALL` (2.1) for any pane
+  watching (`halfWallFor` → `HomeIsle.halfWalls`, a clipping plane on the wall
+  material). That is why the renderer has `localClippingEnabled`.
+- **The drawings are 25% bigger** (`KENDO_SCALE`), and `footX` keeps her feet
+  still through a mirror. The kiai drawing's feet measure 0.17 of its width
+  right of centre, so every turn, and every swing (guard to kiai and back),
+  slid her sideways. The guard's are centred (0.006).
+
+## The house, Oct 2026
+
+- **Box stairs** (hako-kaidan) with a stairwell cut out of the floor above,
+  railed on three sides. Before this, a kitten upstairs could not get down: the
+  floor deck covered the top of the stairs and `heightAt` takes the highest
+  surface. `ceilingAt` is null over a well, and nothing can be placed on the
+  stairs or over the hole (`stairBlocks`).
+- **Ceilings** stop a jump: `HEAD_H` (2.4) of her is solid against the slab.
+- **The eave band** (`eaveBand`) runs from each eave to the next storey's foot.
+  The pyramid skirt it replaces went through the room above. world-check casts
+  down from just above every storey and fails on any tile below the ceiling.
+- **The front door** frames a group in front of it (`doorShotFor`) unless one
+  of them is inside.
+- **ITEM CUSTOMIZATION**: size from half to half again (`LOOK_MUL`), capped by
+  what `fitTo` measures for the room. BIGGER greys out at the cap and says why.
+  The look is a Polyfork model's colourways or a drawn thing's lacquer. It is
+  saved on the row as `look`. Wall things and the yard's BUILT things refuse,
+  and say so.
+- **Her holodeck tube** is the arcade's glass shader, drawn after her, and she
+  floats `HOME_FLOAT_H` (0.55) so her ears stay under the ceiling.
 
 ## Playing with the animals
 

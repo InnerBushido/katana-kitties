@@ -484,6 +484,10 @@ class Game {
       powerPreference: 'high-performance',
     });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    /* For a house's walls cut to half height while a kendo match is watched
+       (housing/homeisle.js `halfWalls`). Costs nothing for a material with
+       no planes, which is every other one. */
+    this.renderer.localClippingEnabled = true;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.08;
     this.renderer.shadowMap.enabled = true;
@@ -10487,7 +10491,7 @@ class Game {
          that is the whole point of the thing. */
       let pad = (frozen || picking || this.leaguePicking || this.teamPicking
         || this.menagerie?.eating(i) || this.inspector?.busy(i)
-        || this.housing?.activities?.holds(i) || this.housing?.watching(i))
+        || this.housing?.activities?.holds(i) || this.housing?.watching(i) || this.housing?.kendoHolds?.(i))
         ? DEAD_PAD : this.input.players[i];
       /* THE DREAM DOJO MAY DRIVE HER — walking her to her tube, holding her
          still in it — and hands a kitten in the simulator the simulator to
@@ -13287,13 +13291,14 @@ class Game {
         wantDist = THREE.MathUtils.lerp(wantDist, course.dist * widen, rig.courseT);
       }
 
-      /* A FRONT DOOR, for a group in front of one — the trap again: the
+      /* A FRONT DOOR, or a KENDO MATCH, for a group at one (housing.js
+         `groupShot`) — the trap again: the
          per-player door shot (housing.js `_doorShot`) turns every member's
          STICK, so this, the camera that draws them, has to turn with it, at
          the same rate (`Player._updateCamera` eases focusT by dt * 2.2) or the
          two would part company for the second it takes. Nobody near a house:
          exactly 0, and nothing here moves. */
-      const door = this.housing?.doorShotFor?.(members) ?? null;
+      const door = this.housing?.groupShot?.(members) ?? null;
       rig.doorT = (rig.doorT ?? 0) + ((door ? 1 : 0) - (rig.doorT ?? 0)) * Math.min(1, dt * 2.2);
       if (rig.doorT < 0.001) rig.doorT = 0;
       if (door) rig.doorShot = { yaw: door.yaw, pitch: door.pitch, centre: door.centre.clone(), dist: door.dist };

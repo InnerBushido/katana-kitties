@@ -409,7 +409,7 @@ export class Billboard extends THREE.Object3D {
     super();
     const {
       cols = 4, rows = 1, width = 1.6, height = 1.6,
-      artFacesRight = true, mirror = true, footOffset = 0,
+      artFacesRight = true, mirror = true, footOffset = 0, footX = 0,
       dirSense = DIR_SENSE, rowSense = null,
     } = opts;
 
@@ -457,7 +457,20 @@ export class Billboard extends THREE.Object3D {
     // transparent padding below the art, so without this the character floats
     // by exactly that margin.
     const geo = footQuad(width, height, footOffset);
-    this.mesh = new THREE.Mesh(geo, this.mat);
+    /* AND ON THE FEET ACROSS, when the drawing's feet are not in the middle
+       of its cell (`footX`, world units right of the quad's centre, as
+       drawn). A mirror flips the UVs and not the quad, so feet drawn left of
+       centre land RIGHT of centre in the mirror image and she slides sideways
+       every time she turns — Richard, of the kendo guard, whose shinai pulls
+       the drawing's box off her body: "moving up/down, the players position is
+       jumping left/right ... the feet should stay in the same spot". Two
+       quads, one per side, swapped in `_setCell`. Zero for every sheet that
+       does not pass it, and then there is one quad and nothing changes. */
+    if (footX) {
+      this._footGeo = [geo.clone().translate(-footX, 0, 0), geo.clone().translate(footX, 0, 0)];
+      geo.dispose();
+    }
+    this.mesh = new THREE.Mesh(this._footGeo?.[0] ?? geo, this.mat);
     this.mesh.castShadow = false;
     this.add(this.mesh);
 
@@ -585,6 +598,10 @@ export class Billboard extends THREE.Object3D {
     const w = 1 / this.cols;
     const h = 1 / this.rows;
 
+    if (this._footGeo && this.mesh.geometry !== this._footGeo[flip ? 1 : 0]
+      && this._footGeo.includes(this.mesh.geometry)) {
+      this.mesh.geometry = this._footGeo[flip ? 1 : 0];
+    }
     if (flip) {
       this.tex.repeat.x = -(w - iu * 2);
       this.tex.offset.x = (c + 1) * w - iu;

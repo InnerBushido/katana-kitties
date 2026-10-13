@@ -3514,8 +3514,30 @@ console.log('\n--- the panda in the ring ---');
       const kiai = ['ember', 'frost'].map((s) => ink(`kittens/${s}/kiai`));
       ok('剣 both kendo guards and both kiai hold the shinai out to the RIGHT, which is what the Billboard is told',
         guard.every((r) => r.reach > 0.1) && kiai.every((r) => r.reach > 0.05)
-        && /setKendoArt\(art\) \{[\s\S]{0,500}mirror: true,\s*artFacesRight: true,/.test(psrc),
+        && /setKendoArt\(art\) \{[\s\S]{0,900}mirror: true,\s*artFacesRight: true,/.test(psrc),
         [...guard, ...kiai].map((r) => `${r.f} ${r.reach.toFixed(3)}`).join(' '));
+      /* HER FEET, which a mirror moves. Richard: "moving up/down, the players
+         position is jumping left/right, based on the sprite, the feet should
+         stay in the same spot." The centre of the lowest 5% of ink against
+         the cell's middle, as `feetX` (core/spritesheet.js) measures it live:
+         0.006 / -0.012 for the guards, 0.173 / 0.154 for the kiai — so every
+         turn in the kiai slid her a third of her width, and every swing
+         (guard to kiai and back) slid her half that again. The kiai has to
+         measure as off-centre, or the fix is answering nothing, and the
+         Billboard has to be handed the measurement. */
+      const feet = (f) => {
+        const { w, h, d } = readPNG(new URL(`../public/sprites/${f}.png`, import.meta.url));
+        const at = (x, y) => d[(y * w + x) * 4 + 3] > 128;
+        let bottom = -1;
+        for (let y = h - 1; y >= 0 && bottom < 0; y--) for (let x = 0; x < w; x++) if (at(x, y)) { bottom = y; break; }
+        const band = Math.max(2, Math.round(h * 0.05));
+        let sx = 0; let n = 0;
+        for (let y = bottom; y > bottom - band && y >= 0; y--) for (let x = 0; x < w; x++) if (at(x, y)) { sx += x; n++; }
+        return (sx / n + 0.5) / w - 0.5;
+      };
+      const kf = ['ember', 'frost'].map((s) => feet(`kittens/${s}/kiai`));
+      ok('...the kiai drawings stand off the middle of their cells, and the Billboard is told where their feet are',
+        kf.every((v) => v > 0.08) && /footX: \(a\.feetX \?\? feetX\(a\)\) \* quad/.test(psrc), kf.map((v) => v.toFixed(3)).join(' '));
       const fsrc = readFileSync(new URL('../src/systems/housing/farm.js', import.meta.url), 'utf8');
       const pen = ['chick', 'bunny', 'goat'].map((a) => ink(`farm/${a}`));
       ok('...and every animal in the pen has its head on the LEFT, which is what the pen tells its Billboards',

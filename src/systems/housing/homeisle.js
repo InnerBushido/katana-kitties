@@ -655,6 +655,23 @@ export class HomeIsle {
     return g;
   }
 
+  /**
+   * The house's walls cut off at world height `y`, or whole (null) — for a
+   * kendo match being watched (kendo.js `halfWallFor`). A clipping plane on
+   * the walls' one material: everything of the house's own above it on that
+   * storey goes (walls, posts, beams, a scroll hung high) and the furniture,
+   * which is not this material, stays. The plane is made once and parked out
+   * of the way after, so toggling it never recompiles the shader.
+   */
+  halfWalls(y) {
+    if (y == null && !this._clip) return;
+    if (!this._clip) {
+      this._clip = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1e9);
+      this.wallMat.clippingPlanes = [this._clip];
+    }
+    this._clip.constant = y ?? 1e9;
+  }
+
   /* ------------------------------ queries ------------------------------ */
 
   /** Ground under (x, z): the island, or a floor/ramp of the house. */

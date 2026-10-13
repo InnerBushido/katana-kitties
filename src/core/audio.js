@@ -1392,6 +1392,18 @@ export class Audio {
         this._tone({ type: 'triangle', from: semi(16), dur: 0.12, gain: 0.2 * v });
         this._tone({ type: 'triangle', from: semi(9), dur: 0.22, gain: 0.2 * v, delay: 0.13 });
         break;
+      /* A KIAI — the kendo shout, one per kitten by pitch (`k`, from
+         housing/kendo.js KIAI_PITCH). A voiced vowel that rises and breaks:
+         two saws a fifth apart through a falling noise burst. PLACEHOLDER for
+         a recorded shout per kitten (docs/notes/housing.md). */
+      case 'kiai': {
+        const p = k || 1;
+        this._tone({ type: 'sawtooth', from: 330 * p, to: 520 * p, dur: 0.18, gain: 0.12 * v });
+        this._tone({ type: 'sawtooth', from: 520 * p, to: 290 * p, dur: 0.42, gain: 0.13 * v, delay: 0.16 });
+        this._tone({ type: 'square', from: 780 * p, to: 430 * p, dur: 0.4, gain: 0.04 * v, delay: 0.16 });
+        this._noise({ from: 2600, to: 900, dur: 0.5, gain: 0.12 * v, q: 0.9, delay: 0.1 });
+        break;
+      }
       case 'wardup':
         this._tone({ type: 'sine', from: semi(7), to: semi(19), dur: 0.26, gain: 0.17 * v });
         this._tone({ type: 'triangle', from: semi(19), dur: 0.5, gain: 0.07 * v, delay: 0.1 });

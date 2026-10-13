@@ -1,5 +1,6 @@
 ﻿import * as THREE from 'three';
 import { Billboard } from '../core/gfx.js';
+import { feetX } from '../core/spritesheet.js';
 import { PANDA_SPEED, PANDA_JUMP, CLAW } from './panda.js';
 import { aggregate, WARD, AEGIS, DIVE, CROSS, CHARGE, DODGE, PARRY } from './powerorb.js';
 import { STEAL, DBREATH, BreathTally, arenaPowerFor } from './clanpower.js';
@@ -163,6 +164,16 @@ export const COMBAT = tune('COMBAT', {
  * and this is the unit that tunable is expressed in. Tying them together would
  * mean tuning one attack silently rescaled every clan buff and every orb.
  */
+/**
+ * THE DODGE THAT REPLACES THE JUMP in a kendo match (systems/housing/kendo.js).
+ * Richard: "the ability to jump should be removed during a fight, instead it
+ * should turn into a dodge and they should dodge in the direction the player is
+ * moving in". Here and not in kendo.js so the two files do not import each
+ * other; `Kendo.sparStrike` reads `kendoDodgeT` for the immunity.
+ */
+export const KENDO_DODGE = { speed: 24, t: 0.24, cool: 0.75 };
+/** The kendo drawings stand this much bigger than her — the bogu is a size up. */
+export const KENDO_SCALE = 1.25;
 export const BASE_REACH = 3.4;
 
 export const MAX_HP = COMBAT.maxHp;
@@ -1711,7 +1722,10 @@ export class Player {
     for (const [key, a] of [['kendoPose', art?.guard], ['kiaiPose', art?.kiai]]) {
       if (this[key]) { this.group.remove(this[key]); this[key] = null; }
       if (!a?.texture) continue;
-      const quad = this.height / (a.contentScale || 1);
+      /* KENDO_SCALE BIGGER than her: Richard, "The Kendo gear that player
+         puts on looks too small, should be probably 25% bigger." The bogu is
+         armour over the kitten, so the drawing in it stands a size up. */
+      const quad = this.height * KENDO_SCALE / (a.contentScale || 1);
       this[key] = new Billboard(a.texture, {
         cols: 1,
         rows: 1,
@@ -1720,6 +1734,8 @@ export class Player {
         width: quad,
         height: quad,
         footOffset: (a.pad ?? 0) * quad,
+        // her feet held still through a mirror — measured, see `feetX`
+        footX: (a.feetX ?? feetX(a)) * quad,
       });
       this[key].visible = false;
       this.group.add(this[key]);
@@ -3089,7 +3105,31 @@ export class Player {
     this.maxJumps = (buff?.jumps ?? 2) + this.power.jumps
       /* A panda cared for at home jumps once more (housing/farm.js). */
       + (this.pandaMount && this.pandaCare?.jump ? 1 : 0);
-    if (pad.pressed('jump') && !this.busy && !this.dodgePlanted && !this.arenaBreathAt && !this.parryAt) {
+    /* IN A KENDO MATCH, JUMP IS A DODGE (housing/kendo.js KENDO_DODGE).
+       Richard: "if they hold jump and dont pick a direction, it does nothing,
+       but as soon as they pick a direction, they dodge in that direction and
+       are immune to attacks during dodging." So it is HELD jump plus a stick
+       that fires it — once per hold — not the press: a press with no
+       direction is spent on nothing and must not be a dodge a frame later
+       when a thumb drifts. The immunity is `kendoDodgeT`, read by
+       `Kendo.sparStrike`; nothing here touches `invulnT`. */
+    if (this.kendoBout) {
+      if (this.kendoDodgeCool > 0) this.kendoDodgeCool -= dt;
+      if (!pad.down('jump')) this._kdHeld = false;
+      else if (!this._kdHeld && moving && !(this.kendoDodgeCool > 0) && this.onGround) {
+        this._kdHeld = true;
+        this.kendoDodgeT = KENDO_DODGE.t;
+        this.kendoDodgeCool = KENDO_DODGE.cool;
+        (this._kdDir ??= new THREE.Vector3()).copy(target).setY(0).normalize();
+        this.squash = 1;
+        hud?.sfx('dodgeout');
+      }
+      if (this.kendoDodgeT > 0) {
+        this.kendoDodgeT -= dt;
+        this.velocity.x = this._kdDir.x * KENDO_DODGE.speed;
+        this.velocity.z = this._kdDir.z * KENDO_DODGE.speed;
+      }
+    } else if (pad.pressed('jump') && !this.busy && !this.dodgePlanted && !this.arenaBreathAt && !this.parryAt) {
       if (this.coyote > 0 || this.jumpsLeft > 1) {
         this.velocity.y = JUMP_V * jumpK;
         this.jumpsLeft = Math.max(1, this.jumpsLeft - 1);
@@ -6416,6 +6456,19 @@ export class Player {
         this._kendoBob = (this._kendoBob ?? 0) + dt * (moving ? 14 : 3);
         pose.mesh.position.y = kiai ? 0 : Math.abs(Math.sin(this._kendoBob)) * (moving ? 0.12 : 0.03);
         pose.mesh.rotation.z = 0;
+        pose.mesh.scale.y = 1;
+        /* THE MATCH'S CEREMONY (kendo.js `kendoStance`): kneeling, reaching
+           for the shinai, and the bow. PLACEHOLDER — the guard drawing sunk
+           and squashed for seiza, and tipped toward her opponent for the rei,
+           until each has a drawing of its own (docs/notes/housing.md). The
+           tip is in the billboard's plane, toward whichever side the drawing
+           points, which `_pointsRight` already knows. */
+        const st = !kiai ? this.kendoStance : null;
+        if (st === 'kneel' || st === 'grab') {
+          pose.mesh.scale.y = st === 'grab' ? 0.8 : 0.66;
+        } else if (st === 'bow') {
+          pose.mesh.rotation.z = (pose._pointsRight ? -1 : 1) * 0.42;
+        }
         pose.mat.color.copy(mat.color);
         pose.mat.opacity = mat.opacity;
       }

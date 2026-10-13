@@ -29,7 +29,9 @@ import { rollFish, FISH } from '../../src/systems/housing/fishing.js';
 import { PLAYER_STYLE } from '../../src/core/palette.js';
 import { worldSig } from '../../src/systems/savegame.js';
 import { ROSHI_LINES, ROSHI_VOICE } from '../../src/systems/housing/roshi.js';
-import { Kendo, KIAI_T } from '../../src/systems/housing/kendo.js';
+import { Kendo, KIAI_T, BOUT } from '../../src/systems/housing/kendo.js';
+import { KENDO_DODGE, KENDO_SCALE } from '../../src/entities/player.js';
+import { Billboard } from '../../src/core/gfx.js';
 import { voicePath } from '../../src/core/audio.js';
 import { existsSync } from 'node:fs';
 import { mealPct, BOON } from '../../src/systems/housing/boons.js';
@@ -663,7 +665,7 @@ export async function housingChecks({ ok, world }) {
     const msrc = readFileSync(new URL('../../src/main.js', import.meta.url), 'utf8');
     ok('the red is a multiplier on the damage number, after the gate',
       /const dmg = base \* \(kind === 'tri' \? triDmgK\(attacker\) : 1\)\s*\* \(this\.housing\?\.boons\?\.dmgK\?\.\(attacker\) \?\? 1\)/.test(msrc));
-    ok('a kitten held by a home activity is handed a dead pad', /inspector\?\.busy\(i\)\s*\|\| this\.housing\?\.activities\?\.holds\(i\)( \|\| this\.housing\?\.watching\(i\))?\)/.test(msrc));
+    ok('a kitten held by a home activity is handed a dead pad', /inspector\?\.busy\(i\)\s*\|\| this\.housing\?\.activities\?\.holds\(i\)( \|\| this\.housing\?\.watching\(i\))?( \|\| this\.housing\?\.kendoHolds\?\.\(i\))?\)/.test(msrc));
   }
 
   /* THINGS TO DO AT HOME. Every hold ends by itself, and pays what it says. */
@@ -817,7 +819,7 @@ export async function housingChecks({ ok, world }) {
     ok('...and when the card closes nobody is left watching', !H.watching(1));
     const msrc2 = readFileSync(new URL('../../src/main.js', import.meta.url), 'utf8');
     ok('...wired: a watcher\'s pad is dead, the counter keeps her pane, and the lens is laid over every pane',
-      /this\.housing\?\.watching\(i\)\)\s*\n?\s*\? DEAD_PAD/.test(msrc2)
+      /this\.housing\?\.watching\(i\)( \|\| this\.housing\?\.kendoHolds\?\.\(i\))?\)\s*\n?\s*\? DEAD_PAD/.test(msrc2)
       && /lanes: this\._snakeLanes\(\)\.map\(\(l, i\) => this\.housing\?\.watchLane\(i\) \?\? l\)/.test(msrc2)
       && /this\.housing\?\.tourLens\(camera, members\)/.test(msrc2));
     game.groups = wasGroups;
@@ -1364,6 +1366,145 @@ export async function housingChecks({ ok, world }) {
     ok('...and hanging it up takes the pose off', a.kendoGeared === false && !K.geared(a));
     const ksrc = readFileSync(new URL('../../src/systems/housing/kendo.js', import.meta.url), 'utf8');
     ok('...with the drawn men kept for a build without the drawings', /menTexture\(\)/.test(ksrc) && /p\.kendoPose \|\| p\.kiaiPose/.test(ksrc));
+  }
+
+  /* A KENDO MATCH, end to end on a stub square: kneel, the turns (grab,
+     stand, kiai), the bow, HAJIME, two ippons a round, best of three, and
+     everything it took given back. Richard's spec is quoted over `BOUT` in
+     kendo.js; each line here is one clause of it. */
+  {
+    const said = [];
+    const sounds = [];
+    const g2 = { players: [], toast: (t, i) => said.push([i, t]), audio: { play: (s) => sounds.push(s) }, scene: { add() {} } };
+    const room = { id: 'r1', cx: 0, cz: 0, w: 12, d: 8, floor: 0 };
+    const isle = { local: (x, z) => ({ x, z }), groundY: 0, shell: { floorY: [0] }, ry: 0, roomAt: () => room };
+    const zone = { isle, room, key: 'site:r1' };
+    const K = new Kendo({ isles: [], game: g2 });
+    // on the tape: inside the room, less 1.4 of margin
+    K.zoneOf = (p) => (Math.abs(p.position.x) < 4.6 && Math.abs(p.position.z) < 2.6 ? zone : null);
+    const a = fakePlayer(0, -1, 0);
+    const b = fakePlayer(1, 1, 0);
+    const c = fakePlayer(2, 0, 1);
+    for (const p of [a, b, c]) { p.kendoPose = {}; p.power = { tag: 'orbs' }; p.powerOrbs = []; K.toggleGear(p); }
+    g2.players = [a, b];
+    const run = (sec, dt = 0.05) => { for (let t = 0; t < sec; t += dt) { K._gatherUp(dt, g2.players); for (const B of [...K.bouts.values()]) K._step(B, dt); } };
+    // step until something is true, at most `max` seconds: the beats are asked by state, not by summed float time
+    const until = (f, max = 10, dt = 0.05) => { for (let t = 0; t < max && !f(); t += dt) run(dt, dt); return f(); };
+    run(BOUT.gather * 0.5);
+    ok('two geared kittens on one square do not start a match at once', K.bouts.size === 0);
+    until(() => K.bouts.size > 0, BOUT.gather);
+    const B = K.boutOf(0);
+    ok('...but after a moment there, they kneel for one', !!B && B === K.boutOf(1) && B.phase === 'kneel' && a.kendoStance === 'kneel');
+    ok('...and their orbs do nothing in it, though they still wear them', a.kendoBout && b.kendoBout && a.power.tag === undefined && Array.isArray(a.powerOrbs));
+    ok('...on two marks along the long side, facing each other, held there',
+      Math.abs(a.position.z) < 1e-6 && a.position.x < 0 && b.position.x > 0 && !!a.pinnedAt && Math.abs(a.facing - Math.PI / 2) < 1e-6);
+    ok("...and the pad is the ceremony's", K.holds(0) && K.holds(1) && !K.holds(2));
+    until(() => B.phase === 'rise', BOUT.kneel + 0.1);
+    run(BOUT.grab * 0.5);
+    ok('she reaches for her shinai first, her opponent still kneeling', B.phase === 'rise' && a.kendoStance === 'grab' && b.kendoStance === 'kneel');
+    until(() => B.step === 'kiai', BOUT.grab + BOUT.stand + 0.1);
+    ok('...stands, and shouts HER kiai', B.step === 'kiai' && a.kiaiT > 0 && !b.kiaiT && sounds.includes('kiai'));
+    until(() => B.turn === 1, BOUT.kiai + 0.1);
+    run(0.05);
+    ok("...then it is her opponent's turn", B.turn === 1 && b.kendoStance === 'grab');
+    until(() => B.phase === 'bow', BOUT.grab + BOUT.stand + BOUT.kiai + 0.2);
+    run(0.05);
+    ok('both up and shouted, they bow to each other', B.phase === 'bow' && a.kendoStance === 'bow' && b.kendoStance === 'bow');
+    K.sparStrike(a, 'stand', { x: 1, y: 0 });
+    ok('a swing during the ceremony is no opening', B.pts[0] === 0);
+    until(() => B.phase === 'fight', BOUT.bow + BOUT.hajime + 0.2);
+    ok('HAJIME: the pins come off and the pad is hers again', B.phase === 'fight' && !a.pinnedAt && !K.holds(0)
+      && said.some(([, t]) => /HAJIME/.test(t)));
+    // the marks are a room apart; close in to sword's reach
+    a.position.set(-1, 0, 0);
+    b.position.set(1, 0, 0);
+    b.kendoDodgeT = 0.1;
+    K.sparStrike(a, 'stand', { x: 1, y: 0 });
+    ok('a kitten mid-dodge cannot be hit', B.pts[0] === 0);
+    b.kendoDodgeT = 0;
+    c.position.set(-1.5, 0, 0.5);
+    g2.players = [a, b, c];
+    K.sparStrike(c, 'stand', { x: 1, y: 0 });
+    ok('...nor can a sister from outside the match score on either fighter', B.pts[0] === 0 && B.pts[1] === 0 && !K.cool.get(0) && !K.cool.get(1));
+    g2.players = [a, b];
+    K.sparStrike(a, 'stand', { x: 1, y: 0 });
+    ok('a clean hit in a live round is IPPON, YAME stops it, and the shove keeps her on the floor',
+      B.pts[0] === 1 && B.phase === 'yame' && K.holds(1) && b.velocity.y <= 2 + 1e-9);
+    until(() => B.phase === 'fight', BOUT.yame + BOUT.hajime + 0.2);
+    const hit = () => { for (const p of [a, b]) p.velocity.set(0, 0, 0); a.position.set(-1, 0, 0); b.position.set(1, 0, 0); K.cool.clear(); K.sparStrike(a, 'stand', { x: 1, y: 0 }); };
+    hit();
+    ok('two ippons take the round', B.phase === 'roundEnd' && B.wins[0] === 1 && B.pts[0] === 2);
+    until(() => B.phase === 'hajime', BOUT.roundEnd + 0.2);
+    ok('...and the next starts at HAJIME, points cleared, a fresh clock', B.round === 2 && B.phase === 'hajime' && B.pts[0] === 0 && B.clock === BOUT.roundT);
+    until(() => B.phase === 'fight', BOUT.hajime + 0.2);
+    until(() => B.phase !== 'fight', BOUT.roundT + 0.5, 0.25);
+    ok("a round that runs out level is a draw, and nobody's", B.round === 2 && B.phase === 'roundEnd' && B.wins.join() === '1,0');
+    until(() => B.phase === 'fight', BOUT.roundEnd + BOUT.hajime + 0.2);
+    hit();
+    until(() => B.phase === 'fight', BOUT.yame + BOUT.hajime + 0.2);
+    hit();
+    until(() => B.phase === 'final', BOUT.roundEnd + 0.2);
+    ok('best of three: the match is decided, and they bow', B.phase === 'final' && a.kendoStance === 'bow'
+      && said.some(([, t]) => /WINS THE MATCH, 2-0/.test(t)));
+    until(() => !K.bouts.size, BOUT.bow + 0.2);
+    ok('...and when it is over, nobody is held and the orbs are hers again',
+      !K.bouts.size && !a.kendoBout && !a.pinnedAt && !K.holds(0) && a.kendoStance === null
+      && /p\.power = aggregate\(p\.powerOrbs \?\? \[\]\)/.test(readFileSync(new URL('../../src/systems/housing/kendo.js', import.meta.url), 'utf8')));
+    // JOGAI
+    until(() => K.bouts.size > 0, BOUT.gather + 0.1);
+    const B2 = K.boutOf(0);
+    until(() => B2.phase === 'fight', 20);
+    b.position.set(9, 0, 0);
+    run(BOUT.jogai * 0.5);
+    ok('a step off the square in a live round is only a warning', B2?.phase === 'fight' && K.bouts.size === 1);
+    run(BOUT.jogai);
+    ok('...but staying off it ends the match, and says so', !K.bouts.size && said.some(([i, t]) => i === 0 && /stepped off the square/.test(t)));
+    b.position.set(1, 0, 0);
+    run(BOUT.gather + 0.1);
+    K._unwear(1);
+    run(0.1);
+    ok('hanging the gear up mid-match calls it off', !K.bouts.size && !b.kendoBout);
+    K._unwear(0);
+    K._unwear(2);
+
+    // THE CAMERA and THE WALLS, for a pane that holds a fighter or a watcher
+    K.toggleGear(a);
+    K.toggleGear(b);
+    run(BOUT.gather + 0.1);
+    g2.players = [a, b, c];
+    const shot = K.shotFor([0]);
+    ok('a pane with a fighter in it gets the match camera, closer than the house shot, looking across the marks',
+      !!shot && shot.dist < 25 && Math.abs(shot.centre.x) < 1e-6 && Math.abs(Math.sin(shot.yaw)) < 1e-6 && shot.pitch > 0.5);
+    c.position.set(400, 0, 400);
+    isle.roomAt = (x) => (x < 100 ? room : null);
+    ok('...a pane with nobody near it does not', K.shotFor([2]) === null && K.halfWallFor(isle, [2]) === null);
+    ok('...and its walls are cut to half height for one that does', Math.abs(K.halfWallFor(isle, [0]) - 2.1) < 1e-6);
+    ok("...nobody else's house", K.halfWallFor({}, [0]) === null);
+    for (const Bx of [...K.bouts.values()]) K._end(Bx, null);
+    K._unwear(0);
+    K._unwear(1);
+
+    const psrc = readFileSync(new URL('../../src/entities/player.js', import.meta.url), 'utf8');
+    ok('in a match JUMP is a dodge: held, and only once she picks a direction',
+      /if \(this\.kendoBout\) \{[\s\S]{0,400}!pad\.down\('jump'\)[\s\S]{0,200}moving && !\(this\.kendoDodgeCool > 0\)/.test(psrc)
+      && KENDO_DODGE.t > 0.15 && KENDO_DODGE.t * KENDO_DODGE.speed > 4);
+    ok('...and the gear is drawn a quarter bigger than her', KENDO_SCALE === 1.25 && /height \* KENDO_SCALE/.test(psrc));
+    ok('...the renderer clips, so the walls can be cut', /localClippingEnabled = true/.test(readFileSync(new URL('../../src/main.js', import.meta.url), 'utf8')));
+  }
+
+  /* FEET STAY PUT WHEN SHE TURNS. A drawing whose feet are off the middle of
+     its cell, mirrored by flipping UVs, jumped sideways twice that offset on
+     every turn. `footX` shifts the quad the other way per facing. */
+  {
+    const tex = new THREE.Texture();
+    tex.image = { width: 64, height: 64 };
+    const bb = new Billboard(tex, { width: 2, height: 2, cols: 1, rows: 1, mirror: true, footX: 0.3 });
+    const cx = () => { bb.mesh.geometry.computeBoundingBox(); const q = bb.mesh.geometry.boundingBox; return (q.min.x + q.max.x) / 2; };
+    bb._setCell(0, 0, false);
+    const l = cx();
+    bb._setCell(0, 0, true);
+    const r = cx();
+    ok('a drawing with its feet off-centre is shifted to put them under her, both ways', Math.abs(l + 0.3) < 1e-6 && Math.abs(r - 0.3) < 1e-6, `${l} / ${r}`);
   }
 
   /* ITEM SIZES AND ITEM CUSTOMIZATION. "The katana swords as furniture in the

@@ -567,6 +567,43 @@ function keyOutBackground(ctx, w, h, clearPockets = false, fillHoles = false) {
  * measure real cells out of these sheets and a repack would move every number
  * they assert.
  */
+/**
+ * WHERE HER FEET ARE ACROSS a one-cell drawing, as a fraction of the cell's
+ * width right of its centre (negative = left). Measured off the packed
+ * pixels: the lowest rows with ink, a band 5% of the cell tall, averaged by
+ * ink. Packing centres the drawing's BOX, and a pose that reaches — the
+ * kendo guard's shinai — has its feet well off that centre, which a mirror
+ * then doubles (`Billboard`'s `footX`). 0 when it cannot measure: no image,
+ * no canvas, no ink. Degrades to the old behaviour, never to a NaN.
+ */
+export function feetX(atlas, cols = 1) {
+  const img = atlas?.texture?.image;
+  if (!img?.width || typeof document === 'undefined') return 0;
+  try {
+    const w = Math.round(img.width / cols), h = img.height;
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(img, 0, 0, w, h, 0, 0, w, h);
+    const d = g.getImageData(0, 0, w, h).data;
+    const inkAt = (x, y) => d[(y * w + x) * 4 + 3] > 128;
+    let bottom = -1;
+    for (let y = h - 1; y >= 0 && bottom < 0; y--) {
+      for (let x = 0; x < w; x++) if (inkAt(x, y)) { bottom = y; break; }
+    }
+    if (bottom < 0) return 0;
+    const band = Math.max(2, Math.round(h * 0.05));
+    let sx = 0, n = 0;
+    for (let y = bottom; y > bottom - band && y >= 0; y--) {
+      for (let x = 0; x < w; x++) if (inkAt(x, y)) { sx += x; n++; }
+    }
+    return n ? (sx / n + 0.5) / w - 0.5 : 0;
+  } catch {
+    return 0;
+  }
+}
+
 export function packMetrics({
   tallest, widest, inked = 0, cols = 1, rows = 1,
   cell = 512, pad = 0.06, maxAtlas = 2048,

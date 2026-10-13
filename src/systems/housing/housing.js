@@ -907,7 +907,17 @@ export class Housing {
        same one (`doorShotFor`, at the same easing rate), so what she sees
        and what her stick means move together. */
     const members = this.game.groups?.find((m) => m.includes(p.index)) ?? [p.index];
-    return this.doorShotFor(members.includes(p.index) ? members : [p.index]);
+    return this.groupShot(members.includes(p.index) ? members : [p.index]);
+  }
+
+  /**
+   * The shot a pane's group shares, or null: a kendo match being watched
+   * (kendo.js `shotFor`) over a front door. ONE answer for the per-kitten
+   * focus and the shared rig (main.js `_updateRig`), which is what keeps the
+   * camera and the sticks in it pointing the same way.
+   */
+  groupShot(members) {
+    return this.kendo.shotFor(members) ?? this.doorShotFor(members);
   }
 
   /**
@@ -953,7 +963,7 @@ export class Housing {
     const players = this.game.players ?? [];
     for (const I of this.isles) {
       if (!I.home) continue;
-      if (scene) { I.cutaway(-1); for (const M of I.xrayMats) M.setCuts?.(camera.position, []); continue; }
+      if (scene) { I.cutaway(-1); I.halfWalls(null); for (const M of I.xrayMats) M.setCuts?.(camera.position, []); continue; }
       let floor = -1;
       const seen = [];
       const floors = [];
@@ -979,6 +989,8 @@ export class Housing {
       const bf = this.builder.cutFloor(I, members ?? players.map((_, k) => k));
       if (bf >= 0) floor = bf;
       I.cutaway(floor);
+      // a kendo match being watched: the walls at half height (kendo.js)
+      I.halfWalls(this.kendo.halfWallFor(I, members ?? players.map((_, k) => k)));
       for (const M of I.xrayMats) M.setCuts?.(camera.position, seen, floors);
     }
   }
@@ -1277,6 +1289,11 @@ export class Housing {
   /** Is a seat's pad being driven by housing outside of a card? */
   busy(index) {
     return this.kendo.kiaiBusy(index);
+  }
+
+  /** Is a seat's pad the kendo ceremony's (kneel, kiai, bow, YAME)? */
+  kendoHolds(index) {
+    return this.kendo.holds(index);
   }
 
   /** Kendo: the sparring zone this kitten is standing in, or null. */
