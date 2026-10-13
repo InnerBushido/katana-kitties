@@ -133,7 +133,6 @@ Each one degrades: delete the file and the game draws the stand-in.
 
 | what | the stand-in | to finish it |
 | --- | --- | --- |
-| **Her statue** | a drawn sitting cat in stone, sash and headband in her colour | `node tools/statue-bake.mjs --go` — Tripo image-to-3D off `docs/art-masters/<sheet>_champion.png`, ~60 Tripo credits for both. **Not run.** Richard authorised it, but the agent's permission check blocks a Tripo spend from an agent session. He runs it himself |
 | **The storage chest** | a card that says so | a real inventory |
 | **The prayer's drawing** | the star's reach pose (`homePose = 'bless'`) at the shrine AND for ITADAKIMASU | a prayer sheet: four directions × 3–4 frames, all four kittens |
 | **Bathing suits** | a puff of steam, and the eating crouch in the water | an onsen pose per kitten |
@@ -177,6 +176,7 @@ in the code, and deleting the file brings it back.
 | what | the file | its fallback |
 | --- | --- | --- |
 | **Roshi's sprite** | `sprites/roshi/roshi.png`, one 768 pose. Sized by `ROSHI_INK` (0.961) and stood on `ROSHI_FOOT` (0.0195), both measured off the baked sheet | `drawRoshi`'s canvas |
+| **Her statue** | `models/statues/{ember,frost}.glb` — Tripo image-to-3D off her champion drawing (`tools/statue-bake.mjs`), then `tools/capture/statue-shrink.mjs`: 460k → 24k triangles (meshoptimizer, UV seams held), turned by a MEASURED yaw (both takes faced +x), texture baked to warm stone, 14MB → 0.8MB. The raw takes are in `out/statues-raw/` (gitignored; they cost Tripo credits — keep them). Storm and Blossom wear Ember's and Frost's, washed 30% toward their colour, on their own plinth with a band in her colour | the drawn stone cat |
 | **Roshi's voice** | five clips in `voice/roshi/`, Arthur ([voices.md](voices.md)) | the toast alone |
 | **Kendo** | `kittens/<sheet>/kendo.png` (the guard) and `kiai.png` (the men strike, held for `KIAI_T` after every swing in the bogu), recoloured by STYLE for Storm and Blossom. `kendo.js` only sets `kendoGeared` and `kiaiT`; `Player` draws them. They MIRROR like the Riposte stance, and world-check measures the shinai reaching right | the drawn men and shinai |
 | **The animals** | `farm/{chick,bunny,goat}.png`, side-on, head LEFT (measured), turned along the circle they walk | the primitive bodies |

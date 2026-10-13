@@ -511,6 +511,28 @@ export async function housingChecks({ ok, world }) {
     H.browsing.clear();
   }
 
+  /* HER STATUE, SHIPPED. The raw Tripo takes were 14MB and 460k triangles and
+     faced +x; what is in public/ must be the shrunk, turned, stone one. Read
+     off the files, because "it was run once" is not the same as "it is what
+     is on disk". */
+  {
+    const rows = ['ember', 'frost'].map((s) => {
+      const f = new URL(`../../public/models/statues/${s}.glb`, import.meta.url);
+      if (!existsSync(f)) return { s, missing: true };
+      const b = readFileSync(f);
+      const j = JSON.parse(b.subarray(20, 20 + b.readUInt32LE(12)).toString('utf8'));
+      const prim = j.meshes[0].primitives[0];
+      return { s, mb: b.length / 1e6, tris: j.accessors[prim.indices].count / 3, gen: j.asset?.generator };
+    }).filter((r) => !r.missing);
+    ok('a generated statue on disk is the shrunk one: under 2MB, under 40k triangles, written by statue-shrink',
+      rows.every((r) => r.mb < 2 && r.tris < 40000 && /statue-shrink/.test(r.gen ?? '')),
+      rows.map((r) => `${r.s} ${r.mb.toFixed(2)}MB ${r.tris} tris`).join(', ') || 'none on disk (drawn statue)');
+    const ssrc = readFileSync(new URL('../../tools/capture/statue-shrink.mjs', import.meta.url), 'utf8');
+    ok('...turned by a MEASURED yaw per take', /STATUE_YAW = \{ ember: -90, frost: -90 \}/.test(ssrc));
+    const stsrc = readFileSync(new URL('../../src/systems/housing/statue.js', import.meta.url), 'utf8');
+    ok('...standing on its own plinth, since the drawn one is hidden when it arrives', /out\.add\(new THREE\.Mesh\(pl, toonVertexMat\(\)\)\)/.test(stsrc));
+  }
+
   /* THE TROPHY SHELF counts arena wins by name, shared by a home's owners. */
   {
     const before = H.store.records.cups ? { ...H.store.records.cups } : null;

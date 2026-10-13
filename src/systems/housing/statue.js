@@ -151,11 +151,37 @@ export async function loadGenerated(sheet) {
     o.material = tex ? toonMat({ map: tex }) : toonVertexMat();
     mats.push(o.material);
   });
-  return { root: c, mats };
+  /* ITS OWN PLINTH. The bridge hides every drawn part when this arrives —
+     plinth included — and the `+ 1.2` above is the plinth's height, so for a
+     while the generated statue stood on nothing, 1.2 in the air. The same
+     plinth as the drawn one, and the same band, whose colour is hers outright
+     (`userData.accent`) where the stone above only takes a wash. */
+  const out = new THREE.Group();
+  const pl = new THREE.CylinderGeometry(1.7, 1.9, 1.2, 8);
+  paint(pl, STONE_DARK);
+  pl.translate(0, 0.6, 0);
+  out.add(new THREE.Mesh(pl, toonVertexMat()));
+  const band = new THREE.CylinderGeometry(1.75, 1.75, 0.25, 8);
+  paint(band, 0xffffff);
+  band.translate(0, 0.95, 0);
+  const bandMat = toonVertexMat({ color: 0xffffff });
+  bandMat.userData.accent = true;
+  out.add(new THREE.Mesh(band, bandMat));
+  mats.push(bandMat);
+  out.add(c);
+  return { root: out, mats };
 }
 
-/** Lerp a generated statue's materials toward her colour by `k` (0..1). */
+/**
+ * Lerp a generated statue's materials toward her colour by `k` (0..1).
+ *
+ * A WASH, NOT A PAINT: 0.3 of the way. The take's texture is stone now (baked
+ * to warm grey by tools/capture/statue-shrink.mjs — Richard: "they don't match
+ * the lighting or shaders"; it was her full-colour drawing, lit twice, pulled
+ * 55% toward one colour), so this only has to say WHOSE statue it is, the way
+ * the drawn one's sash does. At 0.55 the stone went the colour of the paint.
+ */
 export function tintGenerated(mats, colour, k) {
-  const c = new THREE.Color(0xffffff).lerp(new THREE.Color(colour), k * 0.55);
-  for (const m of mats) m.color.copy(c);
+  const c = new THREE.Color(0xffffff).lerp(new THREE.Color(colour), k * 0.3);
+  for (const m of mats) m.color.copy(m.userData.accent ? new THREE.Color(colour) : c);
 }
