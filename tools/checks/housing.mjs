@@ -14,7 +14,7 @@
 --------------------------------------------------------------------------- */
 import * as THREE from 'three';
 import { readFileSync } from 'node:fs';
-import { Housing } from '../../src/systems/housing/housing.js';
+import { Housing, TOUR } from '../../src/systems/housing/housing.js';
 import { HOME_SITES, HOUSES, HOUSE_BY_ID, PRESETS, ITEM_BY_ID, priceOf, HOME_SELL, SPEED_STRIP } from '../../src/systems/housing/catalog.js';
 import { emptyStore, newHome, normalise, saveStore, loadStore, migrateYard, HOME_KEY } from '../../src/systems/housing/homestore.js';
 import { careLevel, careBuff, stalksAt, BAMBOO_GROW, BAMBOO_MAX } from '../../src/systems/housing/farm.js';
@@ -470,6 +470,45 @@ export async function housingChecks({ ok, world }) {
     game.tournament = null;
     game.players = [];
     H.store.boons = {};
+  }
+
+  /* ROSHI'S TOUR: LOOK, THEN FLY. "The camera looks, then flies, 2–3 seconds,
+     slower", and "the minimap zooms out and highlights the island". */
+  {
+    const p = fakePlayer(0);
+    H.browsing.clear();
+    H.browse(0, HOME_SITES[0].id);
+    const f0 = H.cameraFocus(p);
+    const at0 = f0.centre.clone();
+    H.browse(0, HOME_SITES[1].id);
+    const b = H.browsing.get(0);
+    b.ft = TOUR.look * 0.5;
+    const look = H.cameraFocus(p);
+    const I1 = H.isleOf(HOME_SITES[1].id);
+    const toward = Math.atan2(at0.x - I1.x, at0.z - I1.z);
+    ok('a new island is LOOKED AT first: the centre stays, the camera turns to face it',
+      look.centre.distanceTo(at0) < 1e-6 && Math.abs(look.yaw - toward) < 1e-6);
+    b.ft = TOUR.look + TOUR.fly * 0.5;
+    const mid = H.cameraFocus(p).centre.clone();
+    const d0 = Math.hypot(mid.x - at0.x, mid.z - at0.z);
+    const d1 = Math.hypot(mid.x - I1.x, mid.z - I1.z);
+    ok('...then FLIES, and is halfway there halfway through', d0 > 10 && d1 > 10 && Math.abs(d0 - d1) < 1, `${d0.toFixed(1)} / ${d1.toFixed(1)}`);
+    ok('...over two to three seconds', TOUR.fly >= 2 && TOUR.fly <= 3);
+    b.ft = TOUR.look + TOUR.fly + 0.01;
+    const end = H.cameraFocus(p).centre;
+    ok('...and arrives', Math.hypot(end.x - I1.x, end.z - I1.z) < 1e-6);
+    b.t = 0;
+    const m0 = H.tourMap([0]);
+    b.t = TOUR.mapIn;
+    const m1 = H.tourMap([0]);
+    ok('the minimap zooms out over the tour, and rings only the island on the cursor',
+      m0.k === 0 && m1.k === 1 && m1.sites.length === HOME_SITES.length
+      && m1.sites.filter((s) => s.hl).map((s) => s.name).join() === HOME_SITES[1].name);
+    ok('...and nobody touring is no tour', H.tourMap([1, 2]) === null);
+    const msrc = readFileSync(new URL('../../src/systems/minimap.js', import.meta.url), 'utf8');
+    ok('...and the map puts its own box and zoom back after drawing it',
+      /finally \{\s*this\.bounds = keepB;\s*this\.zoom = keepZ;/.test(msrc));
+    H.browsing.clear();
   }
 
   /* THE TROPHY SHELF counts arena wins by name, shared by a home's owners. */

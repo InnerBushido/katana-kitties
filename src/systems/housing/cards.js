@@ -130,7 +130,7 @@ export class HousingCards {
 
   opened(index) {
     const top = this._top(index);
-    if (top?.v === 'realtor') this.H.browsing.set(index, { site: HOME_SITES[0].id });
+    if (top?.v === 'realtor') this.H.browse(index, HOME_SITES[0].id);
   }
 
   closed(index) {
@@ -289,14 +289,14 @@ export class HousingCards {
     // The tour follows the cursor.
     const c = this.game.inspector.cards[index];
     const s = HOME_SITES[Math.min(c?.i ?? 0, HOME_SITES.length - 1)];
-    this.H.browsing.set(index, { site: s.id });
+    this.H.browse(index, s.id);
     return { head: "AT ROSHI'S ISLAND SHOP", rows, backWord: 'LEAVE', foot: 'JUMP <b>look closer</b> · INTERACT <b>leave</b>' };
   }
 
   /** One island: its perks, and the three houses. */
   _v_site(index, p, top) {
     const s = SITE_BY_ID[top.site];
-    this.H.browsing.set(index, { site: s.id });
+    this.H.browse(index, s.id);
     const H = this.H.store.homes[s.id];
     const mine = this.H.homeOf(p);
     const body = `<div class="hs-perks">${s.perks.map((k) => `<span>${esc(k)}</span>`).join('')}</div>`;

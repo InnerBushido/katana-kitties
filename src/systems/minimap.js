@@ -263,7 +263,74 @@ export class Minimap {
    *        can be on one map at once.
    * @param payne the Payne guide, for her own mark in the market
    */
-  draw(players, dragons, kotodama = null, satan = null, ryu = null, seek = null,
+  /**
+   * ROSHI'S TOUR, OVER EVERYTHING ELSE (`tour`, set by main.js from
+   * `Housing.tourMap`). The four sky islands sit outside the archipelago's
+   * box, so for the tour the box is widened to take them in — eased by `k`,
+   * so the map visibly ZOOMS OUT rather than jumping — and put back the moment
+   * the card closes. The fit is otherwise fixed for the reason the bounds
+   * comment gives; this is the one deliberate exception, and it only ever
+   * lasts as long as the card does.
+   */
+  draw(...args) {
+    const T = this.tour;
+    if (!T) { this._drawMain(...args); return; }
+    const keepB = this.bounds;
+    const keepZ = this.zoom;
+    const b = { ...keepB };
+    for (const s of T.sites) {
+      b.minX = Math.min(b.minX, s.x - s.r * 1.6); b.maxX = Math.max(b.maxX, s.x + s.r * 1.6);
+      b.minZ = Math.min(b.minZ, s.z - s.r * 1.6); b.maxZ = Math.max(b.maxZ, s.z + s.r * 1.6);
+    }
+    const k = T.k;
+    this.bounds = {
+      minX: keepB.minX + (b.minX - keepB.minX) * k, maxX: keepB.maxX + (b.maxX - keepB.maxX) * k,
+      minZ: keepB.minZ + (b.minZ - keepB.minZ) * k, maxZ: keepB.maxZ + (b.maxZ - keepB.maxZ) * k,
+    };
+    if (k > 0) this.zoom = 1;
+    try {
+      this._drawMain(...args);
+      this._drawTour(T);
+    } finally {
+      this.bounds = keepB;
+      this.zoom = keepZ;
+    }
+  }
+
+  _drawTour(T) {
+    const c = this.ctx;
+    const d = this.dpr ?? 1;
+    const pulse = 0.5 + 0.5 * Math.sin((this._t ?? 0) * 3);
+    c.save();
+    c.globalAlpha = Math.min(1, T.k * 1.5);
+    for (const s of T.sites) {
+      const x = this._px(s.x), y = this._py(s.z);
+      const r = Math.max(4 * d, s.r * this.scale);
+      c.beginPath();
+      c.arc(x, y, r, 0, Math.PI * 2);
+      c.fillStyle = s.owned ? 'rgba(170,150,130,0.85)' : 'rgba(210,235,200,0.85)';
+      c.fill();
+      c.lineWidth = 1.5 * d;
+      c.strokeStyle = 'rgba(28,16,22,0.75)';
+      c.stroke();
+      if (!s.hl) continue;
+      c.beginPath();
+      c.arc(x, y, r + (4 + pulse * 4) * d, 0, Math.PI * 2);
+      c.lineWidth = 3 * d;
+      c.strokeStyle = '#ffd34a';
+      c.stroke();
+      c.font = `bold ${Math.round(10 * d)}px sans-serif`;
+      c.textAlign = 'center';
+      c.lineWidth = 3 * d;
+      c.strokeStyle = 'rgba(28,16,22,0.9)';
+      c.strokeText(s.name, x, y - r - 9 * d);
+      c.fillStyle = '#ffd34a';
+      c.fillText(s.name, x, y - r - 9 * d);
+    }
+    c.restore();
+  }
+
+  _drawMain(players, dragons, kotodama = null, satan = null, ryu = null, seek = null,
     goal = null, payne = null) {
     /* IN THE SIMULATOR, THE SIMULATOR'S MAP. Richard: "There should be a
        minimap of some sort in the simulator". Every kitten this map is drawn

@@ -18,6 +18,17 @@ import { BuildMode } from './build.js';
 import { HomeBoons } from './boons.js';
 import { HomeActivities } from './activities.js';
 
+/** Roshi's tour: turn to the next island, then fly there; and the map's
+ *  zoom-out. Seconds. */
+export const TOUR = { look: 0.8, fly: 2.4, mapIn: 0.8 };
+const tourEase = (t) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
+function lerpAngle(a, b, u) {
+  let d = b - a;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return a + d * u;
+}
+
 /* ---------------------------------------------------------------------------
    CUSTOM HOUSING — the one object the game talks to.
 
@@ -440,6 +451,10 @@ export class Housing {
     this.boons.update(dt, this.game.players ?? [], this.game.scene);
     if (!this.built) return;
     this.time += dt;
+    for (const b of this.browsing.values()) {
+      b.t = (b.t ?? 0) + dt;
+      if (b.ft != null) b.ft += dt;
+    }
     this._pumpRoads();
     const players = this.game.players ?? [];
     for (const I of this.isles) {
@@ -572,17 +587,75 @@ export class Housing {
     return hasRecording(T.id) ? T.id : T.fallback;
   }
 
+  /**
+   * THE TOUR ON THE MINIMAP, for the pane `members` share, or null. The four
+   * sky islands are not `world.islands` and the corner map has never drawn
+   * them; on the tour it zooms out to take them in (over `TOUR.mapIn`) and
+   * rings the one the cursor is on. Richard: "the minimap zooms out and
+   * highlights the island".
+   */
+  tourMap(members) {
+    const b = members.map((i) => this.browsing.get(i)).find(Boolean);
+    if (!b) return null;
+    return {
+      k: tourEase(Math.min(1, (b.t ?? 0) / TOUR.mapIn)),
+      sites: HOME_SITES.map((s) => ({
+        x: s.x, z: s.z, r: s.r, name: s.name, hl: s.id === b.site,
+        owned: !!this.store.homes[s.id],
+      })),
+    };
+  }
+
   /* ------------------------------ cameras ------------------------------- */
 
-  /** Roshi's tour: her pane flies out to the island she is looking at. */
+  /**
+   * ROSHI'S TOUR IS LOOKING AT `site`. The entry is KEPT across cursor moves —
+   * it used to be replaced on every row, which threw away where the camera was
+   * and is why the old tour could only cut. `from` is the centre it flies from.
+   */
+  browse(index, site) {
+    const b = this.browsing.get(index);
+    if (!b) { this.browsing.set(index, { site, t: 0, ft: TOUR.look + TOUR.fly }); return; }
+    if (b.site === site) return;
+    b.from = (b.from ?? new THREE.Vector3()).copy(b.centre ?? b.from ?? new THREE.Vector3());
+    b.fromSite = b.site;
+    b.site = site;
+    b.ft = 0;
+  }
+
+  /**
+   * Roshi's tour: her pane flies out to the island she is looking at.
+   *
+   * LOOK, THEN GO. Richard: "the camera looks, then flies, 2–3 seconds,
+   * slower". A new island is first TURNED TO from where the camera is — the
+   * centre stays put and the camera swings round behind it so the next island
+   * is in the middle of the frame — and only then does the centre travel, eased,
+   * over `TOUR.fly`. The orbit's slow sway comes back in as it arrives.
+   */
   cameraFocus(p) {
     const b = this.browsing.get(p.index);
     if (b) {
       const I = this.isleOf(b.site);
       if (!I) return null;
       const t = this.time * 0.12;
-      (b.centre ??= new THREE.Vector3()).set(I.x, I.groundY + 6, I.z);
-      return { centre: b.centre, aim: true, dist: 95, pitch: 0.42, yaw: I.ry + Math.PI + Math.sin(t) * 0.7 };
+      const orbit = I.ry + Math.PI + Math.sin(t) * 0.7;
+      const to = new THREE.Vector3(I.x, I.groundY + 6, I.z);
+      b.centre ??= to.clone();
+      const ft = b.ft ?? Infinity;
+      if (!b.from || ft >= TOUR.look + TOUR.fly) {
+        b.centre.copy(to);
+        return { centre: b.centre, aim: true, dist: 95, pitch: 0.42, yaw: orbit };
+      }
+      // the camera BEHIND where it is, looking through it at the next island
+      const toward = Math.atan2(b.from.x - to.x, b.from.z - to.z);
+      if (ft < TOUR.look) {
+        b.centre.copy(b.from);
+        return { centre: b.centre, aim: true, dist: 95, pitch: 0.36, yaw: toward };
+      }
+      const u = tourEase((ft - TOUR.look) / TOUR.fly);
+      b.centre.lerpVectors(b.from, to, u);
+      b.centre.y += Math.sin(u * Math.PI) * 25;
+      return { centre: b.centre, aim: true, dist: 95 + Math.sin(u * Math.PI) * 30, pitch: 0.36 + 0.06 * u, yaw: lerpAngle(toward, orbit, u) };
     }
     return this.builder.camera(p) ?? this.activities.cameraFocus(p) ?? this._doorShot(p) ?? this.koi.cameraFocus?.(p) ?? null;
   }
