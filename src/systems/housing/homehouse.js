@@ -76,7 +76,10 @@ export function buildHouseShell(houseId) {
   const S = SHAPES[houseId] ?? SHAPES.minka;
   const floors = [];
   const roof = [];
+  /** Trim on the ground floor's walls (the noren), in the four colour slots. */
   const accent = [[], [], [], []];
+  /** Trim that belongs to the roof and the eaves — hidden with them. */
+  const ridge = [[], [], [], []];
   const tint = [];
   const walls = [];
   const decks = [];
@@ -164,15 +167,24 @@ export function buildHouseShell(houseId) {
       } else {
         piece(0, len, y, y + wallH, PALETTE.plaster);
         walls.push({ ax, az, bx, bz, y0: y, y1: top });
-        // a paper window in the middle of every wall
-        const wx = along === 'x' ? mx : mx + Math.sign(mx) * 0.17;
-        const wz = along === 'z' ? mz : mz + Math.sign(mz) * 0.17;
-        g.push(box(along === 'x' ? Math.min(3, len * 0.3) : 0.1, 1.4, along === 'z' ? Math.min(3, len * 0.3) : 0.1,
-          PALETTE.paper, wx, y + 2.2, wz));
+        /* NO BUILT-IN WINDOW. There was a paper panel in the middle of every
+           wall; windows are furniture now, hung where she wants them
+           (catalog.js `where: 'wall'`), and a painted one left behind would
+           sit under a real one or contradict an empty wall. */
       }
-      // timber posts at the ends and a beam along the top
-      g.push(box(0.36, wallH, 0.36, PALETTE.woodDark, ax, y + wallH / 2, az));
-      g.push(box(along === 'x' ? len : 0.34, 0.3, along === 'z' ? len : 0.34, PALETTE.woodDark, mx, y + wallH - 0.15, mz));
+      /* Timber posts at the ends and a beam along the top — NO FACE OF EITHER
+         IN THE PLANE OF ANOTHER. Richard: "The ceiling wooden beams are also
+         having some Z-fighting". They were: the beam's top sat exactly on the
+         wall's top (y + wallH both), and with the roof cut away that is the
+         face the camera looks straight down at; and every corner had two
+         full-length beams crossing in the same slab of space, top faces
+         coplanar. So the beam runs BETWEEN the posts (len - 0.4, not len),
+         stands 0.05 proud of the wall top, the post 0.08 proud of the beam,
+         and beams along x sit 0.02 lower than beams along z so a corner
+         never has two faces at one depth. */
+      const lift = along === 'x' ? 0.03 : 0.05;
+      g.push(box(0.38, wallH + 0.13, 0.38, PALETTE.woodDark, ax, y + (wallH + 0.13) / 2, az));
+      g.push(box(along === 'x' ? len - 0.4 : 0.36, 0.3, along === 'z' ? len - 0.4 : 0.36, PALETTE.woodDark, mx, y + wallH - 0.15 + lift, mz));
     };
     side(-hw, hd, hw, hd, true);
     side(hw, hd, hw, -hd, false);
@@ -188,7 +200,7 @@ export function buildHouseShell(houseId) {
       paint(skirt, 0xe6e6e6);
       skirt.translate(0, top - 0.55, 0);
       tint.push(skirt);
-      accent[f % 4].push(box(hw * 2 + 0.4, 0.22, 0.12, 0xffffff, 0, top - 0.7, hd + 0.25));
+      ridge[f % 4].push(box(hw * 2 + 0.4, 0.22, 0.12, 0xffffff, 0, top - 0.7, hd + 0.25));
     }
     floors.push(g);
     y = top;
@@ -240,17 +252,37 @@ export function buildHouseShell(houseId) {
   paint(soff, PALETTE.woodDark);
   soff.translate(0, yTop - 0.12, 0);
   roof.push(soff);
-  accent[0].push(box(0.5, 0.5, td * 0.6, 0xffffff, 0, yTop + S.roof - 0.2, 0));
+  /* THE RIDGE CAP IS THE ROOF'S, not the house's. Richard: "When inside the
+     house, the center point of the roof is still visible, should probably
+     disappear with the roof." It was in accent slot 0 with the noren, and
+     slot 0 was the one slot `setHome` kept when the roof came off — so a
+     block floated in mid-air over the room. Everything up here now goes in
+     `ridge`, which is hidden with the roof, whatever its colour slot. */
+  ridge[0].push(box(0.5, 0.5, td * 0.6, 0xffffff, 0, yTop + S.roof - 0.2, 0));
   if (houseId === 'castle') {
     // shachihoko-ish fins on the ridge — one per possible owner
     for (let k = 0; k < 4; k++) {
       const ang = (k / 4) * Math.PI * 2 + Math.PI / 4;
-      accent[k].push(box(0.5, 1.1, 0.5, 0xffffff,
+      ridge[k].push(box(0.5, 1.1, 0.5, 0xffffff,
         Math.cos(ang) * tw * 1.3, yTop + 0.5, Math.sin(ang) * td * 1.3));
     }
   }
 
-  return { floors, roof, accent, tint, walls, decks, floorY, half, base, front: pd, door: { x: 0, z: bd, w: DOOR_W, y: base } };
+  return {
+    floors, roof, accent, ridge, tint, walls, decks, floorY, half, base, front: pd,
+    door: { x: 0, z: bd, w: DOOR_W, y: base },
+    /* The name board over the door, in the wall above the opening (3.1 to
+       4.25 up). Richard: "the placard above the houses door frame ... is not
+       visible as the roof blocks it from camera" — so it is not moved, the
+       CAMERA is: walking up to the door frames it from behind her, low, under
+       the eave (`Housing.cameraFocus`, `doorShot`). */
+    sign: { x: 0, y: base + 3.66, z: bd + 0.26, w: DOOR_W + 0.6, h: 0.95 },
+  };
+}
+
+/** The shape table's row, for the editor's wall slots (no geometry built). */
+export function houseShape(houseId) {
+  return SHAPES[houseId] ?? SHAPES.minka;
 }
 
 /** How tall the whole house is, for the camera tour and the name sign. */

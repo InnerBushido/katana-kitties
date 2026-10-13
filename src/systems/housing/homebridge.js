@@ -71,8 +71,8 @@ export function* solveHomeRoads(world, isles) {
   for (const isle of isles) {
     const As = findLandings(world, home, isle.island, avoid, 4);
     /* ONE landing on her island, the first — which is the one facing home,
-       and the one the house's front door and the yard plots were laid out
-       around (`PLOTS` keeps ±0.7 rad of the front empty for it). */
+       and the one the house's front door faces (editor.js `yardWhy` keeps
+       the path from the door out to it clear of anything she builds). */
     const Bs = findLandings(world, isle.island, home, [], 1);
     yield;
     if (!As.length || !Bs.length) { out.push(null); continue; }

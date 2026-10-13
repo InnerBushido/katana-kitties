@@ -5,6 +5,8 @@ import { makeLabelTexture } from '../../core/label.js';
 import { buildHouseShell, houseHeight, houseRadius, FLOOR_H } from './homehouse.js';
 import { HOUSE_BY_ID, ITEM_BY_ID } from './catalog.js';
 import { placeModel, drawItem } from './models.js';
+import { wallSlots, yardR } from './editor.js';
+import { buildTreehouse } from './treehouse.js';
 
 /* ---------------------------------------------------------------------------
    One sky site: its island, the house on it, the yard, the doors and the
@@ -33,17 +35,13 @@ import { placeModel, drawItem } from './models.js';
 const NEUTRAL_ACCENT = 0xd9cfbd;
 const NEUTRAL_ROOF = 0x56627a;
 
-/** Yard plots: angle off the front (radians), distance out, kind, size.
- *  Nothing within ±0.7 rad of the front, which is the bridge's landing. */
-export const PLOTS = [
-  { id: 'p1', a: 1.05, d: 30, kind: 'garden', r: 6 },
-  { id: 'p2', a: 1.75, d: 31, kind: 'water', r: 7 },
-  { id: 'p3', a: 2.45, d: 31, kind: 'grove', r: 7 },
-  { id: 'p4', a: Math.PI, d: 31, kind: 'court', r: 8 },
-  { id: 'p5', a: -2.45, d: 31, kind: 'grove', r: 7 },
-  { id: 'p6', a: -1.75, d: 31, kind: 'water', r: 7 },
-  { id: 'p7', a: -1.05, d: 30, kind: 'garden', r: 6 },
-];
+/** How high a wall thing's BOTTOM hangs above its floor. A window sits where
+ *  a kitten's eyes are (she is 2.9 tall); a trophy shelf is up out of reach. */
+export const WALL_Y = { window: 1.0, scroll: 0.5, picture: 1.2, trophy: 1.9 };
+
+/** The outdoor things that stand in the way, as a radius off their centre.
+ *  The rest (a pond, a court, a paddy) are walked on or over. */
+const SOLID = { teahouse: 2.4, belltower: 1.8, well: 1.1, shrine: 2.2, maple: 0.5, cherry: 0.5, pine: 0.5, waterwheel: 1.2, lantern: 0.5, firebasket: 0.3, sake: 0.8, drum: 1.0 };
 
 /** How far out the bubble stands past the island's rim. */
 const BUBBLE_PAD = 7;
@@ -70,9 +68,21 @@ export class HomeIsle {
     this.houseGroup = new THREE.Group();
     this.itemGroup = new THREE.Group();
     this.group.add(this.houseGroup, this.itemGroup);
-    this.accentMats = [0, 1, 2, 3].map(() => toonVertexMat({ color: NEUTRAL_ACCENT }));
-    this.roofMat = toonVertexMat({ color: NEUTRAL_ROOF });
-    this.wallMat = xrayVertexMat();
+    /* EVERY PART OF THE HOUSE IS X-RAY NOW, THE ROOF INCLUDED. Richard: "When
+       player is outside and around the house, the xray shader is not being
+       enabled ... Let's make sure xray is happening to player when they are
+       outside the house on the roof, so that if the roof blocks them, they
+       are still visible." The walls always were; but from outside, behind
+       the house, the thing in the way is the ROOF and its eaves, which were
+       plain toon. The cut is narrower than the town's (1.6 against 2.1) and
+       only bites what is a good step NEARER the camera than she is
+       (`cutNear`), so the side walls of the room she is in are left alone. */
+    const XR = { cutR: 1.6, cutSoft: 0.7, cutNear: 1.4 };
+    this.accentMats = [0, 1, 2, 3].map(() => xrayVertexMat({ color: NEUTRAL_ACCENT, ...XR }));
+    this.roofMat = xrayVertexMat({ color: NEUTRAL_ROOF, ...XR });
+    this.soffitMat = xrayVertexMat(XR);
+    this.wallMat = xrayVertexMat(XR);
+    this.xrayMats = [this.wallMat, this.roofMat, this.soffitMat, ...this.accentMats];
     /** Floor groups and the roof, for the per-pane cutaway. */
     this.floorMeshes = [];
     this.roofMeshes = [];
@@ -81,14 +91,11 @@ export class HomeIsle {
     this.obstacles = [];
     /** What INTERACT means where: rebuilt with the house and the yard. */
     this.spots = [];
-    this.plots = PLOTS.map((P) => {
-      const a = this.ry + P.a;
-      /* Rotated off the FRONT: the front is local +z, which in the world is
-         (sin ry, cos ry); an angle a off it is (sin(ry+a), cos(ry+a)). */
-      const x = site.x + Math.sin(a) * P.d;
-      const z = site.z + Math.cos(a) * P.d;
-      return { ...P, x, z, y: this.island.heightAt(x, z) ?? this.groundY };
-    });
+    /** Outdoor things by place id ('o' + uid): world centre, ground, radius. */
+    this.places = new Map();
+    /** Who has won how many arena battles — Housing hands this in, for the
+     *  trophy shelf. Null draws an empty shelf. */
+    this.cupsFor = null;
   }
 
   /* ------------------------------ building ----------------------------- */
@@ -97,22 +104,6 @@ export class HomeIsle {
     const geo = this.island.buildMesh(20, 48);
     this.islandMesh = new THREE.Mesh(geo, toonVertexMat());
     this.group.add(this.islandMesh);
-    // plot outlines: a ring of flat stones, so an empty plot reads as a place
-    const rings = [];
-    for (const P of this.plots) {
-      const n = Math.round(P.r * 2.2);
-      for (let k = 0; k < n; k++) {
-        const a = (k / n) * Math.PI * 2;
-        const g = new THREE.CylinderGeometry(0.35, 0.42, 0.18, 6);
-        paint(g, P.kind === 'water' ? 0x8fb7c9 : P.kind === 'court' ? 0xe8d29b : P.kind === 'grove' ? 0x7a9a5a : 0xb8b0a0);
-        const x = P.x + Math.cos(a) * P.r;
-        const z = P.z + Math.sin(a) * P.r;
-        g.translate(x, (this.island.heightAt(x, z) ?? P.y) + 0.05, z);
-        rings.push(g);
-      }
-    }
-    this.plotMesh = new THREE.Mesh(mergeParts(rings), toonVertexMat());
-    this.group.add(this.plotMesh);
     this._buildSaleSign();
     this._buildBubble();
     scene.add(this.group);
@@ -218,8 +209,8 @@ export class HomeIsle {
     this.houseGroup.clear();
     this.floorMeshes = [];
     this.roofMeshes = [];
-    this.walls = [];
-    this.decks = [];
+    this.houseWalls = [];
+    this.houseDecks = [];
     this.shell = null;
     this.saleSign.visible = !home;
     if (home) {
@@ -234,7 +225,7 @@ export class HomeIsle {
         this.floorMeshes.push(m);
       }
       if (S.roof.length) {
-        const m = new THREE.Mesh(mergeParts(S.roof), toonVertexMat());
+        const m = new THREE.Mesh(mergeParts(S.roof), this.soffitMat);
         hg.add(m);
         this.roofMeshes.push(m);
       }
@@ -249,25 +240,72 @@ export class HomeIsle {
       }
       S.accent.forEach((parts, k) => {
         if (!parts.length) return;
+        hg.add(new THREE.Mesh(mergeParts(parts), this.accentMats[k]));
+      });
+      /* The ridge, the eave bands and the castle's fins go with the roof —
+         by WHERE they are, not by which colour slot they are in. Keyed on the
+         slot was how the ridge cap (slot 0, with the noren) stayed floating
+         over the room with the roof gone. */
+      (S.ridge ?? []).forEach((parts, k) => {
+        if (!parts.length) return;
         const m = new THREE.Mesh(mergeParts(parts), this.accentMats[k]);
         hg.add(m);
-        /* Accents on the top floor and the roof go with the roof; the
-           ground floor's noren stays. Close enough: they are all trim. */
-        if (k > 0) this.roofMeshes.push(m);
+        this.roofMeshes.push(m);
       });
+      if (S.sign) hg.add(this._nameBoard(S.sign, home, colours));
       this.houseGroup.add(hg);
       // colliders and decks into the world frame
       for (const w of S.walls) {
         const a = this.local(w.ax, w.az);
         const b = this.local(w.bx, w.bz);
-        this.walls.push({ ...w, ax: a.x, az: a.z, bx: b.x, bz: b.z, y0: w.y0 + this.groundY, y1: w.y1 + this.groundY });
+        this.houseWalls.push({ ...w, ax: a.x, az: a.z, bx: b.x, bz: b.z, y0: w.y0 + this.groundY, y1: w.y1 + this.groundY });
       }
-      this.decks = S.decks.map((d) => ({ ...d }));
+      this.houseDecks = S.decks.map((d) => ({ ...d }));
       this.doorWorld = this.local(0, S.door.z);
       this.doorLocal = S.door;
     }
     this.setColours(colours, 1);
     this.rebuildItems();
+  }
+
+  /**
+   * THE HYŌSATSU — the name board over the door. Richard: "Does the placard
+   * say or do anything? We should have the players name and colors or
+   * something like that there, so people know whose house it is." Her name in
+   * the house's wood, and a stripe of each owner's colour under it, so a
+   * castle shared by three reads as three.
+   */
+  _nameBoard(sign, home, colours) {
+    this._boardTex?.dispose();
+    const g = new THREE.Group();
+    g.position.set(sign.x, sign.y, sign.z);
+    const owners = home.owners ?? [];
+    const cols = owners.map((_, k) => colours?.[k % (colours?.length || 1)] ?? NEUTRAL_ACCENT);
+    const parts = [];
+    const board = new THREE.BoxGeometry(sign.w, sign.h, 0.12);
+    paint(board, 0x3a2418);
+    parts.push(board);
+    const rim = new THREE.BoxGeometry(sign.w + 0.16, sign.h + 0.16, 0.06);
+    paint(rim, PALETTE.wood);
+    rim.translate(0, 0, -0.045);
+    parts.push(rim);
+    const sw = (sign.w - 0.3) / Math.max(1, cols.length);
+    cols.forEach((c, k) => {
+      const s = new THREE.BoxGeometry(sw - 0.06, 0.14, 0.05);
+      paint(s, c);
+      s.translate(-sign.w / 2 + 0.15 + sw * (k + 0.5), -sign.h / 2 + 0.13, 0.075);
+      parts.push(s);
+    });
+    g.add(new THREE.Mesh(mergeParts(parts), toonVertexMat()));
+    const text = owners.length ? `${owners.join(' & ').toUpperCase()}'S` : 'HOME';
+    const { texture, aspect } = makeLabelTexture(text, { size: 72, color: '#fff3d6', stroke: '#1d1216', strokeWidth: 8 });
+    this._boardTex = texture;
+    const h = Math.min(sign.h * 0.62, (sign.w * 0.9) / aspect);
+    const plate = new THREE.Mesh(new THREE.PlaneGeometry(h * aspect, h),
+      new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false }));
+    plate.position.set(0, 0.06, 0.08);
+    g.add(plate);
+    return g;
   }
 
   /** Tint the house toward these owner colours by k (0 neutral, 1 hers). */
@@ -284,40 +322,66 @@ export class HomeIsle {
     if (this.bubble) this.bubble.material.uniforms.uTint.value.set(list ? list[0] : 0xffffff);
   }
 
-  /** Lay the yard and the rooms out again from `this.home`. */
+  /** Lay the yard, the walls and the rooms out again from `this.home`. */
   rebuildItems() {
     for (const c of this.itemGroup.children) c.userData.disposed = true;
     this.itemGroup.clear();
     this.obstacles = [];
     this.spots = [];
+    this.places = new Map();
+    /* The house's colliders and decks, then whatever the yard adds (the
+       treehouse is a level of its own). Two lists joined, so moving a tree
+       never has to rebuild the house. */
+    this.walls = [...(this.houseWalls ?? [])];
+    this.decks = [...(this.houseDecks ?? [])];
+    this.itemMeshes = new Map();
     const H = this.home;
     if (!H) return;
-    // ---- the yard
-    for (const P of this.plots) {
-      const id = H.yard?.[P.id];
-      const it = id && ITEM_BY_ID[id];
-      if (!it) continue;
-      const g = this._yardItem(it, P);
+    // ---- outdoors
+    for (const q of H.outdoor ?? []) {
+      const it = ITEM_BY_ID[q.id];
+      if (!it || it.later) continue;
+      const g = this._yardItem(it, q);
       this.itemGroup.add(g);
+      this.itemMeshes.set('o' + q.uid, g);
     }
-    // ---- the rooms
+    // ---- the rooms, and their walls
     const def = HOUSE_BY_ID[H.house];
     for (const room of def?.rooms ?? []) {
       const R = H.rooms?.[room.id];
       if (R?.type === 'kendo' || R?.type === 'holodeck') {
         this.itemGroup.add(this._roomDressing(room, R.type));
       }
-      for (const placed of R?.items ?? []) {
+      const y = this.groundY + (this.shell?.floorY[room.floor] ?? 0);
+      for (const [k, placed] of (R?.items ?? []).entries()) {
         const it = ITEM_BY_ID[placed.id];
         if (!it) continue;
         const L = this.cellCentre(room, placed.gx, placed.gz, it, placed.rot);
         const w = this.local(L.x, L.z);
-        const y = this.groundY + (this.shell?.floorY[room.floor] ?? 0);
-        const g = placeModel(it.model, drawItem(it.id, 2));
+        const g = placeModel(it.model, drawItem(it.id, 2), it.size);
         g.position.set(w.x, y, w.z);
         g.rotation.y = this.ry + (placed.rot ?? 0) * (Math.PI / 2);
         this.itemGroup.add(g);
-        if (it.act) this.spots.push({ x: w.x, z: w.z, y, r: 2.4, act: it.act, item: it.id, room: room.id });
+        this.itemMeshes.set(`r:${room.id}:${k}`, g);
+        if (it.act) this.spots.push({ x: w.x, z: w.z, y, r: 2.6, act: it.act, item: it.id, room: room.id, k });
+      }
+      const slots = (R?.wall?.length) ? wallSlots(H.house, room) : [];
+      for (const [k, q] of (R?.wall ?? []).entries()) {
+        const it = ITEM_BY_ID[q.id];
+        const S = slots.find((s) => s.side === q.side && s.k === q.k);
+        if (!it || !S) continue;
+        const cups = q.id === 'trophy' ? (this.cupsFor?.(H) ?? 0) : 0;
+        const g = placeModel(null, drawItem(it.id, 2, { cups }), it.size);
+        const w = this.local(S.x, S.z);
+        g.position.set(w.x, y + (WALL_Y[q.id] ?? 1), w.z);
+        g.rotation.y = this.ry + S.ry;
+        this.itemGroup.add(g);
+        this.itemMeshes.set(`w:${room.id}:${k}`, g);
+        if (it.act) {
+          // the spot is a step into the room from the wall, where she stands
+          const f = this.local(S.x - Math.sin(S.ry) * -1.4, S.z - Math.cos(S.ry) * -1.4);
+          this.spots.push({ x: f.x, z: f.z, y, r: 1.8, act: it.act, item: it.id, room: room.id, side: q.side, slot: S });
+        }
       }
     }
     // the front door's own spot: owner's lock, everybody's knock
@@ -325,6 +389,12 @@ export class HomeIsle {
       const d = this.local(0, (this.shell?.door.z ?? 6) + 1.6);
       this.spots.push({ x: d.x, z: d.z, y: this.groundY + (this.shell?.base ?? 0), r: 2.6, act: 'door' });
     }
+  }
+
+  /** The first outdoor place holding item `id`, or null — the koi and the farm ask. */
+  placeOf(id) {
+    for (const P of this.places.values()) if (P.item === id) return P;
+    return null;
   }
 
   /** Centre of a grid placement in house-local units. 1 cell = 2 units. */
@@ -336,94 +406,142 @@ export class HomeIsle {
     };
   }
 
-  _yardItem(it, P) {
+  /**
+   * One outdoor thing, at its row's (x, z, rot) in the house's frame. The
+   * place it records (`this.places`) is what the koi, the farm and the
+   * build mode find it by — by uid, so moving a pond keeps its fish.
+   */
+  _yardItem(it, q) {
+    const w = this.local(q.x, q.z);
+    const gy = this.island.heightAt(w.x, w.z) ?? this.groundY;
+    const r = yardR(it);
+    const P = { id: 'o' + q.uid, uid: q.uid, item: it.id, x: w.x, y: gy, z: w.z, r, a: q.rot ?? 0 };
+    this.places.set(P.id, P);
     const g = new THREE.Group();
-    g.position.set(P.x, P.y, P.z);
-    g.rotation.y = this.ry + P.a + Math.PI;
+    g.position.set(w.x, gy, w.z);
+    g.rotation.y = this.ry + (q.rot ?? 0);
     const add = (o) => { g.add(o); return o; };
     const mat = toonVertexMat();
     const flat = (parts) => add(new THREE.Mesh(mergeParts(parts), mat));
-    const disc = (r, h, c, y = 0, seg = 24) => {
-      const d = new THREE.CylinderGeometry(r, r, h, seg);
+    const disc = (rr, h, c, y = 0, seg = 32) => {
+      const d = new THREE.CylinderGeometry(rr, rr, h, seg);
       paint(d, c);
       d.translate(0, y + h / 2, 0);
       return d;
     };
+    const spot = (act, rr = r) => this.spots.push({ x: w.x, z: w.z, y: gy, r: rr, act, item: it.id, place: P.id });
     switch (it.id) {
       case 'koipond': {
-        flat([disc(P.r - 0.6, 0.25, 0x9a948a), disc(P.r - 1.3, 0.28, 0x2f6f9a, 0.02)]);
-        // lily pads
+        /* "Pond is way too small, can make it bigger" — r 10 now, against 7.
+           The rim is stones, so it reads as a pond from above in build mode. */
+        flat([disc(r - 0.6, 0.25, 0x9a948a), disc(r - 1.3, 0.28, 0x2f6f9a, 0.02)]);
+        const rim = [];
+        for (let k = 0; k < 28; k++) {
+          const a = (k / 28) * Math.PI * 2;
+          const s = new THREE.DodecahedronGeometry(0.55 + (k % 3) * 0.12, 0);
+          paint(s, k % 2 ? 0x8a857c : 0x9a948a);
+          s.translate(Math.cos(a) * (r - 0.8), 0.3, Math.sin(a) * (r - 0.8));
+          rim.push(s);
+        }
+        flat(rim);
         const pads = [];
-        for (let k = 0; k < 6; k++) pads.push(disc(0.6, 0.06, 0x4a8a3a, 0.31, 8).translate(Math.cos(k * 2.1) * (P.r - 2.8), 0, Math.sin(k * 2.1) * (P.r - 2.8)));
+        for (let k = 0; k < 8; k++) pads.push(disc(0.7, 0.06, 0x4a8a3a, 0.31, 8).translate(Math.cos(k * 2.1) * (r - 3), 0, Math.sin(k * 2.1) * (r - 3)));
         flat(pads);
-        g.userData.pond = { r: P.r - 1.3 };
-        this.spots.push({ x: P.x, z: P.z, y: P.y, r: P.r + 1, act: 'koi', item: it.id, plot: P.id });
+        g.userData.pond = { r: r - 1.3 };
+        spot('koi', r + 1);
         break;
       }
       case 'onsen': {
-        flat([disc(P.r - 0.5, 0.6, 0x7d7870), disc(P.r - 1.2, 0.62, 0x8fd0d8, 0.02)]);
-        for (let k = 0; k < 8; k++) {
-          const s = new THREE.DodecahedronGeometry(0.8, 0);
+        flat([disc(r - 0.5, 0.6, 0x7d7870), disc(r - 1.2, 0.62, 0x8fd0d8, 0.02)]);
+        const rocks = [];
+        for (let k = 0; k < 14; k++) {
+          const s = new THREE.DodecahedronGeometry(0.8 + (k % 3) * 0.2, 0);
           paint(s, 0x6a655e);
-          s.translate(Math.cos(k * 0.8) * (P.r - 0.4), 0.5, Math.sin(k * 0.8) * (P.r - 0.4));
-          flat([s]);
+          s.translate(Math.cos(k * 0.45) * (r - 0.4), 0.5, Math.sin(k * 0.45) * (r - 0.4));
+          rocks.push(s);
         }
-        this.spots.push({ x: P.x, z: P.z, y: P.y, r: P.r, act: 'soak', item: it.id, plot: P.id });
+        flat(rocks);
+        spot('soak');
         break;
       }
       case 'volleyball': {
-        const sand = new THREE.BoxGeometry(P.r * 1.6, 0.12, P.r * 1.0);
+        const sand = new THREE.BoxGeometry(r * 1.6, 0.12, r * 1.0);
         paint(sand, 0xead7a0);
         sand.translate(0, 0.06, 0);
-        const net = new THREE.BoxGeometry(0.08, 1.2, P.r);
+        const net = new THREE.BoxGeometry(0.08, 1.4, r);
         paint(net, 0xffffff);
-        net.translate(0, 2.2, 0);
-        const p1 = new THREE.BoxGeometry(0.2, 3, 0.2); paint(p1, 0x444444); p1.translate(0, 1.5, P.r / 2);
-        const p2 = new THREE.BoxGeometry(0.2, 3, 0.2); paint(p2, 0x444444); p2.translate(0, 1.5, -P.r / 2);
+        net.translate(0, 2.6, 0);
+        const p1 = new THREE.BoxGeometry(0.25, 3.4, 0.25); paint(p1, 0x444444); p1.translate(0, 1.7, r / 2);
+        const p2 = new THREE.BoxGeometry(0.25, 3.4, 0.25); paint(p2, 0x444444); p2.translate(0, 1.7, -r / 2);
         flat([sand, net, p1, p2]);
-        this.spots.push({ x: P.x, z: P.z, y: P.y, r: P.r, act: 'volley', item: it.id, plot: P.id });
+        spot('volley');
         break;
       }
       case 'bamboofarm': {
-        const soil = new THREE.CylinderGeometry(P.r - 0.6, P.r - 0.6, 0.15, 20);
+        const soil = new THREE.CylinderGeometry(r - 0.6, r - 0.6, 0.15, 24);
         paint(soil, 0x6a4a2a);
         soil.translate(0, 0.08, 0);
         flat([soil]);
-        g.userData.farm = { r: P.r - 1 };
-        this.spots.push({ x: P.x, z: P.z, y: P.y, r: P.r, act: 'harvest', item: it.id, plot: P.id });
+        g.userData.farm = { r: r - 1 };
+        spot('harvest');
         break;
       }
       case 'pen': {
         const posts = [];
-        for (let k = 0; k < 16; k++) {
-          const a = (k / 16) * Math.PI * 2;
-          const b = new THREE.BoxGeometry(0.2, 1.2, 0.2);
+        const n = Math.round(r * 2.2);
+        for (let k = 0; k < n; k++) {
+          const a = (k / n) * Math.PI * 2;
+          const b = new THREE.BoxGeometry(0.25, 1.4, 0.25);
           paint(b, PALETTE.wood);
-          b.translate(Math.cos(a) * (P.r - 0.6), 0.6, Math.sin(a) * (P.r - 0.6));
+          b.translate(Math.cos(a) * (r - 0.6), 0.7, Math.sin(a) * (r - 0.6));
           posts.push(b);
         }
-        const rail = new THREE.TorusGeometry(P.r - 0.6, 0.08, 4, 32);
+        const rail = new THREE.TorusGeometry(r - 0.6, 0.09, 4, 48);
         paint(rail, PALETTE.woodDark);
         rail.rotateX(Math.PI / 2);
-        rail.translate(0, 1.0, 0);
-        const trough = new THREE.BoxGeometry(2, 0.5, 0.8);
+        rail.translate(0, 1.15, 0);
+        const trough = new THREE.BoxGeometry(2.4, 0.6, 0.9);
         paint(trough, PALETTE.woodDark);
-        trough.translate(0, 0.25, P.r - 2);
+        trough.translate(0, 0.3, r - 2.2);
         flat([...posts, rail, trough]);
-        g.userData.pen = { r: P.r - 1.5 };
-        this.spots.push({ x: P.x, z: P.z, y: P.y, r: P.r, act: 'animals', item: it.id, plot: P.id });
+        g.userData.pen = { r: r - 1.5 };
+        spot('animals');
+        break;
+      }
+      case 'treehouse': {
+        /* A LEVEL, not a prop (treehouse.js). Its geometry is in its own frame
+           and goes in this group; its decks, walls and trunks come back in
+           the house's frame and join the island's. */
+        const T = buildTreehouse(
+          (fx, fz) => ({
+            x: q.x + fx * Math.cos(q.rot ?? 0) + fz * Math.sin(q.rot ?? 0),
+            z: q.z - fx * Math.sin(q.rot ?? 0) + fz * Math.cos(q.rot ?? 0),
+          }),
+          q.rot ?? 0, gy - this.groundY, this.wallMat,
+        );
+        add(T.group);
+        this.decks.push(...T.decks);
+        for (const wl of T.walls) {
+          const a = this.local(wl.ax, wl.az);
+          const b = this.local(wl.bx, wl.bz);
+          this.walls.push({ ...wl, ax: a.x, az: a.z, bx: b.x, bz: b.z, y0: wl.y0 + this.groundY, y1: wl.y1 + this.groundY });
+        }
+        for (const t of T.trunks) {
+          const o = this.local(t.x, t.z);
+          this.obstacles.push({ x: o.x, z: o.z, r: t.r });
+        }
+        g.userData.treehouse = T;
         break;
       }
       case 'bladeforest': break;
       default: {
-        const m = placeModel(it.model, drawItem(it.id, 2));
-        add(m);
-        if (it.act) this.spots.push({ x: P.x, z: P.z, y: P.y, r: P.r * 0.7, act: it.act, item: it.id, plot: P.id });
-        const solid = { treehouse: 1.2, teahouse: 2.4, belltower: 1.8, well: 1.1, shrine: 2.2, maple: 0.5, cherry: 0.5, pine: 0.5, waterwheel: 1.2 }[it.id];
-        if (solid) this.obstacles.push({ x: P.x, z: P.z, r: solid });
+        add(placeModel(it.model, drawItem(it.id, 2), it.size));
+        if (it.act) spot(it.act, Math.max(2.4, r + 0.8));
+        const solid = SOLID[it.id];
+        if (solid) this.obstacles.push({ x: w.x, z: w.z, r: solid * Math.max(1, r / 2.5) });
       }
     }
-    g.userData.plot = P.id;
+    g.userData.place = P.id;
     g.userData.item = it.id;
     return g;
   }
@@ -482,8 +600,17 @@ export class HomeIsle {
     if (this.decks?.length) {
       const L = this.toLocal(x, z);
       for (const d of this.decks) {
-        if (L.x < d.x0 || L.x > d.x1 || L.z < d.z0 || L.z > d.z1) continue;
-        const py = this.groundY + (d.yAt ? d.yAt(L.x, L.z) : d.y);
+        /* A deck with a `frame` sits at an angle (the treehouse's bridges and
+           branches): (x, z) is read in ITS frame, the same turn `local` uses. */
+        let lx = L.x, lz = L.z;
+        if (d.frame) {
+          const c = Math.cos(d.frame.a), s = Math.sin(d.frame.a);
+          const dx = L.x - d.frame.x, dz = L.z - d.frame.z;
+          lx = dx * c - dz * s;
+          lz = dx * s + dz * c;
+        }
+        if (lx < d.x0 || lx > d.x1 || lz < d.z0 || lz > d.z1) continue;
+        const py = this.groundY + (d.yAt ? d.yAt(lx, lz) : d.y);
         if (fromY + (d.step ?? 0.4) < py) continue;
         if (!best || py > best.y) best = { y: py, island: this.island, home: this, deck: d };
       }

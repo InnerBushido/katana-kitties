@@ -73,17 +73,45 @@ export function loadModel(id) {
   return cache.get(id).then((root) => (root ? root.clone(true) : null));
 }
 
-/** A group holding `standIn` now and the model later. */
-export function placeModel(id, standIn) {
+const _box = new THREE.Box3();
+const _v = new THREE.Vector3();
+
+/**
+ * Scale `obj` uniformly so it is `size.h` tall or `size.w` across (its wider
+ * of x and z), MEASURED off its own geometry, and sit it on the ground.
+ * Neither a Polyfork file's metres nor a stand-in's units are this game's
+ * scale (a kitten is 2.9 tall), and reasoned sizes have been wrong roughly
+ * every time — CLAUDE.md, "measure, don't reason, about anything drawn".
+ * No size = leave it as it is. A degenerate box leaves it alone too.
+ */
+export function fitTo(obj, size) {
+  if (!obj || !size) return obj;
+  obj.scale.setScalar(1);
+  obj.position.set(0, 0, 0);
+  obj.updateMatrixWorld(true);
+  _box.setFromObject(obj);
+  if (_box.isEmpty()) return obj;
+  _box.getSize(_v);
+  const s = size.h ? size.h / _v.y : size.w / Math.max(_v.x, _v.z);
+  if (!(s > 0) || !Number.isFinite(s)) return obj;
+  obj.scale.setScalar(s);
+  obj.position.y = -_box.min.y * s;
+  obj.userData.fitScale = s;
+  return obj;
+}
+
+/** A group holding `standIn` now and the model later, both fitted to `size`. */
+export function placeModel(id, standIn, size = null) {
   const g = new THREE.Group();
-  if (standIn) g.add(standIn);
+  if (standIn) g.add(fitTo(standIn, size));
   g.userData.modelId = id ?? null;
   if (id) {
     loadModel(id).then((m) => {
       if (!m || g.userData.disposed) return;
       if (standIn) g.remove(standIn);
-      g.add(m);
+      g.add(fitTo(m, size));
       g.userData.real = true;
+      g.userData.onReal?.(g);
     });
   }
   return g;
@@ -124,7 +152,7 @@ function mesh(parts) {
  * `sz` is the footprint the catalogue gives it, so a stand-in fills the cells
  * it was sold as filling.
  */
-export function drawItem(id, sz = 2) {
+export function drawItem(id, sz = 2, opts = {}) {
   const W = sz;
   switch (id) {
     case 'futon': return mesh([box(1.6, 0.25, 3.4, 0xf4efe2), box(1.6, 0.12, 2.2, 0x6f8fd8, 0, 0.25, 0.5), box(1.1, 0.2, 0.6, 0xffffff, 0, 0.25, -1.3)]);
@@ -159,6 +187,32 @@ export function drawItem(id, sz = 2) {
       box(0.2, 2.4, 0.2, 0xd8382a, -0.9, 0, (k - 1) * 2.4), box(0.2, 2.4, 0.2, 0xd8382a, 0.9, 0, (k - 1) * 2.4),
       box(2.6, 0.2, 0.3, 0x222222, 0, 2.4, (k - 1) * 2.4), box(2.2, 0.15, 0.2, 0xd8382a, 0, 1.9, (k - 1) * 2.4)]));
     case 'treehouse': return mesh([cyl(0.5, 0.7, 5, 0x5a3a20), ball(3.4, 0xf6b5cf, 0, 7.6, 0, 0.6), box(3, 0.2, 3, 0x8a6a40, 0, 4.6), box(2.4, 1.8, 2.4, 0xd8b880, 0, 4.8), box(2.8, 0.3, 2.8, 0x8a3a2a, 0, 6.6), box(0.6, 4.6, 0.1, 0x7a5a3a, 1.7, 0, 0)]);
+    /* WALL THINGS — drawn facing +z, their back on z = 0 (the wall), their
+       bottom at y = 0; homeisle.js lifts them to their height on the wall. */
+    case 'window': return mesh([
+      box(2.0, 1.7, 0.1, 0x3a2418, 0, 0, 0.05),
+      box(1.7, 1.4, 0.06, 0xbfe3f2, 0, 0.15, 0.1),
+      ...[0, 1, 2].map((k) => box(0.06, 1.4, 0.1, 0x5a3a20, -0.57 + k * 0.57, 0.15, 0.14)),
+      box(1.7, 0.06, 0.1, 0x5a3a20, 0, 0.82, 0.14),
+      box(2.2, 0.12, 0.3, 0x5a3a20, 0, -0.06, 0.15)]);
+    case 'scroll': return mesh([
+      box(1.0, 2.4, 0.03, 0xf3ead2, 0, 0, 0.03), box(0.9, 1.8, 0.035, 0xfffaee, 0, 0.3, 0.04),
+      box(1.2, 0.1, 0.1, 0x3a2418, 0, 2.38, 0.06),
+      box(1.2, 0.12, 0.12, 0x3a2418, 0, -0.04, 0.06),
+      box(0.42, 0.42, 0.04, 0x1a1a1a, 0, 1.2, 0.06), box(0.3, 0.3, 0.05, 0xfffaee, 0.05, 1.27, 0.06)]);
+    case 'picture': return mesh([
+      box(1.8, 1.3, 0.1, 0x8a5a32, 0, 0, 0.05), box(1.55, 1.05, 0.04, 0x7fc0e0, 0, 0.12, 0.1),
+      box(1.55, 0.35, 0.05, 0x3a7a9a, 0, 0.12, 0.11), cyl(0.18, 0.18, 0.04, 0xffffff, 0.4, 0.75, 0.12)]);
+    case 'trophy': {
+      const n = Math.max(0, Math.min(8, opts.cups ?? 0));
+      const parts = [box(2.0, 0.12, 0.6, 0x5a3a20, 0, 0, 0.3), box(2.0, 0.8, 0.06, 0x3a2418, 0, -0.75, 0.03)];
+      for (let k = 0; k < Math.max(1, n); k++) {
+        const x = -0.8 + (n > 1 ? (1.6 * k) / (n - 1) : 0.8);
+        const c = n ? 0xffcf3a : 0x8a8a84; // an empty shelf holds a grey stand-in cup
+        parts.push(cyl(0.08, 0.12, 0.12, c, x, 0.12, 0.32), cyl(0.04, 0.04, 0.16, c, x, 0.24, 0.32), cyl(0.17, 0.07, 0.28, c, x, 0.4, 0.32));
+      }
+      return mesh(parts);
+    }
     default: return mesh([box(W * 0.8, 0.8, W * 0.8, 0xc8b8a0)]);
   }
 }

@@ -41,7 +41,11 @@ export function newHome(site, house, owners, now = Date.now()) {
     /** What each owner put in, for the castle's pooled purchase and refunds. */
     paid: Object.fromEntries(owners.map((n) => [n, 0])),
     rooms: {},
-    yard: {},
+    /** Outdoor things, placed freely: `{ uid, id, x, z, rot }` in the
+     *  house's own frame (x right, z toward the bridge). `uid` is a counter
+     *  (`H.uid`) so a moved pond keeps its koi. */
+    outdoor: [],
+    uid: 0,
     chest: [],
     farm: null,
     pen: null,
@@ -88,11 +92,43 @@ export function normalise(s) {
       ...h,
       site,
     };
+    migrateYard(out.homes[site]);
   }
   for (const [k, v] of Object.entries(s.bank ?? {})) if (Number.isFinite(v) && v > 0) out.bank[k] = v;
   out.records = s.records && typeof s.records === 'object' ? s.records : {};
   out.jukebox = s.jukebox && typeof s.jukebox === 'object' ? s.jukebox : {};
   return out;
+}
+
+/**
+ * THE OLD PLOTS, as they were laid out until Oct 2026: angle off the front,
+ * distance out. Kept ONLY so a home saved then comes back with its pond and
+ * its pen where they stood — `migrateYard` turns `yard: { p2: 'koipond' }`
+ * into an outdoor row at the same spot. Nothing else reads them.
+ */
+const LEGACY_PLOTS = {
+  p1: [1.05, 30], p2: [1.75, 31], p3: [2.45, 31], p4: [Math.PI, 31],
+  p5: [-2.45, 31], p6: [-1.75, 31], p7: [-1.05, 30],
+};
+
+/** `yard` (plot → item) into `outdoor` rows, once. Pure; returns H. */
+export function migrateYard(H) {
+  if (!Array.isArray(H.outdoor)) H.outdoor = [];
+  H.uid = Number.isFinite(H.uid) ? H.uid : H.outdoor.reduce((m, q) => Math.max(m, q.uid ?? 0), 0);
+  if (H.yard && typeof H.yard === 'object') {
+    for (const [plot, id] of Object.entries(H.yard)) {
+      const L = LEGACY_PLOTS[plot];
+      if (!L || typeof id !== 'string') continue;
+      // an angle a off the front (+z) at distance d is (sin a, cos a) * d
+      H.uid += 1;
+      H.outdoor.push({ uid: H.uid, id, x: +(Math.sin(L[0]) * L[1]).toFixed(2), z: +(Math.cos(L[0]) * L[1]).toFixed(2), rot: L[0] + Math.PI });
+    }
+  }
+  delete H.yard;
+  // a row with no uid (hand-edited file) gets one, or koi state cannot find it
+  for (const q of H.outdoor) if (!Number.isFinite(q.uid)) { H.uid += 1; q.uid = H.uid; }
+  H.outdoor = H.outdoor.filter((q) => q && typeof q.id === 'string' && Number.isFinite(q.x) && Number.isFinite(q.z));
+  return H;
 }
 
 /** The newer of two stores — the game save's copy against the browser's. */

@@ -86,9 +86,9 @@ export class Farm {
       const v = this.views.get(I.site.id);
       if (v) { v.group.parent?.remove(v.group); this.views.delete(I.site.id); }
       if (!H || H.preview) continue;
-      const yard = Object.entries(H.yard ?? {});
-      const farmPlot = yard.find(([, id]) => id === 'bamboofarm')?.[0];
-      const penPlot = yard.find(([, id]) => id === 'pen')?.[0];
+      // place ids ('o' + uid) of the first farm and pen; see HomeIsle.places
+      const farmPlot = I.placeOf('bamboofarm')?.id;
+      const penPlot = I.placeOf('pen')?.id;
       if (farmPlot && !H.farm) H.farm = { cut: now - BAMBOO_GROW * 4 };
       if (penPlot && !H.pen) {
         H.pen = { animals: ANIMALS.map((a) => ({ kind: a.id, fed: now })), visits: [] };
@@ -105,7 +105,7 @@ export class Farm {
   }
 
   _plot(I, id) {
-    return I.plots.find((P) => P.id === id);
+    return I.places.get(id);
   }
 
   _drawStalks(I, view) {

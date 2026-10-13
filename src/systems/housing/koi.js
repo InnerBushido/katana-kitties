@@ -49,10 +49,10 @@ export class Koi {
     for (const I of this.H.isles) {
       const H = I.home;
       if (!H || H.preview) continue;
-      const plot = Object.entries(H.yard ?? {}).find(([, id]) => id === 'koipond')?.[0];
-      if (!plot) continue;
+      // the first pond on the island; a second pond is scenery
+      const P = I.placeOf('koipond');
+      if (!P) continue;
       H.koi ??= { fish: [newKoi(), newKoi(), newKoi()], fed: 0 };
-      const P = I.plots.find((q) => q.id === plot);
       const group = new THREE.Group();
       I.itemGroup.add(group);
       const fish = H.koi.fish.map((f, k) => this._fish(f, k, P, group));

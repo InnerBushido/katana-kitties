@@ -81,10 +81,20 @@ export function xrayVertexMat(opts = {}) {
      extra slots arrive with `uCutOn` at zero and `continue` out of the loop on
      the first line of it, which is the fifth non-negotiable holding. */
   const MAX = 4;
+  /* PER-MATERIAL CUT SHAPE, for the housing walls (housing/homeisle.js). The
+     defaults are the numbers every existing caller has always had, so nothing
+     else moves. `cutNear` is new: a fragment must be at least this much
+     NEARER the camera than she is to be cut. Richard, on her own house: the
+     x-ray was "being activated on the side walls when not necessary as they
+     are not blocking the player, mainly just need the xray on the walls
+     between the player and the camera". A side wall she is standing beside
+     is the same distance from the camera as she is, and inside the cone; a
+     wall that is actually in the way is a room's width nearer. 0 = off. */
+  const { cutR = 2.1, cutSoft = 1.0, cutNear = 0, ...rest } = opts;
   const mat = new THREE.MeshToonMaterial({
     gradientMap: RAMP,
     vertexColors: true,
-    ...opts,
+    ...rest,
   });
 
   const u = {
@@ -100,9 +110,10 @@ export function xrayVertexMat(opts = {}) {
        times her height — enough to read her and her ring without turning the
        building into a doughnut. 2.6 was the first try and from twenty units
        away it took most of the dome with it. */
-    uCutR: { value: 2.1 },
+    uCutR: { value: cutR },
     uCutFlare: { value: 0.5 },
-    uCutSoft: { value: 1.0 },
+    uCutSoft: { value: cutSoft },
+    uCutNear: { value: cutNear },
     /* THE FLOOR EACH SUBJECT IS STANDING ON, and nothing below it is ever cut.
        Reported from play: "fix the x-ray issue where we can see through the
        ground (ceiling of the platform) that Mr. Satan is standing on in the
@@ -148,6 +159,7 @@ export function xrayVertexMat(opts = {}) {
         uniform float uCutR;
         uniform float uCutFlare;
         uniform float uCutSoft;
+        uniform float uCutNear;
         uniform float uCutFloor[${MAX}];
 
         // 4x4 Bayer, so the cut edge dissolves instead of stair-stepping.
@@ -194,6 +206,7 @@ export function xrayVertexMat(opts = {}) {
                beyond her can occlude her — and it is the same two vectors. */
             vec3 av = vXrayWorld - a;
             if (dot(av, av) >= len2) continue;
+            if (uCutNear > 0.0 && length(av) > sqrt(len2) - uCutNear) continue;
             float d = length(vXrayWorld - (a + ab * clamp(t, 0.0, 1.0)));
             /* Widen toward the camera so the hole is a steady size on screen,
                and SCALE THE WHOLE THING BY WHAT THIS VERTEX AGREED TO. "It is

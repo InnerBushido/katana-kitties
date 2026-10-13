@@ -14,6 +14,7 @@ import { Farm } from './farm.js';
 import { Kendo } from './kendo.js';
 import { autoLayout } from './editor.js';
 import { HousingCards } from './cards.js';
+import { BuildMode } from './build.js';
 
 /* ---------------------------------------------------------------------------
    CUSTOM HOUSING — the one object the game talks to.
@@ -50,6 +51,11 @@ const NAG = 2.6;
 
 const styleByName = (n) => PLAYER_STYLE.find((s) => s.name === n) ?? null;
 
+/** Player.js's resting camera yaw (`CAM_YAW`), which a focus yaw is lerped
+ *  from — a shot's yaw is wrapped to within half a turn of it so the camera
+ *  swings the short way round. */
+const CAM_YAW_DEFAULT = -Math.PI * 0.25;
+
 export class Housing {
   constructor(game) {
     this.game = game;
@@ -74,6 +80,9 @@ export class Housing {
     this.koi = new Koi(this);
     this.farm = new Farm(this);
     this.kendo = new Kendo(this);
+    /** Build mode's ghosts, camera and corner map (`build.js`). Not `build`:
+     *  that is the method that puts the islands in the sky. */
+    this.builder = new BuildMode(this);
     this.built = false;
   }
 
@@ -82,7 +91,10 @@ export class Housing {
   build() {
     const scene = this.game.scene;
     this.isles = HOME_SITES.map((s) => new HomeIsle(s, this.world));
-    for (const I of this.isles) I.build(scene);
+    for (const I of this.isles) {
+      I.build(scene);
+      I.cupsFor = (H) => this.cupsOf(H);
+    }
     this.bridges = this.isles.map(() => null);
     /* THE TWO HOOKS. `homeGround` is read at the bottom of `World.heightAt`;
        `homeWall` is called by `Player` right after the arena's wall. */
@@ -147,6 +159,28 @@ export class Housing {
   save() {
     saveStore(this.store);
     this.game.savegame?.touch?.();
+  }
+
+  /* ---------------------------- the trophies ---------------------------- */
+
+  /**
+   * AN ARENA BATTLE WON puts a cup on her trophy shelf. Richard: "trophies
+   * that players win at the arena". Counted by NAME in the home store, not
+   * the game save, because a shelf outlives an afternoon the way the house
+   * does — and counted whether or not she owns a house yet, so the shelf she
+   * buys later is already full. Tournament calls this once per match won.
+   */
+  battleWon(names) {
+    const C = (this.store.records.cups ??= {});
+    for (const n of names) if (n) C[n] = (C[n] ?? 0) + 1;
+    this.save();
+    for (const I of this.isles) if (I.home?.owners.some((o) => names.includes(o))) I.rebuildItems();
+  }
+
+  /** Cups on a home's shelf: every owner's wins together. */
+  cupsOf(H) {
+    const C = this.store.records?.cups ?? {};
+    return (H?.owners ?? []).reduce((a, n) => a + (C[n] ?? 0), 0);
   }
 
   /* ---------------------------- the bridges ---------------------------- */
@@ -418,6 +452,7 @@ export class Housing {
     this.koi.update(dt);
     this.farm.update(dt);
     this.kendo.update(dt, players);
+    this.builder.update(dt, this.time);
     if (this.purchase?.active) this.purchase.update(dt);
     // Roshi's preview fades in on whichever island is being looked at
     if (this.preview) {
@@ -536,7 +571,37 @@ export class Housing {
       (b.centre ??= new THREE.Vector3()).set(I.x, I.groundY + 6, I.z);
       return { centre: b.centre, aim: true, dist: 95, pitch: 0.42, yaw: I.ry + Math.PI + Math.sin(t) * 0.7 };
     }
-    return this.koi.cameraFocus?.(p) ?? null;
+    return this.builder.camera(p) ?? this._doorShot(p) ?? this.koi.cameraFocus?.(p) ?? null;
+  }
+
+  /**
+   * WALKING UP TO A FRONT DOOR, the camera comes round behind her and frames
+   * the door and its name board. Richard: "the placard above the houses door
+   * frame ... is not visible as the roof blocks it from camera. Let's make it
+   * that when the player is approaching the front of the house, the camera
+   * goes behind the player and focuses on the door frame and placard."
+   *
+   * The zone is a box in front of the door, out to 13 units. The shot is low
+   * (pitch 0.16): from the usual 0.6 the eave's overhang is exactly what
+   * hides the board, so the only way to see it is to come in under it.
+   */
+  _doorShot(p) {
+    if (p.mount || p.rideAlong) return null;
+    for (const I of this.isles) {
+      const S = I.shell;
+      if (!S?.sign || !I.home || !I.over(p.position.x, p.position.z)) continue;
+      const L = I.toLocal(p.position.x, p.position.z);
+      if (Math.abs(L.x) > 6.5 || L.z < S.door.z + 0.4 || L.z > S.door.z + 13) continue;
+      if (p.position.y > I.groundY + S.base + 2.5) continue;
+      const c = I.local(0, S.door.z + 2.2);
+      (p._doorCentre ??= new THREE.Vector3()).set(c.x, I.groundY + S.sign.y - 1.0, c.z);
+      // the house's front, wrapped to within a half-turn of the usual yaw
+      let yaw = I.ry;
+      while (yaw - CAM_YAW_DEFAULT > Math.PI) yaw -= Math.PI * 2;
+      while (yaw - CAM_YAW_DEFAULT < -Math.PI) yaw += Math.PI * 2;
+      return { centre: p._doorCentre, aim: true, dist: 12, pitch: 0.16, yaw };
+    }
+    return null;
   }
 
   /**
@@ -550,7 +615,7 @@ export class Housing {
     const players = this.game.players ?? [];
     for (const I of this.isles) {
       if (!I.home) continue;
-      if (scene) { I.cutaway(-1); I.wallMat.setCuts?.(camera.position, []); continue; }
+      if (scene) { I.cutaway(-1); for (const M of I.xrayMats) M.setCuts?.(camera.position, []); continue; }
       let floor = -1;
       const seen = [];
       const floors = [];
@@ -561,11 +626,19 @@ export class Housing {
         if (f >= 0) floor = floor < 0 ? f : Math.min(floor, f);
         if (Math.hypot(p.position.x - I.x, p.position.z - I.z) < I.houseR + 14 && seen.length < 4) {
           seen.push(new THREE.Vector3(p.position.x, p.position.y + 1.4, p.position.z));
-          floors.push(p.position.y - 0.05);
+          /* A KNEE'S HEIGHT ABOVE HER FEET, not just under them. Richard: the
+             x-ray "is cutting into the flooring and the foundation of the
+             house". At -0.05 the tatami (0.06 thick, ON the floor) and the
+             plinth's top edge were above the line and inside the cone. */
+          floors.push(p.position.y + 0.35);
         }
       }
+      /* Building in a room cuts the house to that room's floor whatever she
+         is standing on — the top-down camera has to see the tatami. */
+      const bf = this.builder.cutFloor(I, members ?? players.map((_, k) => k));
+      if (bf >= 0) floor = floor < 0 ? bf : Math.min(floor, bf);
       I.cutaway(floor);
-      I.wallMat.setCuts?.(camera.position, seen, floors);
+      for (const M of I.xrayMats) M.setCuts?.(camera.position, seen, floors);
     }
   }
 
@@ -743,7 +816,6 @@ export class Housing {
       bell: 'RING THE BELL',
       soak: 'SOAK',
       volley: 'VOLLEYBALL',
-      climb: 'CLIMB UP',
       pray: 'PRAY',
     }[s.act];
     return words ? `[${key}]  ${words}` : null;
@@ -809,12 +881,10 @@ export class Housing {
       bell: 'GONNNNG…',
       soak: `${p.name} sinks into the onsen. Ahhh, rosy cheeks.`,
       volley: `${p.name} bats the ball over the net! (Volleyball match coming soon.)`,
-      climb: `${p.name} climbs up the treehouse ladder!`,
       pray: `${p.name} claps twice and makes a wish.`,
     };
     G.toast(lines[s.act] ?? 'Hmm.', p.index);
     G.audio?.play?.(s.act === 'drum' || s.act === 'bell' ? 'land' : 'menu');
-    if (s.act === 'climb') { p.velocity.y = 26; }
     if (s.act === 'nap' || s.act === 'soak') { p.hp = p.maxHp ?? p.hp; }
   }
 

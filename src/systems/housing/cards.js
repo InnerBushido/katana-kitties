@@ -2,7 +2,9 @@ import {
   HOME_SITES, SITE_BY_ID, HOUSES, HOUSE_BY_ID, ITEMS, ITEM_BY_ID, PRESETS, PRESET_BY_ID, ROOM_TYPES, HOME_SELL,
 } from './catalog.js';
 import { JUKEBOX, hasRecording } from './jukebox.js';
-import { gridOf, footprint, fits, firstFit, yardFits, ITEM_SELL } from './editor.js';
+import { footprint, firstFit, firstYardSpot, wallSlots, wallFree, ITEM_SELL } from './editor.js';
+import { buildWhy, commitBuild, removeBuilt, pickList, stepToward, BUILD_KEYS, PICK_KEYS } from './build.js';
+import { Preview } from './preview.js';
 import { Fishing } from './fishing.js';
 import { KOI_COLOURS } from './koi.js';
 import { careBuff } from './farm.js';
@@ -32,6 +34,7 @@ import { careBuff } from './farm.js';
    that says who said no.
 --------------------------------------------------------------------------- */
 
+const ARROW = { left: '◀', up: '▲', down: '▼', right: '▶' };
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const pts = (n) => `${Math.round(n).toLocaleString()} pts`;
 /** "EMBER'S", "EMBER & FROST'S" — the whole thing in capitals or none of it. */
@@ -69,8 +72,8 @@ export function changeRoomType(Hs, p, H, R, type, price) {
 export function ownedCount(H, id) {
   let n = 0;
   for (const R of Object.values(H?.rooms ?? {})) n += (R.items ?? []).filter((q) => q.id === id).length;
-  n += Object.values(H?.yard ?? {}).filter((y) => (y?.id ?? y) === id).length;
-  n += (H?.decor ?? []).filter((q) => q.id === id).length;
+  for (const R of Object.values(H?.rooms ?? {})) n += (R.wall ?? []).filter((q) => q.id === id).length;
+  n += (H?.outdoor ?? []).filter((q) => q.id === id).length;
   return n;
 }
 
@@ -79,6 +82,7 @@ export class HousingCards {
     this.game = game;
     this.H = housing;
     this.st = new Map();
+    this.preview = new Preview();
     /** A deal waiting on other owners: { kind, site, house, preset, seats, yes, driver }. */
     this.pending = null;
   }
@@ -116,6 +120,7 @@ export class HousingCards {
     if (c) c.i = this._top(index).at ?? 0;
     if (was.v === 'site' || was.v === 'house') this.H.stopPreview();
     if (was.v === 'jukebox' && this.H.audition?.who === index) this.H.audition = null;
+    if (was.v === 'shop') this.preview.hide(index);
     return true;
   }
 
@@ -132,6 +137,7 @@ export class HousingCards {
     this.H.browsing.delete(index);
     if (this.H.preview?.who === index) this.H.stopPreview();
     if (this.H.audition?.who === index) this.H.audition = null;
+    this.preview.hide(index);
     /* Closing her card is a NO — unless she already said yes (her card
        closes itself on a yes) and is not the one who asked. */
     const P = this.pending;
@@ -146,7 +152,8 @@ export class HousingCards {
   sig(index, c) {
     const top = this._top(index);
     const p = this.game.players[index];
-    return [this.st.get(index)?.stack.length, top?.v, top?.room, top?.plot, top?.sel, top?.gx, top?.gz, top?.rot,
+    return [this.st.get(index)?.stack.length, top?.v, top?.room, top?.kind, top?.sel, top?.gx, top?.gz, top?.rot, top?.side, top?.k, top?.at,
+      top?.v === 'build' && top.kind === 'yard' ? `${Math.round(top.x * 2)},${Math.round(top.z * 2)}` : '',
       p?.score, this.H.store.at, this.pending ? [...this.pending.yes].join(',') : '', c.i].join('|');
   }
 
@@ -182,7 +189,12 @@ export class HousingCards {
       if (m && m.textContent !== F.msg) m.textContent = F.msg;
       return false;
     }
-    if (top?.v === 'place') return this._drivePlace(index, pad, top);
+    if (top?.v === 'build' || top?.v === 'pick') {
+      const spent = this.H.builder.drive(index, pad, dt);
+      this.H.builder.drawMap(index, c.el?.querySelector('canvas.hs-map'));
+      return spent;
+    }
+    if (top?.v === 'shop') this.preview.draw(index, c.el?.querySelector('canvas.hs-prev'), dt);
     /* THE ROW UNDER THE CURSOR IS WHAT PLAYS. Richard: "the music should be
        playing so the player can preview the songs they like before choosing
        them. Can turn off once the player leaves the menu." `closed` and
@@ -197,17 +209,26 @@ export class HousingCards {
   tap(index, act) {
     const top = this._top(index);
     if (act === 'reel' && top?.v === 'fishing') this.st.get(index).fish?.tap();
-    if (top?.v === 'place') {
+    if (top?.v === 'build' || top?.v === 'pick') {
+      const B = this.H.build;
       const step = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] }[act];
-      if (step) this._nudge(index, top, step[0], step[1]);
-      if (act === 'rot') this._rotate(index, top);
+      if (step && top.v === 'pick') {
+        const L = pickList(this._home(top), top.kind, top.room);
+        const k = L[top.at ?? 0] ? stepToward(L, L[top.at ?? 0], step[0], step[1]) : -1;
+        if (k >= 0) top.at = k;
+      } else if (step && top.kind === 'yard') { top.x += step[0] * 1.5; top.z += step[1] * 1.5; }
+      else if (step && top.kind === 'wall') B.hop(top, step[0], step[1]);
+      else if (step) B.nudge(top, step[0], step[1]);
+      if (act === 'rot') B.rotate(top);
+      if (act === 'sell') this.askSell(index, top);
     }
   }
 
   painted(index, c, el) {
     const top = this._top(index);
     if (top?.v === 'fishing') this.st.get(index).fish?.draw(el.querySelector('canvas.hs-fish'));
-    if (top?.v === 'place') this._drawGrid(index, top, el.querySelector('canvas.hs-grid'));
+    if (top?.v === 'build' || top?.v === 'pick') this.H.builder.drawMap(index, el.querySelector('canvas.hs-map'));
+    if (top?.v === 'shop') this.preview.draw(index, el.querySelector('canvas.hs-prev'), 0);
   }
 
   markup(index, c, back) {
@@ -224,7 +245,7 @@ export class HousingCards {
         ${r.blurb ? `<div class="pc-dim">${esc(r.blurb)}</div>` : ''}
         ${r.disabled && r.why ? `<div class="hs-why">${esc(r.why)}</div>` : ''}
       </div>`).join('');
-    return `<div class="pc-inner hs-card">
+    return `<div class="pc-inner hs-card${V.build ? ' hs-buildcard' : ''}">
       <div class="pc-head"><span class="pc-who">${esc(p?.name ?? '')}</span> ${esc(V.head)}
         <span class="hs-purse">${pts(p?.score ?? 0)}</span></div>
       ${V.body ?? ''}
@@ -507,7 +528,7 @@ export class HousingCards {
         go: () => { this.H.setOpen(p, H, !open); this.game.toast(open ? 'Locked! Only the owners can come in now.' : 'Unlocked! Visitors are welcome.', index); return null; },
       },
       { title: 'FURNISH A ROOM', blurb: 'Furniture on the tatami grid, and kendo or holodeck rooms.', go: () => { this._push(index, { v: 'rooms', site: top.site }); return null; } },
-      { title: 'THE YARD', blurb: 'Ponds, gardens, a farm, a pen — each plot takes things that suit it.', go: () => { this._push(index, { v: 'yard', site: top.site }); return null; } },
+      { title: 'THE YARD', blurb: 'Build anywhere on your island — ponds, a farm, a pen, the treehouse, and decorations.', go: () => { this._push(index, { v: 'yard', site: top.site }); return null; } },
       /* NO MUSIC ROW AND NO FILE ROWS. Richard: "Changing the music should be
          done from the boombox at the entrance and exit to the bridge", and the
          .json save/load "shouldn't be in the menu. Let's have that as a Debug
@@ -566,14 +587,21 @@ export class HousingCards {
       });
     }
     if (R.type === 'living') {
-      rows.push({ title: 'ADD FURNITURE', blurb: 'Pick a thing, then place it on the grid.', go: () => { this._push(index, { v: 'shop', site: top.site, room: room.id }); return null; } });
-      for (const [k, q] of R.items.entries()) {
-        const it = ITEM_BY_ID[q.id];
-        rows.push({
-          title: `MOVE ${it?.name ?? q.id}`, blurb: 'Pick it up and put it somewhere else, or sell it back.',
-          go: () => { this._push(index, { v: 'place', site: top.site, room: room.id, sel: k, id: q.id, gx: q.gx, gz: q.gz, rot: q.rot ?? 0 }); return null; },
-        });
-      }
+      rows.push({ title: 'ADD FURNITURE', blurb: 'Pick a thing, then put it down where you want it.', go: () => { this._push(index, { v: 'shop', site: top.site, room: room.id, kind: 'room' }); return null; } });
+      rows.push({
+        title: 'MOVE OR SELL FURNITURE', blurb: 'Point at a thing in the room and pick it up.',
+        disabled: !R.items.length, why: 'There is nothing in this room yet.',
+        go: () => { this._push(index, { v: 'pick', site: top.site, room: room.id, kind: 'room', at: 0 }); return null; },
+      });
+    }
+    const slots = wallSlots(H.house, room).length;
+    rows.push({
+      title: 'HANG SOMETHING ON THE WALL', blurb: 'Windows, scrolls, pictures and your trophy shelf.',
+      disabled: !slots, why: 'This room has no outside wall to hang things on.',
+      go: () => { this._push(index, { v: 'shop', site: top.site, room: room.id, kind: 'wall' }); return null; },
+    });
+    if ((R.wall ?? []).length) {
+      rows.push({ title: 'MOVE OR SELL WALL THINGS', go: () => { this._push(index, { v: 'pick', site: top.site, room: room.id, kind: 'wall', at: 0 }); return null; } });
     }
     return { head: room.name, rows };
   }
@@ -610,80 +638,176 @@ export class HousingCards {
     };
   }
 
+  /**
+   * THE SHOP, for one kind of place: a room's grid, its walls, or the yard
+   * (the useful things or the decorations — Richard wanted those on their own
+   * shelf). Every row says how many she has (0 included) and stays listed
+   * when she cannot afford it, greyed, saying why. The thing under the
+   * cursor turns on a little stage at the top (`Preview`).
+   */
   _v_shop(index, p, top) {
     const H = this._home(top);
-    const room = this._roomDef(H, top.room);
-    const R = H.rooms[room.id];
-    const rows = ITEMS.filter((it) => it.where.includes('room')).map((it) => {
+    const I = this.H.isleOf(top.site);
+    const room = top.room ? this._roomDef(H, top.room) : null;
+    const R = room ? H.rooms[room.id] : null;
+    const list = ITEMS.filter((it) => it.where.includes(top.kind === 'wall' ? 'wall' : top.kind === 'yard' ? 'yard' : 'room')
+      && (top.kind !== 'yard' || !!it.deco === !!top.deco));
+    const rows = list.map((it) => {
       const price = this.H.itemPrice(it.id);
-      const spot = firstFit(room, R.items, it);
+      let spot = null;
+      if (top.kind === 'room') spot = firstFit(room, R.items, it);
+      else if (top.kind === 'wall') {
+        const S = wallSlots(H.house, room).find((s) => wallFree(R, s.side, s.k));
+        spot = S && { side: S.side, k: S.k };
+      } else spot = firstYardSpot(H, it, I?.radius ?? 50);
       return {
-        title: it.name, right: pts(price),
-        blurb: `YOU HAVE ${ownedCount(H, it.id)} · ${it.blurb ?? `${footprint(it).join('×')} tatami.`}`,
-        disabled: !spot || p.score < price,
-        why: !spot ? 'There is no room left for that here.' : `${p.name} needs ${pts(price - p.score)} more.`,
-        go: () => { this._push(index, { v: 'place', site: top.site, room: room.id, sel: -1, id: it.id, ...spot }); return null; },
+        title: it.later ? `${it.name} — COMING LATER` : it.name,
+        right: it.later ? 'LOCKED' : pts(price),
+        blurb: `YOU HAVE ${ownedCount(H, it.id)}${it.blurb ? ` · ${it.blurb}` : top.kind === 'room' ? ` · ${footprint(it).join('×')} tatami.` : ''}`,
+        disabled: it.later || !spot || p.score < price,
+        why: it.later ? 'Coming in a later update!'
+          : !spot ? (top.kind === 'wall' ? 'Every wall here is full.' : 'There is no room left for that here.')
+            : `${p.name} needs ${pts(price - p.score)} more.`,
+        item: it.id,
+        go: () => { this._push(index, { v: 'build', site: top.site, room: top.room, kind: top.kind, sel: -1, id: it.id, rot: 0, ...spot }); return null; },
       };
     });
-    return { head: 'ADD FURNITURE', rows };
+    const c = this.game.inspector.cards[index];
+    this.preview.show(index, rows[Math.min(c?.i ?? 0, rows.length - 1)]?.item);
+    const head = top.kind === 'wall' ? 'FOR THE WALLS' : top.kind === 'yard' ? (top.deco ? 'DECORATIONS' : 'FOR THE YARD') : 'ADD FURNITURE';
+    return { head, body: '<canvas class="hs-prev" width="200" height="140"></canvas>', rows };
   }
 
-  /** THE GRID: the stick moves it, ATTACK turns it, JUMP puts it down. */
-  _v_place(index, p, top) {
+  /**
+   * BUILD MODE'S CARD — small, at the bottom, see-through, so the world is
+   * the thing she is looking at. The corner map, the key legend, and what is
+   * wrong if it is red. The pad is `BuildMode.drive`'s; these rows are for a
+   * finger (a tap on PUT IT HERE), and for a phone the four keys are buttons.
+   */
+  _v_build(index, p, top) {
     const H = this._home(top);
-    const room = this._roomDef(H, top.room);
-    const R = H.rooms[room.id];
+    const I = this.H.isleOf(top.site);
     const it = ITEM_BY_ID[top.id];
-    const ok = fits(room, R.items, it, top.gx, top.gz, top.rot, top.sel);
+    const bad = buildWhy(H, top, I?.radius ?? 50);
     const price = top.sel < 0 ? this.H.itemPrice(it.id) : 0;
-    const touch = this.game.touchUI ?? document.body.classList.contains('touch-ui');
-    const pad = `<div class="hs-pad">${['left', 'up', 'down', 'right'].map((d) => `<button type="button" data-hact="${d}" data-side="${index}">${{ left: '◀', up: '▲', down: '▼', right: '▶' }[d]}</button>`).join('')}<button type="button" data-hact="rot" data-side="${index}">⟳</button></div>`;
-    const rows = [
-      {
-        title: top.sel < 0 ? `PUT IT HERE — ${pts(price)}` : 'PUT IT HERE',
-        disabled: !ok || p.score < price,
-        why: !ok ? "It doesn't fit there — move it to a clear spot." : `${p.name} needs ${pts(price - p.score)} more.`,
-        go: () => {
-          if (top.sel < 0) {
-            if (!this.H.spend(p, H, price)) return null;
-            R.items.push({ id: it.id, gx: top.gx, gz: top.gz, rot: top.rot });
-          } else Object.assign(R.items[top.sel], { gx: top.gx, gz: top.gz, rot: top.rot });
-          this.H.changed(H);
-          this.game.audio?.play?.('land');
-          this._pop(index);
-          return null;
-        },
-      },
-    ];
-    if (top.sel >= 0) {
-      const back = Math.round(this.H.itemPrice(it.id) * ITEM_SELL);
-      rows.push({ title: `SELL IT BACK — ${pts(back)}`, go: () => { this._push(index, { v: 'sellitem', site: top.site, room: top.room, sel: top.sel, cursor: 0 }); return null; } });
-    }
+    const touch = this._touch();
+    const rows = [{
+      title: top.sel < 0 ? `PUT IT HERE — ${pts(price)}` : 'PUT IT HERE',
+      disabled: !!bad || p.score < price,
+      why: bad ?? `${p.name} needs ${pts(price - p.score)} more.`,
+      go: () => { this.placeHere(index, top); return null; },
+    }];
+    if (top.sel >= 0) rows.push({ title: `SELL IT BACK — ${pts(this._sellBack(it.id))}`, go: () => { this.askSell(index, top); return null; } });
+    const keys = BUILD_KEYS.filter(([, w]) => w !== 'sell' || top.sel >= 0).filter(([, w]) => w !== 'turn' || top.kind !== 'wall');
     return {
+      build: true,
       head: it.name,
-      body: `<canvas class="hs-grid" width="240" height="160"></canvas>${touch ? pad : ''}`,
+      body: `<div class="hs-buildrow"><canvas class="hs-map" width="180" height="180"></canvas><div class="hs-buildinfo">
+        <div class="${bad ? 'hs-bad' : 'hs-good'}">${esc(bad ?? (top.sel < 0 ? 'It fits! Press JUMP to put it here.' : 'It fits here.'))}</div>
+        <div class="hs-keys">${keys.map(([k, w]) => `<span><b>${k}</b> ${w}</span>`).join('')}</div>
+        ${touch ? this._touchPad(index, top.kind !== 'wall', top.sel >= 0) : ''}</div></div>`,
       rows,
-      foot: 'STICK <b>move</b> · ATTACK <b>turn</b> · JUMP <b>choose</b>',
+      foot: ' ',
     };
+  }
+
+  /** THE SELECTOR: a ring on one of her things; the stick hops it. */
+  _v_pick(index, p, top) {
+    const H = this._home(top);
+    const L = pickList(H, top.kind, top.room);
+    if (!L.length) return { head: 'NOTHING HERE', rows: [{ title: 'BACK', go: () => { this._pop(index); return null; } }] };
+    top.at = Math.min(top.at ?? 0, L.length - 1);
+    const q = L[top.at];
+    const it = ITEM_BY_ID[q.id];
+    const touch = this._touch();
+    return {
+      build: true,
+      head: `${it?.name ?? q.id}  (${top.at + 1} of ${L.length})`,
+      body: `<div class="hs-buildrow"><canvas class="hs-map" width="180" height="180"></canvas><div class="hs-buildinfo">
+        <div class="hs-good">The ring shows which one. Move the stick to point at another.</div>
+        <div class="hs-keys">${PICK_KEYS.map(([k, w]) => `<span><b>${k}</b> ${w}</span>`).join('')}</div>
+        ${touch ? `<div class="hs-pad">${['left', 'up', 'down', 'right'].map((d) => `<button type="button" data-hact="${d}" data-side="${index}">${ARROW[d]}</button>`).join('')}</div>` : ''}</div></div>`,
+      rows: [
+        { title: 'PICK IT UP AND MOVE IT', go: () => { this.pickUp(index, top); return null; } },
+        { title: `SELL IT BACK — ${pts(this._sellBack(q.id))}`, go: () => { this.askSell(index, top); return null; } },
+      ],
+      foot: ' ',
+    };
+  }
+
+  _touch() {
+    return !!(this.game.touchUI ?? (typeof document !== 'undefined' && document.body.classList.contains('touch-ui')));
+  }
+
+  _touchPad(index, turn, sell) {
+    const b = (act, label) => `<button type="button" data-hact="${act}" data-side="${index}">${label}</button>`;
+    return `<div class="hs-pad">${['left', 'up', 'down', 'right'].map((d) => b(d, ARROW[d])).join('')}${turn ? b('rot', '⟳') : ''}${sell ? b('sell', 'SELL') : ''}</div>`;
+  }
+
+  _sellBack(id) { return Math.round(this.H.itemPrice(id) * ITEM_SELL); }
+
+  /** From the selector into build mode, holding the one under the ring. */
+  pickUp(index, top) {
+    const H = this._home(top);
+    const L = pickList(H, top.kind, top.room);
+    const q = L[top.at ?? 0];
+    if (!q) return;
+    const row = top.kind === 'yard' ? H.outdoor[q.k] : top.kind === 'wall' ? H.rooms[top.room].wall[q.k] : H.rooms[top.room].items[q.k];
+    const v = { v: 'build', site: top.site, room: top.room, kind: top.kind, sel: q.k, id: row.id };
+    if (top.kind === 'yard') Object.assign(v, { x: row.x, z: row.z, rot: row.rot ?? 0 });
+    else if (top.kind === 'wall') Object.assign(v, { side: row.side, k: row.k });
+    else Object.assign(v, { gx: row.gx, gz: row.gz, rot: row.rot ?? 0 });
+    this._push(index, v);
+    this.game.audio?.play?.('menu');
+  }
+
+  /** JUMP in build mode, or a tap on PUT IT HERE. Refuses out loud. */
+  placeHere(index, top) {
+    const p = this.game.players[index];
+    const H = this._home(top);
+    const I = this.H.isleOf(top.site);
+    const it = ITEM_BY_ID[top.id];
+    const bad = buildWhy(H, top, I?.radius ?? 50);
+    if (bad) { this.game.toast(bad, index); this.game.audio?.play?.('menu'); return; }
+    const price = top.sel < 0 ? this.H.itemPrice(it.id) : 0;
+    if (price && !this.H.spend(p, H, price)) { this.game.toast(`${p.name} needs ${pts(price - p.score)} more.`, index); return; }
+    commitBuild(H, top);
+    this.H.changed(H);
+    this.game.audio?.play?.('land');
+    this.game.toast(top.sel < 0 ? `The ${it.name} is in!` : `Moved the ${it.name}.`, index);
+    this._pop(index);
+  }
+
+  /** SPRINT in build or pick mode: the "are you sure", if there is a thing to sell. */
+  askSell(index, top) {
+    let sel = top.sel;
+    if (top.v === 'pick') sel = pickList(this._home(top), top.kind, top.room)[top.at ?? 0]?.k ?? -1;
+    if (sel == null || sel < 0) { this.game.toast('That is not yours yet — there is nothing to sell back.', index); return; }
+    this._push(index, { v: 'sellitem', site: top.site, room: top.room, kind: top.kind, sel, cursor: 0 });
   }
 
   _v_sellitem(index, p, top) {
     const H = this._home(top);
-    const R = H.rooms[top.room];
-    const q = R.items[top.sel];
+    const list = top.kind === 'yard' ? H.outdoor : top.kind === 'wall' ? H.rooms?.[top.room]?.wall : H.rooms?.[top.room]?.items;
+    const q = list?.[top.sel];
     const it = ITEM_BY_ID[q?.id];
-    const back = Math.round(this.H.itemPrice(it?.id) * ITEM_SELL);
+    const back = this._sellBack(it?.id);
     return {
       head: 'SELL IT BACK?',
+      body: q?.id === 'pen' || q?.id === 'koipond' ? '<div class="hs-note">The animals and the koi wait for you — build it again and they come back.</div>' : '',
       rows: [
         { title: `NO, KEEP THE ${it?.name ?? 'THING'}`, go: () => { this._pop(index); return null; } },
         {
           title: `YES, SELL IT FOR ${pts(back)}`,
           go: () => {
-            R.items.splice(top.sel, 1);
+            if (!removeBuilt(H, top.kind, top.room, top.sel)) return null;
             p.score += back;
+            const n = p.style?.name;
+            if (n && H.paid) H.paid[n] = Math.max(0, (H.paid[n] ?? 0) - back);
             this.game.onScoreChanged?.(p);
             this.H.changed(H);
+            this.game.toast(`Roshi paid ${pts(back)} for the ${it?.name ?? 'thing'}.`, index);
+            // out of the question and out of the build/pick view it came from
             this._pop(index); this._pop(index);
             return null;
           },
@@ -692,138 +816,17 @@ export class HousingCards {
     };
   }
 
-  _drivePlace(index, pad, top) {
-    top._t = (top._t ?? 0) - 1 / 60;
-    const mx = pad.mx ?? 0;
-    const my = pad.my ?? 0;
-    if (Math.abs(mx) + Math.abs(my) > 0.5 && top._t <= 0) {
-      top._t = 0.16;
-      if (Math.abs(mx) > Math.abs(my)) this._nudge(index, top, Math.sign(mx), 0);
-      else this._nudge(index, top, 0, Math.sign(my));
-      return true;
-    }
-    if (pad.pressed('attack')) { pad.consume?.('attack'); this._rotate(index, top); return true; }
-    /* NOT up/down for the cursor while the stick moves the piece: the rows
-       are one or two and JUMP/INTERACT reach them. */
-    return Math.abs(mx) + Math.abs(my) > 0.5;
-  }
-
-  _nudge(index, top, dx, dz) {
-    const H = this._home(top);
-    const room = this._roomDef(H, top.room);
-    const { cols, rows } = gridOf(room);
-    const [w, d] = footprint(ITEM_BY_ID[top.id], top.rot);
-    top.gx = Math.max(0, Math.min(cols - w, top.gx + dx));
-    top.gz = Math.max(0, Math.min(rows - d, top.gz + dz));
-    this.game.audio?.play?.('menu');
-  }
-
-  _rotate(index, top) {
-    top.rot = ((top.rot ?? 0) + 1) % 4;
-    this._nudge(index, top, 0, 0);
-  }
-
-  _drawGrid(index, top, cv) {
-    if (!cv) return;
-    const H = this._home(top);
-    const room = this._roomDef(H, top.room);
-    const R = H.rooms[room.id];
-    const { cols, rows } = gridOf(room);
-    const g = cv.getContext('2d');
-    const s = Math.min((cv.width - 8) / cols, (cv.height - 8) / rows);
-    const ox = (cv.width - s * cols) / 2;
-    const oy = (cv.height - s * rows) / 2;
-    g.clearRect(0, 0, cv.width, cv.height);
-    for (let z = 0; z < rows; z++) {
-      for (let x = 0; x < cols; x++) {
-        g.fillStyle = (x + z) % 2 ? '#d9c98a' : '#cdbb78';
-        g.fillRect(ox + x * s, oy + z * s, s - 1, s - 1);
-      }
-    }
-    for (const [k, q] of R.items.entries()) {
-      if (k === top.sel) continue;
-      const it = ITEM_BY_ID[q.id];
-      const [w, d] = footprint(it, q.rot);
-      g.fillStyle = '#7a5a3a';
-      g.fillRect(ox + q.gx * s + 2, oy + q.gz * s + 2, w * s - 5, d * s - 5);
-    }
-    const it = ITEM_BY_ID[top.id];
-    const [w, d] = footprint(it, top.rot);
-    const ok = fits(room, R.items, it, top.gx, top.gz, top.rot, top.sel);
-    g.fillStyle = ok ? 'rgba(90,200,120,0.85)' : 'rgba(230,70,70,0.85)';
-    g.fillRect(ox + top.gx * s + 2, oy + top.gz * s + 2, w * s - 5, d * s - 5);
-    // the door side, so "up" on the stick is not a guess
-    g.fillStyle = '#b8322a';
-    g.fillRect(ox + (cols * s) / 2 - 10, oy + rows * s + 1, 20, 3);
-  }
-
   _v_yard(index, p, top) {
     const H = this._home(top);
-    const I = this.H.isleOf(top.site);
-    const rows = I.plots.map((P) => {
-      const id = H.yard?.[P.id];
-      return {
-        title: `${P.kind.toUpperCase()} PLOT`, right: id ? ITEM_BY_ID[id]?.name : 'EMPTY',
-        blurb: { garden: 'Gardens, shrines, wells, teahouses.', water: 'Koi ponds, onsens, water wheels.', grove: 'Bamboo farms, trees, the treehouse.', court: 'Volleyball, the bell tower, a pen.' }[P.kind],
-        go: () => { this._push(index, { v: 'plot', site: top.site, plot: P.id }); return null; },
-      };
-    });
-    return { head: 'THE YARD', rows };
-  }
-
-  _v_plot(index, p, top) {
-    const H = this._home(top);
-    const I = this.H.isleOf(top.site);
-    const P = I.plots.find((q) => q.id === top.plot);
-    const cur = H.yard?.[P.id];
-    const rows = [];
-    if (cur) {
-      const back = Math.round(this.H.itemPrice(cur) * ITEM_SELL);
-      rows.push({
-        title: `CLEAR THE PLOT — ${pts(back)} BACK`, blurb: `Roshi buys the ${ITEM_BY_ID[cur]?.name} back.`,
-        go: () => { this._push(index, { v: 'clearplot', site: top.site, plot: P.id, cursor: 0 }); return null; },
-      });
-    }
-    for (const it of ITEMS) {
-      if (!(it.where ?? []).includes(P.kind) || it.where.includes('room') && !['drum', 'bucket', 'sake'].includes(it.id)) continue;
-      const price = this.H.itemPrice(it.id);
-      rows.push({
-        title: it.later ? `${it.name} — COMING LATER` : it.name, right: it.later ? 'LOCKED' : pts(price),
-        blurb: `YOU HAVE ${ownedCount(H, it.id)}${it.blurb ? ` · ${it.blurb}` : ''}`,
-        disabled: it.later || !!cur || p.score < price || !yardFits(P, it),
-        why: it.later ? 'Coming in a later update!' : cur ? 'Clear the plot first.' : `${p.name} needs ${pts(price - p.score)} more.`,
-        go: () => {
-          if (!this.H.spend(p, H, price)) return null;
-          H.yard[P.id] = it.id;
-          this.H.changed(H);
-          this.game.toast(`The ${it.name} is in!`, index);
-          this._pop(index);
-          return null;
-        },
-      });
-    }
-    return { head: `${P.kind.toUpperCase()} PLOT`, rows };
-  }
-
-  _v_clearplot(index, p, top) {
-    const H = this._home(top);
-    const cur = H.yard?.[top.plot];
-    const back = Math.round(this.H.itemPrice(cur) * ITEM_SELL);
     return {
-      head: 'CLEAR IT?',
-      body: cur === 'pen' || cur === 'koipond' ? '<div class="hs-note">The animals and koi move into the chest and come back when you build it again.</div>' : '',
+      head: 'THE YARD',
       rows: [
-        { title: 'NO, KEEP IT', go: () => { this._pop(index); return null; } },
+        { title: 'BUILD SOMETHING', blurb: 'Ponds, the onsen, the farm, the pen, the treehouse — put them anywhere on your island.', go: () => { this._push(index, { v: 'shop', site: top.site, kind: 'yard', deco: false }); return null; } },
+        { title: 'DECORATIONS', blurb: 'Cheap and pretty: trees, lanterns, fences, stones. Anywhere outside.', go: () => { this._push(index, { v: 'shop', site: top.site, kind: 'yard', deco: true }); return null; } },
         {
-          title: `YES, CLEAR IT FOR ${pts(back)}`,
-          go: () => {
-            delete H.yard[top.plot];
-            p.score += back;
-            this.game.onScoreChanged?.(p);
-            this.H.changed(H);
-            this._pop(index); this._pop(index);
-            return null;
-          },
+          title: 'MOVE OR SELL', blurb: 'Point at something outside and pick it up.',
+          disabled: !(H.outdoor ?? []).length, why: 'There is nothing in the yard yet.',
+          go: () => { this._push(index, { v: 'pick', site: top.site, kind: 'yard', at: 0 }); return null; },
         },
       ],
     };

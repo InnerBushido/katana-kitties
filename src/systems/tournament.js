@@ -2252,6 +2252,8 @@ export class Tournament {
         maxHp: MAX_HP,
       });
       this._payPurse(this.winners);
+      // a cup on each winner's trophy shelf at home (housing.js `battleWon`)
+      this.game.housing?.battleWon?.(this.winners.map((w) => w.style?.name));
       this.audio?.play('victory');
       this.announcer?.say('sat_win1', 'AND THAT IS THE MATCH! What a display!');
       this.announcer?.say('sat_win2', 'Put your name on my board, champion. It stays there.');

@@ -16,9 +16,11 @@ import * as THREE from 'three';
 import { readFileSync } from 'node:fs';
 import { Housing } from '../../src/systems/housing/housing.js';
 import { HOME_SITES, HOUSES, HOUSE_BY_ID, PRESETS, ITEM_BY_ID, priceOf, HOME_SELL, SPEED_STRIP } from '../../src/systems/housing/catalog.js';
-import { emptyStore, newHome, normalise, saveStore, loadStore, HOME_KEY } from '../../src/systems/housing/homestore.js';
+import { emptyStore, newHome, normalise, saveStore, loadStore, migrateYard, HOME_KEY } from '../../src/systems/housing/homestore.js';
 import { careLevel, careBuff, stalksAt, BAMBOO_GROW, BAMBOO_MAX } from '../../src/systems/housing/farm.js';
-import { fits, firstFit, gridOf, autoLayout, ITEM_SELL } from '../../src/systems/housing/editor.js';
+import { fits, firstFit, gridOf, autoLayout, ITEM_SELL, yardWhy, firstYardSpot, addOutdoor, wallSlots } from '../../src/systems/housing/editor.js';
+import { buildWhy, commitBuild, removeBuilt, pickList, stepToward, BUILD_KEYS } from '../../src/systems/housing/build.js';
+import { houseRadius, houseShape } from '../../src/systems/housing/homehouse.js';
 import { possessive, ownedCount, roomRefund, changeRoomType } from '../../src/systems/housing/cards.js';
 import { JUKEBOX } from '../../src/systems/housing/jukebox.js';
 import { JUKEBOX_FILES } from '../../src/systems/housing/jukeboxfiles.js';
@@ -205,7 +207,7 @@ export async function housingChecks({ ok, world }) {
   for (const P of PRESETS) {
     const Hm = autoLayout(newHome('emberleaf', 'dojohouse', ['Ember']), P, H.isles[3]);
     const placed = Object.values(Hm.rooms).reduce((a, R) => a + (R.items?.length ?? 0), 0);
-    const yard = Object.keys(Hm.yard).length;
+    const yard = Hm.outdoor.length;
     ok(`the ${P.name} preset fits a dojo house completely`, placed === P.room.length && yard === P.yard.length, `${placed}/${P.room.length} ${yard}/${P.yard.length}`);
   }
 
@@ -233,14 +235,146 @@ export async function housingChecks({ ok, world }) {
       && !/MAKE IT A \$\{T\.name\}`[^\n]*\n[^\n]*\n[^\n]*\n[^\n]*this\.H\.spend/.test(src));
     ok('"Ember\'S" is "EMBER\'S" — a possessive is all capitals', possessive('Ember') === "EMBER'S" && possessive(['Ember', 'Frost']) === "EMBER & FROST'S"
       && !/\$\{who\}'S/.test(src));
-    Hm.yard = { p1: 'koipond' };
-    ok('the shop says how many of each thing she owns, 0 included', ownedCount(Hm, 'koipond') === 1 && ownedCount(Hm, 'futon') === 0
+    addOutdoor(Hm, 'koipond', 0, -30, 0);
+    Hm.rooms[living.id].wall = [{ id: 'window', side: 2, k: 0 }];
+    ok('the shop says how many of each thing she owns, 0 included — yard and walls too', ownedCount(Hm, 'koipond') === 1 && ownedCount(Hm, 'futon') === 0
+      && ownedCount(Hm, 'window') === 1
       && /YOU HAVE \$\{ownedCount\(H, it\.id\)\}/.test(src));
     ok('the home card has no music row and no file rows (the boombox and the debug panel have them)',
       !/PICK THE BRIDGE MUSIC|SAVE HOMES TO A FILE|LOAD HOMES FROM A FILE/.test(src));
     const msrc0 = readFileSync(new URL('../../src/main.js', import.meta.url), 'utf8');
     ok('...and the debug panel does, both asking first', /row\('HousingExport'/.test(msrc0) && /row\('HousingImport'/.test(msrc0)
       && /_debugHousingImport\(\) \{[\s\S]{0,300}confirm\.ask\(/.test(msrc0));
+  }
+
+  /* THE YARD IS FREE NOW. Richard: "rather than having predetermined
+     locations for all the plots". A home saved with the old plots must come
+     back with its things where they stood, and the rules that replaced the
+     plots must actually refuse what they say they refuse. */
+  {
+    const old = migrateYard({ ...newHome('sunrise', 'minka', ['Ember']), yard: { p2: 'koipond', p4: 'pen' } });
+    const pond = old.outdoor.find((q) => q.id === 'koipond');
+    ok('an old plot home comes back with its pond where plot 2 stood, with a uid',
+      !old.yard && old.outdoor.length === 2 && Math.abs(pond.x - Math.sin(1.75) * 31) < 0.01 && Math.abs(pond.z - Math.cos(1.75) * 31) < 0.01
+      && old.outdoor.every((q) => Number.isFinite(q.uid)) && new Set(old.outdoor.map((q) => q.uid)).size === 2);
+    const Hm = newHome('sunrise', 'minka', ['Ember']);
+    const it = ITEM_BY_ID.onsen;
+    const hr = houseRadius('minka');
+    const why = [
+      yardWhy(Hm, it, 0, -48), yardWhy(Hm, it, 0, -(hr + 1)), yardWhy(Hm, it, 0, 20), null,
+    ];
+    addOutdoor(Hm, 'koipond', -25, -20, 0);
+    why[3] = yardWhy(Hm, it, -25, -14);
+    ok('the yard refuses the rim, the house, the path to the bridge and another thing — each with its reason',
+      /edge/.test(why[0]) && /house/.test(why[1]) && /path/.test(why[2]) && /overlaps the KOI POND/.test(why[3]), why.join(' | '));
+    ok('...and takes a clear spot', yardWhy(Hm, it, 25, -20) === null);
+    const spot = firstYardSpot(Hm, ITEM_BY_ID.treehouse, 50);
+    ok('...and finds room for the treehouse on an island with a pond on it', !!spot && yardWhy(Hm, ITEM_BY_ID.treehouse, spot.x, spot.z) === null);
+  }
+
+  /* BUILD MODE: what the ghost says is what gets written. */
+  {
+    const Hm = newHome('sunrise', 'minka', ['Ember']);
+    const room = HOUSE_BY_ID.minka.rooms[0];
+    Hm.rooms = { [room.id]: { type: 'living', items: [] } };
+    const t1 = { kind: 'room', room: room.id, id: 'kotatsu', sel: -1, gx: 0, gz: 0, rot: 0 };
+    ok('build: a clear cell is a yes, and putting it there writes it', buildWhy(Hm, t1) === null
+      && commitBuild(Hm, t1).rooms[room.id].items.length === 1);
+    ok('...the same cell again is a no, with a reason', /fit/.test(buildWhy(Hm, { ...t1 }) ?? ''));
+    ok('...but moving the one already there onto its own cell is fine', buildWhy(Hm, { ...t1, sel: 0 }) === null);
+    const slots = wallSlots('minka', room);
+    const S = houseShape('minka');
+    const [hw, hd] = S.floors[room.floor];
+    ok('wall spans are all on the OUTER wall, and none of them is the front door',
+      slots.length > 0 && slots.every((s) => Math.abs(Math.abs(s.x) - (hw - 0.22)) < 0.01 || Math.abs(Math.abs(s.z) - (hd - 0.22)) < 0.01)
+      && !slots.some((s) => s.side === 0 && room.floor === 0 && Math.abs(s.x) < 2.4), slots.length);
+    const w1 = { kind: 'wall', room: room.id, id: 'window', sel: -1, side: slots[0].side, k: slots[0].k };
+    commitBuild(Hm, w1);
+    ok('...a window takes a span, and a second thing on that span is refused', /hangs/.test(buildWhy(Hm, { ...w1, id: 'scroll' }) ?? ''));
+    const y1 = { kind: 'yard', id: 'cherry', sel: -1, x: 20, z: -20, rot: 0 };
+    commitBuild(Hm, y1);
+    commitBuild(Hm, { ...y1, x: -20 });
+    ok('...a yard thing gets its own uid, so a moved pond keeps its fish', Hm.outdoor.length === 2 && Hm.outdoor[0].uid !== Hm.outdoor[1].uid);
+    commitBuild(Hm, { ...y1, sel: 0, x: 22, z: -24, rot: Math.PI / 4 });
+    ok('...moving it moves it and keeps the uid', Hm.outdoor[0].x === 22 && Hm.outdoor[0].z === -24 && Hm.outdoor[0].uid === 1);
+    const L = pickList(Hm, 'yard');
+    ok('the selector hops to the thing the stick points at', stepToward(L, L[0], -1, 0) === 1 && stepToward(L, L[0], 1, 0) === -1);
+    ok('...and selling takes exactly that one out', removeBuilt(Hm, 'yard', null, 0)?.uid === 1 && Hm.outdoor.length === 1 && Hm.outdoor[0].uid === 2);
+    /* "Can't sell furniture as the up and down buttons are overridden by the
+       placement controls." SELL is its own button in build mode now, and the
+       key legend says so. */
+    const bsrc = readFileSync(new URL('../../src/systems/housing/build.js', import.meta.url), 'utf8');
+    ok('SELL is a button in build mode (SPRINT), not a row the stick cannot reach',
+      /pressed\('sprint'\)\) \{ pad\.consume\?\.\('sprint'\); C\.askSell/.test(bsrc) && BUILD_KEYS.some(([k, w]) => k === 'SPRINT' && w === 'sell'));
+    const csrc = readFileSync(new URL('../../src/systems/housing/cards.js', import.meta.url), 'utf8');
+    ok('...and selling asks first, NO on top', /_v_sellitem[\s\S]{0,900}title: `NO, KEEP THE[\s\S]{0,200}title: `YES, SELL IT FOR/.test(csrc));
+  }
+
+  /* THE TREEHOUSE IS A LEVEL. "player can land on top of the treehouse and go
+     inside it and run on branches". Every deck is sampled; a deck is
+     reachable from another when some point of it is no more than a JUMP above
+     and a short hop across. The roof must be reachable from the ground — that
+     is the whole point of it — and the jump is measured off Player's own
+     numbers, not assumed. */
+  {
+    const psrc = readFileSync(new URL('../../src/entities/player.js', import.meta.url), 'utf8');
+    const g = +psrc.match(/const GRAVITY = ([\d.]+)/)[1];
+    const v = +psrc.match(/const JUMP_V = ([\d.]+)/)[1];
+    const JUMP = (v * v) / (2 * g) - 0.1;
+    const I = H.isles[0];
+    const Hm = newHome(I.site.id, 'minka', ['Ember']);
+    const at = firstYardSpot(Hm, ITEM_BY_ID.treehouse, I.radius);
+    addOutdoor(Hm, 'treehouse', at.x, at.z, 0.7);
+    I.setHome(Hm, null);
+    const tree = I.decks.filter((d) => d.frame);
+    const pts = tree.map((d) => {
+      const out = [];
+      for (let u = 0; u <= 4; u++) {
+        for (let w = 0; w <= 4; w++) {
+          const fx = d.x0 + ((d.x1 - d.x0) * u) / 4;
+          const fz = d.z0 + ((d.z1 - d.z0) * w) / 4;
+          const c = Math.cos(d.frame.a), s = Math.sin(d.frame.a);
+          out.push({ x: d.frame.x + fx * c + fz * s, z: d.frame.z - fx * s + fz * c, y: d.yAt ? d.yAt(fx, fz) : d.y });
+        }
+      }
+      return out;
+    });
+    const ground = (I.island.heightAt(...[I.local(at.x, at.z)].map((q) => [q.x, q.z])[0]) ?? I.groundY) - I.groundY;
+    const seen = new Set();
+    const q = [];
+    pts.forEach((P, k) => { if (P.some((p) => p.y <= ground + 0.8)) { seen.add(k); q.push(k); } });
+    while (q.length) {
+      const a = q.shift();
+      pts.forEach((B, b) => {
+        if (seen.has(b)) return;
+        const hop = pts[a].some((p) => B.some((r) => r.y - p.y <= JUMP && Math.hypot(r.x - p.x, r.z - p.z) <= 2.6));
+        if (hop) { seen.add(b); q.push(b); }
+      });
+    }
+    const top = tree.reduce((m, d, k) => (d.y > tree[m].y ? k : m), 0);
+    ok('the treehouse roof is reachable from the ground, every step no more than one jump',
+      seen.has(top) && tree[top].y - ground > 14, `${seen.size}/${tree.length} decks, roof at ${(tree[top].y - ground).toFixed(1)}, jump ${JUMP.toFixed(2)}`);
+    ok('...and so is every platform, branch and bridge in it', seen.size === tree.length, `${seen.size}/${tree.length}`);
+    // a framed deck answers the island's own height query: stand over the roof
+    const roof = tree[top];
+    const c = I.local(roof.frame.x, roof.frame.z);
+    const h = I.heightAt(c.x, c.z, Infinity);
+    ok('...and the island stands her ON it: heightAt over the cabin is the roof', Math.abs(h.y - (I.groundY + roof.y)) < 0.01, `${h?.y} vs ${I.groundY + roof.y}`);
+    ok('...with its four trunks as obstacles and the cabin as walls', I.obstacles.length >= 4 && I.walls.length > (I.houseWalls?.length ?? 0) + 4);
+    I.setHome(null);
+  }
+
+  /* THE TROPHY SHELF counts arena wins by name, shared by a home's owners. */
+  {
+    const before = H.store.records.cups ? { ...H.store.records.cups } : null;
+    H.store.records.cups = {};
+    H.battleWon(['Ember']);
+    H.battleWon(['Ember', 'Frost']);
+    ok('an arena win is a cup on her shelf, and a castle shelf holds every owner\'s',
+      H.cupsOf({ owners: ['Ember'] }) === 2 && H.cupsOf({ owners: ['Ember', 'Frost'] }) === 3);
+    const tsrc = readFileSync(new URL('../../src/systems/tournament.js', import.meta.url), 'utf8');
+    ok('...and the tournament hands its winners over', /housing\?\.battleWon\?\.\(this\.winners/.test(tsrc));
+    H.store.records.cups = before ?? {};
   }
 
   /* THE BOOMBOX PREVIEWS. "the music should be playing so the player can

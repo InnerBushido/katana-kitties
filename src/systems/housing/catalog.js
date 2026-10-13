@@ -132,12 +132,32 @@ export const ROOM_TYPE_BY_ID = Object.fromEntries(ROOM_TYPES.map((r) => [r.id, r
 /**
  * Furniture and activities.
  *
- * `where`:  'room'  — on a tatami grid cell indoors
- *           'water' / 'garden' / 'court' / 'grove' — a yard plot of that kind
- * A yard plot says what it is (homeisle.js lays them), and an item fits only
- * the plots it names — that is the "valid, theme-matching area" rule.
+ * `where`:  'room' — on the tatami grid indoors
+ *           'wall' — hung on a room's OUTER wall (a window, a scroll ...)
+ *           'yard' — anywhere outdoors on her island, placed freely in 3D
+ * The yard used to be seven fixed plots, each of a kind. Richard, Oct 2026:
+ * "Player should be able to place the plots where they want it, we need to
+ * make a 3D way of player being able to place things exactly where they want
+ * it rather than having predetermined locations for all the plots." So an
+ * outdoor thing is `{ uid, id, x, z, rot }` in the house's own frame
+ * (homestore.js migrates the old plots), and the only rules are the ones in
+ * editor.js `yardFits`: on the island, off the house, off the path to the
+ * bridge, and not on top of something else.
  *
+ * `deco`  — a DECORATION: cheap, does nothing (or nearly nothing), and sits on
+ *           its own shelf in the shop. Richard: "There are a lot of
+ *           'decoration' items for the Garden items ... Decorational items
+ *           should be cheap and should be listed as decorational items".
  * `cells` — footprint on the tatami grid (1 cell = 2 units) for room items.
+ * `r`     — footprint RADIUS outdoors, in units, for collision and spacing.
+ * `size`  — how big it is drawn: `{ h }` a height or `{ w }` a width, in
+ *           units. A kitten is 2.9 tall. MEASURED ONTO THE MODEL at load
+ *           (models.js `fitTo`), never assumed from the file — Polyfork sizes
+ *           are real metres and a kitten is not a metre-scale person, which is
+ *           why "the Samurai Armor, Taiko Drum, katana stand, etc. should be
+ *           twice as big or more ... samurai armor should somewhat fit the
+ *           player". The stand-in is fitted to the same number, so a missing
+ *           model costs the look and not the size.
  * `model` — a vendored Polyfork GLB in public/models/polyfork/, or null for
  *           one drawn here. EVERY ONE HAS A PROCEDURAL FALLBACK (models.js):
  *           delete the folder and the game still plays.
@@ -147,53 +167,71 @@ export const ROOM_TYPE_BY_ID = Object.fromEntries(ROOM_TYPES.map((r) => [r.id, r
  */
 export const ITEMS = [
   // ---------------------------------------------------------------- indoors
-  { id: 'andon', name: 'PAPER FLOOR LAMP', where: ['room'], cells: [1, 1], mult: 0.15, model: 'andon-floor-lantern-b1b7ea' },
-  { id: 'futon', name: 'FUTON', where: ['room'], cells: [1, 2], mult: 0.25, model: null, act: 'nap' },
-  { id: 'kotatsu', name: 'KOTATSU TABLE', where: ['room'], cells: [2, 2], mult: 0.4, model: null },
-  { id: 'tansu', name: 'TANSU CHEST', where: ['room'], cells: [1, 1], mult: 0.3, model: null, act: 'chest' },
-  { id: 'yoroi', name: 'SAMURAI ARMOUR', where: ['room'], cells: [1, 1], mult: 0.6, model: 'yoroi-armour-stand-25f9a2' },
-  { id: 'katana', name: 'KATANA ON A STAND', where: ['room'], cells: [1, 1], mult: 0.35, model: 'katana-in-scabbard-4b6ffb' },
-  { id: 'drum', name: 'TAIKO DRUM', where: ['room', 'garden'], cells: [1, 1], mult: 0.45, model: 'war-drum-on-stand-cbb91a', act: 'drum' },
-  { id: 'bucket', name: 'WOODEN BUCKET', where: ['room', 'garden'], cells: [1, 1], mult: 0.05, model: 'wooden-teoke-bucket-e65f35' },
-  { id: 'sake', name: 'BIG BARREL', where: ['room', 'garden'], cells: [1, 1], mult: 0.1, model: 'komodaru-sake-barrel-c5199a' },
-  { id: 'kitchen', name: 'KITCHEN', where: ['room'], cells: [2, 1], mult: 0.8, model: null, act: 'cook' },
-  // ------------------------------------------------------------------- yard
-  { id: 'koipond', name: 'KOI POND', where: ['water'], mult: 2, model: null, act: 'koi',
-    blurb: 'Feed the koi once or twice a week and they grow — and rare colours turn up. Bring a rod and FISH!' },
-  { id: 'onsen', name: 'ONSEN HOT SPRING', where: ['water'], mult: 2.5, model: null, act: 'soak',
-    blurb: 'A steaming stone pool. Sit in it and your kitten gets rosy.' },
-  { id: 'volleyball', name: 'VOLLEYBALL COURT', where: ['court'], mult: 1.5, model: null, act: 'volley',
+  { id: 'andon', name: 'PAPER FLOOR LAMP', where: ['room'], cells: [1, 1], size: { h: 2.2 }, mult: 0.15, model: 'andon-floor-lantern-b1b7ea', deco: true },
+  { id: 'futon', name: 'FUTON', where: ['room'], cells: [2, 3], size: { w: 5.4 }, mult: 0.25, model: null, act: 'nap',
+    blurb: 'Lie down for a nap. Wakes you fully rested.' },
+  { id: 'kotatsu', name: 'KOTATSU TABLE', where: ['room'], cells: [2, 2], size: { w: 3.6 }, mult: 0.4, model: null, act: 'sit',
+    blurb: 'Sit round it together — eat a meal here, or play a game of cups.' },
+  { id: 'tansu', name: 'TANSU CHEST', where: ['room'], cells: [1, 1], size: { h: 2.6 }, mult: 0.3, model: null, act: 'chest' },
+  { id: 'yoroi', name: 'SAMURAI ARMOUR', where: ['room'], cells: [1, 1], size: { h: 3.4 }, mult: 0.6, model: 'yoroi-armour-stand-25f9a2', deco: true },
+  { id: 'katana', name: 'KATANA ON A STAND', where: ['room'], cells: [2, 1], size: { w: 3.4 }, mult: 0.35, model: 'katana-in-scabbard-4b6ffb', deco: true },
+  { id: 'drum', name: 'TAIKO DRUM', where: ['room', 'yard'], cells: [2, 2], r: 1.8, size: { h: 3.0 }, mult: 0.45, model: 'war-drum-on-stand-cbb91a', act: 'drum',
+    blurb: 'Play along to the beat — a rhythm game for one.' },
+  { id: 'bucket', name: 'WOODEN BUCKET', where: ['room', 'yard'], cells: [1, 1], r: 0.8, size: { h: 1.1 }, mult: 0.05, model: 'wooden-teoke-bucket-e65f35', deco: true },
+  { id: 'sake', name: 'BIG BARREL', where: ['room', 'yard'], cells: [1, 1], r: 1.1, size: { h: 2.2 }, mult: 0.08, model: 'komodaru-sake-barrel-c5199a', deco: true },
+  { id: 'kitchen', name: 'KITCHEN', where: ['room'], cells: [2, 1], size: { w: 4.0 }, mult: 0.8, model: null, act: 'cook',
+    blurb: 'Cook a meal, carry it to the kotatsu, and eat together for extra health in your next battle.' },
+  // ------------------------------------------------------------------ walls
+  /* ON THE WALLS. Richard: "Is it possible to add some sort of windows in the
+     houses? ... We can make this a furniture that can be placed on the walls.
+     We should have some furniture that can be placed on walls, like pictures
+     or scrolls, trophies that players win at the arena". A wall thing takes
+     one 2-unit span of a room's OUTER wall (`wallSlots` in editor.js). */
+  { id: 'window', name: 'SHOJI WINDOW', where: ['wall'], size: { w: 2.0 }, mult: 0.2, model: null, act: 'look',
+    blurb: 'A paper window that slides open. LOOK OUT and see your island.' },
+  { id: 'scroll', name: 'HANGING SCROLL', where: ['wall'], size: { w: 1.1 }, mult: 0.1, model: null, deco: true,
+    blurb: 'A kakejiku with a brushed word on it.' },
+  { id: 'picture', name: 'FRAMED PICTURE', where: ['wall'], size: { w: 1.8 }, mult: 0.1, model: null, deco: true,
+    blurb: 'A picture of your clan emblem, or the sea if you have not sworn yet.' },
+  { id: 'trophy', name: 'TROPHY SHELF', where: ['wall'], size: { w: 2.0 }, mult: 0.15, model: null, act: 'trophies',
+    blurb: 'A shelf with one golden cup for every arena battle you have won.' },
+  // --------------------------------------------- outdoors: things that DO something
+  { id: 'koipond', name: 'KOI POND', where: ['yard'], r: 10, mult: 2, model: null, act: 'koi',
+    blurb: 'Feed the koi so they grow — and rare colours turn up. Pick up the rod beside it and FISH!' },
+  { id: 'onsen', name: 'ONSEN HOT SPRING', where: ['yard'], r: 7, mult: 2.5, model: null, act: 'soak',
+    blurb: 'Change into a bathing suit and relax. Your first 15 seconds of every round next battle hit twice as hard.' },
+  { id: 'volleyball', name: 'VOLLEYBALL COURT', where: ['yard'], r: 10, mult: 1.5, model: null, act: 'volley',
     blurb: 'A sand court and a net. Bat the ball over with your katana.' },
-  { id: 'bamboofarm', name: 'BAMBOO FARM', where: ['grove'], mult: 1.5, model: null, act: 'harvest',
+  { id: 'bamboofarm', name: 'BAMBOO FARM', where: ['yard'], r: 7, mult: 1.5, model: null, act: 'harvest',
     blurb: 'Bamboo that grows back in REAL time — harvest it and sell it to Roshi.' },
-  { id: 'pen', name: 'ANIMAL PEN', where: ['garden', 'court'], mult: 2, model: null, act: 'animals',
-    blurb: 'Raise animals in real time. Visit once or twice a week — they never run away, they just get hungry.' },
-  { id: 'treehouse', name: 'TREEHOUSE', where: ['grove'], mult: 1.8, model: null, act: 'climb',
-    blurb: 'A cherry tree with a little house in it. Climb up the ladder.' },
-  { id: 'shrine', name: 'LITTLE SHRINE', where: ['garden'], mult: 1.2, model: 'tiered-pagoda-f4ade0', act: 'pray',
-    blurb: 'A tiered pagoda shrine for your island.' },
-  { id: 'stones', name: 'JUMPING STONES', where: ['water', 'garden'], mult: 0.6, model: null,
-    blurb: 'Stepping stones to hop across.' },
-  { id: 'toriigarden', name: 'TORII GARDEN', where: ['garden'], mult: 0.9, model: null,
-    blurb: 'A row of little red gates over a path.' },
-  { id: 'well', name: 'ROOFED WELL', where: ['garden'], mult: 0.5, model: 'roofed-well-43a2fc' },
-  { id: 'waterwheel', name: 'WATER WHEEL', where: ['water'], mult: 0.7, model: 'stream-water-wheel-ea2d68' },
-  { id: 'belltower', name: 'BELL TOWER', where: ['garden', 'court'], mult: 1.0, model: 'temple-bell-tower-745387', act: 'bell' },
-  { id: 'teahouse', name: 'TEAHOUSE', where: ['garden', 'court'], mult: 1.2, model: 'open-front-teahouse-c7dd18' },
-  { id: 'basin', name: 'STONE BASIN', where: ['garden'], mult: 0.3, model: 'tsukubai-stone-basin-677586' },
-  { id: 'lantern', name: 'STONE LANTERN', where: ['garden', 'water'], mult: 0.15, model: 'stone-lantern-d56d0a' },
-  { id: 'maple', name: 'MAPLE TREE', where: ['garden', 'grove'], mult: 0.3, model: 'japanese-maple-d2fb29' },
-  { id: 'cherry', name: 'CHERRY TREE', where: ['garden', 'grove'], mult: 0.35, model: 'cherry-tree-a710a9' },
-  { id: 'pine', name: 'SCULPTED PINE', where: ['garden'], mult: 0.3, model: 'sculpted-pine-e45d4f' },
-  { id: 'azalea', name: 'AZALEA BUSH', where: ['garden', 'water'], mult: 0.1, model: 'azalea-bush-7bb14d' },
-  { id: 'fence', name: 'BAMBOO FENCE', where: ['garden', 'grove', 'court'], mult: 0.1, model: 'takegaki-bamboo-fence-c6718b' },
-  { id: 'firebasket', name: 'FIRE BASKET', where: ['garden', 'court'], mult: 0.2, model: 'kagaribi-fire-basket-d28c11' },
-  { id: 'bench', name: 'TEAHOUSE BENCH', where: ['garden', 'court', 'water'], mult: 0.1, model: 'teahouse-bench-6b34e1' },
-  { id: 'banner', name: 'NOBORI BANNER', where: ['garden', 'court'], mult: 0.1, model: 'nobori-banner-ae4d88' },
-  { id: 'paddy', name: 'RICE PADDY', where: ['grove', 'garden'], mult: 0.4, model: 'rice-paddy-tile-dc727e' },
-  { id: 'reeds', name: 'REEDS', where: ['water'], mult: 0.05, model: 'moat-reed-clump-dd6b60' },
+  { id: 'pen', name: 'ANIMAL PEN', where: ['yard'], r: 9, mult: 2, model: null, act: 'animals',
+    blurb: 'Raise animals in real time. Feed them, clean up after them, walk them and PLAY with them.' },
+  { id: 'treehouse', name: 'TREEHOUSE', where: ['yard'], r: 11, mult: 1.8, model: null,
+    blurb: 'Four trees, branches and rope bridges, and a little house at the top. Climb all the way up!' },
+  { id: 'shrine', name: 'LITTLE SHRINE', where: ['yard'], r: 4.5, size: { h: 8 }, mult: 1.2, model: 'tiered-pagoda-f4ade0', act: 'pray',
+    blurb: 'Pray here before a battle and you are BLESSED: fall out of the ring and you fly instead.' },
+  { id: 'belltower', name: 'BELL TOWER', where: ['yard'], r: 3.5, size: { h: 7.5 }, mult: 0.6, model: 'temple-bell-tower-745387', act: 'bell',
+    blurb: 'A temple bell. Ring it!' },
+  // --------------------------------------------- outdoors: decorations
+  { id: 'stones', name: 'JUMPING STONES', where: ['yard'], r: 5, mult: 0.12, model: null, deco: true },
+  { id: 'toriigarden', name: 'TORII GARDEN', where: ['yard'], r: 5.5, mult: 0.2, model: null, deco: true },
+  { id: 'well', name: 'ROOFED WELL', where: ['yard'], r: 2.4, size: { h: 4.4 }, mult: 0.15, model: 'roofed-well-43a2fc', deco: true },
+  { id: 'waterwheel', name: 'WATER WHEEL', where: ['yard'], r: 3, size: { h: 5.2 }, mult: 0.15, model: 'stream-water-wheel-ea2d68', deco: true },
+  { id: 'teahouse', name: 'TEAHOUSE', where: ['yard'], r: 4.5, size: { h: 6 }, mult: 0.3, model: 'open-front-teahouse-c7dd18', deco: true },
+  { id: 'basin', name: 'STONE BASIN', where: ['yard'], r: 1.2, size: { h: 1.3 }, mult: 0.06, model: 'tsukubai-stone-basin-677586', deco: true },
+  { id: 'lantern', name: 'STONE LANTERN', where: ['yard'], r: 1.1, size: { h: 3.0 }, mult: 0.05, model: 'stone-lantern-d56d0a', deco: true },
+  { id: 'maple', name: 'MAPLE TREE', where: ['yard'], r: 1.6, size: { h: 8 }, mult: 0.08, model: 'japanese-maple-d2fb29', deco: true },
+  { id: 'cherry', name: 'CHERRY TREE', where: ['yard'], r: 1.8, size: { h: 9 }, mult: 0.1, model: 'cherry-tree-a710a9', deco: true },
+  { id: 'pine', name: 'SCULPTED PINE', where: ['yard'], r: 1.6, size: { h: 6 }, mult: 0.08, model: 'sculpted-pine-e45d4f', deco: true },
+  { id: 'azalea', name: 'AZALEA BUSH', where: ['yard'], r: 1.1, size: { h: 1.6 }, mult: 0.03, model: 'azalea-bush-7bb14d', deco: true },
+  { id: 'fence', name: 'BAMBOO FENCE', where: ['yard'], r: 2.2, size: { w: 4.4 }, mult: 0.03, model: 'takegaki-bamboo-fence-c6718b', deco: true },
+  { id: 'firebasket', name: 'FIRE BASKET', where: ['yard'], r: 1, size: { h: 3.2 }, mult: 0.05, model: 'kagaribi-fire-basket-d28c11', deco: true },
+  { id: 'bench', name: 'TEAHOUSE BENCH', where: ['yard'], r: 1.6, size: { w: 3.2 }, mult: 0.04, model: 'teahouse-bench-6b34e1', deco: true },
+  { id: 'banner', name: 'NOBORI BANNER', where: ['yard'], r: 0.9, size: { h: 5.5 }, mult: 0.03, model: 'nobori-banner-ae4d88', deco: true },
+  { id: 'paddy', name: 'RICE PADDY', where: ['yard'], r: 3, size: { w: 5.5 }, mult: 0.1, model: 'rice-paddy-tile-dc727e', deco: true },
+  { id: 'reeds', name: 'REEDS', where: ['yard'], r: 0.9, size: { h: 2.4 }, mult: 0.02, model: 'moat-reed-clump-dd6b60', deco: true },
   {
-    id: 'bladeforest', name: 'BUSHIDO BAMBOO FOREST', where: ['grove'], mult: 4, model: null, later: true,
+    id: 'bladeforest', name: 'BUSHIDO BAMBOO FOREST', where: ['yard'], r: 10, mult: 4, model: null, later: true,
     blurb: 'Coming later: a sparring forest where a clean cut goes straight through the bamboo.',
   },
 ];
