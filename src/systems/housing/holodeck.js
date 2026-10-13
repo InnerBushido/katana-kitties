@@ -109,8 +109,13 @@ export class HoloDeck {
           bag = null;
         }
       }
+      // the step onto a rack, remembered on EVERY frame, suited or not
+      this._on ??= new Map();
+      const on = this._rackUnder(p);
+      const stepped = !!on && on.key !== this._on.get(p.index);
+      this._on.set(p.index, on?.key ?? null);
       if (busy || p.simLook || pull || bag?.suited) continue;
-      this._grab(p);
+      if (stepped) this._grab(p, on);
     }
     // The racks: a piece shows while nobody has it, and turns slowly.
     for (const I of this.H.isles) {
@@ -126,37 +131,50 @@ export class HoloDeck {
     }
   }
 
-  _grab(p) {
-    const g = this.game;
+  /**
+   * A RACK ACTS ON THE STEP ONTO IT, not on every frame she stands there.
+   * Richard: "it is spamming the screen with messages ... This message should
+   * not be spamming the screen and should only appear once every time a
+   * player steps on it." Standing still on a rack used to be a press a frame:
+   * when the suit-up was refused (`_suit` — the gear goes back on its racks)
+   * the very next frame took it off them again, and refused again, sixty
+   * times a second. `_on` is the rack each kitten is standing on; nothing
+   * happens until that changes.
+   */
+  _rackUnder(p) {
     for (const I of this.H.isles) {
       if (!I.holoRooms?.length || !I.over(p.position.x, p.position.z, 2)) continue;
       for (const R of I.holoRooms) {
         for (const r of R.racks) {
           if (Math.hypot(p.position.x - r.x, p.position.z - r.z) > HOLO_GRAB) continue;
           if (Math.abs(p.position.y - r.y) > 2.5) continue;
-          const key = this._key(I.site.id, R.room, r.id);
-          const item = GEAR_ITEMS.find((x) => x.id === r.id);
-          const who = this.taken.get(key);
-          if (who != null) {
-            if (who !== p.index && !this._told?.has(`${p.index}:${key}`)) {
-              (this._told ??= new Set()).add(`${p.index}:${key}`);
-              g.toast?.(`${p.name} — ${this.bags.get(who)?.name ?? 'somebody'} has the ${item.name}. It comes back when she takes the gear off.`, p.index);
-            }
-            continue;
-          }
-          let bag = this.bags.get(p.index);
-          if (bag && (bag.site !== I.site.id || bag.room !== R.room)) { this.release(p.index); bag = null; }
-          if (!bag) { bag = { site: I.site.id, room: R.room, items: new Set(), suited: false, name: p.name }; this.bags.set(p.index, bag); }
-          this.taken.set(key, p.index);
-          bag.items.add(r.id);
-          g.sfx?.('orb');
-          g.toast?.(`${p.name} — ${item.name} ✓ (${bag.items.size} of ${GEAR_ITEMS.length})`, p.index);
-          if (bag.items.size === GEAR_ITEMS.length) this._suit(p, bag);
-          return;
+          return { I, R, r, key: this._key(I.site.id, R.room, r.id) };
         }
       }
     }
-    this._told?.clear?.();
+    return null;
+  }
+
+  /** She has just stepped onto rack `on` (`_rackUnder`). */
+  _grab(p, on) {
+    const g = this.game;
+    const { I, R, r, key } = on;
+    const item = GEAR_ITEMS.find((x) => x.id === r.id);
+    const who = this.taken.get(key);
+    if (who != null) {
+      if (who !== p.index) {
+        g.toast?.(`${p.name} — ${this.bags.get(who)?.name ?? 'somebody'} has the ${item.name}. It comes back when she takes the gear off.`, p.index);
+      }
+      return;
+    }
+    let bag = this.bags.get(p.index);
+    if (bag && (bag.site !== I.site.id || bag.room !== R.room)) { this.release(p.index); bag = null; }
+    if (!bag) { bag = { site: I.site.id, room: R.room, items: new Set(), suited: false, name: p.name }; this.bags.set(p.index, bag); }
+    this.taken.set(key, p.index);
+    bag.items.add(r.id);
+    g.sfx?.('orb');
+    g.toast?.(`${p.name} — ${item.name} ✓ (${bag.items.size} of ${GEAR_ITEMS.length})`, p.index);
+    if (bag.items.size === GEAR_ITEMS.length) this._suit(p, bag);
   }
 
   _suit(p, bag) {

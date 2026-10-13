@@ -8,7 +8,7 @@ import { HomeIsle } from './homeisle.js';
 import { HomeBridge, solveHomeRoads } from './homebridge.js';
 import { Roshi } from './roshi.js';
 import { PurchaseScene } from './purchasescene.js';
-import { JUKEBOX, hasRecording } from './jukebox.js';
+import { JUKEBOX, hasRecording, previewOf } from './jukebox.js';
 import { Koi } from './koi.js';
 import { Farm } from './farm.js';
 import { Kendo } from './kendo.js';
@@ -17,6 +17,7 @@ import { HousingCards } from './cards.js';
 import { BuildMode } from './build.js';
 import { HomeBoons } from './boons.js';
 import { HomeActivities } from './activities.js';
+import { HEAD_H } from './homehouse.js';
 import { HoloDeck } from './holodeck.js';
 import { Angling } from './angling.js';
 import { PetPlay } from './petplay.js';
@@ -93,6 +94,10 @@ export class Housing {
     this.scene = null;
     /** Seats browsing Roshi's tour: index → { site, house } for the camera. */
     this.browsing = new Map();
+    /** ...and the pose each tour has its pane's camera in (`tourLens`). */
+    this.lens = new Map();
+    /** Seats watching a sister's tour in her pane: watcher → owner. */
+    this.watchers = new Map();
     /** Seats currently looking at a PREVIEW (the island recoloured to her). */
     this.preview = null;
     this.koi = new Koi(this);
@@ -205,6 +210,8 @@ export class Housing {
     this.debugOpen = false;
     this.stopPreview?.();
     this.browsing.clear();
+    this.lens.clear();
+    this.watchers.clear();
     this.musicSite = null;
     this._onBridge.clear();
     for (const p of this.game.players ?? []) {
@@ -394,6 +401,12 @@ export class Housing {
       }
       this._roomWall(p, I, H);
       this._obstacles(p, I, r);
+      // ...and her head against the ceiling (HomeIsle `ceilingAt`)
+      const c = I.ceilingAt(pos.x, pos.y, pos.z);
+      if (c != null && pos.y + HEAD_H > c) {
+        pos.y = c - HEAD_H;
+        if (p.velocity.y > 0) p.velocity.y = 0;
+      }
     }
   }
 
@@ -504,6 +517,10 @@ export class Housing {
     for (const b of this.browsing.values()) {
       b.t = (b.t ?? 0) + dt;
       if (b.ft != null) b.ft += dt;
+    }
+    this._updateLens(dt);
+    for (const [j, o] of [...this.watchers]) {
+      if (!this.browsing.has(o) || !this.game.players?.[j]) this.watchers.delete(j);
     }
     this._pumpRoads();
     const players = this.game.players ?? [];
@@ -646,7 +663,9 @@ export class Housing {
     /* A RECORDING THAT IS NOT ON DISK PLAYS ITS PROCEDURAL STAND-IN, which
        is non-negotiable 9: delete public/music and the jukebox still plays. */
     if (this.game.audio?.fileMissing?.(T.id)) return T.fallback;
-    return hasRecording(T.id) ? T.id : T.fallback;
+    if (!hasRecording(T.id)) return T.fallback;
+    // an audition starts where the music does (jukebox.js PREVIEW_AT)
+    return this.audition?.id === T.id ? previewOf(T.id) : T.id;
   }
 
   /**
@@ -677,12 +696,176 @@ export class Housing {
    */
   browse(index, site) {
     const b = this.browsing.get(index);
-    if (!b) { this.browsing.set(index, { site, t: 0, ft: TOUR.look + TOUR.fly }); return; }
+    // The first island is turned to and flown to from wherever her camera is.
+    if (!b) { this.browsing.set(index, { site, t: 0, ft: 0 }); this._lensFor(index).restart = true; return; }
     if (b.site === site) return;
-    b.from = (b.from ?? new THREE.Vector3()).copy(b.centre ?? b.from ?? new THREE.Vector3());
     b.fromSite = b.site;
     b.site = site;
     b.ft = 0;
+    this._lensFor(index).restart = true;
+  }
+
+  /* ------------------------------ the tour lens --------------------------- */
+
+  /**
+   * ROSHI'S TOUR DRIVES THE PANE'S CAMERA ITSELF. Richard, Oct 2026: "the
+   * camera is not keeping the island it will go to next ... in the center of
+   * the screen ... The camera should rotate to look at the island from where
+   * it is, then when moving to the island, it should keep looking at it ...
+   * always keeping the island in the center of the screen regardless of the
+   * splitscreen the player is on."
+   *
+   * It used to be a `setFocus` on HER camera, and that had two faults. Her
+   * follow camera chases a focus — `camTarget` lerps at 3.4/s and the
+   * distance at 4/s — so while the centre flew four hundred units in 2.4s
+   * the camera trailed it and the island slid off the middle of the frame.
+   * And in a SHARED pane her camera is not the one drawing: the group's rig
+   * is, and it has never heard of the tour. So the lens is a pose — an eye
+   * and a point it looks at — laid over whatever camera draws her pane, in
+   * `_renderView`, and the look point IS the island's centre from the moment
+   * the turn ends. Centred by construction rather than by chasing.
+   *
+   *   turn   TOUR.look   the eye stays put; the look point swings from where
+   *                      the camera was looking to the island
+   *   fly    TOUR.fly    the eye travels (eased, arcing up) to its orbit
+   *                      spot; the look point stays ON the island
+   *   orbit              a slow sway round it, still looking at it
+   *
+   * Blended in over half a second from the camera's own pose and out again
+   * the same way when the card closes, so neither end is a cut.
+   */
+  _lensFor(index) {
+    let L = this.lens.get(index);
+    if (!L) { L = { eye: null, look: null, eye0: null, look0: null, k: 0, live: true, restart: true }; this.lens.set(index, L); }
+    L.live = true;
+    return L;
+  }
+
+  /** The orbit spot over an island at time `t`: in front of it, up and back. */
+  _orbitEye(I, t, out) {
+    const yaw = I.ry + Math.PI + Math.sin(t * 0.12) * 0.7;
+    const d = 95;
+    const pitch = 0.42;
+    return out.set(
+      I.x + Math.sin(yaw) * Math.cos(pitch) * d,
+      I.groundY + 6 + Math.sin(pitch) * d,
+      I.z + Math.cos(yaw) * Math.cos(pitch) * d);
+  }
+
+  _updateLens(dt) {
+    for (const [i, L] of this.lens) {
+      const b = this.browsing.get(i);
+      if (!b) L.live = false;
+      L.k = Math.max(0, Math.min(1, L.k + (L.live ? dt : -dt) / 0.5));
+      if (!L.live && L.k <= 0) { this.lens.delete(i); continue; }
+      if (!b || !L.eye) continue;
+      const I = this.isleOf(b.site);
+      if (!I) continue;
+      if (L.restart) {
+        L.eye0 = L.eye.clone();
+        L.look0 = L.look.clone();
+        L.restart = false;
+      }
+      const target = (L._t ??= new THREE.Vector3()).set(I.x, I.groundY + 6, I.z);
+      const orbit = this._orbitEye(I, this.time, L._o ??= new THREE.Vector3());
+      const ft = b.ft ?? Infinity;
+      if (ft < TOUR.look) {
+        L.eye.copy(L.eye0);
+        L.look.lerpVectors(L.look0, target, tourEase(ft / TOUR.look));
+      } else if (ft < TOUR.look + TOUR.fly) {
+        const u = tourEase((ft - TOUR.look) / TOUR.fly);
+        L.eye.lerpVectors(L.eye0, orbit, u);
+        L.eye.y += Math.sin(u * Math.PI) * 20;
+        L.look.copy(target);
+      } else {
+        L.eye.copy(orbit);
+        L.look.copy(target);
+      }
+    }
+  }
+
+  /**
+   * Lay the tour over `camera` for one pane's render. `members` are the pane's
+   * kittens; the first with a lens wins — in a shared pane that is the girl
+   * at the counter, whose sisters are watching her tour (`watchers`).
+   */
+  tourLens(camera, members) {
+    if (!this.lens.size) return;
+    const ids = members ?? (this.game.players ?? []).map((_, k) => k);
+    const i = ids.find((k) => this.lens.has(k));
+    if (i == null) return;
+    const L = this.lens.get(i);
+    const fwd = (this._fwd ??= new THREE.Vector3());
+    camera.getWorldDirection(fwd);
+    if (!L.eye) {
+      // The pose the camera already has is where the tour starts from.
+      L.eye = camera.position.clone();
+      L.look = camera.position.clone().addScaledVector(fwd, 40);
+      L.restart = true;
+      this._updateLens(0);
+    }
+    const k = tourEase(L.k);
+    if (k <= 0) return;
+    /* A NARROW PANE STANDS FURTHER BACK, so a column of split screen still
+       shows the whole island: the eye is pushed out along its own line to the
+       look point, which keeps the island exactly where it was in the frame. */
+    const back = Math.max(1, Math.min(2.4, 1.5 / Math.max(0.2, camera.aspect)));
+    const eye = (this._eye ??= new THREE.Vector3()).copy(L.eye).sub(L.look).multiplyScalar(back).add(L.look);
+    const look = (this._look ??= new THREE.Vector3()).copy(camera.position).addScaledVector(fwd, 40);
+    look.lerp(L.look, k);
+    camera.position.lerp(eye, k);
+    camera.lookAt(look);
+  }
+
+  /* ------------------------------ the watchers ---------------------------- */
+
+  /**
+   * SISTERS SHARING HER PANE WATCH HER TOUR. Richard: "When players are both
+   * next to Roshi and are in the same shared screen, if a player brings up
+   * the Roshi menu, then instead of going to splitscreen, the UI should take
+   * up the entire screen and all the players can see what the player talking
+   * to Roshi is doing. A player not controlling the UI should still lose their
+   * normal input control ... but if they press the back button to back out of
+   * the UI, then it will go to splitscreen mode and player regains control."
+   *
+   * A personal card normally puts its kitten in a pane of her own
+   * (`Game._clusters`' `solo`). Roshi's does not while anybody is watching:
+   * she and her watchers are one LANE, so the pane they were sharing stays
+   * theirs with her card in it and the lens on it. A watcher's pad is dead but
+   * for the way out — INTERACT or START, the same two buttons that close a
+   * card — and when the last one has gone, her card is solo again and the
+   * screen splits exactly as it always did.
+   */
+  startWatch(owner) {
+    const G = this.game;
+    const group = (G.groups ?? []).find((m) => m.includes(owner)) ?? [];
+    for (const j of group) {
+      const q = G.players?.[j];
+      if (j === owner || !q || q.mount || q.rideAlong || G.inspector?.busy?.(j) || this.watchers.has(j)) continue;
+      this.watchers.set(j, owner);
+      G.toast?.(`${G.players[owner]?.name ?? 'Your sister'} is looking at Roshi's islands — you are watching. INTERACT to go back to playing.`, j);
+    }
+  }
+
+  endWatch(owner) {
+    for (const [j, o] of [...this.watchers]) if (o === owner) this.watchers.delete(j);
+  }
+
+  /** Is seat `j` watching somebody's tour? Then her pad is dead (Game). */
+  watching(j) { return this.watchers.has(j); }
+
+  /** The pane lane for `Game._clusters`: owner and watchers share one. */
+  watchLane(i) {
+    if (this.watchers.has(i)) return `tour:${this.watchers.get(i)}`;
+    for (const o of this.watchers.values()) if (o === i) return `tour:${i}`;
+    return null;
+  }
+
+  /** A watcher pressed the way out. */
+  unwatch(j) {
+    if (!this.watchers.delete(j)) return;
+    this.game.toast?.('Back to playing!', j);
+    this.game.audio?.play?.('menu');
   }
 
   /**
@@ -695,30 +878,8 @@ export class Housing {
    * over `TOUR.fly`. The orbit's slow sway comes back in as it arrives.
    */
   cameraFocus(p) {
-    const b = this.browsing.get(p.index);
-    if (b) {
-      const I = this.isleOf(b.site);
-      if (!I) return null;
-      const t = this.time * 0.12;
-      const orbit = I.ry + Math.PI + Math.sin(t) * 0.7;
-      const to = new THREE.Vector3(I.x, I.groundY + 6, I.z);
-      b.centre ??= to.clone();
-      const ft = b.ft ?? Infinity;
-      if (!b.from || ft >= TOUR.look + TOUR.fly) {
-        b.centre.copy(to);
-        return { centre: b.centre, aim: true, dist: 95, pitch: 0.42, yaw: orbit };
-      }
-      // the camera BEHIND where it is, looking through it at the next island
-      const toward = Math.atan2(b.from.x - to.x, b.from.z - to.z);
-      if (ft < TOUR.look) {
-        b.centre.copy(b.from);
-        return { centre: b.centre, aim: true, dist: 95, pitch: 0.36, yaw: toward };
-      }
-      const u = tourEase((ft - TOUR.look) / TOUR.fly);
-      b.centre.lerpVectors(b.from, to, u);
-      b.centre.y += Math.sin(u * Math.PI) * 25;
-      return { centre: b.centre, aim: true, dist: 95 + Math.sin(u * Math.PI) * 30, pitch: 0.36 + 0.06 * u, yaw: lerpAngle(toward, orbit, u) };
-    }
+    // Roshi's tour is not a focus any more: it is a lens (`tourLens`).
+    if (this.browsing.has(p.index)) return null;
     return this.builder.camera(p) ?? this.activities.cameraFocus(p) ?? this._doorShot(p) ?? this.koi.cameraFocus?.(p) ?? null;
   }
 
@@ -781,10 +942,13 @@ export class Housing {
           floors.push(p.position.y + 0.35);
         }
       }
-      /* Building in a room cuts the house to that room's floor whatever she
-         is standing on — the top-down camera has to see the tatami. */
+      /* A card about a room cuts the house to THAT room's floor, whatever
+         floor she is standing on — the camera has to see the tatami. It
+         used to be the lower of the two, so a girl downstairs choosing a room
+         upstairs had the very floor she was choosing cut away (Richard: "it
+         only shows the floor the players are on"). */
       const bf = this.builder.cutFloor(I, members ?? players.map((_, k) => k));
-      if (bf >= 0) floor = floor < 0 ? bf : Math.min(floor, bf);
+      if (bf >= 0) floor = bf;
       I.cutaway(floor);
       for (const M of I.xrayMats) M.setCuts?.(camera.position, seen, floors);
     }
@@ -991,7 +1155,8 @@ export class Housing {
       soak: 'SOAK',
       volley: 'VOLLEYBALL',
       pray: 'PRAY',
-      sit: 'SIT AT THE KOTATSU',
+      sit: this.activities.carrying(p.index) ? 'SET THE TABLE WITH THE FOOD'
+        : this.activities.platesOn(this.activities.tableKey(s)) ? 'EAT TOGETHER' : 'SIT AT THE KOTATSU',
       gates: own ? (this.locked(s.home) ? 'OPEN THE GATES' : 'CLOSE THE GATES') : null,
       look: 'LOOK OUT',
       trophies: 'TROPHIES',

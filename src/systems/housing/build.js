@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { HOUSE_BY_ID, ITEM_BY_ID } from './catalog.js';
 import { fits, footprint, gridOf, wallSlots, wallFree, yardWhy, yardR, addOutdoor } from './editor.js';
-import { drawItem, fitTo } from './models.js';
-import { WALL_Y } from './homeisle.js';
+import { drawItem, placeModel } from './models.js';
+import { WALL_Y, YARD_BUILT, roomLook } from './homeisle.js';
 
 /* ---------------------------------------------------------------------------
    BUILD MODE — placing a thing in the world, not on a chart.
@@ -150,7 +150,30 @@ export function pickList(H, kind, roomId) {
 export const BUILD_KEYS = [
   ['STICK', 'move'], ['ATTACK', 'turn'], ['JUMP', 'put it here'], ['SPRINT', 'sell'], ['INTERACT', 'back'],
 ];
-export const PICK_KEYS = [['STICK', 'choose'], ['JUMP', 'pick it up'], ['SPRINT', 'sell'], ['INTERACT', 'back']];
+export const PICK_KEYS = [['STICK', 'choose'], ['JUMP', 'pick it up'], ['ATTACK', 'customize'], ['SPRINT', 'sell'], ['INTERACT', 'back']];
+export const CUSTOM_PICK_KEYS = [['STICK', 'choose'], ['JUMP', 'customize'], ['INTERACT', 'back']];
+
+
+/** See-through copies of every material under `root`, so the original is untouched. */
+function ghostly(root) {
+  root.traverse((o) => {
+    if (!o.isMesh || o.userData.ghost) return;
+    const ms = Array.isArray(o.material) ? o.material : [o.material];
+    const out = ms.map((m) => {
+      const c = m.clone();
+      c.transparent = true;
+      c.opacity = 0.92;
+      c.depthWrite = false;
+      return c;
+    });
+    o.material = Array.isArray(o.material) ? out : out[0];
+    o.userData.ghost = true;
+    o.renderOrder = 5;
+  });
+  return root;
+}
+
+const _fb = new THREE.Box3();
 
 export class BuildMode {
   constructor(housing) {
@@ -213,7 +236,8 @@ export class BuildMode {
         const k = cur ? stepToward(L, cur, mx, my) : -1;
         if (k >= 0) { top.at = k; this.H.game.audio?.play?.('menu'); }
       }
-      if (pad.pressed('jump')) { pad.consume?.('jump'); C.pickUp(index, top); return true; }
+      if (pad.pressed('jump')) { pad.consume?.('jump'); if (top.mode === 'custom') C.customize(index, top); else C.pickUp(index, top); return true; }
+      if (pad.pressed('attack')) { pad.consume?.('attack'); C.customize(index, top); return true; }
       if (pad.pressed('sprint')) { pad.consume?.('sprint'); C.askSell(index, top); return true; }
       return push;
     }
@@ -287,11 +311,10 @@ export class BuildMode {
    * whole; the yard follows the ghost.
    */
   camera(p) {
-    const top = this.topOf(p.index);
-    if (!top) return null;
-    const I = this.isle(top);
-    const H = this.home(top);
-    if (!I || !H) return null;
+    const F = this.frameOf(p.index);
+    if (!F) return null;
+    if (F.item || F.roomOnly) return this._frameCam(F);
+    const { top, I, H } = F;
     const L = this.localOf(top);
     const lw = I.local(L.x, L.z);
     let c = L, dist = 34, y = I.island.heightAt(lw.x, lw.z) ?? I.groundY;
@@ -319,19 +342,121 @@ export class BuildMode {
     return { centre: top._cam, aim: true, dist, pitch: 1.18, yaw };
   }
 
+  /**
+   * WHAT HER CARD IS ABOUT, for the camera and the cutaway: a build or pick
+   * view, a thing being customised, or a ROOM she is choosing between. Richard:
+   * "When choosing a room to furnish ... the camera should zoom and focus on
+   * the room so the player knows which room it is ... regardless of where the
+   * players are in the house, it should show the proper floor and the room
+   * that is being selected. Currently, it only shows the floor the players are
+   * on." So the room lists frame the room under the CURSOR, and every view
+   * that is about one room (its menu, the shop for it, the are-you-sures)
+   * frames that one, cut down to its floor. Null = the card is about nothing
+   * in the house, and her camera is her own.
+   */
+  frameOf(index) {
+    const C = this.H.game.housingCards;
+    const top = C?._top?.(index);
+    if (!top?.site) return null;
+    const I = this.isle(top);
+    const H = this.home(top);
+    if (!I || !H) return null;
+    if (top.v === 'build' || top.v === 'pick') return { top, I, H, room: top.kind === 'yard' ? null : this.roomOf(H, top) };
+    if (top.v === 'custom') return { top, I, H, room: top.kind === 'yard' ? null : this.roomOf(H, top), item: true };
+    const rooms = HOUSE_BY_ID[H.house]?.rooms ?? [];
+    const cur = this.H.game.inspector?.cards?.[index]?.i ?? 0;
+    let id = null;
+    if (top.v === 'rooms') id = rooms[cur]?.id;
+    else if (top.v === 'claims') id = rooms.filter((r) => r.claim)[cur]?.id;
+    else if (['room', 'roomtype', 'shop', 'sellitem'].includes(top.v) && top.kind !== 'yard') id = top.room;
+    const room = id ? rooms.find((r) => r.id === id) : null;
+    return room ? { top, I, H, room, roomOnly: true } : null;
+  }
+
+  /** The camera for a framed room, or close on one thing she is customising. */
+  _frameCam(F) {
+    const { top, I, H, room } = F;
+    let c, dist, y, pitch = 1.18;
+    if (F.item) {
+      const row = top.kind === 'yard' ? H.outdoor?.[top.sel] : H.rooms?.[top.room]?.items?.[top.sel];
+      const it = ITEM_BY_ID[row?.id];
+      if (!row || !it) return null;
+      c = top.kind === 'yard' ? { x: row.x, z: row.z } : cellLocal(room, it, row.gx, row.gz, row.rot);
+      const lw = I.local(c.x, c.z);
+      y = top.kind === 'yard' ? (I.island.heightAt(lw.x, lw.z) ?? I.groundY) : I.groundY + (I.shell?.floorY[room?.floor ?? 0] ?? 0);
+      /* CLOSE, AND FROM THE SIDE ENOUGH TO SEE THE CEILING: "the camera
+         should be focused on it ... so the player can see the final result".
+         Framed on the thing's measured height, so a bigger one stays in. */
+      const mesh = I.itemMeshes?.get(top.kind === 'yard' ? 'o' + row.uid : `r:${top.room}:${top.sel}`);
+      let h = 3;
+      if (mesh) { _fb.setFromObject(mesh); if (!_fb.isEmpty()) h = Math.max(1, _fb.max.y - _fb.min.y); }
+      dist = Math.max(11, h * 3.2 + 6);
+      pitch = top.kind === 'yard' ? 0.62 : 0.86;
+      (top._cam ??= new THREE.Vector3()).set(lw.x, y + h * 0.45, lw.z);
+    } else {
+      c = { x: room.cx, z: room.cz };
+      dist = Math.max(room.w, room.d) * 1.5 + 9;
+      y = I.groundY + (I.shell?.floorY[room.floor] ?? 0);
+      const w = I.local(c.x, c.z + dist * 0.12);
+      (top._cam ??= new THREE.Vector3()).set(w.x, y + 1, w.z);
+    }
+    let yaw = I.ry;
+    while (yaw - CAM_YAW > Math.PI) yaw -= Math.PI * 2;
+    while (yaw - CAM_YAW < -Math.PI) yaw += Math.PI * 2;
+    return { centre: top._cam, aim: true, dist, pitch, yaw };
+  }
+
   /** The floor to cut the house to for a pane where somebody builds indoors, or -1. */
   cutFloor(I, members) {
     let f = -1;
     for (const i of members ?? []) {
-      const top = this.topOf(i);
-      if (!top || top.kind === 'yard' || this.isle(top) !== I) continue;
-      const room = this.roomOf(this.home(top), top);
-      if (room) f = f < 0 ? room.floor : Math.min(f, room.floor);
+      const F = this.frameOf(i);
+      if (!F?.room || F.I !== I) continue;
+      f = f < 0 ? F.room.floor : Math.min(f, F.room.floor);
     }
     return f;
   }
 
   /* -------------------------------- ghosts ------------------------------ */
+
+  /**
+   * THE THING ITSELF, NOT A SILHOUETTE. Richard: "When placing items outdoor,
+   * like the volleyball, it is not showing the actual model and the direction
+   * it is facing before placing it, we should show the actual item they are
+   * placing." The ghost was the drawn stand-in in one flat colour — and for
+   * the things the yard BUILDS (the court, the ponds, the pen) the stand-in
+   * is a token, not the thing. Now:
+   *   a yard-built thing — the island builds it for real, in a sandbox, so
+   *                        the ghost is the very mesh the yard will have;
+   *   anything else      — the model in her colours and at her size (its
+   *                        `look`, if she is moving one she customised).
+   * Its materials are its own transparent copies; the ring and the arrow
+   * still carry green-or-red.
+   */
+  _ghostBody(I, H, top, it) {
+    let body;
+    const row = top.sel >= 0
+      ? (top.kind === 'yard' ? H.outdoor?.[top.sel] : top.kind === 'room' ? H.rooms?.[top.room]?.items?.[top.sel] : null)
+      : null;
+    if (top.kind === 'yard' && YARD_BUILT.has(it.id) && I._yardItem) {
+      const keep = [I.places, I.spots, I.obstacles, I.decks, I.walls];
+      I.places = new Map(); I.spots = []; I.obstacles = []; I.decks = []; I.walls = [];
+      try {
+        body = I._yardItem(it, { uid: -1, id: it.id, x: 0, z: 0, rot: 0 });
+        body.position.set(0, 0, 0);
+        body.rotation.set(0, 0, 0);
+      } catch (e) {
+        body = null;
+      }
+      [I.places, I.spots, I.obstacles, I.decks, I.walls] = keep;
+    }
+    if (!body) {
+      const look = top.kind === 'room' ? roomLook(it, row) : row?.look ? { s: row.look.s, style: row.look.style } : null;
+      body = placeModel(it.model, drawItem(it.id, 2, { cups: 3 }), it.size ?? (it.id === 'treehouse' ? { h: 16 } : null), look);
+      body.userData.onReal = (g) => ghostly(g);
+    }
+    return ghostly(body);
+  }
 
   update(dt, t) {
     const players = this.H.game.players ?? [];
@@ -350,7 +475,7 @@ export class BuildMode {
     const G = this.ghosts.get(i);
     if (!G) return;
     G.group.parent?.remove(G.group);
-    if (G.hid) G.hid.visible = true;
+    if (G.hid) { G.hid.visible = true; G.hid.userData.held = false; }
     this.ghosts.delete(i);
   }
 
@@ -367,10 +492,7 @@ export class BuildMode {
       const mat = new THREE.MeshBasicMaterial({ color: this._ok, transparent: true, opacity: 0.55, depthWrite: false });
       let mesh = null;
       if (id) {
-        const it = ITEM_BY_ID[id];
-        mesh = drawItem(id, 2, { cups: 3 });
-        fitTo(mesh, it.size ?? (id === 'treehouse' ? { h: 16 } : null));
-        mesh.traverse((o) => { if (o.isMesh) o.material = mat; });
+        mesh = this._ghostBody(I, H, top, ITEM_BY_ID[id]);
         group.add(mesh);
       }
       const r = top.kind === 'yard' && id ? yardR(ITEM_BY_ID[id]) : 1.4;
@@ -394,8 +516,9 @@ export class BuildMode {
       ? (top.kind === 'yard' ? 'o' + H.outdoor[top.sel]?.uid : `${top.kind === 'wall' ? 'w' : 'r'}:${top.room}:${top.sel}`)
       : null;
     const real = realKey ? I.itemMeshes?.get(realKey) : null;
-    if (G.hid && G.hid !== real) G.hid.visible = true;
-    if (real) real.visible = false;
+    if (G.hid && G.hid !== real) { G.hid.visible = true; G.hid.userData.held = false; }
+    // `held` so the cutaway, which shows a floor's things again, leaves it hidden
+    if (real) { real.visible = false; real.userData.held = true; }
     G.hid = real ?? null;
 
     const L = this.localOf(top);
@@ -413,6 +536,8 @@ export class BuildMode {
       const bad = buildWhy(H, top, I.radius);
       const c = bad ? this._bad : this._ok;
       G.mat.color.copy(c);
+      // the thing itself fades when it will not go there; the ring says why in colour
+      G.mesh?.traverse((o) => { if (o.isMesh && o.userData.ghost) o.material.opacity = bad ? 0.4 : 0.92; });
       G.ring.material.color.copy(c);
       G.arrow.visible = top.kind !== 'wall';
       G.group.scale.setScalar(1);

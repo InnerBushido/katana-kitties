@@ -67,6 +67,28 @@ export const JUKEBOX = [
 
 export const JUKEBOX_BY_ID = Object.fromEntries(JUKEBOX.map((t) => [t.id, t]));
 
+/* THE PREVIEW STARTS WHERE THE MUSIC DOES. Richard: "When selecting Matsuri
+   Night and Moss Garden from boombox to preview how it sounds, there is just
+   silence at the beginning of the song, can we skip to further in the song".
+   Measured with ffmpeg's ebur128, momentary loudness a second at a time:
+     MATSURI NIGHT  -47 LUFS at 1s, a soft intro to 13s, full (-11) from 20s
+     MOSS GARDEN    -57 at 1s, a fade-in to 8s, the full section from 28s
+     TATAMI LO-FI   a sparse -33/-38 pulse until 24s, full (-11) from there
+   The other three are at -13 to -16 from their first second and start at 0.
+   A preview is its own MUSIC_FILES entry — the same file, starting `first`
+   seconds in and wrapping the whole arrangement as usual — so audio.js plays
+   it like any other piece, and choosing the track still starts it from the
+   top on the island. */
+export const PREVIEW_AT = { homeFestival: 20, homeGarden: 28, homeLofi: 24 };
+for (const [id, at] of Object.entries(PREVIEW_AT)) {
+  if (MUSIC_FILES[id]) MUSIC_FILES[`${id}Preview`] = { ...MUSIC_FILES[id], first: at };
+}
+
+/** The piece to play while a kitten AUDITIONS track `id` on the boombox card. */
+export function previewOf(id) {
+  return MUSIC_FILES[`${id}Preview`] ? `${id}Preview` : id;
+}
+
 /** Is this track's recording in the build at all? */
 export function hasRecording(id) {
   return !!JUKEBOX_FILES[id];

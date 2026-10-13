@@ -20,9 +20,10 @@ import { emptyStore, newHome, normalise, saveStore, loadStore, migrateYard, HOME
 import { careLevel, careBuff, stalksAt, BAMBOO_GROW, BAMBOO_MAX } from '../../src/systems/housing/farm.js';
 import { fits, firstFit, gridOf, autoLayout, ITEM_SELL, yardWhy, firstYardSpot, addOutdoor, wallSlots } from '../../src/systems/housing/editor.js';
 import { buildWhy, commitBuild, removeBuilt, pickList, stepToward, BUILD_KEYS } from '../../src/systems/housing/build.js';
-import { houseRadius, houseShape } from '../../src/systems/housing/homehouse.js';
+import { houseRadius, houseShape, HEAD_H, SLAB_T } from '../../src/systems/housing/homehouse.js';
 import { possessive, ownedCount, roomRefund, changeRoomType } from '../../src/systems/housing/cards.js';
-import { JUKEBOX } from '../../src/systems/housing/jukebox.js';
+import { JUKEBOX, JUKEBOX_BY_ID, PREVIEW_AT, previewOf } from '../../src/systems/housing/jukebox.js';
+import { MUSIC_FILES } from '../../src/core/musicfiles.js';
 import { JUKEBOX_FILES } from '../../src/systems/housing/jukeboxfiles.js';
 import { rollFish, FISH } from '../../src/systems/housing/fishing.js';
 import { PLAYER_STYLE } from '../../src/core/palette.js';
@@ -37,6 +38,11 @@ import { napFade } from '../../src/systems/housing/activities.js';
 import { holoLayout, HOLO_GRAB } from '../../src/systems/housing/holodeck.js';
 import { castPoint, fishCount, fishLen, ANGLE } from '../../src/systems/housing/angling.js';
 import { petLevel, petBoost, messesAt, rhythmError, PLAY } from '../../src/systems/housing/petplay.js';
+import { fitTo, styleModel, stylesFor, drawItem, LOOK_MUL, TINTS } from '../../src/systems/housing/models.js';
+import { MODEL_STYLES } from '../../src/systems/housing/modelstyles.js';
+import { roomLook, CEILING_GAP, FLOOR_H, YARD_BUILT } from '../../src/systems/housing/homeisle.js';
+import { ITEMS } from '../../src/systems/housing/catalog.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 const DAY = 24 * 3600 * 1000;
 
@@ -169,6 +175,60 @@ export async function housingChecks({ ok, world }) {
         return Math.abs(y - top) < 0.4 ? worst : Infinity;
       });
       ok(`${h.name}: every ramp climbs smoothly from one floor to the next`, climbs.every((w) => w < 0.6), climbs.map((w) => w.toFixed(2)).join(','));
+      /* ...AND COMES DOWN AGAIN. "If player navigated to the 2nd or 3rd floor
+         in the house, they are getting stuck on that floor." Start on the
+         floor above, behind the top of the stairs, and walk forward over the
+         stairwell: the ground under her has to follow the steps all the way
+         down, not stay at the upper floor's height. */
+      const descents = stairs.map((d) => {
+        const xc = (d.x0 + d.x1) / 2;
+        let y = I.groundY + I.shell.floorY[d.stair + 1];
+        let worst = 0;
+        for (let k = -4; k <= 40; k++) {
+          const z = d.z0 + (k / 40) * (d.z1 - d.z0);
+          const w = I.local(xc, z);
+          const g = I.heightAt(w.x, w.z, y + 0.1);
+          if (!g) return Infinity;
+          worst = Math.max(worst, Math.abs(g.y - y));
+          y = g.y;
+        }
+        const bottom = I.groundY + I.shell.floorY[d.stair];
+        return Math.abs(y - bottom) < 0.4 ? worst : Infinity;
+      });
+      ok(`${h.name}: every staircase can be walked DOWN, from the floor above to the one below`, descents.every((w) => w < 0.6), descents.map((w) => w.toFixed(2)).join(','));
+      /* THE CEILING. "if they double or triple jump, they can jump to the
+         floor above them, we should make it that they hit the ceiling". */
+      const W = I.shell.wells[0];
+      const fy0 = I.groundY + I.shell.floorY[0];
+      const fy1 = I.groundY + I.shell.floorY[1];
+      const room = I.local(-W.xc, 0);
+      const jumper = fakePlayer(0, room.x, room.z, fy1 - SLAB_T - HEAD_H + 0.5);
+      jumper.velocity.y = 20;
+      const was = { dbg: H.debugOpen, home: H.store.homes[I.site.id] };
+      H.debugOpen = true;
+      H.store.homes[I.site.id] = I.home;
+      H.wall(jumper, jumper.position.x, jumper.position.z, null);
+      ok(`${h.name}: a kitten jumping on the ground floor hits the ceiling, and stops rising`,
+        jumper.position.y + HEAD_H <= fy1 - SLAB_T + 1e-6 && jumper.velocity.y === 0, `head ${(jumper.position.y + HEAD_H).toFixed(2)} lid ${(fy1 - SLAB_T).toFixed(2)}`);
+      const inWell = I.local((W.x0 + W.x1) / 2, (W.z0 + W.z1) / 2);
+      ok('...except up through the stairwell, which has no lid', I.ceilingAt(inWell.x, fy0 + 1, inWell.z) == null);
+      ok('...and somebody on the floor above is not under the floor she is standing on', I.ceilingAt(room.x, fy1 + 0.1, room.z) !== fy1 - SLAB_T);
+      if (was.home === undefined) delete H.store.homes[I.site.id]; else H.store.homes[I.site.id] = was.home;
+      H.debugOpen = was.dbg;
+      // furniture keeps off the stairs and the hole over them
+      const r0 = h.rooms.find((r) => r.floor === 0);
+      const r1 = h.rooms.find((r) => r.floor === 1);
+      const onWell = (room) => {
+        for (let gx = 0; gx < gridOf(room).cols; gx++) for (let gz = 0; gz < gridOf(room).rows; gz++) {
+          const x = room.cx - room.w / 2 + gx * 2 + 1, z = room.cz - room.d / 2 + gz * 2 + 1;
+          if (x > W.x0 && x < W.x1 && z > W.z0 && z < W.z1) return { gx, gz };
+        }
+        return null;
+      };
+      const c0 = r0 && onWell(r0);
+      const c1 = r1 && onWell(r1);
+      ok(`${h.name}: no furniture can stand on the stairs, or over the hole they come up through`,
+        (!c0 || !fits(r0, [], ITEM_BY_ID.tansu, c0.gx, c0.gz)) && (!c1 || !fits(r1, [], ITEM_BY_ID.tansu, c1.gx, c1.gz)) && !!(c0 || c1));
     }
     I.setHome(null);
   }
@@ -531,7 +591,7 @@ export async function housingChecks({ ok, world }) {
     const msrc = readFileSync(new URL('../../src/main.js', import.meta.url), 'utf8');
     ok('the red is a multiplier on the damage number, after the gate',
       /const dmg = base \* \(kind === 'tri' \? triDmgK\(attacker\) : 1\)\s*\* \(this\.housing\?\.boons\?\.dmgK\?\.\(attacker\) \?\? 1\)/.test(msrc));
-    ok('a kitten held by a home activity is handed a dead pad', /inspector\?\.busy\(i\)\s*\|\| this\.housing\?\.activities\?\.holds\(i\)\)/.test(msrc));
+    ok('a kitten held by a home activity is handed a dead pad', /inspector\?\.busy\(i\)\s*\|\| this\.housing\?\.activities\?\.holds\(i\)( \|\| this\.housing\?\.watching\(i\))?\)/.test(msrc));
   }
 
   /* THINGS TO DO AT HOME. Every hold ends by itself, and pays what it says. */
@@ -554,17 +614,40 @@ export async function housingChecks({ ok, world }) {
     for (let k = 0; k < 400; k++) A.update(0.1, ps);
     ok('...and the song gives way again once it is over', !A.prayer && H.musicTrack() !== 'shrinePrayer');
     H.musicSite = null;
-    // the meal: two cook, both sit at the same kotatsu
+    /* THE MEAL. "the message should say something like 'Set the table with
+       the food' ... the plate of food appears on the table ... a plate of
+       food for every player that will sit at the table ... 'Are you sure you
+       want to eat with everyone at the table?' ... everyone sitting at or
+       near the table sits down and does the 'itadakimasu' prayer". */
     const kitchen = { act: 'cook', x: 0, z: 0, y: 0, isle, home };
     const table = { act: 'sit', item: 'kotatsu', x: 0, z: 0, y: 0, isle, home, room: 'r', k: 0 };
+    const key = A.tableKey(table);
     A.start(ps[0], kitchen);
+    ok('cooking says a cooking mini-game is coming', /mini-game is coming/.test(toasts.at(-1)?.[1] ?? ''));
     A.start(ps[0], kitchen);
     ok('one plate each — cooking a second says why it will not', /already carrying/.test(toasts.at(-1)?.[1] ?? ''));
+    const hsrc2 = readFileSync(new URL('../../src/systems/housing/housing.js', import.meta.url), 'utf8');
+    ok('...(its words: SET THE TABLE WITH THE FOOD, then EAT TOGETHER)', /SET THE TABLE WITH THE FOOD/.test(hsrc2) && /EAT TOGETHER/.test(hsrc2));
     A.start(ps[2], kitchen);
     A.start(ps[0], table);
+    ok('a plate brought to the table is SET on it, not sat with', A.platesOn(key) === 1 && !A.holds(0) && !A._plates.has(0)
+      && /sets the table/.test(toasts.at(-1)?.[1] ?? ''));
     A.start(ps[2], table);
-    ok('two kittens with plates sit at one table, held', A.holds(0) && A.holds(2) && A.meals.size === 1);
+    ok('...two plates, two places', A.platesOn(key) === 2 && !A.meals.size);
+    A.start(ps[0], table);
+    ok('...and INTERACT with food on the table asks first, on her card', game.housingCards.st.get(0)?.stack[0]?.v === 'meal');
+    const MV = game.housingCards._view(0);
+    ok('...NO first, and YES says what it does', /^NO/.test(MV.rows[0].title) && /EAT/.test(MV.rows[1].title) && /eat with everyone/i.test(MV.head + MV.body));
+    ok('...three kittens and two plates: YES is greyed and says to cook one more',
+      MV.rows[1].disabled && /3 of you and 2 plates — cook 1 more/.test(MV.rows[1].why));
+    game.housingCards.st.delete(0);
+    ps[1].position.set(30, 0, 0);
+    ok('...a sister who walks off is not counted', A.dinersAt(key, 0).length === 2 && !A.mealWhy(key, 0));
+    A.startMeal(key, 0);
+    ok('YES: everybody at the table sits down, held', A.holds(0) && A.holds(2) && A.meals.size === 1 && !A.holds(1));
     for (let k = 0; k < 100; k++) A.update(0.1, ps);
+    ok('...and the plates they ate from are gone', A.platesOn(key) === 0);
+    ps[1].position.set(0, 0, 0);
     ok('...pray ITADAKIMASU, eat, and each gets the two-diner green',
       !A.holds(0) && !A.holds(2) && H.store.boons[ps[0].name]?.meal === 10 && H.store.boons[ps[2].name]?.meal === 10
       && toasts.some(([, t]) => /ITADAKIMASU/.test(t)));
@@ -583,28 +666,90 @@ export async function housingChecks({ ok, world }) {
   /* ROSHI'S TOUR: LOOK, THEN FLY. "The camera looks, then flies, 2–3 seconds,
      slower", and "the minimap zooms out and highlights the island". */
   {
-    const p = fakePlayer(0);
+    /* THE LENS, MEASURED IN THE FRAME. "Always keeping the island in the
+       center of the screen regardless of the splitscreen the player is on":
+       the island's centre is projected through the camera the lens posed and
+       must land in the middle of the pane, wide or narrow. */
+    const cam = new THREE.PerspectiveCamera(50, 16 / 9, 0.1, 5000);
+    const pose = (aspect = 16 / 9) => {
+      cam.aspect = aspect;
+      cam.position.set(0, 20, 60);
+      cam.lookAt(0, 0, 0);
+      cam.updateProjectionMatrix();
+      cam.updateMatrixWorld();
+      H.tourLens(cam, [0]);
+      cam.updateMatrixWorld();
+    };
+    const ndc = (I) => new THREE.Vector3(I.x, I.groundY + 6, I.z).project(cam);
+    const centred = (I) => { const v = ndc(I); return Math.hypot(v.x, v.y) < 0.02 && v.z < 1; };
     H.browsing.clear();
+    H.lens.clear();
     H.browse(0, HOME_SITES[0].id);
-    const f0 = H.cameraFocus(p);
-    const at0 = f0.centre.clone();
+    pose();
+    const L = H.lens.get(0);
+    L.k = 1;
+    const eyeStart = L.eye.clone();
+    const b0 = H.browsing.get(0);
+    b0.ft = TOUR.look * 0.5;
+    H._updateLens(0);
+    pose();
+    ok('the first island is TURNED TO from where the camera already is: it does not move, it looks',
+      L.eye.distanceTo(eyeStart) < 1e-6 && !centred(H.isles[0]));
+    b0.ft = TOUR.look + TOUR.fly + 1;
+    H._updateLens(0);
+    pose();
+    const I0 = H.isleOf(HOME_SITES[0].id);
+    ok('...and once there, the island is in the middle of the frame', centred(I0), JSON.stringify(ndc(I0)));
     H.browse(0, HOME_SITES[1].id);
     const b = H.browsing.get(0);
-    b.ft = TOUR.look * 0.5;
-    const look = H.cameraFocus(p);
     const I1 = H.isleOf(HOME_SITES[1].id);
-    const toward = Math.atan2(at0.x - I1.x, at0.z - I1.z);
-    ok('a new island is LOOKED AT first: the centre stays, the camera turns to face it',
-      look.centre.distanceTo(at0) < 1e-6 && Math.abs(look.yaw - toward) < 1e-6);
+    b.ft = 0;
+    H._updateLens(0);
+    const eye0 = L.eye.clone();
+    b.ft = TOUR.look * 0.5;
+    H._updateLens(0);
+    pose();
+    ok('a new island is LOOKED AT first: the eye stays put while the view turns',
+      L.eye.distanceTo(eye0) < 1e-6 && !centred(I1) && !centred(I0));
+    for (const u of [0.01, 0.25, 0.5, 0.75, 1]) {
+      b.ft = TOUR.look + TOUR.fly * u;
+      H._updateLens(0);
+      pose();
+      if (!centred(I1)) { ok(`...then FLIES with the island dead centre the whole way (u=${u})`, false, JSON.stringify(ndc(I1))); break; }
+      if (u === 1) ok('...then FLIES with the island dead centre the whole way', true);
+    }
     b.ft = TOUR.look + TOUR.fly * 0.5;
-    const mid = H.cameraFocus(p).centre.clone();
-    const d0 = Math.hypot(mid.x - at0.x, mid.z - at0.z);
-    const d1 = Math.hypot(mid.x - I1.x, mid.z - I1.z);
-    ok('...then FLIES, and is halfway there halfway through', d0 > 10 && d1 > 10 && Math.abs(d0 - d1) < 1, `${d0.toFixed(1)} / ${d1.toFixed(1)}`);
+    H._updateLens(0);
+    const midEye = L.eye.clone();
+    ok('...travelling: halfway through, the eye is well away from where it set off',
+      midEye.distanceTo(eye0) > 20);
     ok('...over two to three seconds', TOUR.fly >= 2 && TOUR.fly <= 3);
-    b.ft = TOUR.look + TOUR.fly + 0.01;
-    const end = H.cameraFocus(p).centre;
-    ok('...and arrives', Math.hypot(end.x - I1.x, end.z - I1.z) < 1e-6);
+    b.ft = TOUR.look + TOUR.fly + 3;
+    H._updateLens(0);
+    pose(0.55);
+    ok('...and in a narrow column of split screen it is centred too', centred(I1), JSON.stringify(ndc(I1)));
+    /* A SISTER IN THE SAME PANE WATCHES. "Instead of going to splitscreen,
+       the UI should take up the entire screen and all the players can see". */
+    const wasGroups = game.groups;
+    const two = [fakePlayer(0), fakePlayer(1)];
+    game.players = two;
+    game.groups = [[0, 1]];
+    H.startWatch(0);
+    ok('opening Roshi with a sister in the pane makes her a WATCHER, in the same lane',
+      H.watching(1) && !H.watching(0) && H.watchLane(0) === H.watchLane(1) && H.watchLane(0) != null);
+    ok('...and she is told how to get back to playing', toasts.some(([i, t]) => i === 1 && /INTERACT to go back/.test(t)));
+    H.unwatch(1);
+    ok('...and BACK lets her go: no lane, so the screen splits again', !H.watching(1) && H.watchLane(0) == null && H.watchLane(1) == null);
+    H.startWatch(0);
+    H.endWatch(0);
+    ok('...and when the card closes nobody is left watching', !H.watching(1));
+    const msrc2 = readFileSync(new URL('../../src/main.js', import.meta.url), 'utf8');
+    ok('...wired: a watcher\'s pad is dead, the counter keeps her pane, and the lens is laid over every pane',
+      /this\.housing\?\.watching\(i\)\)\s*\n?\s*\? DEAD_PAD/.test(msrc2)
+      && /lanes: this\._snakeLanes\(\)\.map\(\(l, i\) => this\.housing\?\.watchLane\(i\) \?\? l\)/.test(msrc2)
+      && /this\.housing\?\.tourLens\(camera, members\)/.test(msrc2));
+    game.groups = wasGroups;
+    game.players = [];
     b.t = 0;
     const m0 = H.tourMap([0]);
     b.t = TOUR.mapIn;
@@ -660,8 +805,23 @@ export async function housingChecks({ ok, world }) {
     H.musicSite = null;
     H.audition = { id: JUKEBOX[2].id, who: 0 };
     const heard = H.musicTrack();
-    ok('browsing the boombox plays the row under the cursor, even off the bridge', heard === JUKEBOX[2].id || heard === JUKEBOX[2].fallback, heard);
+    ok('browsing the boombox plays the row under the cursor, even off the bridge',
+      heard === previewOf(JUKEBOX[2].id) || heard === JUKEBOX[2].fallback, heard);
+    /* ...FROM WHERE THE MUSIC IS. "there is just silence at the beginning of
+       the song, can we skip to further in the song". The same file, `first`
+       seconds in, and only while it is being auditioned. */
+    const pv = Object.entries(PREVIEW_AT).filter(([id]) => JUKEBOX_FILES[id]);
+    ok('...a quiet-opening track previews from its measured start, the same file and loop',
+      pv.length >= 2 && pv.every(([id, at]) => {
+        const P = MUSIC_FILES[previewOf(id)];
+        return previewOf(id) !== id && P.first === at && P.file === JUKEBOX_FILES[id].file && P.loop[1] === JUKEBOX_FILES[id].loop[1] && at < P.length;
+      }));
     H.audition = null;
+    H.musicSite = HOME_SITES[0].id;
+    H.store.jukebox[HOME_SITES[0].id] = 'homeFestival';
+    ok('...and choosing it plays it from the top on the island', H.musicTrack() === 'homeFestival' || H.musicTrack() === JUKEBOX_BY_ID.homeFestival.fallback);
+    H.musicSite = null;
+    delete H.store.jukebox[HOME_SITES[0].id];
     ok('...and nothing once the card is gone', H.musicTrack() === null);
   }
 
@@ -1058,6 +1218,25 @@ export async function housingChecks({ ok, world }) {
     put(kit, { x: I.x + I.radius + 30, z: I.z });
     tick(kit);
     ok('...and so does a half-gathered set', !H.holo.bagOf(0) && R.racks[0].mesh.visible);
+    /* ONE STEP, ONE MESSAGE. "it is spamming the screen with messages ...
+       should only appear once every time a player steps on it." A suit-up
+       the Dream Dojo refuses puts the gear back on the rack she is standing
+       on; that must not be picked up again until she steps off and on. */
+    const suit0 = game.dream.suitAt;
+    game.dream.suitAt = () => false;
+    put(kit, R.racks[0]); tick(kit);
+    put(kit, R.racks[1]); tick(kit);
+    n0 = toasts.length;
+    put(kit, R.racks[2]);
+    for (let k = 0; k < 60; k++) tick(kit);
+    const said = toasts.slice(n0).filter(([i]) => i === 0).length;
+    ok('a refused suit-up on a rack says so ONCE while she stands there, not every frame', said === 2, `${said} toasts in 60 frames`);
+    put(kit, { x: R.racks[2].x + 6, z: R.racks[2].z }); tick(kit);
+    n0 = toasts.length;
+    put(kit, R.racks[2]); tick(kit); tick(kit);
+    ok('...and stepping off and back on is a new step', toasts.length > n0);
+    game.dream.suitAt = suit0;
+    put(kit, { x: I.x + I.radius + 30, z: I.z }); tick(kit);
     I.setHome(null);
     game.dream = null;
     const dsrc = readFileSync(new URL('../../src/systems/dreamdojo.js', import.meta.url), 'utf8');
@@ -1101,6 +1280,169 @@ export async function housingChecks({ ok, world }) {
     ok('...and hanging it up takes the pose off', a.kendoGeared === false && !K.geared(a));
     const ksrc = readFileSync(new URL('../../src/systems/housing/kendo.js', import.meta.url), 'utf8');
     ok('...with the drawn men kept for a build without the drawings', /menTexture\(\)/.test(ksrc) && /p\.kendoPose \|\| p\.kiaiPose/.test(ksrc));
+  }
+
+  /* ITEM SIZES AND ITEM CUSTOMIZATION. "The katana swords as furniture in the
+     house are too big! They are going through the roof!" — the katana was
+     `size: { w: 3.4 }` on a model that stands UP, which made it 35 tall. Every
+     room thing is measured, model and stand-in alike, into the room. */
+  {
+    const roof = FLOOR_H - 0.35 - CEILING_GAP;
+    const box = new THREE.Box3();
+    const measure = (o) => { o.updateMatrixWorld(true); box.setFromObject(o); return box.getSize(new THREE.Vector3()); };
+    // the bug, rebuilt: a 0.10 x 1.02 x 0.10 upright thing given a width of 3.4
+    const sword = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.02, 0.1));
+    fitTo(sword, { w: 3.4 }, roomLook({ cells: [2, 1] }, null));
+    ok('a room thing can never come out taller than the room, whatever its catalogue size says',
+      measure(sword).y <= roof + 1e-6, measure(sword).y.toFixed(2));
+    const L = new GLTFLoader();
+    const glb = async (id) => {
+      const buf = readFileSync(new URL(`../../public/models/polyfork/${id}.glb`, import.meta.url));
+      return (await new Promise((r, j) => L.parse(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), '', r, j))).scene;
+    };
+    const tall = [];
+    for (const it of ITEMS.filter((x) => x.where.includes('room'))) {
+      const bodies = [['stand-in', drawItem(it.id, 2)]];
+      if (it.model) bodies.push(['model', await glb(it.model)]);
+      for (const [what, o] of bodies) {
+        fitTo(o, it.size, roomLook(it, null));
+        const v = measure(o);
+        const [cx, cz] = it.cells ?? [1, 1];
+        if (v.y > roof + 1e-6 || v.x > cx * 2 + 1e-6 || v.z > cz * 2 + 1e-6) tall.push(`${it.id} ${what} ${v.x.toFixed(1)}x${v.y.toFixed(1)}x${v.z.toFixed(1)}`);
+        // ...and its OWN size is not being rescued by the cap: the catalogue is right
+        if (it.size?.h && o.userData.maxMul < 1 - 1e-6 && what === 'model') tall.push(`${it.id}: the catalogue size is over the room's (max x${o.userData.maxMul.toFixed(2)})`);
+      }
+    }
+    ok('every room thing, model and stand-in, measured: under the ceiling and inside its own tatami', !tall.length, tall.join('; '));
+    const kat = await glb('katana-in-scabbard-4b6ffb');
+    fitTo(kat, ITEM_BY_ID.katana.size, roomLook(ITEM_BY_ID.katana, null));
+    const yor = await glb('yoroi-armour-stand-25f9a2');
+    fitTo(yor, ITEM_BY_ID.yoroi.size, roomLook(ITEM_BY_ID.yoroi, null));
+    ok('...the katana is smaller than a kitten (2.9), and so is the armour', measure(kat).y < 2.9 && measure(yor).y < 2.9,
+      `${measure(kat).y.toFixed(2)} / ${measure(yor).y.toFixed(2)}`);
+    fitTo(kat, ITEM_BY_ID.katana.size, roomLook(ITEM_BY_ID.katana, { look: { s: 99 } }));
+    ok('...and BIGGER stops at half again', Math.abs(measure(kat).y - ITEM_BY_ID.katana.size.h * LOOK_MUL.max) < 1e-3);
+
+    // COLOURWAYS: measured palette swaps, on a copy
+    const all = Object.entries(MODEL_STYLES);
+    ok('every vendored Polyfork model has its colourways, the default first and changing nothing',
+      all.length >= 20 && all.every(([, S]) => S.styles.length >= 2 && !S.styles[0].swap.length));
+    const cols = (o) => {
+      const s = new Set();
+      o.traverse((m) => { const c = m.isMesh && m.geometry.attributes.color; if (c) for (let i = 0; i < c.count; i++) s.add([c.getX(i), c.getY(i), c.getZ(i)].map((v) => v.toFixed(3)).join()); });
+      return s;
+    };
+    const base = await glb('katana-in-scabbard-4b6ffb');
+    const twin = base.clone(true);
+    const before = cols(base);
+    styleModel(twin, 'katana-in-scabbard-4b6ffb', 'black-and-gold');
+    const after = cols(twin);
+    // within a hair, as `styleModel` matches: the file's floats are not three-decimal round numbers
+    const near = (set, h) => { const c = new THREE.Color(h); return [...set].some((k) => { const v = k.split(',').map(Number); return Math.abs(v[0] - c.r) + Math.abs(v[1] - c.g) + Math.abs(v[2] - c.b) < 0.006; }); };
+    ok('a colourway repaints the zones it names: the black-and-gold katana has a black saya and no indigo wrap',
+      near(after, '#2a2a2e') && !near(after, '#38506b'));
+    ok('...and only THAT one — the model it was cloned from keeps its paint', [...before].every((k) => cols(base).has(k)) && near(cols(base), '#8c2f2a'));
+    let unmatched = [];
+    for (const [id, S] of all) {
+      const o = await glb(id);
+      const have = cols(o);
+      for (const st of S.styles) for (const [f] of st.swap) if (!near(have, f)) unmatched.push(`${id}:${f}`);
+    }
+    // a zone can be absent from the default build (winter's snow), so the bar is "most", measured
+    const zones = all.reduce((n, [, S]) => n + S.styles.reduce((m, st) => m + st.swap.length, 0), 0);
+    ok('...the zones a colourway names are found in the file\'s own colours (measured, not assumed)',
+      unmatched.length / zones < 0.25, `${unmatched.length} of ${zones} unmatched`);
+    ok('a drawn thing gets lacquers instead, starting with how it came', stylesFor(null)[0].id === TINTS[0].id && !TINTS[0].c);
+
+    // THE CARD: customise a katana in Ember's minka, saved with the house
+    const I = H.isles[0];
+    const Hm = newHome(I.site.id, 'minka', ['Ember']);
+    Hm.rooms = { main: { type: 'living', items: [{ id: 'katana', gx: 0, gz: 0, rot: 0 }, { id: 'futon', gx: 2, gz: 0, rot: 0 }] } };
+    H.store.homes[I.site.id] = Hm;
+    I.setHome(Hm, null);
+    const C = game.housingCards;
+    const kit = fakePlayer(0);
+    kit.score = 0;
+    game.players = [kit];
+    C.st.set(0, { kind: 'home', stack: [{ v: 'home', site: I.site.id }] });
+    game.inspector.cards[0] = { i: 0 };
+    C._push(0, { v: 'room', site: I.site.id, room: 'main' });
+    const roomRows = C._view(0).rows;
+    const ic = roomRows.find((r) => r.title === 'ITEM CUSTOMIZATION');
+    ok('a room offers ITEM CUSTOMIZATION', !!ic && !ic.disabled);
+    ic.go();
+    ok('...which is the selector, in customise mode', C._top(0).v === 'pick' && C._top(0).mode === 'custom');
+    C.customize(0, C._top(0));
+    ok('...and JUMP on a thing opens its customisation', C._top(0).v === 'custom' && C._top(0).sel === 0);
+    const F = H.builder.frameOf(0);
+    const cam = H.builder.camera(kit);
+    const at = I.itemMeshes.get('r:main:0').position;
+    ok('...with the camera ON the thing, close', F?.item && cam && Math.hypot(cam.centre.x - at.x, cam.centre.z - at.z) < 0.01 && cam.dist < 20);
+    const row = () => Hm.rooms.main.items[0];
+    const press = (title) => { const r = C._view(0).rows.find((x) => x.title.startsWith(title)); if (!r.disabled) r.go(); return r; };
+    press('BIGGER');
+    ok('BIGGER makes it bigger, and writes it on the row', Math.abs(row().look?.s - 1.1) < 1e-9);
+    const st0 = loadStore(localStorage, homeKey('check-A'));
+    ok('...saved with the house, in this game\'s row', Math.abs(st0.homes[I.site.id]?.rooms?.main?.items?.[0]?.look?.s - 1.1) < 1e-9);
+    ok('...and in the house\'s JSON', /"look":\{"s":1\.1\}/.test(JSON.stringify(H.store)));
+    for (let k = 0; k < 10; k++) press('BIGGER');
+    const big = press('BIGGER');
+    const mesh = I.itemMeshes.get('r:main:0');
+    ok('...up to a limit, then BIGGER is greyed and says why', big.disabled && /as big as it goes|ceiling/.test(big.why) && measure(mesh).y <= FLOOR_H - 0.35 - CEILING_GAP + 1e-6);
+    const s1 = row().look.s;
+    press('NEXT LOOK');
+    ok('NEXT LOOK changes the look and keeps the size', row().look.style === 'black-and-gold' && row().look.s === s1);
+    press('PUT IT BACK');
+    ok('PUT IT BACK HOW IT CAME clears the row', !row().look);
+    C._pop(0); C._pop(0);
+    // a futon is drawn, not a model: lacquers
+    C._push(0, { v: 'custom', site: I.site.id, room: 'main', kind: 'room', sel: 1 });
+    press('NEXT LOOK');
+    ok('a drawn thing takes a lacquer', Hm.rooms.main.items[1].look?.style === TINTS[1].id);
+    C._pop(0);
+    ok('a wall thing and a yard-built thing refuse customisation, saying why',
+      !!C._noCustom('wall', 'scroll') && [...YARD_BUILT].every((id) => !!C._noCustom('yard', id)) && !C._noCustom('yard', 'lantern'));
+
+    /* THE ROOM UNDER THE CURSOR IS FRAMED, ON ITS OWN FLOOR. "When choosing a
+       room to furnish ... the camera should zoom and focus on the room ...
+       it should show the proper floor". */
+    const I2 = H.isles[1];
+    const Hc = newHome(I2.site.id, 'castle', ['Ember']);
+    H.store.homes[I2.site.id] = Hc;
+    I2.setHome(Hc, null);
+    C.st.set(0, { kind: 'home', stack: [{ v: 'home', site: I2.site.id }] });
+    C._push(0, { v: 'rooms', site: I2.site.id });
+    const castle = HOUSE_BY_ID.castle.rooms;
+    const k = castle.findIndex((r) => r.floor === 2);
+    game.inspector.cards[0].i = k;
+    kit.position.set(I2.x, I2.groundY + 0.5, I2.z);
+    const fr = H.builder.frameOf(0);
+    ok('the room list frames the room under the cursor', fr?.room?.id === castle[k].id && !!H.builder.camera(kit));
+    ok('...cut down to ITS floor, not the one she is standing on', H.builder.cutFloor(I2, [0]) === 2);
+    const hsrc = readFileSync(new URL('../../src/systems/housing/housing.js', import.meta.url), 'utf8');
+    ok('...and the cutaway takes the framed floor over hers', /if \(bf >= 0\) floor = bf;/.test(hsrc));
+    I2.cutaway(0);
+    const up = [...I2.itemGroup.children].filter((g) => g.userData.floor > 0);
+    ok('...and a floor that is cut away takes its furniture with it', up.every((g) => !g.visible));
+    C.st.delete(0);
+    delete H.store.homes[I2.site.id];
+    I2.setHome(null, null);
+
+    /* THE GHOST IS THE THING. "When placing items outdoor, like the volleyball,
+       it is not showing the actual model and the direction it is facing". */
+    const top = { v: 'build', site: I.site.id, kind: 'yard', sel: -1, id: 'volleyball', x: 0, z: -30, rot: 0 };
+    const placesBefore = I.places.size;
+    const spotsBefore = I.spots.length;
+    const ghost = H.builder._ghostBody(I, Hm, top, ITEM_BY_ID.volleyball);
+    const gsize = measure(ghost);
+    ok('a yard-built thing\'s ghost is the real build — the court, full size — and building it touched nothing',
+      gsize.x > 8 && I.places.size === placesBefore && I.spots.length === spotsBefore, `${gsize.x.toFixed(1)} wide`);
+    let seeThrough = true;
+    ghost.traverse((o) => { if (o.isMesh && !(o.material.transparent && o.userData.ghost)) seeThrough = false; });
+    ok('...in see-through copies of its materials', seeThrough);
+    delete H.store.homes[I.site.id];
+    I.setHome(null, null);
+    game.players = [];
   }
 
   localStorage.removeItem(HOME_KEY);

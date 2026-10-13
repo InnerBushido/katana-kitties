@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { toonVertexMat, xrayVertexMat, paint } from '../../core/gfx.js';
 import { Island, mergeParts, PALETTE } from '../../world/build.js';
 import { makeLabelTexture } from '../../core/label.js';
-import { buildHouseShell, houseHeight, houseRadius, FLOOR_H } from './homehouse.js';
+import { buildHouseShell, houseHeight, houseRadius, FLOOR_H, SLAB_T } from './homehouse.js';
 import { HOUSE_BY_ID, ITEM_BY_ID } from './catalog.js';
 import { placeModel, drawItem } from './models.js';
 import { wallSlots, yardR } from './editor.js';
@@ -355,7 +355,9 @@ export class HomeIsle {
     for (const room of def?.rooms ?? []) {
       const R = H.rooms?.[room.id];
       if (R?.type === 'kendo' || R?.type === 'holodeck') {
-        this.itemGroup.add(this._roomDressing(room, R.type));
+        const dz = this._roomDressing(room, R.type);
+        dz.userData.floor = room.floor;
+        this.itemGroup.add(dz);
       }
       const y = this.groundY + (this.shell?.floorY[room.floor] ?? 0);
       for (const [k, placed] of (R?.items ?? []).entries()) {
@@ -363,9 +365,10 @@ export class HomeIsle {
         if (!it) continue;
         const L = this.cellCentre(room, placed.gx, placed.gz, it, placed.rot);
         const w = this.local(L.x, L.z);
-        const g = placeModel(it.model, drawItem(it.id, 2), it.size);
+        const g = placeModel(it.model, drawItem(it.id, 2), it.size, roomLook(it, placed));
         g.position.set(w.x, y, w.z);
         g.rotation.y = this.ry + (placed.rot ?? 0) * (Math.PI / 2);
+        g.userData.floor = room.floor;
         this.itemGroup.add(g);
         this.itemMeshes.set(`r:${room.id}:${k}`, g);
         if (it.act) this.spots.push({ x: w.x, z: w.z, y, r: 2.6, act: it.act, item: it.id, room: room.id, k });
@@ -380,6 +383,7 @@ export class HomeIsle {
         const w = this.local(S.x, S.z);
         g.position.set(w.x, y + (WALL_Y[q.id] ?? 1), w.z);
         g.rotation.y = this.ry + S.ry;
+        g.userData.floor = room.floor;
         this.itemGroup.add(g);
         this.itemMeshes.set(`w:${room.id}:${k}`, g);
         if (it.act) {
@@ -541,7 +545,7 @@ export class HomeIsle {
       }
       case 'bladeforest': break;
       default: {
-        add(placeModel(it.model, drawItem(it.id, 2), it.size));
+        add(placeModel(it.model, drawItem(it.id, 2), it.size, q.look ? { s: q.look.s, style: q.look.style } : null));
         if (it.act) spot(it.act, Math.max(2.4, r + 0.8));
         const solid = SOLID[it.id];
         if (solid) this.obstacles.push({ x: w.x, z: w.z, r: solid * Math.max(1, r / 2.5) });
@@ -663,6 +667,33 @@ export class HomeIsle {
     return best;
   }
 
+  /**
+   * THE CEILING over a kitten's feet at (x, y, z), in world height, or null.
+   * Richard: "if they double or triple jump, they can jump to the floor above
+   * them, we should make it that they hit the ceiling". Inside floor k's
+   * walls the lid is the underside of the slab above (or the roof's, on the
+   * top floor) — except over a stairwell, which is the one place a kitten
+   * may go up through a floor. Only from BELOW: feet already above the lid
+   * (somebody on the roof) are not under it.
+   */
+  ceilingAt(x, y, z) {
+    const S = this.shell;
+    if (!S) return null;
+    const L = this.toLocal(x, z);
+    const ly = y - this.groundY;
+    const n = S.floorY.length;
+    for (let k = 0; k < n; k++) {
+      const [hw, hd] = S.half[k];
+      if (Math.abs(L.x) > hw || Math.abs(L.z) > hd) continue;
+      const lid = S.floorY[k] + FLOOR_H - (k + 1 < n ? SLAB_T : 0.12);
+      if (ly < S.floorY[k] - 0.6 || ly >= lid) continue;
+      const W = k + 1 < n ? S.wells?.[k] : null;
+      if (W && L.x > W.x0 && L.x < W.x1 && L.z > W.z0 && L.z < W.z1) return null;
+      return this.groundY + lid;
+    }
+    return null;
+  }
+
   /** Which floor of the house a point is on, or -1 if not inside it. */
   floorAt(x, y, z) {
     if (!this.shell) return -1;
@@ -710,6 +741,10 @@ export class HomeIsle {
     const n = this.floorMeshes.length;
     for (let k = 0; k < n; k++) this.floorMeshes[k].visible = floor < 0 || k <= floor;
     for (const m of this.roofMeshes) m.visible = floor < 0;
+    // ...and the things standing on a floor that is cut away go with it
+    for (const g of this.itemGroup.children) {
+      if (g.userData.floor != null) g.visible = !g.userData.held && (floor < 0 || g.userData.floor <= floor);
+    }
   }
 
   /** Height of the whole thing, for the camera. */
@@ -723,3 +758,25 @@ export class HomeIsle {
 }
 
 export { FLOOR_H };
+
+/** Under this much of the ceiling, at the least, every room thing stays. */
+export const CEILING_GAP = 0.3;
+
+/** Yard things the build draws itself, rather than as one model: no look. */
+export const YARD_BUILT = new Set(['koipond', 'onsen', 'volleyball', 'bamboofarm', 'pen', 'treehouse', 'bladeforest']);
+
+/**
+ * A room thing's look, with the box it must stay in: under the ceiling (the
+ * walls are FLOOR_H - 0.35 tall, and the slab above sits on them) and inside
+ * its own tatami, in its own unturned frame — cells[0] along x. Richard: "be
+ * careful that when customizing items, that they do not go through the floor,
+ * ceiling, or through walls." The floor is free: `fitTo` sits everything on it.
+ */
+export function roomLook(it, placed) {
+  const [cx, cz] = it.cells ?? [1, 1];
+  return {
+    s: placed?.look?.s ?? 1,
+    style: placed?.look?.style ?? null,
+    cap: { y: FLOOR_H - 0.35 - CEILING_GAP, x: cx * 2 - 0.1, z: cz * 2 - 0.1 },
+  };
+}

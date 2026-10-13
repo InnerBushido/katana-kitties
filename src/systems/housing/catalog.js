@@ -107,6 +107,8 @@ export const HOUSES = [
   },
 ];
 export const HOUSE_BY_ID = Object.fromEntries(HOUSES.map((h) => [h.id, h]));
+// every room knows its house, so the editor can keep furniture off its stairs
+for (const h of HOUSES) for (const r of h.rooms) r.house = h.id;
 
 /**
  * What a ROOM can be turned into. A room is one of these at a time; the
@@ -173,12 +175,12 @@ export const ITEMS = [
   { id: 'kotatsu', name: 'KOTATSU TABLE', where: ['room'], cells: [2, 2], size: { w: 3.6 }, mult: 0.4, model: null, act: 'sit',
     blurb: 'Sit round it together — eat a meal here, or play a game of cups.' },
   { id: 'tansu', name: 'TANSU CHEST', where: ['room'], cells: [1, 1], size: { h: 2.6 }, mult: 0.3, model: null, act: 'chest' },
-  { id: 'yoroi', name: 'SAMURAI ARMOUR', where: ['room'], cells: [1, 1], size: { h: 3.4 }, mult: 0.6, model: 'yoroi-armour-stand-25f9a2', deco: true },
-  { id: 'katana', name: 'KATANA ON A STAND', where: ['room'], cells: [2, 1], size: { w: 3.4 }, mult: 0.35, model: 'katana-in-scabbard-4b6ffb', deco: true },
+  { id: 'yoroi', name: 'SAMURAI ARMOUR', where: ['room'], cells: [1, 1], size: { h: 2.7 }, mult: 0.6, model: 'yoroi-armour-stand-25f9a2', deco: true },
+  { id: 'katana', name: 'KATANA ON A STAND', where: ['room'], cells: [1, 1], size: { h: 1.7 }, mult: 0.35, model: 'katana-in-scabbard-4b6ffb', deco: true },
   { id: 'drum', name: 'TAIKO DRUM', where: ['room', 'yard'], cells: [2, 2], r: 1.8, size: { h: 3.0 }, mult: 0.45, model: 'war-drum-on-stand-cbb91a', act: 'drum',
     blurb: 'Play along to the beat — a rhythm game for one.' },
   { id: 'bucket', name: 'WOODEN BUCKET', where: ['room', 'yard'], cells: [1, 1], r: 0.8, size: { h: 1.1 }, mult: 0.05, model: 'wooden-teoke-bucket-e65f35', deco: true },
-  { id: 'sake', name: 'BIG BARREL', where: ['room', 'yard'], cells: [1, 1], r: 1.1, size: { h: 2.2 }, mult: 0.08, model: 'komodaru-sake-barrel-c5199a', deco: true },
+  { id: 'sake', name: 'BIG BARREL', where: ['room', 'yard'], cells: [1, 1], r: 1.1, size: { h: 1.7 }, mult: 0.08, model: 'komodaru-sake-barrel-c5199a', deco: true },
   { id: 'kitchen', name: 'KITCHEN', where: ['room'], cells: [2, 1], size: { w: 4.0 }, mult: 0.8, model: null, act: 'cook',
     blurb: 'Cook a meal, carry it to the kotatsu, and eat together for extra health in your next battle.' },
   // ------------------------------------------------------------------ walls

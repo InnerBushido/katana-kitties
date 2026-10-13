@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { toonVertexMat, toonMat, paint } from '../../core/gfx.js';
 import { mergeParts } from '../../world/build.js';
+import { MODEL_STYLES } from './modelstyles.js';
 
 /* ---------------------------------------------------------------------------
    Vendored Polyfork models, with a drawn stand-in for every one.
@@ -83,8 +84,18 @@ const _v = new THREE.Vector3();
  * scale (a kitten is 2.9 tall), and reasoned sizes have been wrong roughly
  * every time — CLAUDE.md, "measure, don't reason, about anything drawn".
  * No size = leave it as it is. A degenerate box leaves it alone too.
+ *
+ * `look` is the player's customisation (ITEM CUSTOMIZATION, cards.js): `s`
+ * multiplies the catalogue size, and `cap` is the box it must stay inside in
+ * its own frame — for a room thing, under the ceiling and inside its own
+ * tatami. THE CAP BINDS EVEN AT s = 1. The katana was `size: { w: 3.4 }`,
+ * meant as its length lying down; the model stands UP (0.10 x 1.02 x 0.10
+ * metres), so "3.4 across" made it 35 tall and it went through two roofs.
+ * A wrong catalogue number can no longer do that: whatever it says, nothing
+ * in a room comes out taller than the room. `userData.maxMul` is the largest
+ * `s` the cap allows, which is what greys out BIGGER.
  */
-export function fitTo(obj, size) {
+export function fitTo(obj, size, look = null) {
   if (!obj || !size) return obj;
   obj.scale.setScalar(1);
   obj.position.set(0, 0, 0);
@@ -94,22 +105,111 @@ export function fitTo(obj, size) {
   _box.getSize(_v);
   const s = size.h ? size.h / _v.y : size.w / Math.max(_v.x, _v.z);
   if (!(s > 0) || !Number.isFinite(s)) return obj;
-  obj.scale.setScalar(s);
-  obj.position.y = -_box.min.y * s;
-  obj.userData.fitScale = s;
+  let max = Infinity;
+  const cap = look?.cap;
+  if (cap) {
+    if (cap.y) max = Math.min(max, cap.y / (_v.y * s));
+    if (cap.x) max = Math.min(max, cap.x / (_v.x * s));
+    if (cap.z) max = Math.min(max, cap.z / (_v.z * s));
+  }
+  const m = Math.min(clampMul(look?.s), max);
+  obj.scale.setScalar(s * m);
+  obj.position.y = -_box.min.y * s * m;
+  obj.userData.fitScale = s * m;
+  obj.userData.maxMul = max;
   return obj;
 }
 
-/** A group holding `standIn` now and the model later, both fitted to `size`. */
-export function placeModel(id, standIn, size = null) {
+/** How far a player may resize a thing: half to half again. */
+export const LOOK_MUL = { min: 0.5, max: 1.5, step: 0.1 };
+export const clampMul = (s) => (Number.isFinite(s) ? Math.max(LOOK_MUL.min, Math.min(LOOK_MUL.max, s)) : 1);
+
+/**
+ * PAINT FOR THE DRAWN THINGS. A Polyfork model has its own colourways
+ * (MODEL_STYLES, read off its params by tools/polyfork-styles.mjs); a
+ * stand-in drawn in this file has none, so it gets a lacquer: a multiply
+ * over its vertex colours.
+ */
+export const TINTS = [
+  { id: 'natural', name: 'AS IT CAME', c: null },
+  { id: 'lacquer', name: 'RED LACQUER', c: 0xe0786a },
+  { id: 'sumi', name: 'SUMI BLACK', c: 0x6a6a78 },
+  { id: 'gold', name: 'GOLD LEAF', c: 0xffd98a },
+  { id: 'sakura', name: 'SAKURA PINK', c: 0xffc2d4 },
+  { id: 'hinoki', name: 'PALE HINOKI', c: 0xfff2dc },
+];
+
+/** The looks one thing can have: its model's colourways, or the tints. */
+export function stylesFor(modelId) {
+  const S = modelId && MODEL_STYLES[modelId];
+  if (S) return S.styles.map((x) => ({ id: x.id, name: x.id.replace(/-/g, ' ').toUpperCase() }));
+  return TINTS.map((t) => ({ id: t.id, name: t.name }));
+}
+
+/**
+ * Repaint `root` (a loaded model) as colourway `style`. The default build's
+ * zone colours are in COLOR_0 EXACTLY, in linear space — measured: all six of
+ * the katana's, all seven of the yoroi's, all five of the stone lantern's —
+ * so each vertex within a hair of a zone's default becomes that zone in the
+ * preset. Geometry is cloned first: `loadModel` hands out clones that SHARE
+ * buffers, and painting one would paint every katana in every house.
+ */
+export function styleModel(root, modelId, style) {
+  const S = MODEL_STYLES[modelId]?.styles.find((x) => x.id === style);
+  if (!root || !S || !S.swap.length) return root;
+  const swaps = S.swap.map(([f, t]) => [new THREE.Color(f), new THREE.Color(t)]);
+  root.traverse((o) => {
+    if (!o.isMesh || !o.geometry.attributes.color) return;
+    o.geometry = o.geometry.clone();
+    const c = o.geometry.attributes.color;
+    for (let i = 0; i < c.count; i++) {
+      const r = c.getX(i); const g = c.getY(i); const b = c.getZ(i);
+      for (const [f, t] of swaps) {
+        if (Math.abs(r - f.r) + Math.abs(g - f.g) + Math.abs(b - f.b) < 0.006) { c.setXYZ(i, t.r, t.g, t.b); break; }
+      }
+    }
+    c.needsUpdate = true;
+  });
+  return root;
+}
+
+/** A lacquer over a drawn stand-in: its own material, so only this one changes. */
+export function tintObject(root, style) {
+  const T = TINTS.find((t) => t.id === style);
+  if (!root || !T?.c) return root;
+  root.traverse((o) => {
+    if (!o.isMesh || !o.material) return;
+    o.material = o.material.clone();
+    o.material.color?.multiply?.(new THREE.Color(T.c));
+  });
+  return root;
+}
+
+/**
+ * A group holding `standIn` now and the model later, both fitted to `size`
+ * and dressed in `look` ({ s, style, cap } — see `fitTo`). The group's
+ * `userData.maxMul` is the CURRENT body's, so it is the model's once it has
+ * loaded: the stand-in and the model are not the same shape.
+ */
+export function placeModel(id, standIn, size = null, look = null) {
   const g = new THREE.Group();
-  if (standIn) g.add(fitTo(standIn, size));
+  const hasStyles = !!(id && MODEL_STYLES[id]);
+  if (standIn) {
+    g.add(fitTo(standIn, size, look));
+    if (!hasStyles && look?.style) tintObject(standIn, look.style);
+    g.userData.maxMul = standIn.userData.maxMul;
+  }
   g.userData.modelId = id ?? null;
   if (id) {
     loadModel(id).then((m) => {
       if (!m || g.userData.disposed) return;
       if (standIn) g.remove(standIn);
-      g.add(fitTo(m, size));
+      if (look?.style) {
+        if (hasStyles) styleModel(m, id, look.style);
+        else tintObject(m, look.style);
+      }
+      g.add(fitTo(m, size, look));
+      g.userData.maxMul = m.userData.maxMul;
       g.userData.real = true;
       g.userData.onReal?.(g);
     });
@@ -161,7 +261,8 @@ export function drawItem(id, sz = 2, opts = {}) {
     case 'kitchen': return mesh([box(3.6, 1.0, 1.4, 0x9a6a3a), box(3.6, 0.08, 1.4, 0xd8d0c0, 0, 1.0), cyl(0.4, 0.35, 0.3, 0x333333, -0.8, 1.08), cyl(0.35, 0.3, 0.25, 0x555555, 0.8, 1.08)]);
     case 'andon': return mesh([box(0.6, 1.2, 0.6, 0xfff2c8), box(0.7, 0.08, 0.7, 0x4a2a18, 0, 1.2)]);
     case 'yoroi': return mesh([box(0.9, 1.1, 0.6, 0xa02020, 0, 0.6), ball(0.35, 0x222222, 0, 1.95), box(1.2, 0.08, 0.1, 0x3a2a1a, 0, 1.5)]);
-    case 'katana': return mesh([box(1.2, 0.5, 0.4, 0x3a2416), box(1.4, 0.06, 0.08, 0x111111, 0, 0.62)]);
+    // upright, like the model it stands in for (0.10 x 1.02 x 0.10)
+    case 'katana': return mesh([box(0.5, 0.12, 0.5, 0x3a2416), box(0.1, 1.0, 0.1, 0x8c2f2a, 0, 0.12), box(0.22, 0.04, 0.22, 0x3b3128, 0, 0.8)]);
     case 'drum': return mesh([box(1.2, 0.8, 0.5, 0x5a3a20), cyl(0.7, 0.7, 0.8, 0xc84a2a, 0, 1.2, 0, 14)]);
     case 'bucket': return mesh([cyl(0.35, 0.3, 0.5, 0xb08850)]);
     case 'sake': return mesh([cyl(0.55, 0.5, 1.0, 0xe8dcc0, 0, 0, 0, 12)]);

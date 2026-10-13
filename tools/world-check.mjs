@@ -34424,9 +34424,22 @@ console.log('\n--- the arena doors, the carpet and the way back out ---');
 
     const N = new PN.Payne(g);
     const n = kid();
-    run(N, n, PN.INVITE_AT[1] + 1);
-    ok('a kitten who never met her is invited, twice at most',
-      said(N).filter((id) => id === 'payne_invite').length >= 1 && N._s(n).invites === 2);
+    run(N, n, 600);
+    ok('a kitten who never met her is invited ONCE, however long she plays',
+      said(N).filter((id) => id === 'payne_invite').length === 1 && N._s(n).invites === 1 && PN.INVITE_AT.length === 1,
+      said(N).join(' '));
+    /* THE WAYPOINT IS HERS UNTIL SHE ARRIVES, and no longer. */
+    {
+      const M = new PN.Payne(g);
+      M.position = { x: n.position.x + 200, y: 0, z: n.position.z };
+      const m = kid();
+      m.position.set(n.position.x, 0, n.position.z);
+      run(M, m, PN.INVITE_AT[0] + 1);
+      const marked = !!M.goalFor(m);
+      M.greet(m);
+      ok('...the invitation puts a waypoint over Payne, and talking to her takes it down',
+        marked && !M.goalFor(m) && M._s(m).inviteT === 0);
+    }
     ok('...and gets no hint she never asked for', !said(N).some((id) => /_h_|_t_/.test(id)));
 
     /* NOT IN THE HEADSET. Richard: "Payne's voice should not appear in the VR
@@ -34438,7 +34451,7 @@ console.log('\n--- the arena doors, the carpet and the way back out ---');
     let inside = true;
     g.dream = { stateOf: (i) => (inside && i === h.index ? { phase: 'sim' } : null) };
     ok('a kitten in the Dream Dojo headset is in it, as far as Payne can tell', PN.inHeadset(g, h));
-    run(H, h, PN.INVITE_AT[1] + 30);
+    run(H, h, PN.INVITE_AT.at(-1) + 30);
     ok('...and however long she is in there, Payne invites her to nothing', said(H).length === 0 && H._s(h).invites === 0,
       said(H).join(' '));
     inside = false;
@@ -34756,7 +34769,7 @@ console.log('\n--- the arena doors, the carpet and the way back out ---');
     const P = new PN.Payne(g);
     const late = kid();
     feats.open = false;
-    run(P, late, PN.INVITE_AT[1] + 5);
+    run(P, late, PN.INVITE_AT.at(-1) + 5);
     feats.open = true;
     ok('a kitten seated after the ending is not invited to quests that are over',
       !said(P).includes('payne_invite'), said(P).join(' '));

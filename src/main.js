@@ -10467,6 +10467,17 @@ class Game {
 
     const frozen = this.tournament?.frozen;
     for (let i = 0; i < this.players.length; i++) {
+      /* WATCHING A SISTER'S TOUR OF ROSHI'S ISLANDS (housing.js `startWatch`):
+         a dead pad but for the way out, which is INTERACT or START — the two
+         buttons that close a card, so it is the same "back" she would press if
+         the card were hers. The press is spent here so it cannot also walk her
+         into whatever she is standing by. */
+      if (this.housing?.watching(i)) {
+        const wp = this.input.players[i];
+        for (const a of ['interact', 'start']) {
+          if (wp?.pressed(a)) { wp.consume?.(a); this.housing.unwatch(i); break; }
+        }
+      }
       /* The picker hands HER a dead pad and nobody else one — the stick that
          is choosing a cat must not also walk her off a rim, and the other
          three are still playing. */
@@ -10476,7 +10487,7 @@ class Game {
          that is the whole point of the thing. */
       let pad = (frozen || picking || this.leaguePicking || this.teamPicking
         || this.menagerie?.eating(i) || this.inspector?.busy(i)
-        || this.housing?.activities?.holds(i))
+        || this.housing?.activities?.holds(i) || this.housing?.watching(i))
         ? DEAD_PAD : this.input.players[i];
       /* THE DREAM DOJO MAY DRIVE HER — walking her to her tube, holding her
          still in it — and hands a kitten in the simulator the simulator to
@@ -12705,7 +12716,10 @@ class Game {
          else's game. `stablePanes` is what makes this bearable — the other
          panes do not shuffle when hers appears. */
       solo: this.players.map(
-        (p) => !!(p.mount || p.rideAlong || this.inspector?.busy(p.index)
+        (p) => !!(p.mount || p.rideAlong
+          /* ...EXCEPT a girl at Roshi's counter with sisters watching her
+             tour: their pane stays theirs, her card in it (housing.js). */
+          || (this.inspector?.busy(p.index) && !this.housing?.watchLane(p.index))
           /* ...and a kitten on her way into a tube, in it, or out of it: the
              phase is laid over HER pane, and must not wash over a sister's. */
           || this.dream?.wantsSolo(p))
@@ -12713,7 +12727,9 @@ class Game {
       prev: this._clusterOf,
       mergeIn: MERGE_IN,
       mergeOut: MERGE_OUT,
-      lanes: this._snakeLanes(),
+      /* Roshi's tour is a lane like a Snake Way road: the girl at the counter
+         and her watchers share one, and nobody else is in it. */
+      lanes: this._snakeLanes().map((l, i) => this.housing?.watchLane(i) ?? l),
     });
     this._clusterOf = of;
     return groups;
@@ -13975,6 +13991,8 @@ class Game {
     if (w < 2 || h < 2) return;
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    // Roshi's tour poses the pane's camera itself (housing.js `tourLens`).
+    if (!scene) this.housing?.tourLens(camera, members);
     this._faceAll(camera, members);
     this._aimXray(camera, members, scene);
     this.housing?.aimView(camera, members, scene);

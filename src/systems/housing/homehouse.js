@@ -41,6 +41,12 @@ export const FLOOR_H = 4.6;
  *  steeper and has to be, or it does not fit in a room. */
 const STAIR_GRADE = 0.5;
 const STAIR_W = 2.6;
+/** One step of the box stairs: about a third of a kitten's knee. */
+const STEP_RISE = 0.3;
+/** The ceiling slab's thickness, under each floor above the ground. */
+export const SLAB_T = 0.34;
+/** How much of a kitten is solid against a ceiling, measured from her feet. */
+export const HEAD_H = 2.4;
 const WALL_T = 0.3;
 const DOOR_W = 2.8;
 
@@ -125,6 +131,10 @@ export function buildHouseShell(houseId) {
     plinth.push(ramp);
   }
 
+  /* The stairwells, worked out before any floor is drawn: floor f + 1 has
+     the hole that floor f's stairs come up through. */
+  const wells = stairWells(houseId);
+
   /* ---- each floor ---- */
   let y = base;
   for (let f = 0; f < S.floors.length; f++) {
@@ -134,9 +144,12 @@ export function buildHouseShell(houseId) {
     const g = f === 0 ? [...plinth] : [];
     const top = y + FLOOR_H;
     const wallH = FLOOR_H - 0.35;
-    // tatami floor, laid in 2x1 mats so the editor's grid is VISIBLE
+    // tatami floor, laid in 2x1 mats so the editor's grid is VISIBLE —
+    // and none over the stairwell coming up through this floor
+    const well = f > 0 ? wells[f - 1] : null;
     for (let x = -hw + 1; x < hw - 0.5; x += 2) {
       for (let z = -hd + 1; z < hd - 0.5; z += 2) {
+        if (well && x + 1 > well.x0 && x - 1 < well.x1 && z + 1 > well.z0 && z - 1 < well.z1) continue;
         const odd = ((Math.round(x) + Math.round(z)) / 2) % 2 === 0;
         g.push(box(1.94, 0.06, 1.94, odd ? 0xd8cf94 : 0xcfc489, x, y + 0.03, z));
       }
@@ -190,8 +203,15 @@ export function buildHouseShell(houseId) {
     side(hw, hd, hw, -hd, false);
     side(hw, -hd, -hw, -hd, false);
     side(-hw, -hd, -hw, hd, false);
-    // the floor deck (the ground floor's is the plinth's)
-    if (f > 0) decks.push({ x0: -hw, x1: hw, z0: -hd, z1: hd, y, step: 0.4, floor: f });
+    /* The floor deck (the ground floor's is the plinth's) — WITH THE
+       STAIRWELL CUT OUT OF IT. Richard: "If player navigated to the 2nd or
+       3rd floor in the house, they are getting stuck on that floor. There is
+       no way for them to go back down". The floor above was one deck over
+       the whole footprint, the top of the stairs included, and `heightAt`
+       takes the highest surface under her: standing over the stairs she
+       stood on the floor, never on the step below it. Four decks round the
+       hole, and over the hole there is only the stair. */
+    if (f > 0) for (const d of around(-hw, hw, -hd, hd, well)) decks.push({ ...d, y, step: 0.4, floor: f });
 
     /* Eave skirt round each storey but the top: the castle's tiers, the
        dojo's band. Tinted hers, like every roof. */
@@ -207,30 +227,38 @@ export function buildHouseShell(houseId) {
   }
 
   /* Ceiling slabs belong to the floor they are the GROUND of, so a kitten
-     on floor k never has one over her head. */
+     on floor k never has one over her head — in pieces round the stairwell. */
   for (let f = 1; f < S.floors.length; f++) {
     const [hw, hd] = S.floors[f];
-    floors[f].push(box(hw * 2, 0.34, hd * 2, PALETTE.woodDark, 0, floorY[f] - 0.17, 0));
+    for (const d of around(-hw, hw, -hd, hd, wells[f - 1])) {
+      floors[f].push(box(d.x1 - d.x0, SLAB_T, d.z1 - d.z0, PALETTE.woodDark, (d.x0 + d.x1) / 2, floorY[f] - SLAB_T / 2, (d.z0 + d.z1) / 2));
+    }
   }
 
-  /* ---- the ramps between floors, alternating sides ---- */
+  /* ---- the stairs between floors, alternating sides ----
+     HAKO-KAIDAN, the box staircase of a Japanese house: solid steps of
+     timber, each a block down to the floor, so it reads as stairs from any
+     angle and has no underside to see through. Richard: "Consider making
+     the staircases more traditional looking stairs and connecting properly."
+     It was a tilted plank. The SURFACE she walks on is still the straight
+     slope through the steps' front edges — a stepped `yAt` would bounce the
+     camera on every tread — and the steps are drawn on it. */
   for (let f = 0; f < S.floors.length - 1; f++) {
-    const [uw, ud] = S.floors[f + 1];
-    const y0 = floorY[f];
-    const rise = floorY[f + 1] - y0;
-    const len = rise / STAIR_GRADE;
-    const sx = f % 2 === 0 ? -1 : 1;
-    const xc = sx * (uw - STAIR_W / 2 - 0.4);
-    // it climbs from the front toward the back, and arrives inside the floor above
-    const zTop = -ud + 1.2;
-    const zBot = Math.min(zTop + len, ud - 0.6);
+    const W = wells[f];
+    const { y0, rise, xc, zTop, zBot, sx } = W;
     const L = zBot - zTop;
     const g = floors[f];
-    const ramp = new THREE.BoxGeometry(STAIR_W, 0.3, Math.hypot(L, rise));
-    paint(ramp, PALETTE.wood);
-    ramp.rotateX(Math.atan2(rise, L));
-    ramp.translate(xc, y0 + rise / 2, (zTop + zBot) / 2);
-    g.push(ramp);
+    const n = Math.max(4, Math.round(rise / STEP_RISE));
+    const h = rise / n;
+    const run = L / n;
+    for (let k = 0; k < n; k++) {
+      // step k: from the front (zBot) back; its top at (k + 1) rises
+      const za = zBot - (k + 1) * run;
+      const top = y0 + (k + 1) * h;
+      g.push(box(STAIR_W, top - y0, run, k % 2 ? PALETTE.wood : 0xb98a52, xc, y0 + (top - y0) / 2, za + run / 2));
+      // the dark nosing along each tread's front edge
+      g.push(box(STAIR_W + 0.04, 0.06, 0.1, PALETTE.woodDark, xc, top + 0.01, za + run - 0.05));
+    }
     decks.push({
       x0: xc - STAIR_W / 2, x1: xc + STAIR_W / 2, z0: zTop, z1: zBot, y: y0 + rise, step: 0.6, stair: f,
       yAt: (x, z) => y0 + rise * Math.min(1, Math.max(0, (zBot - z) / L)),
@@ -239,6 +267,20 @@ export function buildHouseShell(houseId) {
     const rx = xc - sx * (STAIR_W / 2);
     walls.push({ ax: rx, az: zTop, bx: rx, bz: zBot - 1.2, y0: y0 + 1.2, y1: y0 + rise + 2, rail: true });
     g.push(box(0.12, 1, L, PALETTE.woodDark, rx, y0 + rise * 0.5 + 0.8, (zTop + zBot) / 2));
+    /* THE OPENING UPSTAIRS IS RAILED on its two long sides and its front, so
+       nobody walks into it by accident; its BACK is open, because that is
+       where the stairs arrive at the floor and where she steps on to go
+       down. A kitten who wants to can still jump down through it. */
+    const up = floors[f + 1];
+    const yu = floorY[f + 1];
+    const railH = 1;
+    for (const x of [W.x0, W.x1]) {
+      walls.push({ ax: x, az: W.z0 + 0.4, bx: x, bz: W.z1, y0: yu, y1: yu + 2, rail: true });
+      up.push(box(0.12, railH, W.z1 - W.z0 - 0.4, PALETTE.woodDark, x, yu + railH - 0.05, (W.z0 + 0.4 + W.z1) / 2));
+      up.push(box(0.2, railH + 0.1, 0.2, PALETTE.woodDark, x, yu + (railH + 0.1) / 2, W.z1));
+    }
+    walls.push({ ax: W.x0, az: W.z1, bx: W.x1, bz: W.z1, y0: yu, y1: yu + 2, rail: true });
+    up.push(box(W.x1 - W.x0, 0.12, 0.12, PALETTE.woodDark, (W.x0 + W.x1) / 2, yu + railH - 0.05, W.z1));
   }
 
   /* ---- the roof on top ---- */
@@ -269,7 +311,7 @@ export function buildHouseShell(houseId) {
   }
 
   return {
-    floors, roof, accent, ridge, tint, walls, decks, floorY, half, base, front: pd,
+    floors, roof, accent, ridge, tint, walls, decks, floorY, half, base, front: pd, wells,
     door: { x: 0, z: bd, w: DOOR_W, y: base },
     /* The name board over the door, in the wall above the opening (3.1 to
        4.25 up). Richard: "the placard above the houses door frame ... is not
@@ -278,6 +320,49 @@ export function buildHouseShell(houseId) {
        the eave (`Housing.cameraFocus`, `doorShot`). */
     sign: { x: 0, y: base + 3.66, z: bd + 0.26, w: DOOR_W + 0.6, h: 0.95 },
   };
+}
+
+/**
+ * Every staircase in a house, as data: floor `f`'s stairs climb from the
+ * front (zBot, at floor f) to the back (zTop, at floor f + 1), and the rect
+ * x0..x1, z0..z1 is BOTH the stairs' footprint on floor f AND the hole they
+ * come up through in floor f + 1. The editor keeps furniture off both
+ * (`stairBlocks`), and the ceiling has no lid over it (`ceilingAt`).
+ */
+export function stairWells(houseId) {
+  const S = SHAPES[houseId] ?? SHAPES.minka;
+  const out = [];
+  let y0 = S.base;
+  for (let f = 0; f < S.floors.length - 1; f++) {
+    const [uw, ud] = S.floors[f + 1];
+    const rise = FLOOR_H;
+    const len = rise / STAIR_GRADE;
+    const sx = f % 2 === 0 ? -1 : 1;
+    const xc = sx * (uw - STAIR_W / 2 - 0.4);
+    // it climbs from the front toward the back, and arrives inside the floor above
+    const zTop = -ud + 1.2;
+    const zBot = Math.min(zTop + len, ud - 0.6);
+    out.push({ floor: f, y0, rise, xc, sx, zTop, zBot, x0: xc - STAIR_W / 2, x1: xc + STAIR_W / 2, z0: zTop, z1: zBot });
+    y0 += FLOOR_H;
+  }
+  return out;
+}
+
+/** Rects of the room grid that furniture may not cover: stairs below, a hole above. */
+export function stairBlocks(houseId, floor) {
+  return stairWells(houseId).filter((W) => W.floor === floor || W.floor + 1 === floor);
+}
+
+/** The rect x0..x1, z0..z1 as up to four rects round `hole` (or itself). */
+function around(x0, x1, z0, z1, hole) {
+  if (!hole) return [{ x0, x1, z0, z1 }];
+  const out = [
+    { x0, x1, z0, z1: hole.z0 },
+    { x0, x1, z0: hole.z1, z1 },
+    { x0, x1: hole.x0, z0: hole.z0, z1: hole.z1 },
+    { x0: hole.x1, x1, z0: hole.z0, z1: hole.z1 },
+  ];
+  return out.filter((d) => d.x1 - d.x0 > 0.01 && d.z1 - d.z0 > 0.01);
 }
 
 /** The shape table's row, for the editor's wall slots (no geometry built). */

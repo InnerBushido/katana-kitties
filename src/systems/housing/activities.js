@@ -32,8 +32,8 @@ export const HOLD = {
   nap: 4,
   look: 5,
   sit: 2.5,
-  /** The meal: the wait for the others to sit, the prayer, the eating. */
-  mealWait: 3,
+  /** The meal: everybody sitting down, the prayer, the eating. */
+  mealSit: 1,
   mealPray: 1.6,
   mealEat: 3,
 };
@@ -51,6 +51,11 @@ export function napFade(t, dur = HOLD.nap) {
   return Math.min(1, t / 1, (dur - t) / 1);
 }
 
+/** Four places at a kotatsu, a plate at each. */
+export const TABLE_SEATS = 4;
+/** How near the table a kitten has to be to be sat down for the meal. */
+export const TABLE_NEAR = 7;
+
 export class HomeActivities {
   constructor(housing) {
     this.H = housing;
@@ -62,6 +67,8 @@ export class HomeActivities {
     /** The shrine's song: { site, t } while it is playing, else null. */
     this.prayer = null;
     this._plates = new Map();
+    /** Kotatsu key → { s, plates: Mesh[] } — the food SET on each table. */
+    this.tables = new Map();
     this._puffs = [];
     this._fades = null;
   }
@@ -216,41 +223,146 @@ export class HomeActivities {
     }
     this._plates.set(p.index, this._plateMesh());
     G.audio?.play?.('menu');
-    G.toast(`${p.name} cooks onigiri and miso! Carry it to the KOTATSU — everybody who brings a plate eats together.`, p.index);
+    /* "let's also send a message letting the player know that a cooking
+       mini-game will come in the future, like we were doing before". */
+    G.toast(`${p.name} cooks onigiri and miso! Take it to the KOTATSU and set the table. (A cooking mini-game is coming in a future update!)`, p.index);
   }
 
+  /**
+   * THE KOTATSU, Oct 2026. Richard: "When bringing plate to the table ... the
+   * message should say something like 'Set the table with the food' ... and
+   * have it that the plate of food appears on the table. Player will have to
+   * bring a plate of food for every player that will sit at the table. Then
+   * player can sit at the table with everyone to eat. There should be a
+   * dialog saying 'Are you sure you want to eat with everyone at the
+   * table?' if confirmed, then everyone sitting at or near the table sits
+   * down and does the 'itadakimasu' prayer before eating."
+   *
+   *   with a plate     SET THE TABLE: it goes from over her head onto the
+   *                    table, at the next of four places
+   *   food on it       EAT TOGETHER: her card asks (NO first), and on a yes
+   *                    every kitten round the table sits, ITADAKIMASU, eats
+   *   nothing on it    sit and get warm, as before
+   *
+   * It used to be the plate-carriers sitting one by one and a three-second
+   * wait for anybody else; now the food is on the table for everybody to
+   * see, and nobody sits until somebody says so.
+   */
   _sit(p, s) {
     const G = this.game;
-    const key = `${s.home?.site}:${s.room}:${s.k}`;
-    if (!this._plates.has(p.index)) {
-      this._hold(p, 'sit', HOLD.sit, { s });
-      p.homePose = 'eat';
-      G.toast(`${p.name} tucks her feet under the warm kotatsu. Cosy! (Bring a plate from the KITCHEN to eat here.)`, p.index);
-      return;
-    }
-    let M = this.meals.get(key);
-    if (M && M.phase !== 'wait') {
+    const key = this.tableKey(s);
+    if (this.meals.has(key)) {
       G.toast('They have already started eating — cook another plate and join the next one!', p.index);
       return;
     }
-    if (!M) {
-      M = { s, diners: new Set(), t: 0, phase: 'wait' };
-      this.meals.set(key, M);
+    if (this._plates.has(p.index)) { this._setPlate(p, s); return; }
+    if (this.platesOn(key)) {
+      if (!G.housingCards?.open?.(p.index, 'meal', { key })) G.toast('Not right now — finish what you are doing first.', p.index);
+      return;
     }
-    M.diners.add(p.index);
-    M.t = 0;
-    // a place round the table each, facing it
-    const k = M.diners.size - 1;
-    const a = k * (Math.PI / 2);
-    p.position.x = s.x + Math.sin(a) * 2.2;
-    p.position.z = s.z + Math.cos(a) * 2.2;
-    p.group?.position?.copy?.(p.position);
-    p.facing = Math.atan2(s.x - p.position.x, s.z - p.position.z);
-    this._hold(p, 'meal', Infinity, { key });
+    this._hold(p, 'sit', HOLD.sit, { s });
     p.homePose = 'eat';
-    G.toast(M.diners.size === 1
-      ? `${p.name} sits down with her plate. Anybody else? Bring a plate and sit too!`
-      : `${p.name} joins the meal — ${M.diners.size} at the table!`, p.index);
+    G.toast(`${p.name} tucks her feet under the warm kotatsu. Cosy! (Cook food in the KITCHEN and set the table to eat here.)`, p.index);
+  }
+
+  tableKey(s) { return `${s.home?.site}:${s.room}:${s.k}`; }
+
+  /** Is she carrying a plate over her head? (the kotatsu's callout) */
+  carrying(i) { return this._plates.has(i); }
+
+  platesOn(key) { return this.tables.get(key)?.plates.length ?? 0; }
+
+  /** Her plate, off her head and onto the table at the next place. */
+  _setPlate(p, s) {
+    const G = this.game;
+    const key = this.tableKey(s);
+    const T = this.tables.get(key) ?? { s, plates: [] };
+    this.tables.set(key, T);
+    if (T.plates.length >= TABLE_SEATS) {
+      G.toast(`The table is full — ${TABLE_SEATS} plates is a place for everybody. Press INTERACT without a plate to eat!`, p.index);
+      return;
+    }
+    const m = this._plates.get(p.index);
+    this._plates.delete(p.index);
+    const k = T.plates.length;
+    T.plates.push(m);
+    const top = this._tableTop(s);
+    const a = k * (Math.PI / 2) + Math.PI / 4;
+    m.position.set(s.x + Math.sin(a) * 0.7, top, s.z + Math.cos(a) * 0.7);
+    m.scale.setScalar(0.8);
+    m.visible = true;
+    G.audio?.play?.('land');
+    const n = T.plates.length;
+    G.toast(`${p.name} sets the table — ${n} plate${n > 1 ? 's' : ''} of food on the kotatsu. One for everybody who eats, then INTERACT to eat together!`, p.index);
+  }
+
+  /** The kotatsu's top, measured off the drawn table (it is not a model). */
+  _tableTop(s) {
+    const mesh = s.isle?.itemMeshes?.get(`r:${s.room}:${s.k}`);
+    if (mesh) {
+      mesh.updateMatrixWorld?.(true);
+      const b = new THREE.Box3().setFromObject(mesh);
+      if (!b.isEmpty()) return b.max.y + 0.06;
+    }
+    return s.y + 1.1;
+  }
+
+  /**
+   * Who would sit down if she said yes: every kitten round the table (on its
+   * floor, a few steps from it, not busy with something else), the girl who
+   * asked first. Pure enough for the card to ask before anybody moves.
+   */
+  dinersAt(key, asker) {
+    const T = this.tables.get(key);
+    if (!T) return [];
+    const s = T.s;
+    const out = [];
+    for (const q of this.game.players ?? []) {
+      if (!q || q.mount || q.rideAlong) continue;
+      if (this.held.has(q.index)) continue;
+      if (Math.hypot(q.position.x - s.x, q.position.z - s.z) > TABLE_NEAR || Math.abs(q.position.y - s.y) > 2.5) continue;
+      out.push(q);
+    }
+    out.sort((a, b) => (a.index === asker ? -1 : b.index === asker ? 1 : a.index - b.index));
+    return out.slice(0, TABLE_SEATS);
+  }
+
+  /** Why the meal cannot start, or null (the card greys YES with it). */
+  mealWhy(key, asker) {
+    const n = this.platesOn(key);
+    const d = this.dinersAt(key, asker).length;
+    if (!n) return 'There is no food on the table yet — cook some in the KITCHEN.';
+    if (this.meals.has(key)) return 'They have already started eating!';
+    if (d > n) return `There ${d === 1 ? 'is' : 'are'} ${d} of you and ${n} plate${n > 1 ? 's' : ''} — cook ${d - n} more so everybody has one!`;
+    return null;
+  }
+
+  /** YES on the card: everybody round the table sits, prays and eats. */
+  startMeal(key, asker) {
+    const G = this.game;
+    const why = this.mealWhy(key, asker);
+    if (why) { G.toast(why, asker); return false; }
+    const T = this.tables.get(key);
+    const s = T.s;
+    const diners = this.dinersAt(key, asker);
+    const M = { s, diners: new Set(), t: 0, phase: 'sit' };
+    this.meals.set(key, M);
+    diners.forEach((p, k) => {
+      M.diners.add(p.index);
+      // a place round the table each, facing it — at the plate she will eat
+      const a = k * (Math.PI / 2) + Math.PI / 4;
+      p.position.x = s.x + Math.sin(a) * 2.2;
+      p.position.z = s.z + Math.cos(a) * 2.2;
+      p.group?.position?.copy?.(p.position);
+      p.facing = Math.atan2(s.x - p.position.x, s.z - p.position.z);
+      this._hold(p, 'meal', Infinity, { key });
+      p.homePose = 'eat';
+      this._dropPlate(p.index);
+      this._puff(p.position);
+      G.toast(diners.length > 1 ? `Everybody sits down at the kotatsu — ${diners.length} at the table!` : `${p.name} sits down to eat.`, p.index);
+    });
+    G.audio?.play?.('menu');
+    return true;
   }
 
   _plateMesh() {
@@ -349,7 +461,6 @@ export class HomeActivities {
         continue;
       }
       m.position.set(p.position.x, p.position.y + 3.6 + Math.sin(this.H.time * 5) * 0.06, p.position.z);
-      m.visible = this.held.get(i)?.act !== 'meal' || this.meals.get(this.held.get(i).key)?.phase === 'wait';
     }
     // the prayer's song: once through, then the bell again
     if (this.prayer) {
@@ -374,7 +485,7 @@ export class HomeActivities {
       M.t += dt;
       const diners = [...M.diners].map((i) => players[i]).filter(Boolean);
       if (!diners.length) { this.meals.delete(key); continue; }
-      if (M.phase === 'wait' && M.t >= HOLD.mealWait) {
+      if (M.phase === 'sit' && M.t >= HOLD.mealSit) {
         M.phase = 'pray';
         M.t = 0;
         for (const p of diners) {
@@ -387,6 +498,10 @@ export class HomeActivities {
         M.t = 0;
         for (const p of diners) { p.homePose = 'eat'; this._dropPlate(p.index); }
       } else if (M.phase === 'eat' && M.t >= HOLD.mealEat) {
+        // the plates they ate from are gone; any spare stay set for later
+        const T = this.tables.get(key);
+        for (const m of T?.plates.splice(0, diners.length) ?? []) m.parent?.remove(m);
+        if (T && !T.plates.length) this.tables.delete(key);
         const pct = mealPct(diners.length);
         for (const p of diners) {
           this._release(p);

@@ -1,5 +1,5 @@
 import { HOUSE_BY_ID, ITEM_BY_ID } from './catalog.js';
-import { houseRadius, houseShape } from './homehouse.js';
+import { houseRadius, houseShape, stairBlocks } from './homehouse.js';
 
 /* ---------------------------------------------------------------------------
    FURNISHING — the tatami grid, the walls and the yard, as data.
@@ -30,6 +30,13 @@ export function fits(room, items, it, gx, gz, rot = 0, skip = -1) {
   const { cols, rows } = gridOf(room);
   const [w, d] = footprint(it, rot);
   if (gx < 0 || gz < 0 || gx + w > cols || gz + d > rows) return false;
+  /* NOT ON THE STAIRS, AND NOT OVER THE HOLE THEY COME UP THROUGH: the
+     stairwell is a gap in the floor above now (homehouse.js `stairWells`),
+     and a chest on it would hang in the air over the steps. */
+  const x0 = room.cx - room.w / 2 + gx * 2, z0 = room.cz - room.d / 2 + gz * 2;
+  for (const W of stairBlocks(room.house, room.floor)) {
+    if (x0 < W.x1 && x0 + w * 2 > W.x0 && z0 < W.z1 && z0 + d * 2 > W.z0) return false;
+  }
   for (const [k, q] of (items ?? []).entries()) {
     if (k === skip) continue;
     const qi = ITEM_BY_ID[q.id];

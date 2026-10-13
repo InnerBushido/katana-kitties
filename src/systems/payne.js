@@ -89,9 +89,11 @@ export const JUMP_TEASE = 4;
 export const JUMP_NEAR = 26;
 /** ...and she laughs once per three minutes at most, however much hopping. */
 export const JUMP_COOL = 180;
-/** A kitten who has never met her is told she exists: once after a minute and
- *  a half of play, once more after six. Never more — see the header. */
-export const INVITE_AT = [90, 360];
+/** A kitten who has never met her is told she exists ONCE, after a minute and
+ *  a half of play. It was twice (90s and 6min); Richard, Oct 2026: "Payne
+ *  should only tell the player to come visit her once and should only get the
+ *  waypoint above her head once per player." */
+export const INVITE_AT = [90];
 /** Where the invitation's map mark stays up, in seconds. */
 export const INVITE_MARK = 60;
 /** Where she stands: across the road from Mr. Satan's `SATAN_TOWN` (11, 22),
@@ -1526,6 +1528,10 @@ export class Payne {
     const L = this.ledger(p);
     const first = !L.met;
     L.met = true;
+    /* THE WAYPOINT OVER HER HEAD GOES THE MOMENT SHE IS FOUND. It stood for
+       its full minute however soon the kitten arrived — "Once a player talks
+       to her, we should remove the waypoint." */
+    this._s(p).inviteT = 0;
     this.say(p, [first ? 'payne_hello' : 'payne_back'], 'hey', { card: false, now: true });
   }
 

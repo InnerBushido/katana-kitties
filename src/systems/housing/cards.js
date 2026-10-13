@@ -3,7 +3,9 @@ import {
 } from './catalog.js';
 import { JUKEBOX, hasRecording } from './jukebox.js';
 import { footprint, firstFit, firstYardSpot, wallSlots, wallFree, ITEM_SELL } from './editor.js';
-import { buildWhy, commitBuild, removeBuilt, pickList, stepToward, BUILD_KEYS, PICK_KEYS } from './build.js';
+import { buildWhy, commitBuild, removeBuilt, pickList, stepToward, BUILD_KEYS, PICK_KEYS, CUSTOM_PICK_KEYS } from './build.js';
+import { stylesFor, LOOK_MUL } from './models.js';
+import { YARD_BUILT } from './homeisle.js';
 import { Preview } from './preview.js';
 import { KOI_COLOURS } from './koi.js';
 import { careBuff, ANIMALS } from './farm.js';
@@ -130,11 +132,15 @@ export class HousingCards {
 
   opened(index) {
     const top = this._top(index);
-    if (top?.v === 'realtor') this.H.browse(index, HOME_SITES[0].id);
+    if (top?.v === 'realtor') {
+      this.H.browse(index, HOME_SITES[0].id);
+      this.H.startWatch(index);
+    }
   }
 
   closed(index) {
     this.H.browsing.delete(index);
+    this.H.endWatch(index);
     if (this.H.preview?.who === index) this.H.stopPreview();
     if (this.H.audition?.who === index) this.H.audition = null;
     this.preview.hide(index);
@@ -152,7 +158,7 @@ export class HousingCards {
   sig(index, c) {
     const top = this._top(index);
     const p = this.game.players[index];
-    return [this.st.get(index)?.stack.length, top?.v, top?.room, top?.kind, top?.sel, top?.gx, top?.gz, top?.rot, top?.side, top?.k, top?.at,
+    return [this.st.get(index)?.stack.length, top?.v, top?.room, top?.kind, top?.sel, top?.gx, top?.gz, top?.rot, top?.side, top?.k, top?.at, top?.rev,
       top?.v === 'build' && top.kind === 'yard' ? `${Math.round(top.x * 2)},${Math.round(top.z * 2)}` : '',
       p?.score, this.H.store.at, this.pending ? [...this.pending.yes].join(',') : '', c.i].join('|');
   }
@@ -582,6 +588,11 @@ export class HousingCards {
         disabled: !R.items.length, why: 'There is nothing in this room yet.',
         go: () => { this._push(index, { v: 'pick', site: top.site, room: room.id, kind: 'room', at: 0 }); return null; },
       });
+      rows.push({
+        title: 'ITEM CUSTOMIZATION', blurb: 'Make one thing bigger or smaller, or change how it looks.',
+        disabled: !R.items.length, why: 'There is nothing in this room to customize yet.',
+        go: () => { this._push(index, { v: 'pick', site: top.site, room: room.id, kind: 'room', at: 0, mode: 'custom' }); return null; },
+      });
     }
     const slots = wallSlots(H.house, room).length;
     rows.push({
@@ -709,18 +720,130 @@ export class HousingCards {
     const q = L[top.at];
     const it = ITEM_BY_ID[q.id];
     const touch = this._touch();
+    const why = this._noCustom(top.kind, q.id);
+    const custom = { title: 'CUSTOMIZE IT', blurb: 'Bigger, smaller, or another look.', disabled: !!why, why, go: () => { this.customize(index, top); return null; } };
+    const keys = top.mode === 'custom' ? CUSTOM_PICK_KEYS : PICK_KEYS;
     return {
       build: true,
       head: `${it?.name ?? q.id}  (${top.at + 1} of ${L.length})`,
       body: `<div class="hs-buildrow"><canvas class="hs-map" width="180" height="180"></canvas><div class="hs-buildinfo">
-        <div class="hs-good">The ring shows which one. Move the stick to point at another.</div>
-        <div class="hs-keys">${PICK_KEYS.map(([k, w]) => `<span><b>${k}</b> ${w}</span>`).join('')}</div>
+        <div class="${why && top.mode === 'custom' ? 'hs-bad' : 'hs-good'}">${esc(why && top.mode === 'custom' ? why : 'The ring shows which one. Move the stick to point at another.')}</div>
+        <div class="hs-keys">${keys.map(([k, w]) => `<span><b>${k}</b> ${w}</span>`).join('')}</div>
         ${touch ? `<div class="hs-pad">${['left', 'up', 'down', 'right'].map((d) => `<button type="button" data-hact="${d}" data-side="${index}">${ARROW[d]}</button>`).join('')}</div>` : ''}</div></div>`,
-      rows: [
+      rows: top.mode === 'custom' ? [custom] : [
         { title: 'PICK IT UP AND MOVE IT', go: () => { this.pickUp(index, top); return null; } },
+        custom,
         { title: `SELL IT BACK — ${pts(this._sellBack(q.id))}`, go: () => { this.askSell(index, top); return null; } },
       ],
       foot: ' ',
+    };
+  }
+
+  /* ------------------------- ITEM CUSTOMIZATION ------------------------- */
+
+  /**
+   * Why this thing cannot be customised, or null. Wall things hang in a slot
+   * of a fixed size, and the yard's BUILT things (the ponds, the court, the
+   * pen, the treehouse) are levels with colliders and animals measured to
+   * them — resizing one would move a fence the goats are inside.
+   */
+  _noCustom(kind, id) {
+    if (kind === 'wall') return 'Wall things fit their space on the wall — they cannot be resized.';
+    if (kind === 'yard' && YARD_BUILT.has(id)) return 'This one is built into the island — it cannot be customized.';
+    return null;
+  }
+
+  /** JUMP (custom mode) or ATTACK on the selector: customise the one under the ring. */
+  customize(index, top) {
+    const H = this._home(top);
+    const q = pickList(H, top.kind, top.room)[top.at ?? 0];
+    if (!q) return;
+    const why = this._noCustom(top.kind, q.id);
+    if (why) { this.game.toast(why, index); this.game.audio?.play?.('menu'); return; }
+    this._push(index, { v: 'custom', site: top.site, room: top.room, kind: top.kind, sel: q.k, cursor: 0 });
+    this.game.audio?.play?.('menu');
+  }
+
+  _customRow(H, top) {
+    return top.kind === 'yard' ? H.outdoor?.[top.sel] : H.rooms?.[top.room]?.items?.[top.sel];
+  }
+
+  /**
+   * ONE THING, MADE HERS. Richard, Oct 2026: "We should have a way for the
+   * player to customize the items to change their scale and how they look
+   * ... Especially if it is a Polyfork item ... Customizations should also be
+   * saved with the house in the json file ... While customizing the item, the
+   * camera should be focused on it ... We should limit the customization so
+   * that player can't go too crazy with it, like having it go through the
+   * roof."
+   *
+   *   SIZE   half to half again (LOOK_MUL), and never past the box `fitTo`
+   *          measures it into — under the ceiling and inside its own tatami
+   *          for a room thing. BIGGER greys out AT the limit and says which.
+   *   LOOK   a Polyfork model's own colourways (MODEL_STYLES, read off its
+   *          params), or a lacquer for a drawn thing (TINTS).
+   *
+   * Every press is applied at once and saved with the house (`row.look`, in
+   * the home row and its JSON); the camera is on the thing (build.js
+   * `frameOf`), so she sees the result as she makes it.
+   */
+  _v_custom(index, p, top) {
+    const H = this._home(top);
+    const row = this._customRow(H, top);
+    const it = ITEM_BY_ID[row?.id];
+    if (!row || !it) return { head: 'NOTHING HERE', rows: [{ title: 'BACK', go: () => { this._pop(index); return null; } }] };
+    const I = this.H.isleOf(top.site);
+    const mesh = I?.itemMeshes?.get(top.kind === 'yard' ? 'o' + row.uid : `r:${top.room}:${top.sel}`);
+    const s = row.look?.s ?? 1;
+    const max = Math.min(LOOK_MUL.max, mesh?.userData.maxMul ?? LOOK_MUL.max);
+    const shown = Math.min(s, max);
+    const styles = stylesFor(it.model);
+    const cur = Math.max(0, styles.findIndex((x) => x.id === row.look?.style));
+    const set = (look) => {
+      const L = { ...(row.look ?? {}), ...look };
+      if (L.s != null && Math.abs(L.s - 1) < 1e-6) delete L.s;
+      if (L.style === styles[0]?.id || !L.style) delete L.style;
+      if (Object.keys(L).length) row.look = L; else delete row.look;
+      top.rev = (top.rev ?? 0) + 1;
+      this.H.changed(H);
+      this.game.audio?.play?.('menu');
+      return null;
+    };
+    const step = LOOK_MUL.step;
+    const r1 = (v) => Math.round(v * 10) / 10;
+    const ceilingWhy = top.kind === 'room' ? 'Any bigger and it would go through the ceiling or into the walls.' : 'That is as big as it goes.';
+    const style = styles[cur];
+    return {
+      head: `CUSTOMIZE: ${it.name}`,
+      body: `<div class="hs-note">SIZE ${Math.round(shown * 100)}% · LOOK: ${esc(style?.name ?? 'AS IT CAME')}${it.model ? ' · a Polyfork model' : ''}</div>`,
+      rows: [
+        {
+          title: 'BIGGER', right: `${Math.round(shown * 100)}%`,
+          disabled: shown + step > max + 1e-6, why: shown + step > LOOK_MUL.max + 1e-6 ? 'That is as big as it goes.' : ceilingWhy,
+          go: () => set({ s: r1(Math.min(max, shown + step)) }),
+        },
+        {
+          title: 'SMALLER', right: `${Math.round(shown * 100)}%`,
+          disabled: shown - step < LOOK_MUL.min - 1e-6, why: 'That is as small as it goes.',
+          go: () => set({ s: r1(Math.max(LOOK_MUL.min, shown - step)) }),
+        },
+        {
+          title: `NEXT LOOK: ${styles[(cur + 1) % styles.length]?.name ?? ''}`, right: `${cur + 1} of ${styles.length}`,
+          disabled: styles.length < 2, why: 'This one only comes one way.',
+          go: () => set({ style: styles[(cur + 1) % styles.length].id }),
+        },
+        {
+          title: `LAST LOOK: ${styles[(cur + styles.length - 1) % styles.length]?.name ?? ''}`,
+          disabled: styles.length < 2, why: 'This one only comes one way.',
+          go: () => set({ style: styles[(cur + styles.length - 1) % styles.length].id }),
+        },
+        {
+          title: 'PUT IT BACK HOW IT CAME',
+          disabled: !row.look, why: 'It is already how it came.',
+          go: () => { delete row.look; return set({}); },
+        },
+        { title: 'DONE', go: () => { this._pop(index); return null; } },
+      ],
     };
   }
 
@@ -817,6 +940,11 @@ export class HousingCards {
           disabled: !(H.outdoor ?? []).length, why: 'There is nothing in the yard yet.',
           go: () => { this._push(index, { v: 'pick', site: top.site, kind: 'yard', at: 0 }); return null; },
         },
+        {
+          title: 'ITEM CUSTOMIZATION', blurb: 'Make a tree, a lantern or a bench bigger or smaller, or change how it looks.',
+          disabled: !(H.outdoor ?? []).length, why: 'There is nothing in the yard to customize yet.',
+          go: () => { this._push(index, { v: 'pick', site: top.site, kind: 'yard', at: 0, mode: 'custom' }); return null; },
+        },
       ],
     };
   }
@@ -863,6 +991,34 @@ export class HousingCards {
       },
     }));
     return { head: "ROSHI'S BOOMBOX", rows };
+  }
+
+  /* ------------------------------- MEAL --------------------------------- */
+
+  /**
+   * "Are you sure you want to eat with everyone at the table?" — Richard's
+   * words, NO first. Who would sit and how many plates are on the table are
+   * on its face; YES is greyed, saying how many more to cook, until there is
+   * a plate for everybody round it (activities.js `mealWhy`).
+   */
+  _v_meal(index, p, top) {
+    const A = this.H.activities;
+    const n = A.platesOn(top.key);
+    const who = A.dinersAt(top.key, index);
+    const why = A.mealWhy(top.key, index);
+    return {
+      head: 'EAT TOGETHER?',
+      body: `<div class="hs-note">Are you sure you want to eat with everyone at the table?<br>
+        ${n} plate${n === 1 ? '' : 's'} on the kotatsu · ${who.map((q) => esc(q.name)).join(', ') || 'nobody'} will sit down.</div>`,
+      rows: [
+        { title: 'NO, NOT YET', go: () => 'close' },
+        {
+          title: `YES, EAT TOGETHER${who.length > 1 ? ` — ${who.length} OF US` : ''}`,
+          disabled: !!why, why,
+          go: () => (A.startMeal(top.key, index) ? 'close' : null),
+        },
+      ],
+    };
   }
 
   /* ------------------------------- KOI ---------------------------------- */
