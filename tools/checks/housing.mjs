@@ -141,6 +141,7 @@ export async function housingChecks({ ok, world }) {
   ok('...and World.heightAt finds it', world.heightAt(mid.x ?? mid.pos?.x, mid.z ?? mid.pos?.z, (mid.y ?? mid.pos?.y) + 0.3)?.platform?.home === true);
 
   /* FLOORS: every floor of every house is walkable from its door. */
+  let doorChecked = false;
   for (const h of HOUSES) {
     const I = H.isles[3];
     I.setHome(newHome(I.site.id, h.id, ['Ember']), [0xff8a3d]);
@@ -268,6 +269,38 @@ export async function housingChecks({ ok, world }) {
       const c1 = r1 && onWell(r1);
       ok(`${h.name}: no furniture can stand on the stairs, or over the hole they come up through`,
         (!c0 || !fits(r0, [], ITEM_BY_ID.tansu, c0.gx, c0.gz)) && (!c1 || !fits(r1, [], ITEM_BY_ID.tansu, c1.gx, c1.gz)) && !!(c0 || c1));
+      /* THE DOOR SHOT IS A PANE'S, NOT A KITTEN'S. Richard: "when multiple
+         players are in front of a player's house, it does not do the 3D
+         camera view ... But, the controls are being overridden as if the
+         camera rotated". Two kittens in one pane: one at the door, one just
+         behind her — both get the shot (both sticks turn) and so does the
+         rig (`doorShotFor`); the moment one of them is inside, nobody does. */
+      if (!doorChecked) {
+        doorChecked = true;
+        const was = { groups: game.groups, players: game.players, home: H.store.homes[I.site.id], dbg: H.debugOpen };
+        H.debugOpen = true;
+        H.store.homes[I.site.id] = I.home;
+        const S = I.shell;
+        const atDoor = I.local(0, S.door.z + 4);
+        const behind = I.local(3, S.door.z + 22);
+        const a = fakePlayer(0, atDoor.x, atDoor.z, I.groundY + S.base);
+        const b = fakePlayer(1, behind.x, behind.z, I.groundY + S.base);
+        game.players = [a, b];
+        game.groups = [[0, 1]];
+        const both = !!H._doorShot(a) && !!H._doorShot(b) && !!H.doorShotFor([0, 1]) && H._doorShot(b).yaw === H.doorShotFor([0, 1]).yaw;
+        game.groups = [[0], [1]];
+        const apart = !!H._doorShot(a) && !H._doorShot(b);
+        game.groups = [[0, 1]];
+        const inside = I.local(0, 0);
+        b.position.set(inside.x, I.groundY + S.floorY[0] + 0.1, inside.z);
+        const vetoed = !H._doorShot(a) && !H.doorShotFor([0, 1]);
+        ok('two kittens sharing a pane at a front door BOTH get the door shot, and the shared camera gets the same one', both);
+        ok('...split into their own panes, only the one at the door does', apart);
+        ok("...and somebody inside the house puts everybody's camera back", vetoed);
+        Object.assign(game, { groups: was.groups, players: was.players });
+        if (was.home === undefined) delete H.store.homes[I.site.id]; else H.store.homes[I.site.id] = was.home;
+        H.debugOpen = was.dbg;
+      }
     }
     I.setHome(null);
   }

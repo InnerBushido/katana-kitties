@@ -13287,6 +13287,21 @@ class Game {
         wantDist = THREE.MathUtils.lerp(wantDist, course.dist * widen, rig.courseT);
       }
 
+      /* A FRONT DOOR, for a group in front of one — the trap again: the
+         per-player door shot (housing.js `_doorShot`) turns every member's
+         STICK, so this, the camera that draws them, has to turn with it, at
+         the same rate (`Player._updateCamera` eases focusT by dt * 2.2) or the
+         two would part company for the second it takes. Nobody near a house:
+         exactly 0, and nothing here moves. */
+      const door = this.housing?.doorShotFor?.(members) ?? null;
+      rig.doorT = (rig.doorT ?? 0) + ((door ? 1 : 0) - (rig.doorT ?? 0)) * Math.min(1, dt * 2.2);
+      if (rig.doorT < 0.001) rig.doorT = 0;
+      if (door) rig.doorShot = { yaw: door.yaw, pitch: door.pitch, centre: door.centre.clone(), dist: door.dist };
+      if (rig.doorT > 0 && rig.doorShot) {
+        want.lerp(rig.doorShot.centre, rig.doorT);
+        wantDist = THREE.MathUtils.lerp(wantDist, rig.doorShot.dist * widen, rig.doorT);
+      }
+
       if (!rig.seeded) {
         rig.target.copy(want);
         rig.dist = wantDist;
@@ -13308,6 +13323,10 @@ class Game {
 
       let yaw = THREE.MathUtils.lerp(-Math.PI * 0.25, 0, ft);
       let pitch = ring ? ring.pitch : THREE.MathUtils.lerp(0.66, DOJO_PITCH, ft);
+      if (rig.doorT > 0 && rig.doorShot) {
+        yaw = THREE.MathUtils.lerp(yaw, rig.doorShot.yaw, rig.doorT);
+        pitch = THREE.MathUtils.lerp(pitch, rig.doorShot.pitch, rig.doorT);
+      }
       if (rig.boardT > 0) {
         yaw = THREE.MathUtils.lerp(yaw, BOARD_VIEW.yaw, rig.boardT);
         pitch = THREE.MathUtils.lerp(pitch, BOARD_VIEW.pitch, rig.boardT);

@@ -896,19 +896,48 @@ export class Housing {
    */
   _doorShot(p) {
     if (p.mount || p.rideAlong) return null;
+    /* HER PANE'S GROUP, not her alone. Richard: "when multiple players are
+       in front of a player's house, it does not do the 3D camera view ... But,
+       the controls are being overridden as if the camera rotated". Two
+       kittens sharing a pane are drawn by the shared rig (main.js
+       `_updateRig`), which never asked about the door — while each one's
+       stick was read through her OWN camYaw, which had swung round to the
+       door. So the decision is the group's: everybody sharing her pane gets
+       the shot (her focus here, which turns her stick) and the rig gets the
+       same one (`doorShotFor`, at the same easing rate), so what she sees
+       and what her stick means move together. */
+    const members = this.game.groups?.find((m) => m.includes(p.index)) ?? [p.index];
+    return this.doorShotFor(members.includes(p.index) ? members : [p.index]);
+  }
+
+  /**
+   * The door shot for a pane's group, or null: somebody in it is in front of
+   * a house's door, and NOBODY in it is inside that house. "If someone is
+   * inside the house, then that camera angle should get overridden back to
+   * ... the view it should be when a player is inside the house." A kitten
+   * on a mount has the animal's camera and neither asks nor vetoes.
+   */
+  doorShotFor(members) {
+    const players = this.game.players ?? [];
+    const kits = members.map((i) => players[i]).filter((q) => q && !q.mount && !q.rideAlong);
     for (const I of this.isles) {
       const S = I.shell;
-      if (!S?.sign || !I.home || !I.over(p.position.x, p.position.z)) continue;
-      const L = I.toLocal(p.position.x, p.position.z);
-      if (Math.abs(L.x) > 6.5 || L.z < S.door.z + 0.4 || L.z > S.door.z + 13) continue;
-      if (p.position.y > I.groundY + S.base + 2.5) continue;
+      if (!S?.sign || !I.home) continue;
+      const atDoor = kits.some((q) => {
+        if (!I.over(q.position.x, q.position.z)) return false;
+        const L = I.toLocal(q.position.x, q.position.z);
+        if (Math.abs(L.x) > 6.5 || L.z < S.door.z + 0.4 || L.z > S.door.z + 13) return false;
+        return q.position.y <= I.groundY + S.base + 2.5;
+      });
+      if (!atDoor) continue;
+      if (kits.some((q) => I.floorAt(q.position.x, q.position.y, q.position.z) >= 0)) return null;
       const c = I.local(0, S.door.z + 2.2);
-      (p._doorCentre ??= new THREE.Vector3()).set(c.x, I.groundY + S.sign.y - 1.0, c.z);
+      (I._doorCentre ??= new THREE.Vector3()).set(c.x, I.groundY + S.sign.y - 1.0, c.z);
       // the house's front, wrapped to within a half-turn of the usual yaw
       let yaw = I.ry;
       while (yaw - CAM_YAW_DEFAULT > Math.PI) yaw -= Math.PI * 2;
       while (yaw - CAM_YAW_DEFAULT < -Math.PI) yaw += Math.PI * 2;
-      return { centre: p._doorCentre, aim: true, dist: 12, pitch: 0.16, yaw };
+      return { centre: I._doorCentre, aim: true, dist: 12, pitch: 0.16, yaw };
     }
     return null;
   }
