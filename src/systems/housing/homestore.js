@@ -1,13 +1,21 @@
 /* ---------------------------------------------------------------------------
    Where homes are written down.
 
-   HOMES OUTLIVE A GAME, AND THAT IS THE DIFFERENCE FROM EVERYTHING ELSE THE
-   SAVE HOLDS. A saved game is one afternoon (systems/savegame.js); a house is
-   hers across every afternoon — "persist across games". So the homes are
-   their own localStorage row, `kk.homes.v1`, read at boot whatever game is
-   loaded, AND copied into each game save so that loading an old save on a
-   new machine brings its houses with it. When the two disagree the newer
-   one wins (`at`).
+   HOMES BELONG TO ONE SAVED GAME. They used to outlive a game — one global
+   row, `kk.homes.v1`, read at boot whatever was loaded — and Richard played
+   that and reversed it, Oct 2026: "Purchased islands and furniture ... should
+   be linked to the save file of the game and not be shared between different
+   save files or new games." A new game buying nothing found last week's
+   castle standing in the sky, and a home-earned boon carried into a stranger's
+   tournament.
+
+   So the store is ONE ROW PER PLAY SESSION, `kk.homes.v1:<sessionId>` — the
+   same id `savegame.js` stamps into its rows — AND a copy in each game save.
+   The row is the between-autosaves safety net (a purchase is written the
+   frame it happens; the game save is up to 30s behind); the save's copy is
+   what a load brings back. On a load the newer of the two wins (`at`). A new
+   game, or RESTART, mints a new session and so starts with an empty store.
+   The old global row is never read again.
 
    REAL TIME LIVES HERE TOO. The bamboo farm, the animals and the koi run on
    the wall clock ("once a week, a few minutes each"), so their timestamps
@@ -24,6 +32,16 @@
 
 export const HOME_KEY = 'kk.homes.v1';
 export const HOME_VERSION = 1;
+
+/** This save session's row. No session (a headless check) is the bare key. */
+export function homeKey(session) {
+  return session ? `${HOME_KEY}:${session}` : HOME_KEY;
+}
+
+/** How many sessions' rows are kept in the browser. The game saves hold their
+ *  own copies, so this only bounds the safety nets, never loses a home a save
+ *  still has. */
+export const HOME_ROWS_KEPT = 8;
 
 export function emptyStore() {
   return { v: HOME_VERSION, at: 0, homes: {}, bank: {}, records: {}, jukebox: {}, boons: {} };
@@ -54,9 +72,9 @@ export function newHome(site, house, owners, now = Date.now()) {
   };
 }
 
-export function loadStore(storage = globalThis.localStorage) {
+export function loadStore(storage = globalThis.localStorage, key = HOME_KEY) {
   try {
-    const raw = storage?.getItem(HOME_KEY);
+    const raw = storage?.getItem(key);
     if (!raw) return emptyStore();
     return normalise(JSON.parse(raw));
   } catch (e) {
@@ -65,15 +83,33 @@ export function loadStore(storage = globalThis.localStorage) {
   }
 }
 
-export function saveStore(store, storage = globalThis.localStorage) {
+export function saveStore(store, storage = globalThis.localStorage, key = HOME_KEY) {
   try {
     store.at = Date.now();
-    storage?.setItem(HOME_KEY, JSON.stringify(store));
+    storage?.setItem(key, JSON.stringify(store));
+    pruneRows(storage, key);
     return true;
   } catch (e) {
     console.warn('[housing] could not write homes', e);
     return false;
   }
+}
+
+/** Drop the oldest sessions' rows past HOME_ROWS_KEPT. Never `keep`. */
+export function pruneRows(storage, keep) {
+  try {
+    if (!storage || typeof storage.length !== 'number' || !storage.key) return;
+    const rows = [];
+    for (let k = 0; k < storage.length; k++) {
+      const key = storage.key(k);
+      if (!key?.startsWith(`${HOME_KEY}:`) || key === keep) continue;
+      let at = 0;
+      try { at = JSON.parse(storage.getItem(key))?.at ?? 0; } catch { /* unreadable: oldest */ }
+      rows.push({ key, at });
+    }
+    rows.sort((a, b) => b.at - a.at);
+    for (const r of rows.slice(HOME_ROWS_KEPT - 1)) storage.removeItem(r.key);
+  } catch { /* a full or locked storage keeps what it has */ }
 }
 
 /**

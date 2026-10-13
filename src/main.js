@@ -3910,6 +3910,10 @@ class Game {
        swore to in a town that has just stood itself back up. */
     this.sessionId = newSessionId();
     this.sessionCast = new Map();
+    /* AND THE HOMES, which belong to a saved game like everything above
+       (housing/homestore.js): a new afternoon owns no islands, has earned no
+       boons, and has not seen the ending that puts the islands up. */
+    this.housing?.reset?.();
     /* THE PARKED PANDAS GO WITH THE CAST THEY BELONG TO. Same argument, one
        object further down: a live animal kept for a kitten who played in a
        world that no longer exists. Their meshes come out of the scene here,

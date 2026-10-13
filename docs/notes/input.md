@@ -721,10 +721,20 @@ dealt like ordinary gamepads. `auto` splits nothing.
 
 ```
   0 pads   P1 WASD   P2 Arrows
-  1 pad    P1 pad    P2 WASD    P3 Arrows
-  2 pads   P1 pad    P2 pad     P3 WASD    P4 Arrows
-  3 pads   P1 pad    P2 pad     P3 pad     P4 WASD
+  1 pad    P1 pad+W  P2 Arrows  P3 WASD
+  2 pads   P1 pad+W  P2 pad+A   P3 WASD    P4 Arrows
+  3 pads   P1 pad+W  P2 pad     P3 pad     P4 Arrows
 ```
+
+**PLAYER 1 IS ALWAYS WASD, PLAYER 2 ALWAYS THE ARROWS / O K L ; (Oct 2026).**
+A Windows machine that once paired a Bluetooth pad keeps reporting it, so the
+old queue (below) put the phantom on player 1 and handed WASD to player 2, and
+Ember could not move. `_assign`'s pinned pass gives seat 1 WASD and seat 2 the
+arrows whatever pads exist; a seat with a pad keeps its pad and has its set
+folded in as a second hand (`alsoKeyset`, +W / +A above), which steps aside if
+a third or fourth kitten takes that set. Seats 3 and 4 prefer WASD and the
+arrows respectively, in the ordinary deal and the force-spawn share alike.
+The paragraph below is the rule this replaced, kept for the reasoning.
 
 **THE SLOT-AFFINITY PASS IS GONE.** `_assign` gave slot `i` `KEYSETS[i]` when it
 was free, which preserved what slot 1 got before four players existed and is the

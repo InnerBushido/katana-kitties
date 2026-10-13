@@ -661,10 +661,10 @@ export function snapshot(game) {
        has been played at somebody" and gates the menu row. See
        `Game._endingSeen`. */
     watched: !!game._endingWatched,
-    /* THE HOMES. They live in their own localStorage row too, and outlive
-       any one game (systems/housing/homestore.js); a save carries a copy so
-       an afternoon moved to another browser brings its houses with it.
-       `Housing.restore` keeps whichever of the two is newer. */
+    /* THE HOMES, which belong to THIS game and no other (Oct 2026 — they
+       used to outlive a game). They also have a localStorage row per session,
+       written the frame something is bought, and `Housing.restore` keeps the
+       newer of that row and this copy. See housing/homestore.js. */
     homes: game.housing?.snapshot?.() ?? null,
   };
 }

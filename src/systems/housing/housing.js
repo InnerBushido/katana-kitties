@@ -3,7 +3,7 @@ import { PLAYER_STYLE } from '../../core/palette.js';
 import {
   HOME_SITES, SITE_BY_ID, HOUSE_BY_ID, ITEM_BY_ID, PRESET_BY_ID, ROOM_TYPE_BY_ID, HOME_SELL, priceOf, SPEED_STRIP,
 } from './catalog.js';
-import { loadStore, saveStore, newHome, homeOf, normalise, newer, exportFile, importFile } from './homestore.js';
+import { loadStore, saveStore, newHome, homeOf, normalise, newer, exportFile, importFile, emptyStore, homeKey } from './homestore.js';
 import { HomeIsle } from './homeisle.js';
 import { HomeBridge, solveHomeRoads } from './homebridge.js';
 import { Roshi } from './roshi.js';
@@ -76,7 +76,9 @@ export class Housing {
   constructor(game) {
     this.game = game;
     this.world = game.world;
-    this.store = loadStore();
+    /* EMPTY AT BOOT. Homes belong to one saved game (homestore.js), and a
+       boot is a new game until a save is loaded — `restore` fills it then. */
+    this.store = emptyStore();
     this.isles = [];
     /** Per isle index: the solved bridge, or null until solved/when unsolvable. */
     this.bridges = [];
@@ -183,10 +185,41 @@ export class Housing {
     return priceOf(mult, this.game.kotodama?.price || 650);
   }
 
+  /** This game's row in the browser (homestore.js `homeKey`). */
+  _key() { return homeKey(this.game.sessionId); }
+
   save() {
-    saveStore(this.store);
+    saveStore(this.store, globalThis.localStorage, this._key());
     this.game.savegame?.touch?.();
   }
+
+  /**
+   * A NEW GAME. `Game.restart` calls this after minting the new session: the
+   * homes, the boons, the records and the bank all belonged to the game that
+   * was just left, and its own row and its saves still have them. Everything
+   * that was being done at home stops, and the islands go back into the
+   * clouds until the ending puts them up again.
+   */
+  reset() {
+    this.store = emptyStore();
+    this.debugOpen = false;
+    this.stopPreview?.();
+    this.browsing.clear();
+    this.musicSite = null;
+    this._onBridge.clear();
+    for (const p of this.game.players ?? []) {
+      this.holo.drop(p.index);
+      this.angling.drop(p.index);
+      this.pets.drop(p.index);
+      p.homeBoon = null;
+    }
+    if (this.built) this._applyStore();
+    for (let k = 0; k < this.bridges.length; k++) this._dressBridge(k);
+  }
+
+  /** Are the islands up? Only after the ending (or the debug row), and the
+   *  same answer as the shop's: before that they are not in the sky at all. */
+  isUp() { return this.shopOpen(); }
 
   /* ---------------------------- the trophies ---------------------------- */
 
@@ -288,6 +321,7 @@ export class Housing {
 
   /** `World.heightAt`'s last loop. */
   heightAt(x, z, fromY = Infinity) {
+    if (!this.isUp()) return null;
     let best = null;
     for (const I of this.isles) {
       const h = I.heightAt(x, z, fromY);
@@ -311,7 +345,7 @@ export class Housing {
    * Doors and the bubble are solid only to somebody not allowed through.
    */
   wall(p, wasX, wasZ, hud) {
-    if (!this.built) return;
+    if (!this.built || !this.isUp()) return;
     const pos = p.position;
     const r = p.radius ?? 0.6;
     for (const [k, I] of this.isles.entries()) {
@@ -473,6 +507,16 @@ export class Housing {
     }
     this._pumpRoads();
     const players = this.game.players ?? [];
+    /* NOT IN THE SKY UNTIL THE ENDING. Richard: "The islands for purchase
+       shouldn't be spawned until after the ending cutscene plays." They are
+       built at boot (the roads take seconds to solve) and simply not shown,
+       stood on or walled until the shop is open. */
+    const up = this.isUp();
+    for (const I of this.isles) I.group.visible = up;
+    for (const B of this.bridges) if (B && !up) B.group.visible = false;
+    // Roshi stands in the TOWN, islands or not.
+    this.roshi?.update(dt, players);
+    if (!up) return;
     for (const I of this.isles) {
       I.update(dt, this.time);
       const H = I.home;
@@ -488,7 +532,6 @@ export class Housing {
     this.holo.update(dt, players);
     this._payBank(players);
     this._trackMusic(players);
-    this.roshi?.update(dt, players);
     this.koi.update(dt);
     this.angling.update(dt, players);
     this.farm.update(dt);
@@ -1055,10 +1098,14 @@ export class Housing {
 
   /** A loaded game's homes: the newer of the save's and the browser's. */
   restore(snap) {
-    if (!snap) return;
-    const theirs = normalise(snap);
-    this.store = newer(this.store, theirs);
-    saveStore(this.store);
+    // This game's own row, which may be up to an autosave ahead of the save.
+    const mine = (() => {
+      const s = loadStore(globalThis.localStorage, this._key());
+      return s.at ? s : null;
+    })();
+    const theirs = snap ? normalise(snap) : null;
+    this.store = newer(mine, theirs) ?? emptyStore();
+    saveStore(this.store, globalThis.localStorage, this._key());
     if (this.built) this._applyStore();
     for (let k = 0; k < this.bridges.length; k++) this._dressBridge(k);
   }
@@ -1069,7 +1116,7 @@ export class Housing {
     const s = await importFile();
     if (!s) { this.game.toast('That file is not a Katana Kitties homes file.', index); return; }
     this.store = s;
-    saveStore(this.store);
+    saveStore(this.store, globalThis.localStorage, this._key());
     this._applyStore();
     for (let k = 0; k < this.bridges.length; k++) this._dressBridge(k);
     this.game.toast(`Loaded ${Object.keys(s.homes).length} home(s) from the file.`, index);

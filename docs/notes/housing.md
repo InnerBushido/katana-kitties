@@ -104,10 +104,23 @@ contains no `.hurt(`. Nothing outside that square changed.
 
 ## Persistence
 
-`homestore.js` keeps one store: in `localStorage` (`HOME_KEY`), in the save row
-(`snapshot.homes`, so a loaded game has its homes), and as JSON a player can
-export and import from the home card. **On restore the newer copy wins**, by its
-own timestamp — a save from yesterday does not un-buy a house bought today.
+**Homes belong to one saved game** (Oct 2026; until then they outlived every
+game, which Richard reversed after a new game found last week's castle in the
+sky). The store — homes, furniture, the bank, the record board, the jukebox
+choices and the **boons** — is one row per play session in `localStorage`,
+`kk.homes.v1:<sessionId>`, plus a copy in every game save (`snapshot.homes`).
+The row is written the frame something is bought; the save is up to 30s
+behind; **on a load the newer of the two wins.** `Game.restart` mints a new
+session and calls `Housing.reset`, so a new game starts with nothing. The
+browser keeps the newest `HOME_ROWS_KEPT` (8) rows; the saves keep their own
+copies regardless. The old global `kk.homes.v1` row is never read again — the
+homes in it were test homes.
+
+**The islands are not up until the ending** (`Housing.isUp` = the shop is
+open): built at boot because the roads take seconds to solve, but hidden, not
+ground and not walls until then.
+
+The JSON export/import on the home card works on the current game's store.
 `worldSig` is unchanged by buying (checked): homes are what the players did, not
 the world.
 

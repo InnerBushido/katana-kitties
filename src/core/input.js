@@ -479,6 +479,10 @@ const KEY_FIELDS = ['up', 'down', 'left', 'right', ...ACTIONS];
    attack, jump: still one contiguous run under the right hand, still in the
    same order relative to each other.
 --------------------------------------------------------------------------- */
+/** Player 1's and player 2's keyboard sets, whatever pads are connected —
+ *  WASD and the arrows / O K L ; (see the pinned pass in `_assign`). */
+export const PINNED_KEYSETS = [0, 1];
+
 export const KEYSETS = [
   {
     name: 'WASD',
@@ -730,9 +734,14 @@ class PadState {
    CONTROLLERS FILL FROM PLAYER 1 DOWN, THEN THE KEYBOARD TAKES WHAT IS LEFT:
 
      0 pads   P1 WASD   P2 Arrows
-     1 pad    P1 pad    P2 WASD    P3 Arrows
-     2 pads   P1 pad    P2 pad     P3 WASD    P4 Arrows
-     3 pads   P1 pad    P2 pad     P3 pad     P4 WASD
+     1 pad    P1 pad+W  P2 Arrows  P3 WASD
+     2 pads   P1 pad+W  P2 pad+A   P3 WASD    P4 Arrows
+     3 pads   P1 pad+W  P2 pad     P3 pad     P4 Arrows
+
+   (+W / +A: the pinned set folded in as a second hand. Player 1 is ALWAYS
+   on WASD and player 2 ALWAYS on the arrows / O K L ; — see the pinned pass
+   in `_assign`. A third or fourth keyboard kitten is WASD on an odd seat and
+   the arrows on an even one.)
 
    WHICH MEANS THE KEYBOARD SET CAN NO LONGER BE THE SLOT NUMBER. It used to be:
    slot i read `KEYSETS[i]` whenever no pad was bound to it. With four slots and
@@ -1632,10 +1641,15 @@ export class InputManager {
    *
    * ```
    *   0 pads   P1 WASD   P2 Arrows
-   *   1 pad    P1 pad    P2 WASD    P3 Arrows
-   *   2 pads   P1 pad    P2 pad     P3 WASD    P4 Arrows
-   *   3 pads   P1 pad    P2 pad     P3 pad     P4 WASD
+   *   1 pad    P1 pad+W  P2 Arrows  P3 WASD
+   *   2 pads   P1 pad+W  P2 pad+A   P3 WASD    P4 Arrows
+   *   3 pads   P1 pad+W  P2 pad     P3 pad     P4 Arrows
    * ```
+   *
+   * SUPERSEDED IN PART, Oct 2026: the two sets are pinned to the first two
+   * seats now (the pinned pass below), because a phantom Bluetooth pad turned
+   * the queue into "Ember loses WASD". What survives of the queue is for
+   * seats 3 and 4, and even there a seat prefers its own parity's set.
    *
    * THERE USED TO BE A SLOT-AFFINITY PASS AND IT IS GONE. Slot `i` took
    * `KEYSETS[i]` when it was free, so a single pad left player 2 on the ARROW
@@ -1698,6 +1712,32 @@ export class InputManager {
        and for the bug that came of only half the code believing it. */
     if (this.touch) takenKeysets.add(TOUCH_KEYSET);
 
+    /* PLAYER 1 IS WASD AND PLAYER 2 IS O K L ;, PADS OR NO PADS. Richard, Oct
+       2026: "Even if there is no controller attached ... the game thinks there
+       is one (maybe because there was a controller attached previously with
+       bluetooth ...) and Ember as Player1 is losing control on WASD and
+       instead WASD is being given to Frost on Player2 ... Frost as Player2
+       always lands on OKL; and never on WASD."
+
+       A Windows machine that once paired a pad goes on REPORTING it, so the
+       dealer below — pads first, then keyboard sets as a queue — put the
+       phantom pad on player 1 and handed WASD to whoever came next. Pinning
+       the two sets to the two seats makes the answer independent of what the
+       browser believes is plugged in. A seat with a pad of its own still has
+       its pad; its set is folded in as a second hand (`alsoKeyset`, the same
+       fold `_spareHandPass` invented), so a REAL pad and its keyboard both
+       drive her. A third or fourth kitten with no pad takes a pinned set
+       only through the force-spawn share (`_shadowPass`), and the fold
+       steps aside for her below — two kittens moving as one is the one
+       arrangement this dealer exists to prevent. */
+    for (let i = 0; i < Math.min(n, PINNED_KEYSETS.length); i++) {
+      const b = next[i];
+      if (this.claims[i] || b.touch || b.keyset != null) continue;
+      const k = PINNED_KEYSETS[i];
+      if (takenKeysets.has(k) || !this._freeKeysets().includes(k)) continue;
+      if (b.pad == null) { b.keyset = k; takenKeysets.add(k); } else b.alsoKeyset = k;
+    }
+
     /* Every padless slot takes the lowest keyboard set still free, in slot
        order — so the first kitten without a controller gets WASD, the next gets
        the arrows, and a fifth would get nothing (see below).
@@ -1709,7 +1749,9 @@ export class InputManager {
        reading two surfaces rather than one slot bound to two devices. */
     for (let i = 0; i < n; i++) {
       if (next[i].pad != null || next[i].keyset != null || next[i].touch) continue;
-      for (const k of this._freeKeysets()) {
+      // Her seat's own set first (P3 WASD, P4 the arrows), then any.
+      const sets = this._freeKeysets();
+      for (const k of [...sets.filter((s) => s === i % 2), ...sets.filter((s) => s !== i % 2)]) {
         if (takenKeysets.has(k)) continue;
         next[i].keyset = k;
         takenKeysets.add(k);
@@ -1718,6 +1760,11 @@ export class InputManager {
     }
     this._shadowPass(next, n);
     this._spareHandPass(next, n);
+    // A set somebody is ON is nobody's second hand (see the pinned pass).
+    for (let i = 0; i < n; i++) {
+      const k = next[i].alsoKeyset;
+      if (k != null && next.slice(0, n).some((b, j) => j !== i && b.keyset === k)) next[i].alsoKeyset = null;
+    }
     return next;
   }
 
@@ -1789,7 +1836,7 @@ export class InputManager {
    *
    * ```
    *   0 pads   P1 WASD   P2 Arrows  P3 WASD*   P4 Arrows*
-   *   1 pad    P1 pad    P2 WASD    P3 Arrows  P4 WASD*
+   *   1 pad    P1 pad    P2 Arrows  P3 WASD    P4 Arrows*
    *   2 pads   P1 pad    P2 pad     P3 WASD    P4 Arrows   <- nothing shared
    * ```
    *
@@ -1805,9 +1852,9 @@ export class InputManager {
    * the last stop on that ring, reached only by pressing the key for it; see
    * `keysetOwners` for why the accident and the choice are not the same thing.
    *
-   * The queue restarts from the lowest free set, so the first shadow lands on
-   * WASD: with one pad that is P2's set, which puts P4 on P2's hands and P3 on
-   * her own arrows, exactly as the table above says.
+   * A shadow takes its seat's parity set — odd seats WASD, even seats the
+   * arrows — so with one pad P4 shares P2's arrows and P3 keeps WASD to
+   * herself, exactly as the table above says.
    */
   _shadowPass(next, n) {
     if (!this.forceSeats) return;
@@ -1825,11 +1872,13 @@ export class InputManager {
        counts the touch slot as WASD's, so `R` passes it between P1 and P3. */
     const ring = this.touch ? KEYSETS.map((_, k) => k) : this._freeKeysets();
     if (!ring.length) return;
-    let k = 0;
+    /* BY SEAT, NOT BY ARRIVAL: an odd seat (P1, P3) shares WASD and an even
+       one (P2, P4) the arrows — "player 3 is WASD and player 4 is OKL;". It
+       used to be the next set round the ring, which with one pad seated P3 on
+       WASD by the ordinary pass and then put P4 on WASD as well. */
     for (let i = 0; i < n; i++) {
       if (next[i].pad != null || next[i].keyset != null || next[i].touch) continue;
-      next[i].keyset = ring[k % ring.length];
-      k += 1;
+      next[i].keyset = ring.includes(i % 2) ? i % 2 : ring[0];
     }
   }
 

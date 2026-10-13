@@ -271,15 +271,14 @@ console.log('\n--- one pad only: player 2 stays on the keyboard ---');
   ok('P2 is not bound to P1 pad', im.bindings[1].pad == null);
 }
 
-/* CONTROLLERS FILL FROM PLAYER 1 DOWN, THEN WASD, THEN THE ARROW KEYS. The
-   keyboard sets are a QUEUE rather than player 2's and player 3's property:
-   whoever is first out of the controllers gets WASD, because WASD with a space
-   bar beats the arrow keys with a numpad and no kid should be handed the worse
-   half on account of her slot number.
-
-   This replaces a slot-affinity rule that gave slot 1 `KEYSETS[1]` whenever it
-   was free — so ONE pad put player 2 on the arrows and pushed WASD down to
-   player 3, which is backwards. */
+/* CONTROLLERS FILL FROM PLAYER 1 DOWN — AND PLAYER 1 IS ALWAYS ON WASD AND
+   PLAYER 2 ALWAYS ON THE ARROWS / O K L ;. Richard, Oct 2026: a Windows
+   machine that once paired a Bluetooth pad goes on reporting it, the queue
+   rule ("whoever is first out of the controllers gets WASD") put the phantom
+   on player 1 and gave WASD to player 2, and Ember could not move. "Frost as
+   Player2 always lands on OKL; and never on WASD as Player1 will always be
+   WASD even if a game pad is connected." A seat with a pad keeps its set as a
+   second hand; a third and fourth keyboard kitten take WASD and then O K L ;. */
 console.log('\n--- how many controllers -> who is on what ---');
 {
   const mkPad = (i) => { const p = DEVICES.ds4Chrome(); p.index = i; return p; };
@@ -291,26 +290,30 @@ console.log('\n--- how many controllers -> who is on what ---');
   ok('0 controllers: P1 WASD, P2 Arrows', layout(zero, 2) === 'WASD Arrows', layout(zero, 2));
 
   const one = drive([mkPad(0)]);    one.slots = 3; one.update();
-  ok('1 controller: P1 pad, P2 WASD, P3 Arrows',
-    layout(one, 3) === 'pad WASD Arrows', layout(one, 3));
+  ok('1 controller: P1 pad (and WASD), P2 Arrows, P3 WASD',
+    layout(one, 3) === 'pad Arrows WASD', layout(one, 3));
 
   const two = drive([mkPad(0), mkPad(1)]); two.slots = 4; two.update();
   ok('2 controllers: P1 pad, P2 pad, P3 WASD, P4 Arrows',
     layout(two, 4) === 'pad pad WASD Arrows', layout(two, 4));
 
   const three = drive([mkPad(0), mkPad(1), mkPad(2)]); three.slots = 4; three.update();
-  ok('3 controllers: P1-P3 pads, P4 WASD',
-    layout(three, 4) === 'pad pad pad WASD', layout(three, 4));
+  ok('3 controllers: P1-P3 pads, P4 Arrows (player 1 keeps WASD in her other hand)',
+    layout(three, 4) === 'pad pad pad Arrows' && three.bindings[0].alsoKeyset === 0, layout(three, 4));
 
   const four = drive([mkPad(0), mkPad(1), mkPad(2), mkPad(3)]); four.slots = 4; four.update();
   ok('4 controllers: nobody is on the keyboard',
     layout(four, 4) === 'pad pad pad pad', layout(four, 4));
 
-  /* A TWO-PLAYER GAME WITH ONE PAD NOW PUTS P2 ON WASD, which is the one thing
-     this rule deliberately changes about the game the girls already know. */
+  /* THE PHANTOM PAD. One pad reported, two players: player 1 keeps WASD and
+     player 2 is on the arrows — never on WASD. */
   const duo = drive([mkPad(0)]);
-  ok('one pad, two players: P2 is on WASD not the arrows',
-    duo.bindings[1].keyset === 0, JSON.stringify(duo.bindings[1]));
+  ok('one pad (real or a phantom), two players: P1 still moves on WASD, P2 is on the arrows',
+    duo.bindings[0].alsoKeyset === 0 && duo.bindings[1].keyset === 1, JSON.stringify(duo.bindings.slice(0, 2)));
+  duo.keys.add('KeyD'); duo.update();
+  ok('...and D really moves player 1, not player 2', duo.players[0].mx > 0.5 && duo.players[1].mx === 0,
+    `${duo.players[0].mx} / ${duo.players[1].mx}`);
+  duo.keys.clear(); duo.update();
 }
 
 /* --------------------- 3. TWO pads, two players -------------------------- */
@@ -547,8 +550,8 @@ console.log('\n--- 2 Joy-Cons (Joy2Win) + a PS4 pad: all three at once ---');
     [0, 1, 2].every((i) => im.players[i].source === 'gamepad'));
   ok('no two slots share a device',
     new Set(im.bindings.slice(0, 3).map((b) => `${b.pad}:${b.half}`)).size === 3);
-  ok('and a fourth player still gets WASD', (im.slots = 4, im.update(),
-    im.bindings[3].keyset === 0), JSON.stringify(im.bindings[3]));
+  ok('and a fourth player still gets a keyboard — an even seat, so the arrows', (im.slots = 4, im.update(),
+    im.bindings[3].keyset === 1), JSON.stringify(im.bindings[3]));
 
   /* THE HALVES EXPAND IN PLACE, so "whichever connects first is player 1" holds
      whatever kind of controller that is. Hoisting them to the front was the old
@@ -691,7 +694,7 @@ console.log('\n--- ENTER joins, every time ---');
     none.joinHint() === null, `${none.joinHint()}`);
 
   const one = drive([mkPad(0)]);
-  ok('1 controller: P2 is on WASD...', one.bindings[1].keyset === 0);
+  ok('1 controller: P2 is on the arrows...', one.bindings[1].keyset === 1);
   ok('...and ENTER is still the way in for P3',
     one.joinHint() === 'ENTER', `${one.joinHint()}`);
 
@@ -709,8 +712,8 @@ console.log('\n--- ENTER joins, every time ---');
     return c;
   };
   const solo = drive([mkPad(0)]);
-  ok('ENTER seats the next keyboard player',
-    JSON.stringify(press(solo, 'Enter')) === '{"pad":null,"half":null,"keyset":1}',
+  ok('ENTER seats the next keyboard player — player 3, on WASD',
+    JSON.stringify(press(solo, 'Enter')) === '{"pad":null,"half":null,"keyset":0}',
     JSON.stringify(press(solo, 'Enter')));
 
   /* TWO KEYBOARD PLAYERS JOIN ONE AT A TIME, on two presses of the same key —
@@ -725,7 +728,7 @@ console.log('\n--- ENTER joins, every time ---');
 
   /* THE NUMPAD'S ENTER IS THE SAME KEY UNDER ANOTHER NAME. `\` is gone. */
   const np = drive([mkPad(0)]);
-  ok('the numpad ENTER works too', press(np, 'NumpadEnter')?.keyset === 1);
+  ok('the numpad ENTER works too', press(np, 'NumpadEnter')?.keyset === 0);
   const bs = drive([mkPad(0)]);
   ok('`\\` no longer joins anybody', press(bs, 'Backslash') === null,
     JSON.stringify(press(bs, 'Backslash')));
@@ -976,26 +979,28 @@ console.log('\n--- force-spawn: four kittens on one keyboard ---');
   ok('handing over is a no-op when nobody is sharing',
     solo2.handKeyboardTo(1) === -1 && solo2.keysetDrives(1, 1));
 
-  /* --- ONE CONTROLLER: THE PAD TAKES P1 AND WASD DOUBLES UP --- */
+  /* --- ONE CONTROLLER: THE PAD TAKES P1, AND THE ARROWS DOUBLE UP --- */
+  /* P2 is pinned to the arrows and P3 takes WASD off player 1's second hand,
+     so the seat left over is P4's, and an even seat shares the arrows. */
   const one = drive([mkPad(0)]);
   one.forceSeats = true;
   one.slots = 4; one.update();
-  ok('1 controller: P1 pad, P2 WASD, P3 Arrows, P4 WASD',
-    layout(one, 4) === 'pad WASD Arrows WASD', layout(one, 4));
-  ok('...so the shared set is WASD, between P2 and P4',
-    JSON.stringify(one.keysetShare(0)) === '[1,3]', JSON.stringify(one.keysetShare(0)));
-  ok('...and P3 has the arrows to herself',
-    JSON.stringify(one.keysetShare(1)) === '[2]', JSON.stringify(one.keysetShare(1)));
-  ok('...W moves P2 until it is passed on',
-    JSON.stringify(moved(one, 'KeyW')) === '[1]', JSON.stringify(moved(one, 'KeyW')));
-  ok('...and R passes it to P4', JSON.stringify(one.swapKeyset(0)) === '[3]');
+  ok('1 controller: P1 pad, P2 Arrows, P3 WASD, P4 Arrows',
+    layout(one, 4) === 'pad Arrows WASD Arrows', layout(one, 4));
+  ok('...so the shared set is the arrows, between P2 and P4',
+    JSON.stringify(one.keysetShare(1)) === '[1,3]', JSON.stringify(one.keysetShare(1)));
+  ok('...and P3 has WASD to herself — player 1 gave up her second hand for it',
+    JSON.stringify(one.keysetShare(0)) === '[2]' && one.bindings[0].alsoKeyset === null, JSON.stringify(one.keysetShare(0)));
+  ok('...the arrows move P2 until they are passed on',
+    JSON.stringify(moved(one, 'ArrowUp')) === '[1]', JSON.stringify(moved(one, 'ArrowUp')));
+  ok('...and U passes them to P4', JSON.stringify(one.swapKeyset(1)) === '[3]');
   one.update();
-  ok('...who then moves on W', JSON.stringify(moved(one, 'KeyW')) === '[3]',
-    JSON.stringify(moved(one, 'KeyW')));
-  /* AND THE ARROWS CANNOT BE PASSED, because nobody is sharing them. The
-     caller has to say so — a key that silently does nothing reads as broken. */
-  ok('...while U refuses, because the arrows are P3\'s alone',
-    one.swapKeyset(1) === null, `${JSON.stringify(one.swapKeyset(1))}`);
+  ok('...who then moves on them', JSON.stringify(moved(one, 'ArrowUp')) === '[3]',
+    JSON.stringify(moved(one, 'ArrowUp')));
+  /* AND WASD CANNOT BE PASSED, because nobody is sharing it. The caller has to
+     say so — a key that silently does nothing reads as broken. */
+  ok('...while R refuses, because WASD is P3\'s alone',
+    one.swapKeyset(0) === null, `${JSON.stringify(one.swapKeyset(0))}`);
 
   /* --- TWO CONTROLLERS: THE FEATURE TURNS ITSELF OFF --- */
   /* NOT BY A RULE SAYING SO. `_shadowPass` only fills slots that came out of
@@ -1734,9 +1739,9 @@ console.log('\n--- the touch pad as a device ---');
   const plain = drive([mkPad(0)]);
   plain.slots = 3;
   plain.update();
-  ok('with no touch pad, two players are dealt exactly as before',
-    plain.bindings[0].pad === 0 && plain.bindings[1].keyset === 0
-    && plain.bindings[2].keyset === 1,
+  ok('with no touch pad, the dealing is the pinned one: P1 pad, P2 arrows, P3 WASD',
+    plain.bindings[0].pad === 0 && plain.bindings[1].keyset === 1
+    && plain.bindings[2].keyset === 0,
     JSON.stringify(plain.bindings.slice(0, 3)));
 }
 
@@ -2315,24 +2320,25 @@ console.log('\n--- WASD as a spare hand, in play and in a menu ---');
     im.menuHand(0) === null, JSON.stringify(im.menuHand(0)));
   im.keys.delete('KeyD');
 
-  /* SOMEBODY ELSE ON WASD IS THE REFUSAL — in play. */
+  /* SOMEBODY ELSE ON WASD IS THE REFUSAL — in play. That is player 3 now:
+     player 2 is pinned to the arrows. */
   const two = drive([DEVICES.ds4Chrome()]);
-  two.slots = 2;
+  two.slots = 3;
   two.update();
   ok('with a sister on WASD, player 1 gets no spare hand',
-    two.bindings[0].alsoKeyset === null && two.bindings[1].keyset === 0,
-    JSON.stringify(two.bindings.slice(0, 2)));
+    two.bindings[0].alsoKeyset === null && two.bindings[2].keyset === 0,
+    JSON.stringify(two.bindings.slice(0, 3)));
   two.keys.add('KeyD');
   two.update();
   ok('...and W A S D moves the sister, not player 1',
-    two.players[0].mx === 0 && two.players[1].mx > 0.5,
-    `${two.players[0].mx} / ${two.players[1].mx}`);
+    two.players[0].mx === 0 && two.players[2].mx > 0.5,
+    `${two.players[0].mx} / ${two.players[2].mx}`);
   /* ...AND THE MENU IS EXACTLY WHERE IT IS ALLOWED. "Even if so." */
   ok('...but the menu hand IS offered to player 1', two.menuHand(0) !== null);
   ok('...and it reads the same keys', two.menuHand(0).mx > 0.5,
     String(two.menuHand(0).mx));
   ok('...for player 1 only, never for the sister holding that keyboard',
-    two.menuHand(1) === null);
+    two.menuHand(2) === null);
   /* THE EDGE IS REAL, AND IT IS SPENDABLE — `MenuNav.spend` pays for it like
      any other pad, or a confirm falls through into the frame underneath. */
   two.keys.delete('KeyD');
@@ -2364,8 +2370,8 @@ console.log('\n--- WASD as a spare hand, in play and in a menu ---');
      nothing to do with her. */
   const hand = DEVICES.xbox();
   const gain = drive([hand]);
-  gain.slots = 2;
-  gain.update();                                   // sister on WASD, no spare
+  gain.slots = 3;
+  gain.update();                                   // P3 on WASD, no spare
   gain.keys.add('KeyF');                           // ...and her finger is on F
   gain.keys.add('KeyW');                           // ...and her thumb on W
   gain.update();

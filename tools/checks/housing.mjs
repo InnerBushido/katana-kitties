@@ -16,7 +16,7 @@ import * as THREE from 'three';
 import { readFileSync } from 'node:fs';
 import { Housing, TOUR } from '../../src/systems/housing/housing.js';
 import { HOME_SITES, HOUSES, HOUSE_BY_ID, PRESETS, ITEM_BY_ID, priceOf, HOME_SELL, SPEED_STRIP } from '../../src/systems/housing/catalog.js';
-import { emptyStore, newHome, normalise, saveStore, loadStore, migrateYard, HOME_KEY } from '../../src/systems/housing/homestore.js';
+import { emptyStore, newHome, normalise, saveStore, loadStore, migrateYard, HOME_KEY, homeKey, pruneRows, HOME_ROWS_KEPT } from '../../src/systems/housing/homestore.js';
 import { careLevel, careBuff, stalksAt, BAMBOO_GROW, BAMBOO_MAX } from '../../src/systems/housing/farm.js';
 import { fits, firstFit, gridOf, autoLayout, ITEM_SELL, yardWhy, firstYardSpot, addOutdoor, wallSlots } from '../../src/systems/housing/editor.js';
 import { buildWhy, commitBuild, removeBuilt, pickList, stepToward, BUILD_KEYS } from '../../src/systems/housing/build.js';
@@ -51,10 +51,11 @@ function fakePlayer(i, x = 0, z = 0, y = 0) {
 export async function housingChecks({ ok, world }) {
   console.log('\n--- custom housing: roads, floors, money, locks ---');
   localStorage.removeItem(HOME_KEY);
+  for (const s of ['check-A', 'check-B']) localStorage.removeItem(homeKey(s));
   const toasts = [];
   const game = {
     world, scene: new THREE.Scene(), players: [],
-    kotodama: { price: 650 }, sessionCast: new Map(),
+    kotodama: { price: 650 }, sessionCast: new Map(), sessionId: 'check-A',
     toast: (t, i) => toasts.push([i, t]),
     onScoreChanged: () => {}, audio: null,
     inspector: { openExt: () => true, cards: [], closeOne() {}, extOf: () => null },
@@ -64,6 +65,21 @@ export async function housingChecks({ ok, world }) {
   H.build();
   ok('housing builds four islands, one per site, none of them in world.islands',
     H.isles.length === HOME_SITES.length && H.isles.every((I) => !world.islands.includes(I.island)));
+  /* NOT UP UNTIL THE ENDING. Richard: "The islands for purchase shouldn't be
+     spawned until after the ending cutscene plays" — and a new game after
+     one that had seen it found them still there. */
+  {
+    const wasOpen = world.snakeOpen;
+    world.snakeOpen = false;
+    H.update(1 / 30);
+    const I0 = H.isles[0];
+    ok('before the ending the islands are not in the sky: unseen, and nothing to stand on',
+      H.isles.every((I) => !I.group.visible) && H.heightAt(I0.x, I0.z) == null);
+    H.debugOpen = true;
+    H.update(1 / 30);
+    ok('...and once the shop opens they are', H.isles.every((I) => I.group.visible) && H.heightAt(I0.x, I0.z) != null);
+    world.snakeOpen = wasOpen;
+  }
 
   /* THE ROADS. Solved in one canonical order so no purchase order can make
      two of them cross. */
@@ -106,7 +122,8 @@ export async function housingChecks({ ok, world }) {
   const r1 = H.buy('sunrise', 'minka', [{ p: p0, share: minka }], null);
   H.purchase.finish();
   ok('buying a small house takes exactly its price', r1.ok && p0.score === 5, `${r1.why ?? ''} purse ${p0.score}`);
-  ok('...and is written down that frame, not when the scene ends', !!JSON.parse(localStorage.getItem(HOME_KEY)).homes.sunrise);
+  ok('...and is written down that frame, not when the scene ends — in THIS game\'s row',
+    !!JSON.parse(localStorage.getItem(homeKey('check-A'))).homes.sunrise && !localStorage.getItem(HOME_KEY));
   ok('...priced at 8 orbs, rounded to a ten', minka === 5200, minka);
   ok('one home each: a second purchase is refused, with a reason',
     !H.buy('cloudpeak', 'minka', [{ p: p0, share: 0 }]).ok);
@@ -234,6 +251,51 @@ export async function housingChecks({ ok, world }) {
   S.homes.sunrise = newHome('sunrise', 'minka', ['Ember']);
   saveStore(S);
   ok('the homes store round-trips through localStorage', loadStore().homes.sunrise?.owners[0] === 'Ember');
+  localStorage.removeItem(HOME_KEY);
+
+  /* ONE SAVED GAME'S HOMES ARE THAT GAME'S. Richard: "Purchased islands and
+     furniture ... should be linked to the save file of the game and not be
+     shared between different save files or new games" — and the same for a
+     boon earned at home. Driven the way Game does it: restart mints a new
+     session and calls reset; a load sets the session back and restores. */
+  {
+    H.boons.grant(p0, 'onsen');
+    const snapA = H.snapshot();
+    const homesA = Object.keys(snapA.homes).sort().join();
+    game.sessionId = 'check-B';
+    H.reset();
+    ok('a NEW game owns no islands, and her home boon is not waiting in it',
+      !Object.keys(H.store.homes).length && !H.boons.banked('Ember') && !H.homeOf(p0) && H.isles.every((I) => !I.home));
+    ok('...and the islands are back in the clouds until ITS ending', !H.isUp() || world.snakeOpen);
+    H.debugOpen = true;
+    const r = H.buy('cloudpeak', 'minka', [{ p: p0, share: 0 }]);
+    H.purchase.finish();
+    ok('...where she can buy a different one', r.ok && !!H.store.homes.cloudpeak && !H.store.homes.sunrise);
+    game.sessionId = 'check-A';
+    H.reset();
+    H.restore(snapA);
+    ok('LOADING the first game brings back ITS homes and its boon — not the second game\'s',
+      Object.keys(H.store.homes).sort().join() === homesA && !H.store.homes.cloudpeak && !!H.boons.banked('Ember')?.onsen);
+    game.sessionId = 'check-B';
+    H.reset();
+    H.restore(null);
+    ok('...and a game whose save predates its last purchase still has it, off its own row',
+      !!H.store.homes.cloudpeak && !H.store.homes.sunrise);
+    game.sessionId = 'check-A';
+    H.reset();
+    H.restore(snapA);
+    H.debugOpen = true;
+    delete H.store.boons.Ember;
+    // A pretend browser with too many games in it: the oldest rows go, never this one.
+    const mem = new Map();
+    const fake = { get length() { return mem.size; }, key: (k) => [...mem.keys()][k] ?? null,
+      getItem: (k) => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, String(v)), removeItem: (k) => mem.delete(k) };
+    for (let k = 0; k < HOME_ROWS_KEPT + 4; k++) fake.setItem(homeKey(`old${k}`), JSON.stringify({ at: k + 1 }));
+    fake.setItem(homeKey('now'), JSON.stringify({ at: 0 }));
+    pruneRows(fake, homeKey('now'));
+    ok(`the browser keeps the newest ${HOME_ROWS_KEPT} games' rows, and always the one being played`,
+      mem.size === HOME_ROWS_KEPT && mem.has(homeKey('now')) && mem.has(homeKey(`old${HOME_ROWS_KEPT + 3}`)) && !mem.has(homeKey('old0')));
+  }
   ok('...and a garbage file normalises to nothing rather than throwing', normalise('nope')?.homes != null && Object.keys(normalise({ homes: 5 }).homes).length === 0);
 
   /* CARE LADDER (pure). */
@@ -1042,4 +1104,5 @@ export async function housingChecks({ ok, world }) {
   }
 
   localStorage.removeItem(HOME_KEY);
+  for (const s of ['check-A', 'check-B']) localStorage.removeItem(homeKey(s));
 }
