@@ -32,6 +32,7 @@ import { Kendo, KIAI_T } from '../../src/systems/housing/kendo.js';
 import { voicePath } from '../../src/core/audio.js';
 import { existsSync } from 'node:fs';
 import { mealPct, BOON } from '../../src/systems/housing/boons.js';
+import { DOOR_SWING } from '../../src/systems/housing/homebridge.js';
 import { napFade } from '../../src/systems/housing/activities.js';
 
 const DAY = 24 * 3600 * 1000;
@@ -165,6 +166,48 @@ export async function housingChecks({ ok, world }) {
   const guest = fakePlayer(1, I0.x + 4, I0.z + 4, I0.groundY + 1);
   H.wall(guest, guest.position.x, guest.position.z, null);
   ok('unlocked, a visitor walks in', Math.hypot(guest.position.x - I0.x, guest.position.z - I0.z) < 10);
+
+  /* THE GRAND GATES, AT BOTH ENDS. "A jukebox and a door at both ends; her
+     statue on her island; grand doors with an open/close animation and a
+     force field, toggled at the bridge entrance." */
+  {
+    const B = H.bridges[0];
+    const Hs = H.store.homes.sunrise;
+    ok('her bridge has a gate, a jukebox and a statue at BOTH ends',
+      B.gates?.length === 2 && B.doorSegments().length === 2 && B.jukeboxSpots?.length === 2 && !!B.statue2);
+    const [G0, G1] = B.gates;
+    const gyEnd = I0.island.heightAt(B.statue2.position.x, B.statue2.position.z) ?? I0.groundY;
+    ok('...and the far end stands on HER island, not out over the sky',
+      Math.abs(B.statue2.position.y - gyEnd) < 0.5 && Math.hypot(G1.cx - B.end.x, G1.cz - B.end.z) < 3,
+      `${B.statue2.position.y.toFixed(2)} vs ${gyEnd.toFixed(2)}`);
+    const at = (pl, Gt) => { pl.position.set(Gt.cx + Gt.fx * 1.5, Gt.y, Gt.cz + Gt.fz * 1.5); };
+    const own = fakePlayer(0);
+    at(own, G0);
+    ok('an owner at the gate is offered it', H._spotFor(own)?.act === 'gates' && /CLOSE THE GATES/.test(H.prompt(own, 'E') ?? ''));
+    B.update(DOOR_SWING * 2, 0);   // the unlock above has swung them open by now
+    const wasLocked = H.locked(Hs);
+    H.interact(own);
+    ok('...and pressing it SHUTS them', !wasLocked && H.locked(Hs) && B.openWant === 0);
+    B.update(DOOR_SWING / 2, 0);
+    const halfK = B.openK;
+    const halfRot = G0.leaves[0].rotation.y;
+    B.update(DOOR_SWING, 0);
+    ok('...swinging, not snapping: halfway through the swing they are halfway shut',
+      Math.abs(halfK - 0.5) < 0.01 && Math.abs(halfRot - G0.leaves[0].userData.ry) > 0.1 && B.openK === 0
+      && Math.abs(G0.leaves[0].rotation.y - G0.leaves[0].userData.ry) < 1e-9,
+      `k ${halfK} rot ${halfRot} ry ${G0.leaves[0].userData.ry} final ${B.openK} ${G0.leaves[0].rotation.y}`);
+    ok('...and the force field is up across BOTH ends while they are shut', B.gates.every((Gt) => Gt.field.visible && Gt.fieldMat.opacity > 0.05));
+    const n0 = toasts.length;
+    const visitor = fakePlayer(1);
+    at(visitor, G1);
+    H.interact(visitor);
+    ok('a visitor at the gate is told whose gates they are, and they stay shut',
+      H.locked(Hs) && toasts.slice(n0).some(([i, t]) => i === 1 && /only she can open them/.test(t)));
+    at(own, G1);
+    H.interact(own);
+    B.update(DOOR_SWING * 2, 0);
+    ok('...and the owner opens them again from her own end', !H.locked(Hs) && B.openK === 1 && B.gates.every((Gt) => !Gt.field.visible));
+  }
 
   /* THE CASTLE: pooled, and every owner refunded. */
   const castle = priceOf(HOUSE_BY_ID.castle.mult, 650);

@@ -259,7 +259,7 @@ export class Housing {
     const owner = H.owners[0];
     const st = styleByName(owner);
     B.setOwner(H.owners.length > 1 ? H.owners.join(' & ') : owner, st?.colour ?? 0xf4c542, st?.sheet);
-    B.setLocked(this.locked(H));
+    B.setLocked(this.locked(H), true);  // a load, not a press: no swing
     if (!this.purchase?.active || this.purchase.k !== k) {
       B.group.visible = true;
       B.solid = true;
@@ -307,7 +307,7 @@ export class Housing {
       const R = I.bubbleRadius();
       if (d2 > (R + 30) ** 2) {
         const B = this.bridges[k];
-        if (B?.solid && H && !this.allowed(p, H)) this._doorPush(p, B.doorSegment(), r, H);
+        if (B?.solid && H && !this.allowed(p, H)) for (const seg of B.doorSegments()) this._doorPush(p, seg, r, H);
         continue;
       }
       if (H && !this.allowed(p, H) && pos.y > I.groundY - 60 && pos.y < I.groundY + R) {
@@ -324,7 +324,7 @@ export class Housing {
       }
       // The bridge door, at the town end.
       const B = this.bridges[k];
-      if (B?.solid && H && !this.allowed(p, H)) this._doorPush(p, B.doorSegment(), r, H);
+      if (B?.solid && H && !this.allowed(p, H)) for (const seg of B.doorSegments()) this._doorPush(p, seg, r, H);
       if (!H || !I.shell) continue;
       if (d2 > (I.houseR + 4) ** 2) {
         this._obstacles(p, I, r);
@@ -466,6 +466,7 @@ export class Housing {
     for (const [k, B] of this.bridges.entries()) {
       const H = this.isles[k].home;
       if (B && H) B.setLocked(this.locked(H));
+      B?.update?.(dt, this.time);
     }
     this._mounts(players);
     this._holoHome(players);
@@ -862,9 +863,17 @@ export class Housing {
     if (!this.built || p.mount || p.rideAlong) return null;
     if (this.roshi?.near(p)) return { act: 'roshi' };
     for (const [k, B] of this.bridges.entries()) {
-      if (!B?.solid || !B.jukeboxSpot) continue;
-      if (Math.hypot(p.position.x - B.jukeboxSpot.x, p.position.z - B.jukeboxSpot.z) < 3.4) {
-        return { act: 'jukebox', k, home: this.isles[k].home };
+      if (!B?.solid) continue;
+      for (const J of B.jukeboxSpots ?? (B.jukeboxSpot ? [B.jukeboxSpot] : [])) {
+        if (Math.hypot(p.position.x - J.x, p.position.z - J.z) < 3.4) {
+          return { act: 'jukebox', k, home: this.isles[k].home };
+        }
+      }
+      /* THE GATES, at either end: an owner opens and shuts them here, at the
+         door itself, rather than only from a menu in her house. */
+      if (this.isles[k].home && B.gateNear?.(p.position.x, p.position.z, 4.2) >= 0
+        && Math.abs(p.position.y - (B.gates[B.gateNear(p.position.x, p.position.z, 4.2)].y)) < 4) {
+        return { act: 'gates', k, home: this.isles[k].home };
       }
     }
     for (const I of this.isles) {
@@ -904,6 +913,7 @@ export class Housing {
       volley: 'VOLLEYBALL',
       pray: 'PRAY',
       sit: 'SIT AT THE KOTATSU',
+      gates: own ? (this.locked(s.home) ? 'OPEN THE GATES' : 'CLOSE THE GATES') : null,
       look: 'LOOK OUT',
       trophies: 'TROPHIES',
     }[s.act];
@@ -929,6 +939,19 @@ export class Housing {
       case 'jukebox':
         C.open(p.index, 'jukebox', { k: s.k });
         return true;
+      case 'gates': {
+        const H = s.home;
+        if (!H.owners.includes(p.style.name)) {
+          G.toast(`These are ${H.owners.join(' & ')}'s gates — only ${H.owners.length > 1 ? 'they' : 'she'} can open them.`, p.index);
+          return true;
+        }
+        const shut = this.locked(H);
+        this.setOpen(p, H, shut);
+        G.audio?.play?.(shut ? 'menu' : 'land');
+        G.toast(shut ? 'The gates swing OPEN — visitors are welcome!'
+          : 'The gates swing SHUT and the force field hums — only the owners can come in now.', p.index);
+        return true;
+      }
       case 'door':
         if (s.home.owners.includes(p.style.name)) C.open(p.index, 'home', { site: s.home.site });
         else G.toast(this.locked(s.home)

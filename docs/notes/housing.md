@@ -167,6 +167,22 @@ ending, $0.18) outranks the boombox from the first kitten's prayer to its end;
 on the bell tower. Delete either and the procedural `dojo` tune and a synthesised
 gong play instead.
 
+## The bridge's two ends
+
+A bridge is dressed the same at BOTH ends: a torii, a pair of grand doors
+(`_grandGate` in `homebridge.js` — two hinged wooden leaves with iron rails and
+a band in her colour) and stone lanterns and nobori banners. The island end also
+has her second statue and a second jukebox that plays her island's music. The island end is
+hidden until the bridge has grown all the way (`setGrow` k ≥ 1), so a
+half-built bridge does not end in a gate floating in the sky.
+
+The lock is the doors. The owner presses ACTION at either end to open or
+close them. The leaves SWING over `DOOR_SWING` (1.6s) rather than snap,
+except on load (`setLocked(locked, true)`), and a pulsing force field fills
+both doorways while they are shut. `doorSegments()` is what the push-back reads,
+so a shut door blocks at both ends. A visitor who presses ACTION is told whose
+gates they are (non-negotiable 6), and nothing happens.
+
 ## Placeholders that are done, and what each still falls back to
 
 These were placeholders and are now generated (Oct 2026: about 12 Higgsfield

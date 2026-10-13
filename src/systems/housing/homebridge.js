@@ -10,6 +10,9 @@ import { SPEED_STRIP } from './catalog.js';
 import { drawStatue, loadGenerated, tintGenerated } from './statue.js';
 import { drawItem, placeModel } from './models.js';
 
+/** Seconds for the grand doors to swing all the way. */
+export const DOOR_SWING = 1.6;
+
 /* ---------------------------------------------------------------------------
    The bridge to her island: a Snake Way road in her colours, a torii that
    comes out of a cloud, her statue and the jukebox at the foot of it, and a
@@ -185,31 +188,17 @@ export class HomeBridge {
       this.group.add(this.strip);
     }
 
-    // the glass door between the torii posts
-    const doorW = SNAKE.halfW * 2 + 0.6;
-    const dg = new THREE.BoxGeometry(doorW, 4.2, 0.18);
-    this.doorMat = new THREE.MeshPhysicalMaterial({
-      color: 0xdff4ff, transparent: true, opacity: 0.35, roughness: 0.05, metalness: 0, depthWrite: false,
-    });
-    this.door = new THREE.Mesh(dg, this.doorMat);
-    this.door.position.set(s.x + this.fx * 0.6, s.y + 2.1, s.z + this.fz * 0.6);
-    this.door.rotation.y = ry;
-    this.group.add(this.door);
-    // the open door: two timber leaves swung back against the posts
-    this.leaves = new THREE.Group();
-    for (const sg of [-1, 1]) {
-      const lg = new THREE.BoxGeometry(doorW / 2, 4.2, 0.2);
-      paint(lg, PALETTE.wood);
-      lg.translate(sg * doorW / 4, 2.1, 0);
-      const leaf = new THREE.Mesh(lg, toonVertexMat());
-      const hinge = new THREE.Group();
-      hinge.position.set(s.x + this.fx * 0.6 + this.rx * sg * (doorW / 2), s.y, s.z + this.fz * 0.6 + this.rz * sg * (doorW / 2));
-      hinge.rotation.y = ry + sg * (Math.PI / 2 - 0.15);
-      leaf.position.x = -sg * doorW / 2;
-      hinge.add(leaf);
-      this.leaves.add(hinge);
-    }
-    this.group.add(this.leaves);
+    /* THE GRAND DOORS, AT BOTH ENDS. Richard: "grand bridge doors with an
+       open/close animation and a force field, toggled at the bridge
+       entrance". Two tall timber leaves banded in her colour, swinging on the
+       torii posts, and a shimmering field across the road that is up only
+       while they are shut. The glass pane they replace was a door that
+       appeared and vanished; these MOVE (`update`), so a lock reads as an
+       event. */
+    this.accentMats = [];
+    this.gates = [this._grandGate(s, 1, 0.6)];
+    this.openK = 1;
+    this.openWant = 1;
 
     // the name over the gate, set by `setOwner`
     this.namePlate = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
@@ -247,9 +236,152 @@ export class HomeBridge {
     jb.add(drawSurfboard());
     this.jukebox = jb;
     this.group.add(jb);
+    this.jukeboxSpots = [this.jukeboxSpot];
+    this._dress(s, -1);
+
+    /* THE ISLAND END, dressed the same: a torii and the doors over the road
+       where it lands, her statue left and the jukebox right as she walks onto
+       her island — "a jukebox and a door at both ends; the player's statue on
+       her island". Everything here stands on her island past the landing
+       (`+t`), because back along the road from the landing is sky. Hidden
+       until the road has grown all the way (`setGrow`), so the purchase scene
+       does not show the far end finished before the bridge reaches it. */
+    this.endGroup = new THREE.Group();
+    const eT = Math.hypot(e.tx, e.tz) || 1;
+    const etx = e.tx / eT, etz = e.tz / eT;
+    const erx = -etz, erz = etx;
+    const ery = Math.atan2(-etx, -etz);
+    const gy = (x, z) => this.isle.island?.heightAt?.(x, z) ?? (e.y - 0.45);
+    const endGate = transformParts(buildTorii(ts), e.x + etx * 1.5, e.y - 0.45, e.z + etz * 1.5, ery);
+    this.endGate = new THREE.Mesh(mergeParts(endGate), toonVertexMat());
+    this.endGroup.add(this.endGate);
+    this.gates.push(this._grandGate({ x: e.x + etx * 1.5, y: e.y, z: e.z + etz * 1.5 }, 1, 0.6, { fx: etx, fz: etz, rx: erx, rz: erz, ry: ery }, this.endGroup));
+    const st2 = drawStatue();
+    this.statue2 = st2.group;
+    this.statueAccent2 = st2.accentMat;
+    const s2x = e.x - erx * (SNAKE.halfW + 4.5) + etx * 6;
+    const s2z = e.z - erz * (SNAKE.halfW + 4.5) + etz * 6;
+    this.statue2.position.set(s2x, gy(s2x, s2z) - 0.1, s2z);
+    this.statue2.rotation.y = ery;
+    this.endGroup.add(this.statue2);
+    const j2x = e.x + erx * (SNAKE.halfW + 4) + etx * 9;
+    const j2z = e.z + erz * (SNAKE.halfW + 4) + etz * 9;
+    const jb2 = jb.clone(true);
+    jb2.position.set(j2x, gy(j2x, j2z), j2z);
+    jb2.rotation.y = ery + Math.PI;
+    this.endGroup.add(jb2);
+    this.jukeboxSpots.push({ x: j2x, z: j2z, y: gy(j2x, j2z) });
+    this._dress({ x: e.x + etx * 1.5, y: e.y, z: e.z + etz * 1.5 }, 1, { fx: etx, fz: etz, rx: erx, rz: erz }, this.endGroup, gy);
+    this.group.add(this.endGroup);
 
     scene.add(this.group);
     this.setGrow(this.grow);
+  }
+
+  /**
+   * One pair of grand doors and the field between them, across the road at
+   * `at`. `F` is the road's frame there (forward, right, the torii's yaw).
+   */
+  _grandGate(at, _unused, ahead, F = null, parent = this.group) {
+    const fx = F?.fx ?? this.fx, fz = F?.fz ?? this.fz, rx = F?.rx ?? this.rx, rz = F?.rz ?? this.rz;
+    const ry = F?.ry ?? this.gateRy;
+    const doorW = SNAKE.halfW * 2 + 0.6;
+    const H = 6.2;
+    const cx = at.x + fx * ahead, cz = at.z + fz * ahead;
+    const leaves = [];
+    for (const sg of [-1, 1]) {
+      const parts = [];
+      const lg = new THREE.BoxGeometry(doorW / 2, H, 0.32);
+      paint(lg, PALETTE.wood);
+      lg.translate(sg * doorW / 4, H / 2, 0);
+      parts.push(lg);
+      // iron studs and a frame, dark
+      for (const y of [0.5, H - 0.5]) {
+        const rail = new THREE.BoxGeometry(doorW / 2, 0.28, 0.38);
+        paint(rail, 0x2a2024);
+        rail.translate(sg * doorW / 4, y, 0);
+        parts.push(rail);
+      }
+      const leaf = new THREE.Mesh(mergeParts(parts), toonVertexMat());
+      // a band in HER colour across the middle (`accentMats`, set by setOwner)
+      const band = new THREE.BoxGeometry(doorW / 2 - 0.2, 0.7, 0.4);
+      paint(band, 0xffffff);
+      band.translate(sg * doorW / 4, H * 0.55, 0);
+      const bandMat = toonVertexMat({ color: this.colour });
+      this.accentMats.push(bandMat);
+      const bandMesh = new THREE.Mesh(band, bandMat);
+      const hinge = new THREE.Group();
+      hinge.position.set(cx + rx * sg * (doorW / 2), at.y - 0.1, cz + rz * sg * (doorW / 2));
+      leaf.position.x = -sg * doorW / 2;
+      bandMesh.position.x = -sg * doorW / 2;
+      hinge.add(leaf, bandMesh);
+      hinge.userData = { ry, sg };
+      parent.add(hinge);
+      leaves.push(hinge);
+    }
+    // the field: a shimmering sheet in her colour, up only while they are shut
+    const fieldMat = new THREE.MeshBasicMaterial({
+      color: this.colour, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending, toneMapped: false,
+    });
+    this.accentMats.push(fieldMat);
+    const field = new THREE.Mesh(new THREE.PlaneGeometry(doorW + 1.2, H + 1.4, 1, 6), fieldMat);
+    field.position.set(cx + fx * 0.5, at.y + H / 2, cz + fz * 0.5);
+    field.rotation.y = ry;
+    field.visible = false;
+    parent.add(field);
+    return { leaves, field, fieldMat, cx, cz, rx, rz, fx, fz, y: at.y, doorW };
+  }
+
+  /**
+   * DRESSED ENTRANCES: a stone lantern either side of the gate and a pair of
+   * nobori banners in her colour. `side` -1 dresses toward town (behind the
+   * start gate), 1 toward her island.
+   */
+  _dress(at, side, F = null, parent = this.group, gy = null) {
+    const fx = F?.fx ?? this.fx, fz = F?.fz ?? this.fz, rx = F?.rx ?? this.rx, rz = F?.rz ?? this.rz;
+    const off = SNAKE.halfW + 1.8;
+    for (const sg of [-1, 1]) {
+      const x = at.x + rx * sg * off + fx * side * 2.2;
+      const z = at.z + rz * sg * off + fz * side * 2.2;
+      const y = gy ? gy(x, z) : at.y - 0.45;
+      const lan = placeModel('stone-lantern-d56d0a', drawItem('lantern'));
+      lan.position.set(x, y, z);
+      lan.scale.multiplyScalar(1.3);
+      parent.add(lan);
+      // the banner: a pole and a tall cloth in her colour, facing the road
+      const bx = at.x + rx * sg * (off + 1.6) + fx * side * 4.2;
+      const bz = at.z + rz * sg * (off + 1.6) + fz * side * 4.2;
+      const by = gy ? gy(bx, bz) : at.y - 0.45;
+      const pole = new THREE.CylinderGeometry(0.08, 0.08, 5.6, 6);
+      paint(pole, 0x3a2a22);
+      pole.translate(0, 2.8, 0);
+      const poleMesh = new THREE.Mesh(pole, toonVertexMat());
+      poleMesh.position.set(bx, by, bz);
+      parent.add(poleMesh);
+      const cloth = new THREE.PlaneGeometry(0.9, 3.4);
+      cloth.translate(0.5, 3.6, 0);
+      const clothMat = new THREE.MeshLambertMaterial({ color: this.colour, side: THREE.DoubleSide });
+      this.accentMats.push(clothMat);
+      const clothMesh = new THREE.Mesh(cloth, clothMat);
+      clothMesh.position.set(bx, by, bz);
+      clothMesh.rotation.y = Math.atan2(rx * sg, rz * sg);
+      parent.add(clothMesh);
+    }
+  }
+
+  /** The doors swing to `openWant`; the field rises as they shut. */
+  update(dt, time = 0) {
+    if (!this.gates) return;
+    const k = this.openK + Math.sign(this.openWant - this.openK) * Math.min(Math.abs(this.openWant - this.openK), dt / DOOR_SWING);
+    this.openK = k;
+    const e = k * k * (3 - 2 * k);
+    for (const G of this.gates) {
+      for (const h of G.leaves) h.rotation.y = h.userData.ry + h.userData.sg * (Math.PI / 2 - 0.15) * e;
+      const shut = 1 - e;
+      G.field.visible = shut > 0.02;
+      G.fieldMat.opacity = shut * (0.22 + 0.1 * Math.sin(time * 3.1)) ;
+    }
   }
 
   /** Put this bridge in `colour` with `name` over the gate. */
@@ -263,6 +395,8 @@ export class HomeBridge {
     tintGeometry(this.headGeo, colour);
     this.stripMat.color.set(colour).lerp(new THREE.Color(0xffffff), 0.5);
     this.statueAccent.color.set(colour);
+    this.statueAccent2?.color.set(colour);
+    for (const m of this.accentMats ?? []) m.color.set(colour);
     const label = `${String(name).toUpperCase()}'S ISLAND`;
     const css = `#${new THREE.Color(colour).getHexString()}`;
     const { texture, aspect } = makeLabelTexture(label, { size: 72, color: css, stroke: '#1d1216', strokeWidth: 9 });
@@ -281,12 +415,28 @@ export class HomeBridge {
         this.statue.add(g.root);
         tintGenerated(g.mats, this.colour, 1);
       });
-    } else if (this.genMats) tintGenerated(this.genMats, colour, 1);
+      // ...and the one on her island, its own clone so it wears its own tint
+      if (this.statue2) {
+        loadGenerated(sheet).then((g) => {
+          if (!g || this._statueSheet !== sheet) return;
+          if (this.genStatue2) this.statue2.remove(this.genStatue2);
+          this.genStatue2 = g.root;
+          this.genMats2 = g.mats;
+          for (const c of this.statue2.children) c.visible = false;
+          this.statue2.add(g.root);
+          tintGenerated(g.mats, this.colour, 1);
+        });
+      }
+    } else {
+      if (this.genMats) tintGenerated(this.genMats, colour, 1);
+      if (this.genMats2) tintGenerated(this.genMats2, colour, 1);
+    }
   }
 
   /** How much of the road is drawn: the deck grows from the town out. */
   setGrow(k) {
     this.grow = k;
+    if (this.endGroup) this.endGroup.visible = k >= 1;
     if (!this.roadMesh) return;
     const segs = Math.round(this.segs * Math.max(0, Math.min(1, k)));
     this.roadMesh.geometry.setDrawRange(0, k >= 1 ? Infinity : segs * this.perSeg);
@@ -294,11 +444,16 @@ export class HomeBridge {
     if (this.strip) this.strip.visible = k >= 1;
   }
 
-  /** Locked: glass door shut. Open: timber leaves swung back. */
-  setLocked(locked) {
-    if (!this.door) return;
-    this.door.visible = locked;
-    this.leaves.visible = !locked;
+  /** Locked: the grand doors swing shut and the field comes up (`update`).
+   *  `snap` puts them there now — a load, not a press. */
+  setLocked(locked, snap = false) {
+    this.openWant = locked ? 0 : 1;
+    if (snap) { this.openK = this.openWant; this.update(0); }
+  }
+
+  /** Is the gate at either end within `r` of (x, z)? Which end, or -1. */
+  gateNear(x, z, r = 4) {
+    return (this.gates ?? []).findIndex((G) => Math.hypot(x - G.cx, z - G.cz) < r);
   }
 
   /** Where along the road (0..1) a point is, or null if not on it. */
@@ -309,11 +464,20 @@ export class HomeBridge {
 
   /** The door across the road, as a segment, in the world. */
   doorSegment() {
-    const s = this.start;
+    return this.doorSegments()[0];
+  }
+
+  /** Both doors — the town end and her island's end. */
+  doorSegments() {
     const h = SNAKE.halfW + 0.6;
-    const cx = s.x + this.fx * 0.6;
-    const cz = s.z + this.fz * 0.6;
-    return { ax: cx - this.rx * h, az: cz - this.rz * h, bx: cx + this.rx * h, bz: cz + this.rz * h, y0: s.y - 2, y1: s.y + 6 };
+    if (!this.gates) {
+      const s = this.start;
+      const cx = s.x + this.fx * 0.6, cz = s.z + this.fz * 0.6;
+      return [{ ax: cx - this.rx * h, az: cz - this.rz * h, bx: cx + this.rx * h, bz: cz + this.rz * h, y0: s.y - 2, y1: s.y + 6 }];
+    }
+    return this.gates.map((G) => ({
+      ax: G.cx - G.rx * h, az: G.cz - G.rz * h, bx: G.cx + G.rx * h, bz: G.cz + G.rz * h, y0: G.y - 2, y1: G.y + 7,
+    }));
   }
 }
 
