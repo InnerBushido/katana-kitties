@@ -20,7 +20,7 @@ import { emptyStore, newHome, normalise, saveStore, loadStore, migrateYard, HOME
 import { careLevel, careBuff, stalksAt, BAMBOO_GROW, BAMBOO_MAX } from '../../src/systems/housing/farm.js';
 import { fits, firstFit, gridOf, autoLayout, ITEM_SELL, yardWhy, firstYardSpot, addOutdoor, wallSlots } from '../../src/systems/housing/editor.js';
 import { buildWhy, commitBuild, removeBuilt, pickList, stepToward, BUILD_KEYS } from '../../src/systems/housing/build.js';
-import { houseRadius, houseShape, HEAD_H, SLAB_T } from '../../src/systems/housing/homehouse.js';
+import { houseRadius, houseShape, HEAD_H, SLAB_T, buildHouseShell } from '../../src/systems/housing/homehouse.js';
 import { possessive, ownedCount, roomRefund, changeRoomType } from '../../src/systems/housing/cards.js';
 import { JUKEBOX, JUKEBOX_BY_ID, PREVIEW_AT, previewOf } from '../../src/systems/housing/jukebox.js';
 import { MUSIC_FILES } from '../../src/core/musicfiles.js';
@@ -35,7 +35,9 @@ import { existsSync } from 'node:fs';
 import { mealPct, BOON } from '../../src/systems/housing/boons.js';
 import { DOOR_SWING } from '../../src/systems/housing/homebridge.js';
 import { napFade } from '../../src/systems/housing/activities.js';
-import { holoLayout, HOLO_GRAB } from '../../src/systems/housing/holodeck.js';
+import { holoLayout, HOLO_GRAB, HOLO_TUBE } from '../../src/systems/housing/holodeck.js';
+import { HOME_FLOAT_H } from '../../src/systems/dreamdojo.js';
+import { TUBE_FRAG } from '../../src/systems/dream/gear.js';
 import { castPoint, fishCount, fishLen, ANGLE } from '../../src/systems/housing/angling.js';
 import { petLevel, petBoost, messesAt, rhythmError, PLAY } from '../../src/systems/housing/petplay.js';
 import { fitTo, styleModel, stylesFor, drawItem, LOOK_MUL, TINTS } from '../../src/systems/housing/models.js';
@@ -174,6 +176,43 @@ export async function housingChecks({ ok, world }) {
         const top = I.groundY + I.shell.floorY[d.stair + 1];
         return Math.abs(y - top) < 0.4 ? worst : Infinity;
       });
+      /* THE TIMBER STAYS UNDER THE TILES. Richard: "the beams in the roof
+         are poking out from outside the house". Cast straight down from just
+         over the storey on every corner post and the middle of every wall
+         beam: the first tile hit has to be ABOVE the timber's top. (From the
+         sky, the top roof's overhang answers first and hides the very skirt
+         the beams came through — the first version of this check passed the
+         broken house.) And
+         no skirt may reach into the storey above it. */
+      {
+        const SH = buildHouseShell(h.id);
+        const tiles = SH.tint.map((g) => new THREE.Mesh(g, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })));
+        const rc = new THREE.Raycaster();
+        const bad = [];
+        const sh = houseShape(h.id);
+        sh.floors.forEach(([hw, hd], f) => {
+          const top = SH.floorY[f] + FLOOR_H;
+          const pts = [[hw, hd], [-hw, hd], [hw, -hd], [-hw, -hd], [0, hd], [0, -hd], [hw, 0], [-hw, 0]];
+          for (const [x, z] of pts) {
+            // (the top storey's own roof lifts at the corners — start over it)
+            rc.set(new THREE.Vector3(x, top + (f === sh.floors.length - 1 ? 3 : 0.6), z), new THREE.Vector3(0, -1, 0));
+            const hit = rc.intersectObjects(tiles)[0];
+            // the post's top is 0.22 under the storey's top, the beam's 0.30
+            if (!hit || hit.point.y < top - 0.22 + 0.04) bad.push(`f${f} (${x},${z}) ${hit ? (hit.point.y - top).toFixed(2) : 'open sky'}`);
+          }
+          if (f < sh.floors.length - 1) {
+            const [uw, ud] = sh.floors[f + 1];
+            for (const [x, z] of [[0, 0], [uw - 0.5, ud - 0.5]]) {
+              rc.set(new THREE.Vector3(x, top + 0.05, z), new THREE.Vector3(0, -1, 0));
+              const hit = rc.intersectObjects(tiles)[0];
+              if (hit && hit.point.y > top - 0.05) bad.push(`f${f} skirt inside the floor above at (${x},${z})`);
+            }
+          }
+        });
+        const nrm = SH.tint.flatMap((g) => { const n = g.getAttribute('normal'); return Array.from({ length: n.count }, (_, i) => n.getY(i)); });
+        ok(`${h.name}: no post or beam pokes out through the roof or an eave skirt, and no skirt reaches into the room above`, !bad.length, bad.join('; '));
+        ok(`${h.name}: ...and every tile faces up, so none is culled from outside`, nrm.every((y) => y > 0), `${nrm.filter((y) => y <= 0).length} face down`);
+      }
       ok(`${h.name}: every ramp climbs smoothly from one floor to the next`, climbs.every((w) => w < 0.6), climbs.map((w) => w.toFixed(2)).join(','));
       /* ...AND COMES DOWN AGAIN. "If player navigated to the 2nd or 3rd floor
          in the house, they are getting stuck on that floor." Start on the
@@ -1158,6 +1197,18 @@ export async function housingChecks({ ok, world }) {
     const tube = I.spots.find((s) => s.act === 'holodeck');
     ok('a holodeck room has three racks and her tube, with a way out of it',
       I.holoRooms.length === 1 && R.racks.length === 3 && !!tube && Math.abs(Math.hypot(tube.out.x, tube.out.z) - 1) < 1e-6);
+    /* SHE IS INSIDE HER TUBE. Richard: "the sprite's head is sticking out of
+       the tube and she is drawn in front of the tube". Her ears at the float
+       height must be under the glass's top, the glass under the ceiling, and
+       the glass drawn after her the way the arcade's is. */
+    {
+      const ears = HOME_FLOAT_H + 2.5;
+      const pod = R.tube?.mesh;
+      ok('her home tube is tall enough for her ears at the top of her float, and fits under the ceiling',
+        ears < HOLO_TUBE.top - 0.3 && HOLO_TUBE.top + 0.3 < FLOOR_H - SLAB_T, `ears ${ears.toFixed(2)} glass ${HOLO_TUBE.top} lid ${(FLOOR_H - SLAB_T).toFixed(2)}`);
+      ok("...and its glass is the arcade's, sorted AT the tube and drawn after her",
+        !!pod && pod.material.fragmentShader === TUBE_FRAG && pod.renderOrder === 5 && pod.position.lengthSq() > 0 && pod.material.blending === THREE.AdditiveBlending);
+    }
     const calls = [];
     const st = [];
     game.dream = {

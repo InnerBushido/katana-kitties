@@ -7,8 +7,8 @@ import { HOUSE_BY_ID, ITEM_BY_ID } from './catalog.js';
 import { placeModel, drawItem } from './models.js';
 import { wallSlots, yardR } from './editor.js';
 import { buildTreehouse } from './treehouse.js';
-import { holoLayout, HOLO_GEAR_SCALE } from './holodeck.js';
-import { GEAR_ITEMS, GEAR_SCALE, GEAR_LIFT, gearModel } from '../dream/gear.js';
+import { holoLayout, HOLO_GEAR_SCALE, HOLO_TUBE } from './holodeck.js';
+import { GEAR_ITEMS, GEAR_SCALE, GEAR_LIFT, gearModel, TUBE_VERT, TUBE_FRAG } from '../dream/gear.js';
 
 /* ---------------------------------------------------------------------------
    One sky site: its island, the house on it, the yard, the doors and the
@@ -596,14 +596,32 @@ export class HomeIsle {
       const base = new THREE.CylinderGeometry(1.45, 1.55, 0.3, 16);
       paint(base, 0x2f3446);
       base.translate(L.tube.x, 0.25, L.tube.z);
-      const cap = new THREE.CylinderGeometry(1.45, 1.35, 0.3, 16);
+      /* The cap is a RING, open in the middle: a house is seen from above,
+         and the arcade's solid cap, from up here, was a lid over her. */
+      const cap = new THREE.TorusGeometry(HOLO_TUBE.r + 0.05, 0.17, 8, 28);
+      cap.rotateX(Math.PI / 2);
       paint(cap, 0x2f3446);
-      cap.translate(L.tube.x, 3.75, L.tube.z);
+      cap.translate(L.tube.x, HOLO_TUBE.top + 0.1, L.tube.z);
       hard.push(base, cap);
-      const pod = new THREE.CylinderGeometry(1.25, 1.25, 3.3, 16, 1, true);
-      paint(pod, 0x7fe6ff);
-      pod.translate(L.tube.x, 2.05, L.tube.z);
-      const R = { room: room.id, racks: [] };
+      /* THE ARCADE'S GLASS, not a tinted cylinder. Richard: "the sprite's
+         head is sticking out of the tube and she is drawn in front of it ...
+         make it work like the Dream Dojo". Two bugs: the pod was 3.3 tall and
+         she floated the arcade's 1.6 in it, so her ears cleared the cap (she
+         floats HOME_FLOAT_H here, and HOLO_TUBE is sized off her 2.5); and
+         the pod's geometry was translated into the ROOM's frame, so three.js
+         sorted it by the room's centre and drew it before her. Now it is the
+         arcade's additive shader, POSITIONED at the tube, drawn after her
+         (renderOrder 5, as the arcade's) — she is seen through it. */
+      const u = { uTime: { value: 0 }, uGlow: { value: 0 }, uColor: { value: new THREE.Color(0x35d7f0) } };
+      const glassH = HOLO_TUBE.top - HOLO_TUBE.bottom;
+      const pod = new THREE.Mesh(new THREE.CylinderGeometry(HOLO_TUBE.r, HOLO_TUBE.r, glassH, 32, 1, true),
+        new THREE.ShaderMaterial({
+          vertexShader: TUBE_VERT, fragmentShader: TUBE_FRAG, uniforms: u,
+          transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+        }));
+      pod.position.set(L.tube.x, HOLO_TUBE.bottom + glassH / 2, L.tube.z);
+      pod.renderOrder = 5;
+      const R = { room: room.id, racks: [], tube: { u, mesh: pod } };
       for (const r of L.racks) {
         const pl = new THREE.CylinderGeometry(0.7, 0.8, 0.45, 14);
         paint(pl, 0x2f3446);
@@ -611,7 +629,7 @@ export class HomeIsle {
         hard.push(pl);
       }
       g.add(new THREE.Mesh(mergeParts(hard), toonVertexMat()));
-      g.add(new THREE.Mesh(pod, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.4, side: THREE.DoubleSide, depthWrite: false })));
+      g.add(pod);
       for (const [k, r] of L.racks.entries()) {
         const item = GEAR_ITEMS.find((x) => x.id === r.id);
         const m = gearModel(r.id, item.colour);

@@ -214,13 +214,21 @@ export function buildHouseShell(houseId) {
     if (f > 0) for (const d of around(-hw, hw, -hd, hd, well)) decks.push({ ...d, y, step: 0.4, floor: f });
 
     /* Eave skirt round each storey but the top: the castle's tiers, the
-       dojo's band. Tinted hers, like every roof. */
+       dojo's band. Tinted hers, like every roof.
+       A BAND, NOT A ROOF. Richard: the beams were poking out through the
+       roof from outside. They were: the skirt was a whole `pagodaRoof`
+       pyramid dropped to `top - 0.55`, which put its surface at the wall
+       line about 0.48 below the storey's top — under the beam (top - 0.30)
+       and the corner posts (top - 0.22) — and its apex 0.35 ABOVE the next
+       floor, inside her room. Now it runs from the eave up to the foot of
+       the next storey's wall and no further, and `eaveBand`'s numbers keep
+       it over the timber (world-check casts down on every post and beam). */
     if (f < S.floors.length - 1) {
-      const skirt = pagodaRoof(hw, hd, 0.9, { overhang: 0.32, cornerLift: 0.35 });
+      const [uw, ud] = S.floors[f + 1];
+      const skirt = eaveBand(hw, hd, uw, ud, top);
       paint(skirt, 0xe6e6e6);
-      skirt.translate(0, top - 0.55, 0);
       tint.push(skirt);
-      ridge[f % 4].push(box(hw * 2 + 0.4, 0.22, 0.12, 0xffffff, 0, top - 0.7, hd + 0.25));
+      ridge[f % 4].push(box(hw * 2 + 0.4, 0.22, 0.12, 0xffffff, 0, top + SKIRT_EAVE - 0.18, hd * (1 + SKIRT_OVER) - 0.02));
     }
     floors.push(g);
     y = top;
@@ -363,6 +371,45 @@ function around(x0, x1, z0, z1, hole) {
     { x0: hole.x1, x1, z0: hole.z0, z1: hole.z1 },
   ];
   return out.filter((d) => d.x1 - d.x0 > 0.01 && d.z1 - d.z0 > 0.01);
+}
+
+/** The eave skirt: out past the wall by this much of the storey's half-width, */
+const SKIRT_OVER = 0.32;
+/** ...its eave this far below the storey's top, its foot this far above it. */
+const SKIRT_EAVE = -0.5;
+const SKIRT_FOOT = 0.3;
+
+/**
+ * The band of tiles round a storey with a smaller one on top: a hipped
+ * frustum from the eave (hw, hd grown by SKIRT_OVER, at top + SKIRT_EAVE) up
+ * to the foot of the storey above (uw, ud, at top + SKIRT_FOOT), faces up and
+ * out like `pagodaRoof`'s. The eave corners lift, as the roof's do.
+ */
+function eaveBand(hw, hd, uw, ud, top) {
+  const ox = hw * (1 + SKIRT_OVER), oz = hd * (1 + SKIRT_OVER);
+  const ix = uw + 0.05, iz = ud + 0.05;
+  const y0 = top + SKIRT_EAVE, y1 = top + SKIRT_FOOT;
+  const lift = 0.3;
+  // outer ring then inner ring, corners in order round the rect
+  const P = [
+    [ox, y0 + lift, oz], [-ox, y0 + lift, oz], [-ox, y0 + lift, -oz], [ox, y0 + lift, -oz],
+    [ix, y1, iz], [-ix, y1, iz], [-ix, y1, -iz], [ix, y1, -iz],
+  ];
+  // mid-edge eave points, unlifted, so the corners curl and the sides do not
+  const M = [[0, y0, oz], [-ox, y0, 0], [0, y0, -oz], [ox, y0, 0]];
+  const M1 = [[0, y1, iz], [-ix, y1, 0], [0, y1, -iz], [ix, y1, 0]];
+  const pos = [...P, ...M, ...M1].flat();
+  const idx = [];
+  for (let k = 0; k < 4; k++) {
+    const o0 = k, o1 = (k + 1) % 4, i0 = 4 + k, i1 = 4 + (k + 1) % 4, om = 8 + k, im = 12 + k;
+    // each side in two halves: corner k → mid → corner k+1
+    idx.push(o0, i0, im, o0, im, om, om, im, i1, om, i1, o1);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  return geo;
 }
 
 /** The shape table's row, for the editor's wall slots (no geometry built). */

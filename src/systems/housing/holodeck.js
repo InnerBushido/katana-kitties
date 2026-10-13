@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { GEAR_ITEMS } from '../dream/gear.js';
 
 /* ---------------------------------------------------------------------------
@@ -33,6 +34,14 @@ import { GEAR_ITEMS } from '../dream/gear.js';
 export const HOLO_GRAB = 1.5;
 /** The pieces float smaller than the arcade's, because the rooms are smaller. */
 export const HOLO_GEAR_SCALE = 0.7;
+/**
+ * Her tube's glass, in the room's own height: from the top of its base to
+ * under its cap, which is under the ceiling slab (4.26 on a lower storey).
+ * She floats HOME_FLOAT_H (dreamdojo.js) and is 2.5 tall, so her ears are at
+ * about 3.05 — inside, with room to spare. world-check measures both.
+ */
+export const HOLO_TUBE = { bottom: 0.4, top: 3.9, r: 1.25 };
+const _tw = new THREE.Vector3();
 
 /**
  * Where the tube and the three racks stand, in the room's own frame (x along
@@ -120,6 +129,21 @@ export class HoloDeck {
     // The racks: a piece shows while nobody has it, and turns slowly.
     for (const I of this.H.isles) {
       for (const R of I.holoRooms ?? []) {
+        /* Her tube streams light the way the arcade's does — faster, and in
+           HER colour, while somebody is in it (dreamdojo.js `s.home`). */
+        if (R.tube) {
+          const u = R.tube.u;
+          u.uTime.value = this.t;
+          const w = R.tube.mesh.getWorldPosition(_tw);
+          const inIt = (players ?? g.players ?? []).find((q) => {
+            const h = q && g.dream?.st?.[q.index]?.phase && g.dream.st[q.index].home;
+            return h && Math.hypot(h.x - w.x, h.z - w.z) < 0.5;
+          });
+          const want = inIt ? 1 : 0;
+          u.uGlow.value += (want - u.uGlow.value) * Math.min(1, dt * 3);
+          if (inIt?.style?.colour != null) u.uColor.value.set(inIt.style.colour);
+          else if (!inIt && u.uGlow.value < 0.05) u.uColor.value.set(0x35d7f0);
+        }
         for (const r of R.racks) {
           const has = this.taken.has(this._key(I.site.id, R.room, r.id));
           r.mesh.visible = !has;

@@ -4,6 +4,27 @@ import { PLAYER_STYLE } from '../../core/palette.js';
 import { mergeParts } from '../../world/build.js';
 import { holoFlicker } from './holo.js';
 
+/** The arcade tube's glass — light streaming up it, faster and brighter while
+ *  somebody is in it. Here so a home holodeck's tube is the SAME glass. */
+export const TUBE_FRAG = /* glsl */`
+  uniform float uTime;
+  uniform vec3 uColor;
+  uniform float uGlow;
+  varying vec2 vUv;
+  void main() {
+    float streak = pow(0.5 + 0.5 * sin(vUv.x * 62.0 + sin(vUv.x * 9.0) * 2.0), 6.0);
+    float rise = fract(vUv.y * 1.5 - uTime * (0.4 + uGlow * 1.2));
+    float band = smoothstep(0.0, 0.05, rise) * (1.0 - smoothstep(0.08, 0.3, rise));
+    float edge = smoothstep(0.85, 1.0, vUv.y) + smoothstep(0.12, 0.0, vUv.y);
+    float a = 0.10 + streak * 0.12 * (0.4 + uGlow) + band * (0.15 + uGlow * 0.5) + edge * 0.35;
+    gl_FragColor = vec4(uColor * (0.6 + uGlow), a);
+  }
+`;
+export const TUBE_VERT = /* glsl */`
+  varying vec2 vUv;
+  void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+`;
+
 /* ---------------------------------------------------------------------------
    THE GEAR ROOM — what is standing on Lionheart's pad, and the suit-up.
 

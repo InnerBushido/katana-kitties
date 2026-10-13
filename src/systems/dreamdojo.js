@@ -28,7 +28,7 @@ import { ISLANDS, islandCentre } from './dream/islands.js';
 import { SimBar, holoFlicker } from './dream/holo.js';
 import { Approach } from './dream/approach.js';
 import { Lecture } from './dream/lecture.js';
-import { GearRoom, GEAR_ITEMS } from './dream/gear.js';
+import { GearRoom, GEAR_ITEMS, TUBE_VERT, TUBE_FRAG } from './dream/gear.js';
 import { gateFrame, buildGate } from './dream/gate.js';
 import { TOUR, GEAR_LINES, GEAR_VOICE } from './dream/stories.js';
 import { TourShadow } from './dream/tourshadow.js';
@@ -143,6 +143,10 @@ export const TUBE_R = 1.5;
 export const TUBE_IN = 1.7;
 /** How high she floats in the tube with the visor on. */
 export const FLOAT_H = 1.6;
+/** ...and in a home holodeck's tube, which is under a ceiling: a 5-unit
+ *  tube does not fit a 4.6 storey, so she floats lower in a shorter one.
+ *  Richard: her head stuck out of the top of it. */
+export const HOME_FLOAT_H = 0.55;
 
 /** How high the hologram sign floats over the deck, at the middle of its bob. */
 export const SIGN_Y = 9.5;
@@ -591,25 +595,6 @@ const DOME_FRAG = /* glsl */`
       + uHit * 0.45 * (0.3 + hex);
     gl_FragColor = vec4(vec3(0.35, 0.95, 1.0) * (0.6 + hex * 0.6 + uHit), a);
   }
-`;
-
-const TUBE_FRAG = /* glsl */`
-  uniform float uTime;
-  uniform vec3 uColor;
-  uniform float uGlow;
-  varying vec2 vUv;
-  void main() {
-    float streak = pow(0.5 + 0.5 * sin(vUv.x * 62.0 + sin(vUv.x * 9.0) * 2.0), 6.0);
-    float rise = fract(vUv.y * 1.5 - uTime * (0.4 + uGlow * 1.2));
-    float band = smoothstep(0.0, 0.05, rise) * (1.0 - smoothstep(0.08, 0.3, rise));
-    float edge = smoothstep(0.85, 1.0, vUv.y) + smoothstep(0.12, 0.0, vUv.y);
-    float a = 0.10 + streak * 0.12 * (0.4 + uGlow) + band * (0.15 + uGlow * 0.5) + edge * 0.35;
-    gl_FragColor = vec4(uColor * (0.6 + uGlow), a);
-  }
-`;
-const TUBE_VERT = /* glsl */`
-  varying vec2 vUv;
-  void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
 `;
 
 /* ------------------------------ canvases --------------------------------- */
@@ -2140,7 +2125,8 @@ export class DreamDojo {
       const baseY = s.home ? s.home.y : ARCADE.y;
       const arc = this.layout.tubes[p.index];
       s.anchor ??= new THREE.Vector3();
-      s.anchor.set(tube.x, baseY + FLOAT_H, tube.z);
+      const lift = s.home ? HOME_FLOAT_H : FLOAT_H;
+      s.anchor.set(tube.x, baseY + lift, tube.z);
       switch (s.phase) {
         case 'walk': {
           /* THE WALK IS HER OWN LEGS on a pad that points at her tube. A
@@ -2190,7 +2176,7 @@ export class DreamDojo {
           // Drawn into the middle of the tube as she rises.
           p.pinnedAt.set(
             THREE.MathUtils.lerp(s.from.x, tube.x, Math.min(1, s.t / 0.5)),
-            baseY + FLOAT_H * k,
+            baseY + lift * k,
             THREE.MathUtils.lerp(s.from.z, tube.z, Math.min(1, s.t / 0.5))
           );
           p.facing = THREE.MathUtils.lerp(p.facing, Math.atan2(-this.layout.u.x, -this.layout.u.z), Math.min(1, dt * 4));
@@ -2258,7 +2244,7 @@ export class DreamDojo {
         }
         case 'descend': {
           const k = ease(Math.min(1, s.t / SEQ.descend));
-          p.pinnedAt.set(tube.x, baseY + FLOAT_H * (1 - k), tube.z);
+          p.pinnedAt.set(tube.x, baseY + lift * (1 - k), tube.z);
           s.fx = 1 - ease(Math.min(1, s.t / 0.7));
           if (s.t >= SEQ.descend) {
             p.pinnedAt = null;
