@@ -18,7 +18,8 @@ import { Housing } from '../../src/systems/housing/housing.js';
 import { HOME_SITES, HOUSES, HOUSE_BY_ID, PRESETS, ITEM_BY_ID, priceOf, HOME_SELL, SPEED_STRIP } from '../../src/systems/housing/catalog.js';
 import { emptyStore, newHome, normalise, saveStore, loadStore, HOME_KEY } from '../../src/systems/housing/homestore.js';
 import { careLevel, careBuff, stalksAt, BAMBOO_GROW, BAMBOO_MAX } from '../../src/systems/housing/farm.js';
-import { fits, firstFit, gridOf, autoLayout } from '../../src/systems/housing/editor.js';
+import { fits, firstFit, gridOf, autoLayout, ITEM_SELL } from '../../src/systems/housing/editor.js';
+import { possessive, ownedCount, roomRefund, changeRoomType } from '../../src/systems/housing/cards.js';
 import { JUKEBOX } from '../../src/systems/housing/jukebox.js';
 import { JUKEBOX_FILES } from '../../src/systems/housing/jukeboxfiles.js';
 import { rollFish, FISH } from '../../src/systems/housing/fishing.js';
@@ -208,6 +209,51 @@ export async function housingChecks({ ok, world }) {
     ok(`the ${P.name} preset fits a dojo house completely`, placed === P.room.length && yard === P.yard.length, `${placed}/${P.room.length} ${yard}/${P.yard.length}`);
   }
 
+  /* A ROOM TYPE CHANGE SELLS THE FURNITURE BACK. Richard: buying a holodeck
+     "automatically happens without a confirmation screen" and the furniture
+     was simply gone. */
+  {
+    const Hm = newHome('sunrise', 'minka', ['Ember']);
+    const R = { type: 'living', items: [{ id: 'kotatsu', gx: 0, gz: 0, rot: 0 }, { id: 'futon', gx: 3, gz: 0, rot: 0 }] };
+    Hm.rooms = { [living.id]: R };
+    Hm.paid = { Ember: 9000 };
+    const q = fakePlayer(0);
+    q.score = 0;
+    const refund = roomRefund(H, R);
+    const want = Math.round(H.itemPrice('kotatsu') * ITEM_SELL) + Math.round(H.itemPrice('futon') * ITEM_SELL);
+    const r = changeRoomType(H, q, Hm, R, 'kendo', Math.min(refund, H.roomPrice('kendo')));
+    ok('changing a room\'s type pays its furniture back at the sell price, first', refund === want && r.ok && R.items.length === 0 && R.type === 'kendo',
+      `${refund} vs ${want}, ${r.why ?? ''}`);
+    ok('...and the refund comes off what she is recorded as having put in', Hm.paid.Ember === 9000 - refund + Math.min(refund, H.roomPrice('kendo')), Hm.paid.Ember);
+    const poor = fakePlayer(1);
+    const R2 = { type: 'living', items: [] };
+    ok('...and a kitten who cannot pay is refused with how much she needs', !changeRoomType(H, poor, Hm, R2, 'holodeck', 500).ok && R2.type === 'living');
+    const src = readFileSync(new URL('../../src/systems/housing/cards.js', import.meta.url), 'utf8');
+    ok('...and the card asks before it does it, NO first', /_v_roomtype[\s\S]{0,1500}title: 'NO, KEEP THE ROOM AS IT IS'[\s\S]{0,200}title: `YES, MAKE IT A/.test(src)
+      && !/MAKE IT A \$\{T\.name\}`[^\n]*\n[^\n]*\n[^\n]*\n[^\n]*this\.H\.spend/.test(src));
+    ok('"Ember\'S" is "EMBER\'S" — a possessive is all capitals', possessive('Ember') === "EMBER'S" && possessive(['Ember', 'Frost']) === "EMBER & FROST'S"
+      && !/\$\{who\}'S/.test(src));
+    Hm.yard = { p1: 'koipond' };
+    ok('the shop says how many of each thing she owns, 0 included', ownedCount(Hm, 'koipond') === 1 && ownedCount(Hm, 'futon') === 0
+      && /YOU HAVE \$\{ownedCount\(H, it\.id\)\}/.test(src));
+    ok('the home card has no music row and no file rows (the boombox and the debug panel have them)',
+      !/PICK THE BRIDGE MUSIC|SAVE HOMES TO A FILE|LOAD HOMES FROM A FILE/.test(src));
+    const msrc0 = readFileSync(new URL('../../src/main.js', import.meta.url), 'utf8');
+    ok('...and the debug panel does, both asking first', /row\('HousingExport'/.test(msrc0) && /row\('HousingImport'/.test(msrc0)
+      && /_debugHousingImport\(\) \{[\s\S]{0,300}confirm\.ask\(/.test(msrc0));
+  }
+
+  /* THE BOOMBOX PREVIEWS. "the music should be playing so the player can
+     preview the songs ... turn off once the player leaves the menu". */
+  {
+    H.musicSite = null;
+    H.audition = { id: JUKEBOX[2].id, who: 0 };
+    const heard = H.musicTrack();
+    ok('browsing the boombox plays the row under the cursor, even off the bridge', heard === JUKEBOX[2].id || heard === JUKEBOX[2].fallback, heard);
+    H.audition = null;
+    ok('...and nothing once the card is gone', H.musicTrack() === null);
+  }
+
   /* MUSIC: the recording when it is in the build, and with it taken out
      the procedural stand-in, never silence. Taken out of the table the game
      reads, rather than asserted of whatever happens to be on disk, so this
@@ -223,6 +269,15 @@ export async function housingChecks({ ok, world }) {
   ok('...and a procedural piece when it is not', t2 === rec?.fallback, t2);
   ok('...and every recording in the table is a jukebox track with a loop', Object.entries(JUKEBOX_FILES).every(([id, F]) =>
     JUKEBOX.some((j) => j.id === id) && F.loop?.[1] > F.loop?.[0] && F.mix > 0), Object.keys(JUKEBOX_FILES).join(' '));
+  /* ...AND IT LOOPS THE WHOLE ARRANGEMENT, ending and all. Richard: the takes
+     loop "2 or 3 times before reaching the end and looping it all over
+     again". A loop region inside the file never reaches the ending; this pins
+     that the loop is the file, start (its priming) to finish. */
+  ok('...and each one loops the WHOLE arranged file, so its ending is heard', Object.values(JUKEBOX_FILES).every((F) =>
+    F.loop[0] < 0.1 && Math.abs(F.loop[1] - F.loop[0] - F.length) < 0.01),
+  Object.entries(JUKEBOX_FILES).map(([id, F]) => `${id} ${F.loop.join('-')}/${F.length}`).join(' '));
+  ok('...and every arranged take that was cut off plays its loop more than once', Object.values(JUKEBOX_FILES).every((F) =>
+    F.arranged === 'whole' || F.length > 90), Object.values(JUKEBOX_FILES).map((F) => `${F.name}:${F.length}`).join(' '));
 
   /* FISHING: the deep end is where the big ones are. */
   let deep = 0;

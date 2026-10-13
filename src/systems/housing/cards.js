@@ -34,6 +34,45 @@ import { careBuff } from './farm.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const pts = (n) => `${Math.round(n).toLocaleString()} pts`;
+/** "EMBER'S", "EMBER & FROST'S" — the whole thing in capitals or none of it. */
+export const possessive = (names) => `${[].concat(names).join(' & ').toUpperCase()}'S`;
+/** What Roshi pays back for everything in a room. */
+export function roomRefund(Hs, R) {
+  return (R?.items ?? []).reduce((a, q) => a + Math.round(Hs.itemPrice(q.id) * ITEM_SELL), 0);
+}
+
+/**
+ * Turn a room into another type, SELLING its furniture back first — so a
+ * kitten a few points short of a holodeck can pay for it with the furniture
+ * it replaces. What she is paid back comes off what she is recorded as having
+ * put into the home, so a later SELL MY HOME does not refund it twice.
+ */
+export function changeRoomType(Hs, p, H, R, type, price) {
+  const refund = roomRefund(Hs, R);
+  if (p.score + refund < price) return { ok: false, why: `${p.name} needs ${price - p.score - refund} more points.` };
+  const n = p.style?.name;
+  if (refund) {
+    p.score += refund;
+    if (n && H.paid) H.paid[n] = Math.max(0, (H.paid[n] ?? 0) - refund);
+  }
+  R.items = [];
+  if (!Hs.spend(p, H, price)) return { ok: false, why: 'Not enough points.' };
+  R.type = type;
+  Hs.changed(H);
+  return { ok: true, refund };
+}
+
+/** "You have 2" — how many of this thing are in this home already, anywhere:
+ *  the rooms, the yard and the outdoor decorations. Richard: "the player
+ *  should be shown how much of each furniture they already own, if none,
+ *  should show 0." */
+export function ownedCount(H, id) {
+  let n = 0;
+  for (const R of Object.values(H?.rooms ?? {})) n += (R.items ?? []).filter((q) => q.id === id).length;
+  n += Object.values(H?.yard ?? {}).filter((y) => (y?.id ?? y) === id).length;
+  n += (H?.decor ?? []).filter((q) => q.id === id).length;
+  return n;
+}
 
 export class HousingCards {
   constructor(game, housing) {
@@ -76,6 +115,7 @@ export class HousingCards {
     const c = this.game.inspector.cards[index];
     if (c) c.i = this._top(index).at ?? 0;
     if (was.v === 'site' || was.v === 'house') this.H.stopPreview();
+    if (was.v === 'jukebox' && this.H.audition?.who === index) this.H.audition = null;
     return true;
   }
 
@@ -91,6 +131,7 @@ export class HousingCards {
   closed(index) {
     this.H.browsing.delete(index);
     if (this.H.preview?.who === index) this.H.stopPreview();
+    if (this.H.audition?.who === index) this.H.audition = null;
     /* Closing her card is a NO — unless she already said yes (her card
        closes itself on a yes) and is not the one who asked. */
     const P = this.pending;
@@ -142,6 +183,14 @@ export class HousingCards {
       return false;
     }
     if (top?.v === 'place') return this._drivePlace(index, pad, top);
+    /* THE ROW UNDER THE CURSOR IS WHAT PLAYS. Richard: "the music should be
+       playing so the player can preview the songs they like before choosing
+       them. Can turn off once the player leaves the menu." `closed` and
+       `_pop` take it away again; `Housing.musicTrack` reads it first. */
+    if (top?.v === 'jukebox') {
+      const t = JUKEBOX[c.i];
+      if (t && this.H.audition?.id !== t.id) this.H.audition = { id: t.id, who: index };
+    }
     return false;
   }
 
@@ -164,10 +213,16 @@ export class HousingCards {
   markup(index, c, back) {
     const V = this._view(index);
     const p = this.game.players[index];
+    /* A GREYED ROW SAYS WHY ON ITS FACE, not only when pressed. Richard: "If
+       a player cant afford to buy something, it should still appear in the
+       list but be grayed out and tell the user they dont have enough points
+       to buy it." The toast on a press stays too (non-negotiable 6) — this
+       is the same sentence, said before she has to try. */
     const rows = V.rows.map((r, k) => `
       <div class="pc-row${k === c.i ? ' cursor' : ''}${r.disabled ? ' hs-off' : ''}" data-side="${index}" data-row="${k}">
         <b>${esc(r.title)}</b>${r.right ? `<span class="hs-right">${esc(r.right)}</span>` : ''}
         ${r.blurb ? `<div class="pc-dim">${esc(r.blurb)}</div>` : ''}
+        ${r.disabled && r.why ? `<div class="hs-why">${esc(r.why)}</div>` : ''}
       </div>`).join('');
     return `<div class="pc-inner hs-card">
       <div class="pc-head"><span class="pc-who">${esc(p?.name ?? '')}</span> ${esc(V.head)}
@@ -196,7 +251,9 @@ export class HousingCards {
       const H = this.H.store.homes[s.id];
       return {
         title: s.name,
-        right: H ? `${H.owners.join(' & ')}'S` : 'FOR SALE',
+        /* ALL CAPS, NAME AND ALL. `${name}'S` read "Ember'S" — a capital S
+           on a name that is not in capitals (Richard, Oct 2026). */
+        right: H ? possessive(H.owners) : 'FOR SALE',
         blurb: s.blurb,
         go: () => { this._push(index, { v: 'site', site: s.id }); return null; },
       };
@@ -451,29 +508,19 @@ export class HousingCards {
       },
       { title: 'FURNISH A ROOM', blurb: 'Furniture on the tatami grid, and kendo or holodeck rooms.', go: () => { this._push(index, { v: 'rooms', site: top.site }); return null; } },
       { title: 'THE YARD', blurb: 'Ponds, gardens, a farm, a pen — each plot takes things that suit it.', go: () => { this._push(index, { v: 'yard', site: top.site }); return null; } },
-      { title: 'PICK THE BRIDGE MUSIC', blurb: 'What plays on your bridge and island.', go: () => { this._push(index, { v: 'jukebox', k: this.H.isles.findIndex((I) => I.site.id === top.site) }); return null; } },
+      /* NO MUSIC ROW AND NO FILE ROWS. Richard: "Changing the music should be
+         done from the boombox at the entrance and exit to the bridge", and the
+         .json save/load "shouldn't be in the menu. Let's have that as a Debug
+         action for now" — main.js `_debugHousingExport`/`_debugHousingImport`. */
     ];
     if (def.rooms.some((r) => r.claim)) {
       rows.push({ title: 'CASTLE ROOMS', blurb: 'Claim a room by walking into it first. Lock yours or invite your sisters in.', go: () => { this._push(index, { v: 'claims', site: top.site }); return null; } });
     }
     rows.push(
       { title: 'STORAGE CHEST', blurb: 'Things you have put away.', go: () => { this._push(index, { v: 'chest', site: top.site }); return null; } },
-      { title: 'SAVE HOMES TO A FILE', blurb: 'Downloads every home as a .json file you can load on another computer.', go: () => { this.H.exportJson(); this.game.toast('Saved! Look in your Downloads folder.', index); return null; } },
-      { title: 'LOAD HOMES FROM A FILE', blurb: 'Replaces the homes on this computer with the ones in the file.', go: () => { this._push(index, { v: 'import', cursor: 0 }); return null; } },
       { title: 'SELL MY HOME', blurb: `Roshi pays back ${Math.round(HOME_SELL * 100)}%.`, go: () => { this._push(index, { v: 'sell', site: top.site, cursor: 0 }); return null; } },
     );
     return { head: `${SITE_BY_ID[top.site].name}`, rows, backWord: 'CLOSE' };
-  }
-
-  _v_import(index) {
-    return {
-      head: 'LOAD HOMES?',
-      body: '<div class="hs-note">The homes in the file replace the ones on this computer.</div>',
-      rows: [
-        { title: 'NO, KEEP THESE HOMES', go: () => { this._pop(index); return null; } },
-        { title: 'YES, PICK A FILE', go: () => { this.H.importJson(index); return 'close'; } },
-      ],
-    };
   }
 
   _v_rooms(index, p, top) {
@@ -511,14 +558,11 @@ export class HousingCards {
         title: `MAKE IT A ${T.name}`, right: price ? pts(price) : 'FREE', blurb: T.blurb,
         disabled: !ok || p.score < price,
         why: !ok ? `Only a big training hall can be a ${T.name}.` : `${p.name} needs ${pts(price - p.score)} more.`,
-        go: () => {
-          if (!this.H.spend(p, H, price)) return null;
-          R.type = T.id;
-          if (T.id !== 'living') R.items = [];
-          this.H.changed(H);
-          this.game.toast(`The ${room.name} is now a ${T.name}!`, index);
-          return null;
-        },
+        /* ALWAYS ASKS FIRST. Richard: the holodeck "automatically happens
+           without a confirmation screen" and threw the furniture away. Now
+           every change of room type is a question, and whatever was in the
+           room is SOLD BACK at Roshi's price rather than lost. */
+        go: () => { this._push(index, { v: 'roomtype', site: top.site, room: room.id, type: T.id, cursor: 0 }); return null; },
       });
     }
     if (R.type === 'living') {
@@ -534,6 +578,38 @@ export class HousingCards {
     return { head: room.name, rows };
   }
 
+  /** CHANGE THE ROOM? No is first; the furniture's refund is in the question. */
+  _v_roomtype(index, p, top) {
+    const H = this._home(top);
+    const room = this._roomDef(H, top.room);
+    const R = H.rooms[room.id];
+    const T = ROOM_TYPES.find((t) => t.id === top.type);
+    const price = this.H.roomPrice(T.id);
+    const refund = roomRefund(this.H, R);
+    const n = (R.items ?? []).length;
+    return {
+      head: `MAKE IT A ${T.name}?`,
+      body: `<div class="hs-note">${n
+        ? `The ${n} thing${n > 1 ? 's' : ''} in the ${esc(room.name)} will be SOLD BACK to Roshi for ${pts(refund)}.`
+        : `The ${esc(room.name)} is empty.`} It costs ${price ? pts(price) : 'nothing'}.</div>`,
+      rows: [
+        { title: 'NO, KEEP THE ROOM AS IT IS', go: () => { this._pop(index); return null; } },
+        {
+          title: `YES, MAKE IT A ${T.name}${n ? ' AND SELL THE FURNITURE' : ''}`,
+          disabled: p.score + refund < price,
+          why: `${p.name} needs ${pts(price - p.score - refund)} more.`,
+          go: () => {
+            const r = changeRoomType(this.H, p, H, R, T.id, price);
+            if (!r.ok) { this.game.toast(r.why, index); return null; }
+            this.game.toast(`The ${room.name} is now a ${T.name}!${r.refund ? ` Roshi paid ${pts(r.refund)} for the furniture.` : ''}`, index);
+            this._pop(index);
+            return null;
+          },
+        },
+      ],
+    };
+  }
+
   _v_shop(index, p, top) {
     const H = this._home(top);
     const room = this._roomDef(H, top.room);
@@ -542,7 +618,8 @@ export class HousingCards {
       const price = this.H.itemPrice(it.id);
       const spot = firstFit(room, R.items, it);
       return {
-        title: it.name, right: pts(price), blurb: it.blurb ?? `${footprint(it).join('×')} tatami.`,
+        title: it.name, right: pts(price),
+        blurb: `YOU HAVE ${ownedCount(H, it.id)} · ${it.blurb ?? `${footprint(it).join('×')} tatami.`}`,
         disabled: !spot || p.score < price,
         why: !spot ? 'There is no room left for that here.' : `${p.name} needs ${pts(price - p.score)} more.`,
         go: () => { this._push(index, { v: 'place', site: top.site, room: room.id, sel: -1, id: it.id, ...spot }); return null; },
@@ -711,7 +788,8 @@ export class HousingCards {
       if (!(it.where ?? []).includes(P.kind) || it.where.includes('room') && !['drum', 'bucket', 'sake'].includes(it.id)) continue;
       const price = this.H.itemPrice(it.id);
       rows.push({
-        title: it.later ? `${it.name} — COMING LATER` : it.name, right: it.later ? 'LOCKED' : pts(price), blurb: it.blurb,
+        title: it.later ? `${it.name} — COMING LATER` : it.name, right: it.later ? 'LOCKED' : pts(price),
+        blurb: `YOU HAVE ${ownedCount(H, it.id)}${it.blurb ? ` · ${it.blurb}` : ''}`,
         disabled: it.later || !!cur || p.score < price || !yardFits(P, it),
         why: it.later ? 'Coming in a later update!' : cur ? 'Clear the plot first.' : `${p.name} needs ${pts(price - p.score)} more.`,
         go: () => {
@@ -757,7 +835,7 @@ export class HousingCards {
     const rows = def.rooms.filter((r) => r.claim).map((room) => {
       const who = H.rooms?.[room.id]?.claim;
       return {
-        title: room.name, right: who ? `${who}'S` : 'UNCLAIMED',
+        title: room.name, right: who ? possessive(who) : 'UNCLAIMED',
         blurb: who ? (who === p.style.name ? 'Yours. Your LOCK MY DOOR setting decides who else may come in.' : `${who} walked in first.`) : 'Walk into it first to claim it.',
         go: () => null,
       };

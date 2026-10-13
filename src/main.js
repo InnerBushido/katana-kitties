@@ -5214,6 +5214,8 @@ class Game {
        enough for a castle share, and stand them at his counter. A flag for
        the tab, never saved. */
     if (code === 'HousingOpen') this._debugHousing();
+    if (code === 'HousingExport') this._debugHousingExport();
+    if (code === 'HousingImport') this._debugHousingImport();
     if (code === 'DreamExtra') this._debugOpenExtra();
     /* 秘 EXTRA HARD in the Sine Gauntlet, on every course, for every kitten.
        Richard: "Add a debug unlock for this Extra hard level so I can test
@@ -5502,6 +5504,32 @@ class Game {
    * cabinet and this is a filing cabinet, and a tester who wants to watch the
    * five-slot cap fill from empty has no other way to empty it.
    */
+  /* THE HOMES AS A FILE, out of her My Home card and into here. Richard: "The
+     saving/loading of json files shouldn't be in the menu. Let's have that as
+     a Debug action for now." Both ask, like every keyless row: the load
+     replaces every home on the device, and the save starts a download. */
+  _debugHousingExport() {
+    const n = Object.keys(this.housing?.store?.homes ?? {}).length;
+    this.confirm.ask({
+      title: 'SAVE THE HOMES TO A FILE?',
+      body: `Downloads ${n} home${n === 1 ? '' : 's'} as a .json file you can load on another computer.`,
+      no: 'NO, DON\'T DOWNLOAD',
+      yes: 'YES, DOWNLOAD THE FILE',
+      onYes: () => { this.housing?.exportJson(); this.toast('[debug] homes saved — look in Downloads', 0); },
+    });
+  }
+
+  _debugHousingImport() {
+    const n = Object.keys(this.housing?.store?.homes ?? {}).length;
+    this.confirm.ask({
+      title: 'LOAD HOMES FROM A FILE?',
+      body: `The homes in the file REPLACE the ${n} on this device.`,
+      no: 'NO, KEEP THESE HOMES',
+      yes: 'YES, PICK A FILE',
+      onYes: () => this.housing?.importJson(0),
+    });
+  }
+
   _debugClearSaves() {
     const n = listSaves().length;
     if (!n) {
@@ -6487,6 +6515,8 @@ class Game {
       ${row('SineExtra', 'open 秘 EXTRA HARD in the Sine Gauntlet', !!this._debugSineExtra)}
       <div class="dbg-sep">ROSHI'S ISLANDS</div>
       ${row('HousingOpen', 'open the island shop, 40,000 each, go to Roshi', !!this.housing?.debugOpen)}
+      ${row('HousingExport', 'save every home to a .json file')}
+      ${row('HousingImport', 'load the homes from a .json file')}
       <div class="dbg-sep">THIS DEVICE — what outlives the tab</div>
       ${row('BoardWipe', `wipe the RECORD BOARD (${this._boardRows()} results)`)}
       ${row('SaveWipe', `wipe the SAVED GAMES (${listSaves().length} of ${saveCap()})`)}

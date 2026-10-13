@@ -1751,6 +1751,12 @@ export class Audio {
       const s = buf.getChannelData(c);
       const d = out.getChannelData(c);
       d.set(s);
+      /* A WHOLE-FILE LOOP HAS NOTHING BEFORE ITS START to fade into — the
+         jukebox's arrangements (housing/jukeboxfiles.js) loop from sample 0,
+         and their end already runs into the start: silence, or a take that
+         was made to wrap. Reading s[-F..0] was NaN in every sample of the
+         fade, which is a 25ms hole of nothing at the seam. */
+      if (iA < F) continue;
       for (let i = 0; i < F; i++) {
         const w = (i / F) * Math.PI / 2;
         d[iB - F + i] = s[iB - F + i] * Math.cos(w) + s[iA - F + i] * Math.sin(w);

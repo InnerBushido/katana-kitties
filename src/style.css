@@ -6611,6 +6611,13 @@ body.touch-ui .ke-foot .menu-btn, body.touch-ui .ke-row .menu-btn { font-size: 1
 .hs-right { float: right; font-weight: 700; opacity: 0.85; margin-left: 0.6em; }
 .hs-purse { float: right; font-weight: 700; color: #ffd34a; }
 .hs-off { opacity: 0.45; }
+/* The reason, in the colour of "no", at full strength inside a faded row —
+   the row is greyed, the sentence telling her why must not be. */
+.hs-off .hs-why { color: #ff8a7a; font-weight: 700; font-size: 0.85em; }
+.hs-card .pc-row.hs-off:has(.hs-why) { opacity: 1; }
+.hs-card .pc-row.hs-off:has(.hs-why) > b,
+.hs-card .pc-row.hs-off:has(.hs-why) > .hs-right,
+.hs-card .pc-row.hs-off:has(.hs-why) > .pc-dim { opacity: 0.45; }
 .hs-note { margin: 0.3em 0 0.5em; line-height: 1.3; }
 .hs-perks { display: flex; flex-wrap: wrap; gap: 0.3em; margin: 0.2em 0 0.5em; }
 .hs-perks span { background: rgba(255, 255, 255, 0.12); border-radius: 0.6em; padding: 0.1em 0.55em; font-size: 0.85em; }

@@ -513,8 +513,10 @@ export class Housing {
 
   /** The jukebox's track for `_wantedTrack`, or null. */
   musicTrack() {
-    if (!this.musicSite) return null;
-    const id = this.store.jukebox?.[this.musicSite] ?? JUKEBOX[0].id;
+    /* A kitten browsing the boombox hears the row under her cursor (cards.js
+       `drive`), and only for as long as the card is open. */
+    const id = this.audition?.id ?? (this.musicSite ? this.store.jukebox?.[this.musicSite] ?? JUKEBOX[0].id : null);
+    if (!id) return null;
     const T = JUKEBOX.find((t) => t.id === id) ?? JUKEBOX[0];
     /* A RECORDING THAT IS NOT ON DISK PLAYS ITS PROCEDURAL STAND-IN, which
        is non-negotiable 9: delete public/music and the jukebox still plays. */
