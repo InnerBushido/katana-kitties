@@ -22,7 +22,7 @@ from the town, grown in her colours when she buys.
 | `cards.js` | **every screen**, as one inspector ext-provider with a per-seat view stack |
 | `editor.js` | the tatami grid, footprints, `fits`, `autoLayout` |
 | `purchasescene.js` | the purchase cutscene |
-| `roshi.js` `jukebox.js` `farm.js` `koi.js` `fishing.js` `angling.js` `holodeck.js` `kendo.js` `models.js` | the realtor, the boombox, the bamboo farm and the animals, the koi, the fish table, fishing in the world, the holodeck's racks, kendo, the vendored models |
+| `roshi.js` `jukebox.js` `farm.js` `koi.js` `fishing.js` `angling.js` `holodeck.js` `petplay.js` `kendo.js` `models.js` | the realtor, the boombox, the bamboo farm and the animals, the koi, the fish table, fishing in the world, the holodeck's racks, playing with the animals, kendo, the vendored models |
 
 ## Decisions, with the reason
 
@@ -140,6 +140,10 @@ Each one degrades: delete the file and the game draws the stand-in.
 | **The angel wings** | two white fans drawn in `boons.js`, flapping | a wing sprite or model |
 | **Taiko, the cups game, volleyball** | a line and a sound | the mini-games |
 | **The Bushido Blade forest** | shown, locked, "later" | Richard's later feature |
+| **The fetch stick** | a brown box, spinning | a stick (or frisbee, or carrot) model |
+| **The chick in flight** | the pen drawing, bobbing in the air — no wings move | a flying frame, or a flap on the billboard |
+| **A mess** | four brown blobs (`PetPlay._pile`) | a drawn pile |
+| **Boosts for kotodama abilities** | not done: the animals boost JUMP HEIGHT, JUMP DISTANCE and SPRINT only | Richard also floated boosting the panda or her kotodama powers; it is a `petBoost` field plus the one line that reads it |
 
 ## Boons — what home is worth in the ring
 
@@ -223,6 +227,41 @@ happens when she comes back out of the sim, leaves the island (`unsuitAt`), or
 a scene or the arena pulls her out. A sister who walks up to an empty rack is
 told who has the piece. The arcade's own "gear off away from the pad" rule
 skips her while `s.homeSuit` is set.
+
+## Playing with the animals
+
+`petplay.js` gives the pen more to do than feeding, from the pen card's rows.
+Picking a row closes the card.
+
+- **MESS.** One pile per `PLAY.messEvery` (8h) of real time, up to three. Like
+  the bamboo, it is worked out from a timestamp (`pen.cleaned`), so nothing
+  ticks while the tab is shut. ACTION at a pile cleans it. The last pile makes
+  every animal happier.
+- **WALK.** Any animal follows her. Every `PLAY.walk` units she walks, it gets
+  happier. If she leaves the island, it trots home and the toast says so.
+- **FETCH, the goat.** Hold ATTACK to throw, like the fishing cast, with
+  ATTACK masked from the katana in the same way. A throw counts only if the
+  GOAT has to run `fetchNeed[level]` for it, measured from where the goat
+  stands, not from her. A short throw is told how far the goat wants to run.
+- **CATCH, the chick.** It flutters at `chickH[level]` and goes further after
+  each catch. Levels 3 and 4 need 3 and 4 jumps, as Richard asked. A kitten
+  without enough jumps is refused before she starts, and the toast names the
+  number she needs and where more jumps come from.
+- **HOP, the bunny.** It hops a rhythm, and she copies it with JUMP. Only the
+  gaps between hops are scored, so starting late is not a mistake. Her pad is
+  only watched, never masked, so she really jumps.
+- **GROWTH and BOOST.** Every `joyPerLevel` happy times an animal grows a
+  level (to 4) and is drawn 12% bigger per level. Each level is a named boost
+  for the pen's owners: chick, JUMP HEIGHT; bunny, JUMP DISTANCE (air speed);
+  goat, SPRINT. A level-up toast names the boost, and the card shows all
+  three. The chick's figure is the HEIGHT gain (`k² − 1`), because its k
+  scales take-off speed and the height is what she sees. With no pen, every
+  boost is 1, so a kitten with no home plays exactly as before.
+
+One bug turned up while building it: a freshly drawn pen stood its animals at
+the ORIGIN until the next frame. A level-up re-syncs the pen, so a walk started
+in that frame sent the animal running across the whole sky. `Farm._place` now
+puts each animal in the pen as it is drawn.
 
 ## Placeholders that are done, and what each still falls back to
 

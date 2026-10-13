@@ -6,7 +6,8 @@ import { footprint, firstFit, firstYardSpot, wallSlots, wallFree, ITEM_SELL } fr
 import { buildWhy, commitBuild, removeBuilt, pickList, stepToward, BUILD_KEYS, PICK_KEYS } from './build.js';
 import { Preview } from './preview.js';
 import { KOI_COLOURS } from './koi.js';
-import { careBuff } from './farm.js';
+import { careBuff, ANIMALS } from './farm.js';
+import { petBoost, petLevel, BOOST_NAME, PLAY } from './petplay.js';
 
 /* ---------------------------------------------------------------------------
    THE HOUSING CARDS — Roshi's counter, her home, the jukebox, the pond, the
@@ -907,8 +908,34 @@ export class HousingCards {
       body: `<div class="hs-note">${D.animals.map((a) => `${a.name}: ${a.hungry ? 'HUNGRY!' : 'happy'}`).join(' · ')}<br>Panda care ${D.level}/4${perks.length ? ` — your panda has ${perks.join(', ')}` : ''}.</div>`,
       rows: [
         { title: 'FEED THE ANIMALS', blurb: 'One visit a day counts. Two visits a day apart in a week is the big bonus.', go: () => { this.H.farm.feed(p, H); return null; } },
+        ...this._petRows(index, p, H),
       ],
     };
+  }
+
+  /** PLAYING WITH THEM (petplay.js): a walk for any of them, and each one's
+   *  own game. Each row says what that animal's happiness is worth to her,
+   *  so the boost is never a secret (Richard: "the player should be informed
+   *  which ability is being boosted"). Picking one closes the card: the game
+   *  is out in the world. */
+  _petRows(index, p, H) {
+    const P = this.H.pets;
+    const go = (kind, a) => () => { if (P.start(p, H, kind, a)) this.game.inspector.closeOne(index); return null; };
+    const rows = [];
+    if (P.playing(index)) rows.push({ title: 'STOP PLAYING', blurb: 'The animal trots back to the pen.', go: () => { P.stop(index, null); return null; } });
+    const B = petBoost(H.pen);
+    for (const A of H.pen?.animals ?? []) {
+      const def = ANIMALS.find((d) => d.id === A.kind);
+      if (!def) continue;
+      const L = petLevel(A);
+      const now = B.lines.find((l) => l.startsWith(BOOST_NAME[A.kind])) ?? `${BOOST_NAME[A.kind]} +0%`;
+      const tag = `Level ${L} of 4 · gives ${now}`;
+      rows.push({ title: `WALK THE ${def.name}`, blurb: `It follows you round your island. ${tag}.`, go: go('walk', A.kind) });
+      if (A.kind === 'goat') rows.push({ title: 'PLAY FETCH WITH THE GOAT', blurb: `HOLD ATTACK to throw — it has to RUN for it. ${tag}.`, go: go('fetch', A.kind) });
+      if (A.kind === 'chick') rows.push({ title: 'CATCH THE CHICK', blurb: `Jump and touch it ${PLAY.wins} times. It flies higher as it grows. ${tag}.`, go: go('catch', A.kind) });
+      if (A.kind === 'bunny') rows.push({ title: 'HOP ALONG WITH THE BUNNY', blurb: `Watch its hops, then JUMP in the same rhythm. ${tag}.`, go: go('hop', A.kind) });
+    }
+    return rows;
   }
 
   /* KOI_COLOURS is re-exported for the Help card, which lists the rares. */

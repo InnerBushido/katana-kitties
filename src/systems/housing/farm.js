@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { toonVertexMat, paint, Billboard } from '../../core/gfx.js';
+import { petBoost, petLevel } from './petplay.js';
 
 /* ---------------------------------------------------------------------------
    THE FARM AND THE PEN — the two things on her island that run on the
@@ -144,7 +145,8 @@ export class Farm {
          same size either way. */
       const art = this.H.game.farmArt?.[def.id];
       if (art?.texture) {
-        const q = (def.size * 2.2) / (art.contentScale || 1);
+        // Grown animals are drawn bigger (petplay.js): +12% a level.
+        const q = (def.size * 2.2 * (0.88 + 0.12 * petLevel(A))) / (art.contentScale || 1);
         const bb = new Billboard(art.texture, {
           cols: 1, rows: 1, mirror: true, artFacesRight: false,
           width: q, height: q, footOffset: (art.pad ?? 0) * q,
@@ -187,11 +189,17 @@ export class Farm {
       }
       const g = new THREE.Group();
       for (const geo of parts) g.add(new THREE.Mesh(geo, toonVertexMat()));
-      g.scale.setScalar(def.size * 1.6);
+      g.scale.setScalar(def.size * 1.6 * (0.88 + 0.12 * petLevel(A)));
       g.userData = { a: k * 2.1, r: 1 + k * 0.9, P, A };
       view.group.add(g);
       view.animals.push(g);
     }
+    /* In the pen from the moment it exists. A new Group stands at the ORIGIN,
+       hundreds of units off any home island, until the next `update` — and a
+       sync happens mid-game whenever an animal grows (petplay.js), so a walk
+       or a game of fetch started in that one frame took its animal from the
+       origin and it ran the length of the sky to reach her. */
+    for (const g of view.animals) this._place(g, Date.now(), this.H.time ?? 0);
   }
 
   update(dt) {
@@ -206,18 +214,26 @@ export class Farm {
       if (recheck && view.stalks.length) this._grow(I, view);
       for (const g of view.animals) {
         const u = g.userData;
-        const hungry = now - (u.A.fed ?? 0) > HUNGRY_AFTER;
-        // A hungry animal sits by the trough; a fed one potters about.
-        const a = hungry ? u.a : u.a + t * 0.35;
-        const r = hungry ? u.P.r - 2.4 : Math.min(u.r, u.P.r - 2);
-        g.position.set(u.P.x + Math.cos(a) * r, u.P.y + (hungry ? 0 : Math.abs(Math.sin(t * 6 + u.a)) * 0.25), u.P.z + Math.sin(a) * r);
-        if (u.bb) {
-          // Walking round the circle: the tangent, (-sin a, cos a).
-          if (!hungry) u.bb.facing = Math.atan2(-Math.sin(a), Math.cos(a));
-        } else {
-          g.rotation.y = -a + (hungry ? 0 : -Math.PI / 2);
-        }
+        // Out of the pen with somebody: petplay.js moves it.
+        if (this.H.pets?.isOut(u.A)) continue;
+        this._place(g, now, t);
       }
+    }
+  }
+
+  /** Where an animal in the pen is at time `t`. */
+  _place(g, now, t) {
+    const u = g.userData;
+    const hungry = now - (u.A.fed ?? 0) > HUNGRY_AFTER;
+    // A hungry animal sits by the trough; a fed one potters about.
+    const a = hungry ? u.a : u.a + t * 0.35;
+    const r = hungry ? u.P.r - 2.4 : Math.min(u.r, u.P.r - 2);
+    g.position.set(u.P.x + Math.cos(a) * r, u.P.y + (hungry ? 0 : Math.abs(Math.sin(t * 6 + u.a)) * 0.25), u.P.z + Math.sin(a) * r);
+    if (u.bb) {
+      // Walking round the circle: the tangent, (-sin a, cos a).
+      if (!hungry) u.bb.facing = Math.atan2(-Math.sin(a), Math.cos(a));
+    } else {
+      g.rotation.y = -a + (hungry ? 0 : -Math.PI / 2);
     }
   }
 
@@ -287,6 +303,9 @@ export class Farm {
         if (had !== B.hp && p.panda.maxHp > 0) p.panda.resetHp?.();
       }
       p.pandaCare = B;
+      /* AND WHAT THE ANIMALS' HAPPINESS IS WORTH TO HER (petplay.js): 1s with
+         no pen, so a kitten with no home plays exactly as she always has. */
+      p.petBoost = petBoost(H?.pen);
     }
   }
 

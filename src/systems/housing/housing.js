@@ -19,6 +19,7 @@ import { HomeBoons } from './boons.js';
 import { HomeActivities } from './activities.js';
 import { HoloDeck } from './holodeck.js';
 import { Angling } from './angling.js';
+import { PetPlay } from './petplay.js';
 
 /** Roshi's tour: turn to the next island, then fly there; and the map's
  *  zoom-out. Seconds. */
@@ -105,6 +106,8 @@ export class Housing {
     this.holo = new HoloDeck(this);
     /** The rod, the lure and the wild fish at the koi pond (`angling.js`). */
     this.angling = new Angling(this);
+    /** Walks, fetch, catch, hop-along and the messes in the pen (`petplay.js`). */
+    this.pets = new PetPlay(this);
     this.built = false;
   }
 
@@ -141,6 +144,7 @@ export class Housing {
     this.koi.sync();
     this.angling.sync();
     this.farm.sync();
+    this.pets.sync();
   }
 
   /** The owners' colours, in owner order. */
@@ -201,6 +205,8 @@ export class Housing {
     // A rebuild clears the island's item group, and the koi and the wild fish live in it.
     this.koi.sync();
     this.angling.sync();
+    this.farm.sync();
+    this.pets.sync();
   }
 
   /** Cups on a home's shelf: every owner's wins together. */
@@ -486,6 +492,7 @@ export class Housing {
     this.koi.update(dt);
     this.angling.update(dt, players);
     this.farm.update(dt);
+    this.pets.update(dt, players);
     this.kendo.update(dt, players);
     this.builder.update(dt, this.time);
     this.activities.update(dt, players);
@@ -782,6 +789,7 @@ export class Housing {
     this.koi.sync();
     this.angling.sync();
     this.farm.sync();
+    this.pets.sync();
     this.game.audio?.play?.('score');
     const k = this.isles.indexOf(I);
     this.stopPreview();
@@ -816,6 +824,7 @@ export class Housing {
     this.koi.sync();
     this.angling.sync();
     this.farm.sync();
+    this.pets.sync();
     return true;
   }
 
@@ -836,6 +845,7 @@ export class Housing {
     this.koi.sync();
     this.angling.sync();
     this.farm.sync();
+    this.pets.sync();
   }
 
   setOpen(p, H, open) {
@@ -893,6 +903,8 @@ export class Housing {
     // The rod stand stands on the koi pond's bank, inside the pond's own spot.
     const pond = this.angling.standNear(p);
     if (pond) return { act: 'rod', pond, home: pond.I.home };
+    const pile = this.pets.pileNear(p);
+    if (pile) return { act: 'clean', pile, home: pile.v.H };
     for (const I of this.isles) {
       if (!I.home || !I.over(p.position.x, p.position.z, 2)) continue;
       let best = null;
@@ -912,6 +924,8 @@ export class Housing {
     // With a rod in her hands, the callout is the rod's: power, line, BITE.
     const rod = this.angling.prompt(p, key);
     if (rod) return rod;
+    const pet = this.pets.prompt(p);
+    if (pet) return pet;
     const s = this._spotFor(p);
     if (!s) return null;
     const own = s.home && s.home.owners.includes(p.style.name);
@@ -921,6 +935,7 @@ export class Housing {
       door: own ? 'MY HOME' : 'KNOCK',
       koi: 'THE KOI POND',
       rod: 'PICK UP A FISHING ROD',
+      clean: 'CLEAN UP THE MESS',
       harvest: 'HARVEST BAMBOO',
       animals: 'THE ANIMALS',
       kendo: 'KENDO GEAR',
@@ -984,6 +999,9 @@ export class Housing {
         return true;
       case 'rod':
         this.angling.toggle(p, s.pond);
+        return true;
+      case 'clean':
+        this.pets.clean(p, s.pile);
         return true;
       case 'harvest':
         this.farm.harvest(p, s.home);

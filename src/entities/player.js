@@ -2995,7 +2995,10 @@ export class Player {
        have run at, clan and orbs included, so the cost scales with her rather
        than fighting the two multipliers above it. */
     const speedK = (buff?.speed ?? 1) * this.power.speed
-      * (this.arenaBreathAt ? DBREATH.moveK : 1);
+      * (this.arenaBreathAt ? DBREATH.moveK : 1)
+      /* HER ANIMALS (housing/petplay.js): a happy goat is SPRINT, a happy
+         bunny is distance in the AIR. 1 with no pen. */
+      * (sprinting ? this.petBoost?.speed ?? 1 : 1) * (this.onGround ? 1 : this.petBoost?.air ?? 1);
     /* A grown panda is a mount, not a buff — riding one multiplies whatever
        you already had, so a Thunderpaw kitten on a panda is the fastest thing
        in the game. It is ground movement throughout: same gravity, same
@@ -3077,7 +3080,9 @@ export class Player {
 
     /* Shadowtail grants a third jump and a little more lift. `maxJumps` is
        read wherever the count is refilled, so landing restores all of them. */
-    const jumpK = (buff?.jump ?? 1) * (this.pandaMount ? PANDA_JUMP : 1);
+    const jumpK = (buff?.jump ?? 1) * (this.pandaMount ? PANDA_JUMP : 1)
+      // ...and a happy chick is JUMP HEIGHT (housing/petplay.js).
+      * (this.petBoost?.jump ?? 1);
     /* Leap orbs ADD to whatever the clan gave her, so a Shadowtail kitten
        wearing three of them has six. The count is read wherever jumps are
        refilled, so landing restores all of them however many that is. */

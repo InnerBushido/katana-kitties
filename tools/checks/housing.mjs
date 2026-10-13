@@ -36,6 +36,7 @@ import { DOOR_SWING } from '../../src/systems/housing/homebridge.js';
 import { napFade } from '../../src/systems/housing/activities.js';
 import { holoLayout, HOLO_GRAB } from '../../src/systems/housing/holodeck.js';
 import { castPoint, fishCount, fishLen, ANGLE } from '../../src/systems/housing/angling.js';
+import { petLevel, petBoost, messesAt, rhythmError, PLAY } from '../../src/systems/housing/petplay.js';
 
 const DAY = 24 * 3600 * 1000;
 
@@ -748,6 +749,160 @@ export async function housingChecks({ ok, world }) {
     game.players = [];
     I.setHome(null);
     A.sync();
+  }
+
+  /* PLAYING WITH THE ANIMALS. "More to do than just feed them": a mess to
+     clean, a walk, fetch, catching the bird (higher as it grows, until it
+     takes 3 or 4 jumps), hopping in time with the rabbit, growing up, and a
+     boost she is TOLD about. Pure parts first, then the real PetPlay. */
+  {
+    ok('an animal grows a level every few happy times, to four, and never back',
+      petLevel({}) === 1 && petLevel({ joy: PLAY.joyPerLevel }) === 2 && petLevel({ joy: 99 }) === 4);
+    const none = petBoost(null);
+    ok('no pen is no boost at all — a kitten with no home plays exactly as before', none.jump === 1 && none.air === 1 && none.speed === 1 && !none.lines.length);
+    const grown = petBoost({ animals: [{ kind: 'chick', joy: 99 }, { kind: 'bunny', joy: 0 }, { kind: 'goat', joy: PLAY.joyPerLevel }] });
+    ok('...a grown animal boosts its own ability, and the boost has a NAME',
+      grown.jump > 1 && grown.air === 1 && grown.speed > 1 && grown.lines.join() === `JUMP HEIGHT +${Math.round(((1 + 3 * PLAY.boostPerLevel.chick) ** 2 - 1) * 100)}%,SPRINT +${Math.round(PLAY.boostPerLevel.goat * 100)}%`,
+      grown.lines.join());
+    const now0 = Date.now();
+    ok('the pen makes a mess on the real clock: a pile per stretch of time, three at most', messesAt({ cleaned: now0 - PLAY.messEvery * 1.5 }, now0) === 1 && messesAt({ cleaned: now0 - PLAY.messEvery * 99 }, now0) === PLAY.messMax
+      && messesAt({ cleaned: now0 }, now0) === 0);
+    ok('the bunny game scores the RHYTHM, not when she started',
+      rhythmError([0, 0.5, 0.8, 1.4], [2, 2.5, 2.8, 3.4]) < 1e-9 && rhythmError([0, 0.5, 0.8, 1.4], [0, 0.9, 1.0, 1.4]) > PLAY.hopTol
+      && rhythmError([0, 0.5], [0]) === Infinity);
+    const psrc = readFileSync(new URL('../../src/entities/player.js', import.meta.url), 'utf8');
+    ok('...and the boosts reach her: sprint, air, jump', /sprinting \? this\.petBoost\?\.speed/.test(psrc) && /this\.onGround \? 1 : this\.petBoost\?\.air/.test(psrc)
+      && /\* \(this\.petBoost\?\.jump \?\? 1\)/.test(psrc));
+
+    const I = H.isles[1];
+    const Hm = newHome(I.site.id, 'minka', ['Ember']);
+    const at = firstYardSpot(Hm, ITEM_BY_ID.pen, I.radius);
+    addOutdoor(Hm, 'pen', at.x, at.z, 0);
+    I.setHome(Hm, null);
+    /* Hers is the ONLY home while this runs: an earlier block leaves Ember a
+       house on sunrise, and `homeOf` answers with the first one it finds, so
+       her boost was read off a pen-less house and came out as nothing. */
+    const keptHomes = { ...H.store.homes };
+    for (const k of Object.keys(H.store.homes)) delete H.store.homes[k];
+    H.store.homes[I.site.id] = Hm;
+    H.farm.sync();
+    H.pets.sync();
+    const v0P = I.placeOf('pen');
+    const P = H.pets;
+    // Before a single frame: an animal grown mid-walk is redrawn by a sync,
+    // and a game started in that frame took it from the origin.
+    ok('a pen that has just been drawn has its animals IN it, not at the origin',
+      H.farm.views.get(I.site.id).animals.every((g) => Math.hypot(g.position.x - v0P.x, g.position.z - v0P.z) < v0P.r));
+    const v = P.views.get(I.site.id);
+    const kit = fakePlayer(0);
+    kit.facing = 0;
+    kit.maxJumps = 2;
+    game.players = [kit];
+    const pen = Hm.pen;
+    const joy = () => pen.animals.map((A) => A.joy ?? 0);
+    // THE MESS
+    pen.cleaned = Date.now() - PLAY.messEvery * 2.5;
+    P.update(0.1, [kit]);
+    ok('two piles show after two lots of real time', v.piles.filter((q) => q.m.visible).length === 2);
+    kit.position.set(v.piles[0].x, v.piles[0].y, v.piles[0].z);
+    ok('...standing at one, ACTION offers to clean it', /CLEAN UP THE MESS/.test(H.prompt(kit, 'E') ?? ''));
+    const j0 = joy();
+    H.interact(kit);
+    P.update(0.1, [kit]);
+    ok('...cleaning one leaves the other', messesAt(pen) === 1 && v.piles.filter((q) => q.m.visible).length === 1 && joy().join() === j0.join());
+    H.interact(kit);
+    ok('...and the last one makes every animal happier', messesAt(pen) === 0 && joy().every((n, k) => n === j0[k] + 1));
+    // THE WALK
+    const step = (n, dx = 1) => { for (let k = 0; k < n; k++) { kit.position.x += dx; P.update(1 / 30, [kit]); } };
+    kit.position.set(v.P.x, v.P.y, v.P.z);
+    ok('a walk takes the chick out of the pen', P.start(kit, Hm, 'walk', 'chick') && P.isOut(pen.animals.find((A) => A.kind === 'chick')));
+    const jw = pen.animals.find((A) => A.kind === 'chick').joy ?? 0;
+    for (let k = 0; k < PLAY.walk / 3 + 2; k++) { step(3, 0); kit.position.x += (k % 6 < 3 ? 3 : -3); P.update(1 / 30, [kit]); }
+    const S = P.playing(0);
+    ok('...it follows her, and a long enough walk makes it happier',
+      (pen.animals.find((A) => A.kind === 'chick').joy ?? 0) === jw + 1 && Math.hypot(S.pos.x - kit.position.x, S.pos.z - kit.position.z) < 4,
+      `joy ${jw} -> ${pen.animals.find((A) => A.kind === 'chick').joy}, ${Math.hypot(S.pos.x - kit.position.x, S.pos.z - kit.position.z).toFixed(1)} away, walked ${S.walked.toFixed(0)}`);
+    const n0 = toasts.length;
+    kit.position.set(I.x + I.radius + 30, v.P.y, I.z);
+    P.update(1 / 30, [kit]);
+    ok('...and off her island it trots home, and says so', !P.playing(0) && toasts.slice(n0).some(([i, t]) => i === 0 && /trotted home/.test(t)));
+    // FETCH
+    kit.position.set(v.P.x, v.P.y, v.P.z);
+    // Throw toward the middle of the island, so a long throw stays on it.
+    kit.facing = Math.atan2(I.x - kit.position.x, I.z - kit.position.z);
+    P.start(kit, Hm, 'fetch', 'goat');
+    const F = P.playing(0);
+    const Sd = { down: false, prev: false };
+    const pad = { mx: 0, my: 0, down: (a) => (a === 'attack' ? Sd.down : false), pressed: (a) => (a === 'attack' ? Sd.down && !Sd.prev : false) };
+    const fr = () => { const m = P.padFor(0, pad); P.update(1 / 30, [kit]); Sd.prev = Sd.down; return m; };
+    const throwFor = (frames) => {
+      Sd.down = true;
+      for (let k = 0; k < frames; k++) fr();
+      Sd.down = false;
+      for (let k = 0; k < 400 && F.phase !== 'idle'; k++) fr();
+      for (let k = 0; k < 3; k++) fr();
+    };
+    Sd.down = true;
+    ok('with the stick, ATTACK is the stick\'s and never the katana\'s', fr().pressed('attack') === false);
+    Sd.down = false;
+    fr(); fr();
+    let n1 = toasts.length;
+    throwFor(1);
+    ok('a short throw does not count, and she is told how far it wants to run',
+      F.wins === 0 && toasts.slice(n1).some(([i, t]) => i === 0 && /throw it further/.test(t)), `${F.wins} wins, ${toasts.slice(n1).map((t) => t[1]).join(' | ')}`);
+    const jg = pen.animals.find((A) => A.kind === 'goat').joy ?? 0;
+    n1 = toasts.length;
+    for (let k = 0; k < PLAY.wins; k++) throwFor(30);
+    ok(`...${PLAY.wins} long throws the goat has to RUN for make it happier`,
+      (pen.animals.find((A) => A.kind === 'goat').joy ?? 0) === jg + 1, `joy ${jg} -> ${pen.animals.find((A) => A.kind === 'goat').joy}, ${toasts.slice(n1).map((t) => t[1]).join(' | ')}`);
+    ok('...and when that grows it, the toast says WHICH ability it boosts',
+      toasts.slice(n1).some(([i, t]) => i === 0 && /grew up/.test(t) && /SPRINT \+\d+%/.test(t)) && kit.petBoost?.speed > 1,
+      `${JSON.stringify(kit.petBoost ?? null)} ${toasts.slice(n1).map((t) => t[1]).join(' | ')}`);
+    P.stop(0, null);
+    // CATCH: too high for her jumps, and refused in words
+    const chick = pen.animals.find((A) => A.kind === 'chick');
+    chick.joy = PLAY.joyPerLevel * 2;
+    n1 = toasts.length;
+    ok('a level-3 chick flies too high for two jumps, and she is told how many it takes',
+      !P.start(kit, Hm, 'catch', 'chick') && toasts.slice(n1).some(([i, t]) => i === 0 && /takes 3 jumps, and you have 2/.test(t)));
+    chick.joy = 0;
+    ok('...a young one is catchable', P.start(kit, Hm, 'catch', 'chick'));
+    const C = P.playing(0);
+    const jc = chick.joy;
+    for (let k = 0; k < PLAY.wins; k++) {
+      for (let f = 0; f < 60; f++) P.update(1 / 30, [kit]);
+      kit.position.set(C.pos.x, C.pos.y - 0.9, C.pos.z);
+      P.update(1 / 30, [kit]);
+    }
+    ok(`...touching it ${PLAY.wins} times makes it happier, and it flies higher than a kitten stands`,
+      chick.joy === jc + 1 && PLAY.chickH[0] > 1.2 && PLAY.chickH[3] > PLAY.chickH[2], `joy ${jc} -> ${chick.joy}, ${C.wins} wins`);
+    P.stop(0, null);
+    // HOP
+    kit.position.set(v.P.x, v.P.y, v.P.z);
+    P.start(kit, Hm, 'hop', 'bunny');
+    const B = P.playing(0);
+    for (let k = 0; k < 200 && B.phase === 'show'; k++) P.update(1 / 30, [kit]);
+    const bunny = pen.animals.find((A) => A.kind === 'bunny');
+    const jb = bunny.joy ?? 0;
+    const jp = { mx: 0, my: 0, down: () => false, pressed: () => false };
+    const beats = B.beats.map((b) => b + 0.4);
+    let bi = 0;
+    for (let k = 0; k < 200 && B.phase === 'copy'; k++) {
+      const hit = bi < beats.length && B.t + 1 / 30 >= beats[bi];
+      if (hit) bi++;
+      P.padFor(0, { ...jp, pressed: (a) => a === 'jump' && hit });
+      P.update(1 / 30, [kit]);
+    }
+    ok('hopping in the bunny\'s rhythm — late, but in time — makes it happier', (bunny.joy ?? 0) === jb + 1, `${bunny.joy}`);
+    const real = P.padFor(0, jp);
+    ok('...and the bunny game never takes her JUMP away: the pad is only watched', real === jp);
+    P.stop(0, null);
+    game.players = [];
+    delete H.store.homes[I.site.id];
+    Object.assign(H.store.homes, keptHomes);
+    I.setHome(null);
+    H.farm.sync();
+    H.pets.sync();
   }
 
   /* THE HOLODECK, AT HOME. "Grab all 3 items to poof into their VR gear, then
