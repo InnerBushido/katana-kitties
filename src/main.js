@@ -8048,6 +8048,7 @@ class Game {
        `castRow`, via `dreamAnchor` — and takes her puppet with her. */
     if (this.dream?.stateOf(p.index)) this.dream.drop(p.index);
     this.housing?.holo?.drop?.(p.index);
+    this.housing?.angling?.drop?.(p.index);
     this.scene.remove(p.group);
     if (p.orbRoot) this.scene.remove(p.orbRoot);
   }
@@ -10481,6 +10482,8 @@ class Game {
          can find a hologram and nothing else (dream/simhud.js). */
       const p = this.players[i];
       pad = this.dream?.padFor(i, pad, DEAD_PAD) ?? pad;
+      // A fishing rod in her hands: ATTACK casts and reels (housing/angling.js).
+      pad = this.housing?.angling?.padFor(i, pad) ?? pad;
       const sim = this.dream?.realmOf(p) === 'sim';
       p.update(dt, pad, sim ? this.dream.worldFor(p) : this.world, sim ? [] : this.dragons,
         sim ? this.dream.hudFor(p) : this);

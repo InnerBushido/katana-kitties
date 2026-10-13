@@ -18,6 +18,7 @@ import { BuildMode } from './build.js';
 import { HomeBoons } from './boons.js';
 import { HomeActivities } from './activities.js';
 import { HoloDeck } from './holodeck.js';
+import { Angling } from './angling.js';
 
 /** Roshi's tour: turn to the next island, then fly there; and the map's
  *  zoom-out. Seconds. */
@@ -102,6 +103,8 @@ export class Housing {
     this.activities = new HomeActivities(this);
     /** The holodeck's racks and her tube (`holodeck.js`). */
     this.holo = new HoloDeck(this);
+    /** The rod, the lure and the wild fish at the koi pond (`angling.js`). */
+    this.angling = new Angling(this);
     this.built = false;
   }
 
@@ -136,6 +139,7 @@ export class Housing {
       if (B) this._dressBridge(k);
     }
     this.koi.sync();
+    this.angling.sync();
     this.farm.sync();
   }
 
@@ -194,6 +198,9 @@ export class Housing {
     for (const n of names) if (n) C[n] = (C[n] ?? 0) + 1;
     this.save();
     for (const I of this.isles) if (I.home?.owners.some((o) => names.includes(o))) I.rebuildItems();
+    // A rebuild clears the island's item group, and the koi and the wild fish live in it.
+    this.koi.sync();
+    this.angling.sync();
   }
 
   /** Cups on a home's shelf: every owner's wins together. */
@@ -477,6 +484,7 @@ export class Housing {
     this._trackMusic(players);
     this.roshi?.update(dt, players);
     this.koi.update(dt);
+    this.angling.update(dt, players);
     this.farm.update(dt);
     this.kendo.update(dt, players);
     this.builder.update(dt, this.time);
@@ -772,6 +780,7 @@ export class Housing {
     this.save();
     I.setHome(H, this.coloursOf(H));
     this.koi.sync();
+    this.angling.sync();
     this.farm.sync();
     this.game.audio?.play?.('score');
     const k = this.isles.indexOf(I);
@@ -805,6 +814,7 @@ export class Housing {
     if (this.bridges[k]) { this.bridges[k].group.visible = false; this.bridges[k].solid = false; }
     if (this.musicSite === siteId) this.musicSite = null;
     this.koi.sync();
+    this.angling.sync();
     this.farm.sync();
     return true;
   }
@@ -824,6 +834,7 @@ export class Housing {
     const I = this.isleOf(H.site);
     I?.rebuildItems();
     this.koi.sync();
+    this.angling.sync();
     this.farm.sync();
   }
 
@@ -879,6 +890,9 @@ export class Housing {
         return { act: 'gates', k, home: this.isles[k].home };
       }
     }
+    // The rod stand stands on the koi pond's bank, inside the pond's own spot.
+    const pond = this.angling.standNear(p);
+    if (pond) return { act: 'rod', pond, home: pond.I.home };
     for (const I of this.isles) {
       if (!I.home || !I.over(p.position.x, p.position.z, 2)) continue;
       let best = null;
@@ -895,6 +909,9 @@ export class Housing {
   /** The callout for her, or null. */
   prompt(p, key) {
     if (!key) return null;
+    // With a rod in her hands, the callout is the rod's: power, line, BITE.
+    const rod = this.angling.prompt(p, key);
+    if (rod) return rod;
     const s = this._spotFor(p);
     if (!s) return null;
     const own = s.home && s.home.owners.includes(p.style.name);
@@ -903,6 +920,7 @@ export class Housing {
       jukebox: own ? 'PICK THE MUSIC' : 'LISTEN',
       door: own ? 'MY HOME' : 'KNOCK',
       koi: 'THE KOI POND',
+      rod: 'PICK UP A FISHING ROD',
       harvest: 'HARVEST BAMBOO',
       animals: 'THE ANIMALS',
       kendo: 'KENDO GEAR',
@@ -963,6 +981,9 @@ export class Housing {
         return true;
       case 'koi':
         C.open(p.index, 'koi', { site: s.home.site });
+        return true;
+      case 'rod':
+        this.angling.toggle(p, s.pond);
         return true;
       case 'harvest':
         this.farm.harvest(p, s.home);

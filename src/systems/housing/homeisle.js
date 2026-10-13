@@ -437,7 +437,8 @@ export class HomeIsle {
     const spot = (act, rr = r) => this.spots.push({ x: w.x, z: w.z, y: gy, r: rr, act, item: it.id, place: P.id });
     switch (it.id) {
       case 'koipond': {
-        /* "Pond is way too small, can make it bigger" — r 10 now, against 7.
+        /* "Pond is way too small, can make it bigger" — r 10, against 7; and
+           12 once it was fished in the world ("We can also make the pond bigger").
            The rim is stones, so it reads as a pond from above in build mode. */
         flat([disc(r - 0.6, 0.25, 0x9a948a), disc(r - 1.3, 0.28, 0x2f6f9a, 0.02)]);
         const rim = [];

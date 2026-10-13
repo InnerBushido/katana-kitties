@@ -5,7 +5,6 @@ import { JUKEBOX, hasRecording } from './jukebox.js';
 import { footprint, firstFit, firstYardSpot, wallSlots, wallFree, ITEM_SELL } from './editor.js';
 import { buildWhy, commitBuild, removeBuilt, pickList, stepToward, BUILD_KEYS, PICK_KEYS } from './build.js';
 import { Preview } from './preview.js';
-import { Fishing } from './fishing.js';
 import { KOI_COLOURS } from './koi.js';
 import { careBuff } from './farm.js';
 
@@ -180,15 +179,6 @@ export class HousingCards {
   /** The editor and the rod take the pad themselves. */
   drive(index, pad, dt, c) {
     const top = this._top(index);
-    if (top?.v === 'fishing') {
-      const F = this.st.get(index).fish;
-      if (pad.pressed('interact')) return false; // BACK, handled by the card
-      F.step(pad, dt);
-      F.draw(c.el?.querySelector('canvas.hs-fish'));
-      const m = c.el?.querySelector('.hs-fishmsg');
-      if (m && m.textContent !== F.msg) m.textContent = F.msg;
-      return false;
-    }
     if (top?.v === 'build' || top?.v === 'pick') {
       const spent = this.H.builder.drive(index, pad, dt);
       this.H.builder.drawMap(index, c.el?.querySelector('canvas.hs-map'));
@@ -208,7 +198,6 @@ export class HousingCards {
 
   tap(index, act) {
     const top = this._top(index);
-    if (act === 'reel' && top?.v === 'fishing') this.st.get(index).fish?.tap();
     if (top?.v === 'build' || top?.v === 'pick') {
       const B = this.H.build;
       const step = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] }[act];
@@ -226,7 +215,6 @@ export class HousingCards {
 
   painted(index, c, el) {
     const top = this._top(index);
-    if (top?.v === 'fishing') this.st.get(index).fish?.draw(el.querySelector('canvas.hs-fish'));
     if (top?.v === 'build' || top?.v === 'pick') this.H.builder.drawMap(index, el.querySelector('canvas.hs-map'));
     if (top?.v === 'shop') this.preview.draw(index, el.querySelector('canvas.hs-prev'), 0);
   }
@@ -888,25 +876,22 @@ export class HousingCards {
       rows: [
         { title: 'FEED THE KOI', blurb: 'Fed twice a day at most, they grow — and new ones sometimes come.', go: () => { this.H.koi.feed(p, H); return null; } },
         {
-          title: 'GO FISHING', blurb: 'Wild fish visit the pond. Catch one and Roshi buys it.',
-          go: () => { this.st.get(index).fish = new Fishing(this.H, p, H); this._push(index, { v: 'fishing', site: top.site }); return null; },
+          /* FISHING IS IN THE WORLD NOW (angling.js): this row hands her a rod
+             from the stand, the same as walking up to it and pressing ACTION. */
+          title: this.H.angling.holding(index) ? 'PUT THE ROD BACK' : 'GO FISHING',
+          blurb: 'Wild fish swim in the pond — see one, cast near it. HOLD ATTACK: the longer you hold, the further it goes.',
+          go: () => {
+            const v = this.H.angling.ponds.get(top.site);
+            if (v) { this.H.angling.toggle(p, v); this.game.inspector.closeOne(index); }
+            else this.game.toast?.('The pond has no fish yet — come back in a moment.', index);
+            return null;
+          },
         },
         {
           title: 'RECORD BOARD', blurb: Object.keys(rec).length ? Object.entries(rec).map(([k, r]) => `${k.toUpperCase()} ${r.lb}lb (${r.who})`).join(' · ') : 'No records yet — be the first!',
           go: () => null,
         },
       ],
-    };
-  }
-
-  _v_fishing(index) {
-    const F = this.st.get(index).fish;
-    const touch = typeof document !== 'undefined' && document.body.classList.contains('touch-ui');
-    return {
-      head: 'FISHING',
-      body: `<canvas class="hs-fish" width="320" height="170"></canvas><div class="hs-fishmsg">${esc(F?.msg ?? '')}</div>${touch ? `<button type="button" class="hs-reel" data-hact="reel" data-side="${index}">CAST / REEL</button>` : ''}`,
-      rows: [],
-      foot: 'JUMP <b>cast · hook · reel</b> · STICK <b>twitch</b> · INTERACT <b>stop</b>',
     };
   }
 

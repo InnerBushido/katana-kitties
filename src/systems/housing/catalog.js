@@ -196,7 +196,7 @@ export const ITEMS = [
   { id: 'trophy', name: 'TROPHY SHELF', where: ['wall'], size: { w: 2.0 }, mult: 0.15, model: null, act: 'trophies',
     blurb: 'A shelf with one golden cup for every arena battle you have won.' },
   // --------------------------------------------- outdoors: things that DO something
-  { id: 'koipond', name: 'KOI POND', where: ['yard'], r: 10, mult: 2, model: null, act: 'koi',
+  { id: 'koipond', name: 'KOI POND', where: ['yard'], r: 12, mult: 2, model: null, act: 'koi',
     blurb: 'Feed the koi so they grow — and rare colours turn up. Pick up the rod beside it and FISH!' },
   { id: 'onsen', name: 'ONSEN HOT SPRING', where: ['yard'], r: 7, mult: 2.5, model: null, act: 'soak',
     blurb: 'Change into a bathing suit and relax. Your first 15 seconds of every round next battle hit twice as hard.' },

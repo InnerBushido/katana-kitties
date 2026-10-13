@@ -6622,14 +6622,11 @@ body.touch-ui .ke-foot .menu-btn, body.touch-ui .ke-row .menu-btn { font-size: 1
 .hs-perks { display: flex; flex-wrap: wrap; gap: 0.3em; margin: 0.2em 0 0.5em; }
 .hs-perks span { background: rgba(255, 255, 255, 0.12); border-radius: 0.6em; padding: 0.1em 0.55em; font-size: 0.85em; }
 .hs-card canvas.hs-grid,
-.hs-card canvas.hs-fish { display: block; width: 100%; max-height: 38cqh; object-fit: contain; image-rendering: pixelated; margin: 0.2em auto; }
-.hs-fishmsg { min-height: 2.4em; text-align: center; font-weight: 700; }
 .hs-pad { display: flex; gap: 0.4em; justify-content: center; margin: 0.3em 0; }
-.hs-pad button, .hs-reel {
+.hs-pad button {
   font: inherit; font-weight: 700; border: 0; border-radius: 0.5em; padding: 0.45em 0.9em;
   background: rgba(255, 255, 255, 0.18); color: inherit; touch-action: manipulation;
 }
-.hs-reel { display: block; width: 100%; margin-top: 0.3em; background: #2f7fb8; }
 .hs-caption {
   position: fixed; left: 50%; bottom: 9vh; transform: translateX(-50%); z-index: 30;
   max-width: 86vw; padding: 0.5em 1.2em; border-radius: 0.8em; pointer-events: none;
@@ -6640,7 +6637,6 @@ body.touch-ui .ke-foot .menu-btn, body.touch-ui .ke-row .menu-btn { font-size: 1
    grid and the pond give up height before the rows do. */
 body.touch-ui .hs-caption { bottom: 4vh; font-size: clamp(13px, 4.2vh, 20px); padding: 0.35em 0.9em; }
 body.touch-ui .hs-card canvas.hs-grid,
-body.touch-ui .hs-card canvas.hs-fish { max-height: 30cqh; }
 body.touch-ui .hs-pad button { padding: 0.6em 1.1em; }
 
 /* BUILD MODE (systems/housing/build.js): "place the item in 3D space with the

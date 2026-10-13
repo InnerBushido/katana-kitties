@@ -22,7 +22,7 @@ from the town, grown in her colours when she buys.
 | `cards.js` | **every screen**, as one inspector ext-provider with a per-seat view stack |
 | `editor.js` | the tatami grid, footprints, `fits`, `autoLayout` |
 | `purchasescene.js` | the purchase cutscene |
-| `roshi.js` `jukebox.js` `farm.js` `koi.js` `fishing.js` `kendo.js` `models.js` | the realtor, the boombox, the bamboo farm and the animals, the koi, fishing, kendo, the vendored models |
+| `roshi.js` `jukebox.js` `farm.js` `koi.js` `fishing.js` `angling.js` `holodeck.js` `kendo.js` `models.js` | the realtor, the boombox, the bamboo farm and the animals, the koi, the fish table, fishing in the world, the holodeck's racks, kendo, the vendored models |
 
 ## Decisions, with the reason
 
@@ -182,6 +182,26 @@ except on load (`setLocked(locked, true)`), and a pulsing force field fills
 both doorways while they are shut. `doorSegments()` is what the push-back reads,
 so a shut door blocks at both ends. A visitor who presses ACTION is told whose
 gates they are (non-negotiable 6), and nothing happens.
+
+## Fishing, in the world
+
+`angling.js` replaced the canvas card, which Richard found boring and which
+showed no fish. There is now a stand of rods on the pond's bank, on the side
+facing the middle of her island. ACTION takes a rod, and while she holds it
+ATTACK belongs to the rod (`padFor` masks it from the katana). Hold ATTACK and
+a ring on the water shows where the cast will land. Let go and the lure flies
+there. The wild fish are dark shapes at the surface, each one a `rollFish` for
+where it swims. They are drawn bigger the heavier they are, so she can pick out
+the big one. The rules are the old card's, now happening in the pond: a gentle
+twitch brings a fish to the lure, thrashing scares off the shy big ones, ATTACK
+in the window sets the hook, and holding ATTACK reels in against the line
+tension. A caught fish is replaced by a new one after `ANGLE.respawn`. A fish
+that got away is still in the pond. The pond grew from 10 to 12.
+
+Two bugs were found by the checks and are worth knowing about. A pad's stick
+can be a getter, so the masked pad sets `mx`/`my` with `defineProperty`
+(assigning them throws). And the release frame used to add one more frame of
+power, so the lure landed half a unit past the ring.
 
 ## The holodeck
 

@@ -35,6 +35,7 @@ import { mealPct, BOON } from '../../src/systems/housing/boons.js';
 import { DOOR_SWING } from '../../src/systems/housing/homebridge.js';
 import { napFade } from '../../src/systems/housing/activities.js';
 import { holoLayout, HOLO_GRAB } from '../../src/systems/housing/holodeck.js';
+import { castPoint, fishCount, fishLen, ANGLE } from '../../src/systems/housing/angling.js';
 
 const DAY = 24 * 3600 * 1000;
 
@@ -639,6 +640,115 @@ export async function housingChecks({ ok, world }) {
     /strikePlayers\(attacker, kind, reach, dir, spent = null\) \{[\s\S]{0,700}?if \(!this\.tournament\?\.fighting\) \{\s*this\.housing\?\.kendo\?\.sparStrike\(attacker, kind, dir\);\s*return;\s*\}/.test(msrc));
   const ksrc = readFileSync(new URL('../../src/systems/housing/kendo.js', import.meta.url), 'utf8');
   ok('...and the kendo strike never calls hurt', !/\.hurt\(/.test(ksrc));
+
+  /* FISHING IN THE WORLD. "Make it 3D and make it that you can see the fish
+     in the pond ... player equips a fishing pole nearby, then when attacking
+     with the fishing pole, then they cast and the longer they hold it, the
+     further it goes. We can also make the pond bigger." Driven through the
+     real Angling with a pad whose buttons the check holds. */
+  {
+    const near = castPoint(0, 0, 0, 0, 10).d;
+    const mid = castPoint(0, 0, 0, 0.5, 10).d;
+    const far = castPoint(0, 0, 0, 1, 10).d;
+    ok('the longer she holds ATTACK, the further the cast goes — out past the middle of the pond',
+      near < mid && mid < far && far > 10, `${near.toFixed(1)} < ${mid.toFixed(1)} < ${far.toFixed(1)}`);
+    ok('...and the pond is bigger than it was (r 12, against 10)', ITEM_BY_ID.koipond.r >= 12);
+
+    const I = H.isles[3];
+    const Hm = newHome(I.site.id, 'minka', ['Ember']);
+    const spot = firstYardSpot(Hm, ITEM_BY_ID.koipond, I.radius);
+    addOutdoor(Hm, 'koipond', spot.x, spot.z, 0);
+    I.setHome(Hm, null);
+    const A = H.angling;
+    A.sync();
+    const v = A.ponds.get(I.site.id);
+    const ids = new Set(FISH.map((f) => f.id));
+    ok('the pond has its wild fish, IN the water, each a real roll of the fish table',
+      v && v.fish.length === fishCount(I.site.id)
+      && v.fish.every((f) => Math.hypot(f.x - v.P.x, f.z - v.P.z) < v.wr && ids.has(f.roll.fish.id) && f.mesh.parent === v.group),
+      v ? `${v.fish.length} fish` : 'no pond');
+    ok('...drawn bigger the heavier they are, so the big one can be SEEN and aimed at', fishLen(20) > fishLen(1) * 2);
+    ok('...and the deep kinds only out in the deep middle',
+      v.fish.every((f) => f.roll.fish.depth <= 1 - Math.hypot(f.x - v.P.x, f.z - v.P.z) / (v.wr * 0.85) + 0.05 + 0.15));
+    ok('the rod stand is on her bank, on the island', Math.abs(Math.hypot(v.stand.x - v.P.x, v.stand.z - v.P.z) - (v.P.r - 0.2)) < 1e-6
+      && I.over(v.stand.x, v.stand.z));
+
+    const kit = fakePlayer(0);
+    kit.facing = 0;
+    game.players = [kit];
+    kit.position.set(v.stand.x, v.stand.y, v.stand.z);
+    ok('at the stand she is offered a rod', /PICK UP A FISHING ROD/.test(H.prompt(kit, 'E') ?? ''));
+    H.interact(kit);
+    ok('...and ACTION gives her one, and her callout is the rod\'s', A.holding(0) && /HOLD ATTACK TO CAST/.test(H.prompt(kit, 'E') ?? ''));
+    const S = { down: false, prev: false, mx: 0 };
+    const pad = {
+      get mx() { return S.mx; }, my: 0,
+      down: (a) => (a === 'attack' ? S.down : false),
+      pressed: (a) => (a === 'attack' ? S.down && !S.prev : false),
+    };
+    const frame = () => { const out = A.padFor(0, pad); A.update(1 / 30, [kit]); S.prev = S.down; return out; };
+    S.down = true;
+    const held = frame();
+    ok('with a rod, ATTACK is the rod\'s — the katana never sees it', held.pressed('attack') === false && held.down('attack') === false);
+    // Aim at a fish: turn to it and wind up just far enough.
+    const L = A.lineOf(0);
+    const f = v.fish[0];
+    kit.position.set(v.P.x + (v.wr + 1) , v.stand.y, v.P.z);
+    f.x = v.P.x + 2; f.z = v.P.z; f.shyT = 0;
+    kit.facing = Math.atan2(f.x - kit.position.x, f.z - kit.position.z);
+    const want = (Math.hypot(f.x - kit.position.x, f.z - kit.position.z) - 1.6) / (v.wr * 1.5);
+    let n = 0;
+    while (L.k < want && n++ < 90) frame();
+    ok('...holding it winds the cast up, and she stands still while it does', L.phase === 'charge' && frame().mx === 0);
+    // Where she is aiming at the moment she lets go. Not the fish: it swims on
+    // through the wind-up and the flight (0.82 off, measured), as fish do.
+    const aim = castPoint(kit.position.x, kit.position.z, kit.facing, L.k, v.wr);
+    S.down = false;
+    for (let k = 0; k < 20; k++) frame();
+    ok('let go, and the lure lands where she aimed — in the water, out by the fish',
+      L.phase === 'wait' && Math.hypot(L.to.x - aim.x, L.to.z - aim.z) < 0.2 && Math.hypot(aim.x - f.x, aim.z - f.z) < 2.5,
+      `${L.phase} ${Math.hypot(L.to.x - aim.x, L.to.z - aim.z).toFixed(2)} from the aim, ${Math.hypot(aim.x - f.x, aim.z - f.z).toFixed(2)} from the fish`);
+    S.mx = 0.6;
+    n = 0;
+    while (L.phase === 'wait' && n++ < 600) frame();
+    S.mx = 0;
+    ok('a gentle twitch brings a fish to it, and it BITES', L.phase === 'bite' && !!L.fish, `${L.phase} after ${n}`);
+    const caught = L.fish;
+    const before = kit.score;
+    S.down = true;
+    frame();
+    ok('...ATTACK in the window sets the hook', L.phase === 'reel' && caught.hooked);
+    n = 0;
+    while (L.phase === 'reel' && n++ < 1800) { S.down = L.tension < 0.7; frame(); }
+    S.down = false;
+    frame();
+    const rec = H.store.records?.fish?.[caught.roll.fish.id];
+    ok('reeled in carefully, she LANDS it: paid, and on the record board',
+      L.phase === 'idle' && kit.score > before && rec?.who === 'Ember' && !v.fish.includes(caught), `${L.phase} +${kit.score - before}`);
+    const count = v.fish.length;
+    for (let k = 0; k < 30 * (ANGLE.respawn + 1); k++) A.update(1 / 30, [kit]);
+    ok('...and another wild fish comes to take its place', v.fish.length === count + 1);
+    // A snap loses nothing: the fish swims off and is still in the pond.
+    const g2 = v.fish[1];
+    g2.x = v.P.x + 2; g2.z = v.P.z; g2.shyT = 0;
+    L.phase = 'reel'; L.fish = g2; g2.hooked = true; L.dist = 1; L.tension = 0.2; L.t = 0; L.to = { x: g2.x, z: g2.z };
+    S.down = true;
+    n = 0;
+    while (L.phase === 'reel' && n++ < 600) frame();
+    S.down = false;
+    frame();
+    ok('reeled against the pull, the line SNAPS — and the fish is still in the pond', L.phase === 'idle' && v.fish.includes(g2) && !g2.hooked);
+    const n0 = toasts.length;
+    kit.position.set(v.P.x + v.wr + ANGLE.leave + 2, v.stand.y, v.P.z);
+    frame();
+    ok('walking away from the pond puts the rod back, and says so',
+      !A.holding(0) && toasts.slice(n0).some(([i, t]) => i === 0 && /rod goes back/.test(t)));
+    const asrc = readFileSync(new URL('../../src/systems/housing/angling.js', import.meta.url), 'utf8');
+    ok('...and nothing in the fishing can reach a blow: no strikePlayers, no hurt', !/strikePlayers\(|\.hurt\(/.test(asrc));
+    game.players = [];
+    I.setHome(null);
+    A.sync();
+  }
 
   /* THE HOLODECK, AT HOME. "Grab all 3 items to poof into their VR gear, then
      walk to the tube and press interact ... if they leave their island, they
