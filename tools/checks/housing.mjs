@@ -255,6 +255,49 @@ export async function housingChecks({ ok, world }) {
       const inWell = I.local((W.x0 + W.x1) / 2, (W.z0 + W.z1) / 2);
       ok('...except up through the stairwell, which has no lid', I.ceilingAt(inWell.x, fy0 + 1, inWell.z) == null);
       ok('...and somebody on the floor above is not under the floor she is standing on', I.ceilingAt(room.x, fy1 + 0.1, room.z) !== fy1 - SLAB_T);
+      /* WALKED, THROUGH THE WALLS. "Unable to climb to the second floor in
+         the castle house ... there is a barrier blocking the walking path at
+         the top of the steps." Every check above read the decks and passed:
+         the stair's own rail stood 2 over the floor above, and 1.2 from the
+         back wall, for a kitten 1.2 wide. So: walk her up every staircase
+         with `H.wall` after each step, off the top onto the landing, round
+         into the room upstairs — and back down again. */
+      const walker = fakePlayer(0, 0, 0, 0);
+      const walk = (path) => {
+        for (const [tx, tz] of path) {
+          const tw = I.local(tx, tz);
+          for (let n = 0; n < 400; n++) {
+            const dx = tw.x - walker.position.x, dz = tw.z - walker.position.z;
+            const d = Math.hypot(dx, dz);
+            if (d < 0.15) break;
+            const wx = walker.position.x, wz = walker.position.z;
+            walker.position.x += (dx / d) * 0.1;
+            walker.position.z += (dz / d) * 0.1;
+            const g = I.heightAt(walker.position.x, walker.position.z, walker.position.y);
+            if (g) walker.position.y = g.y;
+            walker.velocity.set(0, 0, 0);
+            H.wall(walker, wx, wz, null);
+          }
+          const L = I.toLocal(walker.position.x, walker.position.z);
+          if (Math.hypot(L.x - tx, L.z - tz) > 0.3) return `stuck at (${L.x.toFixed(1)}, ${L.z.toFixed(1)}) y ${(walker.position.y - I.groundY).toFixed(1)}, going to (${tx}, ${tz})`;
+        }
+        return null;
+      };
+      const stuck = [];
+      for (const Wk of I.shell.wells) {
+        const [uw] = houseShape(h.id).floors[Wk.floor + 1];
+        const landZ = (Wk.z0 + -houseShape(h.id).floors[Wk.floor + 1][1]) / 2;
+        const inward = Wk.xc - Wk.sx * ((Wk.x1 - Wk.x0) / 2 + 1.5);
+        const start = I.local(Wk.xc, Wk.z1 + 1);
+        walker.position.set(start.x, I.groundY + Wk.y0, start.z);
+        const up = walk([[Wk.xc, Wk.z1 + 0.5], [Wk.xc, Wk.z0 + 0.2], [Wk.xc, landZ], [inward, landZ], [inward, 0]]);
+        const fUp = I.floorAt(walker.position.x, walker.position.y, walker.position.z);
+        if (up || fUp !== Wk.floor + 1) stuck.push(`up ${Wk.floor}->${Wk.floor + 1}: ${up ?? `ended on floor ${fUp}`} (${uw})`);
+        const down = walk([[inward, landZ], [Wk.xc, landZ], [Wk.xc, Wk.z0 + 0.2], [Wk.xc, Wk.z1 + 1]]);
+        const fDn = I.floorAt(walker.position.x, walker.position.y, walker.position.z);
+        if (down || fDn !== Wk.floor) stuck.push(`down ${Wk.floor + 1}->${Wk.floor}: ${down ?? `ended on floor ${fDn}`}`);
+      }
+      ok(`${h.name}: a kitten can WALK up every staircase into the room above, and back down, through every wall and rail`, !stuck.length, stuck.join('; '));
       if (was.home === undefined) delete H.store.homes[I.site.id]; else H.store.homes[I.site.id] = was.home;
       H.debugOpen = was.dbg;
       // furniture keeps off the stairs and the hole over them
@@ -1366,6 +1409,31 @@ export async function housingChecks({ ok, world }) {
     ok('...and hanging it up takes the pose off', a.kendoGeared === false && !K.geared(a));
     const ksrc = readFileSync(new URL('../../src/systems/housing/kendo.js', import.meta.url), 'utf8');
     ok('...with the drawn men kept for a build without the drawings', /menTexture\(\)/.test(ksrc) && /p\.kendoPose \|\| p\.kiaiPose/.test(ksrc));
+  }
+
+  /* CLAIMING CASTLE ROOMS: a fair share each, rounded down; the room left
+     over is nobody's; let one go and pick another. */
+  {
+    const [e, f, b, x] = [0, 1, 2, 3].map((i) => fakePlayer(i));
+    const names = [e, f, b].map((q) => q.style.name);
+    const C = newHome('cloudpeak', 'castle', names.slice(0, 2));
+    const said = [];
+    const was = game.toast;
+    game.toast = (t, i) => said.push([i, t]);
+    ok('two owners of the castle get two rooms each', H.claimShare(C) === 2);
+    ok('she claims one, then a second', H.setClaim(e, C, 'east', true) && H.setClaim(e, C, 'north', true) && C.rooms.east.claim === names[0]);
+    ok('...but not a third, and is told why', !H.setClaim(e, C, 'south', true) && /fair share of 2/.test(said.at(-1)?.[1]));
+    ok("...nor her sister's", !H.setClaim(f, C, 'east', true) && /That is .*'s room/.test(said.at(-1)?.[1]));
+    ok('...nor can a visitor claim one at all', !H.setClaim(x, C, 'south', true) && /owners/.test(said.at(-1)?.[1]));
+    ok('letting one go makes it UNCLAIMED, and she may pick another', H.setClaim(e, C, 'north', false) && !C.rooms.north.claim && H.setClaim(e, C, 'south', true));
+    ok("...and nobody lets go of a room that is not hers", !H.setClaim(f, C, 'south', false) && C.rooms.south.claim === names[0]);
+    const C3 = newHome('cloudpeak', 'castle', names);
+    H.setClaim(e, C3, 'east', true);
+    H.setClaim(f, C3, 'west', true);
+    H.setClaim(b, C3, 'north', true);
+    ok('three owners get one each, and the fourth room is left for everybody',
+      H.claimShare(C3) === 1 && !H.setClaim(e, C3, 'south', true) && !H.setClaim(b, C3, 'south', true) && !C3.rooms.south?.claim);
+    game.toast = was;
   }
 
   /* A KENDO MATCH, end to end on a stub square: kneel, the turns (grab,

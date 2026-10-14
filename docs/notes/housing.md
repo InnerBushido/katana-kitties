@@ -286,6 +286,15 @@ there in seconds:
 
 ## The house, Oct 2026
 
+- **Castle rooms are claimed on the CASTLE ROOMS card**, a fair share each: the
+  claimable rooms over the owners, rounded down (`claimShare`), so a room left
+  over is nobody's and everybody's. LET GO frees one to pick another. Every
+  refusal says why (`claimWhy`).
+- **The stairs land on 2.2 of floor**, and the stair's own rail stops under the
+  floor above. It used to stand 2 over it, 1.2 from the back wall: a kitten 1.2
+  wide could not get off the top. The housing checks now WALK every staircase
+  through `Housing.wall`, up and down.
+
 - **Box stairs** (hako-kaidan) with a stairwell cut out of the floor above,
   railed on three sides. Before this, a kitten upstairs could not get down: the
   floor deck covered the top of the stairs and `heightAt` takes the highest

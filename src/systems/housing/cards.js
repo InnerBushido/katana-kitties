@@ -530,7 +530,7 @@ export class HousingCards {
          action for now" — main.js `_debugHousingExport`/`_debugHousingImport`. */
     ];
     if (def.rooms.some((r) => r.claim)) {
-      rows.push({ title: 'CASTLE ROOMS', blurb: 'Claim a room by walking into it first. Lock yours or invite your sisters in.', go: () => { this._push(index, { v: 'claims', site: top.site }); return null; } });
+      rows.push({ title: 'CASTLE ROOMS', blurb: 'Claim your fair share of the rooms, or let one go to pick another.', go: () => { this._push(index, { v: 'claims', site: top.site }); return null; } });
     }
     rows.push(
       { title: 'STORAGE CHEST', blurb: 'Things you have put away.', go: () => { this._push(index, { v: 'chest', site: top.site }); return null; } },
@@ -952,15 +952,35 @@ export class HousingCards {
   _v_claims(index, p, top) {
     const H = this._home(top);
     const def = HOUSE_BY_ID[H.house];
+    // (the rules and every refusal are Housing's: `claimWhy`, `setClaim`)
+    const me = p.style.name;
+    const share = this.H.claimShare(H);
+    const mine = this.H.claimsOf(H, me).length;
     const rows = def.rooms.filter((r) => r.claim).map((room) => {
       const who = H.rooms?.[room.id]?.claim;
+      if (who === me) {
+        return {
+          title: `LET GO OF THE ${room.name}`, right: 'YOURS',
+          blurb: 'It is yours. Let it go and it is UNCLAIMED again — for you or a sister to pick.',
+          go: () => { if (this.H.setClaim(p, H, room.id, false)) this.game.toast(`${me} lets the ${room.name} go — anybody can claim it now.`, index); return null; },
+        };
+      }
+      const why = this.H.claimWhy(p, H, room.id);
       return {
-        title: room.name, right: who ? possessive(who) : 'UNCLAIMED',
-        blurb: who ? (who === p.style.name ? 'Yours. Your LOCK MY DOOR setting decides who else may come in.' : `${who} walked in first.`) : 'Walk into it first to claim it.',
-        go: () => null,
+        title: who ? room.name : `CLAIM THE ${room.name}`, right: who ? possessive(who) : 'UNCLAIMED',
+        blurb: who ? `${who} claimed it.` : 'Make it yours: only you can furnish it, and your door lock keeps others out.',
+        disabled: !!why, why,
+        go: () => { if (this.H.setClaim(p, H, room.id, true)) this.game.toast(`The ${room.name} is ${me}'s now!`, index); return null; },
       };
     });
-    return { head: 'CASTLE ROOMS', rows };
+    const left = Math.max(0, share - mine);
+    const owners = H.owners.length;
+    const spare = def.rooms.filter((r) => r.claim).length - share * owners;
+    return {
+      head: 'CASTLE ROOMS',
+      body: `<div class="pc-dim">${esc(`A fair share is ${share} room${share === 1 ? '' : 's'} each for ${owners} owner${owners === 1 ? '' : 's'} — you can claim ${left} more.${spare > 0 ? ` ${spare === 1 ? 'One room is' : `${spare} rooms are`} left over for everybody to share.` : ''}`)}</div>`,
+      rows,
+    };
   }
 
   _v_chest(index, p, top) {

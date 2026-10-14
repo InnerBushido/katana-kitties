@@ -1106,6 +1106,67 @@ export class Housing {
     return true;
   }
 
+  /* --------------------------- castle rooms ----------------------------- */
+
+  /**
+   * CLAIMING A CASTLE ROOM. Richard: "How does player go about claiming
+   * Castle Rooms? I don't see a way to claim it yet ... players can only
+   * claim their fair half of the amount of rooms available, so that, everyone
+   * gets a fair amount of rooms. If there is an odd numbered room, then it is
+   * shared or unclaimed. A player can revoke their claimed room and claim a
+   * new one if there is one available." There was no way: the card said
+   * "walk into it first" and nothing ever wrote a claim.
+   *
+   * Her FAIR SHARE is the claimable rooms over the owners, rounded DOWN —
+   * four rooms are 2 each for two owners, 1 each for three with one left
+   * over, and that one can never be claimed by anybody, so it is everybody's.
+   * Only an owner claims. Claims are on the CASTLE ROOMS card, both ways.
+   */
+  claimShare(H) {
+    const def = HOUSE_BY_ID[H.house];
+    const n = def?.rooms.filter((r) => r.claim).length ?? 0;
+    return H.owners.length ? Math.floor(n / H.owners.length) : 0;
+  }
+
+  claimsOf(H, name) {
+    return Object.entries(H.rooms ?? {}).filter(([, R]) => R?.claim === name).map(([id]) => id);
+  }
+
+  /** Why she cannot claim this room, or null. */
+  claimWhy(p, H, roomId) {
+    const n = p.style?.name;
+    const room = HOUSE_BY_ID[H.house]?.rooms.find((r) => r.id === roomId);
+    if (!room?.claim) return 'That room is for everybody — it cannot be claimed.';
+    if (!H.owners.includes(n)) return `Only the castle's owners can claim a room — ${H.owners.join(' & ')}.`;
+    const who = H.rooms?.[roomId]?.claim;
+    if (who === n) return null;
+    if (who) return `That is ${who}'s room. Pick one that says UNCLAIMED.`;
+    const share = this.claimShare(H);
+    const mine = this.claimsOf(H, n).length;
+    if (mine >= share) {
+      return share === 1
+        ? 'You already have your room — let it go first to pick a different one.'
+        : `You already have your fair share of ${share} rooms — let one go first to pick a different one.`;
+    }
+    return null;
+  }
+
+  /** Claim it (true) or let it go (false). Says why on a refusal. */
+  setClaim(p, H, roomId, claim) {
+    const n = p.style?.name;
+    const R = (H.rooms[roomId] ??= { items: [] });
+    if (!claim) {
+      if (R.claim !== n) { this.game.toast('That room is not yours to let go.', p.index); return false; }
+      delete R.claim;
+    } else {
+      const why = this.claimWhy(p, H, roomId);
+      if (why) { this.game.toast(why, p.index); return false; }
+      R.claim = n;
+    }
+    this.save();
+    return true;
+  }
+
   /* ----------------------------- the preview ---------------------------- */
 
   /** Show `houseId` on `siteId` in this kitten's colours, fading in. */

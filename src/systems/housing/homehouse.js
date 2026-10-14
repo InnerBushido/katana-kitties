@@ -273,7 +273,13 @@ export function buildHouseShell(houseId) {
     });
     // a rail on the open side, which is also a collider so nobody walks off it
     const rx = xc - sx * (STAIR_W / 2);
-    walls.push({ ax: rx, az: zTop, bx: rx, bz: zBot - 1.2, y0: y0 + 1.2, y1: y0 + rise + 2, rail: true });
+    /* ...and it stops UNDER the floor above. Richard: "Unable to climb to the
+       second floor in the castle house ... there is a barrier blocking the
+       walking path at the top of the steps". It reached 2 over the upper
+       floor, so up there it was a second wall along the stairwell, from the
+       very back — and between it and the house's back wall was 1.2 of floor
+       for a kitten 1.2 wide. The floor above has its own rails round the hole. */
+    walls.push({ ax: rx, az: zTop, bx: rx, bz: zBot - 1.2, y0: y0 + 1.2, y1: y0 + rise - 0.15, rail: true });
     g.push(box(0.12, 1, L, PALETTE.woodDark, rx, y0 + rise * 0.5 + 0.8, (zTop + zBot) / 2));
     /* THE OPENING UPSTAIRS IS RAILED on its two long sides and its front, so
        nobody walks into it by accident; its BACK is open, because that is
@@ -348,7 +354,8 @@ export function stairWells(houseId) {
     const sx = f % 2 === 0 ? -1 : 1;
     const xc = sx * (uw - STAIR_W / 2 - 0.4);
     // it climbs from the front toward the back, and arrives inside the floor above
-    const zTop = -ud + 1.2;
+    // (a LANDING of 2.2 behind it: she steps off the top and turns there)
+    const zTop = -ud + 2.2;
     const zBot = Math.min(zTop + len, ud - 0.6);
     out.push({ floor: f, y0, rise, xc, sx, zTop, zBot, x0: xc - STAIR_W / 2, x1: xc + STAIR_W / 2, z0: zTop, z1: zBot });
     y0 += FLOOR_H;

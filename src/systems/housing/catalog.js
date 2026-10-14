@@ -77,8 +77,8 @@ export const SITE_BY_ID = Object.fromEntries(HOME_SITES.map((s) => [s.id, s]));
  *
  * `rooms` are the spaces an owner can turn into something — a living room on
  * the tatami grid, the kendo dojo, the holodeck. The castle has one per
- * possible owner, CLAIMED by whoever walks in first ("rooms are claimed by
- * whoever walks in first and claims it").
+ * possible owner, CLAIMED on the CASTLE ROOMS card, a fair share each
+ * (`Housing.claimShare`): the rooms over the owners, rounded down.
  */
 export const HOUSES = [
   {
