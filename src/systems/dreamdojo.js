@@ -3130,9 +3130,17 @@ export class DreamDojo {
     if (g.ryu) push(g.ryu, (g.players ?? []).find((p) => p && (p.mount === g.ryu || p.rideAlong === g.ryu)) ?? null);
     for (const p of g.players ?? []) {
       if (!p?.panda) continue;
+      /* ...and a kitten riding it is carried BY WHAT THE GLASS MOVED IT, and
+         by nothing else. This used to copy the panda's position onto her
+         every frame — but `Panda.carry` puts the panda one SEAT OFFSET from
+         her, along its facing, and a panda's facing is broadside. So every
+         frame she was stepped a seat sideways, the panda was hung off that
+         next frame, and so on: Richard, "the player is moving at a very high
+         speed when moving left/right on the panda ... framerate dependent".
+         Only the push's own shift is hers, and only off her own panda. */
+      const was = p.pandaMount === p.panda ? p.panda.position.clone() : null;
       push(p.panda, p.pandaMount ? p : null);
-      // ...and a kitten riding it is carried with it.
-      if (p.pandaMount) { p.position.x = p.panda.position.x; p.position.z = p.panda.position.z; }
+      if (was) { p.position.x += p.panda.position.x - was.x; p.position.z += p.panda.position.z - was.z; }
     }
     this.domeU.uHit.value = this._domeHit;
   }

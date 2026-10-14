@@ -40687,6 +40687,27 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     D._updateDome(1 / 60);
     ok('...and a dragon perched anywhere else keeps its spot', homeDragon.state === 'perched' && homeDragon.home.x === away.x);
     gD.dragons = [];
+
+    /* A PANDA RIDDEN NOWHERE NEAR THE GLASS DOES NOT MOVE HER. Richard: "the
+       player is moving at a very high speed when moving left/right on the
+       panda ... framerate dependent". The dome copied the panda's position
+       onto her every frame, and `carry` hangs the panda a seat offset away
+       along its broadside facing, so she was stepped sideways once a frame. */
+    {
+      const keepP = gD.players;
+      gD.players = [her];
+      const artP = { cub: { texture: new THREE.Texture() }, adult: { texture: new THREE.Texture() } };
+      const pet = new Panda(artP, { owner: her, tier: 1 });
+      her.panda = pet; her.pandaMount = pet; pet.rider = her;
+      her.position.set(A.x + 400, A.y, A.z + 400);
+      her.velocity.set(0, 0, 0);
+      const at = her.position.clone();
+      for (let f = 0; f < 120; f++) { pet.carry(her); pet.facing = Math.PI / 2; D._updateDome(1 / 60); }
+      ok('a kitten riding her panda far from the dome is not moved by it — no sideways creep a frame at a time',
+        her.position.distanceTo(at) < 1e-6, `moved ${her.position.distanceTo(at).toFixed(2)} in 120 frames`);
+      her.panda = null; her.pandaMount = null; pet.rider = null;
+      gD.players = keepP;
+    }
   }
 
   /* --- the fall: two seconds of air, then back to the start --- */
