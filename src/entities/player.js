@@ -2117,11 +2117,24 @@ export class Player {
    *
    * Outside the simulator `bridgePeek` is never live and `_peekHold` never
    * set, so this IS `_basis()` — non-negotiable 5.
+   *
+   * THE SAME RULE FOR A LENS THAT IS NOT HERS. Richard, Oct 2026: "the
+   * players input should always be dependent on where the camera is and that
+   * the input shouldn't change unless the camera actually changes". In a
+   * shared pane she is drawn by the group's rig (`Game._cameraFor`), and her
+   * own follow camera — the one `camYaw` belongs to — is not on screen at
+   * all; a newcomer to the Dream Dojo had hers swung round to the gear shot
+   * while the pane stayed top-down, and the stick turned with the lens she
+   * could not see. `viewOwn` (written by `Game._render`) says whose lens drew
+   * her; when it is the rig's, the stick is read through the rig's heading.
+   * Where the rig and her camera agree — every ordinary frame — the answer
+   * is the same basis, so the game she knows has not moved.
    */
   _moveBasis(pad) {
     const pushed = (pad?.mx ?? 0) ** 2 + (pad?.my ?? 0) ** 2 > 1e-4;
     const H = this._peekHold;
-    if (!this.bridgePeek?.live && !(H && pushed)) { this._peekHold = null; return this._basis(); }
+    const borrowed = this.viewOwn === false && Number.isFinite(this.viewYaw);
+    if (!this.bridgePeek?.live && !borrowed && !(H && pushed)) { this._peekHold = null; return this._basis(); }
     const view = Number.isFinite(this.viewYaw) ? this.viewYaw : this.camYaw;
     if (!H) this._peekHold = { yaw: view };
     else if (!pushed) H.yaw = view;

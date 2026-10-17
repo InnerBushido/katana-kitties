@@ -43272,6 +43272,33 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     D.interact(sis);
     ok('...her sister gets her own round of the racks — the gear is per kitten',
       D.st[1]?.gather?.size === 3 && !sis.simLook);
+    /* "if there is a player that needs to grab the VR equipment for the first
+       time ... the camera will change for them and ... the other player will
+       get a splitscreen until the camera goes back to normal." The gear shot
+       is HER camera's; a shared pane never drew it. */
+    ok('...and while the racks shot is up she gets a pane of her own (the shot is drawn, not just steered by)',
+      !!D._gearShot(sis) && D.wantsSolo(sis), `shot ${!!D._gearShot(sis)} solo ${D.wantsSolo(sis)}`);
+    {
+      /* AND THE STICK FOLLOWS THE LENS THAT DREW HER. "the input shouldn't
+         change unless the camera actually changes". In a shared pane (viewOwn
+         false) the rig's heading; on her own camera, camYaw exactly. */
+      const kv = sis.viewYaw, kc = sis.camYaw, ko = sis.viewOwn;
+      const up = { mx: 0, my: -1 };
+      const yawOf = (v) => Math.atan2(-v.x, -v.z);
+      sis._peekHold = null;
+      sis.camYaw = 2.4; sis.viewYaw = -0.8; sis.viewOwn = false;
+      const shared = yawOf(sis._moveBasis(up).fwd);
+      sis._moveBasis({ mx: 0, my: 0 });
+      sis.viewOwn = true;
+      sis._moveBasis({ mx: 0, my: 0 });
+      const own = yawOf(sis._moveBasis(up).fwd);
+      ok('...a stick in a shared pane is read through the rig that drew her, and on her own camera through camYaw',
+        Math.abs(shared + 0.8) < 1e-9 && Math.abs(own - 2.4) < 1e-9 && sis._peekHold === null, `${shared.toFixed(2)} ${own.toFixed(2)}`);
+      sis.viewYaw = kv; sis.camYaw = kc; sis.viewOwn = ko; sis._peekHold = null;
+      const msrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+      ok('...and the renderer says whose lens it was, every frame, beside the heading',
+        /p\.viewOwn = !cam \|\| cam === p\.camera;[\s\S]{0,200}cam\.getWorldDirection\(_viewDir\)/.test(msrc));
+    }
     D.exitAll();
     D.st[1].gather = null;
     ok('every way out that is not the walk out takes the gear off at once', !her.simLook && !sis.simLook);

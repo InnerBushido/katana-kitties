@@ -14087,6 +14087,17 @@ class Game {
          where the ride camera is laid over this one after it was placed. See
          `Player._viewBasis`. A lens looking straight down has no heading and
          leaves the last one. */
+      /* ...AND WHETHER THAT LENS WAS HER OWN. Richard, Oct 2026: "the players
+         input should always be dependent on where the camera is and that the
+         input shouldn't change unless the camera actually changes". A kitten
+         in a shared pane is drawn by the group's rig, while her stick was read
+         through her own follow camera's `camYaw` — which a Dream Dojo gear
+         shot had swung round behind a lens nobody could see. `Player._moveBasis`
+         reads the rig's heading instead whenever this is false. */
+      for (const m of groups[i] ?? []) {
+        const p = this.players[m];
+        if (p) p.viewOwn = !cam || cam === p.camera;
+      }
       if (cam) {
         cam.getWorldDirection(_viewDir);
         if (Math.hypot(_viewDir.x, _viewDir.z) > 1e-3) {

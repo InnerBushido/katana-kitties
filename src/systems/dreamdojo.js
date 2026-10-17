@@ -1218,6 +1218,16 @@ export class DreamDojo {
        obstacle course" (dream/sine.js `paneAnchor`). */
     if (this.sine?.inSession?.(p)) return false;
     const s = this.st[p?.index];
+    /* ...AND A FIRST-TIMER ROUND THE RACKS. Richard: "if there is a player
+       that needs to grab the VR equipment for the first time from the Dream
+       Dojo island, that the camera will change for them and that maybe the
+       other player will get a splitscreen until the camera goes back to
+       normal." The gear shot (`_gearShot`) is HER camera's; in a shared pane
+       it was never drawn, and her stick turned with it anyway. */
+    if (s && !s.phase && s.gather?.size && this._gearShot(p)) {
+      const h = Math.hypot(p.position.x - ARCADE.x, p.position.z - ARCADE.z);
+      if (h < DOME_R && p.position.y > ARCADE.y - 3) return true;
+    }
     return !!(s && s.phase) || this.realmOf(p) === 'sim';
   }
 
