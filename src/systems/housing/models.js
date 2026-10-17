@@ -296,6 +296,11 @@ export function drawItem(id, sz = 2, opts = {}) {
     case 'katana': return mesh([box(0.5, 0.12, 0.5, 0x3a2416), box(0.1, 1.0, 0.1, 0x8c2f2a, 0, 0.12), box(0.22, 0.04, 0.22, 0x3b3128, 0, 0.8)]);
     case 'drum': return mesh([box(1.2, 0.8, 0.5, 0x5a3a20), cyl(0.7, 0.7, 0.8, 0xc84a2a, 0, 1.2, 0, 14)]);
     case 'bucket': return mesh([cyl(0.35, 0.3, 0.5, 0xb08850)]);
+    // the holodeck's kit, for build mode's ghost (homeisle.js draws the real one)
+    case 'holotube': return mesh([cyl(1.55, 1.55, 0.3, 0x2f3446, 0, 0, 0, 16), cyl(1.25, 1.25, 3.5, 0x35d7f0, 0, 0.3, 0, 16)]);
+    case 'holorack_headset': return mesh([cyl(0.8, 0.8, 0.45, 0x2f3446, 0, 0, 0, 14), box(0.7, 0.4, 0.5, 0x5ff6ff, 0, 1.0)]);
+    case 'holorack_gloves': return mesh([cyl(0.8, 0.8, 0.45, 0x2f3446, 0, 0, 0, 14), box(0.7, 0.4, 0.5, 0xff4fd8, 0, 1.0)]);
+    case 'holorack_suit': return mesh([cyl(0.8, 0.8, 0.45, 0x2f3446, 0, 0, 0, 14), box(0.7, 0.4, 0.5, 0xffd34a, 0, 1.0)]);
     case 'sake': return mesh([cyl(0.55, 0.5, 1.0, 0xe8dcc0, 0, 0, 0, 12)]);
     case 'shrine': return mesh([box(2.4, 0.4, 2.4, 0x9a9a92), box(1.6, 1.6, 1.6, 0xc8302a, 0, 0.4), box(2.6, 0.3, 2.6, 0x2a2a3a, 0, 2.0), box(1.6, 0.25, 1.6, 0x2a2a3a, 0, 2.6)]);
     case 'well': return mesh([cyl(1, 1, 0.9, 0x8a8a84, 0, 0, 0, 12), box(0.15, 2.4, 0.15, 0x5a3a20, -0.9), box(0.15, 2.4, 0.15, 0x5a3a20, 0.9), box(2.4, 0.2, 1.6, 0x3a3a4a, 0, 2.4)]);

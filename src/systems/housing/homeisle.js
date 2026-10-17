@@ -8,7 +8,7 @@ import { linkGeom, linkParts, linkModels } from './links.js';
 import { placeModel, drawItem } from './models.js';
 import { wallSlots, yardR } from './editor.js';
 import { buildTreehouse } from './treehouse.js';
-import { holoLayout, HOLO_GEAR_SCALE, HOLO_TUBE } from './holodeck.js';
+import { HOLO_GEAR_SCALE, HOLO_TUBE, ensureHoloKit, holoCell, holoOut } from './holodeck.js';
 import { GEAR_ITEMS, GEAR_SCALE, GEAR_LIFT, gearModel, TUBE_VERT, TUBE_FRAG } from '../dream/gear.js';
 
 /* ---------------------------------------------------------------------------
@@ -481,8 +481,10 @@ export class HomeIsle {
       const hs = this.houseOf(room);
       if (!hs) continue;
       const R = H.rooms?.[room.id];
+      // an old save's holodeck kept no rows for its kit: give it one, where it always stood
+      if (R?.type === 'holodeck') ensureHoloKit(room, R);
       if (R?.type === 'kendo' || R?.type === 'holodeck') {
-        const dz = this._roomDressing(room, R.type);
+        const dz = this._roomDressing(room, R.type, R);
         dz.userData.floor = room.floor;
         dz.userData.hk = room.hk;
         this.itemGroup.add(dz);
@@ -490,7 +492,8 @@ export class HomeIsle {
       const y = hs.gy + (hs.shell.floorY[room.floor] ?? 0);
       for (const [k, placed] of (R?.items ?? []).entries()) {
         const it = ITEM_BY_ID[placed.id];
-        if (!it) continue;
+        // the holodeck's kit is drawn, and its meshes registered, by `_roomDressing`
+        if (!it || it.holo) continue;
         const L = this.cellCentre(room, placed.gx, placed.gz, it, placed.rot);
         const w = hs.local(L.x, L.z);
         const g = placeModel(it.model, drawItem(it.id, 2), it.size, roomLook(it, placed));
@@ -806,7 +809,7 @@ export class HomeIsle {
   }
 
   /** What a kendo dojo or a holodeck adds to a room: the floor and the kit. */
-  _roomDressing(room, type) {
+  _roomDressing(room, type, Rrow = null) {
     const g = new THREE.Group();
     const hs = this.houseOf(room);
     const y = this.floorY(room);
@@ -834,73 +837,90 @@ export class HomeIsle {
       const rackW = hs.local(room.cx - room.w / 2 + 1.6, room.cz - room.d / 2 + 1.4);
       this.spots.push({ x: rackW.x, z: rackW.z, y, r: 2.4, act: 'kendo', room: room.id });
     } else if (type === 'holodeck') {
-      /* HER TUBE AND THE THREE RACKS (holodeck.js): the arcade's, smaller.
-         The floor is a dark plate the size of the room; the tube is the
+      /* HER TUBES AND THE THREE RACKS (holodeck.js): the arcade's, smaller.
+         The floor is a dark plate the size of the room; a tube is the
          arcade's glass, with a base and a cap; each rack is a plinth with
-         its piece floating over it and a ring on the floor while it is there. */
-      const L = holoLayout(room);
+         its piece floating over it and a ring on the floor while it is there.
+         WHERE they stand is the room's rows (catalog `holo`), and each piece
+         is its own group under `itemMeshes`, so build mode can hide the one
+         she is carrying exactly as it hides a futon. */
+      const rows = (Rrow?.items ?? []).map((q, k) => ({ q, k, it: ITEM_BY_ID[q.id] })).filter((x) => x.it?.holo);
       const floor = new THREE.BoxGeometry(room.w - 1, 0.08, room.d - 1);
       paint(floor, 0x1a2a3a);
       floor.translate(0, 0.1, 0);
-      const hard = [floor];
-      const base = new THREE.CylinderGeometry(1.45, 1.55, 0.3, 16);
-      paint(base, 0x2f3446);
-      base.translate(L.tube.x, 0.25, L.tube.z);
-      /* The cap is a RING, open in the middle: a house is seen from above,
-         and the arcade's solid cap, from up here, was a lid over her. */
-      const cap = new THREE.TorusGeometry(HOLO_TUBE.r + 0.05, 0.17, 8, 28);
-      cap.rotateX(Math.PI / 2);
-      paint(cap, 0x2f3446);
-      cap.translate(L.tube.x, HOLO_TUBE.top + 0.1, L.tube.z);
-      hard.push(base, cap);
-      /* THE ARCADE'S GLASS, not a tinted cylinder. Richard: "the sprite's
-         head is sticking out of the tube and she is drawn in front of it ...
-         make it work like the Dream Dojo". Two bugs: the pod was 3.3 tall and
-         she floated the arcade's 1.6 in it, so her ears cleared the cap (she
-         floats HOME_FLOAT_H here, and HOLO_TUBE is sized off her 2.5); and
-         the pod's geometry was translated into the ROOM's frame, so three.js
-         sorted it by the room's centre and drew it before her. Now it is the
-         arcade's additive shader, POSITIONED at the tube, drawn after her
-         (renderOrder 5, as the arcade's) — she is seen through it. */
-      const u = { uTime: { value: 0 }, uGlow: { value: 0 }, uColor: { value: new THREE.Color(0x35d7f0) } };
-      const glassH = HOLO_TUBE.top - HOLO_TUBE.bottom;
-      const pod = new THREE.Mesh(new THREE.CylinderGeometry(HOLO_TUBE.r, HOLO_TUBE.r, glassH, 32, 1, true),
-        new THREE.ShaderMaterial({
-          vertexShader: TUBE_VERT, fragmentShader: TUBE_FRAG, uniforms: u,
-          transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
-        }));
-      pod.position.set(L.tube.x, HOLO_TUBE.bottom + glassH / 2, L.tube.z);
-      pod.renderOrder = 5;
-      const R = { room: room.id, racks: [], tube: { u, mesh: pod } };
-      for (const r of L.racks) {
+      g.add(new THREE.Mesh(floor, toonVertexMat()));
+      const R = { room: room.id, racks: [], tubes: [] };
+      const piece = (k, at) => {
+        const pg = new THREE.Group();
+        pg.position.set(at.x, 0, at.z);
+        pg.userData.floor = room.floor;
+        pg.userData.hk = room.hk;
+        g.add(pg);
+        this.itemMeshes.set(`r:${room.id}:${k}`, pg);
+        return pg;
+      };
+      for (const { q, k } of rows.filter((x) => x.it.holo === 'tube')) {
+        const at = holoCell(room, q);
+        const pg = piece(k, at);
+        const base = new THREE.CylinderGeometry(1.45, 1.55, 0.3, 16);
+        paint(base, 0x2f3446);
+        base.translate(0, 0.25, 0);
+        /* The cap is a RING, open in the middle: a house is seen from above,
+           and the arcade's solid cap, from up here, was a lid over her. */
+        const cap = new THREE.TorusGeometry(HOLO_TUBE.r + 0.05, 0.17, 8, 28);
+        cap.rotateX(Math.PI / 2);
+        paint(cap, 0x2f3446);
+        cap.translate(0, HOLO_TUBE.top + 0.1, 0);
+        pg.add(new THREE.Mesh(mergeParts([base, cap]), toonVertexMat()));
+        /* THE ARCADE'S GLASS, not a tinted cylinder. Richard: "the sprite's
+           head is sticking out of the tube and she is drawn in front of it ...
+           make it work like the Dream Dojo". Two bugs: the pod was 3.3 tall and
+           she floated the arcade's 1.6 in it, so her ears cleared the cap (she
+           floats HOME_FLOAT_H here, and HOLO_TUBE is sized off her 2.5); and
+           the pod's geometry was translated into the ROOM's frame, so three.js
+           sorted it by the room's centre and drew it before her. Now it is the
+           arcade's additive shader, POSITIONED at the tube, drawn after her
+           (renderOrder 5, as the arcade's) — she is seen through it. */
+        const u = { uTime: { value: 0 }, uGlow: { value: 0 }, uColor: { value: new THREE.Color(0x35d7f0) } };
+        const glassH = HOLO_TUBE.top - HOLO_TUBE.bottom;
+        const pod = new THREE.Mesh(new THREE.CylinderGeometry(HOLO_TUBE.r, HOLO_TUBE.r, glassH, 32, 1, true),
+          new THREE.ShaderMaterial({
+            vertexShader: TUBE_VERT, fragmentShader: TUBE_FRAG, uniforms: u,
+            transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+          }));
+        pod.position.set(0, HOLO_TUBE.bottom + glassH / 2, 0);
+        pod.renderOrder = 5;
+        pg.add(pod);
+        R.tubes.push({ u, mesh: pod });
+        const t = hs.local(room.cx + at.x, room.cz + at.z);
+        // The way out of the tube, in the world: toward the room's middle, turned like the house.
+        const out = holoOut(room, at);
+        const o = hs.local(room.cx + at.x + out.x, room.cz + at.z + out.z);
+        this.spots.push({ x: t.x, z: t.z, y, r: 2.2, act: 'holodeck', room: room.id, out: { x: o.x - t.x, z: o.z - t.z } });
+      }
+      for (const [n, { q, k, it }] of rows.filter((x) => x.it.holo === 'rack').entries()) {
+        const at = holoCell(room, q);
+        const pg = piece(k, at);
         const pl = new THREE.CylinderGeometry(0.7, 0.8, 0.45, 14);
         paint(pl, 0x2f3446);
-        pl.translate(r.x, 0.32, r.z);
-        hard.push(pl);
-      }
-      g.add(new THREE.Mesh(mergeParts(hard), toonVertexMat()));
-      g.add(pod);
-      for (const [k, r] of L.racks.entries()) {
-        const item = GEAR_ITEMS.find((x) => x.id === r.id);
-        const m = gearModel(r.id, item.colour);
-        m.scale.setScalar((GEAR_SCALE[r.id] ?? 1) * HOLO_GEAR_SCALE);
-        const lift = 0.55 + 0.6 * (GEAR_LIFT[r.id] ?? 1.6) * HOLO_GEAR_SCALE;
-        m.position.set(r.x, lift, r.z);
-        g.add(m);
+        pl.translate(0, 0.32, 0);
+        pg.add(new THREE.Mesh(pl, toonVertexMat()));
+        const item = GEAR_ITEMS.find((x) => x.id === it.gear);
+        const m = gearModel(it.gear, item.colour);
+        m.scale.setScalar((GEAR_SCALE[it.gear] ?? 1) * HOLO_GEAR_SCALE);
+        const lift = 0.55 + 0.6 * (GEAR_LIFT[it.gear] ?? 1.6) * HOLO_GEAR_SCALE;
+        m.position.set(0, lift, 0);
+        pg.add(m);
         const ring = new THREE.Mesh(new THREE.RingGeometry(0.85, 1.0, 32),
           new THREE.MeshBasicMaterial({ color: item.colour, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
         ring.rotation.x = -Math.PI / 2;
-        ring.position.set(r.x, 0.16, r.z);
-        g.add(ring);
-        const w = hs.local(room.cx + r.x, room.cz + r.z);
+        ring.position.set(0, 0.16, 0);
+        pg.add(ring);
+        const w = hs.local(room.cx + at.x, room.cz + at.z);
         // No collider: walking INTO the rack is how she picks the piece up.
-        R.racks.push({ id: r.id, x: w.x, z: w.z, y, mesh: m, ring, baseY: lift, yaw: 0, phase: k * 2.1 });
+        R.racks.push({ id: it.gear, x: w.x, z: w.z, y, mesh: m, ring, baseY: lift, yaw: 0, phase: n * 2.1 });
       }
       this.holoRooms.push(R);
-      const t = hs.local(room.cx + L.tube.x, room.cz + L.tube.z);
-      // The way out of the tube, in the world: the room's own axis, turned like the house.
-      const o = hs.local(room.cx + L.tube.x + L.out.x, room.cz + L.tube.z + L.out.z);
-      this.spots.push({ x: t.x, z: t.z, y, r: 2.2, act: 'holodeck', room: room.id, out: { x: o.x - t.x, z: o.z - t.z } });
     }
     return g;
   }

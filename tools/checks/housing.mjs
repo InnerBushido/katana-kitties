@@ -39,7 +39,10 @@ import { existsSync } from 'node:fs';
 import { mealPct, BOON } from '../../src/systems/housing/boons.js';
 import { DOOR_SWING } from '../../src/systems/housing/homebridge.js';
 import { napFade } from '../../src/systems/housing/activities.js';
-import { holoLayout, HOLO_GRAB, HOLO_TUBE } from '../../src/systems/housing/holodeck.js';
+import { holoLayout, HOLO_GRAB, HOLO_TUBE, holoKit, ensureHoloKit, holoWhyRemove, holoTubes, holoCell, HOLO_TUBE_ID, HOLO_MAX_TUBES } from '../../src/systems/housing/holodeck.js';
+import { GEAR_ITEMS } from '../../src/systems/dream/gear.js';
+import { fits as fitsGrid } from '../../src/systems/housing/editor.js';
+import { ROOM_TYPE_BY_ID, TINY_HOUSE } from '../../src/systems/housing/catalog.js';
 import { HOME_FLOAT_H } from '../../src/systems/dreamdojo.js';
 import { TUBE_FRAG } from '../../src/systems/dream/gear.js';
 import { castPoint, fishCount, fishLen, ANGLE } from '../../src/systems/housing/angling.js';
@@ -654,7 +657,7 @@ export async function housingChecks({ ok, world }) {
     ok('SELL is a button in build mode (SPRINT), not a row the stick cannot reach',
       /pressed\('sprint'\)\) \{ pad\.consume\?\.\('sprint'\); C\.askSell/.test(bsrc) && BUILD_KEYS.some(([k, w]) => k === 'SPRINT' && w === 'sell'));
     const csrc = readFileSync(new URL('../../src/systems/housing/cards.js', import.meta.url), 'utf8');
-    ok('...and selling asks first, NO on top', /_v_sellitem[\s\S]{0,900}title: `NO, KEEP THE[\s\S]{0,200}title: `YES, SELL IT FOR/.test(csrc));
+    ok('...and selling asks first, NO on top', /_v_sellitem[\s\S]{0,900}title: `NO, KEEP THE[\s\S]{0,200}title: (?:it\?\.holo \? `YES, TAKE THE \$\{it\.name\} OUT` : )?`YES, SELL IT FOR/.test(csrc));
   }
 
   /* THE TREEHOUSE IS A LEVEL. "player can land on top of the treehouse and go
@@ -1327,6 +1330,48 @@ export async function housingChecks({ ok, world }) {
     ok('a holodeck fits in every room it can be bought for: inside the walls, racks apart, the tube clear of them',
       fits.every((f) => f.ok), fits.filter((f) => !f.ok).map((f) => `${f.n} gap ${f.gap.toFixed(2)} tube ${f.toTube.toFixed(2)}`).join('; ') || `${fits.length} rooms`);
 
+    /* THE KIT IS FURNITURE SHE ARRANGES. Richard: "players should be able to
+       place the VR Tubes and VR equipment where it fits best in the room ...
+       the 3 pieces of VR equipment and 1 tube should be mandatory, but player
+       can place up to 4. Placing Tubes and equipment should be free ... lower
+       the price of the holodeck and the kendo dojo by half." */
+    {
+      const bad = [];
+      for (const h of [...HOUSES, TINY_HOUSE]) {
+        for (const room of h.rooms) {
+          const rm = { ...room, house: h.id, hk: 'main' };
+          const kit = holoKit(rm);
+          const clear = kit.every((q, k) => fitsGrid(rm, kit, ITEM_BY_ID[q.id], q.gx, q.gz, q.rot, k));
+          const racks = kit.filter((q) => ITEM_BY_ID[q.id].holo === 'rack').map((q) => ITEM_BY_ID[q.id].gear).sort().join();
+          if (holoTubes({ items: kit }) !== 1 || racks !== GEAR_ITEMS.map((g) => g.id).sort().join() || !clear) bad.push(`${h.id}/${room.id}`);
+        }
+      }
+      ok('a new holodeck is given one tube and a rack for each piece of the arcade\'s gear, all on clear tatami, in every room', !bad.length, bad.join(' ') || 'all rooms');
+      ok('...the kit is free, and on a shelf no shop lists',
+        ITEMS.filter((it) => it.holo).every((it) => H.itemPrice(it.id) === 0 && it.where.join() === 'holo'), ITEMS.filter((it) => it.holo).map((it) => H.itemPrice(it.id)).join());
+      ok('the holodeck and the kendo dojo cost half what they did (6 and 5 orbs)',
+        ROOM_TYPE_BY_ID.holodeck.mult === 3 && ROOM_TYPE_BY_ID.kendo.mult === 2.5);
+      const minka = { ...HOUSE_BY_ID.minka.rooms[0], house: 'minka', hk: 'main' };
+      const R0 = { type: 'holodeck', items: holoKit(minka) };
+      const rk = R0.items.findIndex((q) => ITEM_BY_ID[q.id].holo === 'rack');
+      const tk = R0.items.findIndex((q) => q.id === HOLO_TUBE_ID);
+      ok('a rack, and the only tube, refuse to be taken out — and say to MOVE them instead',
+        /MOVE it instead/.test(holoWhyRemove(R0, rk) ?? '') && /at least one tube/.test(holoWhyRemove(R0, tk) ?? ''));
+      const spot = firstFit(minka, R0.items, ITEM_BY_ID[HOLO_TUBE_ID]);
+      R0.items.push({ id: HOLO_TUBE_ID, ...spot });
+      ok('...a second tube fits beside the kit in the small house, and then either tube may go',
+        !!spot && holoWhyRemove(R0, tk) === null && holoWhyRemove(R0, R0.items.length - 1) === null);
+      const csrc = readFileSync(new URL('../../src/systems/housing/cards.js', import.meta.url), 'utf8');
+      ok('...the card stops at four tubes and says why, and the sale path asks holoWhyRemove first',
+        HOLO_MAX_TUBES === 4 && /tubes >= HOLO_MAX_TUBES \? `A holodeck has room for/.test(csrc) && /holoWhyRemove\(this\._home\(top\)\.rooms/.test(csrc));
+      const old = { type: 'holodeck', items: [] };
+      ok("an old save's holodeck, which kept no rows for its kit, is given one where it always stood",
+        ensureHoloKit(minka, old) && old.items.length === 4 && !ensureHoloKit(minka, old));
+      const L0 = holoLayout(minka);
+      const tc = holoCell(minka, old.items.find((q) => q.id === HOLO_TUBE_ID));
+      ok('...the tube within one tatami of where the fixed layout stood it', Math.hypot(tc.x - L0.tube.x, tc.z - L0.tube.z) <= 1.01, `${tc.x},${tc.z} vs ${L0.tube.x},${L0.tube.z}`);
+    }
+
     const I = H.isles[2];
     const Hm = newHome(I.site.id, 'minka', ['Ember']);
     Hm.rooms = { main: { type: 'holodeck', items: [] } };
@@ -1335,17 +1380,33 @@ export async function housingChecks({ ok, world }) {
     const tube = I.spots.find((s) => s.act === 'holodeck');
     ok('a holodeck room has three racks and her tube, with a way out of it',
       I.holoRooms.length === 1 && R.racks.length === 3 && !!tube && Math.abs(Math.hypot(tube.out.x, tube.out.z) - 1) < 1e-6);
+    {
+      // a second tube is a second way in, each with its own glass and its own way out
+      const I3 = H.isles[3];
+      const was = I3.home;
+      const H2 = newHome(I3.site.id, 'minka', ['Ember']);
+      const rm = { ...HOUSE_BY_ID.minka.rooms[0], house: 'minka', hk: 'main' };
+      const items = holoKit(rm);
+      items.push({ id: HOLO_TUBE_ID, ...firstFit(rm, items, ITEM_BY_ID[HOLO_TUBE_ID]) });
+      H2.rooms = { main: { type: 'holodeck', items } };
+      I3.setHome(H2, null);
+      const ts = I3.spots.filter((s) => s.act === 'holodeck');
+      ok('two tubes are two ways into the simulator, each with its own glass and a way out',
+        ts.length === 2 && I3.holoRooms[0].tubes.length === 2 && ts.every((t) => Math.abs(Math.hypot(t.out.x, t.out.z) - 1) < 1e-6)
+        && Math.hypot(ts[0].x - ts[1].x, ts[0].z - ts[1].z) > 3);
+      I3.setHome(was ?? null, null);
+    }
     /* SHE IS INSIDE HER TUBE. Richard: "the sprite's head is sticking out of
        the tube and she is drawn in front of the tube". Her ears at the float
        height must be under the glass's top, the glass under the ceiling, and
        the glass drawn after her the way the arcade's is. */
     {
       const ears = HOME_FLOAT_H + 2.5;
-      const pod = R.tube?.mesh;
+      const pod = R.tubes?.[0]?.mesh;
       ok('her home tube is tall enough for her ears at the top of her float, and fits under the ceiling',
         ears < HOLO_TUBE.top - 0.3 && HOLO_TUBE.top + 0.3 < FLOOR_H - SLAB_T, `ears ${ears.toFixed(2)} glass ${HOLO_TUBE.top} lid ${(FLOOR_H - SLAB_T).toFixed(2)}`);
       ok("...and its glass is the arcade's, sorted AT the tube and drawn after her",
-        !!pod && pod.material.fragmentShader === TUBE_FRAG && pod.renderOrder === 5 && pod.position.lengthSq() > 0 && pod.material.blending === THREE.AdditiveBlending);
+        !!pod && pod.material.fragmentShader === TUBE_FRAG && pod.renderOrder === 5 && pod.getWorldPosition(new THREE.Vector3()).distanceTo(I.group.getWorldPosition(new THREE.Vector3())) > 0.5 && pod.material.blending === THREE.AdditiveBlending);
     }
     const calls = [];
     const st = [];

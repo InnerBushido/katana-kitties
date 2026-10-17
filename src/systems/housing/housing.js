@@ -1616,7 +1616,8 @@ export class Housing {
   /* ------------------------------ helpers ------------------------------- */
 
   static get DAY() { return DAY; }
-  itemPrice(id) { return this.price(ITEM_BY_ID[id]?.mult ?? 1); }
+  /** `mult: 0` is FREE (the holodeck's kit), not priceOf's floor of 10. */
+  itemPrice(id) { const m = ITEM_BY_ID[id]?.mult ?? 1; return m === 0 ? 0 : this.price(m); }
   roomPrice(id) { return this.price(ROOM_TYPE_BY_ID[id]?.mult ?? 0); }
   housePrice(id) { return this.price(HOUSE_BY_ID[id]?.mult ?? 8); }
   site(id) { return SITE_BY_ID[id]; }

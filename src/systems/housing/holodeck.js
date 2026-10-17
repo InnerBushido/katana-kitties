@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { GEAR_ITEMS } from '../dream/gear.js';
+import { ITEM_BY_ID } from './catalog.js';
+import { fits, gridOf, footprint } from './editor.js';
 
 /* ---------------------------------------------------------------------------
    THE HOLODECK — the Dream Dojo's way in, at home.
@@ -28,6 +30,14 @@ import { GEAR_ITEMS } from '../dream/gear.js';
 
    `holoLayout` is pure, so world-check can measure that the racks fit in every
    room a holodeck can be bought for.
+
+   THE KIT IS HERS TO ARRANGE. Richard, Oct 2026: "after building a holodeck,
+   players should be able to place the VR Tubes and VR equipment where it fits
+   best in the room ... placing the 3 pieces of VR equipment and 1 tube should
+   be mandatory, but player can place up to 4." So the tube and the racks are
+   rows in the room's `items` (catalog `holo`), moved in the ordinary build
+   mode. `holoLayout` is now only where `holoKit` puts them FIRST — snapped to
+   the nearest free tatami — and the room is drawn from the rows.
 --------------------------------------------------------------------------- */
 
 /** How near a rack counts as picking its piece up: walk INTO it, no button. */
@@ -60,6 +70,87 @@ export function holoLayout(room) {
     racks: GEAR_ITEMS.map((it, k) => ({ id: it.id, ...put(L / 2 - 1.5, (k - 1) * step) })),
     out: put(1, 0),
   };
+}
+
+/** The kit's catalog ids. */
+export const HOLO_TUBE_ID = 'holotube';
+export const holoRackId = (gear) => `holorack_${gear}`;
+/** "player can place up to 4" tubes. */
+export const HOLO_MAX_TUBES = 4;
+
+/** A grid row's centre, room-relative (build.js `cellLocal`, minus the room's centre). */
+export function holoCell(room, q) {
+  const [cw, cd] = footprint(ITEM_BY_ID[q.id], q.rot ?? 0);
+  return { x: -room.w / 2 + (q.gx + cw / 2) * 2, z: -room.d / 2 + (q.gz + cd / 2) * 2 };
+}
+
+/** The free cell nearest room-relative (x, z) that `id` fits at, or null. */
+function nearestFit(room, items, id, x, z) {
+  const it = ITEM_BY_ID[id];
+  const { cols, rows } = gridOf(room);
+  let best = null;
+  let bd = Infinity;
+  for (let gz = 0; gz < rows; gz++) {
+    for (let gx = 0; gx < cols; gx++) {
+      if (!fits(room, items, it, gx, gz, 0)) continue;
+      const c = holoCell(room, { id, gx, gz });
+      const d = Math.hypot(c.x - x, c.z - z);
+      if (d < bd - 1e-6) { bd = d; best = { id, gx, gz, rot: 0 }; }
+    }
+  }
+  return best;
+}
+
+/**
+ * The room's kit: whatever of it `have` already holds, and the missing ones
+ * (a tube, each rack) added nearest where `holoLayout` would stand them. Pure.
+ * A new holodeck is `holoKit(room)`; an old save's, which kept no rows for its
+ * kit, is completed by the same call when the island is drawn.
+ */
+export function holoKit(room, have = []) {
+  const L = holoLayout(room);
+  const items = have.filter((q) => ITEM_BY_ID[q.id]?.holo);
+  const add = (id, at) => {
+    if (items.some((q) => q.id === id)) return;
+    const s = nearestFit(room, items, id, at.x, at.z);
+    if (s) items.push(s);
+  };
+  add(HOLO_TUBE_ID, L.tube);
+  for (const r of L.racks) add(holoRackId(r.id), r);
+  return items;
+}
+
+/** Make a holodeck room's rows its kit (and only its kit). True if it changed. */
+export function ensureHoloKit(room, R) {
+  if (R?.type !== 'holodeck') return false;
+  const before = JSON.stringify(R.items ?? []);
+  R.items = holoKit(room, R.items ?? []);
+  return JSON.stringify(R.items) !== before;
+}
+
+/** Why row `k` of a holodeck room cannot be taken out, or null. */
+export function holoWhyRemove(R, k) {
+  const q = R?.items?.[k];
+  const it = ITEM_BY_ID[q?.id];
+  if (!it?.holo) return null;
+  if (it.holo === 'rack') return 'Every holodeck needs all three gear racks — you can MOVE it instead.';
+  const tubes = R.items.filter((x) => x.id === HOLO_TUBE_ID).length;
+  return tubes <= 1 ? 'Your holodeck needs at least one tube — you can MOVE it instead.' : null;
+}
+
+/** How many tubes a holodeck room has. */
+export const holoTubes = (R) => (R?.items ?? []).filter((q) => q.id === HOLO_TUBE_ID).length;
+
+/**
+ * The way out of a tube, room-relative: toward the middle of the room, since
+ * the tube can stand anywhere now and the old "along the long axis" walked her
+ * into the wall from a tube in the far corner. A tube dead in the middle
+ * keeps the old answer.
+ */
+export function holoOut(room, c) {
+  const d = Math.hypot(c.x, c.z);
+  if (d < 0.5) return holoLayout(room).out;
+  return { x: -c.x / d, z: -c.z / d };
 }
 
 export class HoloDeck {
@@ -131,10 +222,10 @@ export class HoloDeck {
       for (const R of I.holoRooms ?? []) {
         /* Her tube streams light the way the arcade's does — faster, and in
            HER colour, while somebody is in it (dreamdojo.js `s.home`). */
-        if (R.tube) {
-          const u = R.tube.u;
+        for (const tube of R.tubes ?? []) {
+          const u = tube.u;
           u.uTime.value = this.t;
-          const w = R.tube.mesh.getWorldPosition(_tw);
+          const w = tube.mesh.getWorldPosition(_tw);
           const inIt = (players ?? g.players ?? []).find((q) => {
             const h = q && g.dream?.st?.[q.index]?.phase && g.dream.st[q.index].home;
             return h && Math.hypot(h.x - w.x, h.z - w.z) < 0.5;
@@ -166,17 +257,23 @@ export class HoloDeck {
    * happens until that changes.
    */
   _rackUnder(p) {
+    /* THE NEAREST, not the first: she may stand her racks side by side now,
+       one tatami apart, and both are inside HOLO_GRAB of the seam. */
+    let best = null;
+    let bd = HOLO_GRAB;
     for (const I of this.H.isles) {
       if (!I.holoRooms?.length || !I.over(p.position.x, p.position.z, 2)) continue;
       for (const R of I.holoRooms) {
         for (const r of R.racks) {
-          if (Math.hypot(p.position.x - r.x, p.position.z - r.z) > HOLO_GRAB) continue;
+          const d = Math.hypot(p.position.x - r.x, p.position.z - r.z);
+          if (d > bd) continue;
           if (Math.abs(p.position.y - r.y) > 2.5) continue;
-          return { I, R, r, key: this._key(I.site.id, R.room, r.id) };
+          bd = d;
+          best = { I, R, r, key: this._key(I.site.id, R.room, r.id) };
         }
       }
     }
-    return null;
+    return best;
   }
 
   /** She has just stepped onto rack `on` (`_rackUnder`). */

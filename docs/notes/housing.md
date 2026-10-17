@@ -222,8 +222,14 @@ power, so the lure landed half a unit past the ring.
 ## The holodeck
 
 `holodeck.js` handles the room. A holodeck room has three racks (the arcade's
-own `gearModel`s, at 0.7 scale) and her tube, which `holoLayout` places along
-the room's long axis. She walks into a rack to pick up its piece. With all three
+own `gearModel`s, at 0.7 scale) and her tube. **The kit is furniture**: rows in
+the room's `items` (catalog `holo`, free, on a shelf no shop lists), moved in
+the ordinary build mode from the room card's MOVE THE TUBES AND THE GEAR.
+`holoKit` stands a new one where `holoLayout` always did; one tube and the
+three racks refuse to be taken out (`holoWhyRemove`, which says MOVE instead);
+ADD ANOTHER TUBE allows up to four, each its own way in. A tube's way out
+points at the room's middle. The room costs 3 orbs and the kendo dojo 2.5
+(half, Oct 2026). She walks into a rack to pick up its piece. With all three
 she poofs into the suit using the arcade's own poof (`DreamDojo.suitAt`).
 ACTION at the tube calls `enterFrom` with `s.home`. The rise, the puppet, the
 descent and the walk out all happen in HER tube. Only the crossing goes through

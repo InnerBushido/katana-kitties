@@ -212,13 +212,15 @@ export const LINK_BY_ID = Object.fromEntries(LINK_STYLES.map((s) => [s.id, s]));
  */
 export const ROOM_TYPES = [
   { id: 'living', name: 'TATAMI ROOM', mult: 0, blurb: 'Furniture goes on the tatami grid. Free.' },
+  /* HALF WHAT THEY WERE (5 and 6). Richard, Oct 2026: "let's lower the price
+     of the holodeck and the kendo dojo by half." */
   {
-    id: 'kendo', name: 'KENDO DOJO', mult: 5, need: 'kendo',
+    id: 'kendo', name: 'KENDO DOJO', mult: 2.5, need: 'kendo',
     blurb: 'Bogu armour and a shinai. Sparring is allowed on this floor — and only on this floor.',
   },
   {
-    id: 'holodeck', name: 'HOLODECK', mult: 6,
-    blurb: 'Three racks of VR gear and your own tube. Put on all three, step in, and you are in the simulator. Come out and you are home again.',
+    id: 'holodeck', name: 'HOLODECK', mult: 3,
+    blurb: 'Three racks of VR gear and your own tube — put them wherever you like, and add up to four tubes for free. Put on all three, step in, and you are in the simulator.',
   },
 ];
 export const ROOM_TYPE_BY_ID = Object.fromEntries(ROOM_TYPES.map((r) => [r.id, r]));
@@ -260,6 +262,23 @@ export const ROOM_TYPE_BY_ID = Object.fromEntries(ROOM_TYPES.map((r) => [r.id, r
  * `later` — shown, locked, and not for sale yet (the Bushido-Blade forest).
  */
 export const ITEMS = [
+  /* ------------------------------------------- the holodeck's own kit
+     Richard, Oct 2026: "after building a holodeck, players should be able to
+     place the VR Tubes and VR equipment where it fits best in the room ...
+     placing the 3 pieces of VR equipment and 1 tube should be mandatory, but
+     player can place up to 4. Placing Tubes and equipment should be free since
+     they already paid for it." So the kit is FURNITURE on the tatami grid —
+     the same build mode, the same `fits` — at no price (`mult: 0`, which
+     `itemPrice` reads as free rather than priceOf's floor of 10), and only on
+     a holodeck's floor (`where: ['holo']`, a shelf no shop lists). One tube
+     and the three racks cannot be taken out (holodeck.js `holoWhyRemove`).
+     The rack ids are `holorack_` + the arcade's GEAR_ITEMS ids; the check
+     pins that they agree. */
+  { id: 'holotube', name: 'VR TUBE', where: ['holo'], cells: [2, 2], mult: 0, model: null, holo: 'tube',
+    blurb: 'Step in suited up and press ACTION.' },
+  { id: 'holorack_headset', name: 'VR HEADSET RACK', where: ['holo'], cells: [1, 1], mult: 0, model: null, holo: 'rack', gear: 'headset' },
+  { id: 'holorack_gloves', name: 'VR GLOVES RACK', where: ['holo'], cells: [1, 1], mult: 0, model: null, holo: 'rack', gear: 'gloves' },
+  { id: 'holorack_suit', name: 'TRACKING SUIT RACK', where: ['holo'], cells: [1, 1], mult: 0, model: null, holo: 'rack', gear: 'suit' },
   // ---------------------------------------------------------------- indoors
   { id: 'andon', name: 'PAPER FLOOR LAMP', where: ['room'], cells: [1, 1], size: { h: 2.2 }, mult: 0.15, model: 'andon-floor-lantern-b1b7ea', deco: true },
   { id: 'futon', name: 'FUTON', where: ['room'], cells: [2, 3], size: { w: 5.4 }, mult: 0.25, model: null, act: 'nap',

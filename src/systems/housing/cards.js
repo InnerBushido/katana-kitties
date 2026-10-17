@@ -10,6 +10,7 @@ import { buildWhy, commitBuild, removeBuilt, pickList, stepToward, BUILD_KEYS, P
 import { stylesFor, LOOK_MUL } from './models.js';
 import { YARD_BUILT } from './homeisle.js';
 import { Preview } from './preview.js';
+import { holoKit, holoWhyRemove, holoTubes, HOLO_TUBE_ID, HOLO_MAX_TUBES } from './holodeck.js';
 import { KOI_COLOURS } from './koi.js';
 import { careBuff, ANIMALS } from './farm.js';
 import { petBoost, petLevel, BOOST_NAME, PLAY } from './petplay.js';
@@ -55,7 +56,7 @@ export function roomRefund(Hs, R) {
  * it replaces. What she is paid back comes off what she is recorded as having
  * put into the home, so a later SELL MY HOME does not refund it twice.
  */
-export function changeRoomType(Hs, p, H, R, type, price) {
+export function changeRoomType(Hs, p, H, R, type, price, room = null) {
   const refund = roomRefund(Hs, R);
   if (p.score + refund < price) return { ok: false, why: `${p.name} needs ${price - p.score - refund} more points.` };
   const n = p.style?.name;
@@ -66,6 +67,8 @@ export function changeRoomType(Hs, p, H, R, type, price) {
   R.items = [];
   if (!Hs.spend(p, H, price)) return { ok: false, why: 'Not enough points.' };
   R.type = type;
+  // a holodeck comes with its kit, stood where it always stood; she moves it after
+  if (type === 'holodeck' && room) R.items = holoKit(room);
   Hs.changed(H);
   return { ok: true, refund };
 }
@@ -604,6 +607,25 @@ export class HousingCards {
         go: () => { this._push(index, { v: 'pick', site: top.site, room: room.id, kind: 'room', at: 0, mode: 'custom' }); return null; },
       });
     }
+    if (R.type === 'holodeck') {
+      /* THE KIT, ARRANGED. Richard: "players should be able to place the VR
+         Tubes and VR equipment where it fits best in the room ... the 3 pieces
+         of VR equipment and 1 tube should be mandatory, but player can place
+         up to 4. Placing Tubes and equipment should be free." */
+      const tubes = holoTubes(R);
+      const spot = tubes < HOLO_MAX_TUBES ? firstFit(room, R.items, ITEM_BY_ID[HOLO_TUBE_ID]) : null;
+      rows.push({
+        title: 'MOVE THE TUBES AND THE GEAR', blurb: 'Point at a tube or a rack, pick it up, and put it where it fits best. Free.',
+        go: () => { this._push(index, { v: 'pick', site: top.site, room: room.id, kind: 'room', at: 0 }); return null; },
+      });
+      rows.push({
+        title: `ADD ANOTHER TUBE (${tubes} of ${HOLO_MAX_TUBES})`, right: 'FREE',
+        blurb: 'One for each of you, so nobody waits for a turn.',
+        disabled: !spot,
+        why: tubes >= HOLO_MAX_TUBES ? `A holodeck has room for ${HOLO_MAX_TUBES} tubes — that is all of them.` : 'There is no clear floor left for another tube — move the racks closer together first.',
+        go: () => { this._push(index, { v: 'build', site: top.site, room: room.id, kind: 'room', sel: -1, id: HOLO_TUBE_ID, ...spot }); return null; },
+      });
+    }
     const slots = wallSlots(room.house, room).length;
     rows.push({
       title: 'HANG SOMETHING ON THE WALL', blurb: 'Windows, scrolls, pictures and your trophy shelf.',
@@ -637,9 +659,9 @@ export class HousingCards {
           disabled: p.score + refund < price,
           why: `${p.name} needs ${pts(price - p.score - refund)} more.`,
           go: () => {
-            const r = changeRoomType(this.H, p, H, R, T.id, price);
+            const r = changeRoomType(this.H, p, H, R, T.id, price, room);
             if (!r.ok) { this.game.toast(r.why, index); return null; }
-            this.game.toast(`The ${room.name} is now a ${T.name}!${r.refund ? ` Roshi paid ${pts(r.refund)} for the furniture.` : ''}`, index);
+            this.game.toast(`The ${room.name} is now a ${T.name}!${r.refund ? ` Roshi paid ${pts(r.refund)} for the furniture.` : ''}${T.id === 'holodeck' ? ' Move the tube and the racks wherever you like — FREE.' : ''}`, index);
             this._pop(index);
             return null;
           },
@@ -711,12 +733,12 @@ export class HousingCards {
     const price = top.sel < 0 ? this.H.itemPrice(it.id) : 0;
     const touch = this._touch();
     const rows = [{
-      title: top.sel < 0 ? `PUT IT HERE — ${pts(price)}` : 'PUT IT HERE',
+      title: top.sel < 0 ? `PUT IT HERE — ${price ? pts(price) : 'FREE'}` : 'PUT IT HERE',
       disabled: !!bad || p.score < price,
       why: bad ?? `${p.name} needs ${pts(price - p.score)} more.`,
       go: () => { this.placeHere(index, top); return null; },
     }];
-    if (top.sel >= 0) rows.push({ title: `SELL IT BACK — ${pts(this._sellBack(it.id))}`, go: () => { this.askSell(index, top); return null; } });
+    if (top.sel >= 0) rows.push({ title: it.holo ? 'TAKE IT OUT' : `SELL IT BACK — ${pts(this._sellBack(it.id))}`, go: () => { this.askSell(index, top); return null; } });
     const keys = BUILD_KEYS.filter(([, w]) => w !== 'sell' || top.sel >= 0).filter(([, w]) => w !== 'turn' || top.kind !== 'wall');
     return {
       build: true,
@@ -753,7 +775,7 @@ export class HousingCards {
       rows: top.mode === 'custom' ? [custom] : [
         { title: 'PICK IT UP AND MOVE IT', go: () => { this.pickUp(index, top); return null; } },
         custom,
-        { title: `SELL IT BACK — ${pts(this._sellBack(q.id))}`, go: () => { this.askSell(index, top); return null; } },
+        { title: it?.holo ? 'TAKE IT OUT' : `SELL IT BACK — ${pts(this._sellBack(q.id))}`, go: () => { this.askSell(index, top); return null; } },
       ],
       foot: ' ',
     };
@@ -769,6 +791,7 @@ export class HousingCards {
    */
   _noCustom(kind, id) {
     if (kind === 'wall') return 'Wall things fit their space on the wall — they cannot be resized.';
+    if (ITEM_BY_ID[id]?.holo) return 'The holodeck\'s kit is the arcade\'s own — it can be moved, not customized.';
     if (kind === 'yard' && YARD_BUILT.has(id)) return 'This one is built into the island — it cannot be customized.';
     return null;
   }
@@ -939,6 +962,8 @@ export class HousingCards {
     let sel = top.sel;
     if (top.v === 'pick') sel = pickList(this._home(top), top.kind, top.room)[top.at ?? 0]?.k ?? -1;
     if (sel == null || sel < 0) { this.game.toast('That is not yours yet — there is nothing to sell back.', index); return; }
+    const keep = top.kind === 'room' && holoWhyRemove(this._home(top).rooms?.[top.room], sel);
+    if (keep) { this.game.toast(keep, index); this.game.audio?.play?.('menu'); return; }
     this._push(index, { v: 'sellitem', site: top.site, room: top.room, kind: top.kind, sel, cursor: 0 });
   }
 
@@ -955,7 +980,7 @@ export class HousingCards {
       rows: [
         { title: `NO, KEEP THE ${it?.name ?? 'THING'}`, go: () => { this._pop(index); return null; } },
         {
-          title: `YES, SELL IT FOR ${pts(back)}`,
+          title: it?.holo ? `YES, TAKE THE ${it.name} OUT` : `YES, SELL IT FOR ${pts(back)}`,
           go: () => {
             if (!removeBuilt(H, top.kind, top.room, top.sel)) return null;
             p.score += back;
@@ -963,7 +988,7 @@ export class HousingCards {
             if (n && H.paid) H.paid[n] = Math.max(0, (H.paid[n] ?? 0) - back);
             this.game.onScoreChanged?.(p);
             this.H.changed(H);
-            this.game.toast(`Roshi paid ${pts(back)} for the ${it?.name ?? 'thing'}.`, index);
+            this.game.toast(it?.holo ? `The ${it.name} is out — add it back any time, free.` : `Roshi paid ${pts(back)} for the ${it?.name ?? 'thing'}.`, index);
             // out of the question and out of the build/pick view it came from
             this._pop(index); this._pop(index);
             return null;
