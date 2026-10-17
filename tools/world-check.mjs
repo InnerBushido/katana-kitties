@@ -44462,7 +44462,12 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         const row = sc.rows[sc.i];
         if (row) {
           if (!sc.musicTrack) unscored++;
-          if (SS.shotFor(row.shot, sc.ctx, 0).loc === 'sim' && sc.musicTrack !== 'vr') simNotVr++;
+          /* ...but his CREED carries through "and every reality, real AND
+             virtual": the line before crossed into the sim under it on
+             "galaxy" (SKY_CUT), and cutting the piece for the second half of
+             one sentence would be a seam in the middle of his speech. */
+          const carried = row.shot === 'skyPull2' && sc.musicTrack === SS.TOUR_MUSIC.lionHero;
+          if (SS.shotFor(row.shot, sc.ctx, 0).loc === 'sim' && sc.musicTrack !== 'vr' && !carried) simNotVr++;
           if (heard.at(-1) !== sc.musicTrack) heard.push(sc.musicTrack);
         }
         sc.update(0.25);
@@ -44522,7 +44527,10 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
        Infiltration island and instead stay on Kudamono Storm longer"; and
        on the Kata, "the Sine Gauntlet or Turning Circle island is in the
        background of the camera, but main camera focus should be on the Kata
-       Trace". So the visit list is six, not nine, ON PURPOSE. */
+       Trace". So the visit list was six, not nine, ON PURPOSE — and is seven
+       since Oct 2026, when the Sine Gauntlet came back for one reason: "when
+       Lionheart says 'Every island is a lesson' we can have the camera looking
+       at the Sine Gauntlet instead of panning between the islands". */
     {
       const { mp3Duration: mp3D } = await import('./mp3.mjs');
       const clipT = (id) => mp3D(new URL(`../public/voice/lionheart/${id}.mp3`, import.meta.url)).secs;
@@ -44561,11 +44569,11 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       }
       ok('the tour\'s simulator lines cut on the words that name a place: every word is said, inside its clip, and held longer than the move into it',
         cueBad.length === 0, cueBad.join(' · ') || `${Object.values(SS.TOUR_PANS).flat().length} stops`);
-      const TOUR_ISLES = ['gallery', 'hall', 'range', 'school', 'storm', 'kata'];
-      const DROPPED = ['sine', 'sentries', 'bamboo'];
+      const TOUR_ISLES = ['gallery', 'hall', 'range', 'school', 'storm', 'kata', 'sine'];
+      const DROPPED = ['sentries', 'bamboo'];
       const allIsles = Object.keys(ctxT.isles).filter((k) => k !== 'shadow');
       const visited = [...isleStops].sort().join(' ');
-      ok('...and between them they visit the six islands the lines name, and not the three Richard asked to lose — which are all the others but the Shadow\'s',
+      ok('...and between them they visit the seven islands the lines name (the Sine Gauntlet back for "every island is a lesson"), and not the two Richard asked to lose — which are all the others but the Shadow\'s',
         visited === [...TOUR_ISLES].sort().join(' ')
           && allIsles.every((k) => TOUR_ISLES.includes(k) || DROPPED.includes(k))
           && DROPPED.every((k) => allIsles.includes(k) && !isleStops.has(k)),
@@ -44605,6 +44613,11 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         kata: kataPts,
         gallery: [at('gallery', 0, 0, SS.ISLE_FRAME.lookY)],
         hall: [at('hall', 0, 0, SS.ISLE_FRAME.lookY)],
+        // The Gauntlet's course runs along `fwd` through the middle: both ends and the middle.
+        sine: [-0.6, 0, 0.6].map((f) => {
+          const I = ctxT.isles.sine;
+          return simP({ x: I.x + I.fwd.x * I.r * f, y: I.y + 2, z: I.z + I.fwd.z * I.r * f });
+        }),
       };
       const frameOf = (stops, t) => {
         let i = 0;
@@ -44626,7 +44639,9 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
             continue;
           }
           const fs = frameOf(stops, t);
-          if (!fs.isle || t - fs.at < (fs.cut ?? fs.swing ?? SS.PAN_T) || sh.black > 0.5) continue;
+          // The first stop has no move into it; a fade-in's move is under the black.
+          const into = fs === stops[0] ? 0 : (fs.cut ?? fs.fadeIn ?? fs.swing ?? SS.PAN_T);
+          if (!fs.isle || t - fs.at < into || sh.black > 0.5) continue;
           aim(sh);
           isleN[fs.isle] = (isleN[fs.isle] ?? 0) + 1;
           const pts = subjects[fs.isle].map((p) => p.clone().project(camT));
@@ -44645,9 +44660,10 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       /* NO 180. The map used to look at the Turning Circle from the far side
          of the islands it was about to dive to, so the swing onto the Gallery
          turned the lens round about the vertical. The map now stands behind
-         the hub FROM the island it is heading for, and the outskirts pan ends
-         facing the Storm, so both moves are a push along the heading. Every
-         50th of a second of each swing, against its first frame. */
+         the hub FROM the island it is heading for, so the move is a push
+         along the heading. Every 50th of a second of the swing, against its
+         first frame. (The Storm used to be the second swing, off the outskirts
+         pan; it comes up out of black now, below.) */
       const head = (sh) => Math.atan2(sh.look.z - sh.pos.z, sh.look.x - sh.pos.x);
       const swingTurn = (name, st) => {
         const h0 = head(SS.shotFor(name, ctxT, 0, st.at - 0.05));
@@ -44659,19 +44675,14 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         return (w * 180) / Math.PI;
       };
       const toGallery = swingTurn('simHub', SS.TOUR_PANS.simHub.find((s) => s.isle === 'gallery'));
-      const toStorm = swingTurn('simIsles', SS.TOUR_PANS.simIsles.find((s) => s.isle === 'storm'));
-      ok('...and the whole map pushes ONTO the Kotodama Gallery, and the outskirts onto the Kudamono Storm, without turning round — under 30° each',
-        toGallery < 30 && toStorm < 30, `map → gallery ${toGallery.toFixed(0)}°, pan → storm ${toStorm.toFixed(0)}°`);
+      ok('...and the whole map pushes ONTO the Kotodama Gallery without turning round — under 30°',
+        toGallery < 30, `map → gallery ${toGallery.toFixed(0)}°`);
 
       /* The map: the Turning Circle in the middle, every island round it, and
          turning fairly quickly. The pan: from out past the Dojo's rim, the
          Turning Circle behind it, islands big in the frame. */
       let mapF = 0;
       let mapSeen = Infinity;
-      let panF = 0;
-      let panBad = 0;
-      let panSeen = Infinity;
-      const panSeq = [];
       for (let t = 0; t < SS.TOUR_PANS.simHub[1].at; t += 0.1) {
         const sh = SS.shotFor('simHub', ctxT, 0, t);
         aim(sh);
@@ -44684,25 +44695,31 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         return Math.atan2(p.z - SIMo.dz - hub.z, p.x - SIMo.dx - hub.x);
       };
       const spin = Math.abs(eyeA(0.9) - eyeA(0)) / 0.9;
-      for (let t = 0; t < SS.TOUR_PANS.simIsles[1].at; t += 0.1) {
-        const sh = SS.shotFor('simIsles', ctxT, 0, t);
-        aim(sh);
-        panF++;
-        const out = Math.hypot(sh.pos.x - SIMo.dx - hub.x, sh.pos.z - SIMo.dz - hub.z);
-        if (inF(simP(hub).project(camT)) || out < 66) panBad++;
-        // Close enough that an island's middle can be out of the frame with
-        // half of it in: one counts if its middle or any point of its rim is.
-        const seen = allIsles.filter((k) => {
-          const I = ctxT.isles[k];
-          return [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => inF(simP(TC.isleAt(I, a * I.r, b * I.r, 0)).project(camT), 0.95));
-        });
-        panSeen = Math.min(panSeen, seen.length);
-        panSeq.push(seen.length);
-      }
       ok('...and the Turning Circle is only the middle of the whole map, turning fairly quickly, with the islands round it in frame',
         mapF > 5 && mapSeen >= 8 && spin > 0.25, `${mapF} map frames, ≥${mapSeen} of ${allIsles.length} islands, ${(spin * 180 / Math.PI).toFixed(0)}°/s`);
-      ok('...and "every island is a lesson" pans the outskirts, from past the Dojo\'s rim with the Turning Circle behind the lens and islands always in the frame',
-        panF > 5 && panBad === 0 && panSeen >= 1, `${panF} frames, ${panBad} on the Dojo, ≥${panSeen} islands in each (${panSeq.join('')})`);
+      /* "EVERY ISLAND IS A LESSON" IS THE SINE GAUNTLET. Richard, Oct 2026:
+         "we can have the camera looking at the Sine Gauntlet instead of
+         panning between the islands, we can have it fade in and fade out
+         quickly, it fades out on the word 'lesson' and can fade in at the
+         Kudamono Storm at the part where the camera is zooming in on it". So:
+         the first stop IS the Gauntlet (its course in the frame, by the lens
+         check above), clear on "Every island", black by the end of "lesson",
+         and the Storm comes up out of that black inside half a second while
+         its push is still pushing — the cut is the black, so nothing swings. */
+      const PB = (t) => SS.panBlack('simIsles', t);
+      const lesson = SS.TOUR_PANS.simIsles.find((s) => /lesson/.test(s.word));
+      const stormS = SS.TOUR_PANS.simIsles.find((s) => s.isle === 'storm');
+      const dStorm = (t) => {
+        const p = SS.shotFor('simIsles', ctxT, 0, t).pos;
+        const c = at('storm', ...TC.STAGE.storm.centre, 0);
+        return Math.hypot(p.x - c.x, p.y - c.y, p.z - c.z);
+      };
+      ok('...and "every island is a lesson" is the Sine Gauntlet: out quickly on "lesson", and up on the Kudamono Storm while the lens is still pushing in on it',
+        SS.TOUR_PANS.simIsles[0].isle === 'sine' && lesson?.hold && PB(0.2) < 0.01 && PB(lesson.at) < 0.01
+          && lesson.fadeOut - lesson.at <= 0.6 && PB(lesson.fadeOut) > 0.99 && stormS.at === lesson.fadeOut
+          && stormS.fadeIn <= 0.5 && PB(stormS.at + stormS.fadeIn + 0.01) < 0.01
+          && !stormS.swing && dStorm(stormS.at + stormS.fadeIn + 0.3) < dStorm(stormS.at + stormS.fadeIn) - 0.5,
+        `lesson ${lesson?.at}→${lesson?.fadeOut}, storm in by ${(stormS.at + stormS.fadeIn).toFixed(2)}, pushing ${dStorm(stormS.at + stormS.fadeIn).toFixed(1)}→${dStorm(stormS.at + stormS.fadeIn + 0.3).toFixed(1)}`);
 
       /* THE KATA, HELD. "stay on the Kata Trace longer so that we can
          actually show Lionheart doing a kata routine on there. When it says
@@ -44721,10 +44738,82 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       const sineV = simP(ctxT.isles.sine).project(camT);
       const floorV = subjects.kata[0].clone().project(camT);
       const kTurn = Math.abs(Math.atan2(Math.sin(head(kEnd) - kHead0), Math.cos(head(kEnd) - kHead0))) * 180 / Math.PI;
-      ok('...and on "the maths of the circle" the lens walks round the Kata floor until the Sine Gauntlet is behind it on "Earn stars", the floor still the middle',
-        kataStop && maths && stars && kTurn > 60 && inF(sineV, 0.9) && Math.abs(floorV.x) < 0.4 && floorV.y > SUBS
+      /* ...AND LOWER. Richard, Oct 2026: "the Sine Gauntlet is in the
+         background but the angle is not too good, maybe the camera can go
+         lower so that it is more in the center of the screen towards the
+         end." Through this 42° lens it stood at NDC y 0.69 on "Earn stars"
+         (0.67 at 9.0), against the top edge; KATA_ORBIT_UP 0.42 -> 0.12 with
+         the aim on the floor puts it at 0.28 (0.16). Aiming higher (lookY 3)
+         put it at 0.15 but dropped a floor under the subtitles mid-walk
+         (-0.40 against -0.38); at 0 the floor's lowest is -0.34, as before. */
+      ok('...and on "the maths of the circle" the lens walks round the Kata floor, low, until the Sine Gauntlet is behind it and near the middle on "Earn stars", the floor still the middle',
+        kataStop && maths && stars && kTurn > 60 && inF(sineV, 0.9) && sineV.y < 0.45 && Math.abs(floorV.x) < 0.4 && floorV.y > SUBS
           && stars.at - kataStop.at > 3.5,
         `held ${(stars.at - kataStop.at).toFixed(2)}s before the fade, walked ${kTurn.toFixed(0)}°, sine at (${sineV.x.toFixed(2)}, ${sineV.y.toFixed(2)}), floor at ${floorV.x.toFixed(2)}`);
+
+      /* "EVERY WORLD, EVERY GALAXY ... AND EVERY REALITY". Richard, Oct 2026:
+         "it should start to fade out and be faded to black when he says
+         'galaxy'. This can be a faster fade out to black. When he starts
+         saying 'And every reality' it should already be completely faded in
+         ... We want the transition fade out/fade in to be quick so that
+         players can see that the alignment is the same between the two
+         realities." Measured off the clip: "every galaxy" 8.03-9.09, "galaxy"
+         from ~8.45. Clear before "every", black by 8.5, crossed under the
+         black, up again before the line ends; mission4 opens in the sim with
+         nothing black; and the lens either side of the cross is the SAME lens
+         (only the layer moves), which is the alignment he wants seen. */
+      const m3 = rowOf('skyPull');
+      const m3Len = clipT(m3.voice) + 0.5;
+      const SK = SS.SKY_CUT;
+      const skyB = (t) => SS.shotFor('skyPull', ctxT, t / SK.len, t);
+      // A millisecond either side: the pull itself moves ~12 units/s.
+      const pre = skyB(SK.cross - 0.0005);
+      const post = skyB(SK.cross + 0.0005);
+      const m4a = SS.shotFor('skyPull2', ctxT, 0, 0);
+      const same = Math.hypot(post.pos.x - SIMo.dx - pre.pos.x, post.pos.y - pre.pos.y, post.pos.z - SIMo.dz - pre.pos.z);
+      ok('...and the sky pull crosses into the simulator on "every GALAXY", quickly: clear before "every", black by "galaxy", the same lens either side, and up before "and every reality"',
+        /every galaxy/.test(m3.text) && skyB(8.0).black < 0.01 && skyB(8.0).loc === 'real' && SK.out[0] >= 8.0 && SK.out[1] <= 8.55
+          && SK.out[1] - SK.out[0] <= 0.6 && skyB(SK.out[1]).black > 0.99 && pre.loc === 'real' && post.loc === 'sim'
+          && skyB(SK.in[0]).black > 0.99 && SK.in[1] - SK.in[0] <= 0.6 && skyB(SK.in[1]).black < 0.01 && SK.in[1] <= SK.len && SK.len <= m3Len
+          && same < 0.05 && m4a.loc === 'sim' && !(m4a.black > 0.01),
+        `out ${SK.out.join('→')}, cross ${SK.cross}, in ${SK.in.join('→')} of ${m3Len.toFixed(2)}s, lens moved ${same.toFixed(3)} across the cross, mission4 opens ${m4a.loc}`);
+
+      /* THE LAST SECONDS GO ROUND THE TURNING CIRCLE. "let's have the camera
+         pan around in a circular arc with the focus being the center of the
+         Dojo of the Turning Circle so that the Kata Trace and Sine Gauntlet
+         are visible for the last few seconds before fading out." Every 20th
+         of a second of mission4: from SKY_ARC.from on, the eye's distance
+         from the hub never jumps (an arc, not a chord through it), it turns
+         round the hub by a real angle, ends aimed at the hub, and both islands
+         are in the frame continuously for the last 1.5s+ before the fade is
+         half black. Measured: in from 7.90, half black at 9.85. */
+      const m4Len = SS.REALITY_CUT.len;
+      let both0 = null;
+      let rJump = 0;
+      let lastR = null;
+      let halfB = null;
+      const eyeOf = (sh) => ({ a: Math.atan2(sh.pos.z - SIMo.dz - hub.z, sh.pos.x - SIMo.dx - hub.x), r: Math.hypot(sh.pos.x - SIMo.dx - hub.x, sh.pos.z - SIMo.dz - hub.z) });
+      const arcA0 = eyeOf(SS.shotFor('skyPull2', ctxT, SS.SKY_ARC.from / m4Len, SS.SKY_ARC.from)).a;
+      for (let t = SS.SKY_ARC.from; t <= m4Len; t += 0.05) {
+        const sh = SS.shotFor('skyPull2', ctxT, t / m4Len, t);
+        const e = eyeOf(sh);
+        if (lastR != null) rJump = Math.max(rJump, Math.abs(e.r - lastR));
+        lastR = e.r;
+        if (halfB == null && sh.black > 0.5) halfB = t;
+        if (halfB != null) continue;
+        aim(sh);
+        const both = ['kata', 'sine'].every((k) => inF(simP(ctxT.isles[k]).project(camT), 0.9));
+        if (both && both0 == null) both0 = t;
+        if (!both) both0 = null;
+      }
+      const arcEnd = SS.shotFor('skyPull2', ctxT, SS.SKY_ARC.to / m4Len, SS.SKY_ARC.to);
+      aim(arcEnd);
+      const hubV = simP(hub).project(camT);
+      const arcTurn = Math.abs(Math.atan2(Math.sin(eyeOf(arcEnd).a - arcA0), Math.cos(eyeOf(arcEnd).a - arcA0))) * 180 / Math.PI;
+      ok('...and the last seconds arc round the Turning Circle, aimed at it, with the Kata Trace and the Sine Gauntlet both in the frame for the last 1.5s before the fade',
+        both0 != null && halfB != null && halfB - both0 >= 1.5 && arcTurn > 45 && rJump < 3 && Math.hypot(hubV.x, hubV.y) < 0.15
+          && SS.SKY_ARC.to > SS.REALITY_CUT.end[0],
+        `both in from ${both0?.toFixed(2)}, half black at ${halfB?.toFixed(2)}, turned ${arcTurn.toFixed(0)}° round the hub, worst radius step ${rJump.toFixed(2)}/0.05s, hub at (${hubV.x.toFixed(2)}, ${hubV.y.toFixed(2)})`);
 
       /* THE FADES. "When saying 'earn stars' we can keep showing the kata and
          then slowly fade out and when saying 'climb the ranks of kenshi' we

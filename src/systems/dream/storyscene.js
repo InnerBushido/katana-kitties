@@ -166,10 +166,20 @@ export const TOUR_PANS = {
        just before "how to fight" (6.10) so the school comes up on the word. */
     { at: 6.0, word: 'how to fight', isle: 'school', cut: 0.3, frame: { look: [1, 0, 3], dist: 42, up: 0.5, drift: 1.5, push: { to: 0.68, over: 5 } } },
   ],
+  /* THE SINE GAUNTLET, NOT THE OUTSKIRTS. Richard, Oct 2026: "when
+     Lionheart says 'Every island is a lesson' we can have the camera looking
+     at the Sine Gauntlet instead of panning between the islands, we can have
+     it fade in and fade out quickly, it fades out on the word 'lesson' and
+     can fade in at the Kudamono Storm at the part where the camera is
+     zooming in on it". The outskirts pan (`pan`, PAN_FRAME) is kept for any
+     line that asks for it; this one no longer does. Its course from the hub's
+     side — side-on, the way the Gauntlet's own lens films it — drifting.
+     "lesson" is 1.25-1.62 (the phrase ends there); black by 1.75, and the
+     storm comes up out of it already pushing in, before "aim" (2.54). */
   simIsles: [
-    { at: 0, word: 'Every island', pan: { toward: 'storm' } },
-    // Pushes in along the pan's own heading and lands on "aim" (2.55).
-    { at: 1.75, word: 'aim', isle: 'storm', swing: 0.8, blend: 'line', frame: { look: [0, 0, 2.6], dist: 17, up: 0.4, drift: 2 } },
+    { at: 0, word: 'Every island', isle: 'sine', frame: { look: [0, 0, 2], dist: 64, up: 0.42, drift: 1.5 } },
+    { at: 1.25, word: 'lesson', hold: true, fadeOut: 1.75 },
+    { at: 1.75, word: 'aim', isle: 'storm', fadeIn: 0.4, frame: { look: [0, 0, 2.6], dist: 25, up: 0.4, drift: 2, push: { to: 0.68, over: 1.4 } } },
     { at: 4.4, word: 'kata', isle: 'kata', cut: 0.18, frame: 'kata' },
     { at: 5.7, word: 'maths of the circle', hold: true },
     { at: 8.27, word: 'Earn stars', hold: true, fadeOut: 9.17 },
@@ -186,6 +196,9 @@ export const TOUR_PANS = {
    the cue clock froze there; `StoryScene.cueClock` runs on past it now, and
    the row's `hold` (stories.js) is the half second he offered. */
 export const TOUR_TAIL = { simIsles: { from: 11.35, to: 12.45 } };
+/** The orbit's end: how high (a fraction of its distance) and where it aims. */
+export const KATA_ORBIT_UP = 0.12;
+export const KATA_ORBIT_LOOK = 0;
 /** The Kata Trace's frame: on his floor (`STAGE.kata`), from the hub's side,
  *  and from "the maths of the circle" round it, coming down as it goes so the
  *  islands behind rise into the frame. Aimed near the floor, not at his chest:
@@ -195,7 +208,12 @@ export const TOUR_TAIL = { simIsles: { from: 11.35, to: 12.45 } };
    a routine". The lens looks at the hall's middle instead of one floor, and
    stands back far enough for the four floors and a Lionheart across the top
    of each; the orbit is the one he asked for before, about the new middle. */
-export const KATA_FRAME = { dist: 46, up: 0.6, lookY: 1.5, centre: true, orbit: { at: 5.7, to: 105, over: 3.47, up: 0.42, lookY: -1.5 } };
+/* LOWER AT THE END OF THE ORBIT. Richard, Oct 2026: "When Lionheart says
+   'maths of the circle', the Sine Gauntlet is in the background but the
+   angle is not too good, maybe the camera can go lower so that it is more in
+   the center of the screen towards the end." See world-check for the
+   measured NDC of the Gauntlet's middle at "Earn stars", before and after. */
+export const KATA_FRAME = { dist: 46, up: 0.6, lookY: 1.5, centre: true, orbit: { at: 5.7, to: 105, over: 3.47, up: KATA_ORBIT_UP, lookY: KATA_ORBIT_LOOK } };
 /** The card's close-up, in the frame ABOVE the subtitles: they cover NDC
  *  -0.38 to -0.75 at 16:9, and centred the card's stat rows were behind them.
  *  Aimed `down` below its middle and far enough back that its 8.4 height
@@ -415,7 +433,57 @@ export const TUBES_SHOT = {
    pull, shifted, IS the same place and rotation — and the move never stops.
    `lion_tour_mission4`, measured: "and every reality" 0.10-1.57, "real"
    1.65, "AND" 2.35, "virtual" 2.85-3.40, "They all matter" 8.97-9.97. */
-export const REALITY_CUT = { out: [0.15, 1.55], cross: 1.58, in: [1.62, 2.95], end: [9.3, 10.35], len: 10.77 };
+/* ...AND NOW IT CROSSES ONE LINE EARLIER, AND QUICKLY. Richard, Oct 2026:
+   "when Lionheart says 'every world, every galaxy' it should start to fade
+   out and be faded to black when he says 'galaxy'. This can be a faster
+   fade out to black. When he starts saying 'And every reality' it should
+   already be completely faded in, we can do a fast fade in here as well. We
+   want the transition fade out/fade in to be quick so that players can see
+   that the alignment is the same between the two realities." So the black
+   is in `lion_tour_mission3` (`skyPull`, SKY_CUT), measured off a 25ms RMS
+   envelope at -30dB: "to every island" 4.87-6.09, "every world" 6.57-7.55,
+   "every galaxy" 8.03-9.09 ("galaxy" from ~8.45); clip 9.40, line 9.90.
+   Out from "every" (8.03) to black on "galaxy" (8.50), held over the rest
+   of the word, across, and up by 9.80 — before mission4's first word at
+   0.00. `REALITY_CUT` keeps the mission4 line's own end: out after "They
+   all matter" (8.96-9.95). */
+export const SKY_CUT = { out: [8.03, 8.5], cross: 8.6, in: [9.3, 9.8], len: 9.9 };
+export const REALITY_CUT = { end: [9.3, 10.35], len: 10.77 };
+/**
+ * THE LAST SECONDS: ROUND THE TURNING CIRCLE. Richard, Oct 2026: "When
+ * zooming out at the end in the simulator, let's have the camera pan around
+ * in a circular arc with the focus being the center of the Dojo of the
+ * Turning Circle so that the Kata Trace and Sine Gauntlet are visible for the
+ * last few seconds before fading out." The pull rises away on the far side
+ * of the hub from both (measured: 166° round from the hub at "BOTH!", the two
+ * islands at -123° and -161°), so from `from` it bends round the hub onto
+ * the bearing opposite the two of them (`ctx.isles`), comes in to `R` and
+ * down to `H`, and turns its aim onto the hub — in polar coordinates about
+ * the hub, so the move is an arc and never a chord across it. Still moving
+ * as the line's own fade (`REALITY_CUT.end`) takes it, so it never parks.
+ */
+export const SKY_ARC = { from: 4.4, to: 9.4, R: 165, H: 72, lookY: 4 };
+
+/** The pull at `tt` on the mission4 line, bent round the hub (SKY_ARC). */
+export function skyArc(ctx, pos, look, tt) {
+  const S = SKY_ARC;
+  const a = ease(clamp01((tt - S.from) / (S.to - S.from)));
+  const hub = ctx.dojo;
+  if (a <= 0 || !hub) return { pos, look };
+  const K = ctx.isles?.kata;
+  const G = ctx.isles?.sine;
+  const p0 = angOf(pos, hub);
+  // Opposite the two islands' middle bearing; with neither, where it already is.
+  const end = K && G
+    ? Math.atan2(Math.sin(angOf(K, hub)) + Math.sin(angOf(G, hub)), Math.cos(angOf(K, hub)) + Math.cos(angOf(G, hub))) + Math.PI
+    : p0;
+  const th = p0 + wrapA(end - p0) * a;
+  const r = lerp(Math.hypot(pos.x - hub.x, pos.z - hub.z), S.R, a);
+  return {
+    pos: v3(hub.x + Math.cos(th) * r, lerp(pos.y, hub.y + S.H, a), hub.z + Math.sin(th) * r),
+    look: lerpP(look, v3(hub.x, hub.y + S.lookY, hub.z), a),
+  };
+}
 
 /**
  * The camera for a named shot, `k` (0..1) through its line.
@@ -542,15 +610,20 @@ export function shotFor(name, ctx, k = 0, t = null) {
       const h = lerp(14, 210, kk * kk);
       const look = lerpP(v3(A.x, A.y + 4, A.z), v3(ctx.dojo.x * 0.5, 0, ctx.dojo.z * 0.5), kk);
       const pos = v3(A.x - u.x * r - v.x * r * 0.35, A.y + h, A.z - u.z * r - v.z * r * 0.35);
-      if (name === 'skyPull') return { pos, look, loc: 'real' };
-      // "...and every reality, real AND virtual": over, under black, mid-move.
+      if (name === 'skyPull') {
+        // "...every world, every GALAXY": over, under black, mid-move (SKY_CUT).
+        const C = SKY_CUT;
+        const tt = t ?? k * C.len;
+        const black = tt < C.cross
+          ? ease(clamp01((tt - C.out[0]) / (C.out[1] - C.out[0])))
+          : 1 - ease(clamp01((tt - C.in[0]) / (C.in[1] - C.in[0])));
+        return tt < C.cross ? { pos, look, loc: 'real', black } : { pos: sim(pos), look: sim(look), loc: 'sim', black };
+      }
       const R = REALITY_CUT;
       const tt = t ?? k * R.len;
-      const black = Math.max(
-        tt < R.cross ? ease(clamp01((tt - R.out[0]) / (R.out[1] - R.out[0]))) : 1 - ease(clamp01((tt - R.in[0]) / (R.in[1] - R.in[0]))),
-        ease(clamp01((tt - R.end[0]) / (R.end[1] - R.end[0]))),
-      );
-      return tt < R.cross ? { pos, look, loc: 'real', black } : { pos: sim(pos), look: sim(look), loc: 'sim', black };
+      const black = ease(clamp01((tt - R.end[0]) / (R.end[1] - R.end[0])));
+      const arc = skyArc(ctx, pos, look, tt);
+      return { pos: sim(arc.pos), look: sim(arc.look), loc: 'sim', black };
     }
     case 'isleEnd': {
       const from = at(-46, -14, A.y + 22);

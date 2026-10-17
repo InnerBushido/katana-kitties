@@ -1589,8 +1589,9 @@ lens every tenth of a second:
 - **Each island's vignette** (the canes, both bouts and the pen, her spot, the
   Kata floor) is in the frame and above the subtitles, its middle within 0.19
   NDC of the frame's, and the Turning Circle is out of the frame.
-- **The visit list is exactly six islands.** The three he dropped (sine,
-  sentries and bamboo) are checked absent.
+- **The visit list is exactly seven islands** (six until the Oct 2026 pass
+  brought the Sine Gauntlet back, below). The two he dropped (sentries and
+  bamboo) are checked absent.
 - **No swing turns more than 30°.**
 - **The Sine Gauntlet** is behind the Kata on "Earn stars".
 - **Every fade** lands where its word is, and the card is in frame above the
@@ -1611,6 +1612,63 @@ lens every tenth of a second:
   Range → School at ~6.5 s.
 - The swing onto the range peaks near 280°/s. If it reads as a whip, lengthen
   its `swing` to 0.75 and push `RANGE_CUTS` back ~0.2 s to match.
+
+### The Oct 2026 pass: the Sine Gauntlet, the galaxy cut, the last arc
+
+All in `storyscene.js`. Each change is pinned by a world-check that asks what
+the shot is for.
+
+- **"when Lionheart says 'Every island is a lesson' we can have the camera
+  looking at the Sine Gauntlet instead of panning between the islands ... it
+  fades out on the word 'lesson' and can fade in at the Kudamono Storm at the
+  part where the camera is zooming in on it."**
+  - The outskirts pan above is no longer used by this line (`pan` and
+    `PAN_FRAME` are kept for any line that asks for it).
+  - The first stop is the Sine Gauntlet, side-on from the hub's side, drifting.
+  - It fades out from "lesson" (1.25) to black at 1.75.
+  - The Storm comes up over 0.4 s with its own push: distance 26.3 → 23.7 in
+    the first 0.3 s after it is clear.
+  - The visit list is SEVEN islands again; only the sentries and bamboo are
+    dropped.
+- **"When Lionheart says 'maths of the circle', the Sine Gauntlet is in the
+  background but the angle is not too good, maybe the camera can go lower."**
+  - The orbit's end is now `KATA_ORBIT_UP` 0.12 (was 0.42), aimed at 0 (was
+    −1.5).
+  - Through the 42° lens, the Gauntlet on "Earn stars" moves from NDC y 0.69
+    to 0.28, and at 9.0 s from 0.67 to 0.16.
+  - **Tried and dropped:** aiming higher (lookY 3) got it to 0.15, but floor 1
+    went under the subtitles mid-walk (−0.40 against −0.38). At 0 the floor's
+    lowest point is −0.34, the same as before.
+- **"when Lionheart says 'every world, every galaxy' it should start to fade
+  out and be faded to black when he says 'galaxy' ... When he starts saying
+  'And every reality' it should already be completely faded in ... so that
+  players can see that the alignment is the same between the two
+  realities."**
+  - The crossing moved one line earlier, into `lion_tour_mission3`
+    (`SKY_CUT`).
+  - Measured phrases: "every world" 6.57–7.55 and "every galaxy" 8.03–9.09.
+  - The cut runs out 8.03 → 8.50, crosses at 8.6, and comes back in
+    9.3 → 9.8. The line is 9.9 s long.
+  - The lens is the same lens either side of the cross (0.013 apart at ±0.5
+    ms); only the layer changes.
+  - mission4 opens in the sim with nothing black. `REALITY_CUT` keeps only its
+    end fade.
+  - The tour's music check exempts this one row: his Creed carries through
+    "and every reality". Cutting the piece mid-sentence would put a seam in
+    his speech.
+- **"When zooming out at the end in the simulator, let's have the camera pan
+  around in a circular arc with the focus being the center of the Dojo of the
+  Turning Circle so that the Kata Trace and Sine Gauntlet are visible for the
+  last few seconds before fading out."**
+  - `SKY_ARC`: from 4.4 s to 9.4 s, the pull is bent round the hub in polar
+    coordinates, so it moves as an arc and never as a chord. It ends on the
+    bearing opposite the two islands' mean, 165 out and 72 up, aimed at the
+    hub.
+  - It turns 135°, and its worst radius step is 1.85 per 0.05 s.
+  - Both islands are in frame continuously from 7.75 s, and the fade is half
+    black at 9.85 s. It is still moving when the fade starts.
+  - **Tried and dropped:** the window 5.4–9.8 only had both islands in frame
+    from 8.45 s.
 
 ## The holo kit, Lionheart's quests, the levels and the course
 
