@@ -38,6 +38,28 @@ MUSIC_FILES.shrinePrayer = {
   mix: 0.55,
 };
 
+/* THE TEA CEREMONY'S (activities.js `_tea`), the shrine song's sister: once
+   through from the first kneel. ElevenLabs Music, eleven_music_v2_5, Oct
+   2026, 2 takes at 450 credits each: "Gentle Japanese tea ceremony music ...
+   solo koto with a soft shakuhachi melody ... 66 BPM ... a clear, complete
+   ending". Take 2 (generation AAAxwk5rJyYPyUqptljp) was kept: it rises out of
+   1.1s of silence while the kettle is whisked and fades from 24s, under the
+   bow at 22s, to nothing at 28.5s — the ceremony ends at 26. Take 1 started at
+   full level and rang out at 27s, after the kittens had stood up.
+   Measured -21.7 LUFS against the shrine's -15.7 at 0.55, and its peak is
+   -5.2 dB, so it is levelled in the mix (0.60), not in the file. Delete the
+   mp3 and the ceremony plays `frost` instead. */
+MUSIC_FILES.teaCeremony = {
+  file: 'music/teaCeremony.mp3',
+  name: 'TEA CEREMONY',
+  level: 'home',
+  spb: 60 / 66,
+  first: 0,
+  loop: [0, 30],
+  length: 30,
+  mix: 0.6,
+};
+
 export const JUKEBOX = [
   {
     id: 'homeSurf', name: 'TURTLE BEACH', fallback: 'saucer',

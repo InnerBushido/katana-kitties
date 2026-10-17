@@ -252,6 +252,8 @@ export function xrayVertexMat(opts = {}) {
       u.uCutFloor.value[i] = Number.isFinite(f) ? f : -1e9;
     }
   };
+  // read-only, for world-check: two materials' cuts compared (the teahouse's is smaller)
+  mat.userData.xray = u;
   return mat;
 }
 

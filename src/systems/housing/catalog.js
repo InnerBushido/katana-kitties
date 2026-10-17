@@ -336,7 +336,9 @@ export const ITEMS = [
   { id: 'toriigarden', name: 'TORII GARDEN', where: ['yard'], r: 5.5, mult: 0.2, model: null, deco: true },
   { id: 'well', name: 'ROOFED WELL', where: ['yard'], r: 2.4, size: { h: 4.4 }, mult: 0.15, model: 'roofed-well-43a2fc', deco: true },
   { id: 'waterwheel', name: 'WATER WHEEL', where: ['yard'], r: 3, size: { h: 5.2 }, mult: 0.15, model: 'stream-water-wheel-ea2d68', deco: true },
-  { id: 'teahouse', name: 'TEAHOUSE', where: ['yard'], r: 4.5, size: { h: 6 }, mult: 0.3, model: 'open-front-teahouse-c7dd18', deco: true },
+  // a third bigger than it was, and somewhere to go IN: teahouse.js
+  { id: 'teahouse', name: 'TEAHOUSE', where: ['yard'], r: 5.8, size: { h: 8 }, mult: 0.3, model: 'open-front-teahouse-c7dd18', deco: true, act: 'tea',
+    blurb: 'Kneel together for a tea ceremony, with its own music.' },
   { id: 'basin', name: 'STONE BASIN', where: ['yard'], r: 1.2, size: { h: 1.3 }, mult: 0.06, model: 'tsukubai-stone-basin-677586', deco: true },
   { id: 'lantern', name: 'STONE LANTERN', where: ['yard'], r: 1.1, size: { h: 3.0 }, mult: 0.05, model: 'stone-lantern-d56d0a', deco: true },
   { id: 'maple', name: 'MAPLE TREE', where: ['yard'], r: 1.6, size: { h: 8 }, mult: 0.08, model: 'japanese-maple-d2fb29', deco: true },

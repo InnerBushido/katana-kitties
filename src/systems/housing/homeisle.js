@@ -5,6 +5,7 @@ import { makeLabelTexture } from '../../core/label.js';
 import { buildHouseShell, houseHeight, houseRadius, floorOf, FLOOR_H, SLAB_T, WINDOW, PORT_H } from './homehouse.js';
 import { ITEMS, ITEM_BY_ID, LINK_BY_ID, houseSpecs, homeRooms, pathPosts } from './catalog.js';
 import { PathFX, makeFlame, makeLamp } from './pathfx.js';
+import { TEA, teaK, teaSet } from './teahouse.js';
 import { ZenGarden, zenParts, ZEN, ZEN_ROCKS, ZEN_STONES, ZEN_STONE_R, ZEN_RAKE } from './zengarden.js';
 import { linkGeom, linkParts, linkModels } from './links.js';
 import { placeModel, drawItem, clampMul, SHOJI, shojiPair, PANEL_GAP, STONES } from './models.js';
@@ -47,7 +48,7 @@ export const WALL_Y = { window: 1.0, scroll: 0.5, picture: 1.2, trophy: 1.9 };
 /** The outdoor things that stand in the way, as a radius off their centre.
  *  The rest (a pond, a court, a paddy) are walked on or over. */
 const SOLID = {
-  teahouse: 2.4, belltower: 1.8, well: 1.1, shrine: 2.2, maple: 0.5, cherry: 0.5, pine: 0.5, waterwheel: 1.2, lantern: 0.5, firebasket: 0.3, sake: 0.8, drum: 1.0,
+  belltower: 1.8, well: 1.1, shrine: 2.2, maple: 0.5, cherry: 0.5, pine: 0.5, waterwheel: 1.2, lantern: 0.5, firebasket: 0.3, sake: 0.8, drum: 1.0,
   /* Measured off the loaded models (fitted to their catalogue size), not
      guessed: the basin is 1.52 across, the azalea's stems 0.9, the bucket
      0.92 by 0.72, and the banner stands on a weighted foot 1.72 across. */
@@ -133,7 +134,11 @@ export class HomeIsle {
        bushes — their own two, since the walls' carries the kendo clip. */
     this.treeMat = xrayVertexMat(XR);
     this.plantMat = xrayVertexMat(XR);
-    this.xrayMats = [this.wallMat, this.roofMat, this.soffitMat, ...this.accentMats, this.treeMat, this.plantMat];
+    /* THE TEAHOUSE'S, smaller and gentler than a house's: "a smaller, less
+       aggressive x-ray". Its roof is one mesh with its posts, so a house's
+       1.6 cone took the whole front of it off. */
+    this.teaMat = xrayVertexMat({ cutR: 1.0, cutSoft: 0.5, cutNear: 1.4 });
+    this.xrayMats = [this.wallMat, this.roofMat, this.soffitMat, ...this.accentMats, this.treeMat, this.plantMat, this.teaMat];
     /** Floor groups and the roof, for the per-pane cutaway. */
     this.floorMeshes = [];
     this.roofMeshes = [];
@@ -513,6 +518,7 @@ export class HomeIsle {
     this.holoRooms = [];
     this.places = new Map();
     this.fxSites = [];
+    this.teahouses = [];
     /* The house's colliders and decks, then whatever the yard adds (the
        treehouse is a level of its own). Two lists joined, so moving a tree
        never has to rebuild the house. */
@@ -842,6 +848,54 @@ export class HomeIsle {
         }
         const rk = this.local(...this._itemToHouse(q, ZEN_RAKE.x, ZEN_RAKE.z));
         this.spots.push({ x: rk.x, z: rk.z, y: gy, r: 1.8, act: 'rake', item: it.id, place: P.id, zen: Z });
+        break;
+      }
+      case 'teahouse': {
+        /* teahouse.js has the measurements and the why. Its look's size
+           scales the colliders with the model, like a fence's. */
+        const mul = clampMul(q.look?.s);
+        const k = teaK(mul);
+        const body = add(placeModel(it.model, drawItem(it.id, 2), it.size, q.look ? { s: q.look.s, style: q.look.style } : null));
+        xrayModel(body, this.teaMat, 0.7);
+        body.userData.onReal = (gm) => xrayModel(gm, this.teaMat, 0.7);
+        const frame = { x: q.x, z: q.z, a: q.rot ?? 0 };
+        const base = gy - this.groundY;
+        const F = TEA.floor, S = TEA.step;
+        // the step, then the tatami: each a step up from the one before, and the sides a JUMP
+        this.decks.push({ x0: S.x0 * k, x1: S.x1 * k, z0: S.z0 * k, z1: S.z1 * k, y: base + S.y * k, step: 0.5, frame, tea: 'step' });
+        this.decks.push({ x0: F.x0 * k, x1: F.x1 * k, z0: F.z0 * k, z1: F.z1 * k, y: base + F.y * k, step: 0.5, frame, tea: 'floor' });
+        const W = (fx, fz) => this.local(...this._itemToHouse(q, fx * k, fz * k));
+        const seg = (a, b, y0, y1, extra = {}) => this.walls.push({ ax: a.x, az: a.z, bx: b.x, bz: b.z, y0, y1, item: q.uid, ...extra });
+        for (const [a, b] of TEA.walls) seg(W(...a), W(...b), gy, gy + TEA.wallTop * k, { tea: 'wall' });
+        /* THE PLATFORM'S OPEN EDGES. Its 0.8 is more than a deck's step, and a
+           deck too high to step onto is one she walks UNDER (heightAt's
+           one-way rule, which the hologram's discs need) — so from the open
+           side she was in the tatami up to her chest. A riser on the right
+           edge and either side of the step, topped just under the floor so
+           a kitten standing on it is never pushed by her own floor. */
+        const rise = gy + F.y * k - 0.05;
+        for (const [a, b] of [[[F.x1, F.z0], [F.x1, F.z1]], [[F.x0, F.z1], [S.x0, F.z1]], [[S.x1, F.z1], [F.x1, F.z1]]]) {
+          seg(W(...a), W(...b), gy, rise, { tea: 'riser' });
+        }
+        const C = TEA.counter;
+        const cc = [[C.x0, C.z0], [C.x1, C.z0], [C.x1, C.z1], [C.x0, C.z1]].map(([x, z]) => W(x, z));
+        for (let n = 0; n < 4; n++) seg(cc[n], cc[(n + 1) % 4], gy + F.y * k, gy + C.y1 * k, { tea: 'counter' });
+        const ir = W(TEA.irori.x, TEA.irori.z);
+        this.obstacles.push({ x: ir.x, z: ir.z, r: TEA.irori.r * k, y0: gy + F.y * k - 0.1 });
+        for (const [px, pz] of TEA.posts) { const o = W(px, pz); this.obstacles.push({ x: o.x, z: o.z, r: 0.22 * k }); }
+        const T = teaSet(k);
+        add(T.set);
+        for (const b of T.bowls) add(b);
+        const rec = {
+          uid: q.uid, k, gy, x: w.x, z: w.z, a: this.ry + (q.rot ?? 0), floorY: gy + F.y * k, bowls: T.bowls, group: g,
+          seat: (i) => W(...TEA.seats[i]), tray: W(...TEA.tray),
+        };
+        this.teahouses.push(rec);
+        const front = W(0, S.z1 + 0.6);
+        this.spots.push({ x: front.x, z: front.z, y: gy, r: 2.6, act: 'tea', item: it.id, place: P.id, tea: rec });
+        // and from inside on the tatami too: she may have walked in first
+        const mid = W(0, 0.4);
+        this.spots.push({ x: mid.x, z: mid.z, y: gy + F.y * k, r: 3.4, act: 'tea', item: it.id, place: P.id, tea: rec });
         break;
       }
       case 'tiki': {

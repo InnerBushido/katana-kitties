@@ -956,7 +956,38 @@ export class Housing {
    * camera and the sticks in it pointing the same way.
    */
   groupShot(members) {
-    return this.kendo.shotFor(members) ?? this.doorShotFor(members);
+    return this.kendo.shotFor(members) ?? this.teaShotFor(members) ?? this.doorShotFor(members);
+  }
+
+  /**
+   * THE TEAHOUSE'S FRONT, the door shot's little sister. Richard: "a camera
+   * zoom on its front (smaller radius)". Anybody in the pane's group on its
+   * step, its tatami or the few metres in front of its open side gets the
+   * room framed from the street: 10 back instead of the house's 12, aimed a
+   * metre over the tatami where four kittens kneel. Behind it or beside its
+   * closed wall she keeps her own camera — there is nothing to look INTO.
+   */
+  teaShotFor(members) {
+    const players = this.game.players ?? [];
+    const kits = members.map((i) => players[i]).filter((q) => q && !q.mount && !q.rideAlong);
+    if (!kits.length) return null;
+    for (const I of this.isles) {
+      for (const T of I.teahouses ?? []) {
+        const c = Math.cos(T.a), s = Math.sin(T.a);
+        const near = kits.some((q) => {
+          const dx = q.position.x - T.x, dz = q.position.z - T.z;
+          const lx = dx * c - dz * s, lz = dx * s + dz * c;
+          return Math.abs(lx) <= 3.6 * T.k && lz >= -2.4 * T.k && lz <= 2.96 * T.k + 6 && q.position.y <= T.gy + 4;
+        });
+        if (!near) continue;
+        (T._centre ??= new THREE.Vector3()).set(T.x + 0.4 * T.k * s, T.floorY + 1.0, T.z + 0.4 * T.k * c);
+        let yaw = T.a;
+        while (yaw - CAM_YAW_DEFAULT > Math.PI) yaw -= Math.PI * 2;
+        while (yaw - CAM_YAW_DEFAULT < -Math.PI) yaw += Math.PI * 2;
+        return { centre: T._centre, aim: true, dist: 10, pitch: 0.18, yaw };
+      }
+    }
+    return null;
   }
 
   /**
@@ -1497,6 +1528,7 @@ export class Housing {
       drum: 'PLAY THE DRUM',
       bell: 'RING THE BELL',
       rake: 'RAKE THE SAND',
+      tea: this.activities.teaParty ? 'KNEEL FOR TEA TOO' : 'KNEEL FOR TEA',
       soak: 'SOAK',
       volley: 'VOLLEYBALL',
       pray: 'PRAY',

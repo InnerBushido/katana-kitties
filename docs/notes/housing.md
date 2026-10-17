@@ -175,6 +175,12 @@ measured 73.5, drift 83ms — it is ambient and has almost no onsets to measure)
 **TATAMI LO-FI's best loop scored 0.55** where the others score 0.75–0.98 — a
 seam that may be heard; **listen to it before deciding it is fine.**
 
+Two pieces play ONCE rather than loop, and outrank the jukebox while they do
+(`prayerTrack`): the shrine's (45s) and the **tea ceremony's** (30s, 2 takes,
+900 credits, Oct 2026 — take 2 kept because it rises out of silence under the
+whisking and has faded by the time the kittens stand; `jukebox.js` has the
+measurements). Both are levelled in `mix`, not in the file.
+
 ## Placeholders — the work that is left
 
 Each one degrades: delete the file and the game draws the stand-in.
@@ -189,6 +195,7 @@ Each one degrades: delete the file and the game draws the stand-in.
 | **Taiko, the cups game, volleyball** | a line and a sound | the mini-games |
 | **The Bushido Blade forest** | shown, locked, "later" | Richard's later feature |
 | **Boosts for kotodama abilities** | not done: the animals boost JUMP HEIGHT, JUMP DISTANCE and SPRINT only | Richard also floated boosting the panda or her kotodama powers; it is a `petBoost` field plus the one line that reads it |
+| **Seiza with a tea bowl** | the tea ceremony kneels in the PRAYER drawing and sips in the MEAL's (`_tea`); the kendo seiza is in armour | a kneeling-with-a-bowl pose, all four kittens |
 | **Windows open onto a gap, not glass** | the opening and two sliding panels | nothing needed unless a pane of glass is wanted |
 
 ## Boons — what home is worth in the ring
@@ -436,6 +443,28 @@ in `out/props-raw/` (gitignored — keep them). The poses were 13 more
 - **The path strip in front of the house is gone**, and the gap round a house
   is a box 0.3 off its footprint, not a circle. Paths are yard things that
   may cross each other.
+
+## Paths, the zen garden and the teahouse — Oct 2026
+
+- **Paths are stood on**: each is a deck at the top of what is drawn, a few
+  thousandths apart by uid so crossing paths never z-fight. A flat path goes
+  under any yard thing that is not itself a floor (`YARD_FLOORS`); a torch or
+  lantern path is only in the way at its posts (`pathPosts`, read by the
+  drawing, the colliders and `yardWhy` alike). `pathfx.js` is everything a
+  path does when she walks it.
+- **RIDE sets the turn step** on the lawn, 15 → 30 → 45°; paths start at 15.
+- **The zen garden** (`zengarden.js`) keeps a grid of footprints painted
+  onto its sand, which outlives the yard being rebuilt round it, and its rake
+  sweeps it smooth.
+- **The teahouse is walked into** (`teahouse.js`): it was a SOLID disc, and
+  is now the model's own walls, step and tatami, measured off the GLB, plus
+  risers on the platform's open edges — a deck too high to step onto is one
+  she walks UNDER, so without them she stood in the floor up to her chest.
+  It is a third bigger (h 8), has its own smaller x-ray (`teaMat`), and a
+  camera (`teaShotFor`, in `groupShot` beside the door's) that frames the
+  room from the street at 10 back. KNEEL FOR TEA: whoever kneels first starts
+  it and the music; the others have six seconds to kneel too; then the bowls
+  go round and everybody bows. 26 seconds, one kitten or four.
 
 ## Known rough edges
 

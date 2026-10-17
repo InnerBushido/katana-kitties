@@ -42,6 +42,7 @@ import { napFade, napFacing, HomeActivities, LOOK_SHOT } from '../../src/systems
 import { xrayModel, PANEL_GAP, WINDOW_IN, furnScale, FURN_REACH, FURN_INSET, pathParts, steppingStones } from '../../src/systems/housing/homeisle.js';
 import { PathFX, FLARE_T, FLARE_COLOURS, LAMP_TINT } from '../../src/systems/housing/pathfx.js';
 import { ZEN, ZEN_STONES, ZEN_RAKE, RAKE_T } from '../../src/systems/housing/zengarden.js';
+import { TEA, TEA_T, TEA_LEN } from '../../src/systems/housing/teahouse.js';
 import { zFights } from './zfight.mjs';
 import { TREEHOUSE_PLAN, slidePath } from '../../src/systems/housing/treehouse.js';
 import { holoLayout, HOLO_GRAB, HOLO_TUBE, holoKit, ensureHoloKit, holoWhyRemove, holoTubes, holoCell, HOLO_TUBE_ID, HOLO_MAX_TUBES } from '../../src/systems/housing/holodeck.js';
@@ -1143,6 +1144,129 @@ export async function housingChecks({ ok, world }) {
     ok('...and raking smooth sand says so rather than doing nothing', /already raked smooth/.test(toasts.at(-1)?.[1] ?? ''), String(toasts.at(-1)?.[1]));
     ok('...and it is a floor: no path may run under it',
       !!yardWhy(Hm, ITEM_BY_ID.path_gravel, at.x, at.z, -1, I.radius));
+    I.setHome(null, null);
+  }
+
+  /* THE TEAHOUSE WORKS LIKE A HOUSE. "a camera zoom on its front (smaller
+     radius); a smaller, less aggressive x-ray; a tea ceremony with special
+     music ... 20-30 seconds; remove the collider that keeps her out, and add
+     colliders on the walls, floor and steps". Walked in by its step, walked at
+     its three walls from inside and its platform from the open side, then two
+     kittens kneel and the ceremony is timed through. */
+  {
+    const I = H.isles[0];
+    const Hm = newHome(I.site.id, 'minka', ['Ember']);
+    const rot = 0.5;
+    const at = firstYardSpot(Hm, ITEM_BY_ID.teahouse, I.radius);
+    addOutdoor(Hm, 'teahouse', at.x, at.z, rot);
+    I.setHome(Hm, null);
+    const T = I.teahouses?.[0];
+    ok('a teahouse is built, and is no longer a SOLID disc she cannot enter',
+      !!T && !I.obstacles.some((o) => Math.hypot(o.x - T.x, o.z - T.z) < 0.5), T ? `k ${T.k.toFixed(3)}` : 'none');
+    const k = T.k;
+    const c = Math.cos(T.a), s = Math.sin(T.a);
+    const L = (p) => { const dx = p.x - T.x, dz = p.z - T.z; return { x: (dx * c - dz * s) / k, z: (dx * s + dz * c) / k }; };
+    const W = (fx, fz) => I.local(...I._itemToHouse({ x: at.x, z: at.z, rot }, fx * k, fz * k));
+    const walker = fakePlayer(0, 0, 0, 0);
+    const stepTo = (fx, fz) => {
+      const tw = W(fx, fz);
+      for (let n = 0; n < 400; n++) {
+        const dx = tw.x - walker.position.x, dz = tw.z - walker.position.z;
+        const d = Math.hypot(dx, dz);
+        if (d < 0.12) return true;
+        const wx = walker.position.x, wz = walker.position.z;
+        walker.position.x += (dx / d) * Math.min(0.1, d);
+        walker.position.z += (dz / d) * Math.min(0.1, d);
+        const g = I.heightAt(walker.position.x, walker.position.z, walker.position.y);
+        if (g) walker.position.y = g.y;
+        H.wall(walker, wx, wz, null);
+      }
+      return false;
+    };
+    const putAt = (fx, fz) => { const w = W(fx, fz); walker.position.set(w.x, T.gy, w.z); };
+    // in by the step
+    putAt(0, TEA.step.z1 + 3);
+    const inside = stepTo(0, TEA.step.z1 - 0.3) && stepTo(0, 0.4);
+    const onFloor = walker.position.y - T.floorY;
+    ok('...she walks up its step and onto the tatami',
+      inside && Math.abs(onFloor) < 0.02, `reached ${inside}, ${onFloor.toFixed(3)} from the tatami's top`);
+    // from the tatami at each of its three walls: she stops inside every one
+    const r = walker.radius / k;
+    putAt(0, 0.4); walker.position.y = T.floorY;
+    stepTo(0, -5);
+    const back = L(walker.position).z;
+    putAt(0, 0.4); walker.position.y = T.floorY;
+    stepTo(-6, 0.4);
+    const left = L(walker.position).x;
+    putAt(0, -1.2); walker.position.y = T.floorY;
+    stepTo(6, -1.2);
+    const right = L(walker.position).x;
+    ok('...and its back, closed side and the back half of its open side are walls, from inside',
+      back > -2.24 && left > -2.95 && right < 2.95 && back < -2.24 + r + 0.2,
+      `back ${back.toFixed(2)}, left ${left.toFixed(2)}, right ${right.toFixed(2)} (walls at -2.24, ±2.95)`);
+    // from the open side, on the ground: the platform's edge, not her walking under its floor
+    // (a metre out, and her height against where she set off: the yard round it is the minka's, and not flat)
+    putAt(4.5, 1.5);
+    const y0 = walker.position.y;
+    stepTo(0, 1.5);
+    const edge = L(walker.position).x;
+    const edgeY = walker.position.y - y0;
+    putAt(-2.4, TEA.step.z1 + 1);
+    const y1 = walker.position.y;
+    stepTo(-2.4, 0);
+    const front = L(walker.position).z;
+    ok('...and the platform\'s open edges are risers: beside the step and from the open side, she is stopped, not under the floor',
+      edge > TEA.floor.x1 && front > TEA.floor.z1 && edge < TEA.floor.x1 + r + 0.2 && front < TEA.floor.z1 + r + 0.2
+      && Math.abs(edgeY) < 0.1 && Math.abs(walker.position.y - y1) < 0.1,
+      `side ${edge.toFixed(2)} (edge ${TEA.floor.x1}) rose ${edgeY.toFixed(2)}, front ${front.toFixed(2)} (edge ${TEA.floor.z1}) rose ${(walker.position.y - y1).toFixed(2)}`);
+    // the x-ray: its own material, a smaller cut than a house's
+    const tg = I.itemMeshes.get('o' + Hm.outdoor.at(-1).uid);
+    let onTea = 0;
+    tg.traverse((o) => { if (o.isMesh && o.material === I.teaMat) onTea++; });
+    const cr = (m) => m.userData.xray.uCutR.value;
+    ok('...its x-ray is its own and smaller than a house\'s', onTea > 0 && cr(I.teaMat) < cr(I.wallMat) && I.xrayMats.includes(I.teaMat),
+      `${onTea} meshes, cut ${cr(I.teaMat)} vs ${cr(I.wallMat)}`);
+    // the camera: in front, on the step or inside → the teahouse's shot; behind it → her own
+    putAt(0, TEA.step.z1 + 2);
+    game.players = [walker];
+    const shot = H.groupShot([0]);
+    const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+    putAt(0, -TEA.floor.z1 - 8);
+    const behind = H.teaShotFor([0]);
+    ok('...in front of it the camera frames its room from the street, closer than a house\'s door shot',
+      !!shot && shot.dist < 12 && Math.abs(wrap(shot.yaw - T.a)) < 1e-6 && Math.abs(shot.centre.y - T.floorY - 1) < 1e-6 && !behind,
+      shot ? `dist ${shot.dist}, yaw off ${wrap(shot.yaw - T.a).toFixed(4)}, behind ${behind}` : 'no shot');
+    // THE CEREMONY
+    const ps = [0, 1, 2].map((i) => fakePlayer(i));
+    game.players = ps;
+    const A = H.activities;
+    const spots = I.spots.filter((q) => q.act === 'tea');
+    A.start(ps[0], { ...spots[0], isle: I, home: Hm });
+    H.musicSite = 'test';
+    const music = H.musicTrack();
+    A.update(1, ps);
+    A.start(ps[1], { ...spots[1], isle: I, home: Hm });
+    const seat0 = L(ps[0].position), seat1 = L(ps[1].position);
+    ok('kneeling for tea seats her on the tatami in seiza, and her sister beside her; the ceremony\'s own music plays',
+      A.holds(0) && A.holds(1) && ps[0].homePose === 'pray' && ps[1].homePose === 'pray'
+      && Math.hypot(seat0.x - TEA.seats[0][0], seat0.z - TEA.seats[0][1]) < 1e-6 && Math.hypot(seat1.x - TEA.seats[1][0], seat1.z - TEA.seats[1][1]) < 1e-6
+      && Math.abs(ps[0].position.y - T.floorY) < 1e-6 && music === 'teaCeremony' && !!MUSIC_FILES.teaCeremony,
+      `music ${music}`);
+    let late = null, sipped = [], lifted = 0, endAt = null;
+    for (let t = 1; t < 32; t += 0.1) {
+      A.update(0.1, ps);
+      if (late == null && t > TEA_T.join + 0.5) { A.start(ps[2], { ...spots[0], isle: I, home: Hm }); late = !A.holds(2) && /already being served/.test(toasts.at(-1)?.[1] ?? ''); }
+      for (const p of ps.slice(0, 2)) if (p.homePose === 'eat' && !sipped.includes(p.index)) sipped.push(p.index);
+      for (const b of T.bowls) lifted = Math.max(lifted, b.position.y - b.userData.home.y);
+      if (endAt == null && !A.holds(0) && !A.holds(1)) endAt = t;
+    }
+    ok('...a kitten arriving after the tea is served is told so rather than ignored', late === true);
+    ok('...each of them is handed her bowl and sips, then everybody stands together',
+      sipped.join() === '0,1' && lifted > 0.8 && Math.abs(endAt - TEA_LEN) < 0.25 && !ps[0].homePose && !A.teaParty,
+      `sipped ${sipped}, bowl up ${lifted.toFixed(2)}, over at ${endAt?.toFixed(1)}s of ${TEA_LEN}`);
+    ok('...it runs 20 to 30 seconds, its bowls are back on the tray and its music has ended',
+      TEA_LEN >= 20 && TEA_LEN <= 30 && T.bowls.every((b) => b.position.equals(b.userData.home)) && H.musicTrack() !== 'teaCeremony');
+    H.musicSite = null;
     I.setHome(null, null);
   }
 

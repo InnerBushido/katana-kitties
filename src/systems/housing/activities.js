@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mealPct, BOON } from './boons.js';
+import { TEA_T, TEA_LEN, sipLen } from './teahouse.js';
 
 /* ---------------------------------------------------------------------------
    THINGS TO DO AT HOME — the furniture that answers back.
@@ -47,6 +48,9 @@ export const LOOK_SHOT = { ahead: 7, eye: 2.2, back: 4.5, pitch: 0.12 };
 /** The temple piece: once through, then the second gong (jukebox.js). */
 export const PRAYER_TRACK = 'shrinePrayer';
 export const PRAYER_LEN = 45;
+/** The tea ceremony's piece (jukebox.js): once through, from its first kneel. */
+export const TEA_TRACK = 'teaCeremony';
+export const TEA_MUSIC_LEN = 30;
 
 /**
  * THE NAP'S FADE, as an opacity over the hold — 0 to black in a second, held,
@@ -91,7 +95,7 @@ export class HomeActivities {
     const fn = {
       pray: this._pray, soak: this._soak, nap: this._nap, look: this._look,
       cook: this._cook, sit: this._sit, trophies: this._trophies, bell: this._bell,
-      drum: this._drum, rake: this._rake,
+      drum: this._drum, rake: this._rake, tea: this._tea,
     }[s.act];
     if (!fn || this.held.has(p.index)) return false;
     fn.call(this, p, s);
@@ -128,8 +132,105 @@ export class HomeActivities {
 
   /** The jukebox gives way to this while it plays (Housing.musicTrack). */
   prayerTrack() {
+    if (this.teaMusic) return this.game.audio?.fileMissing?.(TEA_TRACK) ? 'frost' : TEA_TRACK;
     if (!this.prayer) return null;
     return this.game.audio?.fileMissing?.(PRAYER_TRACK) ? 'dojo' : PRAYER_TRACK;
+  }
+
+  /* ------------------------------ the teahouse ----------------------------- */
+
+  /**
+   * KNEEL FOR TEA (teahouse.js has Richard's note). The first kitten to kneel
+   * starts the ceremony and its music; for TEA_T.join seconds anybody else
+   * may kneel beside her — the kettle is being whisked — and then the bowls
+   * go round, one sip each, every kitten's share of the same 16 seconds, and
+   * everybody bows. 26 seconds, one kitten or four.
+   *
+   * SEIZA IS THE PRAYER DRAWING, AND A SIP IS THE MEAL'S. There is no
+   * kneeling-with-a-bowl drawing for the four kittens yet (housing.md's
+   * placeholder list), and the kendo seiza is in armour.
+   */
+  _tea(p, s) {
+    const G = this.game;
+    const T = s.tea;
+    if (!T) return;
+    let C = this.teaParty;
+    if (C && C.T !== T) { G.toast('A tea ceremony is already happening in the other teahouse — wait for it to finish.', p.index); return; }
+    if (C && C.t >= TEA_T.join) { G.toast('The tea is already being served. Kneel for the next one when this ends!', p.index); return; }
+    if (!C) {
+      C = this.teaParty = { T, t: 0, seats: [], sipper: -1 };
+      this.teaMusic = { t: 0 };
+    }
+    const taken = new Set(C.seats.map((q) => q.k));
+    const k = [0, 1, 2, 3].find((n) => !taken.has(n));
+    if (k == null) { G.toast('All four places are taken!', p.index); return; }
+    C.seats.push({ i: p.index, k });
+    const at = T.seat(k);
+    p.position.set(at.x, T.floorY, at.z);
+    p.group?.position?.copy?.(p.position);
+    p.facing = Math.atan2(T.tray.x - at.x, T.tray.z - at.z);
+    this._hold(p, 'tea', Infinity);
+    p.homePose = 'pray';
+    G.toast(C.seats.length === 1
+      ? `${p.name} kneels for tea. Sisters, come and kneel too — the tea is served in ${Math.ceil(TEA_T.join - C.t)} seconds!`
+      : `${p.name} kneels beside ${C.seats.length - 1 === 1 ? 'her sister' : 'her sisters'}.`, p.index);
+  }
+
+  /** The ceremony's clock: whisk, a sip each, the bow, then everybody up. */
+  _updateTea(dt, players) {
+    if (this.teaMusic && (this.teaMusic.t += dt) >= TEA_MUSIC_LEN) this.teaMusic = null;
+    const C = this.teaParty;
+    if (!C) return;
+    const G = this.game;
+    C.seats = C.seats.filter((q) => this.held.get(q.i)?.act === 'tea' && players[q.i]);
+    // the yard rebuilt under them (somebody moved a lantern): the old tea set is gone
+    if (!C.seats.length || C.T.group.userData.disposed) { this._endTea(C, players); return; }
+    C.t += dt;
+    C.T.group.updateWorldMatrix?.(true, false);
+    const n = C.seats.length;
+    const t0 = TEA_T.whisk, sl = sipLen(n);
+    const sipT = C.t - t0;
+    const k = sipT >= 0 ? Math.floor(sipT / sl) : -1;
+    // the bowls: hers rises from the tray to her, tips, and goes back
+    C.seats.forEach((q, j) => {
+      const b = C.T.bowls[q.k];
+      if (!b) return;
+      const u = j === k ? (sipT - j * sl) / sl : -1;
+      const lift = u < 0 ? 0 : Math.min(1, u / 0.25, (1 - u) / 0.2);
+      const at = C.T.seat(q.k);
+      const lp = C.T.group.worldToLocal?.(new THREE.Vector3(at.x, C.T.floorY, at.z));
+      if (lp) b.position.lerpVectors(b.userData.home, lp.setY(b.userData.home.y + 1.25).addScaledVector(lp.clone().sub(b.userData.home).setY(0).normalize(), -0.55), lift);
+      b.rotation.x = lift * Math.sin(Math.max(0, u) * Math.PI) * 0.6;
+    });
+    if (k !== C.sipper && k >= 0 && k < n) {
+      C.sipper = k;
+      const p = players[C.seats[k].i];
+      if (p) {
+        p.homePose = 'eat';
+        G.toast(`${p.name} turns the bowl and sips the matcha… mmm!`, p.index);
+      }
+      if (k > 0) { const prev = players[C.seats[k - 1].i]; if (prev) prev.homePose = 'pray'; }
+    }
+    if (C.t >= t0 + TEA_T.sip * 4 && !C.bowed) {
+      C.bowed = true;
+      for (const q of C.seats) {
+        const p = players[q.i];
+        if (!p) continue;
+        p.homePose = 'pray';
+        G.toast('Everybody bows together… ARIGATOU GOZAIMASU!', p.index);
+      }
+      G.audio?.play?.('menu');
+    }
+    if (C.t >= TEA_LEN) this._endTea(C, players);
+  }
+
+  _endTea(C, players = this.game.players ?? []) {
+    for (const q of C.seats) {
+      const p = players[q.i];
+      if (p && this.held.get(q.i)?.act === 'tea') this._release(p);
+    }
+    for (const b of C.T.bowls) { b.position.copy(b.userData.home); b.rotation.x = 0; }
+    this.teaParty = null;
   }
 
   /* --------------------------------- onsen -------------------------------- */
@@ -506,6 +607,7 @@ export class HomeActivities {
       }
     }
     this._updateMeals(dt, players);
+    this._updateTea(dt, players);
     // the plate rides over her head; gone if she leaves home or a battle starts
     for (const [i, m] of this._plates) {
       const p = players[i];
