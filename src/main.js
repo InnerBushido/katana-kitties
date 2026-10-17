@@ -4516,6 +4516,22 @@ class Game {
   }
 
   /**
+   * WHERE HER KOTODAMA ORBIT. Richard, Oct 2026: "When player is in the
+   * simulation, it seems it is bringing the worlds regular, large kotodama
+   * orbs into the simulator with the player. It should leave that outside of
+   * the simulator like it does for any of the other orbs the player has
+   * equipped before entering the simulator." Her worn orbs are swapped for
+   * her holo kit on the way in (`DreamDojo._applyKit`); the orbs she has
+   * FOUND, and the gold quest tokens, are the real world's, so in the sim
+   * they keep circling her body in its tube (`dreamAnchor`) — moved, never
+   * dropped, so nothing is lost (non-negotiable 4) and the maths each one
+   * draws is still about the circle it is actually on (1).
+   */
+  orbCentre(p) {
+    return p.realm === 'sim' && p.dreamAnchor ? p.dreamAnchor : p.position;
+  }
+
+  /**
    * Put the world on hold for the ending: no other voice, and no cast.
    *
    * TWO DIFFERENT GATES AND THEY ARE NOT THE SAME MOMENT, which is why this is
@@ -10129,9 +10145,9 @@ class Game {
       for (const d of this.dragons) d.update(dt, this.world, []);
       this.dream?.update(dt);
       for (const p of this.players) {
-        for (const o of p.orbs ?? []) o.update(dt, p.position);
+        for (const o of p.orbs ?? []) o.update(dt, this.orbCentre(p));
         for (const o of p.wornOrbs ?? []) o.update(dt, p.position);
-        for (const o of p.featOrbs ?? []) o.update(dt, p.position);
+        for (const o of p.featOrbs ?? []) o.update(dt, this.orbCentre(p));
       }
       this._updateMusic(dt);
       // The simulator going up a slice a frame, before the tour cuts into it.
@@ -10182,9 +10198,9 @@ class Game {
          no collision, no input — which is why this is three lines rather than
          an exception carved out of `_tickPlayers`. */
       for (const p of this.players) {
-        for (const o of p.orbs ?? []) o.update(dt, p.position);
+        for (const o of p.orbs ?? []) o.update(dt, this.orbCentre(p));
         for (const o of p.wornOrbs ?? []) o.update(dt, p.position);
-        for (const o of p.featOrbs ?? []) o.update(dt, p.position);
+        for (const o of p.featOrbs ?? []) o.update(dt, this.orbCentre(p));
       }
       this._renderView(this.shrineScene.camera, 0, 0,
         ...this.renderer.getSize(new THREE.Vector2()).toArray(), null, true);
@@ -10540,9 +10556,9 @@ class Game {
 
     // Orbs, pickups, dragons, dojo.
     for (const p of this.players) {
-      for (const o of p.orbs ?? []) o.update(dt, p.position);
+      for (const o of p.orbs ?? []) o.update(dt, this.orbCentre(p));
       for (const o of p.wornOrbs ?? []) o.update(dt, p.position);
-      for (const o of p.featOrbs ?? []) o.update(dt, p.position);
+      for (const o of p.featOrbs ?? []) o.update(dt, this.orbCentre(p));
     }
     this.kotodama.update(dt);
     this.feats.update(dt);

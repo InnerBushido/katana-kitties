@@ -4355,7 +4355,8 @@ console.log('\n--- the shrine scene is a two-shot ---');
        first version threw "this.players is not iterable" on a scope object
        that had `players` on it. */
     const tick = new Function('dt', `${body}`);
-    const host = { players: [p] };
+    // `orbCentre` is the Game's (her tube while she is in the simulator); out here it is her.
+    const host = { players: [p], orbCentre: (q) => q.position };
     for (let i = 0; i < 30; i++) tick.call(host, 1 / 60);
     ok('...so theta really advances while the leader is talking',
       o.theta > before + 0.4, `${before.toFixed(3)} -> ${o.theta.toFixed(3)} rad`);
@@ -29761,7 +29762,7 @@ console.log('\n--- quests: earned before the end, paid one at a time after it --
     const save = stripComments(src('../src/systems/savegame.js'));
     ok('the game runs the quests every frame, and moves the tokens',
       /this\.feats\.update\(dt\)/.test(main)
-        && /featOrbs \?\? \[\]\) o\.update\(dt, p\.position\)/.test(main));
+        && /featOrbs \?\? \[\]\) o\.update\(dt, this\.orbCentre\(p\)\)/.test(main));
     ok('BOTH ways into the Awakening settle the quests',
       (main.match(/this\._awaken\(/g) || []).length >= 2
         && !/_announceAwakening\(this\.kotodama\.awaken\(\)\)/.test(main)
@@ -41948,6 +41949,22 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         ok('...and the dark sky carries the code rain, scaled by the same gloom — set for each pane before its sky is placed',
           /uniform float uGloom;[\s\S]*if \(uGloom > 0\.001\) \{[\s\S]*trail \* rain/.test(wsrc)
           && /this\.sim\.setGloom\(this\.paneGloom\(members\)\);\s*this\.sim\.faceCamera\(camera\);/.test(readFileSync(new URL('../src/systems/dreamdojo.js', import.meta.url), 'utf8')));
+        /* HER FOUND ORBS STAY OUTSIDE. "it is bringing the worlds regular,
+           large kotodama orbs into the simulator with the player. It should
+           leave that outside" — Richard, Oct 2026. They circle her body in
+           its tube instead: moved, never dropped. */
+        {
+          const body = msrc.match(/\n  orbCentre\(p\) \{([\s\S]*?)\n  \}/)?.[1];
+          const orbCentre = body && new Function('p', body);
+          const tube = new THREE.Vector3(5, 1, 5);
+          const inSim = { realm: 'sim', dreamAnchor: tube, position: new THREE.Vector3(SW.SIM.dx + 9, 3, 9) };
+          const home = { realm: null, dreamAnchor: null, position: new THREE.Vector3(1, 2, 3) };
+          ok('影 in the simulator her found orbs and quest tokens circle her body in its tube, not her — and every place they are moved asks the same question',
+            !!orbCentre && orbCentre(inSim) === tube && orbCentre(home) === home.position
+            && (msrc.match(/p\.orbs \?\? \[\]\) o\.update\(dt, this\.orbCentre\(p\)\)/g) ?? []).length === 3
+            && (msrc.match(/p\.featOrbs \?\? \[\]\) o\.update\(dt, this\.orbCentre\(p\)\)/g) ?? []).length === 3
+            && !/p\.(orbs|featOrbs) \?\? \[\]\) o\.update\(dt, p\.position\)/.test(msrc));
+        }
       }
     }
 
