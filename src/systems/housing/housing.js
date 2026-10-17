@@ -18,7 +18,7 @@ import { autoLayout, defaultWindows, houseWhy, brokenLinks, wallSlots, ITEM_SELL
 /** How far toward its bridge a NEW house of this kind stands (see `buy`). */
 export const HOME_FORWARD = { castle: 7 };
 import { linkWhy, linkBlockers } from './links.js';
-import { HousingCards } from './cards.js';
+import { HousingCards, roomTypeRefund } from './cards.js';
 import { BuildMode } from './build.js';
 import { HomeBoons } from './boons.js';
 import { HomeActivities } from './activities.js';
@@ -395,8 +395,11 @@ export class Housing {
         this._obstacles(p, I, r);
         continue;
       }
+      // a kitten lying on a futon or sat at the table is IN the furniture's rectangle, on purpose
+      const held = this.activities?.holds?.(p.index);
       for (const w of I.walls) {
         if (pos.y + 1.5 < w.y0 || pos.y > w.y1) continue;
+        if (held && w.furn) continue;
         this._segPush(p, w, r);
       }
       // every house's front door, for somebody the lock keeps out
@@ -442,6 +445,11 @@ export class Housing {
 
   _obstacles(p, I, r) {
     for (const o of I.obstacles) {
+      /* Most are posts from the ground up and have no range; one with `y0`
+         or `y1` is skipped by a kitten wholly above or below it, the way a
+         wall is — the cabin tree is a trunk under the floor and a mast above. */
+      if (o.y0 != null && p.position.y + 1.5 < o.y0) continue;
+      if (o.y1 != null && p.position.y > o.y1) continue;
       const dx = p.position.x - o.x;
       const dz = p.position.z - o.z;
       const d = Math.hypot(dx, dz);
@@ -1024,6 +1032,12 @@ export class Housing {
          only shows the floor the players are on"). */
       const bf = this.builder.cutFloor(I, members ?? players.map((_, k) => k));
       if (bf) cut.set(bf.hk, bf.f);
+      // building outside: roofs off, and a bridge's house cut to the bridge's floor
+      const soft = new Set(cut.keys());
+      for (const c of this.builder.outdoorCuts(I, members ?? players.map((_, k) => k))) {
+        if (c.hard) cut.set(c.hk, c.f);
+        else if (!soft.has(c.hk)) cut.set(c.hk, Math.min(cut.get(c.hk) ?? 99, c.f));
+      }
       I.cutaway(cut);
       // a kendo match being watched: the walls at half height (kendo.js)
       I.halfWalls(this.kendo.halfWallFor(I, members ?? players.map((_, k) => k)));
@@ -1249,6 +1263,7 @@ export class Housing {
     const why = houseWhy(H, spec, env);
     if (why) { this.game.toast(why, p.index); return false; }
     const def = HOUSE_BY_ID[spec.house];
+    let raise = null;
     const at = { x: +spec.x.toFixed(2), z: +spec.z.toFixed(2), rot: +(spec.rot ?? 0).toFixed(4) };
     if (!spec.hk) {
       const price = this.annexPrice(H, spec.house);
@@ -1258,6 +1273,11 @@ export class Housing {
       H.annex.push({ uid: H.uid, house: spec.house, ...at, paid: price, free: !price });
       defaultWindows(H, `a${H.uid}`);
       this.game.toast(price ? `The ${def.name} is built!` : `The ${def.name} is built — free, it came with the island!`, p.index);
+      /* "Play a build animation when a house is built, similar to the island
+         purchase": the purchase scene's rise, in place, without taking the
+         camera away from her build view. It changes nothing — the house is
+         already written down above. */
+      raise = `a${H.uid}`;
     } else {
       const sold = brokenLinks(H, spec, env);
       if (spec.hk === 'main') H.at = at;
@@ -1268,7 +1288,7 @@ export class Housing {
         : `Moved the ${def.name} — and everything inside it.`, p.index);
     }
     this.changed(H);
-    this.game.audio?.play?.('land');
+    if (raise) { I?.raise?.(raise); this.game.audio?.play?.('islerise'); } else this.game.audio?.play?.('land');
     return true;
   }
 
@@ -1281,6 +1301,8 @@ export class Housing {
       if (room.hk !== hk) continue;
       const R = H.rooms?.[room.id];
       for (const q of [...(R?.items ?? []), ...(R?.wall ?? [])]) if (!q.free) n += Math.round(this.itemPrice(q.id) * ITEM_SELL);
+      // ...and a holodeck or a dojo in it, which is bought like furniture and sold like it
+      n += roomTypeRefund(this, R);
     }
     for (const L of H.links ?? []) if (L.a.hk === hk || L.b.hk === hk) n += Math.round((L.paid ?? 0) * HOME_SELL);
     return n;
@@ -1461,7 +1483,7 @@ export class Housing {
       door: own ? 'MY HOME' : 'KNOCK',
       frontdoor: !this.allowed(p, s.home) ? 'KNOCK' : s.door?.pinned ? 'CLOSE THE DOOR' : 'KEEP THE DOOR OPEN',
       portdoor: s.door?.pinned ? 'CLOSE THE DOOR' : 'KEEP THE DOOR OPEN',
-      window: s.home?.rooms?.[s.room]?.wall?.[s.wk]?.open ? 'CLOSE THE WINDOW' : 'OPEN THE WINDOW',
+      window: s.home?.rooms?.[s.room]?.wall?.[s.wk]?.open ? 'CLOSE THE WINDOW' : 'OPEN THE WINDOW AND LOOK OUT',
       koi: 'THE KOI POND',
       rod: 'PICK UP A FISHING ROD',
       clean: 'CLEAN UP THE MESS',
@@ -1536,11 +1558,20 @@ export class Housing {
         this.toggleDoor(p, s.home, s.door);
         return true;
       case 'window': {
+        /* OPENING A WINDOW IS LOOKING OUT OF IT. Richard, Oct 2026: "The 'zoom
+           in and look out the window' option is no longer there, we should
+           reintroduce that". It went when windows became real holes that open
+           and shut, because INTERACT became the latch and the window's spot
+           stopped being a 'look'. One button, so: a shut window slides open
+           and she looks out (the hold, activities.js `_look`); an open one
+           shuts. Every opening is a look. */
         const q = s.home.rooms?.[s.room]?.wall?.[s.wk];
         if (!q) return true;
-        if (q.open) delete q.open; else q.open = true;
-        this.save();
         G.audio?.play?.('menu');
+        if (q.open) { delete q.open; this.save(); return true; }
+        q.open = true;
+        this.save();
+        this.activities.start(p, { ...s, act: 'look' });
         return true;
       }
       case 'koi':

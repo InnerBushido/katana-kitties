@@ -47,7 +47,23 @@ const pts = (n) => `${Math.round(n).toLocaleString()} pts`;
 export const possessive = (names) => `${[].concat(names).join(' & ').toUpperCase()}'S`;
 /** What Roshi pays back for everything in a room. */
 export function roomRefund(Hs, R) {
-  return (R?.items ?? []).reduce((a, q) => a + Math.round(Hs.itemPrice(q.id) * ITEM_SELL), 0);
+  return (R?.items ?? []).reduce((a, q) => a + (q.free ? 0 : Math.round(Hs.itemPrice(q.id) * ITEM_SELL)), 0) + roomTypeRefund(Hs, R);
+}
+
+/**
+ * WHAT THE ROOM ITSELF SELLS BACK FOR: a holodeck or a kendo dojo, at the
+ * same rate as the furniture. Richard, Oct 2026: "Selling a holodeck, or
+ * converting it to a tatami room should refund money to the player, same
+ * for the kendo dojo." It refunded the things IN the room and kept the
+ * price of the room. `typePaid` is what she paid (written by
+ * `changeRoomType`); a room made before that was written down is refunded
+ * on today's price, which is the price it was sold at in every build that
+ * did not record one.
+ */
+export function roomTypeRefund(Hs, R) {
+  if (!R?.type || R.type === 'living') return 0;
+  const paid = Number.isFinite(R.typePaid) ? R.typePaid : Hs.roomPrice(R.type);
+  return Math.round(paid * ITEM_SELL);
 }
 
 /**
@@ -67,6 +83,7 @@ export function changeRoomType(Hs, p, H, R, type, price, room = null) {
   R.items = [];
   if (!Hs.spend(p, H, price)) return { ok: false, why: 'Not enough points.' };
   R.type = type;
+  if (price) R.typePaid = price; else delete R.typePaid;
   // a holodeck comes with its kit, stood where it always stood; she moves it after
   if (type === 'holodeck' && room) R.items = holoKit(room);
   Hs.changed(H);
@@ -646,11 +663,18 @@ export class HousingCards {
     const T = ROOM_TYPES.find((t) => t.id === top.type);
     const price = this.H.roomPrice(T.id);
     const refund = roomRefund(this.H, R);
+    const typeBack = roomTypeRefund(this.H, R);
+    const old = ROOM_TYPES.find((t) => t.id === R.type);
     const n = (R.items ?? []).length;
+    // the room's own refund is said out loud, apart from the furniture's
+    const what = [
+      typeBack ? `the ${old?.name ?? 'room'} for ${pts(typeBack)}` : '',
+      n ? `the ${n} thing${n > 1 ? 's' : ''} in it for ${pts(refund - typeBack)}` : '',
+    ].filter(Boolean).join(' and ');
     return {
       head: `MAKE IT A ${T.name}?`,
-      body: `<div class="hs-note">${n
-        ? `The ${n} thing${n > 1 ? 's' : ''} in the ${esc(room.name)} will be SOLD BACK to Roshi for ${pts(refund)}.`
+      body: `<div class="hs-note">${what
+        ? `Roshi will BUY BACK ${what}.`
         : `The ${esc(room.name)} is empty.`} It costs ${price ? pts(price) : 'nothing'}.</div>`,
       rows: [
         { title: 'NO, KEEP THE ROOM AS IT IS', go: () => { this._pop(index); return null; } },
@@ -661,7 +685,7 @@ export class HousingCards {
           go: () => {
             const r = changeRoomType(this.H, p, H, R, T.id, price, room);
             if (!r.ok) { this.game.toast(r.why, index); return null; }
-            this.game.toast(`The ${room.name} is now a ${T.name}!${r.refund ? ` Roshi paid ${pts(r.refund)} for the furniture.` : ''}${T.id === 'holodeck' ? ' Move the tube and the racks wherever you like — FREE.' : ''}`, index);
+            this.game.toast(`The ${room.name} is now a ${T.name}!${r.refund ? ` Roshi paid ${pts(r.refund)} for ${typeBack ? `the ${old?.name ?? 'room'}${n ? ' and its furniture' : ''}` : 'the furniture'}.` : ''}${T.id === 'holodeck' ? ' Move the tube and the racks wherever you like — FREE.' : ''}`, index);
             this._pop(index);
             return null;
           },

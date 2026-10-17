@@ -1798,7 +1798,11 @@ export class Player {
       this[key] = new Billboard(a.texture, {
         cols: 1,
         rows: 1,
-        mirror: key === 'prayPose',
+        /* The futon turns too: both drawings (Ember's and Frost's, measured)
+           lie with the head on the LEFT, so `artFacesRight: false` and she is
+           mirrored when the pillow is on the screen's right. It was a fixed
+           quad, head left from every side of the bed. */
+        mirror: key !== 'bathPose',
         artFacesRight: key === 'prayPose',
         width: quad,
         height: quad,
@@ -2142,7 +2146,15 @@ export class Player {
     const pushed = (pad?.mx ?? 0) ** 2 + (pad?.my ?? 0) ** 2 > 1e-4;
     const H = this._peekHold;
     const borrowed = this.viewOwn === false && Number.isFinite(this.viewYaw);
-    if (!this.bridgePeek?.live && !borrowed && !(H && pushed)) { this._peekHold = null; return this._basis(); }
+    /* ...AND FOR A LENS SWINGING ROUND HER (`camSwing`: a focus turning in or
+       out — the front door's shot, the Dojo's). Richard: "Input switching
+       when the camera changes to the front door camera, and then when it
+       changes back is not smooth". A held stick was read through the lens
+       every frame of its half-turn, so she walked a curve into the door and
+       a curve back out. Now a push held through the swing keeps the heading
+       it started with until she lets go — the bridge's rule, above. A still
+       camera never sets it, so the game she knows is untouched. */
+    if (!this.bridgePeek?.live && !borrowed && !(this.camSwing && pushed) && !(H && pushed)) { this._peekHold = null; return this._basis(); }
     const view = Number.isFinite(this.viewYaw) ? this.viewYaw : this.camYaw;
     if (!H) this._peekHold = { yaw: view };
     else if (!pushed) H.yaw = view;
@@ -6523,6 +6535,7 @@ export class Player {
       } else if (hp === 'bath') {
         pose.mesh.position.y = Math.sin(ph * 2.2) * 0.04;
       } else {
+        pose.facing = this.facing;
         const b = Math.sin(ph * 1.3) * 0.025;
         pose.mesh.scale.set(1 + b * 0.3, 1 + b, 1);
       }
@@ -7066,6 +7079,16 @@ export class Player {
     const active = this.focus && !flying;
     this.focusT += ((active ? 1 : 0) - this.focusT) * Math.min(1, dt * 2.2);
     let yaw = CAM_YAW;
+    /* THE TURN EASES BACK OUT TOO. Richard, Oct 2026: "Input switching when
+       the camera changes to the front door camera, and then when it changes
+       back is not smooth". Going IN eased on `focusT`; coming OUT, the focus
+       was already null, so the yaw was CAM_YAW on the very next frame — the
+       lens jumped a half-turn round her and the stick with it. The last
+       focus's turn is kept and eased out on the same `focusT`. */
+    if (this.focus) this._lastFocusYaw = this.focus.yaw ?? CAM_YAW;
+    else if (this.focusT > 0.001 && Number.isFinite(this._lastFocusYaw) && !flying) {
+      yaw = THREE.MathUtils.lerp(CAM_YAW, this._lastFocusYaw, this.focusT);
+    }
     if (this.focusT > 0.001 && this.focus) {
       const t = this.focusT;
       wantDist = THREE.MathUtils.lerp(wantDist, this.focus.dist, t);
@@ -7106,6 +7129,8 @@ export class Player {
       );
     }
 
+    // is the lens turning round her this frame? (`_moveBasis` holds a push through it)
+    this.camSwing = Math.abs(yaw - this.camYaw) > 1e-4;
     this.camYaw = yaw;
 
     /* AND THEN THE SHAPE OF HER PANE, WHICH EVERY DISTANCE ABOVE IGNORES.

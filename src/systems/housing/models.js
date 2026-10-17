@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { toonVertexMat, toonMat, paint } from '../../core/gfx.js';
-import { mergeParts } from '../../world/build.js';
+import { mergeParts, PALETTE } from '../../world/build.js';
 import { MODEL_STYLES } from './modelstyles.js';
 
 /* ---------------------------------------------------------------------------
@@ -276,6 +276,39 @@ function mesh(parts) {
   return new THREE.Mesh(mergeParts(parts), SHARED);
 }
 
+/** The generated shoji leaf every door and window is made of. */
+export const SHOJI = 'props/shoji-door';
+/** Shoji panels that meet run in two grooves this far either side of the middle. */
+export const PANEL_GAP = 0.045;
+
+/**
+ * A PAIR OF SHOJI, closed: two paper leaves `w` wide between them and `h`
+ * tall, origin at the middle of their foot, one PANEL_GAP in front of the
+ * middle and one behind (two grooves — at one depth their overlap flickers).
+ * The window in a wall (`HomeIsle._windowPanels`) and the window in the shop
+ * (`drawItem('window')`) are both this, so the thing she buys is the thing
+ * she gets. Richard, Oct 2026: "Shoji in furniture view should be the same
+ * model as the actual shoji being placed on the walls."
+ */
+export function shojiPair(w, h, mat = null) {
+  const pw = w / 2 + 0.06;
+  const parts = [];
+  const b = (bw, bh, bd, c, x, y) => { const s = new THREE.BoxGeometry(bw, bh, bd); paint(s, c); s.translate(x, y, 0); parts.push(s); };
+  b(pw, h, 0.04, PALETTE.paper, 0, h / 2);
+  for (const x of [-pw / 2 + 0.04, 0, pw / 2 - 0.04]) b(0.06, h, 0.07, PALETTE.woodDark, x, h / 2);
+  for (const y of [0.03, h / 3, (h * 2) / 3, h - 0.03]) b(pw, 0.06, 0.07, PALETTE.woodDark, 0, y);
+  const geo = mergeParts(parts);
+  SHARED ??= toonVertexMat();
+  const group = new THREE.Group();
+  const panels = [-1, 1].map((sgn) => {
+    const m = placeModel(SHOJI, new THREE.Mesh(geo, mat ?? SHARED), { box: { x: pw, y: h, z: 0.06 }, ry: Math.PI / 2 });
+    m.position.set(sgn * w / 4, 0, sgn * PANEL_GAP);
+    group.add(m);
+    return m;
+  });
+  return { group, panels };
+}
+
 /**
  * The procedural version of an item, in world units, origin on the ground.
  * `sz` is the footprint the catalogue gives it, so a stand-in fills the cells
@@ -326,12 +359,20 @@ export function drawItem(id, sz = 2, opts = {}) {
     case 'treehouse': return mesh([cyl(0.5, 0.7, 5, 0x5a3a20), ball(3.4, 0xf6b5cf, 0, 7.6, 0, 0.6), box(3, 0.2, 3, 0x8a6a40, 0, 4.6), box(2.4, 1.8, 2.4, 0xd8b880, 0, 4.8), box(2.8, 0.3, 2.8, 0x8a3a2a, 0, 6.6), box(0.6, 4.6, 0.1, 0x7a5a3a, 1.7, 0, 0)]);
     /* WALL THINGS — drawn facing +z, their back on z = 0 (the wall), their
        bottom at y = 0; homeisle.js lifts them to their height on the wall. */
-    case 'window': return mesh([
-      box(2.0, 1.7, 0.1, 0x3a2418, 0, 0, 0.05),
-      box(1.7, 1.4, 0.06, 0xbfe3f2, 0, 0.15, 0.1),
-      ...[0, 1, 2].map((k) => box(0.06, 1.4, 0.1, 0x5a3a20, -0.57 + k * 0.57, 0.15, 0.14)),
-      box(1.7, 0.06, 0.1, 0x5a3a20, 0, 0.82, 0.14),
-      box(2.2, 0.12, 0.3, 0x5a3a20, 0, -0.06, 0.15)]);
+    case 'window': {
+      /* THE WALL'S WINDOW, in its frame: the shoji pair (`shojiPair`, 1.6 by
+         1.6 — homehouse's WINDOW) and the dark timber the wall cuts round it,
+         2.0 across like the catalogue says. It was a blue-glass sash. */
+      const g = new THREE.Group();
+      const W = 1.6, Hh = 1.6;
+      g.add(mesh([
+        box(0.2, Hh, 0.38, 0x3a2418, -(W / 2 + 0.1) + 0.04, 0, 0),
+        box(0.2, Hh, 0.38, 0x3a2418, W / 2 + 0.1 - 0.04, 0, 0),
+        box(W + 0.4, 0.16, 0.4, 0x3a2418, 0, Hh - 0.04, 0),
+        box(W + 0.4, 0.16, 0.4, 0x3a2418, 0, -0.12, 0)]));
+      g.add(shojiPair(W, Hh).group);
+      return g;
+    }
     case 'scroll': return mesh([
       box(1.0, 2.4, 0.03, 0xf3ead2, 0, 0, 0.03), box(0.9, 1.8, 0.035, 0xfffaee, 0, 0.3, 0.04),
       box(1.2, 0.1, 0.1, 0x3a2418, 0, 2.38, 0.06),

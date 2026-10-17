@@ -92,6 +92,8 @@ const box = (w, h, d, c, x = 0, y = 0, z = 0) => {
 export const WINDOW = { w: 1.6, sill: 1.0, h: 1.6 };
 /** A doorway cut for a bridge: as tall as the front door. */
 export const PORT_H = 3.1;
+/** How far a plinth runs down into the ground, and how far below it she is still lifted on. */
+export const PLINTH_SINK = 2.0;
 
 export function buildHouseShell(houseId, openings = []) {
   const S = SHAPES[houseId] ?? SHAPES.minka;
@@ -113,20 +115,44 @@ export function buildHouseShell(houseId, openings = []) {
   const plinth = [];
   const pw = bw + S.porch;
   const pd = bd + S.porch;
+  /* THE PLINTH GOES DOWN INTO THE GROUND, and she is put on top of it.
+     Richard, Oct 2026: "Step up base colliders aren't working all the time.
+     Sometimes after moving or rotating a house, the player can just walk
+     through the base ... should be pushed up on top of it". The house stands
+     at the ground height under its MIDDLE (`_frame`), so on a slope the
+     downhill edge of a timber plinth was its 0.7 plus the slope above the
+     grass — past the deck's 0.75 step, and the plinth has no wall, so she
+     walked into it with her feet on the grass. Now the timber plinth's deck
+     takes her from anything up to PLINTH_SINK below it, and the box is drawn
+     that far down so the downhill side is not a shelf floating on air. The
+     castle's stone base is a storey and has a ramp: it keeps its step, and
+     its sides are WALLS instead, but for the ramp's mouth. */
   if (S.stone) {
-    plinth.push(box(pw * 2, base, pd * 2, PALETTE.stone, 0, base / 2, 0));
+    plinth.push(box(pw * 2, base + PLINTH_SINK, pd * 2, PALETTE.stone, 0, (base - PLINTH_SINK) / 2, 0));
     // battered courses, so the base reads as Ishigaki and not as a box
     for (let k = 0; k < 4; k++) {
-      const s = 1 + (3 - k) * 0.025;
+      // + 0.012: the top course was exactly the plinth's size, and its four
+      // sides flickered in the plinth's (tools/checks/zfight.mjs)
+      const s = 1.012 + (3 - k) * 0.025;
       plinth.push(box(pw * 2 * s, 0.12, pd * 2 * s, 0x7f7a74, 0, (k + 0.5) * (base / 4), 0));
     }
   } else {
-    plinth.push(box(pw * 2, base, pd * 2, PALETTE.wood, 0, base / 2, 0));
+    plinth.push(box(pw * 2, base + PLINTH_SINK, pd * 2, PALETTE.wood, 0, (base - PLINTH_SINK) / 2, 0));
+    // the posts stop 0.1 short of the box's foot, so the two undersides are not one plane
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-      plinth.push(box(0.4, base + 0.1, 0.4, PALETTE.woodDark, sx * (pw - 0.3), base / 2, sz * (pd - 0.3)));
+      plinth.push(box(0.4, base + 0.1 + PLINTH_SINK - 0.1, 0.4, PALETTE.woodDark, sx * (pw - 0.3), (base + 0.1 - PLINTH_SINK + 0.1) / 2, sz * (pd - 0.3)));
     }
   }
-  decks.push({ x0: -pw, x1: pw, z0: -pd, z1: pd, y: base, step: 0.75 });
+  decks.push({ x0: -pw, x1: pw, z0: -pd, z1: pd, y: base, step: S.stone ? 0.75 : base + PLINTH_SINK, plinth: true });
+  if (S.stone) {
+    // the stone base's four sides, open where the ramp comes up the front
+    const lo = -PLINTH_SINK, hi = base - 0.15;
+    walls.push({ ax: -pw, az: -pd, bx: pw, bz: -pd, y0: lo, y1: hi, plinth: true });
+    walls.push({ ax: -pw, az: -pd, bx: -pw, bz: pd, y0: lo, y1: hi, plinth: true });
+    walls.push({ ax: pw, az: -pd, bx: pw, bz: pd, y0: lo, y1: hi, plinth: true });
+    walls.push({ ax: -pw, az: pd, bx: -STAIR_W, bz: pd, y0: lo, y1: hi, plinth: true });
+    walls.push({ ax: STAIR_W, az: pd, bx: pw, bz: pd, y0: lo, y1: hi, plinth: true });
+  }
 
   /* The way up onto the plinth: a ramp out of the front door. For the
      minka it is one step and the deck's own `step` takes it; the castle's
@@ -200,16 +226,26 @@ export function buildHouseShell(houseId, openings = []) {
         const t0 = Math.max(0.35, t - o.w / 2), t1 = Math.min(len - 0.35, t + o.w / 2);
         if (t1 - t0 < 0.3) continue;
         holes.push({ t0, t1, h0: o.sill, h1: Math.min(wallH - 0.2, o.sill + o.h), door: !o.sill });
-        // a dark timber frame round every cut, so a hole reads as built and not broken
-        const fr = (from, to, h0, h1) => {
+        /* A dark timber frame round every cut, so a hole reads as built and
+           not broken — AND STANDING 0.04 PROUD INTO THE HOLE. Richard, Oct
+           2026: "windows are z-fighting with the hole cut in the wall". They
+           were: each jamb ended exactly where the wall piece beside it ended,
+           the head's underside was the plane of the plaster over the hole and
+           the sill's top the plane of the plaster under it, so the hole's
+           four inner faces were two colours at one depth. The jambs are a
+           hair thinner than the head and sill (0.08 proud of the wall, not
+           0.1) and the head and sill a hair longer, so no two of the frame's
+           own faces share a plane either. tools/checks/zfight.mjs proves it
+           for every house, with windows and bridge doors cut. */
+        const fr = (from, to, h0, h1, dd = 0.1) => {
           const L = to - from, c = from + L / 2, P = pt(c);
-          g.push(box(along === 'x' ? L : WALL_T + 0.1, h1 - h0, along === 'z' ? L : WALL_T + 0.1, PALETTE.woodDark, P.x, y + (h0 + h1) / 2, P.z));
+          g.push(box(along === 'x' ? L : WALL_T + dd, h1 - h0, along === 'z' ? L : WALL_T + dd, PALETTE.woodDark, P.x, y + (h0 + h1) / 2, P.z));
         };
         const top1 = Math.min(wallH - 0.2, o.sill + o.h);
-        fr(t0 - 0.12, t0, o.sill, top1);
-        fr(t1, t1 + 0.12, o.sill, top1);
-        fr(t0 - 0.12, t1 + 0.12, top1, top1 + 0.12);
-        if (o.sill > 0) fr(t0 - 0.12, t1 + 0.12, o.sill - 0.12, o.sill);
+        fr(t0 - 0.12, t0 + 0.04, o.sill, top1, 0.08);
+        fr(t1 - 0.04, t1 + 0.12, o.sill, top1, 0.08);
+        fr(t0 - 0.14, t1 + 0.14, top1 - 0.04, top1 + 0.12);
+        if (o.sill > 0) fr(t0 - 0.14, t1 + 0.14, o.sill - 0.12, o.sill + 0.04);
       }
       holes.sort((p, q) => p.t0 - q.t0);
       let t = 0;
@@ -306,8 +342,9 @@ export function buildHouseShell(houseId, openings = []) {
       const za = zBot - (k + 1) * run;
       const top = y0 + (k + 1) * h;
       g.push(box(STAIR_W, top - y0, run, k % 2 ? PALETTE.wood : 0xb98a52, xc, y0 + (top - y0) / 2, za + run / 2));
-      // the dark nosing along each tread's front edge
-      g.push(box(STAIR_W + 0.04, 0.06, 0.1, PALETTE.woodDark, xc, top + 0.01, za + run - 0.05));
+      // the dark nosing along each tread's front edge, 0.01 proud of the riser
+      // so its face is not the step's face (zfight.mjs)
+      g.push(box(STAIR_W + 0.04, 0.06, 0.1, PALETTE.woodDark, xc, top + 0.01, za + run - 0.04));
     }
     decks.push({
       x0: xc - STAIR_W / 2, x1: xc + STAIR_W / 2, z0: zTop, z1: zBot, y: y0 + rise, step: 0.6, stair: f,
@@ -322,7 +359,8 @@ export function buildHouseShell(houseId, openings = []) {
        very back — and between it and the house's back wall was 1.2 of floor
        for a kitten 1.2 wide. The floor above has its own rails round the hole. */
     walls.push({ ax: rx, az: zTop, bx: rx, bz: zBot - 1.2, y0: y0 + 1.2, y1: y0 + rise - 0.15, rail: true });
-    g.push(box(0.12, 1, L, PALETTE.woodDark, rx, y0 + rise * 0.5 + 0.8, (zTop + zBot) / 2));
+    // 0.02 short of the top step's back, whose face it shared
+    g.push(box(0.12, 1, L - 0.02, PALETTE.woodDark, rx, y0 + rise * 0.5 + 0.8, (zTop + zBot) / 2 + 0.01));
     /* THE OPENING UPSTAIRS IS RAILED on its two long sides and its front, so
        nobody walks into it by accident; its BACK is open, because that is
        where the stairs arrive at the floor and where she steps on to go

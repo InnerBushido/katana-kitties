@@ -43363,7 +43363,30 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         `${yawOf(a).toFixed(2)} ${yawOf(held).toFixed(2)} ${yawOf(next).toFixed(2)}`);
       ok('...and once it is down and she lets go, it is her own camYaw again, exactly',
         Math.abs(yawOf(after) - 2.9) < 1e-9 && Math.abs(yawOf(home) - 0.3) < 1e-9 && her._peekHold === null);
-      her.viewYaw = keepVY; her.camYaw = keepCY;
+      /* THE FRONT DOOR'S SHOT, the same rule. "Input switching when the
+         camera changes to the front door camera, and then when it changes
+         back is not smooth." Her own lens swinging (`camSwing`) holds a push
+         at the heading it had when the swing caught it, through the swing
+         and after, until she lets go; a still lens holds nothing. */
+      her._peekHold = null; her.bridgePeek.w = 0;
+      her.camYaw = 0.3; her.viewYaw = 0.3; her.camSwing = false;
+      const still = yawOf(her._moveBasis(up).fwd);
+      const stillHolds = her._peekHold === null;
+      her.camSwing = true; her.camYaw = her.viewYaw = 0.35;
+      const s0 = yawOf(her._moveBasis(up).fwd);
+      her.camYaw = her.viewYaw = 2.4;
+      const s1 = yawOf(her._moveBasis(up).fwd);
+      her.camSwing = false; her.camYaw = her.viewYaw = 2.9;
+      const s2 = yawOf(her._moveBasis(up).fwd);
+      her._moveBasis({ mx: 0, my: 0 });
+      const s3 = yawOf(her._moveBasis(up).fwd);
+      ok('...and a push held while her own lens swings round (the front door\'s shot) keeps its heading until she lets go',
+        Math.abs(still - 0.3) < 1e-9 && stillHolds && Math.abs(s0 - 0.35) < 1e-9 && Math.abs(s1 - 0.35) < 1e-9
+        && Math.abs(s2 - 0.35) < 1e-9 && Math.abs(s3 - 2.9) < 1e-9 && her._peekHold === null,
+        [still, s0, s1, s2, s3].map((v) => v.toFixed(2)).join(' '));
+      ok('...and the lens turns back OUT of a focus on the same ease it turned in on, never a one-frame jump',
+        /if \(this\.focus\) this\._lastFocusYaw = this\.focus\.yaw \?\? CAM_YAW;\s*else if \(this\.focusT > 0\.001 && Number\.isFinite\(this\._lastFocusYaw\) && !flying\) \{\s*yaw = THREE\.MathUtils\.lerp\(CAM_YAW, this\._lastFocusYaw, this\.focusT\);/.test(read('../src/entities/player.js')));
+      her.viewYaw = keepVY; her.camYaw = keepCY; her.camSwing = false;
     }
     const pl = read('../src/entities/player.js');
     const mn = read('../src/main.js');

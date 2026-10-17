@@ -78,6 +78,41 @@ export function cellLocal(room, it, gx, gz, rot = 0) {
   return { x: room.cx - room.w / 2 + (gx + cw / 2) * 2, z: room.cz - room.d / 2 + (gz + cd / 2) * 2 };
 }
 
+/* THE FURNITURE RIDES WITH THE HOUSE BEING MOVED. Richard, Oct 2026: "When
+   moving a house that has furniture inside it, either the furniture should
+   be disabled while the house moves, or should be parented to the house and
+   move with it ... parenting would be best." The ghost was the shell alone,
+   and the real house hidden — so her futon and kotatsu stood on the empty
+   lawn where the house had been. Every mesh that belongs to the house (its
+   furniture, its windows, a dojo's floor) is carried by the ghost's move:
+   ghost * inverse(where the house stood) * where the thing stood, which is
+   what a child of the house group would get. `uncarry` puts each back on
+   its own transform; if the house was put down, `rebuildItems` has already
+   replaced them anyway. */
+const _D = new THREE.Matrix4();
+const _M = new THREE.Matrix4();
+
+export function carry(G, I, hk, real) {
+  if (G.carry && G.carry.hk !== hk) uncarry(G);
+  if (!G.carry) {
+    const list = [];
+    for (const o of I.itemGroup.children) {
+      if (o.userData.floor == null || (o.userData.hk ?? 'main') !== hk) continue;
+      list.push({ o, m: new THREE.Matrix4().compose(o.position, o.quaternion, o.scale) });
+    }
+    G.carry = { hk, list };
+  }
+  G.group.updateMatrix();
+  real.updateMatrix();
+  _D.copy(real.matrix).invert().premultiply(G.group.matrix);
+  for (const { o, m } of G.carry.list) _M.multiplyMatrices(_D, m).decompose(o.position, o.quaternion, o.scale);
+}
+
+export function uncarry(G) {
+  for (const { o, m } of G?.carry?.list ?? []) m.decompose(o.position, o.quaternion, o.scale);
+  if (G) G.carry = null;
+}
+
 /**
  * Why `top` cannot go where it is, as a sentence; null when it can. Pure:
  * world-check asks it with hand-made homes.
@@ -516,6 +551,40 @@ export class BuildMode {
     return out;
   }
 
+  /**
+   * THE ROOFS COME OFF FOR WORK OUTSIDE. Richard, Oct 2026: "When player is
+   * not inside a house, and is building a bridge, or adding to the yard, the
+   * roofs of the house should be hidden" — from the build camera's height a
+   * roof is most of the picture and hides the lawn round the house. And "When
+   * building a bridge on the 2nd or 3rd floor, the house should show that
+   * floor so the player can see where the bridge is going": a house the
+   * bridge starts or ends at is cut to that floor (the higher one, if both
+   * ends are in it), so the doorway is on screen.
+   *
+   * `[{ hk, f, hard }]`: `hard` — the bridge's floor — wins over the floor a
+   * kitten is standing on; the rest only take the roof off a house nobody in
+   * the pane is inside.
+   */
+  outdoorCuts(I, members) {
+    const out = [];
+    for (const i of members ?? []) {
+      const F = this.frameOf(i);
+      if (!F || F.I !== I || F.room) continue;
+      const { top } = F;
+      if (top.kind !== 'yard' && top.kind !== 'house' && top.kind !== 'link') continue;
+      for (const hs of I.houses ?? []) {
+        let f = hs.shell.floorY.length - 1;
+        let hard = false;
+        if (top.kind === 'link') {
+          const ends = [top.a, top.cur].filter((e) => e?.hk === hs.hk);
+          if (ends.length) { f = Math.max(...ends.map((e) => e.floor)); hard = true; }
+        }
+        out.push({ hk: hs.hk, f, hard });
+      }
+    }
+    return out;
+  }
+
   /* -------------------------------- ghosts ------------------------------ */
 
   /**
@@ -553,6 +622,8 @@ export class BuildMode {
       const look = top.kind === 'room' ? roomLook(it, row) : row?.look ? { s: row.look.s, style: row.look.style } : null;
       body = placeModel(it.model, drawItem(it.id, 2, { cups: 3 }), it.size ?? (it.id === 'treehouse' ? { h: 16 } : null), look);
       body.userData.onReal = (g) => ghostly(g);
+      // a drawn stand-in with models of its own inside (the window's shoji) ghosts them too when they land
+      body.traverse((o) => { if (o !== body && o.userData.modelId && !o.userData.onReal) o.userData.onReal = (g) => ghostly(g); });
     }
     return ghostly(body);
   }
@@ -576,6 +647,7 @@ export class BuildMode {
     G.group.parent?.remove(G.group);
     for (const mk of G.marks ?? []) mk.parent?.remove(mk);
     if (G.hid) { G.hid.visible = true; G.hid.userData.held = false; }
+    uncarry(G);
     this.ghosts.delete(i);
   }
 
@@ -735,6 +807,7 @@ export class BuildMode {
       if (G.hid && G.hid !== real) G.hid.visible = true;
       if (real) real.visible = false;
       G.hid = real ?? null;
+      if (real) carry(G, I, hk, real); else uncarry(G);
     } else {
       const at = G.group.userData.at;
       if (at) {

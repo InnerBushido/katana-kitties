@@ -5,7 +5,7 @@ import { makeLabelTexture } from '../../core/label.js';
 import { buildHouseShell, houseHeight, houseRadius, floorOf, FLOOR_H, SLAB_T, WINDOW, PORT_H } from './homehouse.js';
 import { ITEMS, ITEM_BY_ID, LINK_BY_ID, houseSpecs, homeRooms } from './catalog.js';
 import { linkGeom, linkParts, linkModels } from './links.js';
-import { placeModel, drawItem, clampMul } from './models.js';
+import { placeModel, drawItem, clampMul, SHOJI, shojiPair, PANEL_GAP } from './models.js';
 import { wallSlots, yardR } from './editor.js';
 import { buildTreehouse } from './treehouse.js';
 import { HOLO_GEAR_SCALE, HOLO_TUBE, ensureHoloKit, holoCell, holoOut } from './holodeck.js';
@@ -429,9 +429,14 @@ export class HomeIsle {
       return mergeParts(parts);
     };
     // Tripo's shoji leaf (tools/prop-bake.mjs) stretched to the hole; the drawn panel until it loads, or for good
+    /* ONE PANEL BEHIND THE OTHER, the way shoji run in two grooves. They
+       overlap by 0.12 where they meet, and at one depth that strip
+       flickered between the two (Richard: "avoid z-fighting at all costs").
+       PANEL_GAP apart, both inside the wall's thickness. */
     const panels = [-1, 1].map((sgn) => {
       const m = placeModel(SHOJI, new THREE.Mesh(geo(), this.wallMat), { box: { x: pw, y: PORT_H - 0.06, z: 0.08 }, ry: Math.PI / 2 });
       m.position.x = sgn * w / 4;
+      m.position.z = sgn * PANEL_GAP;
       g.add(m);
       return m;
     });
@@ -543,13 +548,16 @@ export class HomeIsle {
         const L = this.cellCentre(room, placed.gx, placed.gz, it, placed.rot);
         const w = hs.local(L.x, L.z);
         const g = placeModel(it.model, drawItem(it.id, 2), it.size, roomLook(it, placed));
+        // measured while it is still at the origin, unturned (`_furnWalls`)
+        const box = new THREE.Box3().setFromObject(g);
         g.position.set(w.x, y, w.z);
         g.rotation.y = hs.ry + (placed.rot ?? 0) * (Math.PI / 2);
+        this._furnWalls(g, box, placed, y, room.hk ?? 'main');
         g.userData.floor = room.floor;
         g.userData.hk = room.hk;
         this.itemGroup.add(g);
         this.itemMeshes.set(`r:${room.id}:${k}`, g);
-        if (it.act) this.spots.push({ x: w.x, z: w.z, y, r: 2.6, act: it.act, item: it.id, room: room.id, k });
+        if (it.act) this.spots.push({ x: w.x, z: w.z, y, r: 2.6, act: it.act, item: it.id, room: room.id, k, ry: g.rotation.y });
       }
       const slots = (R?.wall?.length) ? wallSlots(room.house, room) : [];
       for (const [k, q] of (R?.wall ?? []).entries()) {
@@ -575,7 +583,8 @@ export class HomeIsle {
           // the spot is a step into the room from the wall, where she stands
           const f = hs.local(S.x - Math.sin(S.ry) * -1.4, S.z - Math.cos(S.ry) * -1.4);
           const act = q.id === 'window' ? 'window' : it.act;
-          this.spots.push({ x: f.x, z: f.z, y, r: 1.8, act, item: it.id, room: room.id, side: q.side, slot: S, wk: k });
+          // `face`: the world turn of the wall thing, whose own +z points into the room
+          this.spots.push({ x: f.x, z: f.z, y, r: 1.8, act, item: it.id, room: room.id, side: q.side, slot: S, wk: k, face: hs.ry + S.ry, wx: w.x, wz: w.z });
         }
       }
     }
@@ -610,19 +619,16 @@ export class HomeIsle {
    */
   _windowPanels(q) {
     const g = new THREE.Group();
-    const pw = WINDOW.w / 2 + 0.06;
-    const parts = [];
-    const b = (bw, bh, bd, c, x, y) => { const s = new THREE.BoxGeometry(bw, bh, bd); paint(s, c); s.translate(x, y, 0); parts.push(s); };
-    b(pw, WINDOW.h, 0.04, PALETTE.paper, 0, WINDOW.h / 2);
-    for (const x of [-pw / 2 + 0.04, 0, pw / 2 - 0.04]) b(0.06, WINDOW.h, 0.07, PALETTE.woodDark, x, WINDOW.h / 2);
-    for (const y of [0.03, WINDOW.h / 3, (WINDOW.h * 2) / 3, WINDOW.h - 0.03]) b(pw, 0.06, 0.07, PALETTE.woodDark, 0, y);
-    const geo = mergeParts(parts);
-    const panels = [-1, 1].map((sgn) => {
-      const m = placeModel(SHOJI, new THREE.Mesh(geo, this.wallMat), { box: { x: pw, y: WINDOW.h, z: 0.06 }, ry: Math.PI / 2 });
-      m.position.set(sgn * WINDOW.w / 4, 0, 0.02);
-      g.add(m);
-      return m;
-    });
+    /* IN THE WALL, NOT IN FRONT OF IT, and one panel behind the other. The
+       window's slot is the wall's inner line less 0.22 (`wallSlots`), so the
+       wall's middle is WINDOW_IN behind this group; the panels sit there, in
+       the hole, and slide into the plaster either side when it opens. They
+       were 0.02 into the room, both at one depth — the overlap flickered,
+       and an open window was two paper panels standing in the room. */
+    const P = shojiPair(WINDOW.w, WINDOW.h, this.wallMat);
+    P.group.position.z = -WINDOW_IN;
+    g.add(P.group);
+    const panels = P.panels;
     this.windows.push({ q, panels, k: q.open ? 1 : 0 });
     return g;
   }
@@ -711,6 +717,40 @@ export class HomeIsle {
     for (let k = 0; k < 4; k++) {
       const a = c[k], b = c[(k + 1) % 4];
       this.walls.push({ ax: a.x, az: a.z, bx: b.x, bz: b.z, y0, y1, item: q.uid });
+    }
+  }
+
+  /**
+   * FURNITURE IS SOLID — NEARLY TO ITS EDGE. Richard, Oct 2026: "Players
+   * should not be able to walk through furniture like the table, futon,
+   * kitchen ... but can get close to it (collision at half the radius of the
+   * player) ... Players should always be able to walk around the edges of
+   * the room, and through gaps in between objects. The collider should scale
+   * with the object, but scaling above 100% should only count half the extra
+   * size: an object at 150% gets a 125% collider, at 50% a 50% one."
+   *
+   * The rectangle is the thing's MEASURED box (`box`, taken at the origin
+   * before it was turned), never its grid cells: a cell is 2 units and most
+   * furniture fills less of it, so cells would wall off the gaps she is meant
+   * to walk through. Shrunk by FURN_INSET, so her middle stops FURN_REACH
+   * from the edge — half her radius — instead of a whole radius plus the
+   * wall pad. A holodeck's tube is stepped INTO and has none.
+   */
+  _furnWalls(g, box, placed, y, hk) {
+    const it = ITEM_BY_ID[placed.id];
+    if (!it || it.holo || box.isEmpty()) return;
+    const s = placed.look?.s ?? 1;
+    const k = furnScale(s) / s;   // the box already has `s` in it
+    const hx = ((box.max.x - box.min.x) / 2) * k - FURN_INSET;
+    const hz = ((box.max.z - box.min.z) / 2) * k - FURN_INSET;
+    if (hx < 0.05 || hz < 0.05) return;   // too slight to stand in her way
+    const cx = (box.min.x + box.max.x) / 2, cz = (box.min.z + box.max.z) / 2;
+    const c = Math.cos(g.rotation.y), sn = Math.sin(g.rotation.y);
+    const at = (lx, lz) => ({ x: g.position.x + lx * c + lz * sn, z: g.position.z - lx * sn + lz * c });
+    const P = [[-hx, -hz], [hx, -hz], [hx, hz], [-hx, hz]].map(([fx, fz]) => at(cx + fx, cz + fz));
+    for (let q = 0; q < 4; q++) {
+      const a = P[q], b = P[(q + 1) % 4];
+      this.walls.push({ ax: a.x, az: a.z, bx: b.x, bz: b.z, y0: y, y1: y + Math.max(1, box.max.y), furn: placed.id, hk });
     }
   }
 
@@ -852,7 +892,11 @@ export class HomeIsle {
         }
         for (const t of T.trunks) {
           const o = this.local(t.x, t.z);
-          this.obstacles.push({ x: o.x, z: o.z, r: t.r });
+          // a trunk with a height range keeps it (the cabin's tree thins to a mast)
+          this.obstacles.push({
+            x: o.x, z: o.z, r: t.r,
+            ...(t.y0 != null ? { y0: t.y0 + this.groundY } : {}), ...(t.y1 != null ? { y1: t.y1 + this.groundY } : {}),
+          });
         }
         g.userData.treehouse = T;
         break;
@@ -1137,11 +1181,48 @@ export class HomeIsle {
         d.panels.forEach((m, i) => { m.position.x = (i ? 1 : -1) * (d.w / 4 + d.k * (d.w / 2 + 0.05)); });
       }
     }
+    for (const [hk, R] of this.raising ?? []) {
+      R.t += dt;
+      const u = Math.min(1, R.t / R.dur);
+      // the purchase scene's ease, and a little overshoot so it lands
+      const e = u >= 1 ? 1 : u * u * (3 - 2 * u) * (1 + Math.sin(u * Math.PI) * 0.08);
+      this.rise(hk, e);
+      if (u >= 1) this.raising.delete(hk);
+    }
     for (const W of this.windows ?? []) {
       const want = W.q.open ? 1 : 0;
       W.k += Math.sign(want - W.k) * Math.min(Math.abs(want - W.k), dt * 3);
       W.panels.forEach((m, i) => { m.position.x = (i ? 1 : -1) * (WINDOW.w / 4 + W.k * (WINDOW.w / 2 + 0.06)); });
     }
+  }
+
+  /**
+   * A HOUSE RISING OUT OF ITS GROUND, and everything in it with it: `e` 0..1.
+   * Richard, Oct 2026: "Furniture and windows aren't scaled with the build
+   * animation. Can we parent them to the house". They are not children of the
+   * house group (the cutaway and the build ghost each need them on their own),
+   * so this scales them about the same ground the house group stands on,
+   * which is the same thing a parent would do. `e` at 1 puts back exactly
+   * what was there, so a skipped scene leaves no half-risen chair.
+   */
+  rise(hk, e) {
+    const hs = this.houseOf(hk);
+    if (!hs) return;
+    const k = Math.max(0.02, Math.min(1, e));
+    hs.group.scale.set(1, k, 1);
+    for (const g of this.itemGroup.children) {
+      if (g.userData.floor == null || (g.userData.hk ?? 'main') !== hs.hk) continue;
+      const r = (g.userData.rise ??= { y: g.position.y, s: g.scale.y });
+      g.position.y = hs.gy + (r.y - hs.gy) * k;
+      g.scale.y = r.s * k;
+      if (e >= 1) delete g.userData.rise;
+    }
+  }
+
+  /** Raise house `hk` over `dur` seconds from now (`update` drives it). */
+  raise(hk, dur = RAISE_T) {
+    (this.raising ??= new Map()).set(hk, { t: 0, dur });
+    this.rise(hk, 0);
   }
 
   bump(x, y, z) {
@@ -1183,8 +1264,20 @@ export class HomeIsle {
 
 export { FLOOR_H };
 
-/** The generated shoji leaf every door and window is made of. */
-const SHOJI = 'props/shoji-door';
+export { PANEL_GAP };
+/** From a window's slot back to the middle of its wall (`wallSlots`: hw - 0.22). */
+export const WINDOW_IN = 0.22;
+
+/** A furnishing's collider at scale `s`: as big as it, but past 100% only half the extra counts. */
+export const furnScale = (s) => (s <= 1 ? s : 1 + (s - 1) * 0.5);
+/** How close her middle comes to a furnishing's edge: half her radius (Player 0.75). */
+export const FURN_REACH = 0.375;
+/** ...so the rectangle is drawn in from the edge by her push distance (radius + `_segPush`'s 0.18) less that. */
+export const FURN_INSET = 0.75 + 0.18 - FURN_REACH;
+
+/** How long a newly built house takes to rise out of the lawn. */
+export const RAISE_T = 2.4;
+
 
 /** The drawn flower box a blossom bridge's planter stands in as (links.js `linkModels`). */
 function planterStandIn() {

@@ -99,10 +99,11 @@ export class PurchaseScene {
         /* THE HOUSE, NOT ITS PARENT: the house group sits at the island's
            height, so scaling the empty parent would scale that height too
            and sink the house into the ground. */
+        /* ...AND WHAT IS IN IT: `rise` scales the furniture and windows
+           about the same ground, so they come up with the walls instead of
+           standing full-height inside a house a tenth built. */
         const e = ease(u);
-        const hg = I.houseGroup.children[0];
-        if (hg) { hg.scale.set(1, Math.max(0.02, e), 1); }
-        I.itemGroup.scale.setScalar(1);
+        I.rise('main', e);
         I.setColours(this.H.coloursOf(I.home), ease((u - 0.3) / 0.7));
         // In front of the house (local +z faces home), drifting round it.
         const a = I.ry + 0.9 - u * 0.9;
@@ -197,7 +198,7 @@ export class PurchaseScene {
     if (!this.active) return;
     this.active = false;
     const I = this.isle;
-    I.houseGroup.children[0]?.scale.set(1, 1, 1);
+    I.rise('main', 1);
     if (I.home) I.setColours(this.H.coloursOf(I.home), 1);
     const B = this.H.bridges[this.k];
     if (B) {

@@ -21,9 +21,9 @@ const ITEMS_PATHS = () => ITEMS.filter((it) => it.path);
 import { emptyStore, newHome, normalise, saveStore, loadStore, migrateYard, HOME_KEY, homeKey, pruneRows, HOME_ROWS_KEPT } from '../../src/systems/housing/homestore.js';
 import { careLevel, careBuff, stalksAt, BAMBOO_GROW, BAMBOO_MAX } from '../../src/systems/housing/farm.js';
 import { fits, firstFit, gridOf, autoLayout, ITEM_SELL, yardWhy, yardR, firstYardSpot, addOutdoor, wallSlots, houseWhy, defaultWindows } from '../../src/systems/housing/editor.js';
-import { buildWhy, commitBuild, removeBuilt, pickList, stepToward, BUILD_KEYS } from '../../src/systems/housing/build.js';
-import { houseRadius, houseShape, HEAD_H, SLAB_T, buildHouseShell, houseFoot } from '../../src/systems/housing/homehouse.js';
-import { possessive, ownedCount, roomRefund, changeRoomType } from '../../src/systems/housing/cards.js';
+import { buildWhy, commitBuild, removeBuilt, pickList, stepToward, BUILD_KEYS, carry, uncarry } from '../../src/systems/housing/build.js';
+import { houseRadius, houseShape, HEAD_H, SLAB_T, buildHouseShell, houseFoot, WINDOW, PORT_H } from '../../src/systems/housing/homehouse.js';
+import { possessive, ownedCount, roomRefund, changeRoomType, roomTypeRefund } from '../../src/systems/housing/cards.js';
 import { JUKEBOX, JUKEBOX_BY_ID, PREVIEW_AT, previewOf } from '../../src/systems/housing/jukebox.js';
 import { MUSIC_FILES } from '../../src/core/musicfiles.js';
 import { JUKEBOX_FILES } from '../../src/systems/housing/jukeboxfiles.js';
@@ -38,9 +38,10 @@ import { voicePath } from '../../src/core/audio.js';
 import { existsSync } from 'node:fs';
 import { mealPct, BOON } from '../../src/systems/housing/boons.js';
 import { DOOR_SWING } from '../../src/systems/housing/homebridge.js';
-import { napFade } from '../../src/systems/housing/activities.js';
-import { xrayModel } from '../../src/systems/housing/homeisle.js';
-import { TREEHOUSE_PLAN } from '../../src/systems/housing/treehouse.js';
+import { napFade, napFacing, HomeActivities, LOOK_SHOT } from '../../src/systems/housing/activities.js';
+import { xrayModel, PANEL_GAP, WINDOW_IN, furnScale, FURN_REACH, FURN_INSET } from '../../src/systems/housing/homeisle.js';
+import { zFights } from './zfight.mjs';
+import { TREEHOUSE_PLAN, slidePath } from '../../src/systems/housing/treehouse.js';
 import { holoLayout, HOLO_GRAB, HOLO_TUBE, holoKit, ensureHoloKit, holoWhyRemove, holoTubes, holoCell, HOLO_TUBE_ID, HOLO_MAX_TUBES } from '../../src/systems/housing/holodeck.js';
 import { GEAR_ITEMS } from '../../src/systems/dream/gear.js';
 import { fits as fitsGrid } from '../../src/systems/housing/editor.js';
@@ -528,6 +529,29 @@ export async function housingChecks({ ok, world }) {
     const poor = fakePlayer(1);
     const R2 = { type: 'living', items: [] };
     ok('...and a kitten who cannot pay is refused with how much she needs', !changeRoomType(H, poor, Hm, R2, 'holodeck', 500).ok && R2.type === 'living');
+    /* "Selling a holodeck, or converting it to a tatami room should refund
+       money to the player, same for the kendo dojo." The dojo just bought
+       above is turned back into tatami: she gets the dojo's price back at the
+       furniture's rate, and only once — the tatami room it becomes is worth
+       nothing more. A holodeck's free kit is not paid for twice either. */
+    {
+      const paidK = R.typePaid;
+      const before = q.score;
+      const back = roomTypeRefund(H, R);
+      const r3 = changeRoomType(H, q, Hm, R, 'living', 0);
+      ok('turning a kendo dojo back into tatami pays the dojo back, at the sell price',
+        paidK > 0 && back === Math.round(paidK * ITEM_SELL) && r3.ok && q.score - before === back && roomTypeRefund(H, R) === 0 && R.typePaid === undefined,
+        `paid ${paidK}, back ${back}, got ${q.score - before}`);
+      const rich = { ...fakePlayer(2), score: 1e6 };
+      const R4 = { type: 'living', items: [] };
+      changeRoomType(H, rich, Hm, R4, 'holodeck', H.roomPrice('holodeck'), living);
+      ok('...and so does a holodeck, and its free kit adds nothing to it',
+        R4.items.length >= 4 && roomRefund(H, R4) === Math.round(H.roomPrice('holodeck') * ITEM_SELL), roomRefund(H, R4));
+      ok('...and an old save\'s dojo, with no price written down, is refunded at today\'s',
+        roomTypeRefund(H, { type: 'kendo', items: [] }) === Math.round(H.roomPrice('kendo') * ITEM_SELL));
+      const hsrc5 = readFileSync(new URL('../../src/systems/housing/housing.js', import.meta.url), 'utf8');
+      ok('...and selling a whole extra house pays its holodeck and dojo back too', /n \+= roomTypeRefund\(this, R\);/.test(hsrc5));
+    }
     const src = readFileSync(new URL('../../src/systems/housing/cards.js', import.meta.url), 'utf8');
     ok('...and the card asks before it does it, NO first', /_v_roomtype[\s\S]{0,1500}title: 'NO, KEEP THE ROOM AS IT IS'[\s\S]{0,200}title: `YES, MAKE IT A/.test(src)
       && !/MAKE IT A \$\{T\.name\}`[^\n]*\n[^\n]*\n[^\n]*\n[^\n]*this\.H\.spend/.test(src));
@@ -616,12 +640,71 @@ export async function housingChecks({ ok, world }) {
       ['path_carpet', 'path_tiki', 'path_lantern'].every((id) => ITEM_BY_ID[id]?.path) && Math.min(...ITEMS_PATHS().map((it) => it.pw)) < 2.5 && Math.max(...ITEMS_PATHS().map((it) => it.pw)) > 4);
     const plain = buildHouseShell('minka').walls.length, cut = buildHouseShell('minka', [{ floor: 0, side: 1, at: 0, w: 2.6, sill: 0, h: 3.1 }]).walls.length;
     ok('a bridge door cuts the wall\'s collider in two, so she can walk through it', cut > plain, `${plain} -> ${cut}`);
+    /* "avoid z-fighting at all costs in all housing related things (roof,
+       doors, windows, ceiling, etc.), and double check it when the house is
+       modified". Every house, with a window in every outside wall of every
+       floor and a bridge door beside it — the shapes a modified house has —
+       and no two same-facing faces in one plane. The only faces let off are
+       the undersides of things standing ON a floor, which no camera is ever
+       beneath. */
+    {
+      const bad = [];
+      for (const h of HOUSES) {
+        const op = [];
+        for (let f = 0; f < h.floors; f++) for (let s = 0; s < 4; s++) {
+          if (f === 0 && s === 0) continue;   // the front door's wall
+          op.push({ floor: f, side: s, at: -1.4, ...WINDOW });
+          op.push({ floor: f, side: s, at: 2.2, w: 2.6, sill: 0, h: PORT_H });
+        }
+        const S = buildHouseShell(h.id, op);
+        const all = [...S.floors.flat(), ...S.roof, ...S.tint, ...S.accent.flat(), ...(S.ridge ?? []).flat()];
+        const lv = [0, ...S.floorY];
+        const f = zFights(all, (x) => x.axis === 'y' && x.side === '-' && lv.some((l) => Math.abs(l - x.plane) < 1e-3));
+        if (f.length) bad.push(`${h.id}: ${f.length}, e.g. ${JSON.stringify(f[0])}`);
+      }
+      ok('no house has two faces fighting in one plane — windows, doors, frames, stairs, roof', !bad.length, bad.join('; '));
+      const isrc = readFileSync(new URL('../../src/systems/housing/homeisle.js', import.meta.url), 'utf8');
+      const msrc = readFileSync(new URL('../../src/systems/housing/models.js', import.meta.url), 'utf8');
+      ok('...and shoji that meet run in two grooves, the window\'s inside the wall',
+        PANEL_GAP >= 0.04 && /m\.position\.z = sgn \* PANEL_GAP;/.test(isrc) && /m\.position\.set\(sgn \* w \/ 4, 0, sgn \* PANEL_GAP\)/.test(msrc)
+        && /P\.group\.position\.z = -WINDOW_IN;/.test(isrc) && WINDOW_IN === 0.22);
+      /* "Shoji in furniture view should be the same model as the actual shoji
+         being placed on the walls." The shop's window holds the same shoji
+         model, at the wall window's size. */
+      const shop = [];
+      drawItem('window', 2).traverse((o) => { if (o.userData.modelId) shop.push(o.userData.modelId); });
+      ok('...and the shop\'s window is the wall\'s: the same shoji pair, the same model',
+        shop.length === 2 && shop.every((id) => id === 'props/shoji-door') && /const P = shojiPair\(WINDOW\.w, WINDOW\.h, this\.wallMat\);/.test(isrc), shop.join(','));
+    }
     const Hw = newHome('sunrise', 'minka', ['Ember']);
     defaultWindows(Hw);
     const wins = Object.values(Hw.rooms).flatMap((R) => R.wall ?? []).filter((q) => q.id === 'window');
     ok('a new house comes with windows, free, one to an outside wall', wins.length >= 2 && wins.every((q) => q.free));
     const hsrc2 = readFileSync(new URL('../../src/systems/housing/homeisle.js', import.meta.url), 'utf8');
     ok('only the first house carries the name board (the front-door camera follows it)', /hs\.hk === 'main'/.test(hsrc2) || /s\.hk === 'main'/.test(hsrc2));
+    /* "reintroduce [look out the window] but have the camera be a bit further
+       away from the player ... a few feet back". Opening a window starts the
+       look; the camera is aimed OUT of the wall (its own turn, not the
+       island's middle) and stands LOOK_SHOT.back behind her. */
+    {
+      const toasts = [];
+      const A = new HomeActivities({ game: { toast: (m) => toasts.push(m) } });
+      const kit = { index: 0, name: 'Ember', position: new THREE.Vector3(), velocity: new THREE.Vector3(), facing: 0 };
+      const face = 0.6;   // the window's +z into the room
+      const spot = { act: 'look', x: 3 + Math.sin(face) * 1.2, z: 4 + Math.cos(face) * 1.2, y: 0, face, wx: 3, wz: 4, isle: { x: 100, z: 100 } };
+      A.start(kit, spot);
+      const F = A.cameraFocus(kit);
+      const out = { x: -Math.sin(face), z: -Math.cos(face) };
+      // the camera: back from the centre along -yaw's view, dist away
+      const cam = F && { x: F.centre.x + Math.sin(F.yaw) * F.dist * Math.cos(F.pitch), z: F.centre.z + Math.cos(F.yaw) * F.dist * Math.cos(F.pitch) };
+      const behind = cam && ((kit.position.x - cam.x) * out.x + (kit.position.z - cam.z) * out.z);
+      ok('a window spot starts a LOOK hold, and she faces out of the wall',
+        A.held.get(0)?.act === 'look' && Math.abs(Math.atan2(out.x, out.z) - kit.facing) < 1e-6);
+      ok('...and the camera is a few feet back behind her, inside, looking out',
+        !!F && Math.abs(behind - LOOK_SHOT.back) < 0.15 && behind > 3, behind?.toFixed(2));
+      const hsrc3 = readFileSync(new URL('../../src/systems/housing/housing.js', import.meta.url), 'utf8');
+      ok('...and the window\'s INTERACT opens it AND looks out', /OPEN THE WINDOW AND LOOK OUT/.test(hsrc3) && /act: 'look' \}\)/.test(hsrc3));
+    }
   }
 
   /* BUILD MODE: what the ghost says is what gets written. */
@@ -660,6 +743,182 @@ export async function housingChecks({ ok, world }) {
       /pressed\('sprint'\)\) \{ pad\.consume\?\.\('sprint'\); C\.askSell/.test(bsrc) && BUILD_KEYS.some(([k, w]) => k === 'SPRINT' && w === 'sell'));
     const csrc = readFileSync(new URL('../../src/systems/housing/cards.js', import.meta.url), 'utf8');
     ok('...and selling asks first, NO on top', /_v_sellitem[\s\S]{0,900}title: `NO, KEEP THE[\s\S]{0,200}title: (?:it\?\.holo \? `YES, TAKE THE \$\{it\.name\} OUT` : )?`YES, SELL IT FOR/.test(csrc));
+  }
+
+  /* THE HOUSE AND ITS THINGS ARE ONE. "Furniture and windows aren't scaled
+     with the build animation. Can we parent them to the house" and "When
+     moving a house that has furniture inside it ... should be parented to the
+     house and move with it". Measured on the real island's meshes. */
+  {
+    const I = H.isles[0];
+    const Hm = newHome(I.site.id, 'minka', ['Ember']);
+    const room = HOUSE_BY_ID.minka.rooms[0];
+    Hm.rooms = { [room.id]: { type: 'living', items: [{ id: 'kotatsu', gx: 0, gz: 0, rot: 0 }] } };
+    defaultWindows(Hm);
+    I.setHome(Hm, null);
+    const mine = I.itemGroup.children.filter((g) => g.userData.floor != null && (g.userData.hk ?? 'main') === 'main');
+    const hs = I.houseOf('main');
+    const before = mine.map((g) => ({ y: g.position.y, s: g.scale.y, x: g.position.x, z: g.position.z }));
+    I.rise('main', 0.5);
+    const half = mine.every((g, k) => Math.abs(g.scale.y - before[k].s * 0.5) < 1e-9
+      && Math.abs((g.position.y - hs.gy) - (before[k].y - hs.gy) * 0.5) < 1e-9) && hs.group.scale.y === 0.5;
+    I.rise('main', 1);
+    const back = mine.every((g, k) => g.scale.y === before[k].s && g.position.y === before[k].y) && hs.group.scale.y === 1;
+    ok('a house rising brings its furniture AND its windows up with it, and puts them back exactly',
+      mine.length >= 3 && half && back, `${mine.length} things`);
+    const hsrc4 = readFileSync(new URL('../../src/systems/housing/housing.js', import.meta.url), 'utf8');
+    const psrc4 = readFileSync(new URL('../../src/systems/housing/purchasescene.js', import.meta.url), 'utf8');
+    ok('...the purchase scene uses it, and so does a new house being built',
+      /I\.rise\('main', e\)/.test(psrc4) && /I\.rise\('main', 1\)/.test(psrc4) && /I\?\.raise\?\.\(raise\)/.test(hsrc4));
+    I.raise('main');
+    for (let k = 0; k < 40; k++) I.update(0.1, k * 0.1, []);
+    ok('...and the raise finishes on its own at full height', !I.raising.size && mine.every((g, k) => g.scale.y === before[k].s));
+    // the move: a ghost 10 east and a quarter turn round carries every one of them
+    const G = { group: new THREE.Group(), carry: null };
+    G.group.position.copy(hs.group.position).add(new THREE.Vector3(10, 0, 0));
+    G.group.rotation.y = hs.group.rotation.y + Math.PI / 2;
+    carry(G, I, 'main', hs.group);
+    const rel = (g, P) => {
+      const v = new THREE.Vector3(g.position.x, g.position.y, g.position.z).sub(P.position);
+      return v.applyAxisAngle(new THREE.Vector3(0, 1, 0), -P.rotation.y);
+    };
+    const same = mine.every((g, k) => {
+      const a = rel(g, G.group);
+      const b = new THREE.Vector3(before[k].x, before[k].y, before[k].z).sub(hs.group.position).applyAxisAngle(new THREE.Vector3(0, 1, 0), -hs.group.rotation.y);
+      return a.distanceTo(b) < 1e-6;
+    });
+    uncarry(G);
+    const home = mine.every((g, k) => Math.abs(g.position.x - before[k].x) < 1e-9 && Math.abs(g.position.z - before[k].z) < 1e-9);
+    ok('moving a house carries everything in it, in the house\'s own frame, and lets go exactly', same && home);
+    const bsrc2 = readFileSync(new URL('../../src/systems/housing/build.js', import.meta.url), 'utf8');
+    /* "Sometimes after moving or rotating a house, the player can just walk
+       through the base ... should be pushed up on top of it." Every island,
+       the small house stood at a spread of places and turns: from the grass
+       just outside each edge of the plinth, the next step in is ON it. The
+       worst rise is reported, because that is the number that was past the
+       old 0.75 step. */
+    {
+      let worst = 0, miss = 0, n = 0;
+      for (const J of H.isles) {
+        const Hp = newHome(J.site.id, 'minka', ['Ember']);
+        for (const [fx, fz, rot] of [[0, 0, 0], [12, -10, 0.7], [-14, 8, 2.1], [6, 16, 3.9], [-10, -14, 5.2]]) {
+          Hp.at = { x: fx, z: fz, rot };
+          J.setHome(Hp, null);
+          const hs = J.houseOf('main');
+          const P = hs.decks.find((d) => d.plinth);
+          for (let k = 0; k < 16; k++) {
+            const a = (k / 16) * Math.PI * 2;
+            // a point just inside the plinth's edge, and one 0.5 outside it, along a ray from its middle
+            const sx = Math.sin(a), sz = Math.cos(a);
+            const t = Math.min(P.x1 / Math.abs(sx || 1e-9), P.z1 / Math.abs(sz || 1e-9));
+            const inn = hs.local(sx * (t - 0.3), sz * (t - 0.3));
+            const out = hs.local(sx * (t + 0.5), sz * (t + 0.5));
+            const g = J.island.heightAt(out.x, out.z);
+            if (g == null) continue;
+            n++;
+            const top = hs.gy + P.y;
+            worst = Math.max(worst, top - g);
+            const on = J.heightAt(inn.x, inn.z, g);
+            if (!on || Math.abs(on.y - top) > 1e-6) miss++;
+          }
+        }
+        J.setHome(null, null);
+      }
+      ok('a plinth lifts her onto it from the grass at every edge, wherever the house stands and however it turns',
+        n > 200 && miss === 0, `${miss}/${n} edges walked into, worst rise ${worst.toFixed(2)}`);
+    }
+    ok('...and the build ghost does it, and lets go when it is dropped', /if \(real\) carry\(G, I, hk, real\); else uncarry\(G\);/.test(bsrc2) && /uncarry\(G\);\s*this\.ghosts\.delete\(i\);/.test(bsrc2));
+    I.setHome(null, null);
+  }
+
+  /* FURNITURE IS SOLID. "Players should not be able to walk through
+     furniture like the table, futon, kitchen ... but can get close to it
+     (collision at half the radius of the player) ... always be able to walk
+     around the edges of the room, and through gaps in between objects ... an
+     object at 150% gets a 125% collider". Walked, through `Housing.wall`. */
+  {
+    ok('a furnishing\'s collider: 150% gets 125%, 50% gets 50%, 100% is 100%',
+      furnScale(1.5) === 1.25 && furnScale(0.5) === 0.5 && furnScale(1) === 1 && Math.abs(FURN_INSET - 0.555) < 1e-9);
+    const I = H.isles[0];
+    const Hf = newHome(I.site.id, 'minka', ['Ember']);
+    const room = HOUSE_BY_ID.minka.rooms[0];
+    /* A table in the middle (cells 1-2 by 1-2 of a 5 by 4 grid), so the
+       room's edge is clear all round; then a chest at cell 4 for the gap
+       between them (cell 3). A thing stood AGAINST a wall closes that bit of
+       edge, and that is the player's doing, not the collider's. */
+    Hf.rooms = { [room.id]: { type: 'living', items: [{ id: 'kotatsu', gx: 1, gz: 1, rot: 0 }] } };
+    const was = { dbg: H.debugOpen, home: H.store.homes[I.site.id] };
+    H.debugOpen = true;
+    H.store.homes[I.site.id] = Hf;
+    I.setHome(Hf, null);
+    const hs = I.houseOf('main');
+    const y = hs.gy + hs.shell.floorY[0];
+    const walker = fakePlayer(0);
+    walker.radius = 0.75;
+    const walk = (path) => {
+      for (const [tx, tz] of path) {
+        const tw = hs.local(tx, tz);
+        for (let n = 0; n < 400; n++) {
+          const dx = tw.x - walker.position.x, dz = tw.z - walker.position.z;
+          const d = Math.hypot(dx, dz);
+          if (d < 0.12) break;
+          const wx = walker.position.x, wz = walker.position.z;
+          walker.position.x += (dx / d) * Math.min(0.1, d);
+          walker.position.z += (dz / d) * Math.min(0.1, d);
+          walker.position.y = y;
+          walker.velocity.set(0, 0, 0);
+          H.wall(walker, wx, wz, null);
+        }
+      }
+      return hs.toLocal(walker.position.x, walker.position.z);
+    };
+    // the first table, measured in its own frame
+    const kot = I.itemMeshes.get(`r:${room.id}:0`);
+    const par = kot.parent, keep = [kot.position.clone(), kot.rotation.y];
+    par.remove(kot); kot.position.set(0, 0, 0); kot.rotation.y = 0; kot.updateMatrixWorld(true);
+    const kb = new THREE.Box3().setFromObject(kot);
+    kot.position.copy(keep[0]); kot.rotation.y = keep[1]; par.add(kot); kot.updateMatrixWorld(true);
+    const kc = hs.toLocal(kot.position.x, kot.position.z);
+    // straight at its middle from the room's back: she stops half her radius off its edge
+    const start = hs.local(kc.x + (kb.min.x + kb.max.x) / 2, kc.z + kb.min.z - 1.6);
+    walker.position.set(start.x, y, start.z);
+    const L = walk([[kc.x + (kb.min.x + kb.max.x) / 2, kc.z]]);
+    const gap = (kc.z + kb.min.z) - L.z;
+    ok('she cannot walk through a table, and stops half her radius from its edge',
+      Math.abs(gap - FURN_REACH) < 0.06, `${gap.toFixed(3)} off the edge (want ${FURN_REACH})`);
+    // round the room's edge, then through the one-cell gap between the table and a chest
+    const ed = (room.w / 2) - 0.9, ez = (room.d / 2) - 0.9;
+    const s0 = hs.local(-ed, -ez);
+    walker.position.set(s0.x, y, s0.z);
+    const lap = walk([[ed, -ez], [ed, ez], [-ed, ez], [-ed, -ez]]);
+    Hf.rooms[room.id].items.push({ id: 'tansu', gx: 4, gz: 1, rot: 0 });
+    I.setHome(Hf, null);
+    const midX = room.cx - room.w / 2 + 7;   // the gap: cell 3, x 6..8 from the room's edge
+    const g0 = hs.local(midX, -ez);
+    walker.position.set(g0.x, y, g0.z);
+    const thru = walk([[midX, ez]]);
+    ok('...and she can walk all the way round the room\'s edge, and through the gap between a table and a chest',
+      Math.hypot(lap.x + ed, lap.z + ez) < 0.2 && Math.hypot(thru.x - midX, thru.z - ez) < 0.2,
+      `lap ends (${lap.x.toFixed(2)}, ${lap.z.toFixed(2)}), gap walk ends (${thru.x.toFixed(2)}, ${thru.z.toFixed(2)})`);
+    // the futon at 150%: its collider is 125% of its own size, less the inset
+    Hf.rooms[room.id].items = [{ id: 'futon', gx: 1, gz: 0, rot: 0, look: { s: 1.5 } }];
+    I.setHome(Hf, null);
+    const fu = I.itemMeshes.get(`r:${room.id}:0`);
+    const fp = fu.parent;
+    fp.remove(fu); const fk = [fu.position.clone(), fu.rotation.y]; fu.position.set(0, 0, 0); fu.rotation.y = 0; fu.updateMatrixWorld(true);
+    const fb = new THREE.Box3().setFromObject(fu);
+    fu.position.copy(fk[0]); fu.rotation.y = fk[1]; fp.add(fu);
+    const fw = I.walls.filter((w) => w.furn === 'futon');
+    const sides = fw.map((w) => Math.hypot(w.bx - w.ax, w.bz - w.az)).sort((a, b) => a - b);
+    const want = [fb.max.x - fb.min.x, fb.max.z - fb.min.z].map((v) => v * (1.25 / 1.5) - 2 * FURN_INSET).sort((a, b) => a - b);
+    ok('...and a futon at 150% has a 125% collider',
+      fw.length === 4 && Math.abs(sides[0] - want[0]) < 1e-6 && Math.abs(sides[3] - want[1]) < 1e-6,
+      `${sides.map((v) => v.toFixed(2))} vs ${want.map((v) => v.toFixed(2))}`);
+    const hsrc6 = readFileSync(new URL('../../src/systems/housing/housing.js', import.meta.url), 'utf8');
+    ok('...and a kitten lying on it or sat at the table is not shoved out of it', /if \(held && w\.furn\) continue;/.test(hsrc6));
+    H.debugOpen = was.dbg;
+    if (was.home) H.store.homes[I.site.id] = was.home; else delete H.store.homes[I.site.id];
+    I.setHome(null, null);
   }
 
   /* THE TREEHOUSE IS A LEVEL. "player can land on top of the treehouse and go
@@ -750,6 +1009,30 @@ export async function housingChecks({ ok, world }) {
       }
       ok('the treehouse stair and slide pass under no rope bridge lower than her head (the old ramp ran under A to B)',
         stair.length >= 10 && chute.length >= 8 && worst > 3.3, `${stair.length} stair, ${chute.length} slide decks; closest rope overhead ${worst === Infinity ? 'none' : worst.toFixed(2)}`);
+      /* ...and the helter-skelter, which turns through the middle of all four
+         trees, passes under NOTHING of the treehouse lower than her head — no
+         platform, branch or bridge, and not its own upper turn. */
+      let low = Infinity, lowWhat = '';
+      /* ...but not the chord before or after: grown by her radius, its far
+         end is 0.5 above this one's near end by construction, and that is a
+         slope, not a roof. The upper TURN is 30+ chords away. */
+      const ci = new Map(chute.map(([d], k) => [d, k]));
+      for (const [k, [cd, P]] of chute.entries()) {
+        for (const p of P) {
+          tree.forEach((r, i) => {
+            if (r === cd || (ci.has(r) && Math.abs(ci.get(r) - k) <= 2)) return;
+            const c = Math.cos(r.frame.a), s = Math.sin(r.frame.a);
+            const dx = p.x - r.frame.x, dz = p.z - r.frame.z;
+            const lx = dx * c - dz * s, lz = dx * s + dz * c;
+            if (lx < r.x0 - 0.6 || lx > r.x1 + 0.6 || lz < r.z0 - 0.6 || lz > r.z1 + 0.6) return;
+            const ry = r.yAt ? r.yAt(Math.max(r.x0, Math.min(r.x1, lx)), Math.max(r.z0, Math.min(r.z1, lz))) : r.y;
+            if (ry - p.y < 0.5) return;
+            if (ry - p.y < low) { low = ry - p.y; lowWhat = r.part ?? `deck ${i}`; }
+          });
+        }
+      }
+      ok('...and nothing of the treehouse hangs lower than her head over the slide, its own upper turn included',
+        low > 3.3, low === Infinity ? 'nothing over it' : `closest ${low.toFixed(2)} (${lowWhat})`);
 
       // walk it, as the doorway check above walks a house
       const walker = fakePlayer(0, 0, 0, 0);
@@ -781,11 +1064,32 @@ export async function housingChecks({ ok, world }) {
       ok('...a kitten walks up the spiral stair a tenth at a time and steps off onto platform A',
         walked && Math.abs(onA - TREEHOUSE_PLAN.PLAT[0].y) < 0.15, `walked ${walked}, at ${onA.toFixed(2)} (A is ${TREEHOUSE_PLAN.PLAT[0].y})`);
 
-      // the slide: put her on its lip and let `_slide` carry her
-      const L = TREEHOUSE_PLAN.SLIDE;
-      const lip = I.local(...th(L.cx + 0.15, L.cz + L.R));
-      // asked from just over D, not from the sky: D's own branch is over the lip
-      walker.position.set(lip.x, I.heightAt(lip.x, lip.z, I.groundY + ground + TREEHOUSE_PLAN.PLAT[3].y + 0.3).y, lip.z);
+      /* THE SLIDE IS ENTERED FROM THE TOP. Richard: "the player cant enter
+         the slide from the top ... move the slide higher to the top". So she
+         is stood on the cabin's ROOF, a little way back from the gap in its
+         rail, and walks at the chute: she has to end up riding. */
+      const SP = slidePath();
+      const roofY = I.groundY + ground + SP.top;
+      const m0 = SP.marks[0], m1 = SP.marks[1];
+      const back = I.local(...th(m0.x - (m1.x - m0.x) * 1.5, m0.z - (m1.z - m0.z) * 1.5));
+      walker.position.set(back.x, I.heightAt(back.x, back.z, roofY + 0.3).y, back.z);
+      const onRoof = walker.position.y - roofY;
+      let boarded = false;
+      for (let n = 0; n < 80 && !boarded; n++) {
+        const tw = I.local(...th(SP.marks[2].x, SP.marks[2].z));
+        const dx = tw.x - walker.position.x, dz = tw.z - walker.position.z, d = Math.hypot(dx, dz) || 1;
+        const wx = walker.position.x, wz = walker.position.z;
+        walker.position.x += (dx / d) * 0.1;
+        walker.position.z += (dz / d) * 0.1;
+        const g = I.heightAt(walker.position.x, walker.position.z, walker.position.y + 0.2);
+        if (g) walker.position.y = g.y;
+        walker.slide = null;
+        H.wall(walker, wx, wz, null);
+        boarded = !!walker.slide;
+      }
+      ok('...a kitten on the cabin roof walks into the slide from the top and is riding it',
+        Math.abs(onRoof) < 0.05 && boarded && walker.position.y > roofY - 1.2,
+        `on the roof ${onRoof.toFixed(2)}, boarded ${boarded} at ${(walker.position.y - roofY).toFixed(2)}`);
       const ys = [walker.position.y];
       let rode = 0, uphill = 0;
       for (let n = 0; n < 400; n++) {
@@ -803,9 +1107,29 @@ export async function housingChecks({ ok, world }) {
         ys.push(walker.position.y);
       }
       const drop = ys[0] - ys[ys.length - 1];
-      ok('...and the slide carries a kitten from D down to the run at the bottom, never uphill',
-        rode > 40 && uphill === 0 && drop > TREEHOUSE_PLAN.PLAT[3].y - 0.6 && ys[ys.length - 1] - I.groundY - ground < 0.4,
+      ok('...and carries her from the roof round the pole to the run at the bottom, never uphill',
+        rode > 200 && uphill === 0 && drop > SP.top - 1.5 && ys[ys.length - 1] - I.groundY - ground < 0.4,
         `${rode} steps, ${uphill} uphill, dropped ${drop.toFixed(2)}, ends ${(ys[ys.length - 1] - I.groundY - ground).toFixed(2)} up`);
+
+      /* ROUND THE MAST, INSIDE THE CABIN. "the tree trunk is going through it
+         and the player cant get in or walk around it". She walks a ring round
+         the cabin tree at 1.5 from its middle, inside the room; with the
+         trunk's old collider (r 1.1 at every height) the ring was solid. */
+      {
+        const P = TREEHOUSE_PLAN;
+        const T = P.TRUNKS[P.PLAT[2].t];
+        const floor = I.groundY + ground + P.PLAT[2].y;
+        const ringAt = (k) => th(T.x + Math.sin(k * 0.5) * 1.5, T.z + Math.cos(k * 0.5) * 1.5);
+        const s0 = I.local(...ringAt(0));
+        walker.position.set(s0.x, I.heightAt(s0.x, s0.z, floor + 0.3).y, s0.z);
+        let round = true;
+        for (let k = 1; k <= 13 && round; k++) round = stepTo(...ringAt(k));
+        ok('...and inside the cabin a kitten walks right round the tree, which is a mast above the floor',
+          round && Math.abs(walker.position.y - floor) < 0.1, `round ${round}, at ${(walker.position.y - floor).toFixed(2)} over the floor`);
+        const tsrc = readFileSync(new URL('../../src/systems/housing/treehouse.js', import.meta.url), 'utf8');
+        ok('...and the stair\'s rope rail is ONE rope end to end (a tube), staked into the ground at the bottom',
+          /new THREE\.TubeGeometry\(curve/.test(tsrc) && /ropeRail\(rail, [\d.]+, \{ stakeStart: true \}\)/.test(tsrc));
+      }
       const psrc2 = readFileSync(new URL('../../src/entities/player.js', import.meta.url), 'utf8');
       ok('...and Player rides what housing hands her: the stick is taken, and the slide sets her speed before she moves',
         /if \(this\.slide\) pad = FROZEN_PAD/.test(psrc2) && /const sl = this\.slide;[\s\S]{0,1800}\/\/ --- move \+ collide ---/.test(psrc2));
@@ -1004,6 +1328,41 @@ export async function housingChecks({ ok, world }) {
     for (let k = 0; k < 400; k++) A.update(0.1, ps);
     ok('...and the song gives way again once it is over', !A.prayer && H.musicTrack() !== 'shrinePrayer');
     H.musicSite = null;
+    /* "When napping on the bed, the player sprite model is not facing in the
+       correct direction." She lies on the futon's middle facing its PILLOW,
+       measured off the drawn futon (the white box nearest an end), and the
+       drawing is a mirroring billboard whose head is on the left. */
+    {
+      // the futon is one merged mesh: the pillow is its WHITE vertices (painted 0xffffff)
+      const fut = drawItem('futon', 2);
+      let pz = null, zs = 0, nz = 0;
+      fut.updateMatrixWorld(true);
+      fut.traverse((m) => {
+        const col = m.isMesh && m.geometry.attributes.color;
+        if (!col) return;
+        const pos = m.geometry.attributes.position, v = new THREE.Vector3();
+        for (let i = 0; i < pos.count; i++) {
+          if (col.getX(i) < 0.99 || col.getY(i) < 0.99 || col.getZ(i) < 0.99) continue;
+          v.fromBufferAttribute(pos, i);
+          m.localToWorld(v);
+          zs += v.z; nz++;
+        }
+      });
+      if (nz) pz = zs / nz;
+      const ry = 0.9;
+      const head = { x: Math.sin(napFacing(ry)), z: Math.cos(napFacing(ry)) };
+      const pil = pz != null && { x: Math.sin(ry) * pz, z: Math.cos(ry) * pz };   // the pillow, turned ry
+      const sleeper = { ...fakePlayer(3), hp: 50, maxHp: 100 };
+      sleeper.position.set(5, 0, 7);
+      A.start(sleeper, { act: 'nap', x: 1, z: 2, y: 0, ry, isle, home });
+      ok('a nap lies her on the futon\'s middle, facing its pillow',
+        !!pil && sleeper.position.x === 1 && sleeper.position.z === 2 && head.x * pil.x + head.z * pil.z > 1 && Math.abs(sleeper.facing - napFacing(ry)) < 1e-9,
+        `pillow at ${pz}`);
+      for (let k = 0; k < 60; k++) A.update(0.1, [...ps, sleeper]);
+      ok('...and she gets up where she lay down from', sleeper.position.x === 5 && sleeper.position.z === 7);
+      const psrc2 = readFileSync(new URL('../../src/entities/player.js', import.meta.url), 'utf8');
+      ok('...and the futon drawing is a mirroring billboard turned with her', /mirror: key !== 'bathPose'/.test(psrc2) && /else \{\s*pose\.facing = this\.facing;/.test(psrc2));
+    }
     /* THE MEAL. "the message should say something like 'Set the table with
        the food' ... the plate of food appears on the table ... a plate of
        food for every player that will sit at the table ... 'Are you sure you
@@ -2051,6 +2410,28 @@ export async function housingChecks({ ok, world }) {
     I2.cutaway(0);
     const up = [...I2.itemGroup.children].filter((g) => g.userData.floor > 0);
     ok('...and a floor that is cut away takes its furniture with it', up.every((g) => !g.visible));
+    /* "When player is not inside a house, and is building a bridge, or adding
+       to the yard, the roofs of the house should be hidden" and "When
+       building a bridge on the 2nd or 3rd floor, the house should show that
+       floor". Her standing on the lawn, through the real cutaway. */
+    {
+      const cam = new THREE.PerspectiveCamera();
+      const roofsShown = () => I2.houses.some((hs) => hs.roofMeshes.some((m) => m.visible));
+      kit.position.set(I2.x + I2.radius * 0.8, I2.groundY + 0.5, I2.z);
+      C._push(0, { v: 'build', site: I2.site.id, kind: 'yard', id: 'lantern', sel: -1, x: 20, z: 20, rot: 0 });
+      H.aimView(cam, [0], false);
+      const yardOff = !roofsShown() && I2.houses.every((hs) => hs.floorMeshes.every((m) => m.visible));
+      C._pop(0);
+      C._push(0, { v: 'build', site: I2.site.id, kind: 'link', style: 'plank', a: { hk: 'main', floor: 1, side: 1, at: 0 }, cur: null });
+      H.aimView(cam, [0], false);
+      const fm = I2.houseOf('main').floorMeshes;
+      const linkCut = !roofsShown() && fm[0].visible && fm[1].visible && !fm[2].visible;
+      C._pop(0);
+      C.st.delete(0);   // no card at all: she is just standing on the lawn
+      H.aimView(cam, [0], false);
+      ok('building in the yard takes every roof off; a bridge cuts its house to the bridge\'s floor; done, the roofs are back',
+        yardOff && linkCut && roofsShown(), `${yardOff} ${linkCut}`);
+    }
     C.st.delete(0);
     delete H.store.homes[I2.site.id];
     I2.setHome(null, null);

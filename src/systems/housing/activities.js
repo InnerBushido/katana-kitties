@@ -40,6 +40,10 @@ export const HOLD = {
   mealEat: 3,
 };
 
+/** The look out of a window: the point it aims at is `ahead` past the frame
+ *  at `eye` over the floor, and the camera is `back` behind her. */
+export const LOOK_SHOT = { ahead: 7, eye: 2.2, back: 4.5, pitch: 0.12 };
+
 /** The temple piece: once through, then the second gong (jukebox.js). */
 export const PRAYER_TRACK = 'shrinePrayer';
 export const PRAYER_LEN = 45;
@@ -52,6 +56,10 @@ export function napFade(t, dur = HOLD.nap) {
   if (!(t >= 0) || t >= dur) return 0;
   return Math.min(1, t / 1, (dur - t) / 1);
 }
+
+/** The way she faces asleep on a futon turned `ry`: toward its pillow, which
+ *  the drawn futon has at its own -z. */
+export const napFacing = (ry) => ry + Math.PI;
 
 /** Four places at a kotatsu, a plate at each. */
 export const TABLE_SEATS = 4;
@@ -96,8 +104,11 @@ export class HomeActivities {
   }
 
   _release(p) {
+    const h = this.held.get(p?.index);
     this.held.delete(p.index);
     if (p) p.homePose = null;
+    // she was lifted onto the futon; she gets up where she lay down from
+    if (h?.back && p?.position) { p.position.x = h.back.x; p.position.z = h.back.z; }
   }
 
   /* -------------------------------- shrine -------------------------------- */
@@ -144,7 +155,21 @@ export class HomeActivities {
   /* ---------------------------------- nap --------------------------------- */
 
   _nap(p, s) {
-    this._hold(p, 'nap', HOLD.nap, { s });
+    /* ONTO THE FUTON, HEAD ON THE PILLOW. Richard, Oct 2026: "When napping on
+       the bed, the player sprite model is not facing in the correct
+       direction." The drawing was a billboard that never turned, so her head
+       was on the left of the screen whichever way the futon lay, and she lay
+       wherever she had pressed INTERACT from, up to 2.6 off it. She is put on
+       its middle now and faces the pillow, which `drawItem('futon')` draws at
+       its own -z: the world heading of that is the futon's turn plus a half
+       turn. The billboard mirrors on it (player.js `setHomeArt`). */
+    const back = { x: p.position.x, z: p.position.z };
+    if (Number.isFinite(s.ry)) {
+      p.position.x = s.x;
+      p.position.z = s.z;
+      p.facing = napFacing(s.ry);
+    }
+    this._hold(p, 'nap', HOLD.nap, { s, back });
     p.homePose = 'futon';
     this.game.toast(`${p.name} snuggles under the futon… zzz`, p.index);
   }
@@ -185,26 +210,44 @@ export class HomeActivities {
   /* ---------------------------- the window ---------------------------------- */
 
   _look(p, s) {
-    const I = s.isle;
-    if (!I) return;
-    // outward: from the island's middle through the window
-    const ox = s.x - I.x, oz = s.z - I.z;
+    /* OUTWARD IS THE WALL'S, not "away from the island's middle": with houses
+       that stand anywhere and turn, a window on the side of a house near the
+       rim pointed the camera along the wall. `face` is the window's own turn
+       (its +z into the room), so out is the other way; the old guess stays
+       for a spot that has none. */
+    let ox, oz;
+    if (Number.isFinite(s.face)) { ox = -Math.sin(s.face); oz = -Math.cos(s.face); } else {
+      const I = s.isle;
+      if (!I) return;
+      ox = s.x - I.x; oz = s.z - I.z;
+    }
     const L = Math.hypot(ox, oz) || 1;
-    this._hold(p, 'look', HOLD.look, { s, out: { x: ox / L, z: oz / L } });
+    const out = { x: ox / L, z: oz / L };
+    // she steps up to it, facing out, so the shot is over the room and past her
+    p.position.x = s.x;
+    p.position.z = s.z;
+    p.facing = Math.atan2(out.x, out.z);
+    this._hold(p, 'look', HOLD.look, { s, out });
     this.game.toast(`${p.name} slides the window open and looks out…`, p.index);
   }
 
   /**
-   * LOOKING OUT: over her shoulder, through the window, at her own yard. The
-   * camera sits inside the room behind her and aims at a point out past the
-   * frame.
+   * LOOKING OUT: through the window at her own yard, from a few steps back in
+   * the room. Richard: "have the camera be a bit further away from the
+   * player, not necessarily over their shoulders but a few feet back". It was
+   * 2 behind her (dist 12.5 to a point 9 out); it is `LOOK_SHOT.back` now, so
+   * she stands in the shot in front of the frame, with the yard beyond it.
    */
   cameraFocus(p) {
     const h = this.held.get(p.index);
     if (h?.act !== 'look') return null;
     const { s, out } = h;
-    (h.centre ??= new THREE.Vector3()).set(s.x + out.x * 9, s.y + 2.2, s.z + out.z * 9);
-    return { centre: h.centre, aim: true, dist: 12.5, pitch: 0.1, yaw: Math.atan2(-out.x, -out.z) };
+    const W = LOOK_SHOT;
+    const wx = s.wx ?? s.x, wz = s.wz ?? s.z;
+    // from the window: she is `inside` in from it, the camera `back` behind her
+    const inside = Math.hypot(s.x - wx, s.z - wz);
+    (h.centre ??= new THREE.Vector3()).set(wx + out.x * W.ahead, s.y + W.eye, wz + out.z * W.ahead);
+    return { centre: h.centre, aim: true, dist: W.ahead + inside + W.back, pitch: W.pitch, yaw: Math.atan2(-out.x, -out.z) };
   }
 
   /* ---------------------------- kitchen + kotatsu ---------------------------- */
