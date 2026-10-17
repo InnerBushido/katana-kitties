@@ -76,6 +76,8 @@ const HOUSE_GAP = 0.3;
 
 /** Outdoor footprint radius of an item. */
 export const yardR = (it) => it?.r ?? 2;
+/** ...and the radius it COLLIDES at, which may be smaller (the koi pond's rim). */
+export const hitR = (it) => it?.hit ?? yardR(it);
 
 /* ----- shapes: a circle, or an oriented rectangle (a path, a house) ----- */
 
@@ -108,7 +110,7 @@ export function houseBox(s, pad = 0) {
 /** A yard thing's shape where it stands: a box for a path, else a circle. */
 export function thingShape(it, x, z, rot = 0) {
   if (it?.path) return { box: obb(x, z, it.pw / 2, it.len / 2, rot) };
-  return { x, z, r: yardR(it) };
+  return { x, z, r: hitR(it) };
 }
 const shapesHit = (a, b, pad = 0) => {
   if (a.box && b.box) return obbHit(a.box, b.box, pad);
@@ -217,9 +219,13 @@ export function withHouse(H, spec) {
 
 /** The first free spot for `it` outdoors — rings out from the house, back first; or null. */
 export function firstYardSpot(H, it, siteR = 50) {
-  const r = yardR(it);
-  for (let d = r + 4; d < siteR - RIM - r + 0.01; d += 1.5) {
-    const n = Math.max(8, Math.round(d * 0.8));
+  const r = hitR(it);
+  /* FROM THE MIDDLE, IN 1-UNIT RINGS. It started at r + 4 in 1.5 steps with
+     a point every 1.25 units of arc, on the theory that the middle is always a
+     house — which stopped being true the day a house could be moved, and the
+     coarse grid stepped clean over the one gap a big pond fitted in. */
+  for (let d = 0; d < siteR - RIM - r + 0.01; d += 1) {
+    const n = d < 0.5 ? 1 : Math.max(12, Math.round(d * 1.6));
     for (let k = 0; k < n; k++) {
       // start at the back (-z) and fan out both ways
       const s = k % 2 ? 1 : -1;

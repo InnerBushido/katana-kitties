@@ -670,10 +670,17 @@ export class HousingCards {
         const S = wallSlots(room.house, room).find((s) => wallFree(R, s.side, s.k) && !buildWhy(H, { kind: 'wall', room: room.id, id: it.id, side: s.side, k: s.k, sel: -1 }));
         spot = S && { side: S.side, k: S.k };
       } else spot = firstYardSpot(H, it, I?.radius ?? 50);
+      /* NO SPOT FOUND IS NOT "NO ROOM". The search is a grid and she has eyes:
+         a yard thing with nowhere found for it still goes into build mode,
+         behind the house, and the drop says exactly what is in the way
+         (`yardWhy`) wherever she tries it. Richard: "it says there is not
+         enough room, but seems there is plenty of room." */
+      const loose = !spot && top.kind === 'yard';
+      if (loose) spot = { x: 0, z: -Math.round((I?.radius ?? 50) * 0.55), rot: 0 };
       return {
         title: it.later ? `${it.name} — COMING LATER` : it.name,
         right: it.later ? 'LOCKED' : pts(price),
-        blurb: `YOU HAVE ${ownedCount(H, it.id)}${it.blurb ? ` · ${it.blurb}` : top.kind === 'room' ? ` · ${footprint(it).join('×')} tatami.` : ''}`,
+        blurb: `YOU HAVE ${ownedCount(H, it.id)}${loose ? ' · NO FREE SPOT FOUND — carry it to one.' : ''}${it.blurb ? ` · ${it.blurb}` : top.kind === 'room' ? ` · ${footprint(it).join('×')} tatami.` : ''}`,
         disabled: it.later || !spot || p.score < price,
         why: it.later ? 'Coming in a later update!'
           : !spot ? (top.kind === 'wall' ? 'Every wall here is full.' : 'There is no room left for that here.')

@@ -14,7 +14,7 @@
 --------------------------------------------------------------------------- */
 import * as THREE from 'three';
 import { readFileSync } from 'node:fs';
-import { Housing, TOUR } from '../../src/systems/housing/housing.js';
+import { Housing, TOUR, HOME_FORWARD } from '../../src/systems/housing/housing.js';
 import { HOME_SITES, HOUSES, HOUSE_BY_ID, PRESETS, ITEM_BY_ID, priceOf, HOME_SELL, SPEED_STRIP, FREE_ANNEX, homeRooms } from '../../src/systems/housing/catalog.js';
 import { linkWhy, linkBlockers, portSpots, linkModels } from '../../src/systems/housing/links.js';
 const ITEMS_PATHS = () => ITEMS.filter((it) => it.path);
@@ -417,6 +417,10 @@ export async function housingChecks({ ok, world }) {
   H.purchase.finish();
   ok('two sisters share a castle, each paying half', r2.ok && p1.score === 0 && p2.score === 0, r2.why);
   ok('...and both are its owners', H.store.homes.moonwater?.owners.join() === 'Frost,Storm');
+  /* "move the castle a bit forward so there is more room to build the Koi
+     pond": a new castle stands HOME_FORWARD toward its bridge. */
+  ok('...and a new castle stands forward, toward its bridge, leaving the back a garden',
+    H.store.homes.moonwater?.at?.z === HOME_FORWARD.castle && HOME_FORWARD.castle > 0, JSON.stringify(H.store.homes.moonwater?.at));
   game.players = [p0, p1];
   H.sell('moonwater');
   ok('selling pays 75% back to the owner who is here', p1.score === Math.round(share * HOME_SELL), p1.score);
@@ -1874,6 +1878,21 @@ export async function housingChecks({ ok, world }) {
     ok('...and the old names still mean themselves (the meal, ITADAKIMASU)', as('eat', true).join() === 'eat' && as('bless', true).join() === 'bless');
     /* The ceremony kneels SHORTER than she stands, in order: measured on
        screen, seiza came out a head taller than the guard when sized by ink. */
+    /* THE KOI POND ON A CASTLE ISLAND. It collides at its water, not its
+       drawn rim, and the search starts in the middle in 1-unit rings: with
+       every preset's yard laid round a castle, a pond still finds a place. */
+    const koi = ITEM_BY_ID.koipond;
+    ok('the koi pond collides at its water, not at its rim', koi.hit < koi.r && koi.hit >= koi.r - 1.5, `${koi.hit} of ${koi.r}`);
+    const crowded = PRESETS.map((pr) => {
+      const Hc = newHome('sunrise', 'castle', ['Ember']);
+      Hc.at = { x: 0, z: HOME_FORWARD.castle, rot: 0 };
+      autoLayout(Hc, pr, { radius: 50 });
+      return [pr.id, firstYardSpot(Hc, koi, 50)];
+    });
+    ok('...and a castle with any preset\'s yard still has room for one', crowded.every(([, sp]) => !!sp), crowded.map(([id, sp]) => `${id}:${sp ? 'ok' : 'NONE'}`).join(' '));
+    const csrc = readFileSync(new URL('../../src/systems/housing/cards.js', import.meta.url), 'utf8');
+    ok('...and a yard thing with no spot found still goes into build mode, to be carried to one',
+      /const loose = !spot && top\.kind === 'yard';/.test(csrc) && /disabled: it\.later \|\| !spot \|\|/.test(csrc));
     const C = KENDO_CEREMONY_H;
     ok('kneeling is shorter than reaching, reaching than bowing, bowing than standing',
       C.seizaPose < C.reachPose && C.reachPose < C.reiPose && C.reiPose < 1, JSON.stringify(C));

@@ -14,6 +14,9 @@ import { Koi } from './koi.js';
 import { Farm } from './farm.js';
 import { Kendo } from './kendo.js';
 import { autoLayout, defaultWindows, houseWhy, brokenLinks, wallSlots, ITEM_SELL } from './editor.js';
+
+/** How far toward its bridge a NEW house of this kind stands (see `buy`). */
+export const HOME_FORWARD = { castle: 7 };
 import { linkWhy, linkBlockers } from './links.js';
 import { HousingCards } from './cards.js';
 import { BuildMode } from './build.js';
@@ -1042,6 +1045,15 @@ export class Housing {
       p.score -= share;
       H.paid[p.style.name] = share;
       this.game.onScoreChanged?.(p);
+    }
+    /* THE CASTLE STANDS FORWARD, toward its bridge, so the back of the island
+       is one big garden: Richard, "or move the castle a bit forward so there is
+       more room to build the Koi pond on the island". Only a new castle — an
+       old save keeps the place its furniture and yard were laid out round. */
+    const fwd = HOME_FORWARD[houseId];
+    if (fwd) {
+      const at = { x: 0, z: fwd, rot: 0 };
+      if (!houseWhy({ ...H, at }, { hk: 'main', house: houseId, ...at }, this.envOf(I))) H.at = at;
     }
     defaultWindows(H);
     H.winV = 1;
