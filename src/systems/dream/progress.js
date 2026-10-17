@@ -133,6 +133,23 @@ export class DreamProgress {
 
   flag(name, f) { return !!this.data.kittens[name]?.flags?.[f]; }
 
+  /**
+   * THE HOUSES THIS GAME HAS BOUGHT, for Kata Trace's house songs
+   * (beatmap.js `HOME_SONG_TIERS`): the party's, not a kitten's — "those 2
+   * songs get unlocked in the Kata Trace for everyone forever" — and kept
+   * here, in the ledger the save row carries, so selling the house again
+   * does not lock them.
+   */
+  unlockHome(house) {
+    const h = (this.data.homes ??= []);
+    if (h.includes(house)) return false;
+    h.push(house);
+    this.save();
+    return true;
+  }
+
+  homesOpen() { return new Set(this.data.homes ?? []); }
+
   setFlag(name, f, v = true) {
     this.of(name).flags[f] = v;
     this.save();

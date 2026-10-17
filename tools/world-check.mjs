@@ -44912,7 +44912,8 @@ console.log('\n--- his recordings: one song per level, looped on the beat, won i
   const { MUSIC_FILES } = await import('../src/core/musicfiles.js');
   const { DreamProgress } = await import('../src/systems/dream/progress.js');
   const { KataHall } = await import('../src/systems/dream/kata.js');
-  const ids = Object.keys(MUSIC_FILES);
+  // His recordings: the house songs share the table now (beatmap.js `HOME_SONG_TIERS`) and are checked below.
+  const ids = Object.keys(MUSIC_FILES).filter((id) => ['medium', 'hard', 'extra'].includes(MUSIC_FILES[id].level));
   const bad = [];
   for (const id of ids) {
     const f = MUSIC_FILES[id];
@@ -44976,7 +44977,8 @@ console.log('\n--- his recordings: one song per level, looped on the beat, won i
   const none = kit();
   const openNow = BM.SONGS.filter((s) => !BM.songLocked(s.id, none)).map((s) => s.id);
   ok('a kitten who has never fought him can dance to his theme and every other song, and to none of his recordings',
-    openNow.includes('shadow') && ids.every((id) => !openNow.includes(id)) && openNow.length === BM.SONGS.length - ids.length,
+    openNow.includes('shadow') && ids.every((id) => !openNow.includes(id))
+    && openNow.length === BM.SONGS.length - ids.length - BM.SONGS.filter((s) => s.lock?.startsWith('home:')).length,
     openNow.join(' '));
   const perWin = ['medium', 'hard', 'extra'].map((lv) => ids.filter((id) => !BM.songLocked(id, kit({ [lv]: true }))).sort().join('+'));
   ok('...each win opens exactly its own level\'s song (and EXTRA HARD its long cut with it)',
@@ -45040,6 +45042,45 @@ console.log('\n--- his recordings: one song per level, looped on the beat, won i
   ok('...and "every song" lists and opens all of them, secret or not',
     KataHall.prototype.songChoices.call({ dream: { game: { _debugSongs: true }, progress: new DreamProgress(null) } }, none)
       .filter((c) => ids.includes(c.S.id) && !c.locked).length === ids.length);
+
+  /* THE HOUSE SONGS. "add the 'Purchased Housing' songs as locked songs to the
+     Kata Trace ... 2 of each of the songs are locked under the 3 different
+     price tiers ... Once at least one of the players buys one of the house
+     types, then those 2 songs get unlocked in the Kata Trace for everyone
+     forever ... only show 3 locked songs in the menu". */
+  {
+    const { homesOpen } = await import('../src/systems/dream/kata.js');
+    const homeIds = BM.SONGS.filter((s) => s.lock?.startsWith('home:')).map((s) => s.id);
+    ok('the six house songs are Kata Trace songs, two to a house, each a whole number of bars inside 30-90s',
+      homeIds.length === 6 && Object.values(BM.HOME_SONG_TIERS).every((t) => t.length === 2)
+      && homeIds.every((id) => { const S = BM.songById(id); return S.beats % 4 === 0 && S.beats * S.spb <= 90.01 && S.beats * S.spb >= 30; }),
+      homeIds.map((id) => `${id} ${(BM.songById(id).beats * BM.songById(id).spb).toFixed(0)}s`).join(' '));
+    const PH = new DreamProgress(null);
+    const store = { homes: {} };
+    const stub = (debug = false) => ({ dream: { game: { _debugSongs: debug, housing: { store } }, progress: PH } });
+    const rows = (debug = false) => KataHall.prototype.songChoices.call(stub(debug), none);
+    const r0 = rows();
+    const bundles = r0.filter((c) => c.S.bundle);
+    ok('...locked, they are THREE rows, one per house, each saying which house to buy — and none of the six songs is listed',
+      bundles.length === 3 && bundles.every((c) => /^Buy a .+ from Roshi to unlock these 2 songs/.test(c.locked ?? ''))
+      && !r0.some((c) => homeIds.includes(c.S.id)), bundles.map((c) => c.locked).join(' | '));
+    store.homes.sunrise = { site: 'sunrise', house: 'minka', at: { x: 0, z: 0, rot: 0 } };
+    const r1 = rows();
+    ok('...a small house bought by anybody opens its two songs, unlocked, in place of its bundle',
+      !r1.some((c) => c.S.id === 'bundle:minka') && BM.HOME_SONG_TIERS.minka.every((id) => r1.find((c) => c.S.id === id && !c.locked))
+      && r1.filter((c) => c.S.bundle).length === 2, r1.filter((c) => c.S.bundle || homeIds.includes(c.S.id)).map((c) => c.S.id).join(' '));
+    delete store.homes.sunrise;
+    ok('...and they STAY open after the house is sold — "for everyone forever" — carried in the game ledger',
+      homesOpen(stub().dream).has('minka') && PH.toSave().homes?.includes('minka')
+      && BM.songLocked('homeLofi', none, false, homesOpen(stub().dream)) === null);
+    const r2 = rows(true);
+    ok('...the debug "open every song in Kata Trace" lists all six, open, and no bundle',
+      homeIds.every((id) => r2.find((c) => c.S.id === id && !c.locked)) && !r2.some((c) => c.S.bundle));
+    const msrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    ok('...the debug row is called "open every song in Kata Trace", and DANCE on a bundle is refused in words',
+      /row\('DreamSongs', 'open every song in Kata Trace'/.test(msrc) && !/'open every Shadow song/.test(msrc)
+      && /^Buy a SKY CASTLE from Roshi/.test(BM.songLocked('bundle:castle', none, false, new Set())));
+  }
 
   /* HIS CHART, FITTED. One hand-written chart, opening / march / finale; the
      finale is pinned to each song's END and the march fills the middle. At

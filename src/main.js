@@ -6276,7 +6276,7 @@ class Game {
    * appears to do nothing — sixth non-negotiable, and the toast is cheaper
    * than the confusion.
    */
-  /** Every Shadow song open in Kata Trace, for this session (`KataHall.songChoices`). */
+  /** Every song open in Kata Trace, for this session (`KataHall.songChoices`). */
   _toggleDreamNav() {
     if (!this.dream) { this.toast('[debug] no Dream Dojo yet — it is built on PLAY', 0); return; }
     this.dream.navDebug = !this.dream.navDebug;
@@ -6291,16 +6291,20 @@ class Game {
   }
 
   _debugShadowSongs() {
-    if (this._debugSongs) { this.toast('[debug] every Shadow song is already open in Kata Trace', 0); return; }
+    /* EVERY SONG, not every Shadow song. Richard, Oct 2026: "Let's make the
+       'Open every shadow song in Kata Trace' be 'Open every song in Kata
+       Trace' instead, so that all the locked songs are unlocked and playable"
+       — the house songs' bundles open with his recordings. */
+    if (this._debugSongs) { this.toast('[debug] every song is already open in Kata Trace', 0); return; }
     this.confirm.ask({
-      title: 'OPEN EVERY SHADOW SONG?',
-      body: 'Requiem, Darksynth, Nightmare and Nightmare (long) become playable in Kata Trace '
-        + 'for every kitten, without beating him. Until the tab is closed.',
+      title: 'OPEN EVERY SONG IN KATA TRACE?',
+      body: 'Shadow Lionheart\'s four recordings and the six house songs become playable in Kata Trace '
+        + 'for every kitten, without beating him or buying a house. Until the tab is closed.',
       no: 'NO, KEEP THEM LOCKED',
-      yes: 'YES, OPEN ALL FOUR',
+      yes: 'YES, OPEN EVERY SONG',
       onYes: () => {
         this._debugSongs = true;
-        this.toast('[debug] every Shadow song is open in Kata Trace', 0);
+        this.toast('[debug] every song is open in Kata Trace', 0);
         this._refreshDebugPanel();
       },
     });
@@ -6536,7 +6540,7 @@ class Game {
       ${row('KeyU', `${KEYSETS[1].name} &#8594; ${this._keyboardHeldBy(1)}`)}
       ${TUNING_ROW}
       <div class="dbg-sep">SHADOW LIONHEART — his songs and his secret</div>
-      ${row('DreamSongs', 'open every Shadow song in Kata Trace', this._debugSongs)}
+      ${row('DreamSongs', 'open every song in Kata Trace', this._debugSongs)}
       ${row('DreamExtra', 'open 秘 EXTRA HARD — as if 1st Class')}
       ${row('DreamNav', 'show the Dream Dojo walk paths', !!this.dream?.navDebug)}
       ${row('SineExtra', 'open 秘 EXTRA HARD in the Sine Gauntlet', !!this._debugSineExtra)}

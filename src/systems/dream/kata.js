@@ -9,6 +9,7 @@ import * as BM from './beatmap.js';
 import { customCharts } from './chartstore.js';
 import { KataBoard } from './kataboard.js';
 import { kyoTexture } from '../crossfx.js';
+import { houseSpecs } from '../housing/catalog.js';
 
 /* ---------------------------------------------------------------------------
    KATA TRACE — 型, a dance with Lionheart.
@@ -170,6 +171,15 @@ export function markOffset(name, r = MARK_R) {
 export const MARK_NAMES = ['C', ...BM.DIRS];
 
 /* --------------------------------- the hall ------------------------------- */
+
+/** `KataHall.homesOpen`, as a function of the Dream Dojo alone (the checks call it with a stand-in). */
+export function homesOpen(dream) {
+  const P = dream?.progress;
+  for (const home of Object.values(dream?.game?.housing?.store?.homes ?? {})) {
+    for (const s of houseSpecs(home)) if (BM.HOME_SONG_TIERS[s.house]) P?.unlockHome?.(s.house);
+  }
+  return P?.homesOpen?.() ?? new Set();
+}
 
 /* ONE FLOOR EACH, IN HER COLOUR. Richard: "For the daily/weekly kata, let's
    only show the kata area for active players. Let's section each area off
@@ -374,13 +384,43 @@ export class KataHall {
    * EXTRA HARD ones are not even LISTED until the secret is open to her —
    * "Beat him on 秘 EXTRA HARD" on a nine-year-old's song list would give
    * away the one thing in the game that is meant to be found. The debug
-   * panel's *unlock every Shadow song* opens them all (`game._debugSongs`).
+   * panel's *open every song in Kata Trace* opens them all (`game._debugSongs`).
+   *
+   * THE HOUSE SONGS are one locked row per house until somebody in the party
+   * owns one (`BM.homeBundle`), and then the two songs themselves — so the
+   * list carries three locked rows instead of six.
    */
   songChoices(p) {
     const all = !!this.dream.game?._debugSongs;
-    return BM.SONGS
-      .filter((s) => s.lock !== 'extra' || all || extraOpen(this.dream.progress, p))
-      .map((s) => ({ S: s, locked: BM.songLocked(s.id, p, all) }));
+    const homes = homesOpen(this.dream);
+    const out = [];
+    const bundled = new Set();
+    for (const s of BM.SONGS) {
+      if (s.lock === 'extra' && !all && !extraOpen(this.dream.progress, p)) continue;
+      const h = s.lock?.startsWith('home:') ? s.lock.slice(5) : null;
+      if (h && !all && !homes.has(h)) {
+        if (!bundled.has(h)) {
+          bundled.add(h);
+          const B = BM.homeBundle(h);
+          out.push({ S: B, locked: BM.songLocked(B.id, p, all, homes) });
+        }
+        continue;
+      }
+      out.push({ S: s, locked: BM.songLocked(s.id, p, all, homes) });
+    }
+    return out;
+  }
+
+  /**
+   * Which houses this game has bought — every house standing on every home
+   * now, written into the ledger as it is seen, so a house sold later keeps
+   * its songs open ("for everyone forever").
+   */
+  homesOpen() { return homesOpen(this.dream); }
+
+  /** A row of the picker by id — a song, or a locked house's bundle. */
+  _songRow(choices, id) {
+    return choices.find((c) => c.S.id === id)?.S ?? BM.songById(id);
   }
 
   /** What she last chose — kept on her for the visit, so a second go is one press. */
@@ -428,6 +468,7 @@ export class KataHall {
     // A song she can no longer see (a save from a debug session) is not where the picker opens.
     if (!choices.some((c) => c.S.id === k.song)) k.song = 'vr';
     const lockOf = (id) => choices.find((c) => c.S.id === id)?.locked ?? null;
+    const songOf = (id) => this._songRow(choices, id);
     const audio = this.dream.game?.audio;
     // His recordings are fetched when she LOOKS at one, so DANCE is not kept waiting on the network.
     const fetchSong = () => { if (!lockOf(k.song)) audio?.prefetchMusic?.([k.song]); };
@@ -438,7 +479,7 @@ export class KataHall {
     const rows = [
       {
         text: () => {
-          const S = BM.songById(k.song);
+          const S = songOf(k.song);
           return lockOf(k.song) ? `SONG  ◀ 🔒 ${S.name} ▶` : `SONG  ◀ ${S.name} · ${Math.round(S.bpm * k.speed)} BPM ▶`;
         },
         cycle: (s) => {
@@ -509,7 +550,7 @@ export class KataHall {
     const k = this.pickOf(p);
     const c = k.custom ? customCharts().find((x) => x.id === k.custom) : null;
     // Locked is locked for a custom chart of it too — a map is not a way round a trophy.
-    const why = BM.songLocked(c ? c.chart.song : k.song, p, !!this.dream.game?._debugSongs);
+    const why = BM.songLocked(c ? c.chart.song : k.song, p, !!this.dream.game?._debugSongs, this.homesOpen());
     if (why) {
       this.dream.hint(p, why);
       this.dream.game.sfx?.('deny');

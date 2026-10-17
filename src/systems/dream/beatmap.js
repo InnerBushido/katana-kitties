@@ -1,5 +1,7 @@
 import { MUSIC } from '../../core/audio.js';
 import { MUSIC_FILES } from '../../core/musicfiles.js';
+import { JUKEBOX_FILES } from '../housing/jukeboxfiles.js';
+import { HOUSE_BY_ID } from '../housing/catalog.js';
 
 /* ---------------------------------------------------------------------------
    THE BEAT MAP — what Lionheart does in a Kata Trace run, written down.
@@ -202,6 +204,7 @@ const SONG_BEATS = { shadow: 128 };
 export function songSpb(key) {
   // A recording's beat is MEASURED (tools/capture/shadow-music.mjs), not chosen.
   if (MUSIC_FILES[key]) return { spb: MUSIC_FILES[key].spb, steps: 1 };
+  if (JUKEBOX_FILES[key]) return { spb: JUKEBOX_FILES[key].spb, steps: 1 };
   const b = MUSIC[key]?.beat ?? MUSIC.play.beat;
   let k = 1;
   while (b * k < MIN_SPB) k *= 2;
@@ -229,7 +232,11 @@ export function rng32(seed) {
 export const SONG_SECS = [30, 90];
 function songBeats(key, spb) {
   if (SONG_BEATS[key]) return SONG_BEATS[key];
-  if (MUSIC_FILES[key]) return MUSIC_FILES[key].beats;
+  if (MUSIC_FILES[key]?.beats) return MUSIC_FILES[key].beats;
+  /* A JUKEBOX RECORDING has no chart length of its own (it was arranged to
+     loop): as much of it as fits SONG_SECS, in whole bars. */
+  const J = JUKEBOX_FILES[key];
+  if (J) return Math.max(16, Math.floor(Math.min(J.length - J.first, SONG_SECS[1]) / spb / 4) * 4);
   const secs = SONG_SECS[0] + (hash(`len:${key}`) % 7) * ((SONG_SECS[1] - SONG_SECS[0]) / 6);
   let n = Math.max(16, Math.round(secs / spb / 4) * 4);
   // Rounding to a bar can carry a 90s piece to 90.5 (The Crossing did): back inside by whole bars.
@@ -238,15 +245,60 @@ function songBeats(key, spb) {
   return n;
 }
 
-/** song → the Shadow level she must have beaten (`p.shadowBeat[level]`) to dance to it. */
-const SONG_LOCKS = Object.fromEntries(Object.entries(MUSIC_FILES).map(([id, f]) => [id, f.level]));
-export const SONGS = [...Object.keys(MUSIC), ...Object.keys(MUSIC_FILES)].map((id) => {
+/**
+ * THE HOUSING SONGS, TWO TO A HOUSE. Richard, Oct 2026: "add the 'Purchased
+ * Housing' songs as locked songs to the Kata Trace that can be unlocked when
+ * a player purchases a house on an island. Since there are 6 songs, ... 2 of
+ * each of the songs are locked under the 3 different price tiers ... Once at
+ * least one of the players buys one of the house types, then those 2 songs
+ * get unlocked in the Kata Trace for everyone forever." The calm pair with the
+ * small house, the festival pair with the dojo house, the loud pair with the
+ * castle. A track not in the build (no recording) is simply not listed.
+ */
+export const HOME_SONG_TIERS = {
+  minka: ['homeLofi', 'homeGarden'],
+  dojohouse: ['homeFestival', 'homeSunset'],
+  castle: ['homeSurf', 'homeChiptune'],
+};
+const HOME_SONGS = Object.values(HOME_SONG_TIERS).flat().filter((id) => JUKEBOX_FILES[id]);
+/* ...and the engine plays them from the same table it plays his from. The
+   jukebox merges them too (housing/jukebox.js); whichever module loads first,
+   the entries are the same objects. */
+for (const id of HOME_SONGS) MUSIC_FILES[id] ??= JUKEBOX_FILES[id];
+/* HIS RECORDINGS, BY THEIR LEVEL — not "everything in MUSIC_FILES", which
+   other modules add to (the jukebox's tracks, its previews, the shrine's
+   prayer) and which would then have been songs with a lock nobody can say. */
+const SHADOW_LEVELS = new Set(['medium', 'hard', 'extra']);
+const SHADOW_FILES = Object.keys(MUSIC_FILES).filter((id) => SHADOW_LEVELS.has(MUSIC_FILES[id].level));
+/** song → the Shadow level she must have beaten (`p.shadowBeat[level]`), or `home:<house>`. */
+const SONG_LOCKS = {
+  ...Object.fromEntries(SHADOW_FILES.map((id) => [id, MUSIC_FILES[id].level])),
+  ...Object.fromEntries(Object.entries(HOME_SONG_TIERS).flatMap(([h, ids]) => ids.map((id) => [id, `home:${h}`]))),
+};
+export const SONGS = [...Object.keys(MUSIC), ...SHADOW_FILES, ...HOME_SONGS].map((id) => {
   const { spb, steps } = songSpb(id);
   return {
     id, name: MUSIC_FILES[id]?.name ?? SONG_NAMES[id] ?? id, spb, steps, bpm: Math.round(60 / spb), beats: songBeats(id, spb),
     lock: SONG_LOCKS[id] ?? null,
   };
 });
+
+/**
+ * A LOCKED HOUSE'S SONGS ARE ONE ROW. "While they are locked, we can list it
+ * in the Kata Trace menu as a 'locked bundle' so that we only show 3 locked
+ * songs in the menu and when one of them are unlocked, it will add the 2
+ * songs to the menu". A bundle is a song-shaped row (`bundle: true`) the
+ * picker can land on and say what it wants; DANCE refuses it in words.
+ */
+export const homeBundle = (house) => {
+  const ids = HOME_SONG_TIERS[house].filter((id) => JUKEBOX_FILES[id]);
+  return {
+    id: `bundle:${house}`, bundle: true, house, ids, lock: `home:${house}`,
+    name: `${HOUSE_BY_ID[house]?.short ?? house} SONGS ×${ids.length}`, spb: 0.5, steps: 1, bpm: 0, beats: 0,
+  };
+};
+/** The refusal for a house's songs, as an instruction (non-negotiable 6). */
+export const homeLockWords = (house, n = 2) => `Buy a ${HOUSE_BY_ID[house]?.name ?? house} from Roshi to unlock ${n === 1 ? 'this song' : `these ${n} songs`} — for everybody!`;
 
 /* ------------------------------ his songs ---------------------------------- */
 
@@ -260,7 +312,7 @@ export const SONGS = [...Object.keys(MUSIC), ...Object.keys(MUSIC_FILES)].map((i
    right away" — and Electronic 2's long cut, unlocked with it. */
 export const SHADOW_TRACK = { easy: 'shadow', medium: 'shadowOrch', hard: 'shadowSynth', extra: 'shadowNight' };
 /** Every song his hand-written chart is written for. */
-export const SHADOW_SONGS = ['shadow', ...Object.keys(MUSIC_FILES)];
+export const SHADOW_SONGS = ['shadow', ...SHADOW_FILES];
 /** How a lock is SAID — an instruction, never just "locked" (non-negotiable 6). */
 export const LEVEL_WORDS = { easy: 'EASY', medium: 'MEDIUM', hard: 'HARD', extra: '秘 EXTRA HARD' };
 
@@ -270,9 +322,16 @@ export const LEVEL_WORDS = { easy: 'EASY', medium: 'MEDIUM', hard: 'HARD', extra
  * song is the trophy of one fight. `all` is the debug row's "unlock every
  * song". Returns null if open, or the sentence that says what it wants.
  */
-export function songLocked(id, p, all = false) {
+export function songLocked(id, p, all = false, homes = null) {
+  if (id?.startsWith?.('bundle:')) {
+    const h = id.slice(7);
+    return all || homes?.has?.(h) ? null : homeLockWords(h, HOME_SONG_TIERS[h]?.length ?? 2);
+  }
   const lv = SONG_LOCKS[id];
-  if (!lv || all || p?.shadowBeat?.[lv]) return null;
+  if (!lv || all) return null;
+  // A house's songs are the party's, not hers: `homes` is the set of houses bought this game.
+  if (lv.startsWith('home:')) return homes?.has?.(lv.slice(5)) ? null : homeLockWords(lv.slice(5), 1);
+  if (p?.shadowBeat?.[lv]) return null;
   return `Beat Shadow Lionheart on ${LEVEL_WORDS[lv]} to unlock this song!`;
 }
 export const songById = (id) => SONGS.find((s) => s.id === id) ?? null;
