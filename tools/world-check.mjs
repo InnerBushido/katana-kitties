@@ -38760,6 +38760,29 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         const fi = CO.SECTIONS.findIndex((x) => x.key === 'final');
         ok('...filmed from behind her, because the stagger and the slalom are both side to side',
           shotAt(CO.CP_S[fi] + 1) === 'final' && shotAt(CO.CP_S[fi] + 20) === 'final');
+        /* "after jumping over the platforms, the camera should rotate to the
+           side view ... Or potentially do more of a diagonal rear corner view
+           so they can see both obstacles better." Behind her on the ledges;
+           the 45° corner once the last ledge is behind her. */
+        {
+          const lane = CO.LANES[fin.lane];
+          const lastLedge = Math.max(...fin.ledges.map((l) => CO.pathS(lane, l.b)));
+          const want = (s) => { G.run = { sMax: s, cp: CO.checkpointFor(s), drill: { state: 'live' } }; return G._wantShot(); };
+          const climb = want(lastLedge - 0.5);
+          const tail = want(lastLedge + 0.5);
+          const end = want(CO.FINISH_S - 1);
+          const side = G._yaw();
+          const diff = (a, b) => { let d = a - b; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return Math.abs(d); };
+          const quarter = diff(climb.yaw, side);
+          ok('登竜 off the Dragon\'s Tail\'s last ledge the lens turns to the rear corner — half way from behind her to side-on — and holds it to the finish',
+            climb.behind === 1 && Math.abs(quarter - Math.PI / 2) < 0.01
+            && Math.abs(diff(tail.yaw, side) - quarter * (1 - SN.CORNER_CAM.turn)) < 0.01 && tail.dist === SN.CORNER_CAM.dist
+            && tail.behind === SN.CORNER_CAM.behind && end.yaw === tail.yaw,
+            `climb ${climb.yaw.toFixed(2)} tail ${tail.yaw.toFixed(2)} side ${side.toFixed(2)} end ${end.yaw.toFixed(2)}`);
+          // ...and no other course's stretch has a corner: the High Steps are all ledges.
+          const steps = want(CO.CP_S[ti] + 8);
+          ok('...and only there: the High Steps stay straight behind her to their last ledge', steps.behind === 1, String(steps.behind));
+        }
 
         /* THE CARD OVER HER HEAD. "When the camera is pulling behind the
            player ... the text UI appearing above their heads is too big and
@@ -38776,8 +38799,19 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         const side = { s: panel.scale.x, y: panel.position.y, o: panel.mat.opacity };
         ok('...and with the lens behind her, the card over her head is half the size, lower and fainter — and itself again side-on',
           Math.abs(back.s - SN.CARD_BEHIND.scale) < 1e-3 && Math.abs(back.o - SN.CARD_BEHIND.opacity) < 1e-3 && back.y < side.y - 1
-          && Math.abs(side.s - 1) < 1e-3 && Math.abs(side.o - 1) < 1e-3 && Math.abs(side.y - (2.6 + 2.3)) < 1e-3,
+          && Math.abs(side.s - SN.CARD_SIDE.scale) < 1e-3 && Math.abs(side.o - 1) < 1e-3 && Math.abs(side.y - (2.6 + SN.CARD_SIDE.lift)) < 1e-3,
           JSON.stringify({ back, side }));
+        /* "zoomed out, in the side view, the UI above their head is too small
+           to read ... the UI should be bigger and when the camera is behind
+           the player, the UI should be the current size". On screen a card is
+           its size over the lens's distance: side-on it must read at least
+           half as big again as it does behind her, and its bottom edge (the
+           card is 1.7 tall) must not come down onto her head to do it. */
+        const apparent = (s, dist) => s / dist;
+        const bottom = (c) => c.y - 0.85 * c.s - 2.6;
+        ok('...side-on, zoomed out, the card reads at least 1.5x as big on screen as behind her, and still clears her head',
+          apparent(side.s, SN.COURSE_CAM.dist) >= 1.5 * apparent(back.s, SN.SHOULDER_CAM.dist) && bottom(side) >= 1.4 && bottom(back) >= 0.7,
+          `side ${apparent(side.s, SN.COURSE_CAM.dist).toFixed(4)} behind ${apparent(back.s, SN.SHOULDER_CAM.dist).toFixed(4)} bottoms ${bottom(side).toFixed(2)} ${bottom(back).toFixed(2)}`);
         G.run = keepRun;
       }
       // Swiping away takes its ledges out of the world with its stones.

@@ -183,8 +183,33 @@ export const STONES_CAM = { dist: 18, pitch: 0.55, lift: 1.0, lead: 3 };
 /** How fast the lens swings between the side-on shot and that one (1/s). */
 const CAM_EASE = 2.5;
 /** The card over her head with the lens behind her (see `_fitCard`): this
- *  big, this far over her head, this opaque. Side-on it is 1, 2.3 and 1. */
+ *  big, this far over her head, this opaque. */
 export const CARD_BEHIND = { scale: 0.5, lift: 1.2, opacity: 0.6 };
+/**
+ * ...AND SIDE-ON, BIGGER THAN IT WAS. Richard, Oct 2026: "when the player is
+ * running around the course, zoomed out, in the side view, the UI above their
+ * head is too small to read, in this zoomed out side view, the UI should be
+ * bigger and when the camera is behind the player, the UI should be the
+ * current size it is which is the smaller size." It was 1 at COURSE_CAM's 25
+ * away — about the same size on screen as the behind shot's 0.5 at 14, which
+ * is the size he calls small. `lift` is the card's CENTRE over her head; the
+ * card is drill.js's 5.4×1.7, and its bottom edge stays 1.45 over her head
+ * at either size (1.45 + 0.85·scale), so growing it never puts it on her.
+ */
+export const CARD_SIDE = { scale: 1.6, lift: 1.45 + 0.85 * 1.6, opacity: 1 };
+/**
+ * THE DRAGON'S TAIL, ONCE SHE IS DOWN OFF ITS LEDGES. Richard, Oct 2026: "On
+ * the Dragons Gate course in the Sine Gauntlet, at the ending, after jumping
+ * over the platforms, the camera should rotate to the side view so that the
+ * player can better see the lazers they need to walk past. Or potentially do
+ * more of a diagonal rear corner view so they can see both obstacles better."
+ * The corner: the stretch after the ledges is walls from alternate sides
+ * (side to side — what a side-on lens loses) with a wave bar between each
+ * pair (up and down — what a lens straight behind her loses). `turn` is how
+ * far round from behind her toward side-on (0.5 is the 45° corner); `behind`
+ * is what the overhead card sizes itself by, half way between its two sizes.
+ */
+export const CORNER_CAM = { dist: 19, pitch: 0.5, lift: 1.2, lead: 3.5, turn: 0.5, behind: 0.5 };
 /** How far before a `behind` stretch's checkpoint the lens starts to turn (see `_shoulder`). */
 export const SHOT_AHEAD = 5;
 
@@ -1297,14 +1322,33 @@ export class SineGauntlet {
   }
 
   /** The side-on yaw (see COURSE_CAM), or, behind her, the yaw that looks
-   *  down her lane the way it runs. */
+   *  down her lane the way it runs — or, off the Dragon's Tail's ledges, the
+   *  corner between the two (CORNER_CAM). */
   _wantShot() {
     const sec = this._shoulder();
     if (!sec) return { yaw: this._yaw(), dist: COURSE_CAM.dist, pitch: COURSE_CAM.pitch, lead: 0, lift: COURSE_CAM.lift, pin: 0, behind: 0 };
     const f = this.isle.fwd;
     const sg = sec.lane % 2 ? -1 : 1;     // the way her lane runs, in b
+    const back = Math.atan2(sg * f.z, -sg * f.x);
+    if (this._pastLedges(sec)) {
+      const C = CORNER_CAM;
+      let dy = this._yaw() - back;
+      while (dy > Math.PI) dy -= Math.PI * 2;
+      while (dy < -Math.PI) dy += Math.PI * 2;
+      return { yaw: back + dy * C.turn, dist: C.dist, pitch: C.pitch, lead: C.lead, lift: C.lift, pin: 0, behind: C.behind };
+    }
     const S = sec.key === 'stones' ? STONES_CAM : SHOULDER_CAM;
-    return { yaw: Math.atan2(sg * f.z, -sg * f.x), dist: S.dist, pitch: S.pitch, lead: S.lead, lift: S.lift, pin: S === STONES_CAM ? 1 : 0, behind: 1 };
+    return { yaw: back, dist: S.dist, pitch: S.pitch, lead: S.lead, lift: S.lift, pin: S === STONES_CAM ? 1 : 0, behind: 1 };
+  }
+
+  /** A stretch with ledges AND beams after them (the Dragon's Tail), with
+   *  every ledge behind her — the same test the working card reads. */
+  _pastLedges(sec) {
+    const r = this.run;
+    if (!r || !sec?.ledges || !(sec.bars || sec.fixed)) return false;
+    if (SECTIONS.indexOf(sec) !== nextSection(r.sMax)) return false;
+    const lane = LANES[sec.lane];
+    return !sec.ledges.some((l) => pathS(lane, l.b) > r.sMax);
   }
 
   /** The shot, eased: a cut from side-on to behind her would be a quarter
@@ -1338,9 +1382,10 @@ export class SineGauntlet {
     const d = this.run?.drill;
     if (!d?.panel) return;
     const k = this._cam?.behind ?? 0;
-    d.panel.scale.setScalar(1 - (1 - CARD_BEHIND.scale) * k);
-    d.panel.position.y = (d.p.height ?? 2.6) + 2.3 - (2.3 - CARD_BEHIND.lift) * k;
-    d.panel.mat.opacity = 1 - (1 - CARD_BEHIND.opacity) * k;
+    const mix = (key) => CARD_SIDE[key] + (CARD_BEHIND[key] - CARD_SIDE[key]) * k;
+    d.panel.scale.setScalar(mix('scale'));
+    d.panel.position.y = (d.p.height ?? 2.6) + mix('lift');
+    d.panel.mat.opacity = mix('opacity');
   }
 
   /** Where the runner is — or the start, between runs — in the world: her,
