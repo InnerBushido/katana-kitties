@@ -217,6 +217,10 @@ const wrapA = (a) => Math.atan2(Math.sin(a), Math.cos(a));
  * of hysteresis, so a kitten stood on the line does not restart the piece.
  */
 export const MUSIC_SWELL = { beyond: 10, floor: 0.08, near: 0.5, out: 6 };
+/** Shadow Lionheart's island mood (`_shadowMood`): seconds for the sky to go
+ *  dark on the way in and come back on the way out, and for the music to fade
+ *  either way ("fade out and turn off ... fades back in"). */
+export const SHADOW_MOOD = { dark: 2.5, light: 2, hush: 2 };
 
 /** The phases spent in (or crossing out of) the tube, framed by her own
  *  follow camera rather than the dome's (`cameraFocus`). */
@@ -2126,6 +2130,7 @@ export class DreamDojo {
 
     this._dt = dt;
     for (const p of g.players ?? []) if (p) p.peekAt = this._peekFor(p);
+    this._shadowMood(dt);
 
     /* FIRST: is anything taking the whole screen? Then nobody stays inside —
        a scene that frames "the kittens" must find them in the real world,
@@ -3659,6 +3664,45 @@ export class DreamDojo {
 
   /** Every billboard the arcade owns, turned to this lens. `members` is the
    *  kittens the lens is for, when it has any (a scene's camera has none). */
+  /**
+   * SHADOW LIONHEART'S ISLAND HAS A MOOD. Richard, Oct 2026: "When entering
+   * the Shadow Lionheart island, the music should fade out and turn off...
+   * when leaving the Shadow Lionheart island, the music fades back in to
+   * normal music again. Can also have the sky darken to set the mood of the
+   * island, if so, need to brighten again when leaving. Can even have some
+   * Matrix effects start playing in the background sky if we make the sky go
+   * dark."
+   *   · The SKY is per kitten (`_gloom[i]`) and so per pane: her sister on
+   *     the Kata Trace island keeps her own blue sky.
+   *   · The MUSIC is one speaker for everybody, so it follows the latest
+   *     thing anybody did: a kitten arriving hushes it, a kitten leaving
+   *     brings it back (`hush`, read by main.js `_wantedTrack`). His fight's
+   *     own theme is not the island's music and is not hushed by this.
+   */
+  _shadowMood(dt) {
+    const F = this.shadow;
+    this._gloom ??= [];
+    this._onShadow ??= [];
+    for (const p of this.game.players ?? []) {
+      if (!p) continue;
+      const i = p.index;
+      const on = !!F?.onIsle?.(p);
+      if (on !== !!this._onShadow[i]) this._moodLast = { i, on };
+      this._onShadow[i] = on;
+      const g = this._gloom[i] ?? 0;
+      this._gloom[i] = on ? Math.min(1, g + dt / SHADOW_MOOD.dark) : Math.max(0, g - dt / SHADOW_MOOD.light);
+    }
+    const L = this._moodLast;
+    const want = L?.on && this._onShadow[L.i] && (this.game.players ?? []).some((p) => p?.index === L.i) ? 1 : 0;
+    this.hush ??= 0;
+    this.hush = want ? Math.min(1, this.hush + dt / SHADOW_MOOD.hush) : Math.max(0, this.hush - dt / SHADOW_MOOD.hush);
+  }
+
+  /** A pane's gloom: the deepest of its kittens'. A scene's lens (no members) has none. */
+  paneGloom(members) {
+    return members?.length ? Math.max(0, ...members.map((i) => this._gloom?.[i] ?? 0)) : 0;
+  }
+
   faceCamera(camera, members = null) {
     if (!this.built) return;
     this.lionSprite?.faceCamera(camera);
@@ -3689,6 +3733,8 @@ export class DreamDojo {
       for (const k of this.simPandas) k?.panda.faceCamera(camera);
       for (const c of this.choices) c?.faceCamera(camera, members);
       for (const k of this.mapKiosks ?? []) k.faceCamera(camera);
+      // Shadow Lionheart's gloom, as deep as the deepest kitten in this pane is in it.
+      this.sim.setGloom(this.paneGloom(members));
       this.sim.faceCamera(camera);
       this.gallery?.faceCamera(camera);
       this.hall?.faceCamera(camera);

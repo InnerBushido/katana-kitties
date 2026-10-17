@@ -81,6 +81,7 @@ const VOID_VERT = /* glsl */`
    sphere can ride on the camera and never show a seam or a parallax. */
 const VOID_FRAG = /* glsl */`
   uniform float uTime;
+  uniform float uGloom;
   varying vec3 vDir;
   float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
   float noise(vec2 p) {
@@ -107,6 +108,32 @@ const VOID_FRAG = /* glsl */`
     vec2 sp = vec2(a * 60.0, y * 60.0);
     float st = step(0.985, hash(floor(sp))) * smoothstep(0.05, 0.4, y);
     col += vec3(0.7, 0.95, 1.0) * st * (0.5 + 0.5 * sin(uTime * 2.0 + hash(floor(sp)) * 40.0));
+    /* SHADOW LIONHEART'S GLOOM (SimWorld.setGloom): the sky goes dark and the
+       code rains down it. Columns round the horizon by angle, each with its
+       own speed and phase; a bright head falling, a fading trail above it,
+       and every cell a 3x5 block of bits that re-rolls now and then — a
+       glyph, without a font. */
+    if (uGloom > 0.001) {
+      col *= 1.0 - 0.88 * uGloom;
+      float u = a / 6.2831853 + 0.5;
+      float cid = floor(u * 180.0);
+      float fx = fract(u * 180.0);
+      float rid = floor(y * 42.0);
+      float fy = fract(y * 42.0);
+      float live = step(0.4, hash(vec2(cid, 3.0)));
+      float sp = 0.18 + 0.4 * hash(vec2(cid, 1.0));
+      float head = 1.15 - fract(uTime * sp * 0.25 + hash(vec2(cid, 2.0))) * 2.3;
+      float dh = y - head;
+      float trail = dh >= 0.0 ? exp(-dh * 5.0) : 0.0;
+      vec2 sub = floor(vec2(fx * 3.0, fy * 5.0));
+      float roll = floor(uTime * (1.0 + 5.0 * hash(vec2(rid, cid))));
+      float bit = step(0.45, hash(vec2(cid * 7.0 + sub.x + roll * 3.1, rid * 13.0 + sub.y)));
+      float cell = step(0.12, fx) * step(fx, 0.88) * step(0.08, fy) * step(fy, 0.92);
+      float fade = smoothstep(-0.3, 0.05, y) * smoothstep(0.97, 0.75, y);
+      float rain = live * bit * cell * fade;
+      col += vec3(0.15, 1.0, 0.4) * trail * rain * 0.75 * uGloom;
+      col += vec3(0.75, 1.0, 0.85) * exp(-abs(dh) * 70.0) * rain * uGloom;
+    }
     gl_FragColor = vec4(col, 1.0);
   }
 `;
@@ -575,7 +602,7 @@ export class SimWorld {
     this.root.position.set(SIM.dx, 0, SIM.dz);
     scene.add(this.root);
 
-    this.fog = new THREE.Fog(0x071c28, 150, 1050);
+    this.fog = new THREE.Fog(SIM_FOG, 150, 1050);
     this._uniforms = [];
     this._buildVoid();
     this._buildHub();
@@ -635,12 +662,13 @@ export class SimWorld {
   _buildVoid() {
     const uTime = { value: 0 };
     this._uTime = uTime;
+    this._uGloom = { value: 0 };
     const sky = new THREE.Mesh(
       new THREE.SphereGeometry(2200, 32, 20),
       new THREE.ShaderMaterial({
         vertexShader: VOID_VERT, fragmentShader: VOID_FRAG,
         side: THREE.BackSide, depthWrite: false, fog: false,
-        uniforms: { uTime },
+        uniforms: { uTime, uGloom: this._uGloom },
       })
     );
     sky.frustumCulled = false;
@@ -1065,6 +1093,18 @@ export class SimWorld {
     for (const f of this.tickers) f(dt, this.t);
   }
 
+  /**
+   * How far into Shadow Lionheart's gloom THIS pane's sky is, 0..1 — set per
+   * pane before it draws, like the sky's position (DreamDojo.faceCamera reads
+   * it off the kittens in the pane). Dark sky, the code rain, and the fog
+   * pulled toward the same dark so the islands sink into it.
+   */
+  setGloom(g) {
+    const k = Math.max(0, Math.min(1, Number.isFinite(g) ? g : 0));
+    this._uGloom.value = k;
+    this.fog.color.setHex(SIM_FOG).lerp(_gloomFog, k);
+  }
+
   /** Before a sim pane draws: put the sky on this lens. */
   faceCamera(camera) {
     this.sky.position.set(camera.position.x - SIM.dx, camera.position.y, camera.position.z - SIM.dz);
@@ -1075,3 +1115,6 @@ export class SimWorld {
 }
 
 const _se = new THREE.Euler();
+/** The simulator's fog, and what Shadow Lionheart's gloom pulls it to. */
+export const SIM_FOG = 0x071c28;
+const _gloomFog = new THREE.Color(0x010805);

@@ -41907,6 +41907,48 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
           F.state === 'lost' && !her.angel && !F.barrier.visible && F.barred.size === 0, `${F.state} ${her.angel}`);
         for (let f = 0; f < 60 * 8; f++) F.update(1 / 60);
       }
+
+      /* 影 HIS ISLAND HAS A MOOD. Richard, Oct 2026: "When entering the
+         Shadow Lionheart island, the music should fade out and turn off...
+         when leaving ... the music fades back in to normal music again. Can
+         also have the sky darken ... need to brighten again when leaving.
+         Can even have some Matrix effects start playing in the background
+         sky". The sky is per pane; the music is one speaker. */
+      {
+        const MOOD = DD.SHADOW_MOOD;
+        const run = (s) => { for (let f = 0; f < Math.ceil(s * 60); f++) D._shadowMood(1 / 60); };
+        put(her, F.kiosks[0]);
+        put(sis, { x: IH.x + IH.r + 60, y: IH.y, z: IH.z });
+        D._shadowMood(1 / 60);
+        run(MOOD.dark * 0.5);
+        const half = D._gloom[her.index];
+        run(Math.max(MOOD.dark, MOOD.hush));
+        // What DreamDojo.faceCamera does for each pane before it draws.
+        const pane = (m) => D.sim.setGloom(D.paneGloom(m));
+        pane([her.index]);
+        const herSky = D.sim._uGloom.value;
+        const herFog = D.sim.fog.color.getHex();
+        pane([sis.index]);
+        const sisSky = D.sim._uGloom.value;
+        const sisFog = D.sim.fog.color.getHex();
+        ok('影 on his island her sky goes dark over a couple of seconds and her music fades to nothing — her sister\'s pane, elsewhere, keeps its own sky',
+          half > 0.3 && half < 0.7 && D._gloom[her.index] === 1 && D.hush === 1 && herSky === 1 && herFog !== SW.SIM_FOG
+          && D._gloom[sis.index] === 0 && sisSky === 0 && sisFog === SW.SIM_FOG,
+          `half ${half.toFixed(2)} hush ${D.hush} skies ${herSky} ${sisSky} fog ${herFog.toString(16)}`);
+        put(her, { x: IH.x + IH.r + 60, y: IH.y, z: IH.z + 8 });
+        run(Math.max(MOOD.light, MOOD.hush) + 0.1);
+        pane([her.index, sis.index]);
+        ok('...and walking off it brings both back: the sky its own blue, the music faded back up',
+          D._gloom[her.index] === 0 && D.hush === 0 && D.sim._uGloom.value === 0 && D.sim.fog.color.getHex() === SW.SIM_FOG);
+        const msrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+        const wsrc = readFileSync(new URL('../src/world/simworld.js', import.meta.url), 'utf8');
+        ok('...the island\'s quiet scales the simulator\'s music, keeping the track so it fades back rather than restarting; his fight\'s own theme is not hushed',
+          /this\._vrLevel = swell \* \(1 - \(this\.dream\?\.hush \?\? 0\)\)/.test(msrc) && /if \(swell > 0\) return 'vr'/.test(msrc)
+          && msrc.indexOf("this.dream?.shadow?.state === 'live'") < msrc.indexOf('this._vrLevel = swell'));
+        ok('...and the dark sky carries the code rain, scaled by the same gloom — set for each pane before its sky is placed',
+          /uniform float uGloom;[\s\S]*if \(uGloom > 0\.001\) \{[\s\S]*trail \* rain/.test(wsrc)
+          && /this\.sim\.setGloom\(this\.paneGloom\(members\)\);\s*this\.sim\.faceCamera\(camera\);/.test(readFileSync(new URL('../src/systems/dreamdojo.js', import.meta.url), 'utf8')));
+      }
     }
 
     /* ONE CARD AT A TIME. "the text above easy/med/hard is showing up for all
@@ -44161,7 +44203,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     ok('...and a kitten on a dragon does not count — the flight theme has her', at(5) === 0);
     her.mount = null;
     ok('...and the piece is the Dream Dojo\'s own synthwave, wired into the router',
-      MUSd.vr?.tune === 'vr' && /this\._vrLevel = this\.dream\?\.musicLevel\?\.\(this\.players\) \?\? 0;[\s\S]{0,400}?if \(this\._vrLevel > 0\) return 'vr';/.test(readD('../src/main.js')));
+      MUSd.vr?.tune === 'vr' && /const swell = this\.dream\?\.musicLevel\?\.\(this\.players\) \?\? 0;[\s\S]{0,900}?if \(swell > 0\) return 'vr';/.test(readD('../src/main.js')));
     park(her);
   }
 
@@ -44432,7 +44474,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       const wt = mainSrc.slice(mainSrc.indexOf('  _wantedTrack(dt = 0) {'));
       const iTour = wt.indexOf('const tour = this.storyScene?.musicTrack;');
       ok('...and `_wantedTrack` asks the scene before anything about where the kittens stand, the simulator piece at full level',
-        iTour > 0 && iTour < wt.indexOf('if (this.travel)') && iTour < wt.indexOf('this._vrLevel = this.dream?.musicLevel')
+        iTour > 0 && iTour < wt.indexOf('if (this.travel)') && iTour < wt.indexOf('const swell = this.dream?.musicLevel')
         && /if \(tour\) \{ this\._vrLevel = 1; return tour; \}/.test(wt));
       const mine = ['tourPayne', 'tourLion', 'tourCreed'];
       const sig = (m) => [MUSIC[m].scale.join(','), MUSIC[m].root ?? 146.83, MUSIC[m].beat].join('|');

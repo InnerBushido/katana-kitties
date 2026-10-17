@@ -9203,11 +9203,15 @@ class Game {
       this._vrLevel = 1;
       return SHADOW_TRACK[this.dream.shadow.L?.id] ?? 'shadow';
     }
-    this._vrLevel = this.dream?.musicLevel?.(this.players) ?? 0;
+    const swell = this.dream?.musicLevel?.(this.players) ?? 0;
+    /* ...AND HIS ISLAND IS QUIET: "When entering the Shadow Lionheart island,
+       the music should fade out and turn off" (DreamDojo `_shadowMood`). The
+       track stays `vr` underneath so coming back off it is a fade, not a cut. */
+    this._vrLevel = swell * (1 - (this.dream?.hush ?? 0));
     /* HIS RECORDINGS ARE FETCHED ON THE WAY IN — bytes only, ~1.4MB each, so
        the fight's music does not wait on the network (Audio.prefetchMusic). */
-    if (this._vrLevel > 0 && !this._shadowFetched) { this._shadowFetched = true; this.audio?.prefetchMusic?.(Object.values(SHADOW_TRACK)); }
-    if (this._vrLevel > 0) return 'vr';
+    if (swell > 0 && !this._shadowFetched) { this._shadowFetched = true; this.audio?.prefetchMusic?.(Object.values(SHADOW_TRACK)); }
+    if (swell > 0) return 'vr';
     const isl = this._islandTrack(dt);
     if (isl === 'arena' && !this.inMatch) return 'saucer';
     return isl;
