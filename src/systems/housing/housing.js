@@ -1496,6 +1496,7 @@ export class Housing {
       cook: 'COOK',
       drum: 'PLAY THE DRUM',
       bell: 'RING THE BELL',
+      rake: 'RAKE THE SAND',
       soak: 'SOAK',
       volley: 'VOLLEYBALL',
       pray: 'PRAY',

@@ -276,6 +276,23 @@ function mesh(parts) {
   return new THREE.Mesh(mergeParts(parts), SHARED);
 }
 
+/**
+ * THE JUMPING STONES, one row each: centre (x, z) in the item's own frame,
+ * radius, and the height of the top. Richard, Oct 2026: "Jumping stones
+ * should be twice as big, more separated, with colliders" — they were r 0.6,
+ * 1.6 apart and 0.3 tall, so they were a picture of stones: she walked
+ * through them at ground level. Now r ~1.2, 3.4 apart in a zigzag, and the
+ * tops vary 0.45..0.85 so it is a hop from one to the next. The drawing
+ * (`drawItem('stones')`) and the decks she stands on (`HomeIsle._yardItem`)
+ * both read this, so the top she lands on is the top she sees.
+ */
+export const STONES = [0, 1, 2, 3, 4].map((k) => ({
+  x: (k - 2) * 3.4,
+  z: Math.sin(k * 1.7) * 1.3,
+  r: 1.1 + ((k * 7) % 3) * 0.1,
+  h: [0.45, 0.7, 0.55, 0.85, 0.6][k],
+}));
+
 /** The generated shoji leaf every door and window is made of. */
 export const SHOJI = 'props/shoji-door';
 /** Shoji panels that meet run in two grooves this far either side of the middle. */
@@ -347,12 +364,17 @@ export function drawItem(id, sz = 2, opts = {}) {
     case 'pine': return mesh([cyl(0.18, 0.25, 2, 0x5a3a20), ball(1.2, 0x2f6a3a, 0.6, 2.3, 0, 0.45), ball(1.0, 0x2f6a3a, -0.6, 2.8, 0.2, 0.45)]);
     case 'azalea': return mesh([ball(0.55, 0xe05a9a, 0, 0.4, 0, 0.8)]);
     case 'fence': return mesh([box(2, 1.5, 0.15, 0xc8b070), box(2, 0.08, 0.22, 0x3a6a2a, 0, 0.5), box(2, 0.08, 0.22, 0x3a6a2a, 0, 1.1)]);
+    // the shop's pictures of them; the yard draws the real ones (homeisle `torchParts` / `lampParts`)
+    case 'tiki': return mesh([cyl(0.08, 0.1, 2.4, 0xb08a4a), cyl(0.22, 0.13, 0.38, 0x6a4a2a, 0, 2.36), ball(0.2, 0xffa63a, 0, 2.95, 0, 1.6)]);
+    case 'pathlamp': return mesh([box(0.35, 0.5, 0.35, 0x8a857c), box(0.3, 0.32, 0.3, 0xfff0c8, 0, 0.5), box(0.5, 0.1, 0.5, 0x7a756e, 0, 0.82)]);
     case 'firebasket': return mesh([cyl(0.05, 0.05, 1.0, 0x222222), cyl(0.35, 0.2, 0.35, 0x222222, 0, 1.0), ball(0.25, 0xffa040, 0, 1.45)]);
     case 'bench': return mesh([box(1.5, 0.1, 0.5, 0xc0302a, 0, 0.4), box(0.1, 0.4, 0.4, 0x5a3a20, -0.6), box(0.1, 0.4, 0.4, 0x5a3a20, 0.6)]);
     case 'banner': return mesh([cyl(0.05, 0.05, 3.2, 0x222222), box(0.8, 2.2, 0.04, 0xf0e8d0, 0.42, 0.8)]);
     case 'paddy': return mesh([box(2, 0.1, 2, 0x6aa04a), box(2.1, 0.15, 0.1, 0x7a5a3a, 0, 0, 1), box(2.1, 0.15, 0.1, 0x7a5a3a, 0, 0, -1)]);
     case 'reeds': return mesh([cyl(0.04, 0.04, 1.6, 0x6a9a3a, -0.2), cyl(0.04, 0.04, 1.4, 0x6a9a3a, 0.2, 0, 0.1), cyl(0.04, 0.04, 1.7, 0x6a9a3a, 0, 0, -0.2)]);
-    case 'stones': return mesh([0, 1, 2, 3, 4].map((k) => cyl(0.6, 0.7, 0.3, 0x9a9a92, (k - 2) * 1.6, 0, Math.sin(k * 1.7) * 0.8, 9)));
+    case 'stones': return mesh(STONES.flatMap((s, k) => [
+      cyl(s.r, s.r + 0.15, s.h - 0.06, k % 2 ? 0x8f8f87 : 0x9a9a92, s.x, 0, s.z, 9),
+      cyl(s.r - 0.08, s.r, 0.06, 0xaeaea4, s.x, s.h - 0.06, s.z, 9)]));
     case 'toriigarden': return mesh([0, 1, 2].flatMap((k) => [
       box(0.2, 2.4, 0.2, 0xd8382a, -0.9, 0, (k - 1) * 2.4), box(0.2, 2.4, 0.2, 0xd8382a, 0.9, 0, (k - 1) * 2.4),
       box(2.6, 0.2, 0.3, 0x222222, 0, 2.4, (k - 1) * 2.4), box(2.2, 0.15, 0.2, 0xd8382a, 0, 1.9, (k - 1) * 2.4)]));

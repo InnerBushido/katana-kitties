@@ -208,10 +208,23 @@ export function pickList(H, kind, roomId) {
   }).filter(Boolean);
 }
 
-/** The key legend, said the same on the card and in the check. */
+/** The key legend, said the same on the card and in the check. `step` is
+ *  filled in with the turn step she has now ("RIDE  step 45°"). */
 export const BUILD_KEYS = [
-  ['STICK', 'move'], ['ATTACK', 'turn'], ['JUMP', 'put it here'], ['SPRINT', 'sell'], ['INTERACT', 'back'],
+  ['STICK', 'move'], ['ATTACK', 'turn'], ['RIDE', 'step'], ['JUMP', 'put it here'], ['SPRINT', 'sell'], ['INTERACT', 'back'],
 ];
+
+/* HOW FAR ONE PRESS OF ATTACK TURNS IT. Richard, Oct 2026: "rotation of
+   walking paths should be in 15 degree increments ... the RIDE button toggles
+   between 15, 30, and 45 degrees ... default should be 45 degrees except for
+   walking paths which is 15". Only the free-standing kinds (the yard, and a
+   house on its lawn) have an angle to step; a room thing sits on the tatami
+   grid and turns a quarter at a time, and RIDE says so rather than doing
+   nothing. The step lives on the build view, so it is hers for as long as
+   she holds this thing and starts from the default for the next one. */
+export const ROT_STEPS = [15, 30, 45];
+export const freeTurn = (top) => top.kind === 'yard' || top.kind === 'house';
+export const rotStepOf = (top) => top.rotStep ?? (ITEM_BY_ID[top.id]?.path ? 15 : 45);
 export const PICK_KEYS = [['STICK', 'choose'], ['JUMP', 'pick it up'], ['ATTACK', 'customize'], ['SPRINT', 'sell'], ['INTERACT', 'back']];
 export const CUSTOM_PICK_KEYS = [['STICK', 'choose'], ['JUMP', 'customize'], ['INTERACT', 'back']];
 
@@ -340,9 +353,22 @@ export class BuildMode {
       else this.hop(top, mx, my);
     }
     if (pad.pressed('attack')) { pad.consume?.('attack'); this.rotate(top); }
+    if (pad.pressed('mount')) { pad.consume?.('mount'); this.turnStep(index, top); }
     if (pad.pressed('jump')) { pad.consume?.('jump'); C.placeHere(index, top); return true; }
     if (pad.pressed('sprint')) { pad.consume?.('sprint'); C.askSell(index, top); return true; }
     return true;
+  }
+
+  /** RIDE: 15 → 30 → 45 → 15 degrees a turn, said out loud each time. */
+  turnStep(index, top) {
+    if (!freeTurn(top)) {
+      this.H.game.toast(top.kind === 'wall' ? 'Things on a wall always face the room.' : 'Inside, things turn a quarter at a time — press ATTACK.', index);
+      return;
+    }
+    const k = ROT_STEPS.indexOf(rotStepOf(top));
+    top.rotStep = ROT_STEPS[(k + 1) % ROT_STEPS.length];
+    this.H.game.toast(`ATTACK now turns it ${top.rotStep}°.`, index);
+    this.H.game.audio?.play?.('menu');
   }
 
   /** Held-stick repeat for the stepped kinds: true on the frames it steps. */
@@ -419,7 +445,13 @@ export class BuildMode {
 
   rotate(top) {
     if (top.kind === 'wall') return; // a wall thing faces the room, always
-    if (top.kind === 'yard' || top.kind === 'house') top.rot = ((top.rot ?? 0) + Math.PI / 4) % (Math.PI * 2);
+    if (freeTurn(top)) {
+      /* Stepped from the angle it is AT, snapped to the step: a thing put
+         down at 45° and stepped by 15 goes to 60, and one at 15° stepped by
+         30 goes up to the next 30 (30), not past it to 45. */
+      const s = rotStepOf(top) * Math.PI / 180;
+      top.rot = ((Math.floor((top.rot ?? 0) / s + 1e-6) + 1) * s) % (Math.PI * 2);
+    }
     else { top.rot = ((top.rot ?? 0) + 1) % 4; this.nudge(top, 0, 0); }
     this.H.game.audio?.play?.('menu');
   }
@@ -607,8 +639,8 @@ export class BuildMode {
       ? (top.kind === 'yard' ? H.outdoor?.[top.sel] : top.kind === 'room' ? H.rooms?.[top.room]?.items?.[top.sel] : null)
       : null;
     if (top.kind === 'yard' && YARD_BUILT.has(it.id) && I._yardItem) {
-      const keep = [I.places, I.spots, I.obstacles, I.decks, I.walls];
-      I.places = new Map(); I.spots = []; I.obstacles = []; I.decks = []; I.walls = [];
+      const keep = [I.places, I.spots, I.obstacles, I.decks, I.walls, I.fxSites];
+      I.places = new Map(); I.spots = []; I.obstacles = []; I.decks = []; I.walls = []; I.fxSites = [];
       try {
         body = I._yardItem(it, { uid: -1, id: it.id, x: 0, z: 0, rot: 0 });
         body.position.set(0, 0, 0);
@@ -616,7 +648,7 @@ export class BuildMode {
       } catch (e) {
         body = null;
       }
-      [I.places, I.spots, I.obstacles, I.decks, I.walls] = keep;
+      [I.places, I.spots, I.obstacles, I.decks, I.walls, I.fxSites] = keep;
     }
     if (!body) {
       const look = top.kind === 'room' ? roomLook(it, row) : row?.look ? { s: row.look.s, style: row.look.style } : null;

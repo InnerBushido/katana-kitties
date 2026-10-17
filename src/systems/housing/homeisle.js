@@ -3,9 +3,11 @@ import { toonVertexMat, xrayVertexMat, paint } from '../../core/gfx.js';
 import { Island, mergeParts, PALETTE } from '../../world/build.js';
 import { makeLabelTexture } from '../../core/label.js';
 import { buildHouseShell, houseHeight, houseRadius, floorOf, FLOOR_H, SLAB_T, WINDOW, PORT_H } from './homehouse.js';
-import { ITEMS, ITEM_BY_ID, LINK_BY_ID, houseSpecs, homeRooms } from './catalog.js';
+import { ITEMS, ITEM_BY_ID, LINK_BY_ID, houseSpecs, homeRooms, pathPosts } from './catalog.js';
+import { PathFX, makeFlame, makeLamp } from './pathfx.js';
+import { ZenGarden, zenParts, ZEN, ZEN_ROCKS, ZEN_STONES, ZEN_STONE_R, ZEN_RAKE } from './zengarden.js';
 import { linkGeom, linkParts, linkModels } from './links.js';
-import { placeModel, drawItem, clampMul, SHOJI, shojiPair, PANEL_GAP } from './models.js';
+import { placeModel, drawItem, clampMul, SHOJI, shojiPair, PANEL_GAP, STONES } from './models.js';
 import { wallSlots, yardR } from './editor.js';
 import { buildTreehouse } from './treehouse.js';
 import { HOLO_GEAR_SCALE, HOLO_TUBE, ensureHoloKit, holoCell, holoOut } from './holodeck.js';
@@ -144,6 +146,8 @@ export class HomeIsle {
     this.holoRooms = [];
     /** Outdoor things by place id ('o' + uid): world centre, ground, radius. */
     this.places = new Map();
+    /** The torches, lamps and strips pathfx.js animates — rebuilt with the yard. */
+    this.fxSites = [];
     /** Who has won how many arena battles — Housing hands this in, for the
      *  trophy shelf. Null draws an empty shelf. */
     this.cupsFor = null;
@@ -155,6 +159,7 @@ export class HomeIsle {
     const geo = this.island.buildMesh(20, 48);
     this.islandMesh = new THREE.Mesh(geo, toonVertexMat());
     this.group.add(this.islandMesh);
+    this.pathFx = new PathFX(this);
     this._buildSaleSign();
     this._buildBubble();
     scene.add(this.group);
@@ -507,6 +512,7 @@ export class HomeIsle {
     this.spots = [];
     this.holoRooms = [];
     this.places = new Map();
+    this.fxSites = [];
     /* The house's colliders and decks, then whatever the yard adds (the
        treehouse is a level of its own). Two lists joined, so moving a tree
        never has to rebuild the house. */
@@ -789,9 +795,69 @@ export class HomeIsle {
     const spot = (act, rr = r) => this.spots.push({ x: w.x, z: w.z, y: gy, r: rr, act, item: it.id, place: P.id });
     switch (it.path ? 'path' : it.id) {
       case 'path': {
+        /* Two paths may cross, and two of one kind have their tops at one
+           height: each piece sits its own few thousandths up (by uid), so
+           where they cross one is simply on top. */
+        const lift = 0.004 + ((q.uid ?? 0) % 6) * 0.006;
+        g.position.y += lift;
         const P = pathParts(it);
         flat(P.solid);
         if (P.glow.length) add(new THREE.Mesh(mergeParts(P.glow), new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false })));
+        P.torches.forEach(([x, y, z], k) => this.fxSites.push(makeFlame(g, x, y, z, (q.uid ?? 0) * 4 + k)));
+        for (const geo of P.lamps) this.fxSites.push(makeLamp(g, geo));
+        const frame = { x: q.x, z: q.z, a: q.rot ?? 0 };
+        for (const d of P.decks) this.decks.push({ ...d, y: gy - this.groundY + lift + d.y, step: 0.3, frame, path: it.id });
+        const posts = pathPosts(it);
+        for (const [px, pz] of posts?.at ?? []) {
+          const o = this.local(...this._itemToHouse(q, px, pz));
+          this.obstacles.push({ x: o.x, z: o.z, r: posts.r });
+        }
+        // the two that answer her feet (pathfx.js): where the strip is, in the world
+        if (it.id === 'path_petal' || it.id === 'path_carpet') {
+          this.fxSites.push({ kind: it.id === 'path_petal' ? 'petal' : 'carpet', x: w.x, z: w.z, a: this.ry + (q.rot ?? 0), hw: it.pw / 2, hl: it.len / 2, y: gy + lift + P.decks[0].y });
+        }
+        break;
+      }
+      case 'zengarden': {
+        add(new THREE.Mesh(zenParts(), mat));
+        const frame = { x: q.x, z: q.z, a: q.rot ?? 0 };
+        const base = gy - this.groundY;
+        /* The sand is kept by uid across a rebuild (zengarden.js), but never
+           for the build ghost, which is uid -1 and must not walk on hers. */
+        this.zenGrids ??= new Map();
+        const Z = new ZenGarden(q.uid, { x: w.x, z: w.z, a: this.ry + (q.rot ?? 0), y: gy + ZEN.sandY }, q.uid >= 0 ? this.zenGrids.get(q.uid) : null);
+        if (q.uid >= 0) this.zenGrids.set(q.uid, Z.grid);
+        add(Z.mesh);
+        this.fxSites.push(Z);
+        g.userData.zen = Z;
+        const k = ZEN.kerb;
+        this.decks.push({ x0: -ZEN.w / 2 - k, x1: ZEN.w / 2 + k, z0: -ZEN.d / 2 - k, z1: ZEN.d / 2 + k, y: base + ZEN.sandY, step: 0.3, frame });
+        ZEN_STONES.forEach(([x, z], i) => {
+          const h = ZEN_STONE_R * 0.75;
+          this.decks.push({ x0: x - h, x1: x + h, z0: z - h, z1: z + h, y: base + ZEN.stoneY + i * 0.004, step: 0.3, frame, stone: true });
+        });
+        for (const [x, z, r] of ZEN_ROCKS) {
+          const o = this.local(...this._itemToHouse(q, x, z));
+          this.obstacles.push({ x: o.x, z: o.z, r: r * 0.9 });
+        }
+        const rk = this.local(...this._itemToHouse(q, ZEN_RAKE.x, ZEN_RAKE.z));
+        this.spots.push({ x: rk.x, z: rk.z, y: gy, r: 1.8, act: 'rake', item: it.id, place: P.id, zen: Z });
+        break;
+      }
+      case 'tiki': {
+        const parts = [];
+        const [x, y, z] = torchParts(parts, 0, 0);
+        flat(parts);
+        this.fxSites.push(makeFlame(g, x, y, z, q.uid ?? 0));
+        this.obstacles.push({ x: w.x, z: w.z, r: 0.3 });
+        break;
+      }
+      case 'pathlamp': {
+        const parts = [];
+        const paper = lampParts(parts, 0, 0);
+        flat(parts);
+        this.fxSites.push(makeLamp(g, paper));
+        this.obstacles.push({ x: w.x, z: w.z, r: 0.35 });
         break;
       }
       case 'koipond': {
@@ -899,6 +965,17 @@ export class HomeIsle {
           });
         }
         g.userData.treehouse = T;
+        break;
+      }
+      case 'stones': {
+        /* Each stone is a deck — a square inside its circle, so her feet
+           never hang in the air off a corner — and she can step up from the
+           grass (step 0.9 clears the tallest, 0.85). STONES has the why. */
+        add(drawItem('stones'));
+        for (const s of STONES) {
+          const h = s.r * 0.8;
+          this.decks.push({ x0: s.x - h, x1: s.x + h, z0: s.z - h, z1: s.z + h, y: gy - this.groundY + s.h, step: 0.9, frame: { x: q.x, z: q.z, a: q.rot ?? 0 }, stone: true });
+        }
         break;
       }
       case 'bladeforest': break;
@@ -1189,6 +1266,7 @@ export class HomeIsle {
       this.rise(hk, e);
       if (u >= 1) this.raising.delete(hk);
     }
+    this.pathFx?.update(dt, t, players);
     for (const W of this.windows ?? []) {
       const want = W.q.open ? 1 : 0;
       W.k += Math.sign(want - W.k) * Math.min(Math.abs(want - W.k), dt * 3);
@@ -1299,99 +1377,162 @@ function planterStandIn() {
  * A PATH PIECE, flat on the grass, `pw` wide and `len` long along its own z.
  * Richard: "walking paths in the yard on the ground, these can be narrow or
  * wide. Some of it should be fancy like 'red carpet' paths ... tiki torches".
- * Thin (a tenth of a unit), so a kitten walks over it without a step and the
- * camera never sees it stand proud. `glow` is the torch flames and lantern
- * paper — unlit, so they read as alight.
+ * Thin (a tenth of a unit or so), so a kitten walks over it without a step.
+ *
+ *   solid   — the toon parts, one merged mesh
+ *   glow    — unlit parts that never change
+ *   torches — [x, y, z] of each flame (pathfx.js `makeFlame` draws it, alive)
+ *   lamps   — each lantern's paper, its own geometry (pathfx.js `makeLamp`)
+ *   decks   — what she STANDS on: "she stands on top of path meshes". It was
+ *             walked through at grass level, so her feet sank into a boardwalk
+ *             0.17 tall. Rectangles in the piece's own frame, at their tops.
  */
 export function pathParts(it) {
   const solid = [];
   const glow = [];
+  const torches = [];
+  const lamps = [];
+  const decks = [];
   const hw = it.pw / 2, hl = it.len / 2;
   const B = (w, h, d, c, x, y, z, list = solid) => { const g = new THREE.BoxGeometry(w, h, d); paint(g, c); g.translate(x, y, z); list.push(g); return g; };
+  const flat = (y) => decks.push({ x0: -hw, x1: hw, z0: -hl, z1: hl, y });
   let seed = it.id.length * 7.13;
   const rnd = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
   switch (it.id) {
-    case 'path_stone':
-      for (let z = -hl + 0.6; z < hl; z += 1.2) {
-        const s = new THREE.CylinderGeometry(0.62 + rnd() * 0.15, 0.7, 0.12, 7);
-        paint(s, rnd() < 0.5 ? 0x9a958e : 0x8a857c);
-        s.translate((rnd() - 0.5) * 0.5, 0.06, z);
-        solid.push(s);
+    case 'path_stone': {
+      for (const s of steppingStones(it, rnd)) {
+        const sh = new THREE.Shape(s.poly.map(([x, z]) => new THREE.Vector2(x, -z)));
+        const geo = new THREE.ExtrudeGeometry(sh, { depth: s.h, bevelEnabled: false });
+        geo.rotateX(-Math.PI / 2);
+        paint(geo, s.c);
+        solid.push(geo);
+        decks.push({ ...s.deck, y: s.h });
       }
       break;
+    }
     case 'path_wood':
       for (const x of [-hw + 0.25, hw - 0.25]) B(0.18, 0.1, it.len, 0x5a3e26, x, 0.05, 0);
       for (let z = -hl + 0.3; z < hl; z += 0.6) B(it.pw, 0.08, 0.5, rnd() < 0.5 ? PALETTE.wood : 0xb98a52, 0, 0.13, z);
+      flat(0.17);
       break;
     case 'path_gravel':
       B(it.pw, 0.06, it.len, 0xd8d2c4, 0, 0.03, 0);
-      for (let x = -hw + 0.35; x < hw; x += 0.45) B(0.05, 0.02, it.len - 0.1, 0xb8b2a4, x, 0.065, 0);
-      for (const x of [-hw, hw]) B(0.16, 0.1, it.len, 0x7a756e, x, 0.05, 0);
+      for (let x = -hw + 0.35; x < hw - 0.2; x += 0.45) B(0.05, 0.02, it.len - 0.1, 0xb8b2a4, x, 0.065, 0);
+      // the kerbs run a hair past the gravel's ends, so the ends never share a plane
+      for (const x of [-hw, hw]) B(0.16, 0.1, it.len + 0.02, 0x7a756e, x, 0.05, 0);
+      flat(0.06);
       break;
     case 'path_flag':
       for (let z = -hl + 0.55; z < hl; z += 1.1) {
-        for (let x = -hw + 0.55; x < hw - 0.1; x += 1.1) B(1.0, 0.1, 1.0, [0xa8a39b, 0x9a958e, 0xb4afa6][Math.floor(rnd() * 3)], x, 0.05, z);
+        for (let x = -hw + 0.55; x < hw - 0.1; x += 1.1) B(1.0, 0.1 + rnd() * 0.03, 1.0, [0xa8a39b, 0x9a958e, 0xb4afa6][Math.floor(rnd() * 3)], x, 0.05, z);
       }
+      flat(0.1);
       break;
     case 'path_petal':
       B(it.pw, 0.06, it.len, 0xc9a77a, 0, 0.03, 0);
       for (let k = 0; k < 40; k++) {
         const p = new THREE.CylinderGeometry(0.09, 0.09, 0.02, 5);
         paint(p, rnd() < 0.6 ? 0xffb7cf : 0xffe0ea);
-        p.translate((rnd() - 0.5) * it.pw * 0.9, 0.07, (rnd() - 0.5) * it.len * 0.95);
+        // each its own height, so two that overlap never share a plane
+        p.translate((rnd() - 0.5) * it.pw * 0.9, 0.07 + k * 0.0012, (rnd() - 0.5) * it.len * 0.95);
         solid.push(p);
       }
+      flat(0.06);
       break;
     case 'path_lantern':
       B(it.pw - 1.0, 0.06, it.len, 0xd8d2c4, 0, 0.03, 0);
-      for (const z of [-hl + 1.5, hl - 1.5]) {
-        for (const x of [-hw + 0.3, hw - 0.3]) {
-          B(0.35, 0.5, 0.35, 0x8a857c, x, 0.25, z);
-          B(0.3, 0.32, 0.3, 0xfff0c8, x, 0.66, z, glow);
-          B(0.5, 0.1, 0.5, 0x7a756e, x, 0.87, z);
-        }
-      }
+      for (const [x, z] of pathPosts(it).at) lamps.push(lampParts(solid, x, z));
+      decks.push({ x0: -hw + 0.5, x1: hw - 0.5, z0: -hl, z1: hl, y: 0.06 });
       break;
     case 'path_carpet':
       B(it.pw - 0.5, 0.05, it.len, 0xc0202a, 0, 0.025, 0);
-      for (const x of [-hw + 0.3, hw - 0.3]) B(0.12, 0.06, it.len, 0xe8b84a, x, 0.03, 0);
-      for (let z = -hl + 1; z < hl; z += 2) B(0.5, 0.055, 0.5, 0xe8b84a, 0, 0.03, z).rotateY(0);
+      for (const x of [-hw + 0.3, hw - 0.3]) B(0.12, 0.06, it.len + 0.02, 0xe8b84a, x, 0.03, 0);
+      for (let z = -hl + 1; z < hl; z += 2) B(0.5, 0.055, 0.5, 0xe8b84a, 0, 0.03, z);
+      decks.push({ x0: -hw + 0.25, x1: hw - 0.25, z0: -hl, z1: hl, y: 0.05 });
       break;
     case 'path_tiki': {
       B(it.pw - 1.0, 0.06, it.len, 0xe2cf9a, 0, 0.03, 0);
-      for (const z of [-hl + 1.5, hl - 1.5]) {
-        for (const x of [-hw + 0.25, hw - 0.25]) {
-          const pole = new THREE.CylinderGeometry(0.08, 0.1, 2.4, 6);
-          paint(pole, 0xb08a4a);
-          pole.translate(x, 1.2, z);
-          solid.push(pole);
-          const cup = new THREE.CylinderGeometry(0.2, 0.13, 0.35, 6);
-          paint(cup, 0x6a4a2a);
-          cup.translate(x, 2.5, z);
-          solid.push(cup);
-          const fl = new THREE.ConeGeometry(0.17, 0.55, 6);
-          paint(fl, 0xffa63a);
-          fl.translate(x, 2.95, z);
-          glow.push(fl);
-          const core = new THREE.ConeGeometry(0.09, 0.32, 6);
-          paint(core, 0xfff2a0);
-          core.translate(x, 2.86, z);
-          glow.push(core);
-        }
-      }
+      for (const [x, z] of pathPosts(it).at) torches.push(torchParts(solid, x, z));
+      decks.push({ x0: -hw + 0.5, x1: hw - 0.5, z0: -hl, z1: hl, y: 0.06 });
       break;
     }
     default:
       B(it.pw, 0.06, it.len, 0xc9a77a, 0, 0.03, 0);
+      flat(0.06);
   }
-  return { solid, glow };
+  return { solid, glow, torches, lamps, decks };
+}
+
+/** A bamboo tiki torch's pole and cup at (x, z); returns where its flame sits. */
+export function torchParts(solid, x, z) {
+  const pole = new THREE.CylinderGeometry(0.08, 0.1, 2.4, 6);
+  paint(pole, 0xb08a4a);
+  pole.translate(x, 1.2, z);
+  const wrap = new THREE.CylinderGeometry(0.11, 0.11, 0.3, 6);
+  paint(wrap, 0x6a4a2a);
+  wrap.translate(x, 1.9, z);
+  const cup = new THREE.CylinderGeometry(0.22, 0.13, 0.38, 7);
+  paint(cup, 0x6a4a2a);
+  cup.translate(x, 2.55, z);
+  solid.push(pole, wrap, cup);
+  return [x, 2.72, z];
+}
+
+/** A little stone path lantern at (x, z): post and cap into `solid`; returns its paper. */
+export function lampParts(solid, x, z) {
+  const b = (w, h, d, c, y) => { const g = new THREE.BoxGeometry(w, h, d); paint(g, c); g.translate(x, y, z); solid.push(g); };
+  b(0.35, 0.5, 0.35, 0x8a857c, 0.25);
+  b(0.5, 0.1, 0.5, 0x7a756e, 0.87);
+  const paper = new THREE.BoxGeometry(0.3, 0.32, 0.3);
+  paper.translate(x, 0.66, z);
+  return paper;
+}
+
+/**
+ * STEPPING STONES THAT FIT. Richard, Oct 2026: "stepping-stone paths get
+ * varied heights (no z-fighting) and shapes that fit tightly without
+ * intersecting." They were heptagons r 0.62-0.77 every 1.2, so neighbours
+ * overlapped by up to 0.34 and their tops, all at 0.12, fought. Now the strip
+ * is CUT: slanted lines across it, a stone between each two, drawn in from
+ * both lines by GAP so the seam between them is a thin even line of grass;
+ * corners clipped so they read as stone, not tiles; each its own height.
+ * Every stone is convex by construction (two lines that never cross inside
+ * the strip, since |slope| * width < the narrowest spacing).
+ */
+export const STONE_GAP = 0.06;
+export function steppingStones(it, rnd) {
+  const hw = it.pw / 2, hl = it.len / 2;
+  const cuts = [{ c: -hl, s: 0 }];
+  for (let z = -hl + 1.1 + rnd() * 0.3; z < hl - 0.9; z += 1.0 + rnd() * 0.4) cuts.push({ c: z, s: (rnd() - 0.5) * 0.3 });
+  cuts.push({ c: hl, s: 0 });
+  const out = [];
+  for (let k = 0; k + 1 < cuts.length; k++) {
+    const A = cuts[k], C = cuts[k + 1];
+    const x0 = -hw + 0.05 + rnd() * 0.2, x1 = hw - 0.05 - rnd() * 0.2;
+    const zA = (x) => A.c + A.s * x + STONE_GAP, zC = (x) => C.c + C.s * x - STONE_GAP;
+    const q = [[x0, zA(x0)], [x1, zA(x1)], [x1, zC(x1)], [x0, zC(x0)]];
+    // clip each corner 0.14 along both its edges
+    const poly = [];
+    for (let i = 0; i < 4; i++) {
+      const P0 = q[(i + 3) % 4], P1 = q[i], P2 = q[(i + 1) % 4];
+      const toward = (Q, d) => { const L = Math.hypot(Q[0] - P1[0], Q[1] - P1[1]); return [P1[0] + ((Q[0] - P1[0]) / L) * d, P1[1] + ((Q[1] - P1[1]) / L) * d]; };
+      poly.push(toward(P0, 0.14), toward(P2, 0.14));
+    }
+    out.push({
+      poly,
+      h: 0.08 + ((k * 5) % 4) * 0.025 + rnd() * 0.01,
+      c: rnd() < 0.5 ? 0x9a958e : 0x8a857c,
+      deck: { x0: x0 + 0.1, x1: x1 - 0.1, z0: Math.max(zA(x0), zA(x1)), z1: Math.min(zC(x0), zC(x1)) },
+    });
+  }
+  return out;
 }
 
 /** Under this much of the ceiling, at the least, every room thing stays. */
 export const CEILING_GAP = 0.3;
 
 /** Yard things the build draws itself, rather than as one model: no look. */
-export const YARD_BUILT = new Set(['koipond', 'onsen', 'volleyball', 'bamboofarm', 'pen', 'treehouse', 'bladeforest', ...ITEMS.filter((i) => i.path).map((i) => i.id)]);
+export const YARD_BUILT = new Set(['koipond', 'onsen', 'volleyball', 'bamboofarm', 'pen', 'treehouse', 'bladeforest', 'tiki', 'pathlamp', 'zengarden', ...ITEMS.filter((i) => i.path).map((i) => i.id)]);
 
 /**
  * A room thing's look, with the box it must stay in: under the ceiling (the

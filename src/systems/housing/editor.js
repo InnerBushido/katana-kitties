@@ -1,4 +1,4 @@
-import { HOUSE_BY_ID, ITEM_BY_ID, houseSpecs, homeRooms } from './catalog.js';
+import { HOUSE_BY_ID, ITEM_BY_ID, houseSpecs, homeRooms, pathPosts } from './catalog.js';
 import { houseFoot, houseShape, stairBlocks } from './homehouse.js';
 import { linkWhy, toIsle, underBridgeWhy } from './links.js';
 
@@ -112,6 +112,17 @@ export function thingShape(it, x, z, rot = 0) {
   if (it?.path) return { box: obb(x, z, it.pw / 2, it.len / 2, rot) };
   return { x, z, r: hitR(it) };
 }
+/** Yard things that ARE a floor — water, sand, soil, a level. A path would
+ *  vanish under one, so these still refuse a path, flat or not. */
+export const YARD_FLOORS = new Set(['koipond', 'onsen', 'volleyball', 'bamboofarm', 'pen', 'paddy', 'treehouse', 'bladeforest', 'stones', 'zengarden']);
+
+/** A posted path's posts as circles where it stands (`pathPosts`), else null. */
+export function postShapes(it, x, z, rot = 0) {
+  const P = pathPosts(it);
+  if (!P) return null;
+  const c = Math.cos(rot), s = Math.sin(rot);
+  return P.at.map(([fx, fz]) => ({ x: x + fx * c + fz * s, z: z - fx * s + fz * c, r: P.r }));
+}
 const shapesHit = (a, b, pad = 0) => {
   if (a.box && b.box) return obbHit(a.box, b.box, pad);
   if (a.box) return circleHit(a.box, b.x, b.z, b.r + pad);
@@ -135,7 +146,10 @@ const envOf = (env) => (typeof env === 'number' ? { r: env } : (env ?? {}));
  *   off the landing      — where the town bridge arrives stays clear, or a
  *                          pond could seal her out of her own home
  *   not on another thing — paths may cross and touch each other, and a
- *                          thing may stand BESIDE a path but not on it
+ *                          thing may stand ON a flat path (Richard, Oct 2026:
+ *                          "ground paths (not tiki) can be built under yard
+ *                          objects"); a torch or lantern path is in the way
+ *                          only where its posts are
  *   under a bridge       — only if it fits under (links.js)
  *
  * The strip from the front door to the bridge used to be kept clear too.
@@ -165,7 +179,12 @@ export function yardWhy(H, it, x, z, skip = -1, env = 50) {
     const qi = ITEM_BY_ID[q.id];
     if (!qi) continue;
     if (it.path && qi.path) continue;
-    if (shapesHit(me, thingShape(qi, q.x, q.z, q.rot ?? 0), -0.2)) return `It overlaps the ${qi.name}.`;
+    const flatOn = (a, b) => a.path && !pathPosts(a) && !YARD_FLOORS.has(b.id);
+    if (flatOn(it, qi) || flatOn(qi, it)) continue;
+    // a posted path is only its posts, except to a floor, which it may not cross at all
+    const mine = (!YARD_FLOORS.has(qi.id) && postShapes(it, x, z, E.rot ?? 0)) || [me];
+    const theirs = (!YARD_FLOORS.has(it.id) && postShapes(qi, q.x, q.z, q.rot ?? 0)) || [thingShape(qi, q.x, q.z, q.rot ?? 0)];
+    if (mine.some((a) => theirs.some((b) => shapesHit(a, b, -0.2)))) return `It overlaps the ${qi.name}.`;
   }
   return underBridgeWhy(H, it, x, z, E);
 }

@@ -331,7 +331,8 @@ export const ITEMS = [
   { id: 'belltower', name: 'BELL TOWER', where: ['yard'], r: 3.5, size: { h: 7.5 }, mult: 0.6, model: 'temple-bell-tower-745387', act: 'bell',
     blurb: 'A temple bell. Ring it!' },
   // --------------------------------------------- outdoors: decorations
-  { id: 'stones', name: 'JUMPING STONES', where: ['yard'], r: 5, mult: 0.12, model: null, deco: true },
+  // r: the row of STONES (models.js) is 13.6 end to end plus the stones
+  { id: 'stones', name: 'JUMPING STONES', where: ['yard'], r: 8, mult: 0.12, model: null, deco: true },
   { id: 'toriigarden', name: 'TORII GARDEN', where: ['yard'], r: 5.5, mult: 0.2, model: null, deco: true },
   { id: 'well', name: 'ROOFED WELL', where: ['yard'], r: 2.4, size: { h: 4.4 }, mult: 0.15, model: 'roofed-well-43a2fc', deco: true },
   { id: 'waterwheel', name: 'WATER WHEEL', where: ['yard'], r: 3, size: { h: 5.2 }, mult: 0.15, model: 'stream-water-wheel-ea2d68', deco: true },
@@ -364,11 +365,39 @@ export const ITEMS = [
     blurb: 'For VIP kittens only. Gold trim and all.' },
   { id: 'path_tiki', name: 'TIKI TORCH PATH', where: ['yard'], path: true, deco: true, len: 6, pw: 3.6, r: 3.2, mult: 0.1, model: null,
     blurb: 'Bamboo torches burning on both sides.' },
+  /* "tiki torches and path lanterns become standalone yard decorations" —
+     the very torch and lamp the two paths are lined with (homeisle.js
+     `torchParts` / `lampParts`), one at a time, wherever she likes. */
+  /* "Zen garden yard item: stepping stones, sand whose pattern changes when
+     walked on, and a rake to the side that clears it." zengarden.js. */
+  { id: 'zengarden', name: 'ZEN GARDEN', where: ['yard'], r: 6, mult: 0.25, model: null, deco: true, act: 'rake',
+    blurb: 'Raked sand that remembers every footstep. The rake puts it right.' },
+  { id: 'tiki', name: 'TIKI TORCH', where: ['yard'], r: 0.7, mult: 0.02, model: null, deco: true,
+    blurb: 'It flares blue, purple or YOUR colour when you run past.' },
+  { id: 'pathlamp', name: 'PATH LANTERN', where: ['yard'], r: 0.7, mult: 0.02, model: null, deco: true,
+    blurb: 'A little stone lamp that glows your colour as you pass.' },
   {
     id: 'bladeforest', name: 'BUSHIDO BAMBOO FOREST', where: ['yard'], r: 10, mult: 4, model: null, later: true,
     blurb: 'Coming later: a sparring forest where a clean cut goes straight through the bamboo.',
   },
 ];
+/**
+ * THE POSTS A PATH STANDS ON ITS EDGES, in its own frame: [[x, z]...] and how
+ * thick they are. Richard, Oct 2026: "ground paths (not tiki) can be built
+ * under yard objects ... tiki torches and the lantern path's lanterns get
+ * colliders that interfere with other yard objects". A path with none is
+ * flat, and things stand on it; one with posts is flat EXCEPT its posts,
+ * which are solid to her and to anything placed. One table, read by the
+ * drawing (homeisle.js `pathParts`), the colliders and the placement rule
+ * (editor.js `yardWhy`), so the post she bumps is the post that is drawn.
+ */
+export function pathPosts(it) {
+  if (it?.id !== 'path_tiki' && it?.id !== 'path_lantern') return null;
+  const ex = it.id === 'path_tiki' ? 0.25 : 0.3;
+  const hw = it.pw / 2 - ex, hl = it.len / 2 - 1.5;
+  return { r: it.id === 'path_tiki' ? 0.3 : 0.35, at: [[-hw, -hl], [hw, -hl], [-hw, hl], [hw, hl]] };
+}
+
 export const ITEM_BY_ID = Object.fromEntries(ITEMS.map((i) => [i.id, i]));
 
 /**

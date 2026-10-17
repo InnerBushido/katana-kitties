@@ -6,7 +6,7 @@ import { houseWhy } from './editor.js';
 import { portSpots, linkBlockers } from './links.js';
 import { JUKEBOX, hasRecording } from './jukebox.js';
 import { footprint, firstFit, firstYardSpot, wallSlots, wallFree, ITEM_SELL } from './editor.js';
-import { buildWhy, commitBuild, removeBuilt, pickList, stepToward, BUILD_KEYS, PICK_KEYS, CUSTOM_PICK_KEYS } from './build.js';
+import { buildWhy, commitBuild, removeBuilt, pickList, stepToward, BUILD_KEYS, PICK_KEYS, CUSTOM_PICK_KEYS, freeTurn, rotStepOf } from './build.js';
 import { stylesFor, LOOK_MUL } from './models.js';
 import { YARD_BUILT } from './homeisle.js';
 import { Preview } from './preview.js';
@@ -181,7 +181,7 @@ export class HousingCards {
   sig(index, c) {
     const top = this._top(index);
     const p = this.game.players[index];
-    return [this.st.get(index)?.stack.length, top?.v, top?.room, top?.kind, top?.sel, top?.gx, top?.gz, top?.rot, top?.side, top?.k, top?.at, top?.rev,
+    return [this.st.get(index)?.stack.length, top?.v, top?.room, top?.kind, top?.sel, top?.gx, top?.gz, top?.rot, top?.rotStep, top?.side, top?.k, top?.at, top?.rev,
       top?.v === 'build' && top.kind === 'yard' ? `${Math.round(top.x * 2)},${Math.round(top.z * 2)}` : '',
       p?.score, this.H.store.at, this.pending ? [...this.pending.yes].join(',') : '', c.i].join('|');
   }
@@ -241,6 +241,7 @@ export class HousingCards {
       else if (step && top.kind === 'wall') B.hop(top, step[0], step[1]);
       else if (step) B.nudge(top, step[0], step[1]);
       if (act === 'rot') B.rotate(top);
+      if (act === 'step') B.turnStep(index, top);
       if (act === 'sell') this.askSell(index, top);
     }
   }
@@ -763,17 +764,22 @@ export class HousingCards {
       go: () => { this.placeHere(index, top); return null; },
     }];
     if (top.sel >= 0) rows.push({ title: it.holo ? 'TAKE IT OUT' : `SELL IT BACK — ${pts(this._sellBack(it.id))}`, go: () => { this.askSell(index, top); return null; } });
-    const keys = BUILD_KEYS.filter(([, w]) => w !== 'sell' || top.sel >= 0).filter(([, w]) => w !== 'turn' || top.kind !== 'wall');
+    const keys = this._stepKeys(top, BUILD_KEYS.filter(([, w]) => w !== 'sell' || top.sel >= 0).filter(([, w]) => w !== 'turn' || top.kind !== 'wall'));
     return {
       build: true,
       head: it.name,
       body: `<div class="hs-buildrow"><canvas class="hs-map" width="180" height="180"></canvas><div class="hs-buildinfo">
         <div class="${bad ? 'hs-bad' : 'hs-good'}">${esc(bad ?? (top.sel < 0 ? 'It fits! Press JUMP to put it here.' : 'It fits here.'))}</div>
         <div class="hs-keys">${keys.map(([k, w]) => `<span><b>${k}</b> ${w}</span>`).join('')}</div>
-        ${touch ? this._touchPad(index, top.kind !== 'wall', top.sel >= 0) : ''}</div></div>`,
+        ${touch ? this._touchPad(index, top.kind !== 'wall', top.sel >= 0, freeTurn(top) && rotStepOf(top)) : ''}</div></div>`,
       rows,
       foot: ' ',
     };
+  }
+
+  /** The legend's RIDE row says the step she has NOW; gone where there is none. */
+  _stepKeys(top, keys) {
+    return keys.filter(([k]) => k !== 'RIDE' || freeTurn(top)).map(([k, w]) => (k === 'RIDE' ? [k, `turn by ${rotStepOf(top)}°`] : [k, w]));
   }
 
   /** THE SELECTOR: a ring on one of her things; the stick hops it. */
@@ -918,9 +924,9 @@ export class HousingCards {
     return !!(this.game.touchUI ?? (typeof document !== 'undefined' && document.body.classList.contains('touch-ui')));
   }
 
-  _touchPad(index, turn, sell) {
+  _touchPad(index, turn, sell, step = 0) {
     const b = (act, label) => `<button type="button" data-hact="${act}" data-side="${index}">${label}</button>`;
-    return `<div class="hs-pad">${['left', 'up', 'down', 'right'].map((d) => b(d, ARROW[d])).join('')}${turn ? b('rot', '⟳') : ''}${sell ? b('sell', 'SELL') : ''}</div>`;
+    return `<div class="hs-pad">${['left', 'up', 'down', 'right'].map((d) => b(d, ARROW[d])).join('')}${turn ? b('rot', '⟳') : ''}${step ? b('step', `${step}°`) : ''}${sell ? b('sell', 'SELL') : ''}</div>`;
   }
 
   _sellBack(id) { return Math.round(this.H.itemPrice(id) * ITEM_SELL); }
@@ -1154,14 +1160,14 @@ export class HousingCards {
       go: () => { this.placeHere(index, top); return null; },
     }];
     if (!isNew && top.sel !== 'main') rows.push({ title: `SELL IT BACK — ${pts(this.H.annexRefund(H, top.sel))}`, go: () => { this.askSell(index, top); return null; } });
-    const keys = BUILD_KEYS.filter(([, w]) => w !== 'sell' || (!isNew && top.sel !== 'main'));
+    const keys = this._stepKeys(top, BUILD_KEYS.filter(([, w]) => w !== 'sell' || (!isNew && top.sel !== 'main')));
     return {
       build: true,
       head: def.name,
       body: `<div class="hs-buildrow"><canvas class="hs-map" width="180" height="180"></canvas><div class="hs-buildinfo">
         <div class="${bad ? 'hs-bad' : 'hs-good'}">${esc(bad ?? (isNew ? 'It fits! Press JUMP to build it here.' : 'It fits here — everything inside comes with it.'))}</div>
         <div class="hs-keys">${keys.map(([k, w]) => `<span><b>${k}</b> ${w}</span>`).join('')}</div>
-        ${touch ? this._touchPad(index, true, !isNew && top.sel !== 'main') : ''}</div></div>`,
+        ${touch ? this._touchPad(index, true, !isNew && top.sel !== 'main', rotStepOf(top)) : ''}</div></div>`,
       rows,
       foot: ' ',
     };

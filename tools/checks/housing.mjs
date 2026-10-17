@@ -37,20 +37,22 @@ import { Billboard } from '../../src/core/gfx.js';
 import { voicePath } from '../../src/core/audio.js';
 import { existsSync } from 'node:fs';
 import { mealPct, BOON } from '../../src/systems/housing/boons.js';
-import { DOOR_SWING } from '../../src/systems/housing/homebridge.js';
+import { DOOR_SWING, HomeBridge } from '../../src/systems/housing/homebridge.js';
 import { napFade, napFacing, HomeActivities, LOOK_SHOT } from '../../src/systems/housing/activities.js';
-import { xrayModel, PANEL_GAP, WINDOW_IN, furnScale, FURN_REACH, FURN_INSET } from '../../src/systems/housing/homeisle.js';
+import { xrayModel, PANEL_GAP, WINDOW_IN, furnScale, FURN_REACH, FURN_INSET, pathParts, steppingStones } from '../../src/systems/housing/homeisle.js';
+import { PathFX, FLARE_T, FLARE_COLOURS, LAMP_TINT } from '../../src/systems/housing/pathfx.js';
+import { ZEN, ZEN_STONES, ZEN_RAKE, RAKE_T } from '../../src/systems/housing/zengarden.js';
 import { zFights } from './zfight.mjs';
 import { TREEHOUSE_PLAN, slidePath } from '../../src/systems/housing/treehouse.js';
 import { holoLayout, HOLO_GRAB, HOLO_TUBE, holoKit, ensureHoloKit, holoWhyRemove, holoTubes, holoCell, HOLO_TUBE_ID, HOLO_MAX_TUBES } from '../../src/systems/housing/holodeck.js';
 import { GEAR_ITEMS } from '../../src/systems/dream/gear.js';
 import { fits as fitsGrid } from '../../src/systems/housing/editor.js';
-import { ROOM_TYPE_BY_ID, TINY_HOUSE } from '../../src/systems/housing/catalog.js';
+import { ROOM_TYPE_BY_ID, TINY_HOUSE, pathPosts } from '../../src/systems/housing/catalog.js';
 import { HOME_FLOAT_H } from '../../src/systems/dreamdojo.js';
 import { TUBE_FRAG } from '../../src/systems/dream/gear.js';
 import { castPoint, fishCount, fishLen, ANGLE } from '../../src/systems/housing/angling.js';
 import { petLevel, petBoost, messesAt, rhythmError, PLAY } from '../../src/systems/housing/petplay.js';
-import { fitTo, styleModel, stylesFor, drawItem, LOOK_MUL, TINTS } from '../../src/systems/housing/models.js';
+import { fitTo, styleModel, stylesFor, drawItem, placeModel, LOOK_MUL, TINTS, STONES } from '../../src/systems/housing/models.js';
 import { MODEL_STYLES } from '../../src/systems/housing/modelstyles.js';
 import { roomLook, CEILING_GAP, FLOOR_H, YARD_BUILT } from '../../src/systems/housing/homeisle.js';
 import { ITEMS, LINK_STYLES } from '../../src/systems/housing/catalog.js';
@@ -743,6 +745,39 @@ export async function housingChecks({ ok, world }) {
       /pressed\('sprint'\)\) \{ pad\.consume\?\.\('sprint'\); C\.askSell/.test(bsrc) && BUILD_KEYS.some(([k, w]) => k === 'SPRINT' && w === 'sell'));
     const csrc = readFileSync(new URL('../../src/systems/housing/cards.js', import.meta.url), 'utf8');
     ok('...and selling asks first, NO on top', /_v_sellitem[\s\S]{0,900}title: `NO, KEEP THE[\s\S]{0,200}title: (?:it\?\.holo \? `YES, TAKE THE \$\{it\.name\} OUT` : )?`YES, SELL IT FOR/.test(csrc));
+    /* "rotation of walking paths should be in 15 degree increments ... the
+       RIDE button toggles between 15, 30, and 45 degrees ... default should be
+       45 degrees except for walking paths which is 15". Pressed, not read. */
+    {
+      const B = H.builder, deg = (r) => Math.round(r * 180 / Math.PI);
+      const toasts = [];
+      const keepToast = H.game.toast;
+      H.game.toast = (m, k) => toasts.push(m);
+      const pth = { kind: 'yard', id: 'path_stone', sel: -1, x: 0, z: 0, rot: 0 };
+      const lan = { kind: 'yard', id: 'lantern', sel: -1, x: 0, z: 0, rot: 0 };
+      const hou = { kind: 'house', id: 'minka', sel: -1, x: 0, z: 0, rot: 0 };
+      B.rotate(pth); B.rotate(lan); B.rotate(hou);
+      const first = [deg(pth.rot), deg(lan.rot), deg(hou.rot)];
+      B.turnStep(0, lan);                 // 45 -> 15
+      B.rotate(lan);                      // 45 -> 60
+      B.turnStep(0, lan); B.rotate(lan);  // 15 -> 30: 60 -> 90
+      B.turnStep(0, pth);                 // 15 -> 30
+      B.rotate(pth);                      // 15 -> 30
+      const room = { kind: 'room', id: 'kotatsu', sel: -1, gx: 0, gz: 0, rot: 0 };
+      const nT = toasts.length;
+      B.turnStep(0, room);
+      ok('ATTACK turns a path 15° and everything else 45° (a house too); RIDE steps 15 → 30 → 45, each from the angle it is at',
+        first.join() === '15,45,45' && deg(lan.rot) === 90 && lan.rotStep === 30 && pth.rotStep === 30 && deg(pth.rot) === 30,
+        `first ${first}, lantern ${deg(lan.rot)}° at ${lan.rotStep}, path ${deg(pth.rot)}° at ${pth.rotStep}`);
+      ok('...every RIDE press says what ATTACK now does, and in a room it says why it cannot',
+        toasts.slice(0, 3).every((m) => /ATTACK now turns it \d+°/.test(m)) && toasts.length === nT + 1 && /quarter/.test(toasts[nT]) && room.rotStep === undefined);
+      const C = H.game.housingCards;
+      const leg = C._stepKeys(lan, BUILD_KEYS);
+      ok('...and the legend and the touch pad both show the step',
+        leg.some(([k, w]) => k === 'RIDE' && w === 'turn by 30°') && !C._stepKeys(room, BUILD_KEYS).some(([k]) => k === 'RIDE')
+          && /data-hact="step"[^>]*>30°/.test(C._touchPad(0, true, false, 30)) && /pressed\('mount'\)\) \{ pad\.consume\?\.\('mount'\); this\.turnStep/.test(bsrc));
+      H.game.toast = keepToast;
+    }
   }
 
   /* THE HOUSE AND ITS THINGS ARE ONE. "Furniture and windows aren't scaled
@@ -918,6 +953,226 @@ export async function housingChecks({ ok, world }) {
     ok('...and a kitten lying on it or sat at the table is not shoved out of it', /if \(held && w\.furn\) continue;/.test(hsrc6));
     H.debugOpen = was.dbg;
     if (was.home) H.store.homes[I.site.id] = was.home; else delete H.store.homes[I.site.id];
+    I.setHome(null, null);
+  }
+
+  /* "The stone lanterns at the entrance of the island gate are too small.
+     They should be the same size as the stone lantern yard item." The gate's
+     own `_dress`, run into a bare group, against the yard's lantern. */
+  {
+    const g = new THREE.Group();
+    HomeBridge.prototype._dress.call({ fx: 0, fz: 1, rx: 1, rz: 0, accentMats: [], colour: 0xffffff }, { x: 0, y: 0, z: 0 }, 1, null, g);
+    const tall = (o) => { o.updateMatrixWorld(true); const b = new THREE.Box3().setFromObject(o); return b.max.y - b.min.y; };
+    const gate = tall(g.children[0]);
+    const yard = tall(placeModel(ITEM_BY_ID.lantern.model, drawItem('lantern'), ITEM_BY_ID.lantern.size));
+    ok('the island gate\'s stone lanterns are the yard\'s stone lantern, at its size', Math.abs(gate - yard) < 1e-6 && Math.abs(yard - ITEM_BY_ID.lantern.size.h) < 0.01,
+      `gate ${gate.toFixed(2)}, yard ${yard.toFixed(2)}`);
+  }
+
+  /* THE PATHS, Richard's playthrough list for them, each one walked:
+     "ground paths (not tiki) can be built under yard objects", "tiki torches
+     and the lantern path's lanterns get colliders that interfere with other
+     yard objects", "she stands on top of path meshes", "stepping-stone paths
+     get varied heights (no z-fighting) and shapes that fit tightly without
+     intersecting", the petals, the carpet, the torches and the lamps. */
+  {
+    const I = H.isles[0];
+    const Hm = newHome(I.site.id, 'minka', ['Ember']);
+    const paths = ITEMS.filter((i) => i.path);
+    // ---- what may stand on what
+    const gravel = ITEM_BY_ID.path_gravel, tiki = ITEM_BY_ID.path_tiki;
+    const at = firstYardSpot(Hm, ITEM_BY_ID.koipond, I.radius);
+    addOutdoor(Hm, 'path_gravel', at.x, at.z, 0);
+    const onGravel = yardWhy(Hm, ITEM_BY_ID.lantern, at.x, at.z, -1, I.radius);
+    Hm.outdoor = [];
+    addOutdoor(Hm, 'lantern', at.x, at.z, 0);
+    const gravelOver = yardWhy(Hm, gravel, at.x, at.z, -1, I.radius);
+    const tikiOver = yardWhy(Hm, tiki, at.x, at.z, -1, I.radius);                       // its middle on the lantern
+    const post = pathPosts(tiki).at[0];
+    const tikiPost = yardWhy(Hm, tiki, at.x - post[0], at.z - post[1], -1, I.radius);   // a POST on the lantern
+    ok('a flat path goes under a yard thing and a yard thing onto it; a torch path only minds its posts',
+      onGravel == null && gravelOver == null && tikiOver == null && /overlaps the STONE LANTERN/.test(tikiPost ?? ''),
+      `${onGravel} / ${gravelOver} / ${tikiOver} / ${tikiPost}`);
+    // ---- every path is stood ON, at its own top, and its posts are solid where they are drawn
+    Hm.outdoor = [];
+    const spots = paths.map((it, k) => {
+      const x = at.x + (k % 3 - 1) * 7, z = at.z + Math.floor(k / 3) * 7 - 7;
+      addOutdoor(Hm, it.id, x, z, 0.4);
+      return { it, x, z, uid: Hm.outdoor.at(-1).uid };
+    });
+    I.setHome(Hm, null);
+    const bad = [];
+    for (const S of spots) {
+      const P = pathParts(S.it);
+      const d = P.decks[0];
+      const fx = (d.x0 + d.x1) / 2, fz = (d.z0 + d.z1) / 2;
+      const w = I.local(...I._itemToHouse({ x: S.x, z: S.z, rot: 0.4 }, fx, fz));
+      const c = I.local(S.x, S.z);
+      const gy = I.island.heightAt(c.x, c.z) ?? I.groundY;
+      const lift = 0.004 + (S.uid % 6) * 0.006;
+      const h = I.heightAt(w.x, w.z, gy + 0.05)?.y - gy;
+      if (!(Math.abs(h - (lift + d.y)) < 1e-6 && d.y >= 0.05)) bad.push(`${S.it.id} ${h?.toFixed(3)} vs ${(lift + d.y).toFixed(3)}`);
+    }
+    ok('she stands ON every kind of path, at the top of what is drawn (a boardwalk is 0.17)', bad.length === 0, bad.join('; ') || `${spots.length} kinds`);
+    const tk = spots.find((S) => S.it.id === 'path_tiki');
+    const posts = pathPosts(tiki).at.map(([px, pz]) => I.local(...I._itemToHouse({ x: tk.x, z: tk.z, rot: 0.4 }, px, pz)));
+    const flames = pathParts(tiki).torches;
+    ok('...a torch path\'s four posts are solid, where its torches are drawn',
+      posts.every((p) => I.obstacles.some((o) => Math.hypot(o.x - p.x, o.z - p.z) < 1e-6 && o.r === pathPosts(tiki).r))
+        && flames.every(([x, , z], k) => x === pathPosts(tiki).at[k][0] && z === pathPosts(tiki).at[k][1]));
+    // ---- no flat path fights itself
+    // (faces turned DOWN at the ground are never seen, and every path has some there)
+    const fights = paths.map((it) => [it.id, zFights(pathParts(it).solid.filter((g) => g.type === 'BoxGeometry'), (x) => x.axis === 'y' && x.side === '-' && Math.abs(x.plane) < 1e-6).length]).filter(([, n]) => n);
+    ok('...and no path\'s parts share a face (the zfight scan, on every path\'s boxes)', fights.length === 0, JSON.stringify(fights));
+    // ---- stepping stones: each convex, none touching, neighbours at different heights
+    let seed = 3.3;
+    const rnd = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
+    let worst = Infinity, same = 0, n = 0;
+    for (let trial = 0; trial < 40; trial++) {
+      const St = steppingStones(ITEM_BY_ID.path_stone, rnd);
+      n += St.length;
+      for (let k = 0; k + 1 < St.length; k++) {
+        // least distance between the two outlines' vertices and the other's edges is the seam
+        const A = St[k].poly, Bp = St[k + 1].poly;
+        const maxA = Math.max(...A.map((p) => p[1])), minB = Math.min(...Bp.map((p) => p[1]));
+        const seg = (p, a, b) => { const vx = b[0] - a[0], vz = b[1] - a[1]; const u = Math.max(0, Math.min(1, ((p[0] - a[0]) * vx + (p[1] - a[1]) * vz) / (vx * vx + vz * vz))); return Math.hypot(p[0] - a[0] - u * vx, p[1] - a[1] - u * vz); };
+        const gap = Math.min(...A.flatMap((p) => Bp.map((q, i) => seg(p, q, Bp[(i + 1) % Bp.length]))), ...Bp.flatMap((p) => A.map((q, i) => seg(p, q, A[(i + 1) % A.length]))));
+        worst = Math.min(worst, gap);
+        if (Math.abs(St[k].h - St[k + 1].h) < 0.005) same++;
+        if (maxA > minB + 0.6) worst = -1;
+      }
+    }
+    ok('stepping stones fit tight and never touch: the narrowest seam over 40 strips is a hair over 0.1, and neighbours differ in height',
+      worst > 0.1 && worst < 0.2 && same === 0, `seam ${worst.toFixed(3)}, ${same} level pairs in ${n} stones`);
+    // ---- the effects, driven by a kitten walking about
+    const fx = I.pathFx ?? new PathFX(I);
+    const kit = fakePlayer(0);
+    const torch = I.fxSites.find((s) => s.kind === 'torch');
+    const tw = torch.parts[0].getWorldPosition(new THREE.Vector3());
+    const cols = [];
+    for (let pass = 0; pass < 3; pass++) {
+      kit.position.set(tw.x + 6, tw.y - 2.7, tw.z);
+      fx.update(0.016, pass, [kit]);
+      kit.position.set(tw.x + 0.5, tw.y - 2.7, tw.z);
+      fx.update(0.3, pass + 0.3, [kit]);
+      cols.push(torch.col.getHex());
+    }
+    const lit = torch.parts[0].material.color.getHex();
+    kit.position.set(tw.x + 6, tw.y - 2.7, tw.z);
+    for (let k = 0; k < 120; k++) fx.update(0.016, 2 + k * 0.016, [kit]);
+    ok('a tiki torch flares blue, then purple, then HER colour as she passes, and burns orange again after',
+      cols[0] === FLARE_COLOURS[0] && cols[1] === FLARE_COLOURS[1] && cols[2] === kit.style.colour && lit !== 0xff6a12
+        && torch.flare === 0 && torch.parts[0].material.color.getHex() === 0xff6a12 && FLARE_T >= 1 && FLARE_T <= 2,
+      cols.map((c) => c.toString(16)).join(' '));
+    const lamp = I.fxSites.find((s) => s.kind === 'lamp');
+    const lw = lamp.mesh.getWorldPosition(new THREE.Vector3());
+    kit.position.set(lw.x + 1, lw.y - 0.6, lw.z);
+    for (let k = 0; k < 60; k++) fx.update(0.016, k, [kit]);
+    const want = new THREE.Color(0xfff0c8).lerp(new THREE.Color(kit.style.colour), LAMP_TINT);
+    ok('...a lantern leans a third of the way toward her colour while she is beside it ("subtly")', lamp.mesh.material.color.equals(want));
+    const walk = (kind) => {
+      const S = I.fxSites.find((s) => s.kind === kind);
+      fx.parts.length = 0;
+      kit.velocity.set(Math.sin(S.a) * 6, 0, Math.cos(S.a) * 6);
+      kit.position.set(S.x, S.y, S.z);
+      for (let k = 0; k < 30; k++) fx.update(0.016, k, [kit]);
+      const got = fx.parts.map((o) => o.kind);
+      kit.velocity.set(0, 0, 0);
+      for (let k = 0; k < 40; k++) fx.update(0.016, k, [kit]);   // standing still kicks nothing up
+      return { got, S, after: fx.parts };
+    };
+    const pet = walk('petal');
+    const landed = pet.after.filter((o) => o.kind === 'petal').every((o) => o.p.y >= o.floor - 1e-9);
+    ok('walking the sakura path kicks petals up off her feet, and they settle back on it', pet.got.filter((k) => k === 'petal').length >= 5 && landed && pet.after.length <= pet.got.length);
+    const car = walk('carpet');
+    ok('...and the red carpet leaves gold footprints with a glint off each', car.got.includes('print') && car.got.includes('spark') && car.got.filter((k) => k === 'print').length >= 1);
+    const me = I.fxSites.length;
+    I.setHome(null, null);
+    ok('...and the yard\'s effects go with the yard', me > 0 && I.fxSites.length === 0);
+    ok('a lone TIKI TORCH and PATH LANTERN are yard decorations, solid, burning and glowing like the paths\' own',
+      ['tiki', 'pathlamp'].every((id) => ITEM_BY_ID[id]?.deco && ITEM_BY_ID[id].where.includes('yard') && YARD_BUILT.has(id)));
+  }
+
+  /* THE ZEN GARDEN. "stepping stones, sand whose pattern changes when walked
+     on, and a rake to the side that clears it." Walked: across the sand, then
+     along the stepping stones, then raked, then the yard rebuilt under it. */
+  {
+    const I = H.isles[0];
+    const Hm = newHome(I.site.id, 'minka', ['Ember']);
+    const at = firstYardSpot(Hm, ITEM_BY_ID.zengarden, I.radius);
+    addOutdoor(Hm, 'zengarden', at.x, at.z, 0.5);
+    I.setHome(Hm, null);
+    const Z = I.fxSites.find((s) => s.kind === 'zen');
+    const kit = fakePlayer(1);
+    const W = (fx, fz) => I.local(...I._itemToHouse({ x: at.x, z: at.z, rot: 0.5 }, fx, fz));
+    const stand = (fx, fz) => {
+      const w = W(fx, fz);
+      kit.position.set(w.x, I.heightAt(w.x, w.z, Z.at.y + 0.05)?.y, w.z);
+      (I.pathFx ??= new PathFX(I)).update(0.016, 0, [kit]);
+    };
+    // along the stepping stones: she is ON them, and the sand is untouched
+    for (const [x, z] of ZEN_STONES) stand(x, z);
+    const onStones = Z.trodden;
+    const stoneY = kit.position.y - Z.at.y;
+    // across the sand, the long way, between the stones
+    for (let x = -ZEN.w / 2 + 0.3; x < ZEN.w / 2 - 0.3; x += 0.2) stand(x, -ZEN.d / 2 + 0.6);
+    const walked = Z.trodden;
+    ok('the zen garden\'s sand is walked flat where she walks, and the stepping stones leave it alone',
+      onStones === 0 && walked > 0.05 && walked < 0.25 && stoneY > 0.05, `stones ${onStones}, a walk across ${walked.toFixed(3)}, stones stand ${stoneY.toFixed(2)} over the sand`);
+    // it outlives a rebuild of the yard (planting a tree rebuilds it all)
+    addOutdoor(Hm, 'pine', at.x + 14, at.z, 0);
+    I.setHome(Hm, null);
+    const Z2 = I.fxSites.find((s) => s.kind === 'zen');
+    ok('...the footprints are still there after the yard is rebuilt round it', Z2 !== Z && Z2.trodden === walked);
+    // the rake
+    const s = I.spots.find((q) => q.act === 'rake');
+    const rw = W(ZEN_RAKE.x, ZEN_RAKE.z);
+    const toastsWas = toasts.length;
+    H.activities.start(kit, { ...s, isle: I, home: Hm });
+    H.activities.held.delete(kit.index);
+    kit.position.set(rw.x, Z2.at.y - ZEN.sandY, rw.z);
+    let half = null;
+    for (let k = 0, tt = 0; tt < RAKE_T + 0.3; k++, tt += 0.05) {
+      I.pathFx.update(0.05, tt, [kit]);   // she stands at the rake, off the sand
+      if (half == null && tt >= RAKE_T / 2) half = Z2.trodden;
+    }
+    ok('...and the RAKE beside it crosses the bed and leaves it smooth',
+      Math.hypot(s.x - rw.x, s.z - rw.z) < 1e-6 && half > 0 && half < walked && Z2.trodden === 0 && Z2.rake === null && toasts.length > toastsWas,
+      `${walked.toFixed(3)} → ${half?.toFixed(3)} half way → ${Z2.trodden}`);
+    H.activities.start(kit, { ...s, isle: I, home: Hm });
+    ok('...and raking smooth sand says so rather than doing nothing', /already raked smooth/.test(toasts.at(-1)?.[1] ?? ''), String(toasts.at(-1)?.[1]));
+    ok('...and it is a floor: no path may run under it',
+      !!yardWhy(Hm, ITEM_BY_ID.path_gravel, at.x, at.z, -1, I.radius));
+    I.setHome(null, null);
+  }
+
+  /* JUMPING STONES SHE STANDS ON. "Jumping stones should be twice as big,
+     more separated, with colliders". Each stone's top as DRAWN (the highest
+     vertex over it) against the height the island answers there, with the
+     row turned 0.7 so a frame mistake shows. */
+  {
+    const I = H.isles[0];
+    const Hm = newHome(I.site.id, 'minka', ['Ember']);
+    const at = firstYardSpot(Hm, ITEM_BY_ID.stones, I.radius);
+    addOutdoor(Hm, 'stones', at.x, at.z, 0.7);
+    I.setHome(Hm, null);
+    const pos = drawItem('stones').geometry.attributes.position;
+    const rows = STONES.map((s) => {
+      let top = -1;
+      for (let v = 0; v < pos.count; v++) if (Math.hypot(pos.getX(v) - s.x, pos.getZ(v) - s.z) < s.r - 0.1) top = Math.max(top, pos.getY(v));
+      const [hx, hz] = I._itemToHouse({ x: at.x, z: at.z, rot: 0.7 }, s.x, s.z);
+      const w = I.local(hx, hz);
+      const gy = I.island.heightAt(w.x, w.z) ?? I.groundY;
+      const stood = I.heightAt(w.x, w.z, gy + 0.05)?.y;   // walking up to it off the grass
+      const gyc = I.island.heightAt(...[I.local(at.x, at.z)].map((c) => [c.x, c.z])[0]) ?? I.groundY;
+      return { drawn: top, stood: stood - gyc, h: s.h };
+    });
+    const gaps = STONES.slice(1).map((s, k) => Math.hypot(s.x - STONES[k].x, s.z - STONES[k].z) - s.r - STONES[k].r);
+    ok('jumping stones are twice the size they were (r 0.6) and a hop apart, not touching',
+      STONES.every((s) => s.r >= 1.1) && Math.min(...gaps) > 0.8 && Math.max(...gaps) < 2.4, `radii ${STONES.map((s) => s.r.toFixed(2))}, gaps ${gaps.map((v) => v.toFixed(2))}`);
+    ok('...and she stands ON every stone, at the top that is drawn, stepping up off the grass',
+      rows.every((r) => Math.abs(r.drawn - r.h) < 1e-6 && Math.abs(r.stood - r.h) < 0.02),
+      rows.map((r) => `${r.drawn.toFixed(2)}/${r.stood?.toFixed(2)}`).join(' '));
     I.setHome(null, null);
   }
 

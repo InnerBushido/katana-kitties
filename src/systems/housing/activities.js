@@ -91,7 +91,7 @@ export class HomeActivities {
     const fn = {
       pray: this._pray, soak: this._soak, nap: this._nap, look: this._look,
       cook: this._cook, sit: this._sit, trophies: this._trophies, bell: this._bell,
-      drum: this._drum,
+      drum: this._drum, rake: this._rake,
     }[s.act];
     if (!fn || this.held.has(p.index)) return false;
     fn.call(this, p, s);
@@ -450,6 +450,16 @@ export class HomeActivities {
   _bell(p) {
     this.game.audio?.sample?.('templeGong', 0.8);
     this.game.toast('GONNNNNG…', p.index);
+  }
+
+  /** The zen garden's rake: it crosses the bed and leaves it smooth (zengarden.js). */
+  _rake(p, s) {
+    const Z = s.zen;
+    if (!Z) return;
+    if (!Z.trodden && !Z.rake) { this.game.toast('The sand is already raked smooth. Go and walk on it!', p.index); return; }
+    if (!Z.startRake()) { this.game.toast('Somebody is already raking it.', p.index); return; }
+    this.game.audio?.play?.('menu');
+    this.game.toast(`${p.name} rakes the sand smooth…`, p.index);
   }
 
   _drum(p) {

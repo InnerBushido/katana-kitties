@@ -6,7 +6,7 @@ import {
   SNAKE, SnakeRoad, findLandings, windRoadSteps, buildRoadMesh, toriiScale, cloudPuff, buildSnakeHead, dissolveMat,
 } from '../../world/snakeway.js';
 import { DRAGON_SPOTS } from '../../entities/dragon.js';
-import { SPEED_STRIP } from './catalog.js';
+import { SPEED_STRIP, ITEM_BY_ID } from './catalog.js';
 import { drawStatue, loadGenerated, tintGenerated } from './statue.js';
 import { drawItem, placeModel } from './models.js';
 
@@ -345,9 +345,13 @@ export class HomeBridge {
       const x = at.x + rx * sg * off + fx * side * 2.2;
       const z = at.z + rz * sg * off + fz * side * 2.2;
       const y = gy ? gy(x, z) : at.y - 0.45;
-      const lan = placeModel('stone-lantern-d56d0a', drawItem('lantern'));
+      /* THE YARD'S LANTERN, AT THE YARD'S SIZE. Richard, Oct 2026: "The stone
+         lanterns at the entrance of the island gate are too small. They
+         should be the same size as the stone lantern yard item." They were
+         the model at whatever size it came in, times 1.3; now they are fitted
+         to the catalogue's own size, the one the yard fits it to. */
+      const lan = placeModel(ITEM_BY_ID.lantern.model, drawItem('lantern'), ITEM_BY_ID.lantern.size);
       lan.position.set(x, y, z);
-      lan.scale.multiplyScalar(1.3);
       parent.add(lan);
       // the banner: a pole and a tall cloth in her colour, facing the road
       const bx = at.x + rx * sg * (off + 1.6) + fx * side * 4.2;
