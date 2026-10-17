@@ -43295,6 +43295,17 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       ok('...a stick in a shared pane is read through the rig that drew her, and on her own camera through camYaw',
         Math.abs(shared + 0.8) < 1e-9 && Math.abs(own - 2.4) < 1e-9 && sis._peekHold === null, `${shared.toFixed(2)} ${own.toFixed(2)}`);
       sis.viewYaw = kv; sis.camYaw = kc; sis.viewOwn = ko; sis._peekHold = null;
+      /* "When both players enter the simulator, it seems it is keeping both
+         players in separate splitscreens ... The camera splitting should use
+         the same logic as like when they are not in the simulator." */
+      const kst = D.st[1], kr = sis.realm;
+      D.st[1] = { phase: 'sim', t: 0 }; sis.realm = 'sim';
+      const inside = D.wantsSolo(sis);
+      D.st[1] = { phase: 'rise', t: 0 };
+      const crossing = D.wantsSolo(sis);
+      D.st[1] = kst; sis.realm = kr;
+      ok('...inside the simulator she shares a pane by the ordinary rule; only the crossing is hers alone',
+        !inside && crossing, `inside ${inside} crossing ${crossing}`);
       const msrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
       ok('...and the renderer says whose lens it was, every frame, beside the heading',
         /p\.viewOwn = !cam \|\| cam === p\.camera;[\s\S]{0,200}cam\.getWorldDirection\(_viewDir\)/.test(msrc));

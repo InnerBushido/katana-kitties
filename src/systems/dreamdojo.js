@@ -1228,7 +1228,17 @@ export class DreamDojo {
       const h = Math.hypot(p.position.x - ARCADE.x, p.position.z - ARCADE.z);
       if (h < DOME_R && p.position.y > ARCADE.y - 3) return true;
     }
-    return !!(s && s.phase) || this.realmOf(p) === 'sim';
+    /* ...BUT NOT FOR BEING IN THE SIMULATOR. Richard, Oct 2026: "When both
+       players enter the simulator, it seems it is keeping both players in
+       separate splitscreens instead of combining their split screen, even
+       though they are both near each other ... The camera splitting should use
+       the same logic as like when they are not in the simulator." Being inside
+       (phase 'sim') was counted as a tube phase, so two sisters side by side
+       in the sim each had a pane forever. Only the crossing itself — the rise,
+       the rain, the rez and the way back — is laid over her own pane. Two
+       realities still never share one: the sim is twelve thousand units east,
+       which `clusterPlayers` cannot merge across. */
+    return !!(s && s.phase && s.phase !== 'sim');
   }
 
   /**
