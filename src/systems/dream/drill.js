@@ -28,6 +28,21 @@ import { starsFor } from './progress.js';
    `spec` is the whole drill, as data plus a `setup(d)`:
      { id, title, kanji, colour, time, goal, goalText, bands, lowerIsBetter,
        score: 'time' | 'count' | fn(d), grace, leaveR, setup(d), tick?(d, dt) }
+   and, for a drill with a place to START (the gallery's 剛 circle):
+     startZone?(d)    {x, z, r} in the layer — the drill waits, saying where,
+                      until she is inside it ('arrive'); THEN `arrived?(d)`
+                      builds what is dangerous and the count-in (`grace`)
+                      runs. Richard: "the drill should not start until the
+                      player gets into the circle, then the lazers should
+                      spawn, and there should be a second or two before the
+                      trial begins."
+   and for one that comes in STAGES (the gallery's levels):
+     d.mark() / d.wipe(m)  everything built after the mark goes again;
+     d.stageLabel          a line on the card under the title;
+     d.put(q)              stand her on a layer point (a level's start pad).
+   and for scoring that is not a band on one number:
+     stars?(d, score)  1..3, in place of `bands`;
+     camera?(d)        a `Player.setFocus` focus for her pane, or null;
    and, for a drill that drives her itself (dream/kata.js):
      always?(d, dt)   every frame, in every state
      steer?(d, pad)   her pad, every frame from the count-in on — return a
@@ -50,7 +65,7 @@ export class Drill {
     this.t = 0;
     this.count = 0;
     this.goal = spec.goal ?? 1;
-    this.state = 'ready';
+    this.state = spec.startZone ? 'arrive' : 'ready';
     this.readyT = spec.grace ?? 1.2;
     this.colour = p.style?.colour ?? HOLO.cyan;
     this.objs = [];
@@ -99,6 +114,7 @@ export class Drill {
       accept: (info, tt) => this.state === 'live' && (!accept || accept(info, tt)),
       onRefuse: (tt, info) => {
         if (this.state === 'ready') this.dream.hint?.(this.p, 'Not yet — wait for GO!');
+        else if (this.state === 'arrive') this.dream.hint?.(this.p, this.spec.arriveText ?? 'Step into the circle to start');
         else if (this.state === 'live') refuse?.(tt, info);
       },
     });
@@ -120,11 +136,13 @@ export class Drill {
   }
 
   /** A beam that drains her SIM bar. `hold: true` is a beam a raised Ward
-   *  stands in rather than a blow it takes (see the gallery's 守 drill). */
+   *  stands in rather than a blow it takes (see the gallery's 守 drill).
+   *  `floorY` is the floor it casts its line on and fades under — the drill
+   *  floor's own height unless a level says otherwise. */
   laser(o) {
     const { onResult, hold, ...rest } = o;
     const L = new Laser({
-      parent: this.root, owner: this.p.index,
+      parent: this.root, owner: this.p.index, floorY: this.at.y,
       ...rest,
       onHit: (q) => {
         /* PUSHED AWAY FROM THE NEAREST POINT OF THE BEAM, flat. The first cut
@@ -196,6 +214,55 @@ export class Drill {
     return d;
   }
 
+  /* ------------------------------- stages -------------------------------- */
+
+  /** Where the lists stand now, for `wipe`. */
+  mark() {
+    return {
+      targets: this.targets.length, decks: this.decks.length, lasers: this.lasers.length,
+      rings: this.rings.length, stars: this.stars.length, objs: this.root.children.length,
+    };
+  }
+
+  /** Take away everything built since `m` — a level's own pieces — and leave
+   *  what was there before it (the floor's circle, the turrets' bases). */
+  wipe(m) {
+    for (const t of this.targets.splice(m.targets)) { this.dream.gate.remove(t); t.dispose(); }
+    for (const dk of this.decks.splice(m.decks)) this.dream.sim.removeTempDisc(dk);
+    for (const L of this.lasers.splice(m.lasers)) L.dispose();
+    for (const r of this.rings.splice(m.rings)) r.dispose();
+    for (const s of this.stars.splice(m.stars)) s.dispose();
+    for (const b of this.bolts) b.dispose();
+    this.bolts = [];
+    for (const o of this.root.children.slice(m.objs)) o.removeFromParent();
+  }
+
+  /** Stand her on a layer point, stopped — a level's start pad. */
+  put(q) {
+    const p = this.p;
+    p.position.set(q.x + SIM.dx, q.y + 0.05, q.z + SIM.dz);
+    p.velocity?.set?.(0, 0, 0);
+    if (q.facing != null) p.facing = q.facing;
+  }
+
+  /** Is she inside a layer circle, flat? */
+  inside(c, r) {
+    return Math.hypot(this.p.position.x - SIM.dx - c.x, this.p.position.z - SIM.dz - c.z) <= r;
+  }
+
+  /** Under way: waiting for her at its start circle, counting in, or live.
+   *  The question every "is she busy in here" asks — 'arrive' is a drill she
+   *  has started, so a pedestal must not start another under her. */
+  get running() {
+    return this.state === 'arrive' || this.state === 'ready' || this.state === 'live';
+  }
+
+  /** Her pane's focus, if this drill frames her (`spec.camera`). */
+  cameraFocus() {
+    if (this.state === 'won' || this.state === 'failed') return null;
+    return this.spec.camera?.(this) ?? null;
+  }
+
   /* ------------------------------- running ------------------------------- */
 
   /** One more toward the goal. */
@@ -213,7 +280,7 @@ export class Drill {
     const score = typeof s.score === 'function' ? s.score(this)
       : s.score === 'count' ? this.count : this.t;
     const lower = s.lowerIsBetter ?? (s.score !== 'count');
-    const stars = s.bands ? starsFor(score, s.bands, lower) : 1;
+    const stars = s.stars ? Math.max(1, Math.min(3, s.stars(this, score))) : s.bands ? starsFor(score, s.bands, lower) : 1;
     this.result = this.dream.award(this.p, s.id, stars, score, lower);
     this.stars_ = stars;
     this.dream.game.sfx?.('victory');
@@ -226,7 +293,7 @@ export class Drill {
   }
 
   fail(why) {
-    if (this.state !== 'live' && this.state !== 'ready') return;
+    if (this.state !== 'live' && this.state !== 'ready' && this.state !== 'arrive') return;
     this.state = 'failed';
     this.why = why;
     this.dream.game.sfx?.('deny');
@@ -246,7 +313,14 @@ export class Drill {
     const players = [this.p];
     // Every frame, whatever the state: a drill that places her or draws to a clock (Kata Trace).
     this.spec.always?.(this, dt);
-    if (this.state === 'ready') {
+    if (this.state === 'arrive') {
+      const z = this.spec.startZone(this);
+      if (this.inside(z, z.r)) {
+        this.spec.arrived?.(this);
+        this.state = 'ready';
+        this.readyT = this.spec.grace ?? 1.2;
+      } else if (this._left()) this.fail('Stopped — you left the floor');
+    } else if (this.state === 'ready') {
       this.readyT -= dt;
       if (this.readyT <= 0) {
         this.state = 'live';
@@ -292,7 +366,11 @@ export class Drill {
       return;
     }
     const lines = [{ text: `${s.kanji ?? ''} ${s.title}`.trim(), size: 2.1, color: this.colour, glow: true }];
-    if (this.state === 'ready') {
+    if (this.stageLabel && (this.state === 'ready' || this.state === 'live')) lines.push({ text: this.stageLabel, size: 1.3, color: HOLO.gold });
+    if (this.state === 'arrive') {
+      lines.push({ text: s.goalText, size: 1.5 });
+      lines.push({ text: s.arriveText ?? 'Step into the circle to start', size: 1.6, color: HOLO.gold });
+    } else if (this.state === 'ready') {
       lines.push({ text: s.goalText, size: 1.5 });
       lines.push({ text: 'READY…', size: 1.9, color: HOLO.gold });
     } else if (this.state === 'live') {

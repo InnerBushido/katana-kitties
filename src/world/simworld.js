@@ -623,6 +623,30 @@ export class SimWorld {
     return best;
   }
 
+  /**
+   * THE UNDERSIDE OF A LIDDED DECK. Richard, Oct 2026, on the gallery's 跳
+   * ledge: "make it that the player can't jump on the platform from
+   * underneath it (they hit it with their head, like a ceiling) and have to
+   * jump from further away from it to land on top". A deck made with
+   * `ceiling: true` answers here: her head rising from `y0` to `y1` (world
+   * heights) under its disc meets its bottom face, and the lowest such face
+   * is returned — null for none. Every other deck is still one-way, so the
+   * hub, the islands and every drill floor are walked under exactly as they
+   * were. Not `ceilingAt`: HomeIsle has one of those with another shape.
+   */
+  lidAt(x, z, y0, y1) {
+    const lx = x - SIM.dx;
+    const lz = z - SIM.dz;
+    let best = null;
+    for (const d of this.decks) {
+      if (!d.ceiling) continue;
+      if (d.yAt(lx, lz) == null) continue;
+      const under = d.y - d.thick;
+      if (y0 <= under + 0.05 && y1 > under && (best == null || under < best)) best = under;
+    }
+    return best;
+  }
+
   resolveSolids(x, z, radius, fromY = -Infinity) {
     let lx = x - SIM.dx;
     let lz = z - SIM.dz;
@@ -857,16 +881,31 @@ export class SimWorld {
    * that it is temporary; `removeTempDisc` takes the deck AND its drawing
    * away together, so a kitten can never stand on something she cannot see.
    */
-  addTempDisc({ x, z, r, y, colour = HOLO.cyan, name = 'step' }) {
+  addTempDisc({ x, z, r, y, colour = HOLO.cyan, name = 'step', ceiling = false, thick = 0.5 }) {
     const deck = new DiscDeck({ x, z, r, y, name });
     deck.temp = true;
+    /* A lid (`lidAt`) is drawn as thick as it stops her, so the slab she
+       bonks on is the slab she sees — and its underside gets a rim of its
+       own, because from below the top rim is the one thing hidden. */
+    deck.ceiling = ceiling;
+    deck.thick = thick;
+    deck.home = { x, y, z };
     this.decks.push(deck);
     const grp = new THREE.Group();
     const slab = new THREE.Mesh(
-      new THREE.CylinderGeometry(r, r * 0.9, 0.5, 32),
-      new THREE.MeshBasicMaterial({ color: 0x0a2230, transparent: true, opacity: 0.8 })
+      new THREE.CylinderGeometry(r, r * 0.9, thick, 32),
+      new THREE.MeshBasicMaterial({ color: 0x0a2230, transparent: true, opacity: ceiling ? 0.92 : 0.8 })
     );
-    slab.position.set(x, y - 0.25, z);
+    slab.position.set(x, y - thick / 2, z);
+    if (ceiling) {
+      const lip = new THREE.Mesh(
+        new THREE.TorusGeometry(r * 0.9 - 0.08, 0.06, 6, 48),
+        new THREE.MeshBasicMaterial({ color: colour, transparent: true, opacity: 0.6, toneMapped: false })
+      );
+      lip.rotation.x = Math.PI / 2;
+      lip.position.set(x, y - thick, z);
+      grp.add(lip);
+    }
     const rim = new THREE.Mesh(
       new THREE.TorusGeometry(r - 0.08, 0.08, 6, 48),
       new THREE.MeshBasicMaterial({ color: colour, toneMapped: false })
@@ -883,6 +922,23 @@ export class SimWorld {
     this.root.add(grp);
     deck._grp = grp;
     return deck;
+  }
+
+  /**
+   * Move a temp deck — a drifting step. Its drawing goes with it, and the
+   * kittens standing ON it (grounded, and it is the deck under them) are
+   * carried by the same amount, so a moving platform is not a treadmill she
+   * is wiped off. Returns nothing; `players` may be empty.
+   */
+  moveTempDisc(deck, x, y, z, players = []) {
+    const dx = x - deck.x;
+    const dy = y - deck.y;
+    const dz = z - deck.z;
+    if (!dx && !dy && !dz) return;
+    const riders = players.filter((p) => p.onGround && this.heightAt(p.position.x, p.position.z, p.position.y + 0.1)?.platform === deck);
+    deck.x = x; deck.y = y; deck.z = z;
+    deck._grp?.position.set(x - deck.home.x, y - deck.home.y, z - deck.home.z);
+    for (const p of riders) { p.position.x += dx; p.position.y += dy; p.position.z += dz; }
   }
 
   removeTempDisc(deck) {

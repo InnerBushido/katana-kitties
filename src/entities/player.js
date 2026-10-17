@@ -51,6 +51,9 @@ const SPRINT_SPEED = 17;
 const ACCEL = 60;
 const AIR_ACCEL = 26;
 const JUMP_V = 11.2;
+/** How far above her feet her head meets a lidded deck (SimWorld.lidAt):
+ *  the house's HEAD_H less a little, since a sim kitten is the plain one. */
+export const HEAD_ROOM = 2.2;
 const COYOTE = 0.12;
 
 /** A dead controller, for the frames a kitten is not in charge of herself.
@@ -3458,7 +3461,19 @@ export class Player {
     // --- move + collide ---
     const wasX = this.position.x;
     const wasZ = this.position.z;
+    const wasY = this.position.y;
     this.position.addScaledVector(this.velocity, dt);
+
+    /* A LIDDED deck's underside (SimWorld.lidAt — the gallery's 跳 ledges):
+       her head rising into it stops there. Asked of every world that has the
+       question, which is the simulator alone; the town has no lids. */
+    if (this.velocity.y > 0 && world.lidAt) {
+      const lid = world.lidAt(this.position.x, this.position.z, wasY + HEAD_ROOM, this.position.y + HEAD_ROOM);
+      if (lid != null) {
+        this.position.y = lid - HEAD_ROOM;
+        this.velocity.y = 0;
+      }
+    }
 
     /* Her own height goes in, so a solid she is standing ON TOP of stops
        shoving her sideways — see World.resolveSolids. Without it the spire
@@ -3481,7 +3496,17 @@ export class Player {
 
     // Own height passed in so bridge decks and terraces are one-way: you land
     // on top of them, and walk underneath from below.
-    const g = world.heightAt(this.position.x, this.position.z, this.position.y);
+    /* ...and SWEPT: the height she fell FROM this frame, not the one she
+       fell to. Richard, Oct 2026: "the player keeps constantly falling
+       through the floor when doing power dive, this is mainly happening on
+       the floating discs in the hologram". DIVE.speed is 46, 0.77 a frame at
+       60fps and 1.5 at 30: a deck's 0.4 step catches her only when a frame
+       ends inside it, so a dive straight through a thin disc found her below
+       it, where a one-way deck is a deck she is UNDER. Asking from the top of
+       the fall counts every deck the frame crossed; rising, it is the old
+       question unchanged. (Thicker colliders were the other offer; they
+       would only move the frame rate it breaks at.) */
+    const g = world.heightAt(this.position.x, this.position.z, Math.max(this.position.y, wasY));
     const wasGrounded = this.onGround;
 
     /* Ground snapping. Running DOWN a slope, gravity alone leaves the kitten

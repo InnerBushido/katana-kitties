@@ -10720,7 +10720,12 @@ class Game {
     /* THE WORLD, because the thing she leaves behind FALLS now — it hangs for
        a second in the smoke and then drops, and a drop needs a floor to find.
        See `systems/dodgefx.js`. */
-    this.dodgeFx?.update(dt, this.players, this.world);
+    /* Per kitten: a decoy dropped in the simulator lands on the SIM's floor.
+       Handed the town's World, `heightAt` 12000 units east of it was null and
+       every log fell out of sight — Richard: "the object that spawns behind
+       them should collide and stay in the world when landing on the disc
+       islands in the hologram". */
+    this.dodgeFx?.update(dt, this.players, (p) => this.dream?.worldFor?.(p) ?? this.world);
     this.sweepFx?.update(dt, this.players, this.payne?.sweeper);
     this.parryFx?.update(dt, this.players);
     /* AND THE CLAN POWERS LAST OF THE THREE, for the same reason dodgefx runs
@@ -10801,7 +10806,10 @@ class Game {
         : this.dream?.shadow?.cameraFocus?.(p) ?? this.dream?.sine?.cameraFocus?.(p)
           /* ...and a Kata Trace run's: her floor and Lionheart across the top
              of it, so every mark and all five of his spots are in the pane. */
-          ?? this.dream?.kata?.cameraFocus?.(p) ?? null;
+          ?? this.dream?.kata?.cameraFocus?.(p)
+          /* ...and a gallery drill that frames her (Drill.cameraFocus): the
+             剛 circle in close, so a beam at her shins reads against her. */
+          ?? this.dream?.drillFocus?.(p) ?? null;
       /* THE WAY ACROSS AND THE DOME (DreamDojo.cameraFocus): in close behind
          her for the stones, pulled back over the whole island inside the
          bubble. Never on the Dojo floor itself — `near` wins, so the maths

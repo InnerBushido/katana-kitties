@@ -10,6 +10,12 @@ import { TrainingGate, Shards } from './dream/targets.js';
 import { makeSimHud } from './dream/simhud.js';
 import { DreamProgress, forgetLegacy } from './dream/progress.js';
 import { Drill } from './dream/drill.js';
+
+/** Is she inside a drill, including the gallery's 'arrive' wait, when a drill
+ *  stands open for her to step into its circle? This asks the STATE rather
+ *  than a getter on Drill, because a station has to answer the same for any
+ *  object that carries one (world-check hands it plain `{ state }` objects). */
+const drilling = (d) => !!d && (d.state === 'arrive' || d.state === 'ready' || d.state === 'live');
 import { Gallery } from './dream/gallery.js';
 import { TrialHall } from './dream/hall.js';
 import { TameshigiriRange } from './dream/range.js';
@@ -1901,7 +1907,7 @@ export class DreamDojo {
       return null;
     }
     const dr = this.drills[p.index];
-    if (dr && (dr.state === 'ready' || dr.state === 'live')) { s.peek?.reset(); return null; }
+    if (drilling(dr)) { s.peek?.reset(); return null; }
     this._ends ??= this._peekEnds();
     /* A KIOSK'S CIRCLE OUTRANKS A BRIDGE (dream/peek.js `stationFirst`):
        standing in one, or walking at one nearer than the mouth, there is no
@@ -2454,7 +2460,7 @@ export class DreamDojo {
   stationAt(p) {
     if (this.realmOf(p) !== 'sim') return null;
     const dr = this.drills[p.index];
-    if (dr && (dr.state === 'ready' || dr.state === 'live')) return null;
+    if (drilling(dr)) return null;
     const q = this._flatPos(p);
     for (const st of this.stations) {
       if (Math.hypot(q.x - st.x, q.z - st.z) < st.r && Math.abs(p.position.y - st.y) < 2) return st;
@@ -2711,7 +2717,7 @@ export class DreamDojo {
       break;
     }
     const d = this.drills[p.index];
-    const busy = (d && (d.state === 'ready' || d.state === 'live')) || this.highway?.riding(p.index)
+    const busy = drilling(d) || this.highway?.riding(p.index)
       || this.choices[p.index] || this.rundowns[p.index] || this.game.inspector?.busy?.(p.index)
       /* Waiting her turn in the Sine Gauntlet's stands is not being lost —
          a four-kitten queue is minutes, and she cannot leave it to follow
@@ -3047,6 +3053,11 @@ export class DreamDojo {
    * the door would snap the tilt. Both weights ease, and the result is mixed
    * with the walking camera by them.
    */
+  /** A running drill's own shot for her pane (Drill.cameraFocus), or null. */
+  drillFocus(p) {
+    return p ? this.drills[p.index]?.cameraFocus?.() ?? null : null;
+  }
+
   cameraFocus(p) {
     const L = this.layout;
     if (!L || !p) return null;

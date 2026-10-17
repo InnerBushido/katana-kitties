@@ -226,7 +226,7 @@ reach and the real jump:
 | --- | --- | --- | --- |
 | 斬 Long Cut | ring 4.3 | cuts from 4.00 | 5.02 |
 | 河 Riverclaw | ring 5.4 | the Long Cut orb 5.02 | sworn 6.72 |
-| 跳 Leap | ledge 5.0 | two jumps land 4.60 | three 7.01 |
+| 跳 Leap | tall step 5.7 | two FULL jumps (the orb lent) 5.22 | three 7.01 |
 | 影 Shadowtail | star 6.8 | two jumps 4.60 | sworn 9.14 |
 | 守 Long Guard | beam 2.44s | a Ward is up 2.20s | two lent, 3.40s |
 
@@ -2665,6 +2665,82 @@ seductive**, so his lines are loud, practical and arcade-owner, and nobody
 "jacks out": she **connects** and **disconnects**. The whole casting, the
 cutter and the gating are in
 [voices.md](voices.md#lionheart-is-barrett-and-the-wording-is-half-the-casting).
+
+## The Kotodama Gallery pass, Oct 2026 (`dream/gallery.js`)
+
+Richard's list, "Improvements for Kotodama Gallery in the Simulator", drill by
+drill. Every number below is exported from `gallery.js` and measured by
+`world-check` against the real jump, reach, ward and shield.
+
+- **疾 Gale.** "make the hoops face the centre so they form a circle". Each
+  gate's yaw is `GALE_FACE`. Three stars are a second kinder: 9.5s became 10.5s.
+- **剛 Adamant.** "don't start until she is inside the circle". A drill can now
+  open on `'arrive'`: the gold circle is drawn, the beams are built only when
+  she steps in, and then `ADAMANT_GRACE` (2s) counts in before the trial. The
+  camera closes to `ADAMANT_CAM` (16 out, pitch 0.5) while she is in it, through
+  `drillFocus` in the camera chain. "Is this meant to work like a jump rope?"
+  No. The beams are two sweeping clock hands at shin height, and she hops them.
+- **Every laser** (Adamant, Long Guard, Flash Step) was drawn behind the yellow
+  circle and the kitten. It now draws in its own band (`LASER_ORDER` 30, glow 30,
+  core 31, above everything at 24-25), and it has a floor footprint: a dark
+  shadow and a coloured trace. Below the floor, a shader fades it to 0.22. The
+  hit pad shrank 0.45 → 0.3, because Flash Step damage "happens before she
+  reaches the lasers".
+  **And every beam in a drill had been DRAWN pointing the wrong way.** This was
+  found in the browser. `Laser._place` aimed with `lookAt(b + parent.position)`.
+  A drill's root sits at the origin inside the sim layer, and the layer is 12000
+  out, so every beam pointed at world −X. Long Guard's three beams were
+  parallel, and Adamant's two clock hands were two parallel bars. The hits were
+  judged on the true a–b segment the whole time. The fix turns the beam in its
+  parent's own frame. `world-check` measures the drawn ends through the real
+  matrices: 0.0000 off with the fix, 9.4 off with the old `lookAt`.
+- **跳 Leap.** "she can't land on a platform from underneath, she hits her
+  head". Two separate fixes:
+  - **Landing.** The real cause was a fast fall skipping a thin deck between
+    frames. The landing is now swept from the frame's start height, which also
+    fixes **Power Dive** "falls through the floating hologram discs" (pinned at
+    30fps).
+  - **Head-bump.** The tower's decks are `ceiling` decks with a thickness.
+    Rising into one bumps her head (`HEAD_ROOM` 2.2, `lidAt`), and that is the
+    rule Richard described for these decks. A plain disc still lifts her
+    through, as it always has.
+
+  The tower is `LEAP_CLIMB`: 12 rows spiralling up. Three are `LEAP_DECK` (5.7)
+  and need all three jumps, two sway in and out, and the rest are one-jump
+  steps. The old 5.0 ledge was measured against bare jumps, but she has the orb
+  LENT, and two FULL jumps land at 5.22.
+- **壁 Ward.** Three stars means under `WARD_GOLD` (18s) and not hit once.
+- **十 Cross Slash** and **突 Charge** have the levels Richard listed
+  (`CROSS_LEVELS`, `CHARGE_PARTS`). A set that is only partly cut stands back
+  up. Targets in the air answer only inside a band around the apex: one jump
+  is 2.4 and two jumps are 4.2 without the orb. `AIR_BAND` is ±0.9, so a
+  kitten on the floor cannot reach them.
+- **守 Long Guard.** Three turrets rise and turn, then put a reticle on her.
+  Each volley charges for 1s, holds for 1s, then the beam grows to her in 0.25s,
+  homing on her. There is a 2.5s pause between volleys. The beam lengths are
+  `GUARD_BEAMS` 1.0 / 1.5 / the old 2.44.
+- **瞬 Flash Step.** It has four levels:
+  - a single wall, with the prize further from it;
+  - a grid of walls with four prizes;
+  - a prize in the air over ground lasers, where a hit puts her back on a clear
+    pad;
+  - a shield-bearer. "takes 0.75s before they face the player again" is
+    `SHIELD_TURN`: a 0.35s wait, then half a turn in 0.4s.
+
+  The decoy now drops onto the sim's own decks, because dodgefx asks for her
+  world, not the town's.
+- **返 Riposte** swings a real 3-D sword. The holo-kitten is a billboard and
+  cannot turn, so the blade sits on its own shoulder pivot (`swordPose`), with a
+  rise as the tell and a 0.3s swing as the blow.
+- **間 Long Parry** is a pack (`PACK_LEVELS`). The levels are one partner
+  three times, then two from one side, then three round her. The last level is
+  passed only by leading all three to ONE side, so a single riposte covers
+  them. A blow from a pack is judged as one: one hit and the round restarts with
+  the pack respawned. After a catch they step back 4.5 and wait 1.8s, which is
+  past her guard's own cool-down.
+- **Stations** treat the `'arrive'` wait as being in a drill. `dreamdojo.js`
+  asks the state (`drilling`), not a getter on Drill, because world-check hands
+  stations plain `{ state }` objects. A getter broke three checks.
 
 ## Still to build (stages 2–5)
 

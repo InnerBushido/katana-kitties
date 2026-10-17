@@ -1120,7 +1120,7 @@ export class DodgeFx {
          twice on the frames after the commit. */
       if (p.dodgeT > 0 && p.dodgePlaced && this.seen.get(p.index) !== p.dodgeSeq) {
         this.seen.set(p.index, p.dodgeSeq);
-        this._drop(p, world);
+        this._drop(p, typeof world === 'function' ? world(p) : world);
       }
 
       this._updateFigure(dt, p);

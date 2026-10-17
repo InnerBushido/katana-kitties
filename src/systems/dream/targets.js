@@ -284,6 +284,14 @@ export class Target {
     this.o.onBreak?.(this, info);
   }
 
+  /** Move it, foot and all — the Cross Slash drill's circling posts. The
+   *  gate measures `position`, so that moves with what is drawn. */
+  moveTo(x, y, z) {
+    this.local.set(x, y, z);
+    this.group.position.copy(this.local);
+    this.position.set(x + SIM.dx, y + (this.o.centre ?? 1.2), z + SIM.dz);
+  }
+
   /** Stand it back up — everything in here does. */
   revive() {
     this.live = true;
@@ -425,6 +433,69 @@ export class HoloKitten extends Target {
     const ring = new THREE.Mesh(new THREE.RingGeometry(0.9, 1.05, 32).rotateX(-Math.PI / 2), holoMat(this.colour, 0.7));
     ring.position.y = 0.05;
     this.group.add(ring);
+    /* A BLADE, so a blow is something she SEES coming. Richard, Oct 2026:
+       "For Riposte, let's have the enemy swing a sword once they get near the
+       player." The sprite is a billboard and cannot turn toward her, so the
+       sword is a 3-D thing of its own on a shoulder pivot: `aimAt` turns it,
+       `swordPose` raises and swings it. Hidden until a drill asks. */
+    this.swordPivot = new THREE.Group();
+    this.swordPivot.position.y = 1.55;
+    this.swordPivot.rotation.order = 'YXZ';
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.7, 0.03).translate(0, 0.95, 0), holoMat(0xffffff, 0.9));
+    const glow = new THREE.Mesh(new THREE.BoxGeometry(0.26, 1.8, 0.08).translate(0, 0.95, 0), holoMat(o.swordColour ?? 0xff5a6a, 0.45));
+    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.06, 0.12), holoMat(HOLO.gold, 0.9));
+    const hilt = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.3, 0.08).translate(0, -0.15, 0), holoMat(HOLO.gold, 0.7));
+    this.swordBlade = new THREE.Group();
+    this.swordBlade.position.x = 0.45;
+    this.swordBlade.add(blade, glow, guard, hilt);
+    this.swordPivot.add(this.swordBlade);
+    this.swordPivot.visible = false;
+    for (const m of [blade, glow, guard, hilt]) m.renderOrder = 24;
+    this.group.add(this.swordPivot);
+  }
+
+  /** Turn the sword (and shield) toward a layer point. */
+  aimAt(x, z) {
+    const g = this.group.position;
+    this.yaw = Math.atan2(x - g.x, z - g.z);
+    this.swordPivot.rotation.y = this.yaw;
+  }
+
+  /**
+   * The blade's pose. `raise` 0..1 lifts it back over the shoulder (the
+   * tell); `swing` 0..1 brings it over and down in front (the blow). Rest is
+   * held low and forward. Angles about the shoulder: +X tips the blade
+   * toward where it faces.
+   */
+  swordPose(raise = 0, swing = 0) {
+    this.swordPivot.visible = true;
+    const REST = 1.9;
+    const UP = -0.75;
+    const DOWN = 2.3;
+    const a = swing > 0 ? UP + (DOWN - UP) * Math.min(1, swing) : REST + (UP - REST) * Math.min(1, raise);
+    this.swordPivot.rotation.x = a;
+  }
+
+  /**
+   * A shield of light in front of it, facing `shieldYaw` — the Flash Step
+   * drill's last level. Built on first ask. Returns the shield group.
+   */
+  shield(on = true) {
+    if (!this.shieldGrp && on) {
+      const g = new THREE.Group();
+      const disc = new THREE.Mesh(new THREE.CircleGeometry(1.3, 32), holoMat(0x7ff4ff, 0.32));
+      const rim = new THREE.Mesh(new THREE.TorusGeometry(1.3, 0.07, 6, 40), holoMat(0xffffff, 0.9));
+      // A round shield held up in front: its face looks along +Z, the way it faces.
+      const arc = new THREE.Group();
+      arc.add(disc, rim);
+      arc.position.set(0, 1.4, 0.95);
+      g.add(arc);
+      for (const m of [disc, rim]) m.renderOrder = 25;
+      this.shieldGrp = g;
+      this.group.add(g);
+    }
+    if (this.shieldGrp) this.shieldGrp.visible = on;
+    return this.shieldGrp;
   }
 
   update(dt) {
@@ -504,8 +575,12 @@ export class HoloStar {
    *   with a layer-space `group.position`). `onTake` is handed whichever got
    *   there first, so a drill can tell her from them.
    */
-  constructor({ parent, x, y, z, owner = null, colour = HOLO.gold, onTake, lock = 0, rivals = [] }) {
+  constructor({ parent, x, y, z, owner = null, colour = HOLO.gold, onTake, lock = 0, rivals = [], reach = 1.5 }) {
     this.local = new THREE.Vector3(x, y, z);
+    /** How near (flat) she must come. 1.5 is a walk-up; a prize in the air
+     *  that she reaches by a TELEPORT is passed over in no frames at all, so
+     *  the Flash Step drill's floating one is wider. */
+    this.reach = reach;
     this.owner = owner;
     this.onTake = onTake;
     this.taken = false;
@@ -556,7 +631,7 @@ export class HoloStar {
       if (this.owner != null && p.index !== this.owner) continue;
       const x = p.position.x - SIM.dx;
       const z = p.position.z - SIM.dz;
-      if (Math.hypot(x - this.local.x, z - this.local.z) < 1.5 && Math.abs(p.position.y - this.local.y) < 2.2) {
+      if (Math.hypot(x - this.local.x, z - this.local.z) < this.reach && Math.abs(p.position.y - this.local.y) < 2.2) {
         this._take(p);
         return;
       }
@@ -580,6 +655,52 @@ export class HoloStar {
 
 /* -------------------------------- hazards -------------------------------- */
 
+/* WHERE A BEAM IS, MADE READABLE. Richard, Oct 2026: "it is very hard to see
+   where the lazers are relative to where the player is. The lazers seem to
+   not have any shadows and are shown, even when they are below the ground
+   ... make it that they are faded when under the ground ... Seems that they
+   lazers are appearing behind the yellow circle ... seems like a shader
+   layering issue ... It looks like the lazer is behind the player, but should
+   likely be infront of the player in terms of layering." Three things:
+     · LASER_ORDER: drawn after the floor's circles and her sprite. A beam was
+       a default-order transparent sorted by its MIDDLE, which for a beam
+       from the circle's centre is further than the circle's rim and further
+       than her — so both painted over it.
+     · its FOOTPRINT: a dark band and a thin line of its colour straight under
+       it on the floor (`floorY`), so a beam at shin height reads as "this
+       far off the floor, here" from a lens that is looking down at it.
+     · UNDER THE FLOOR, FAINT: the beam's own shader drops to UNDER_ALPHA of
+       itself below `floorY` (per fragment, by world height) — still there, so
+       a beam passing under a deck is not a beam that vanished. */
+export const LASER_ORDER = 30;
+export const UNDER_ALPHA = 0.22;
+const BEAM_VERT = /* glsl */`
+  varying float vY;
+  void main() {
+    vec4 w = modelMatrix * vec4(position, 1.0);
+    vY = w.y;
+    gl_Position = projectionMatrix * viewMatrix * w;
+  }
+`;
+const BEAM_FRAG = /* glsl */`
+  uniform vec3 uColour;
+  uniform float uOpacity;
+  uniform float uFloor;
+  varying float vY;
+  void main() {
+    float under = vY < uFloor - 0.02 ? ${UNDER_ALPHA.toFixed(2)} : 1.0;
+    gl_FragColor = vec4(uColour, uOpacity * under);
+  }
+`;
+function beamMat(colour, opacity, floorY) {
+  const m = new THREE.ShaderMaterial({
+    vertexShader: BEAM_VERT, fragmentShader: BEAM_FRAG,
+    uniforms: { uColour: { value: new THREE.Color(colour) }, uOpacity: { value: opacity }, uFloor: { value: floorY ?? -1e6 } },
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, toneMapped: false,
+  });
+  return m;
+}
+
 /**
  * A beam of light that hurts — the SIM bar, never her. A segment from `a` to
  * `b` (layer coordinates, {x, y, z}), optionally moved every frame by
@@ -592,7 +713,7 @@ export class HoloStar {
  * be jumped are the ones you are meant to block or Flash-Step.
  */
 export class Laser {
-  constructor({ parent, a, b, thick = 0.35, colour = 0xff3b6b, dmg = 10, owner = null, move = null, warm = 0, onHit }) {
+  constructor({ parent, a, b, thick = 0.35, colour = 0xff3b6b, dmg = 10, owner = null, move = null, warm = 0, onHit, floorY = null }) {
     this.a = new THREE.Vector3(a.x, a.y, a.z);
     this.b = new THREE.Vector3(b.x, b.y, b.z);
     this.thick = thick;
@@ -603,26 +724,69 @@ export class Laser {
     this.t = 0;
     this.warm = warm;
     this.on = true;
+    this.floorY = floorY;
     const geo = new THREE.CylinderGeometry(1, 1, 1, 10, 1, true);
     geo.rotateX(Math.PI / 2);
-    this.core = new THREE.Mesh(geo, holoMat(0xffffff, 0.9));
-    this.glow = new THREE.Mesh(geo, holoMat(colour, 0.45));
+    this.core = new THREE.Mesh(geo, beamMat(0xffffff, 0.9, floorY));
+    this.glow = new THREE.Mesh(geo, beamMat(colour, 0.45, floorY));
+    this.core.renderOrder = LASER_ORDER + 1;
+    this.glow.renderOrder = LASER_ORDER;
     this.group = new THREE.Group();
     this.group.add(this.core, this.glow);
     parent.add(this.group);
+    /* The footprint: a unit quad along +Z, stretched under the beam each frame. */
+    if (floorY != null) {
+      const q = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+      this.shadow = new THREE.Mesh(q, new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.55, depthWrite: false, toneMapped: false }));
+      this.trace = new THREE.Mesh(q, new THREE.MeshBasicMaterial({ color: colour, transparent: true, opacity: 0.5, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending }));
+      this.shadow.renderOrder = LASER_ORDER - 2;
+      this.trace.renderOrder = LASER_ORDER - 1;
+      parent.add(this.shadow, this.trace);
+    }
     this._place();
+  }
+
+  /** The beam's footprint on `floorY`: flat, under it, as wide as it reads. */
+  _placeShadow(live) {
+    if (!this.shadow) return;
+    const fy = this.floorY;
+    // Only the part of the beam that is ABOVE the floor casts anything.
+    const show = this.on && (this.a.y > fy - 0.02 || this.b.y > fy - 0.02);
+    this.shadow.visible = show;
+    this.trace.visible = show;
+    if (!show) return;
+    const dx = this.b.x - this.a.x;
+    const dz = this.b.z - this.a.z;
+    const len = Math.hypot(dx, dz);
+    const yaw = Math.atan2(dx, dz);
+    for (const [m, w, y] of [[this.shadow, Math.max(0.5, this.thick * 3.2), fy + 0.035], [this.trace, Math.max(0.12, this.thick * 0.7), fy + 0.045]]) {
+      m.position.set((this.a.x + this.b.x) / 2, y, (this.a.z + this.b.z) / 2);
+      m.rotation.set(0, yaw, 0);
+      m.scale.set(w, 1, Math.max(0.01, len));
+    }
+    this.trace.material.opacity = live ? 0.55 : 0.2;
+    this.shadow.material.opacity = live ? 0.55 : 0.3;
   }
 
   _place() {
     const mid = _v.addVectors(this.a, this.b).multiplyScalar(0.5);
     const len = this.a.distanceTo(this.b);
     this.group.position.copy(mid);
-    this.group.lookAt(_w.copy(this.b).add(this.group.parent?.position ?? _z));
+    /* Turned in the PARENT'S OWN FRAME, from a to b. This used to be
+       `lookAt(b + parent.position)`, which is a world point only when the
+       parent's parent sits at the origin. A drill's root is at the origin
+       INSIDE the sim layer, and the layer is SIM.dx (12000) out, so every
+       beam in a drill was drawn pointing at world -X: Long Guard's three
+       came out parallel, Adamant's clock hands were two parallel bars, and
+       the hits were judged on the true a-b segment the whole time. Found in
+       the browser, Oct 2026, behind "the lasers are hard to see". */
+    if (len > 1e-6) this.group.quaternion.setFromUnitVectors(_z.set(0, 0, 1), _w.subVectors(this.b, this.a).divideScalar(len));
     const live = this.on && this.t >= this.warm;
     const k = live ? 1 : 0.25;
     this.core.scale.set(this.thick * 0.25 * k, this.thick * 0.25 * k, len);
     this.glow.scale.set(this.thick * k, this.thick * k, len);
-    this.glow.material.opacity = live ? 0.45 + 0.15 * Math.sin(this.t * 30) : 0.18;
+    this.glow.material.uniforms.uOpacity.value = live ? 0.45 + 0.15 * Math.sin(this.t * 30) : 0.18;
+    this._placeShadow(live);
   }
 
   /** Distance from her body (a vertical segment) to the beam, in the layer. */
@@ -641,12 +805,19 @@ export class Laser {
     if (!this.on || this.t < this.warm) return;
     for (const p of players) {
       if (this.owner != null && p.index !== this.owner) continue;
-      if (this.distTo(p) < this.thick + 0.45) this.onHit?.(p, this);
+      if (this.distTo(p) < this.thick + LASER_PAD) this.onHit?.(p, this);
     }
   }
 
-  dispose() { this.group.removeFromParent(); }
+  dispose() { this.group.removeFromParent(); this.shadow?.removeFromParent(); this.trace?.removeFromParent(); }
 }
+
+/** How far past its own radius a beam reaches her body. 0.45 before Oct 2026:
+ *  with the glow drawn at `thick`, a kitten whose sprite was visibly clear of
+ *  a thin wall took the hit — "the player is taking damage before even
+ *  stepping into the lazers". Her body segment is her middle; her sprite is
+ *  about 0.5 either side of it, so 0.3 is touching what is drawn. */
+export const LASER_PAD = 0.3;
 
 /**
  * A bolt fired at her from a turret — the thing a Ward exists to stop. Flies

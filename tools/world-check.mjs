@@ -36757,11 +36757,18 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const climb = (n, k = 1) => apex(V * k) * (n - 1) + apex(V * LATER * k);
     const shadow = CLANS.find((c) => c.id === 'shadow').buff;
     const two = climb(2) + LAND;
+    /* ...BUT NOT WITH THE ORB LENT. Only the LAST jump of a chain is weak,
+       so a kitten with three jumps who stops after two has made two FULL
+       ones — and that is the kitten in the Leap drill. The ledge at 5.0 was
+       measured against `two` (4.59) and stood 0.22 under her real 5.22:
+       Richard, Oct 2026, "very easy to jump on with just 2 jumps". */
+    const twoLent = apex(V) * 2 + LAND;
     const three = climb(2 + PO.aggregate(['leap']).jumps) + LAND;
     const sworn3 = climb(shadow.jumps, shadow.jump) + LAND;
     line('best ledge on two jumps / a Leap orb / Shadowtail', `${two.toFixed(2)} / ${three.toFixed(2)} / ${sworn3.toFixed(2)}`);
-    ok('跳 the Leap ledge is out of reach of two jumps', GAL.LEAP_DECK > two * 1.05, `${GAL.LEAP_DECK} vs ${two.toFixed(2)}`);
-    ok('...and comfortably inside three', GAL.LEAP_DECK < (three - LAND) * 0.85, `${GAL.LEAP_DECK} vs ${three.toFixed(2)}`);
+    ok('跳 the Leap ledge is out of reach of two jumps — two FULL ones, as the lent orb gives her', GAL.LEAP_DECK > twoLent * 1.05,
+      `${GAL.LEAP_DECK} vs ${twoLent.toFixed(2)}`);
+    ok('...and inside three with a second jump\'s top to spare', GAL.LEAP_DECK < three - 1.0, `${GAL.LEAP_DECK} vs ${three.toFixed(2)}`);
     ok('影 the Shadowtail star is out of reach of two jumps', HAL.SHADOW_DECK > two * 1.3);
     ok('...and inside the oath\'s three, with room', HAL.SHADOW_DECK < (sworn3 - LAND) * 0.85,
       `${HAL.SHADOW_DECK} vs ${sworn3.toFixed(2)}`);
@@ -36876,6 +36883,370 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         /src: 'bolt', drill: this, from,/.test(srcOf('drill.js'))
         && /src: 'blade', drill: d, from: me, foe: f/.test(srcOf('school.js'))
         && /src: 'shadow', from, foe: b/.test(srcOf('shadow.js')));
+    }
+
+    /* --- THE OCT 2026 PASS ON THE GALLERY. Richard's notes on every drill,
+       each with the check that would have caught it. --- */
+    {
+      const DRm = await import('../src/systems/dream/drill.js');
+      D.shards ??= { burst() {}, update() {} };
+      D.progress ??= new PR.DreamProgress(null);
+      const GI = ISL.islandCentre(dc, L.u, ISL.ISLANDS.gallery);
+      const at = { x: GI.x, y: GI.y, z: GI.z, r: ISL.ISLANDS.gallery.r, fwd: { x: GI.dir.x, z: GI.dir.z } };
+      const gstub = { key: () => 'X', dream: D };
+      // The top of one full jump: JUMP_V 11.2, GRAVITY 26.
+      const V_ONE = () => (11.2 * 11.2) / 52;
+      const lay = (x, y, z) => her.position.set(x + SW.SIM.dx, y, z + SW.SIM.dz);
+      const run = (id) => {
+        D.drills[0]?.dispose?.();
+        D.drills[0] = null;
+        D.st[0] = { phase: 'sim', t: 0, simHp: 100 };
+        her.velocity.set(0, 0, 0);
+        her.parryT = 0; her.triWindT = 0; her.triLeft = 0; her.triT = 0; her.triHangT = 0; her.chargeT = 0;
+        const spec = GAL.DRILLS[id](gstub, her);
+        D.startDrill(her, { kanji: '?', ...spec, id: `gallery.${id}` }, at);
+        return D.drills[0];
+      };
+      const golive = (d) => { for (let i = 0; i < 400 && d.state !== 'live'; i++) d.update(1 / 60); return d.state === 'live'; };
+
+      /* 疾 "all hoops facing in a circle towards the center". */
+      {
+        const d = run('swift');
+        const c = d.spot(0, 0);
+        const worst = Math.max(...d.gateList.map((r) => {
+          const nx = Math.sin(r.group.rotation.y); const nz = Math.cos(r.group.rotation.y);
+          const rx = r.local.x - c.x; const rz = r.local.z - c.z;
+          return Math.abs(nx * rz - nz * rx) / Math.hypot(rx, rz);
+        }));
+        ok('疾 every Gale hoop faces the middle of the floor, so the eight read as one ring', worst < 1e-6, worst.toExponential(1));
+        ok('...and three stars are a second kinder', d.spec.bands[2] === 10.5, String(d.spec.bands));
+      }
+
+      /* 剛 "the drill should not start until the player gets into the circle". */
+      {
+        const c0 = at;
+        lay(c0.x + at.fwd.x * 18, at.y, c0.z + at.fwd.z * 18);
+        const d = run('vigor');
+        for (let i = 0; i < 180; i++) d.update(1 / 60);
+        const waited = d.state === 'arrive' && d.t === 0 && d.lasers.length === 0 && D.drillFocus(her) == null;
+        lay(c0.x + 1, at.y, c0.z);
+        d.update(1 / 60);
+        const f = D.drillFocus(her);
+        ok('剛 Adamant waits at its circle: no clock, no beams, until she walks in', waited, `${d.state} t ${d.t} beams ${d.lasers.length}`);
+        ok('...then the beams appear, with a count-in of a second or two before it starts',
+          d.state === 'ready' && d.lasers.length === 2 && d.readyT >= 1.5 && d.readyT <= 2.5, `${d.state} ${d.readyT}`);
+        ok('...and her camera comes in on the circle, closer and lower than the walking one',
+          !!f && f.dist === GAL.ADAMANT_CAM.dist && f.dist < 22 && f.pitch < 0.66 && Math.abs(f.centre.x - SW.SIM.dx - c0.x) < 0.01, f ? `${f.dist} ${f.pitch}` : 'none');
+        golive(d);
+        // Drawn over the gold circle and over her: the beams are the last transparent thing.
+        const ring = d.root.children.find((o) => o.geometry?.type === 'RingGeometry');
+        const L0 = d.lasers[0];
+        let herTop = 0;
+        her.group.traverse((o) => { herTop = Math.max(herTop, o.renderOrder ?? 0); });
+        ok('...and its beams are drawn after the gold circle and after her (Richard: "behind the yellow circle")',
+          L0.glow.renderOrder > (ring?.renderOrder ?? 0) && L0.core.renderOrder > L0.glow.renderOrder && L0.glow.renderOrder > herTop,
+          `beam ${L0.glow.renderOrder} ring ${ring?.renderOrder} her ${herTop}`);
+        ok('...and each throws a line on the floor straight under it, the length of the beam',
+          L0.shadow?.visible && Math.abs(L0.shadow.position.y - at.y) < 0.1
+          && Math.abs(L0.shadow.scale.z - Math.hypot(L0.b.x - L0.a.x, L0.b.z - L0.a.z)) < 1e-6, `${L0.shadow?.position.y} ${L0.shadow?.scale.z}`);
+        ok('...and a beam below the floor is drawn faint rather than at full strength',
+          L0.glow.material.uniforms.uFloor.value === at.y && /uFloor - 0\.02 \? 0\.22/.test(L0.glow.material.fragmentShader) && TG.UNDER_ALPHA < 0.4);
+        /* The DRAWN beam lies along a-b, in WORLD space, for every beam in the
+           drill. It was `lookAt(b + parent.position)`: right only when the
+           parent's parent is at the origin, and a drill's root sits inside
+           the sim layer, SIM.dx out — so all of them pointed at world -X and
+           Adamant's two hands were drawn as parallel bars. Measured through
+           the real matrices, not by reading the code. */
+        let worst = 0;
+        for (const Lx of d.lasers) {
+          const len = Lx.a.distanceTo(Lx.b);
+          if (len < 0.5) continue;
+          // The length is on the core's scale (the group is unit), so its ends are the core's.
+          Lx.core.updateWorldMatrix(true, false);
+          const wa = Lx.core.localToWorld(new THREE.Vector3(0, 0, -0.5));
+          const wb = Lx.core.localToWorld(new THREE.Vector3(0, 0, 0.5));
+          const pa = Lx.group.parent.localToWorld(Lx.a.clone());
+          const pb = Lx.group.parent.localToWorld(Lx.b.clone());
+          worst = Math.max(worst, Math.min(wa.distanceTo(pa) + wb.distanceTo(pb), wa.distanceTo(pb) + wb.distanceTo(pa)));
+        }
+        ok('...and every beam is DRAWN where it is judged, from a to b in the world, inside the offset sim layer',
+          // ...and asked of a root that really IS offset, or it proves nothing.
+          d.lasers.length === 2 && worst < 1e-3 && d.root.getWorldPosition(new THREE.Vector3()).length() > 100,
+          `ends off by ${worst.toFixed(4)}, root at ${d.root.getWorldPosition(new THREE.Vector3()).x.toFixed(0)}`);
+        d.dispose(); D.drills[0] = null;
+      }
+
+      /* 跳 "can't jump on the platform from underneath it (they hit it with
+         their head, like a ceiling) ... force triple jump ... a dozen". */
+      {
+        const G = 26; const V = 11.2; const LAND = 0.4;
+        const one = (V * V) / (2 * G);
+        const reach1 = one + LAND;
+        const d = run('leap');
+        const C = d.climb;
+        const rises = C.map((s, i) => s.y - (i ? C[i - 1].y : at.y));
+        ok('跳 the Leap tower is a dozen lidded platforms', C.length >= 12 && C.every((s) => s.deck.ceiling), `${C.length}`);
+        ok('...three of them a triple jump up, and two that move',
+          rises.filter((r) => Math.abs(r - GAL.LEAP_DECK) < 1e-6).length === 3 && C.filter((s) => s.sway).length === 2);
+        ok('...and every other step is one jump up', rises.every((r) => Math.abs(r - GAL.LEAP_DECK) < 1e-6 || r <= reach1 - 0.5),
+          rises.map((r) => r.toFixed(1)).join(' '));
+        // A swaying deck is measured at both ends of its swing and the middle.
+        const at3 = (s) => [-1, 0, 1].map((k) => ({ x: s.x + s.rx * k * (s.sway ?? 0), z: s.z + s.rz * k * (s.sway ?? 0) }));
+        let tight = Infinity;
+        let stack = '';
+        for (let i = 0; i < C.length; i++) {
+          for (let j = i + 1; j < C.length; j++) {
+            let gap = Infinity;
+            for (const a of at3(C[i])) for (const b of at3(C[j])) gap = Math.min(gap, Math.hypot(a.x - b.x, a.z - b.z) - 2 * GAL.LEAP_R);
+            if (j === i + 1) tight = Math.min(tight, gap);
+            if (gap < 0 && Math.abs(C[i].y - C[j].y) < 8) stack += ` ${i}/${j}`;
+          }
+        }
+        ok('...with a real gap between neighbours, and no lid hung low over another platform', tight > 0.5 && !stack, `${tight.toFixed(2)}${stack}`);
+        const far = Math.max(...C.map((s) => Math.hypot(s.x - at.x, s.z - at.z) + GAL.LEAP_R + (s.sway ?? 0)));
+        ok('...all of it over the island floor', far < at.r - 1, `${far.toFixed(1)} of ${at.r}`);
+        // A kitten under a lid stops at it; the same deck without one is one-way as ever.
+        const pad0 = { mx: 0, my: 0, down: () => false, pressed: () => false };
+        const lid = C[2];
+        her.position.set(lid.deck.x + SW.SIM.dx, lid.y - 4.5, lid.deck.z + SW.SIM.dz);
+        her.velocity.set(0, 14, 0);
+        her.onGround = false;
+        let top = -Infinity;
+        for (let i = 0; i < 40; i++) { her.update(1 / 60, pad0, sim, [], null); top = Math.max(top, her.position.y); }
+        const under = lid.y - lid.deck.thick - PL.HEAD_ROOM;
+        ok('...and jumping up into one from below, her head stops at its underside',
+          top <= under + 1e-6 && top > under - 0.5, `${top.toFixed(2)} vs ${under.toFixed(2)}`);
+        // A moving platform carries whoever stands on it.
+        const mv = C.find((s) => s.sway);
+        her.position.set(mv.deck.x + SW.SIM.dx, mv.deck.y, mv.deck.z + SW.SIM.dz);
+        her.onGround = true;
+        const x0 = her.position.x;
+        sim.moveTempDisc(mv.deck, mv.deck.x + 0.5, mv.deck.y, mv.deck.z, [her]);
+        ok('...and a moving platform carries her with it', Math.abs(her.position.x - x0 - 0.5) < 1e-6, `${(her.position.x - x0).toFixed(3)}`);
+        d.dispose(); D.drills[0] = null;
+      }
+
+      /* 落 "the player keeps constantly falling through the floor when doing
+         power dive ... mainly happening on the floating discs". A dive at
+         DIVE.speed, at 30 frames a second, onto a temp disc. */
+      {
+        const pad0 = { mx: 0, my: 0, down: () => false, pressed: () => false };
+        const deck = sim.addTempDisc({ x: at.x + 30, z: at.z, r: 2.5, y: at.y + 6 });
+        her.position.set(deck.x + SW.SIM.dx, deck.y + 0.9, deck.z + SW.SIM.dz);
+        her.velocity.set(0, -PO.DIVE.speed, 0);
+        her.onGround = false;
+        let landed = false;
+        for (let i = 0; i < 6 && !landed; i++) {
+          her.update(1 / 30, pad0, sim, [], null);
+          landed = her.onGround && Math.abs(her.position.y - deck.y) < 1e-6;
+        }
+        ok('落 a dive at full speed lands on a floating disc at 30fps instead of falling through it', landed, `y ${her.position.y.toFixed(2)} vs ${deck.y}`);
+        sim.removeTempDisc(deck);
+        /* ...and a deck is still one-way: standing on the floor under one, she
+           stays on the floor. (Rising INTO one's 0.4 step lifts her onto it,
+           as it always has — the sweep asks from the top of a FALL only.) */
+        const over = sim.addTempDisc({ x: at.x + 5, z: at.z + 5, r: 2.5, y: at.y + 3 });
+        her.position.set(over.x + SW.SIM.dx, at.y, over.z + SW.SIM.dz);
+        her.velocity.set(0, 0, 0);
+        her.onGround = true;
+        for (let i = 0; i < 20; i++) her.update(1 / 60, pad0, sim, [], null);
+        ok('...and a kitten standing under a floating disc stays under it', Math.abs(her.position.y - at.y) < 1e-6, `${her.position.y.toFixed(2)} vs ${at.y}`);
+        sim.removeTempDisc(over);
+      }
+
+      /* 壁 "if the player can beat it in under 18 seconds and not get hit". */
+      {
+        const s = GAL.DRILLS.ward(gstub, her).stars;
+        ok('壁 three Ward stars: under 18s and never hit — and only then',
+          s({ hits: 0 }, 17.9) === 3 && s({ hits: 1 }, 12) < 3 && s({ hits: 0 }, 18.2) < 3 && GAL.WARD_GOLD === 18);
+      }
+
+      /* 十 six levels, each ONE Cross Slash that breaks everything on it. */
+      {
+        const d = run('tri');
+        golive(d);
+        const L1 = d.L;
+        const post = L1.posts[0];
+        const cut = (t) => t.hit({ attacker: her, kind: 'tri', dmg: 9, dist: 2.4, swing: 1, dir: { x: 0, z: 1 } });
+        her.triWindT = 0.2; d.update(1 / 60);
+        cut(post); cut(post);
+        her.triWindT = 0; d.update(1 / 60);
+        const putBack = post.live && post.hp === post.maxHits && d.count === 0;
+        her.triWindT = 0.2; d.update(1 / 60);
+        cut(post); cut(post); cut(post);
+        her.triWindT = 0; d.update(1 / 60);
+        ok('十 a Cross Slash that leaves the post standing puts it back', putBack, `${post.live} ${post.hp}`);
+        ok('...and one that breaks it clears the level', d.count === 1 && d.lvNext != null, `${d.count}`);
+        for (let i = 0; i < 90; i++) d.update(1 / 60);
+        const P2 = d.L.posts;
+        const fx = Math.sin(her.facing); const fz = Math.cos(her.facing);
+        const dots = P2.map((t) => ((t.local.x - (her.position.x - SW.SIM.dx)) * fx + (t.local.z - (her.position.z - SW.SIM.dz)) * fz) / GAL.CROSS_R);
+        ok('...the second is one in front and one behind her', d.lv === 1 && P2.length === 2 && dots.some((k) => k > 0.99) && dots.some((k) => k < -0.99),
+          dots.map((k) => k.toFixed(2)).join(' '));
+        ok('...and there are six, ending with the ones that appear as she cuts',
+          GAL.CROSS_LEVELS.length === 6 && GAL.CROSS_LEVELS[5].chain && GAL.CROSS_LEVELS[4].air && GAL.CROSS_LEVELS[3].orbit > 0);
+        // In the air: out of reach from the floor, in reach at the top of one jump.
+        const A = PL.ATTACKS.tri;
+        const lift = GAL.CROSS_AIR + 1.3;
+        const win = PL.COMBAT.strikeHeight + GAL.CROSS_AIR_UP;
+        ok('...and the posts in the air cannot be cut from the floor, and can from the top of one jump',
+          lift > win + 0.3 && lift - (V_ONE()) <= win - 0.3 && A.reach >= GAL.CROSS_R + 0.5, `${lift.toFixed(2)} vs ${win.toFixed(2)}`);
+        d.dispose(); D.drills[0] = null;
+      }
+
+      /* 突 sets of three, in one charge, or the set comes back. */
+      {
+        const d = run('charge');
+        golive(d);
+        const S = d.L.sets[0];
+        her.chargeT = 0.3; d.update(1 / 60);
+        S.mats[0].breakNow(); S.mats[1].breakNow();
+        her.chargeT = 0; d.update(1 / 60);
+        const back = S.mats.every((m) => m.live) && !S.done;
+        her.chargeT = 0.3; d.update(1 / 60);
+        for (const m of S.mats) m.breakNow();
+        her.chargeT = 0; d.update(1 / 60);
+        ok('突 a charge through part of a set puts the whole set back', back);
+        ok('...and through all three, the set is done', S.done && d.count === 0);
+        ok('...five parts, the last an L of a low set and a high one, done before she lands',
+          GAL.CHARGE_PARTS.length === 5 && GAL.CHARGE_PARTS[4].combo && GAL.CHARGE_PARTS[4].sets.length === 2
+          && GAL.CHARGE_PARTS[4].sets[0].h === GAL.CHARGE_ONE && GAL.CHARGE_PARTS[4].sets[1].h === GAL.CHARGE_TWO
+          && GAL.CHARGE_PARTS[4].sets[1].dir - GAL.CHARGE_PARTS[4].sets[0].dir === 90);
+        // The two heights, against the real jump: one (11.2) and one plus a last, weak (x0.86).
+        const one = V_ONE();
+        const two = one + ((11.2 * 0.86) ** 2) / 52;
+        ok('...and the sets in the air sit at the tops of one jump and of two',
+          Math.abs(GAL.CHARGE_ONE - one) < 0.1 && Math.abs(GAL.CHARGE_TWO - two) < 0.1, `${one.toFixed(2)} ${two.toFixed(2)}`);
+        // A mat in the air answers only near its own height — measured through the real gate.
+        const mat = new TG.Mat({ x: 0, y: GAL.CHARGE_ONE - 0.3, z: 0, owner: 0, colour: 0xffffff, kinds: ['charge'],
+          hitUp: (1.0 + GAL.AIR_BAND) - PL.COMBAT.strikeHeight, hitDown: -(1.0 - GAL.AIR_BAND) - PL.COMBAT.strikeHeight });
+        const gate = new TG.TrainingGate();
+        gate.add(mat);
+        const tryAt = (y) => { her.position.set(SW.SIM.dx - 2, y, SW.SIM.dz); mat.live = true; mat.hp = 1; return gate.strike(her, 'charge', PL.BASE_REACH, { x: 1, y: 0 }); };
+        const floorHit = tryAt(0);
+        const topHit = tryAt(GAL.CHARGE_ONE);
+        const twoHit = tryAt(two);
+        ok('...and a set at the top of one jump cannot be charged from the floor, or from the top of two',
+          floorHit === 0 && topHit === 1 && twoHit === 0, `${floorHit} ${topHit} ${twoHit}`);
+        d.dispose(); D.drills[0] = null;
+      }
+
+      /* 守 three turrets, a warning, a beam she sees coming, three levels. */
+      {
+        const bareUp = PO.wardFor(1, 0).max + PO.WARD.tail;
+        const lentUp = PO.wardFor(1, 2).max + PO.WARD.tail;
+        const seen = GAL.GUARD.grow + GAL.BEAM_T;
+        ok('守 the last Long Guard level: from first sight of the beam, longer than a bare Ward and shorter than the lent pair',
+          seen > bareUp + 0.15 && lentUp - seen > 0.5, `${bareUp.toFixed(2)} < ${seen.toFixed(2)} < ${lentUp.toFixed(2)}`);
+        ok('...and the first two are inside a bare one, so the lesson comes last',
+          GAL.GUARD_BEAMS.length === 3 && GAL.GUARD_BEAMS.slice(0, 2).every((b) => GAL.GUARD.grow + b < bareUp - 0.3));
+        ok('...with the 2-3 seconds between volleys he asked for, and the beam reaching her in a quarter second',
+          GAL.GUARD.pause >= 2 && GAL.GUARD.pause <= 3 && Math.abs(GAL.GUARD.grow - 0.25) < 1e-9);
+        lay(at.x, at.y, at.z);
+        const d = run('aegis');
+        golive(d);
+        const L = d.L;
+        let fired = false;
+        let reached = Infinity;
+        Object.defineProperty(her, 'warded', { value: true, configurable: true });
+        for (let i = 0; i < 60 * 12 && d.count === 0; i++) {
+          d.update(1 / 60);
+          if (L.phase === 'fire' && !fired) fired = true;
+          if (L.phase === 'fire') {
+            const b0 = d.turrets[0].beam;
+            if (b0.distTo(her) < b0.thick + TG.LASER_PAD && reached === Infinity) reached = L.t;
+          }
+        }
+        delete her.warded;
+        ok('...three turrets rise, and a volley held off from first touch to last clears a level',
+          d.turrets.length === 3 && fired && d.count === 1, `${d.count}`);
+        ok('...and the beam grows to her over GUARD.grow, not on the frame it fires',
+          reached > GAL.GUARD.grow * 0.6 && reached < GAL.GUARD.grow + 0.05, `${reached.toFixed(3)}s`);
+        ok('...and she is marked while she is targeted', d.reticle.visible);
+        d.dispose(); D.drills[0] = null;
+      }
+
+      /* 瞬 four levels; a pad clear of every beam; a wall two jumps cannot clear. */
+      {
+        const d = run('blink');
+        const twoTop = V_ONE() + ((11.2 * 0.86) ** 2) / 52;
+        const clearOf = () => d.lasers.every((Lz) => Lz.distTo(her) > Lz.thick + TG.LASER_PAD + 0.3);
+        golive(d);
+        const pads = [];
+        for (let lv = 0; lv < 4; lv++) {
+          if (lv) { d.lvNext = 0.001; d.update(1 / 60); }
+          pads.push(d.lv === lv && clearOf());
+        }
+        ok('瞬 every Flash Step level stands her on a pad clear of every beam', pads.every(Boolean), pads.join(' '));
+        ok('...a wall is too tall to jump with two jumps', Math.max(...GAL.BLINK_WALL) - 0.18 - TG.LASER_PAD > twoTop + 0.2,
+          `${Math.max(...GAL.BLINK_WALL)} vs ${twoTop.toFixed(2)}`);
+        ok('...the star in the air is out of reach from the floor and inside the top of a jump',
+          GAL.BLINK_AIR_Y >= 2.2 && Math.abs(GAL.BLINK_AIR_Y - V_ONE()) < 2.2);
+        ok('...and the shield-bearer takes 0.75s to come back round',
+          Math.abs(GAL.SHIELD_TURN.wait + Math.PI / GAL.SHIELD_TURN.rate - 0.75) < 0.01);
+        // The last level: from in front, refused; from behind, it counts.
+        golive(d);
+        const L = d.L;
+        const foe = L.foe.group.position;
+        const blow = () => L.foe.hit({ attacker: her, kind: 'stand', dmg: 10, dist: 2, swing: 1, dir: { x: 0, z: 1 } });
+        const yaw = L.yaw;
+        lay(foe.x + Math.sin(yaw) * 2, at.y, foe.z + Math.cos(yaw) * 2);
+        const front = blow();
+        lay(foe.x - Math.sin(yaw) * 2, at.y, foe.z - Math.cos(yaw) * 2);
+        const back = blow();
+        ok('...whose shield refuses a blow from in front and not from behind', !front && back);
+        d.dispose(); D.drills[0] = null;
+      }
+
+      /* 間 the pack, judged together: one side caught whole; round her, not. */
+      {
+        const d = run('longparry');
+        golive(d);
+        for (let i = 0; i < 2; i++) { d.lvNext = 0.001; d.update(1 / 60); d.update(1 / 60); }
+        const L = d.L;
+        ok('間 Long Parry\'s last level is three partners from three sides', d.lv === 2 && L.foes.length === 3);
+        const strike = (place) => {
+          d.L.foes.forEach((h, i) => { const q = place(i); h.group.position.set(q.x, at.y, q.z); });
+          lay(at.x, at.y, at.z);
+          d.L.mode = 'wind'; d.L.windT = 99; d.guardAt = 0;
+          D.st[0].iframes = 0; D.st[0].simHp = 100;
+          her.parryT = 0.3; her.parryDir = 0;
+          d.update(1 / 60);
+        };
+        const realRip = her.riposte;
+        her.riposte = () => { her.parryT = 0; };
+        strike((i) => ({ x: at.x + (i - 1) * 1.4, z: at.z + 2 }));
+        const caught = d.L.caught === 1 && !d.L.after;
+        strike((i) => ({ x: at.x + Math.sin(i * 2.1) * 2, z: at.z + Math.cos(i * 2.1) * 2 }));
+        const split = d.L.after === 'retry';
+        her.riposte = realRip;
+        ok('...three swinging together from her guard\'s side are all caught by one riposte', caught);
+        ok('...and from round her, one lands and the level starts over', split);
+        d.dispose(); D.drills[0] = null;
+      }
+
+      /* 返 "have the enemy swing a sword once they get near the player". */
+      {
+        const h = new TG.HoloKitten({ x: 0, y: 0, z: 0, parent: new THREE.Group() });
+        h.swordPose(0, 0); const rest = h.swordPivot.rotation.x;
+        h.swordPose(1, 0); const up = h.swordPivot.rotation.x;
+        h.swordPose(0, 1); const down = h.swordPivot.rotation.x;
+        ok('返 a holo-kitten raises its sword in the tell and brings it down on the blow',
+          h.swordPivot.visible && up < rest - 1 && down > up + 2, `${rest} ${up} ${down}`);
+        const src = readFileSync(new URL('../src/systems/dream/gallery.js', import.meta.url), 'utf8');
+        ok('...in the Riposte drill and in every Long Parry partner', /h\.swordPose\(Math\.min\(1, d\.windT/.test(src) && /h\.swordPose\(Math\.min\(1, L\.windT/.test(src));
+      }
+
+      /* The Flash Step's log lands on a disc in here, and a drill's camera reaches her pane. */
+      {
+        const ms = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+        const fxs = readFileSync(new URL('../src/systems/dodgefx.js', import.meta.url), 'utf8');
+        ok('瞬 the Flash Step decoy asks the floor of the world she is in (the simulator\'s, in there)',
+          /this\.dodgeFx\?\.update\(dt, this\.players, \(p\) => this\.dream\?\.worldFor\?\.\(p\) \?\? this\.world\)/.test(ms)
+          && /typeof world === 'function' \? world\(p\) : world/.test(fxs));
+        ok('...and a drill\'s own shot is in her pane\'s camera chain', /\?\? this\.dream\?\.drillFocus\?\.\(p\)/.test(ms));
+        void DRm;
+      }
     }
   }
 
