@@ -45326,7 +45326,8 @@ console.log('\n--- his recordings: one song per level, looped on the beat, won i
          cut in the gap before the beat (shadow-music.mjs `seamLag`, `seamCut`).
          Exactly on the grid was the first way, and every one of the three
          stumbled at its seam — the takes creep 0.1%, so beat A and beat B are
-         30-60ms out of step with each other (Requiem -43ms, Darksynth -61ms).
+         30-60ms out of step with each other (Requiem -43ms; Darksynth's old
+         52-100 loop -61ms, its 15-111 one +23ms off the grid's drift).
          So: within 80ms of the beat on each side, and the length is the
          beats less the lag to the millisecond — the music's own A-to-B. */
       const lag = f.lag ?? NaN;
@@ -45364,6 +45365,23 @@ console.log('\n--- his recordings: one song per level, looped on the beat, won i
     const [A, B] = N.loopBeats;
     ok('...and the long cut\'s chart covers all of it: the original, plus one more loop than it has extra passes',
       L.beats === N.beats + (L.passes + 1) * (B - A), `${L.beats} beats for ${L.passes} passes`);
+  }
+  /* DARKSYNTH, THE SAME WAY. Richard, Oct 2026: "The loop on the Hard Shadow
+     Lionheart music is not very good, too repetitive in the battle, also the
+     splice transition of the music is not very good. We want more diversity
+     and the main theme of the song repeating during the battle." It looped
+     52-100, 21s of the drop alone, so the theme (beats 7-46) was heard once.
+     Every pass is the theme from its second G phrase (15) and the whole drop
+     (47-110), ending before the closing hit (111) and the fade (49.8s); and
+     its seam is timed off the grid's drift, which the tool prints beside the
+     onset match it overrules. */
+  {
+    const S = MUSIC_FILES.shadowSynth;
+    const src = readFileSync(new URL('../tools/capture/shadow-music.mjs', import.meta.url), 'utf8');
+    ok('...and Darksynth loops its THEME and its whole drop every pass — 15 to 111, before the closing hit — twice as long as it was, its seam timed by the grid',
+      S.loopBeats[0] <= 15 && S.loopBeats[0] >= 8 && S.loopBeats[1] === 111 && S.loop[1] < 49.8 && S.loop[1] - S.loop[0] > 40
+      && Math.abs(S.lag) < 0.04 && /id: 'shadowSynth'[^\n]*loopBeats: \[15, 111\], lagBy: 'drift'/.test(src),
+      `${S.loopBeats.join('-')} -> ${S.loop.map((s) => s.toFixed(2)).join('-')}s lag ${S.lag}`);
   }
 
   /* THE LOCKS. A kitten who has won nothing; then one fight at a time. */

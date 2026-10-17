@@ -52,7 +52,28 @@ const TARGET_RMS = 0.050;
 /** id → take, and what it is. The `level` is the fight it plays in and the win that unlocks it in Kata Trace. */
 const TAKES = [
   { id: 'shadowOrch', raw: 'shadow_orch1.mp3', name: 'Shadow Lionheart: Requiem', level: 'medium', gen: 'QmFpkWfxZoSc30YCrEDg' },
-  { id: 'shadowSynth', raw: 'shadow_elec1.mp3', name: 'Shadow Lionheart: Darksynth', level: 'hard', gen: '3kFbSIA305fvUrXLT5l1' },
+  /* DARKSYNTH'S LOOP IS CHOSEN BY ITS SECTIONS TOO. Richard, Oct 2026: "The
+     loop on the Hard Shadow Lionheart music is not very good, too repetitive
+     in the battle, also the splice transition of the music is not very good.
+     We want more diversity and the main theme of the song repeating during
+     the battle." The search had picked 52-100: 21s from the middle of the
+     drop, so the theme — the G / C / D phrases of the first 46 beats — played
+     once and never again. Read off per-beat band energy: the theme runs in
+     8-beat phrases from 7 (G at 15, C at 23, D at 31, G at 39); beat 46 is
+     the one beat with the sub dropped out, the break before the drop; the
+     drop is 47-110, sixteen bars at full mids; 111 is the closing hit, and
+     the fade starts at 112 (49.8s). So the loop runs to the end of the drop
+     and jumps back to the theme's second G phrase at 15 — drop into verse,
+     the turn the song makes at 46 run the other way. 96 beats, 42s, the
+     theme and the drop on every pass.
+     ITS SEAM IS TIMED BY THE GRID'S DRIFT (`lagBy: 'drift'`), not by
+     `seamLag`. That compares the four beats before A with the four before B,
+     which here are the theme against the drop — two arrangements — and it
+     peaked at +97ms (corr 0.278, against the edge of its ±110 search), with
+     neighbouring pairs anywhere from -4 to +97. Per-beat onset peaks scatter
+     -101..+110: a pad-and-arp texture has no hit to lock to. The beat fit's
+     own 8s windows say where the music sits against the grid at each end. */
+  { id: 'shadowSynth', raw: 'shadow_elec1.mp3', name: 'Shadow Lionheart: Darksynth', level: 'hard', gen: '3kFbSIA305fvUrXLT5l1', loopBeats: [15, 111], lagBy: 'drift' },
   /* NIGHTMARE'S LOOP IS CHOSEN BY ITS SECTIONS, not by the search. Richard,
      of the first long cut: "isn't looping very well and sound awkward,
      especially since it only says HONOR once ... we should loop at the
@@ -70,6 +91,15 @@ const TAKES = [
 const LONG_SECS = [120, 180];
 
 const dry = process.argv.includes('--dry');
+
+/** Where the music sits against the grid at `t` seconds (s), off `measure`'s
+ *  per-8s drift windows, interpolated between their centres. */
+const driftAt = (m, t) => {
+  const d = m.drift;
+  const x = Math.max(0, Math.min(d.length - 1, (t - 4) / 8));
+  const i = Math.min(d.length - 2, Math.floor(x));
+  return (d[i] + (d[i + 1] - d[i]) * (x - i)) / 1000;
+};
 const meta = {};
 mkdirSync(P('public/music'), { recursive: true });
 for (const T of TAKES) {
@@ -86,7 +116,10 @@ for (const T of TAKES) {
   const tA = m.firstBeat + best.A * m.spb;
   const tB = m.firstBeat + best.B * m.spb;
   // Align the seam to the music, then cut in the gap before the beat (see seamLag, seamCut).
-  const { lag, corr } = seamLag(bandOnsets(mono), tA, tB, m.spb);
+  const sl = seamLag(bandOnsets(mono), tA, tB, m.spb);
+  const lag = T.lagBy === 'drift' ? +(driftAt(m, tA) - driftAt(m, tB)).toFixed(3) : sl.lag;
+  const corr = sl.corr;
+  if (T.lagBy === 'drift') console.log(`  seam lag by the grid's drift: ${(lag * 1000).toFixed(0)}ms (the onset match said ${(sl.lag * 1000).toFixed(0)}ms at corr ${sl.corr.toFixed(3)})`);
   const off = seamCut(mono, tA + lag, tB);
   const cutA = tA + lag + off, cutB = tB + off;
   const rms = rmsOf(mono, tA, tB);
