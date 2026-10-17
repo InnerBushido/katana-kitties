@@ -42609,6 +42609,55 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const arrived = walk(3, 0, 0, 120);
     ok('...running round the rim past the mouth never turns it on, and nor does standing near it',
       !past && !arrived);
+    /* "should only be happening if the player is moving in the direction to
+       cross the bridge ... such as, right after crossing the bridge". Off to
+       one side of the mouth and heading straight AT it, square to the way
+       the bridge runs: that is a kitten turning along the rim, and a mouth
+       is a point she can aim at without choosing its bridge. */
+    {
+      const rx = -E.toward.z;
+      const rz = E.toward.x;
+      const side = { x: E.mouth.x + rx * 5 - E.toward.x * 0.6, z: E.mouth.z + rz * 5 - E.toward.z * 0.6 };
+      let r = null;
+      D.st[0].peek = null;
+      for (let n = 0; n < 60; n++) {
+        her.position.set(side.x, E.mouth.y, side.z);
+        her.velocity.set(-rx * run, 0, -rz * run);
+        r = D._peekFor(her);
+      }
+      ok('望 heading AT the mouth from along the rim, square to its bridge, is not crossing it: no look across', !r);
+    }
+    /* THE GAP BEFORE THE RIDE. "the camera seems to be going back to a
+       top-default camera view which shouldn't be happening at all": the
+       trigger let her go 0.5 past the mouth and the ride boards about 2 past,
+       so the look across ran home in between. ON, it holds her out to `past`
+       on the deck going onward — and lets go past that, or going back. */
+    {
+      D.st[0].peek = null;
+      tw(3, dwellN);
+      const onDeck = (k, sgn = 1, n = 1) => {
+        let r = null;
+        for (let m = 0; m < n; m++) {
+          her.position.set(E.mouth.x + E.toward.x * k, E.mouth.y, E.mouth.z + E.toward.z * k);
+          her.velocity.set(E.toward.x * run * sgn, 0, E.toward.z * run * sgn);
+          r = D._peekFor(her);
+        }
+        return r;
+      };
+      const at2 = onDeck(2.1, 1, 10);
+      const at5 = onDeck(PK.PEEK.past - 0.5);
+      const beyond = onDeck(PK.PEEK.past + 1);
+      D.st[0].peek = null;
+      const fresh = onDeck(2.1, 1, 30);
+      ok('望 ON, the look across holds her out onto the deck until the ride can take it (2.1 past, where it boards at a run) — and never STARTS out there',
+        at2?.w === 1 && at5?.w === 1 && !beyond && !fresh && PK.PEEK.past > 2.1);
+      D.st[0].peek = null;
+      tw(3, dwellN);
+      onDeck(1.5, 1, 2);
+      const turned = onDeck(1.5, -1, Math.ceil(PK.PEEK.awayT / F) + 1);
+      ok('...and turning back off the deck lets it go', !turned);
+      D.st[0].peek = null;
+    }
     // From the island end it looks back at the hub.
     const back = ends.find((e) => e.road === E.road && e !== E);
     ok('...and from the island end of the same bridge it looks back at the hub',

@@ -90,6 +90,27 @@ import * as THREE from 'three';
        kiosk's circle, or is walking at one that is nearer than the mouth.
        A look already up lets go the moment she steps into a circle.
 
+   THREE MOVES WERE STILL TWO TOO MANY — RICHARD'S FIFTH PASS. "it looks like
+   it is transitioning between 3 camera states: first is when the player
+   starts approaching the bridge, it zooms in ... second the camera seems to
+   be going back to a top-default camera view which shouldn't be happening at
+   all, third the camera is transitioning to the bridge 'over the shoulders'
+   camera view." Measured, walking on at a run: the look across was 0.28 of
+   the way in at the mouth; `peekZone` let go of her 0.5 past it, and the ride
+   did not board until 2.07 past — so for those frames the look across ran
+   HOME (0.28 → 0.17, the lens 22 → 25.6 out), and then the ride came in over
+   that. An ON trigger now keeps her out to `past` onto the deck, which is
+   further than the ride ever takes to board, and `hold` takes it from there.
+   "Also, the camera to 'look across the bridge' should only be happening if
+   the player is moving in the direction to cross the bridge, if they are
+   moving away from crossing the bridge, it should not show this camera
+   view, such as, right after crossing the bridge". Heading at the MOUTH was
+   the whole test, and a mouth is a point: off a bridge onto the hub's rim, a
+   kitten turning along it heads straight at the neighbouring mouth while
+   going square to the way that bridge runs. So `toward` also asks for her
+   heading to agree with the BRIDGE's (`along`), and going against it is
+   `away`.
+
    A LAYER, like `SnakeCam`: laid over whichever pose is already drawing.
    THE LENS IS BLENDED ROUND HER and the aim is blended separately, out to
    the island. Blending both as one orbit round the aim (SnakeCam's way) was
@@ -134,6 +155,13 @@ export const PEEK = {
    *  much toward the mouth (a cosine) for it to count as walking up to it. */
   moving: 1.5,
   toward: 0.35,
+  /** ...and her heading must agree with the bridge's own direction by at
+   *  least this much (a cosine): crossing it, not passing its mouth. */
+  along: 0.35,
+  /** Once ON, how far out onto the deck past the mouth it keeps her — the
+   *  ride boards about 2 past it at a run, so the look across is never
+   *  dropped in the gap before `hold` takes over. */
+  past: 6,
 };
 
 const ss = (x) => x * x * (3 - 2 * x);
@@ -174,21 +202,31 @@ export function peekPose(S) {
 /**
  * Where a kitten at `pos` going at `vel` stands to one bridge end `E` =
  * { mouth, toward, far }: null when she is out of its reach (past `exit`, off
- * its deck's height, or already past the mouth onto the bridge), else her
- * distance and whether she is heading for it, away from it, or neither. Pure.
+ * its deck's height, or already past the mouth onto the bridge — unless `on`,
+ * when out to `past` onto it), else her distance and whether she is heading
+ * for it, away from it, or neither. Pure.
  */
-export function peekZone(pos, vel, E) {
+export function peekZone(pos, vel, E, on = false) {
   const dx = pos.x - E.mouth.x;
   const dz = pos.z - E.mouth.z;
   if (Math.abs(pos.y - E.mouth.y) > 3) return null;
   // Behind the mouth: on the deck it opens from, not already on the bridge.
-  if (dx * E.toward.x + dz * E.toward.z > 0.5) return null;
+  const out = dx * E.toward.x + dz * E.toward.z;
+  if (out > (on ? PEEK.past : 0.5)) return null;
   const d = Math.hypot(dx, dz);
   if (d > PEEK.exit) return null;
   const sp = Math.hypot(vel.x, vel.z);
   const moving = sp >= PEEK.moving;
+  // The way she goes against the way the bridge goes: crossing it, or not.
+  const along = moving ? (vel.x * E.toward.x + vel.z * E.toward.z) / sp : 0;
+  // Out on the deck already (an ON trigger only): onward is toward.
+  if (out > 0.5) return { d, moving, toward: along >= PEEK.along, away: along <= -PEEK.toward };
   const cos = !moving ? 0 : d > 0.3 ? -(dx * vel.x + dz * vel.z) / (d * sp) : 1;
-  return { d, moving, toward: moving && cos >= PEEK.toward, away: moving && cos <= -PEEK.toward };
+  return {
+    d, moving,
+    toward: moving && cos >= PEEK.toward && along >= PEEK.along,
+    away: moving && (cos <= -PEEK.toward || along <= -PEEK.toward),
+  };
 }
 
 /** How a kiosk's circle outranks a mouth: inside it (plus `pad`), or walking
@@ -233,7 +271,7 @@ export class PeekTrigger {
 
   step(dt, pos, vel, ends) {
     if (this.end) {
-      const z = peekZone(pos, vel, this.end);
+      const z = peekZone(pos, vel, this.end, true);
       if (!z) { this.reset(); return null; }
       this.away = z.away ? this.away + dt : 0;
       if (this.away >= PEEK.awayT) { this.reset(); return null; }
