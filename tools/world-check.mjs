@@ -37308,6 +37308,121 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     delete fakeGame.audio;
     pick.speed = 1;
 
+    /* ♪♪ DANCING TOGETHER. "If two or more players are playing Kata Trace,
+       we should have one song play ... When one player finishes their song,
+       then the other players song should start playing ... fade in fairly
+       quickly" and "Wait for other players to join?" ... "Join current
+       session" ... "Loading…" ... "they all start playing the same song
+       together. If player selects 'No.' then the song starts and players
+       can't join." Richard, Oct 2026. */
+    {
+      const I = D.kata.isle;
+      const fl1 = D.kata.floors[1];
+      const into = (p) => p.position.set(I.x + SW.SIM.dx + 1, I.y + 0.5, I.z + SW.SIM.dz + 1);
+      const joins = [];
+      const A = { musicVolume: 1, musicRate: 1, ctx: { currentTime: 50 }, mode: null,
+        restartMusic(mode, rate) { this.mode = mode; this.musicRate = rate; return 50.2; }, musicGrid: () => null,
+        joinMusic(mode, rate, songT, fade) { joins.push({ mode, rate, songT, fade }); this.mode = mode; this.musicRate = rate; return 50 - songT; },
+        prefetchMusic() {}, _decodeFile() {} };
+      fakeGame.audio = A;
+      into(her); into(sis);
+      const toLive = (...ds) => {
+        for (let f = 0; f < 600 && ds.some((x) => x.state === 'ready'); f++) {
+          for (const x of ds) { x.spec.steer(x, { mx: 0, my: 0, pressed: () => false }); x.update(1 / 60); }
+        }
+      };
+      const row = (i, re) => { const c = D.choices[i]; const k = c?.rows.findIndex((r) => re.test(typeof r.text === 'function' ? r.text() : r.text)); if (c && k >= 0) { c.i = k; c.pick(); return true; } return false; };
+
+      // Alone on the island, DANCE is DANCE: nobody to ask about.
+      const sisAt = sis.position.clone();
+      sis.position.set(0, 0, 0);
+      D.t += 100;
+      D.kata.danceOrAsk(her, fl);
+      const alone = !!D.kata.runOf(her) && !D.choices[0];
+      D.kata.runOf(her)?.dispose(); D.drills[0] = null;
+      sis.position.copy(sisAt);
+      ok('♪♪ alone in the hall, DANCE starts the song without asking anything', alone);
+
+      // With a sister about, it asks; "no" starts it now and nobody can join.
+      D.t += 100;
+      D.kata.danceOrAsk(her, fl);
+      const asked = D.choices[0]?.title === 'WAIT FOR OTHERS TO JOIN?';
+      row(0, /^no — start/);
+      ok('♪♪ with a sister in the hall DANCE asks "wait for others to join?", and NO starts it at once with nobody able to join',
+        asked && !!D.kata.runOf(her) && !D.kata.session && !D.kata._canJoin(sis), `${asked} ${D.choices[0]?.title}`);
+      D.kata.runOf(her)?.dispose(); D.drills[0] = null; D.kata.musicOwner = null;
+
+      // YES: she waits, and can back out whenever she likes.
+      D.t += 100;
+      D.kata.danceOrAsk(her, fl);
+      row(0, /^yes — wait/);
+      const waiting = D.kata.session?.state === 'wait' && /WAITING FOR OTHERS/.test(D.choices[0]?.title ?? '');
+      const canJoin = D.kata._canJoin(sis);
+      const kiosk = fl1.kiosks[0]?.station;
+      const says = kiosk ? kiosk.prompt(sis, 'E') : '';
+      sis._hints = [];
+      row(0, /stop waiting/);
+      ok('♪♪ YES puts up "waiting for others to join…", her sister\'s kiosk says JOIN, and STOP WAITING backs out cleanly',
+        waiting && canJoin && /JOIN .+'S SONG/.test(says) && !D.kata.session && !D.choices[0] && !D.kata.runOf(her),
+        `${waiting} ${canJoin} "${says}" ${!!D.kata.session}`);
+
+      // YES, and she joins: LOADING… for both, then both runs start together on one song.
+      D.t += 100;
+      D.kata.danceOrAsk(her, fl);
+      row(0, /^yes — wait/);
+      D.kata._askJoin(sis, fl1);
+      const joinQ = /JOIN .+'S SONG\?/.test(D.choices[1]?.title ?? '');
+      row(1, /^yes, join/);
+      const loading = D.choices[0]?.title === 'LOADING…' && D.choices[1]?.title === 'LOADING…' && !D.kata.runOf(her) && !D.kata.runOf(sis);
+      for (let f = 0; f < 60 * 1.2; f++) D.kata.update(1 / 60);
+      const stillLoading = !D.kata.runOf(her);
+      for (let f = 0; f < 60; f++) D.kata.update(1 / 60);
+      const r0 = D.kata.runOf(her);
+      const r1 = D.kata.runOf(sis);
+      ok('♪♪ she JOINS at her own kiosk; both get LOADING… for 1-2s (not less), then both runs start on the same chart',
+        joinQ && loading && stillLoading && !!r0 && !!r1 && r0.chart === r1.chart && r0.session != null && r0.session === r1.session
+          && KT.SESSION_LOAD >= 1 && KT.SESSION_LOAD <= 2,
+        `${joinQ} ${loading} ${stillLoading} ${!!r0} ${!!r1}`);
+      if (r0 && r1) {
+        const before = fakeGame.sounds.length;
+        toLive(r0, r1);
+        const one = [r0, r1].filter((x) => x.ownsMusic).length === 1 && [r0, r1].filter((x) => x.sharesMusic).length === 1;
+        for (let f = 0; f < 240; f++) { r0.update(1 / 60); r1.update(1 / 60); }
+        const ticks = fakeGame.sounds.slice(before).filter((s) => s === 'beat' || s === 'beatup').length;
+        ok('...ONE of them owns the song and the other shares it — no metronome under a song both are hearing',
+          one && ticks === 0, `owners ${[r0, r1].map((x) => x.ownsMusic)} ticks ${ticks}`);
+        const [own, sh] = r0.ownsMusic ? [r0, r1] : [r1, r0];
+        const n0 = joins.length;
+        own.fail('test'); own.update(1 / 60);
+        ok('...and when the owner\'s song ends, the sister keeps the SAME music going, unrestarted',
+          D.kata.musicOwner === sh && sh.ownsMusic && joins.length === n0 && A.mode === sh.chart.song, `${D.kata.musicOwner === sh} joins ${joins.length - n0}`);
+        own.dispose(); sh.dispose(); D.drills[0] = null; D.drills[1] = null; D.kata.musicOwner = null;
+      }
+
+      // Two runs, no session: the second ticks a metronome under the first's
+      // song; when the first ends, hers comes in AT HER POSITION, fading up.
+      D.t += 100;
+      D.kata.begin(her, fl);
+      Object.assign(D.kata.pickOf(sis), { song: 'vr', diff: 'easy', speed: 0.75, custom: null });
+      D.kata.begin(sis, fl1);
+      const a0 = D.kata.runOf(her);
+      const a1 = D.kata.runOf(sis);
+      toLive(a0, a1);
+      const before = fakeGame.sounds.length;
+      for (let f = 0; f < 180; f++) { a0.update(1 / 60); a1.update(1 / 60); }
+      const metro = fakeGame.sounds.slice(before).some((s) => s === 'beat' || s === 'beatup') && a0.ownsMusic && !a1.ownsMusic;
+      const n0 = joins.length;
+      a0.fail('test'); a0.update(1 / 60);
+      const J = joins[n0];
+      ok('♪♪ two songs at once: her sister keeps time by the metronome, and when the first ends hers is brought in at HER position and speed, fading up in 1-2s',
+        metro && !!J && J.rate === 0.75 && Math.abs(J.songT - a1.songT) < 0.05 && J.fade >= 0.5 && J.fade <= 2
+          && D.kata.musicOwner === a1 && a1.ownsMusic && a1.metroFade > 0,
+        `${metro} ${JSON.stringify(J)} songT ${a1.songT.toFixed(2)}`);
+      a0.dispose(); a1.dispose(); D.drills[0] = null; D.drills[1] = null; D.kata.musicOwner = null;
+      Object.assign(D.kata.pickOf(sis), { song: 'vr', diff: 'normal', speed: 1, custom: null });
+      delete fakeGame.audio;
+    }
+
     // INTERACT mid-run asks, and the cursor opens on NO.
     D.t += 100;
     D.kata.begin(her, fl);
@@ -45108,6 +45223,8 @@ console.log('\n--- his recordings: one song per level, looped on the beat, won i
   const asrc = readFileSync(new URL('../src/core/audio.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
   ok('a Kata Trace run plays the recording through once, never round its boss loop',
     /restartMusic\(mode, rate = 1\) \{[\s\S]{0,120}this\.startMusic\(mode, rate, \{ loop: false \}\)/.test(asrc));
+  ok('♪♪ Audio.joinMusic places a song already under way from the run\'s own beat 0 and ramps the bus up from silence',
+    /joinMusic\(mode, rate = 1, songT = 0, fade = [\d.]+\) \{[\s\S]{0,700}const beat0 = now - songT;[\s\S]{0,500}this\._beat0 = beat0;[\s\S]{0,400}linearRampToValueAtTime\(this\.musicVolume \* this\.musicLevel, now \+ fade\)/.test(asrc));
   ok('...the boss loop is crossfaded on a COPY, so a straight play-through never hears the seam',
     /_loopBuffer\(id, buf\) \{[\s\S]*?createBuffer\(buf\.numberOfChannels[\s\S]*?Math\.cos\(w\)[\s\S]*?Math\.sin\(w\)/.test(asrc)
     && /src\.buffer = this\._fileLoop \? this\._loopBuffer\(id, buf\) : buf;/.test(asrc));
