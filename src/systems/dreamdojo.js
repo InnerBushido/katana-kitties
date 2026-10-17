@@ -1420,6 +1420,8 @@ export class DreamDojo {
       if (this.highway?.riding(p.index)) return true;
       const ch = this.choices[p.index];
       if (ch) { ch.pick(); return true; }
+      // An angel over Shadow Lionheart's floor: "Leave the battle" (dream/shadow.js `angelAsk`).
+      if (this.shadow?.angelAsk?.(p)) return true;
       if (this.onPort(p)) { this._begin(p, 'derez'); return true; }
       /* MID-KATA, INTERACT IS "STOP?" — and only that: on the south-west mark
          she is close enough to the song kiosk that the press would otherwise
@@ -3698,7 +3700,7 @@ export class DreamDojo {
       this.bamboo?.faceCamera(camera);
       this.school?.faceCamera(camera);
       this.ranks?.faceCamera(camera);
-      this.shadow?.faceCamera(camera);
+      this.shadow?.faceCamera(camera, members);
       this.highway?.faceCamera(camera);
       for (const d of this.drills) d?.faceCamera(camera);
       for (const r of this.rundowns) r?.faceCamera(camera);

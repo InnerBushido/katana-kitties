@@ -41492,10 +41492,20 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         /const far = !w\.out && !floor\.includes\(w\.p\)/.test(readFileSync(new URL('../src/systems/dream/shadow.js', import.meta.url), 'utf8')));
       for (const q of [...F.who.values()]) if (!q.out) F.onCatch(q.p);
       const e = F._entry();
-      ok('...and when the LAST is caught the fight is LOST, and everybody comes down at the edge as a cat',
+      /* "When all the players die from Shadow Lionheart, they are all
+         respawning in the same location, they should spawn in different
+         locations so they are not ontop of each other." Richard, Oct 2026. */
+      const landed = [...F.who.values()].map((q) => ({ x: q.p.position.x - SW.SIM.dx, z: q.p.position.z - SW.SIM.dz }));
+      const gaps = landed.flatMap((a, i) => landed.slice(i + 1).map((b) => Math.hypot(a.x - b.x, a.z - b.z)));
+      ok('...and when the LAST is caught the fight is LOST, and everybody comes down on the edge as a cat — a stride APART, not on top of each other',
         F.state === 'lost' && !her.angel && !her.angelLeash && [...F.who.values()].every((q) => !q.p.angel && !q.out)
-        && Math.hypot(her.position.x - SW.SIM.dx - e.x, her.position.z - SW.SIM.dz - e.z) < 0.01,
-        `${F.state} angel ${her.angel}`);
+        && landed.length === 3 && Math.min(...gaps) > SH.SPREAD - 0.05
+        && landed.every((a) => Math.abs(Math.hypot(a.x - F.centre.x, a.z - F.centre.z) - Math.hypot(e.x - F.centre.x, e.z - F.centre.z)) < 0.01),
+        `${F.state} angel ${her.angel} gaps ${gaps.map((g) => g.toFixed(2))}`);
+      ok('...and ONE kitten still lands exactly where she always did', (() => {
+        const [s] = F._spots(1);
+        return Math.hypot(s.x - e.x, s.z - e.z) < 1e-9;
+      })());
       const solo = new Map([[0, { p: her, catches: 0 }]]);
       F.who = solo; F.state = 'live';
       D._simCatch(her);
@@ -41658,7 +41668,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     B.hit(blow);
     const st = D.progress.stars(nameOf(her), 'shadow');
     ok('影 beaten on EASY: stars and the tick, in his EASY line — and not the quest, nor the rank\'s flag',
-      F.state === 'won' && st >= 1 && F.say === SH.SHADOW_LINES.easy.line && her.shadowBeat.easy && sis.shadowBeat.easy
+      F.state === 'won' && st >= 1 && F.say === SH.SHADOW_LINES.easy.line && her.shadowBeat.easy && !sis.shadowBeat.easy
       && !her.shadowBeat.medium && fakeGame.feats.earned.length === 0 && !D.progress.flag(nameOf(her), 'shadow'),
       `${F.state} ${st} ${F.say} ${fakeGame.feats.earned.join()}`);
     for (let f = 0; f < 60 * (SH.HANDOVER.secs + 0.2); f++) F.update(1 / 60);
@@ -41688,17 +41698,24 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     F.t = 100;
     BM.hp = 1;
     BM.hit(blow);
-    ok('影 beaten on MEDIUM: his MEDIUM line, the flag their rank needs, and the tenth quest',
-      F.say === SH.SHADOW_LINES.medium.line && D.progress.flag(nameOf(her), 'shadow') && D.progress.flag(nameOf(sis), 'shadow')
-      && [...fakeGame.feats.earned].sort().join() === '0:shadow,1:shadow'
+    /* HIS PRIZE IS THE HOST'S. Richard, Oct 2026: "When Shadow Lionheart is
+       defeated, if he has an award to give, it should only be given to the
+       player that initiated the battle. To unlock an award, each player will
+       have to initiate a battle with Shadow and win it by themselves or with
+       the help of others." She pressed the kiosk; her sister helped. */
+    ok('影 beaten on MEDIUM: his MEDIUM line, and the flag and the tenth quest go to the kitten who STARTED it — her sister keeps her stars only',
+      F.say === SH.SHADOW_LINES.medium.line && D.progress.flag(nameOf(her), 'shadow') && !D.progress.flag(nameOf(sis), 'shadow')
+      && D.progress.stars(nameOf(sis), 'shadow') >= 1
+      && [...fakeGame.feats.earned].sort().join() === '0:shadow'
       && fakeGame.feats.delays.every((dl) => dl === SH.HANDOVER.secs)
       && fakeGame.toasts.filter((t) => /beat Shadow Lionheart/.test(t)).length === 0,
       `${F.say} ${fakeGame.feats.earned.join()}`);
     ok('...and on MEDIUM he bursts and is gone, as he always did — the unmasking is HARD and EXTRA HARD\'s',
       !F.unmask && !F.boss.group.visible);
     for (let f = 0; f < 60 * (SH.HANDOVER.secs + 0.2); f++) F.update(1 / 60);
-    ok('...then the stars, the quest news and "a share of my HONOR", once his line has had its time',
-      fakeGame.toasts.filter((t) => /Powerup Kotodama/.test(t)).length === 2 && /HONOR/.test(F.say) && !her.kyo,
+    ok('...then the stars, the quest news and "a share of my HONOR", once his line has had its time — and her sister is told how to win the prize for herself',
+      fakeGame.toasts.filter((t) => /Powerup Kotodama/.test(t)).length === 1 && /HONOR/.test(F.say) && !her.kyo
+      && fakeGame.toasts.some((t) => /helped beat Shadow Lionheart on MEDIUM.*whoever STARTS the fight/.test(t)),
       fakeGame.toasts.join(' / '));
     for (let f = 0; f < 60 * 12; f++) F.update(1 / 60);
 
@@ -41718,9 +41735,11 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     /* AND 凶 TO EVERY KITTEN WHO BEAT HIM ON HARD — her sister too, on her
        first win at anything. Richard: "to unlock Lionhearts cross-slash, you
        need to just beat him on the hard difficulty". It used to be her alone. */
-    ok('影 beaten on HARD: the first thing anybody hears is his hand-over line, with nobody told their prize over it — and 凶 is both of theirs',
+    /* ...and now, HER 凶: her sister helped, so her sister has a fight of her
+       own to start (the host rule above, Oct 2026). */
+    ok('影 beaten on HARD: the first thing anybody hears is his hand-over line, with nobody told their prize over it — and 凶 is the host\'s',
       F.level === 2 && F.say === SH.HANDOVER.line && fakeGame.toasts.filter((t) => /beat Shadow Lionheart/.test(t)).length === 0
-      && her.kyo && sis.kyo && sis.shadowBeat.hard && !sis.shadowBeat.easy && !sis.shadowBeat.medium, `${F.say}`);
+      && her.kyo && !sis.kyo && !sis.shadowBeat.hard && !sis.shadowBeat.easy && !sis.shadowBeat.medium, `${F.say}`);
 
     /* LIONHEART OUT OF THE BURST. Richard: "he explodes like he currently
        does, but then we should also show an image of him falling on his knees
@@ -41760,10 +41779,11 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       `prize at ${promised?.toFixed(2)}s, kneeling then: ${kneelWhenPrize}, standing frames ${standing}, tells ${tells}`);
     ok('...and his card names LIONHEART, not his shadow', (F.panel._key ?? '').includes('"text":"LIONHEART"') && !(F.panel._key ?? '').includes('SHADOW LIONHEART'), String(F.panel._key).slice(0, 160));
     const honorFirst = /HONOR/.test(F.say);
-    const told = fakeGame.toasts.filter((t) => /inherit his 凶/.test(t)).length === 2 && !fakeGame.toasts.some((t) => /too, for his 凶/.test(t));
+    const told = fakeGame.toasts.filter((t) => /inherit his 凶/.test(t)).length === 1 && !fakeGame.toasts.some((t) => /too, for his 凶/.test(t))
+      && fakeGame.toasts.some((t) => /helped beat Shadow Lionheart on HARD/.test(t));
     let kyoAt = null;
     for (let f = 0; f < 60 * 12 && kyoAt == null; f++) { F.update(1 / 60); if (F.say === SH.SHADOW_LINES.kyo.line) kyoAt = f / 60; }
-    ok('...then "a share of my HONOR", and only AFTER it, 凶 explained — and both of them told it is theirs',
+    ok('...then "a share of my HONOR", and only AFTER it, 凶 explained — told to her, and her sister told she helped',
       honorFirst && told && kyoAt != null && kyoAt + 1.5 >= 6.95, `${honorFirst} ${told} ${kyoAt}`);
     ok('...and the fight still clears itself, however long he talked — Lionheart with it', (() => {
       for (let f = 0; f < 60 * 15; f++) F.update(1 / 60);
@@ -41771,6 +41791,123 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     })());
     D.lionArt = keepLionArt;
     delete fakeGame.lionKoArt;
+
+    /* 影 WHO IS IN IT IS DECIDED ONCE. Richard, Oct 2026: "when the battle
+       starts, all players on the Shadow Lionheart island are teleported into
+       the battle automatically. If a player leaves the battle, they are no
+       longer allowed to re-enter ... If a player arrives to the island after
+       the battle has already started, then that player is also blocked from
+       entering. If a player dies while battling, they turn into an angel ...
+       can press the action button ... 'Leave the battle' ... If all players
+       are dead, angels, or have left the battle, then the battle is over." */
+    {
+      const flat = (p) => ({ x: p.position.x - SW.SIM.dx, z: p.position.z - SW.SIM.dz });
+      const fromMid = (p) => Math.hypot(flat(p).x - F.centre.x, flat(p).z - F.centre.z);
+      her.shadowBeat = { easy: false, medium: false, hard: false };
+      put(her, F.kiosks[0]);
+      put(sis, F.kiosks[1]);
+      D.t += 10;
+      fakeGame.toasts.length = 0;
+      const sisOnIsle = F.onIsle(sis) && !F._onFloor().includes(sis);
+      F.kiosks[0].station.interact(her);
+      const a = flat(her); const b = flat(sis);
+      ok('影 starting a fight brings EVERY kitten on his island into it — set down inside his ring, a stride apart, and told',
+        sisOnIsle && F.state === 'live' && F.who.size === 2 && F.host === her.index
+        && fromMid(her) < SH.ARENA_R && fromMid(sis) < SH.ARENA_R && Math.abs(Math.hypot(a.x - b.x, a.z - b.z) - SH.SPREAD) < 0.2
+        && fakeGame.toasts.some((t) => /started the fight — you're IN IT/.test(t)),
+        `${sisOnIsle} ${F.state} ${F.who.size} ${fromMid(sis).toFixed(1)} ${Math.hypot(a.x - b.x, a.z - b.z).toFixed(2)}`);
+      F.update(1 / 60);
+      ok('...and while it is up, the ring is a RED WALL', F.barrier.visible && F.barrier.material.uniforms.uColour.value.getHex() === SH.BARRIER.colour);
+
+      /* THE LENS HIS CARD IS PLACED FOR. "When one player is fighting Shadow
+         Lionheart and the other is in a split screen, it seems the UI next to
+         Lionheart is being affected by the other players camera movements."
+         Two panes drawn in turn; only the fighter's sets `view`. */
+      {
+        const cam = (dx, dz) => { const c = new THREE.PerspectiveCamera(); c.position.set(F.centre.x + SW.SIM.dx, IH.y + 8, F.centre.z + SW.SIM.dz); c.lookAt(c.position.x + dx, c.position.y - 0.3, c.position.z + dz); c.updateMatrixWorld(); return c; };
+        F.faceCamera(cam(1, 0), [her.index]);
+        const mine = { ...F.view };
+        F.faceCamera(cam(0, 1), [5]);
+        const stranger = { ...F.view };
+        F.faceCamera(cam(0, 1), [sis.index]);
+        const helper = { ...F.view };
+        ok('影 his card and his staging follow the lens of the kitten who STARTED the fight — not a pane without a fighter, nor her helper\'s, drawn after it',
+          Math.abs(mine.x - 1) < 1e-6 && stranger.x === mine.x && stranger.z === mine.z && helper.x === mine.x && helper.z === mine.z,
+          JSON.stringify({ mine, stranger, helper }));
+        ok('...and a scene\'s camera (no pane) never stages him mid-fight', !F.lensCounts(null) && F.lensCounts([her.index]) && F.lensCounts([sis.index, her.index]));
+      }
+
+      // THE ANGELS' BLESSING: 2hp at 0.5s over her, then 1hp every 0.25s.
+      {
+        D.st[sis.index].simHp = 50;
+        F.onCatch(her);
+        const H = SH.ANGEL_HEAL;
+        const reach = (sis.radius ?? 0.75) * H.reach;
+        const over = (dx) => her.position.set(sis.position.x + dx, sis.position.y + 30, sis.position.z);
+        const hp = () => D.st[sis.index].simHp;
+        const step = (n) => { for (let f = 0; f < n; f++) F._heal(1 / 60); return hp(); };
+        over(reach * 0.9);
+        const t29 = step(29); const t31 = step(2); const t44 = step(13); const t47 = step(3); const t62 = step(15);
+        const streamed = F.streams.has(her.index) && F.streams.get(her.index).g.visible;
+        ok('影 an ANGEL hovering over a sister heals her — nothing before 0.5s, +2 at it, then +1 every 0.25s — at ANY height, in 1.5x her radius, under a green stream',
+          her.angel && t29 === 50 && t31 === 52 && t44 === 52 && t47 === 53 && t62 === 54 && streamed && H.reach === 1.5 && H.colour === 0x5dff8a,
+          `${t29} ${t31} ${t44} ${t47} ${t62} stream ${streamed}`);
+        over(reach * 1.1);
+        const wide = step(90);
+        ok('...and not from just outside that reach: no heal, and the stream is gone', wide === 54 && !F.streams.has(her.index), `${wide}`);
+        D.st[sis.index].simHp = D.simMax(sis) - 1;
+        over(0);
+        ok('...and never past her full bar', step(120) === D.simMax(sis));
+      }
+
+      // HER BUTTON AS AN ANGEL: the question opens on NO; YES lands her outside, for good.
+      {
+        D.t += 10;
+        D.closeChoice(her);
+        her.position.set(F.centre.x + SW.SIM.dx, IH.y + 5, F.centre.z + SW.SIM.dz);
+        D.interact(her);
+        const C = D.choices[her.index];
+        const asked = C?.title === 'LEAVE THE BATTLE?' && C.i === 0 && /^no/.test(C.rows[0].text) && /cannot come back/.test(C.rows[1].text);
+        C.i = 1; C.pick();
+        ok('影 as an angel her button asks "LEAVE THE BATTLE?", cursor on NO; YES sets her down OUTSIDE the ring as a cat, at full health, and the fight goes on',
+          asked && !her.angel && !F.who.has(her.index) && F.barred.has(her.index) && fromMid(her) > SH.ARENA_R + SH.BARRIER.pad
+          && D.st[her.index].simHp === D.simMax(her) && F.state === 'live', `${asked} ${her.angel} ${fromMid(her).toFixed(1)} ${F.state}`);
+        // ...and the red wall keeps her out, and says why.
+        D.t += 10;
+        fakeGame.toasts.length = 0;
+        put(her, { x: F.centre.x + 3, y: IH.y, z: F.centre.z });
+        her.velocity.set(-5, 0, 0);
+        F.update(1 / 60);
+        ok('...and the red wall will not let her back in: walked into the middle, she is held on the outside of it and told why',
+          !F.who.has(her.index) && fromMid(her) >= SH.ARENA_R + SH.BARRIER.pad - 1e-6 && her.velocity.x >= 0
+          && fakeGame.toasts.some((t) => /You left the battle — the red wall/.test(t)), `${fromMid(her).toFixed(2)} ${fakeGame.toasts.join(' / ')}`);
+        // A kitten who was never in it — she arrived after it started — is told so.
+        F.barred.delete(her.index);
+        D.t += 10;
+        fakeGame.toasts.length = 0;
+        put(her, { x: F.centre.x - 2, y: IH.y, z: F.centre.z });
+        F.update(1 / 60);
+        ok('...and a kitten who arrives after it started is held out too, told the battle already started',
+          !F.who.has(her.index) && fromMid(her) >= SH.ARENA_R + SH.BARRIER.pad - 1e-6
+          && fakeGame.toasts.some((t) => /battle already started/.test(t)), fakeGame.toasts.join(' / '));
+        ok('...and the kiosk says to wait for the next fight, rather than inviting her in', (() => {
+          D.t += 10; fakeGame.toasts.length = 0;
+          F.kiosks[0].station.interact(her);
+          return F.who.size === 1 && fakeGame.toasts.some((t) => /wait for it to end/.test(t));
+        })());
+      }
+
+      // "If all players are dead, angels, or have left the battle, then the battle is over."
+      {
+        F.who.set(her.index, { p: her, catches: 1, out: true });
+        her.angel = true;
+        put(sis, { x: F.centre.x + SH.ARENA_R + 8, y: IH.y, z: F.centre.z });
+        F.update(1 / 60);
+        ok('影 with her sister walked out of it and only an angel left in it, the battle is OVER — and the wall is down',
+          F.state === 'lost' && !her.angel && !F.barrier.visible && F.barred.size === 0, `${F.state} ${her.angel}`);
+        for (let f = 0; f < 60 * 8; f++) F.update(1 / 60);
+      }
+    }
 
     /* ONE CARD AT A TIME. "the text above easy/med/hard is showing up for all
        of them at the same time and they are blocking each other". Standing
