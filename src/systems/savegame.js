@@ -341,6 +341,9 @@ export function castRow(p, here = true) {
     /* `dreamAnchor` FIRST: a kitten in the Dream Dojo's simulator is saved
        standing in her tube, never at her coordinates in the void. */
     at: ['x', 'y', 'z'].map((k) => +(p.dreamAnchor ?? p.position)[k].toFixed(2)),
+    /* ...AND THAT IT WAS THE SIMULATOR, so a load can stand her somewhere
+       better than inside a tube. See `landAt`. */
+    sim: !!p.dreamAnchor,
     facing: +(p.facing ?? 0).toFixed(3),
     /* `dreamOath.was` FIRST, for the same reason as `dreamAnchor`: a trial
        oath in the Clan Trial Hall is the simulator's, and a save taken while
@@ -766,6 +769,31 @@ export function describe(snap, world = null) {
  *
  * @returns {{seated: number, waiting: number}}
  */
+/**
+ * Where a loaded kitten is stood: her saved spot, unless that spot is the
+ * simulator's.
+ *
+ * A kitten saved in the simulator is saved at her tube (`dreamAnchor`), so
+ * nobody loads standing in the void. But stood back INSIDE the tube, its wall
+ * threw her ten units out of the back, past the edge of the pad, and she fell
+ * to the island below. Richard, Oct 2026: "When loading a game, if the player
+ * was saved in the simulator, they are spawning outside of the simulator and
+ * falling to the ground. If anything, we should have them spawn in the center
+ * of the Dream Dojo island". So the centre of the pad it is
+ * (`DreamDojo.landingSpot`): she is in her real kit, since the save only
+ * ever holds that, and the tubes are a few steps away. Rows saved before
+ * `sim` existed are known by an anchor inside a tube (`DreamDojo.inTube`).
+ * Returns [x, y, z], or null for a row with no usable spot.
+ */
+export function landAt(game, row) {
+  const at = row?.at;
+  if (!Array.isArray(at) || at.length !== 3 || !at.every(Number.isFinite)) return null;
+  const D = game.dream;
+  if (!(row.sim || D?.inTube?.(at))) return at;
+  const q = D?.landingSpot?.();
+  return q ? [q.x, q.y, q.z] : at;
+}
+
 export function restore(game, snap) {
   game.restart();
 
@@ -937,8 +965,9 @@ export function restore(game, snap) {
     applyCast(game, p, row);
     /* A LOAD PLACES HER; A REJOIN DOES NOT. See `applyCast` — this is the
        half that is only ever right when the whole world is being put back. */
-    if (Array.isArray(row.at) && row.at.every(Number.isFinite)) {
-      p.position.set(row.at[0], row.at[1], row.at[2]);
+    const at = landAt(game, row);
+    if (at) {
+      p.position.set(at[0], at[1], at[2]);
       p.camTarget.copy(p.position);
     }
     p.facing = row.facing ?? 0;

@@ -48,7 +48,7 @@ import {
   MAX_KEPT, SPARE_SLOTS, MAX_LIST, capFor, trimSaves, saveCap,
   worldSig, listSaves, putSave, dropSave, clearSaves,
   snapshot, describe, restore,
-  castRow, applyCast, meaningful, newSessionId,
+  castRow, applyCast, meaningful, newSessionId, landAt,
 } from '../src/systems/savegame.js';
 import { Prop, BAMBOO_POINTS } from '../src/entities/prop.js';
 import { STEAL, DBREATH, ARENA_POWERS, BreathTally, arenaPowerFor } from '../src/entities/clanpower.js';
@@ -18423,6 +18423,34 @@ console.log('\n--- a rebuilt list may not slide a new answer under the cursor --
   ok('...and update remembers which element the index meant',
     /focusEl\.set\(panel\.id, items\[i\]/.test(nsrc));
   ok('...and a restart forgets it', /reset\(\)\s*\{[^}]*focusEl\.clear\(\)/.test(nsrc));
+
+  /* TEXT BOXES ARE STOPS. Richard, Oct 2026: "I can no longer select the text
+     boxes with keyboard/controller input in the Kata Trace Beat Maps, should
+     be able to highlight it and select it to start to be able to type".
+     The beat map's title and author boxes have no `type` at all. */
+  {
+    const keSrc = readFileSync(new URL('../src/systems/dream/kataeditor.js', import.meta.url), 'utf8');
+    ok('a text box is a stop for the menu cursor — typed, untyped, number and textarea alike',
+      ['input[type="text"]', 'input:not([type])', 'input[type="number"]', 'textarea'].every((s) => nsrc.includes(`.panel ${s}`))
+      && /<input id="ke-title" maxlength/.test(keSrc));
+    const log = [];
+    const box = { tagName: 'INPUT', type: 'text', focus: () => log.push('focus'), select: () => log.push('select'), click: () => log.push('click'), blur: () => log.push('blur') };
+    nav._activate(box);
+    ok('...confirm on one goes INTO it, ready to type, and clicks nothing', log.join() === 'focus,select', log.join());
+    const beats = { tagName: 'INPUT', type: 'number', step: '4', min: '4', max: '400', value: '16', dispatchEvent: () => log.push('change') };
+    nav._adjust(beats, 1);
+    const up = beats.value;
+    beats.value = '400';
+    nav._adjust(beats, 1);
+    ok('...a number box steps by its own step with left/right, and stops at its max', up === '20' && beats.value === '400', `${up} ${beats.value}`);
+    // The ring walking off a box she is typing in takes her out of it.
+    const keepDoc = globalThis.document;
+    log.length = 0;
+    globalThis.document = { activeElement: box, querySelectorAll: () => [] };
+    const next = { classList: { add() {}, remove() {} }, scrollIntoView() {} };
+    try { nav._lastPainted = box; nav._paint([next], 0, false); } finally { globalThis.document = keepDoc; }
+    ok('...and the cursor moving off a box she is typing in takes her out of it', log.includes('blur'), log.join());
+  }
 }
 
 console.log('\n--- the profile is as big as its cards have earned ---');
@@ -28276,7 +28304,7 @@ console.log('\n--- one press is not enough, and one player drives ---');
         const from = at0 + `\n  ${sig} {`.length;
         const body = gsrc.slice(from, gsrc.indexOf('\n  }\n', from));
         // eslint-disable-next-line no-new-func
-        return new Function('castRow', 'meaningful', `return function (${args}) {${body}\n};`)(castRow, meaningful);
+        return new Function('castRow', 'meaningful', 'landAt', `return function (${args}) {${body}\n};`)(castRow, meaningful, landAt);
       };
       const place = liftG('_placeFromSave(p)', 'p');
       const remember = liftG('_rememberPlayer(p, over = {})', 'p, over = {}');
@@ -44374,7 +44402,64 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     sHer.phase = keepPhase;
     her.panda = cub;
     ok('...and the moment she is out, it heels to HER again', D.ownerFor(her) === her);
+    /* A GROWN PANDA WAITS AT THE STONES, out of the simulator too. Richard,
+       Oct 2026: "the panda should just wait for the player on the Dojo of the
+       Turning Circle island or whichever island it is last on, but should not
+       try to follow the player into the Dream Dojo island." */
+    {
+      const keepAt = her.position.clone();
+      const isle = world.dojoIsland;
+      const big = { position: new THREE.Vector3(L.launch.x + 5, world.dojoCentre.y, L.launch.z), group: new THREE.Group(), rideable: true };
+      her.panda = big;
+      her.pandaMount = false;
+      her.position.set(isle.x, world.dojoCentre.y, isle.z);
+      const onDojo = D.ownerFor(her);
+      her.position.set(L.stones[1].x, L.stones[1].y, L.stones[1].z);
+      const onStone = D.ownerFor(her);
+      her.position.set(A.x, A.y, A.z);
+      const onPad = D.ownerFor(her);
+      ok('a grown panda heels to her on the Dojo of the Turning Circle', onDojo === her);
+      ok('...and waits at the launch the moment she is out on the stones, and on the pad',
+        onStone !== her && hyp(onStone.position, L.launch) < 1e-6 && hyp(onPad.position, L.launch) < 1e-6,
+        `${hyp(onStone.position, L.launch).toFixed(2)} / ${hyp(onPad.position, L.launch).toFixed(2)}`);
+      her.position.set(isle.x, world.dojoCentre.y, isle.z);
+      ok('...and heels again once she is back on the Dojo', D.ownerFor(her) === her);
+      // Left on another island: it waits there, rather than walking off a rim toward the launch.
+      const far = world.islands.find((i) => i.kind !== 'dojo' && Math.hypot(i.x - isle.x, i.z - isle.z) > isle.radius + i.radius + 20);
+      big.position.set(far.x, far.baseY ?? 30, far.z);
+      her.position.set(L.stones[1].x, L.stones[1].y, L.stones[1].z);
+      const away = D.ownerFor(her).position;
+      ok('...and one left on another island waits there instead', hyp(away, big.position) < 1e-6, `${hyp(away, big.position).toFixed(2)}`);
+      her.pandaMount = true;
+      ok('...and a ridden one is hers to steer: the dome turns that away', D.ownerFor(her) === her);
+      her.pandaMount = false;
+      her.position.copy(keepAt);
+      D._pandaFree(her);
+    }
     her.panda = keepPanda;
+
+    /* A GAME SAVED IN THE SIMULATOR LOADS ON THE MIDDLE OF THE PAD. Richard,
+       Oct 2026: "if the player was saved in the simulator, they are spawning
+       outside of the simulator and falling to the ground ... we should have
+       them spawn in the center of the Dream Dojo island". She was saved at
+       her tube's anchor, and stood back inside the tube its wall threw her
+       ten units out of the back and off the pad (measured in the browser:
+       z -7.5 to -17.1 in one frame, then y 34.6 to 24 and falling). */
+    {
+      const t0 = L.tubes[0];
+      const g = { dream: D };
+      const mid = landAt(g, { at: [t0.x, A.y + DD.FLOAT_H, t0.z], sim: true });
+      const old = landAt(g, { at: [t0.x, A.y + DD.FLOAT_H, t0.z] });
+      const town = landAt(g, { at: [10, 5, 20] });
+      const ground = world.heightAt(mid[0], mid[2], A.y + 3);
+      ok('a game saved in the simulator loads her standing on the middle of the Dream Dojo pad',
+        hyp({ x: mid[0], z: mid[2] }, A) < 1e-6 && ground != null && Math.abs(mid[1] - (ground.y ?? ground)) < 1e-6,
+        `${mid.map((v) => v.toFixed(1))}`);
+      ok('...and so does an older save, known by its anchor inside a tube', old[0] === mid[0] && old[2] === mid[2]);
+      ok('...and a save anywhere else loads exactly where it was taken', town.join() === '10,5,20');
+      const geared = { dreamAnchor: new THREE.Vector3(t0.x, A.y + DD.FLOAT_H, t0.z), position: new THREE.Vector3(12000, 0, 0), style: { name: 'x' } };
+      ok('...and a row taken in the simulator says so', castRow(geared).sim === true && castRow({ position: new THREE.Vector3(), style: { name: 'x' } }).sim === false);
+    }
 
     /* A PANDA RIDDEN NOWHERE NEAR THE GLASS DOES NOT MOVE HER. Richard: "the
        player is moving at a very high speed when moving left/right on the

@@ -68,7 +68,7 @@ import { loadBoard, clearBoard, BOARD_MODES } from './systems/leaderboard.js';
 import {
   listSaves, putSave, dropSave, clearSaves, snapshot, describe, restore,
   castRow, applyCast, meaningful, newSessionId, worldSig, WORLD_SHAPE_KEY,
-  AUTOSAVE_EVERY, AUTOSAVE_AFTER, MAX_SAVES, MAX_LIST, saveCap, saveByHand,
+  AUTOSAVE_EVERY, AUTOSAVE_AFTER, MAX_SAVES, MAX_LIST, saveCap, saveByHand, landAt,
 } from './systems/savegame.js';
 
 /** One order carried across a reload — `{ do: 'new' }` or `{ do: 'load', id }`
@@ -8275,8 +8275,9 @@ class Game {
     const row = this.sessionCast.get(p?.style?.name);
     if (!row?.fromSave) return false;
     row.fromSave = false;
-    const at = row.at;
-    if (!Array.isArray(at) || at.length !== 3 || !at.every(Number.isFinite)) return false;
+    // Out of the simulator onto the middle of the pad, as `restore` does.
+    const at = landAt(this, row);
+    if (!at) return false;
     p.position.set(at[0], at[1], at[2]);
     p.group?.position.copy(p.position);
     p.camTarget?.copy(p.position);

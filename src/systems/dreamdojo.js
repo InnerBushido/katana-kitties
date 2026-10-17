@@ -141,6 +141,9 @@ export const ROCK = { r: ARCADE.r * 0.95, top: 1.4, h: 16, rim: 2 };
 /** Where her cub waits while she is in the simulator: this far from her
  *  tube toward the pad's middle, the end of the walk out (`ownerFor`). */
 export const CUB_WAIT = 3.2;
+/** How much nearer the pad than the launch she has to be before a grown
+ *  panda stops and waits (`pastLaunch`): the Dojo's rim runs a few units on. */
+export const PANDA_WAIT_MARGIN = 4;
 /** How tall Lionheart stands — Payne's height, he is a grown-up too. */
 export const LION_HEIGHT = 6.2;
 export const LION_TALK_R = 5.6;
@@ -1263,7 +1266,19 @@ export class DreamDojo {
    * `position` is answered differently; everything else is her.
    */
   ownerFor(p) {
-    if (this.realmOf(p) !== 'sim' || !this.layout) return p;
+    if (!this.layout) return p;
+    const inSim = this.realmOf(p) === 'sim';
+    /* A GROWN PANDA STOPS AT THE STONES, not at the glass. Richard, Oct 2026:
+       "If player has a big panda and is near the Dream Dojo island or jumping
+       platforms to get to the island, the panda should just wait for the
+       player on the Dojo of the Turning Circle island or whichever island it
+       is last on, but should not try to follow the player into the Dream Dojo
+       island." It used to heel her right up to the launch, then walk off the
+       rim after her onto the stones, and the dome was the only thing that
+       stopped it. Now it waits the moment she is past the launch. A ridden
+       one is hers to steer, and the dome still turns that away. */
+    const big = !!p.panda?.rideable && !p.pandaMount;
+    if (!inSim) return big && this.pastLaunch(p) ? this._pandaWait(p) : this._pandaFree(p);
     const s = this.st[p.index];
     if (!s) return p;
     /* A CUB WAITS ON THE PAD, AT HER TUBE. Richard: "the baby panda can go
@@ -1284,18 +1299,75 @@ export class DreamDojo {
       }
       return s.cubProxy;
     }
-    if (!s.proxy) {
-      /* At the take-off for the first stone since the way across curved:
-         the old spot, 61 out along the straight line, is no longer "the foot
-         of the stones". */
-      const dc = this.game.world.dojoCentre;
-      const at = this.layout.launch;
-      const wait = new THREE.Vector3(at.x, dc.y, at.z);
-      s.proxy = new Proxy(p, {
-        get: (t, k) => (k === 'position' ? wait : Reflect.get(t, k)),
-      });
+    return this._pandaWait(p);
+  }
+
+  /**
+   * Is she past the take-off for the first stone, on the stones or the pad?
+   * Measured toward the pad: nearer to it than the launch spot is, by a
+   * margin, since the Dojo's own rim runs a few units past the launch.
+   */
+  pastLaunch(p) {
+    const L = this.layout;
+    if (!L || !p?.position) return false;
+    const her = Math.hypot(p.position.x - ARCADE.x, p.position.z - ARCADE.z);
+    return her < Math.hypot(L.launch.x - ARCADE.x, L.launch.z - ARCADE.z) - PANDA_WAIT_MARGIN;
+  }
+
+  /**
+   * Her panda's stand-in owner while it waits: a `Proxy` of her, for the
+   * reason `ownerFor` gives, whose `position` is the spot it waits on. The
+   * spot is picked once per wait. If the panda is on the Dojo of the Turning
+   * Circle (or out past it toward the pad) it is the launch, the last ground before the jump and where she
+   * comes back to. If it is anywhere else ("whichever island it is last on")
+   * it is where the panda stands: walked to the launch from another island,
+   * it would go over the first rim between them.
+   */
+  _pandaWait(p) {
+    this._waits ??= new WeakMap();
+    let w = this._waits.get(p);
+    if (!w) {
+      const at = new THREE.Vector3();
+      w = { at, set: false, proxy: new Proxy(p, { get: (t, k) => (k === 'position' ? at : Reflect.get(t, k)) }) };
+      this._waits.set(p, w);
     }
-    return s.proxy;
+    if (!w.set) {
+      const isle = this.game.world.dojoIsland;
+      const pp = p.panda?.position;
+      // On the Dojo, or already out toward the pad (the dome pushes a grown one off it).
+      const near = !pp || !isle || Math.hypot(pp.x - isle.x, pp.z - isle.z) < (isle.radius ?? 66)
+        || this.pastLaunch({ position: pp });
+      if (near) w.at.set(this.layout.launch.x, this.game.world.dojoCentre.y, this.layout.launch.z);
+      else w.at.copy(pp);
+      w.set = true;
+    }
+    return w.proxy;
+  }
+
+  /** She is back on this side of the launch: the next wait picks its spot afresh. */
+  _pandaFree(p) {
+    const w = this._waits?.get(p);
+    if (w) w.set = false;
+    return p;
+  }
+
+  /**
+   * The middle of the pad, standing: where a game saved in the simulator is
+   * loaded (savegame.js `landAt`).
+   */
+  landingSpot() {
+    const w = this.game.world;
+    const h = w?.heightAt?.(ARCADE.x, ARCADE.z, ARCADE.y + 3);
+    const y = typeof h === 'number' ? h : h?.y;
+    return { x: ARCADE.x, y: Number.isFinite(y) ? y : ARCADE.y, z: ARCADE.z };
+  }
+
+  /** Is [x, y, z] one of the arcade's tube anchors, raised off the pad? An
+   *  older save row says it was the simulator only by being there. */
+  inTube(at) {
+    const T = this.layout?.tubes;
+    if (!T || !Array.isArray(at)) return false;
+    return at[1] > ARCADE.y + 0.5 && T.some((t) => Math.hypot(at[0] - t.x, at[2] - t.z) < 1);
   }
 
   /** The pad she is driven by: her own, a dead one, or the walk to her tube. */
@@ -2046,7 +2118,6 @@ export class DreamDojo {
        before `position`, so nobody ever loads a game standing in the void. */
     const s = this.st[p.index];
     p.dreamAnchor = toSimNow ? s.anchor.clone() : null;
-    s.proxy = null;
     if (toSimNow) {
       /* HER HOLO KIT: a copy of what she wears, and no clan (dream/holokit.js).
          Before `refillSim`, which sizes her bar off the kit she has in here. */
