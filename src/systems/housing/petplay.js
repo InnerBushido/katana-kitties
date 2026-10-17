@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { paint, toonVertexMat } from '../../core/gfx.js';
 import { mergeParts } from '../../world/build.js';
 import { ANIMALS } from './farm.js';
+import { placeModel } from './models.js';
 
 /* ---------------------------------------------------------------------------
    PLAYING WITH THE ANIMALS — more than feeding them.
@@ -42,9 +43,10 @@ import { ANIMALS } from './farm.js';
               chick: JUMP HEIGHT, bunny: JUMP DISTANCE, goat: SPRINT. A level-up
               says which one in the toast, and the pen card lists all three.
 
-   PLACEHOLDERS (docs/notes/housing.md): the stick is a stick-shaped box; the
-   chick "flying" is the pen drawing bobbing in the air, with no wing
-   animation; a pile is a few brown blobs.
+   THE PROPS ARE MODELS (Oct 2026): the stick is Polyfork's fallen twig, a
+   pile is a Tripo mess (`props/mess-pile`), each standing in for itself as
+   the old drawn box and blobs until it loads - and when it never does. The
+   chick flaps between `farm/chick_fly.png` and her pen drawing in the air.
 --------------------------------------------------------------------------- */
 
 const HOUR = 3600 * 1000;
@@ -167,7 +169,8 @@ export class PetPlay {
       paint(b, 0x6a4a2a);
       parts.push(b);
     }
-    return new THREE.Mesh(mergeParts(parts), toonVertexMat());
+    // Tripo's pile (tools/prop-bake.mjs `mess-pile`), the four blobs until it loads
+    return placeModel('props/mess-pile', new THREE.Mesh(mergeParts(parts), toonVertexMat()), { h: 0.45 });
   }
 
   /** The pile she is standing at, for `Housing._spotFor`. */
@@ -268,6 +271,9 @@ export class PetPlay {
     const S = this.s.get(i);
     if (!S) return;
     S.stick?.removeFromParent();
+    // Never leave her mid-flap: the pen drawing back, the flutter frame away.
+    const u = this._animal(S)?.userData;
+    if (u?.fly) { u.fly.visible = false; if (u.bb) u.bb.visible = true; }
     this.s.delete(i);
     if (why) this.game.toast?.(why, i);
   }
@@ -389,8 +395,17 @@ export class PetPlay {
       S.last.copy(p.position);
       if (g) {
         g.position.copy(S.pos);
-        const bb = g.userData.bb;
-        if (bb && S.vel && Math.hypot(S.vel.x, S.vel.z) > 0.2) bb.facing = Math.atan2(S.vel.x, S.vel.z);
+        const { bb, fly } = g.userData;
+        const face = S.vel && Math.hypot(S.vel.x, S.vel.z) > 0.2 ? Math.atan2(S.vel.x, S.vel.z) : null;
+        if (bb && face != null) bb.facing = face;
+        /* THE FLAP: in the air she swaps between the flutter frame and the
+           pen drawing at 8 a second, wings up and wings down. */
+        if (fly) {
+          const up = S.kind === 'catch' && Math.floor(this.t * 8) % 2 === 0;
+          fly.visible = up;
+          if (bb) bb.visible = !up;
+          if (face != null) fly.facing = face;
+        }
       }
     }
   }
@@ -421,7 +436,8 @@ export class PetPlay {
       if (!S.stick) {
         const geo = new THREE.BoxGeometry(0.9, 0.1, 0.1);
         paint(geo, 0x8a5a30);
-        S.stick = new THREE.Mesh(geo, toonVertexMat());
+        // Polyfork's twig (a 24m bug-world log, fitted down to a stick), the box until it loads
+        S.stick = placeModel('fallen-twig-4c64de', new THREE.Mesh(geo, toonVertexMat()), { w: 1.0 });
         S.v.group.add(S.stick);
       }
       S.stick.visible = true;

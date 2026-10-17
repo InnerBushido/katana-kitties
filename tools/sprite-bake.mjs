@@ -241,6 +241,18 @@ const WORK = [
      critters, prompted off `critters/rabbit.png` for the style. 512: they are
      a metre tall at most. */
   ...['chick', 'bunny', 'goat'].map((a) => ({ file: `${a}.png`, out: `farm/${a}.png`, to: [512, 512], chroma: true })),
+  /* THE HOME POSES, Oct 2026 - the placeholders the housing notes listed as
+     "faked by squashing the guard pose". The kendo three (`seiza` kneeling,
+     `reach` for the shinai, `rei` the bow) are off her own `kendo.png`; the
+     three home ones (`pray` at the shrine, `bath` in the onsen, `futon` asleep)
+     off her `bless.png`. The bath is a HEAD and a towel above a flat cut, on
+     purpose: the first take was a swimsuit and was rejected - the game is for
+     girls of nine and under, and the water hides the rest anyway. */
+  ...['ember', 'frost'].flatMap((s) => ['seiza', 'reach', 'rei', 'pray', 'bath', 'futon'].map((p) => (
+    { file: `${s}_${p}.png`, out: `kittens/${s}/${p}.png`, to: [768, 768], chroma: true }))),
+  /* The chick's flutter frame, off `chick.png`; drawn facing right and
+     MIRRORED in the master so it faces left like the rest of the pen. */
+  { file: 'chick_fly.png', out: 'farm/chick_fly.png', to: [512, 512], chroma: true },
 ];
 
 /* ========================================================================== */

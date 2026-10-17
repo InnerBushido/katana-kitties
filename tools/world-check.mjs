@@ -3514,7 +3514,8 @@ console.log('\n--- the panda in the ring ---');
       const kiai = ['ember', 'frost'].map((s) => ink(`kittens/${s}/kiai`));
       ok('剣 both kendo guards and both kiai hold the shinai out to the RIGHT, which is what the Billboard is told',
         guard.every((r) => r.reach > 0.1) && kiai.every((r) => r.reach > 0.05)
-        && /setKendoArt\(art\) \{[\s\S]{0,900}mirror: true,\s*artFacesRight: true,/.test(psrc),
+        // 2000, not 900: the ceremony's sizing comment now sits above the Billboard
+        && /setKendoArt\(art\) \{[\s\S]{0,2000}mirror: true,\s*artFacesRight: true,/.test(psrc),
         [...guard, ...kiai].map((r) => `${r.f} ${r.reach.toFixed(3)}`).join(' '));
       /* HER FEET, which a mirror moves. Richard: "moving up/down, the players
          position is jumping left/right, based on the sprite, the feet should
@@ -6327,6 +6328,9 @@ console.log('\n--- background removal keeps the drawn whites ---');
     'roshi/roshi.png',
     'kittens/ember/kendo.png', 'kittens/frost/kendo.png', 'kittens/ember/kiai.png', 'kittens/frost/kiai.png',
     'farm/chick.png', 'farm/bunny.png', 'farm/goat.png',
+    // ...and the home poses: kendo's ceremony, the prayer, the onsen, the futon; the chick's flutter.
+    ...['ember', 'frost'].flatMap((s) => ['seiza', 'reach', 'rei', 'pray', 'bath', 'futon'].map((p) => `kittens/${s}/${p}.png`)),
+    'farm/chick_fly.png',
   ];
   {
     const dir = new URL('../public/sprites/', import.meta.url);
@@ -6498,8 +6502,12 @@ console.log('\n--- background removal keeps the drawn whites ---');
        kiai strikes (arms over the helmet), the chick's wing and the goat's
        legs. Measured by this loop. Not filled: Roshi is a plain sprite, the
        kiai a single-pose billboard and the animals load without `fillHoles`. */
-    ok('turning the fill on for every sheet would repaint thirty-one of them',
-      touched.length === 31 && touched.includes('roshi/roshi.png')
+    /* THIRTY-SIX SINCE THE HOME POSES: Ember's prayer and futon (paws to her
+       chest), Frost's reach and rei (the shinai arm against the hakama), and
+       the chick's flutter frame (a wing over her back). Measured by this loop.
+       Not filled: all five come through CRITTER_ART like the kiai. */
+    ok('turning the fill on for every sheet would repaint thirty-six of them',
+      touched.length === 36 && touched.includes('farm/chick_fly.png') && touched.includes('kittens/ember/pray.png') && touched.includes('roshi/roshi.png')
       && touched.includes('kittens/ember/kiai.png') && touched.includes('kittens/frost/kiai.png')
       && touched.includes('lionheart/defeated.png') && touched.includes('beasts/dragon_sheet.png')
       && touched.filter((f) => /\/vr_/.test(f)).length === 8 && touched.includes('kittens/frost/vr_riposte.png')
@@ -6779,10 +6787,12 @@ console.log('\n--- the art that ships is smaller than the art that made it ---')
        the VR gear on (`vr_<pose>.png`), worn in the tube and in the sim.
        FIFTEEN SINCE 返 RIPOSTE WENT INTO THE HEADSET (`vr_riposte.png`).
        SEVENTEEN SINCE KENDO: `kendo.png`, the guard in the bogu, and
-       `kiai.png`, the men strike (systems/housing/kendo.js). */
-    ok('...with the same seventeen poses drawn for each of them',
+       `kiai.png`, the men strike (systems/housing/kendo.js).
+       TWENTY-THREE SINCE THE HOME POSES: kendo's `seiza`, `reach` and `rei`,
+       and `pray`, `bath` and `futon` (Player.setHomeArt). */
+    ok('...with the same twenty-three poses drawn for each of them',
       posesOf('ember') === posesOf('frost')
-      && posesOf('ember').split(' ').length === 17, posesOf('ember'));
+      && posesOf('ember').split(' ').length === 23, posesOf('ember'));
   }
 
   /* --- and nothing else in public/ is quietly enormous ----------------------

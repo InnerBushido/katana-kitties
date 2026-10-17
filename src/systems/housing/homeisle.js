@@ -4,7 +4,7 @@ import { Island, mergeParts, PALETTE } from '../../world/build.js';
 import { makeLabelTexture } from '../../core/label.js';
 import { buildHouseShell, houseHeight, houseRadius, floorOf, FLOOR_H, SLAB_T, WINDOW, PORT_H } from './homehouse.js';
 import { ITEMS, ITEM_BY_ID, LINK_BY_ID, houseSpecs, homeRooms } from './catalog.js';
-import { linkGeom, linkParts } from './links.js';
+import { linkGeom, linkParts, linkModels } from './links.js';
 import { placeModel, drawItem } from './models.js';
 import { wallSlots, yardR } from './editor.js';
 import { buildTreehouse } from './treehouse.js';
@@ -382,8 +382,9 @@ export class HomeIsle {
       b(0.05, PORT_H - 0.9, 0.08, PALETTE.woodDark, 0, (PORT_H + 0.8) / 2);
       return mergeParts(parts);
     };
+    // Tripo's shoji leaf (tools/prop-bake.mjs) stretched to the hole; the drawn panel until it loads, or for good
     const panels = [-1, 1].map((sgn) => {
-      const m = new THREE.Mesh(geo(), this.wallMat);
+      const m = placeModel(SHOJI, new THREE.Mesh(geo(), this.wallMat), { box: { x: pw, y: PORT_H - 0.06, z: 0.08 }, ry: Math.PI / 2 });
       m.position.x = sgn * w / 4;
       g.add(m);
       return m;
@@ -568,7 +569,7 @@ export class HomeIsle {
     for (const y of [0.03, WINDOW.h / 3, (WINDOW.h * 2) / 3, WINDOW.h - 0.03]) b(pw, 0.06, 0.07, PALETTE.woodDark, 0, y);
     const geo = mergeParts(parts);
     const panels = [-1, 1].map((sgn) => {
-      const m = new THREE.Mesh(geo, this.wallMat);
+      const m = placeModel(SHOJI, new THREE.Mesh(geo, this.wallMat), { box: { x: pw, y: WINDOW.h, z: 0.06 }, ry: Math.PI / 2 });
       m.position.set(sgn * WINDOW.w / 4, 0, 0.02);
       g.add(m);
       return m;
@@ -593,6 +594,7 @@ export class HomeIsle {
       const G = linkGeom(H, L, gyAt);
       if (!G) continue;
       const ground = (d) => gyAt(G.A.x + G.ux * d, G.A.z + G.uz * d) - G.A.y;
+      G.models = true;
       const P = linkParts(G, ground);
       const g = new THREE.Group();
       const w0 = this.local(G.A.x, G.A.z);
@@ -600,6 +602,12 @@ export class HomeIsle {
       g.rotation.y = this.ry + G.a;
       if (P.solid.length) g.add(new THREE.Mesh(mergeParts(P.solid), toonVertexMat()));
       if (P.glow.length) g.add(new THREE.Mesh(mergeParts(P.glow), new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false })));
+      for (const m of linkModels(G)) {
+        const mg = placeModel(m.id, m.stand ? planterStandIn() : null, { h: m.h });
+        mg.position.set(m.x, m.y, m.z);
+        mg.rotation.y = m.ry;
+        g.add(mg);
+      }
       g.userData.link = L.uid;
       this.itemGroup.add(g);
       this.linkMeshes.set(L.uid, g);
@@ -1068,6 +1076,25 @@ export class HomeIsle {
 }
 
 export { FLOOR_H };
+
+/** The generated shoji leaf every door and window is made of. */
+const SHOJI = 'props/shoji-door';
+
+/** The drawn flower box a blossom bridge's planter stands in as (links.js `linkModels`). */
+function planterStandIn() {
+  const parts = [];
+  const b = new THREE.BoxGeometry(1.2, 0.3, 0.4);
+  paint(b, 0x7a5236);
+  b.translate(0, 0.15, 0);
+  parts.push(b);
+  for (let k = 0; k < 3; k++) {
+    const f = new THREE.DodecahedronGeometry(0.16, 0);
+    paint(f, [0xff8fb8, 0xffd0e0, 0xffffff][k]);
+    f.translate(-0.4 + k * 0.4, 0.38, 0);
+    parts.push(f);
+  }
+  return new THREE.Mesh(mergeParts(parts), toonVertexMat());
+}
 
 /**
  * A PATH PIECE, flat on the grass, `pw` wide and `len` long along its own z.

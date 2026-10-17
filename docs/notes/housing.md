@@ -146,24 +146,14 @@ Each one degrades: delete the file and the game draws the stand-in.
 
 | what | the stand-in | to finish it |
 | --- | --- | --- |
-| **Kendo: kneeling, reaching for the shinai, the bow** | the guard drawing squashed to 66% (seiza) or 80% (reaching), and tipped 0.42 rad toward her opponent for the rei (`Player`, the `kendoStance` block) | three drawings per kitten sheet — seiza, the reach, the rei |
 | **Each kitten's kiai** | one synthesised shout (`audio.js 'kiai'`), pitched per kitten by `KIAI_PITCH` | four recorded kiai, a voice each ([voices.md](voices.md)) |
 | **The kendo scoreboard** | ONE `#kendo-board` at the top of the whole screen, for the first match on | per pane, if two matches in two houses ever run at once |
 | **Polyfork knobs** | ITEM CUSTOMIZATION offers size and the model's colourways only | its geometry knobs (`remixable`), with the same "never through the roof" cap |
 | **Set plates** | plates on a kotatsu are not saved: a reload clears the table | a field on the room row, if it matters to anyone |
 | **The storage chest** | a card that says so | a real inventory |
-| **The prayer's drawing** | the star's reach pose (`homePose = 'bless'`) at the shrine AND for ITADAKIMASU | a prayer sheet: four directions × 3–4 frames, all four kittens |
-| **Bathing suits** | a puff of steam, and the eating crouch in the water | an onsen pose per kitten |
-| **Lying down** | the nap HIDES her (`homePose = 'hidden'`) and fades the pane if everyone in it is asleep | a futon pose |
-| **The angel wings** | two white fans drawn in `boons.js`, flapping | a wing sprite or model |
 | **Taiko, the cups game, volleyball** | a line and a sound | the mini-games |
 | **The Bushido Blade forest** | shown, locked, "later" | Richard's later feature |
-| **The fetch stick** | a brown box, spinning | a stick (or frisbee, or carrot) model |
-| **The chick in flight** | the pen drawing, bobbing in the air — no wings move | a flying frame, or a flap on the billboard |
-| **A mess** | four brown blobs (`PetPlay._pile`) | a drawn pile |
 | **Boosts for kotodama abilities** | not done: the animals boost JUMP HEIGHT, JUMP DISTANCE and SPRINT only | Richard also floated boosting the panda or her kotodama powers; it is a `petBoost` field plus the one line that reads it |
-| **Bridge decoration models** | every bridge is drawn (`linkParts` in links.js) — planks, rope, stone, a vermilion taiko-bashi, the blossom arch | Tripo or Polyfork pieces for the fancy styles; Tripo is paid, so say the price first |
-| **Door panels** | two sliding paper panels per doorway, drawn boxes (`IsleHome._door`) | a shoji door model |
 | **Windows open onto a gap, not glass** | the opening and two sliding panels | nothing needed unless a pane of glass is wanted |
 
 ## Boons — what home is worth in the ring
@@ -365,6 +355,17 @@ in the code, and deleting the file brings it back.
 | **Roshi's voice** | five clips in `voice/roshi/`, Arthur ([voices.md](voices.md)) | the toast alone |
 | **Kendo** | `kittens/<sheet>/kendo.png` (the guard) and `kiai.png` (the men strike, held for `KIAI_T` after every swing in the bogu), recoloured by STYLE for Storm and Blossom. `kendo.js` only sets `kendoGeared` and `kiaiT`; `Player` draws them. They MIRROR like the Riposte stance, and world-check measures the shinai reaching right | the drawn men and shinai |
 | **The animals** | `farm/{chick,bunny,goat}.png`, side-on, head LEFT (measured), turned along the circle they walk | the primitive bodies |
+| **Kendo's ceremony** | `kittens/<sheet>/{seiza,reach,rei}.png`, off her own `kendo.png`, recoloured by style. Sized as a FRACTION of the standing guard (`KENDO_CEREMONY_H`: 0.72 / 0.8 / 0.92) — sizing by ink area made seiza a head taller than the guard, because the generator fills the frame whatever the pose | the guard squashed (seiza, reach) or tipped (rei) |
+| **The prayer, the onsen, the futon** | `kittens/<sheet>/{pray,bath,futon}.png` and `homePose` `'pray'` / `'bath'` / `'futon'` (`Player.setHomeArt`). The prayer is sized by ink area against her bless drawing; the bath is a HEAD and a towel on the water — the first take was a swimsuit and was rejected for a game for girls of nine and under; the futon is drawn whole, bedding and all. Still one still each, not the four-direction prayer sheet Richard once asked for | `Player._homeAs`: the star's reach, the eating crouch, hiding her |
+| **The chick in flight** | `farm/chick_fly.png`, mirrored in the master to face LEFT like the pen; flaps against the pen drawing at 8/s while CATCH has her up | the pen drawing bobbing |
+| **Door and window panels** | `models/props/shoji-door.glb` (Tripo text-to-model, `tools/prop-bake.mjs`), stretched into each panel's box by `fitBox` in models.js | the drawn paper boxes |
+| **The angel wings** | `models/props/angel-wings.glb` (Tripo), squeezed on the flap | the two drawn fans |
+| **A mess, the fetch stick** | `models/props/mess-pile.glb` (Tripo) and Polyfork's `fallen-twig-4c64de` | the brown blobs, the box |
+| **Bridge decoration** | `linkModels` in links.js: Polyfork lantern posts on plank and rope, stone lanterns at the stone bridge's corners, a torii over each end of the vermilion, flower planters down the blossom bridge (whose drawn boxes become the stand-in) | nothing — the bridge underneath is whole on its own |
+
+Tripo props cost 30 credits each (three: shoji, wings, pile); the raw takes are
+in `out/props-raw/` (gitignored — keep them). The poses were 13 more
+`gpt_image_2_5` images off each kitten's own `kendo.png` / `bless.png`.
 
 ## More houses, bridges, paths, windows — Oct 2026
 

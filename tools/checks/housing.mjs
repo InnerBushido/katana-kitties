@@ -16,7 +16,7 @@ import * as THREE from 'three';
 import { readFileSync } from 'node:fs';
 import { Housing, TOUR } from '../../src/systems/housing/housing.js';
 import { HOME_SITES, HOUSES, HOUSE_BY_ID, PRESETS, ITEM_BY_ID, priceOf, HOME_SELL, SPEED_STRIP, FREE_ANNEX, homeRooms } from '../../src/systems/housing/catalog.js';
-import { linkWhy, linkBlockers, portSpots } from '../../src/systems/housing/links.js';
+import { linkWhy, linkBlockers, portSpots, linkModels } from '../../src/systems/housing/links.js';
 const ITEMS_PATHS = () => ITEMS.filter((it) => it.path);
 import { emptyStore, newHome, normalise, saveStore, loadStore, migrateYard, HOME_KEY, homeKey, pruneRows, HOME_ROWS_KEPT } from '../../src/systems/housing/homestore.js';
 import { careLevel, careBuff, stalksAt, BAMBOO_GROW, BAMBOO_MAX } from '../../src/systems/housing/farm.js';
@@ -32,7 +32,7 @@ import { PLAYER_STYLE } from '../../src/core/palette.js';
 import { worldSig } from '../../src/systems/savegame.js';
 import { ROSHI_LINES, ROSHI_VOICE } from '../../src/systems/housing/roshi.js';
 import { Kendo, KIAI_T, BOUT } from '../../src/systems/housing/kendo.js';
-import { KENDO_DODGE, KENDO_SCALE } from '../../src/entities/player.js';
+import { KENDO_DODGE, KENDO_SCALE, KENDO_CEREMONY_H, Player } from '../../src/entities/player.js';
 import { Billboard } from '../../src/core/gfx.js';
 import { voicePath } from '../../src/core/audio.js';
 import { existsSync } from 'node:fs';
@@ -47,7 +47,7 @@ import { petLevel, petBoost, messesAt, rhythmError, PLAY } from '../../src/syste
 import { fitTo, styleModel, stylesFor, drawItem, LOOK_MUL, TINTS } from '../../src/systems/housing/models.js';
 import { MODEL_STYLES } from '../../src/systems/housing/modelstyles.js';
 import { roomLook, CEILING_GAP, FLOOR_H, YARD_BUILT } from '../../src/systems/housing/homeisle.js';
-import { ITEMS } from '../../src/systems/housing/catalog.js';
+import { ITEMS, LINK_STYLES } from '../../src/systems/housing/catalog.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 const DAY = 24 * 3600 * 1000;
@@ -777,7 +777,7 @@ export async function housingChecks({ ok, world }) {
     const isle = { spots: [{ act: 'sit', item: 'kotatsu' }], x: 0, z: 0 };
     const home = { site: 'test', owners: ps.map((p) => p.name) };
     A.start(ps[0], { act: 'nap', x: 0, z: 0, y: 0, isle, home });
-    ok('a nap holds her still and hides her under the covers', A.holds(0) && ps[0].homePose === 'hidden');
+    ok('a nap holds her still and puts her under the covers', A.holds(0) && ps[0].homePose === 'futon');
     A.start(ps[1], { act: 'pray', x: 0, z: 0, y: 0, isle, home });
     H.musicSite = 'test';
     ok('praying starts the shrine\'s song, and it outranks the boombox', !!A.prayer && H.musicTrack() === 'shrinePrayer');
@@ -1839,6 +1839,44 @@ export async function housingChecks({ ok, world }) {
     delete H.store.homes[I.site.id];
     I.setHome(null, null);
     game.players = [];
+  }
+
+  /* THE PLACEHOLDERS THAT WERE REPLACED, Oct 2026. Every one of them is a FILE
+     the game now reaches for, and every one degrades to what it replaced -
+     so the checks are that the file is there, and that the fallback still
+     answers when it is not. */
+  {
+    const pub = (f) => existsSync(new URL(`../../public/${f}`, import.meta.url));
+    const poses = ['seiza', 'reach', 'rei', 'pray', 'bath', 'futon'];
+    const missing = ['ember', 'frost'].flatMap((k) => poses.map((q) => `sprites/kittens/${k}/${q}.png`)).filter((f) => !pub(f));
+    ok('every new kitten pose is baked, for both sheets', !missing.length, missing.join(' '));
+    ok('...and the chick has its flutter frame', pub('sprites/farm/chick_fly.png'));
+    const models = ['props/shoji-door', 'props/angel-wings', 'props/mess-pile', 'fallen-twig-4c64de', 'flower-planter-500ed2',
+      'lantern-post-f47665', 'torii-gate-402f30', 'stone-lantern-d56d0a'];
+    const gone = models.filter((m) => !pub(m.includes('/') ? `models/${m}.glb` : `models/polyfork/${m}.glb`));
+    ok('every prop model the housing reaches for is in public/models', !gone.length, gone.join(' '));
+    /* Every bridge style's decoration resolves to a file that exists. */
+    const G = { len: 8, w: 2.6, rise: 0, models: true };
+    const deco = LINK_STYLES.flatMap((st) => linkModels({ ...G, style: st }));
+    ok('every fancy bridge decoration names a model that exists',
+      deco.length > 0 && deco.every((m) => pub(m.id.includes('/') ? `models/${m.id}.glb` : `models/polyfork/${m.id}.glb`)),
+      `${deco.length} pieces`);
+    /* _homeAs: the drawn pose when there is one, the OLD pose when there is not. */
+    const as = (hp, drawn) => {
+      const f = { homePose: hp, prayPose: drawn ? {} : null, bathPose: drawn ? {} : null, futonPose: drawn ? {} : null };
+      return ['bless', 'eat', 'hidden'].filter((n) => Player.prototype._homeAs.call(f, n));
+    };
+    ok('with no drawing, the prayer is the reach, the bath the crouch and the futon hides her',
+      as('pray', false).join() === 'bless' && as('bath', false).join() === 'eat' && as('futon', false).join() === 'hidden',
+      `${as('pray', false)}|${as('bath', false)}|${as('futon', false)}`);
+    ok('...and with one, none of the old three is worn as well',
+      !as('pray', true).length && !as('bath', true).length && !as('futon', true).length);
+    ok('...and the old names still mean themselves (the meal, ITADAKIMASU)', as('eat', true).join() === 'eat' && as('bless', true).join() === 'bless');
+    /* The ceremony kneels SHORTER than she stands, in order: measured on
+       screen, seiza came out a head taller than the guard when sized by ink. */
+    const C = KENDO_CEREMONY_H;
+    ok('kneeling is shorter than reaching, reaching than bowing, bowing than standing',
+      C.seizaPose < C.reachPose && C.reachPose < C.reiPose && C.reiPose < 1, JSON.stringify(C));
   }
 
   localStorage.removeItem(HOME_KEY);

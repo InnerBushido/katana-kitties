@@ -339,8 +339,8 @@ export function linkParts(G, ground) {
       }
     }
   }
-  if (st.id === 'sakura') {
-    // flower boxes along the deck edge
+  if (st.id === 'sakura' && !G.models) {
+    // flower boxes along the deck edge (the planter MODELS take over in `linkModels`)
     for (let d = 1; d < len - 0.6; d += 2.2) {
       for (const s of [-1, 1]) {
         solid.push(bx(0.4, 0.3, 1.2, 0x7a5236, s * (hw - 0.45), Y(d) + 0.15, d));
@@ -383,3 +383,38 @@ export function linkParts(G, ground) {
 
 /** The door heights a bridge needs: as tall as the front door. */
 export const LINK_DOOR_H = PORT_H;
+
+/**
+ * THE MODELS ON A BRIDGE — Polyfork pieces, in the bridge's own frame (A at
+ * the origin, z along it, y up from A's floor). Richard: "We can use Tripo or
+ * Polyfork to create some bridges or to create some models to add to decorate
+ * the bridges to make them look nice." The bridge itself stays drawn, because
+ * it is a different length every time and a model cannot stretch; these stand
+ * on it. Each is `{ id, x, y, z, ry, h }` — `h` the height to fit it to, the
+ * same `size.h` the yard's things use, so a generator's scale never matters.
+ * A plain bridge gets a lantern post at each end, the stone one a stone
+ * lantern at each corner, the vermilion one a torii over each end, the blossom
+ * one flower planters down both edges. Every piece degrades to nothing: the
+ * bridge underneath is whole on its own.
+ */
+export function linkModels(G) {
+  const st = G.style;
+  const { len, rise, w } = G;
+  const hw = w / 2;
+  const Y = (d) => rise * Math.min(1, Math.max(0, d / len));
+  const out = [];
+  if (st.id === 'plank' || st.id === 'rope') {
+    out.push({ id: 'lantern-post-f47665', x: hw + 0.35, y: Y(0.6), z: 0.6, ry: -Math.PI / 2, h: 2.4 });
+    out.push({ id: 'lantern-post-f47665', x: -(hw + 0.35), y: Y(len - 0.6), z: len - 0.6, ry: Math.PI / 2, h: 2.4 });
+  } else if (st.id === 'stone') {
+    for (const d of [0.9, len - 0.9]) for (const s of [-1, 1]) out.push({ id: 'stone-lantern-d56d0a', x: s * (hw - 0.5), y: Y(d), z: d, ry: 0, h: 1.3 });
+  } else if (st.id === 'vermilion') {
+    // a torii is 2.6 wide for 3.19 tall: fit it to the bridge's width and it stands ~4 high, over the 3.1 door
+    if (len > 4) for (const d of [1.2, len - 1.2]) out.push({ id: 'torii-gate-402f30', x: 0, y: Y(d), z: d, ry: 0, h: 3.19 * (w + 0.9) / 2.6 });
+  } else if (st.id === 'sakura') {
+    for (let d = 1; d < len - 0.6; d += 2.2) {
+      for (const s of [-1, 1]) out.push({ id: 'flower-planter-500ed2', x: s * (hw - 0.45), y: Y(d), z: d, ry: Math.PI / 2, h: 0.5, stand: s });
+    }
+  }
+  return out;
+}

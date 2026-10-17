@@ -48,13 +48,17 @@ export function loadModel(id) {
       if (typeof window === 'undefined' || typeof fetch !== 'function' || !globalThis.location) return null;
       try {
         const L = await getLoader();
-        const gltf = await L.loadAsync(`${BASE}${id}.glb`);
+        /* `props/<id>` is a Tripo take (tools/prop-bake.mjs), not Polyfork:
+           it lives in its own folder and carries a TEXTURE rather than vertex
+           colours, which the toon material below must keep. */
+        const gltf = await L.loadAsync(id.includes('/') ? `/models/${id}.glb` : `${BASE}${id}.glb`);
         const root = gltf.scene;
         const vmat = toonVertexMat();
         root.traverse((o) => {
           if (!o.isMesh) return;
           const g = o.geometry;
           if (g.attributes.color) o.material = vmat;
+          else if (o.material?.map) o.material = toonMat({ map: o.material.map });
           else {
             const c = o.material?.color ?? new THREE.Color(0xcccccc);
             o.material = toonMat({ color: c });
@@ -97,6 +101,7 @@ const _v = new THREE.Vector3();
  */
 export function fitTo(obj, size, look = null) {
   if (!obj || !size) return obj;
+  if (size.box) return fitBox(obj, size);
   obj.scale.setScalar(1);
   obj.position.set(0, 0, 0);
   obj.updateMatrixWorld(true);
@@ -118,6 +123,30 @@ export function fitTo(obj, size, look = null) {
   obj.userData.fitScale = s * m;
   obj.userData.maxMul = max;
   return obj;
+}
+
+/**
+ * STRETCH TO A BOX. A door panel or a window is whatever size its hole is,
+ * not the model's own proportions: `size.box` = {x, y, z} in the parent's
+ * frame, `size.ry` a quarter-turn applied first (a Tripo take faces where it
+ * likes — the shoji came back facing +x). Returns a wrapper, so the turn and
+ * the non-uniform scale do not fight; it stands on y = 0, centred in x and z.
+ */
+function fitBox(obj, size) {
+  const wrap = new THREE.Group();
+  obj.scale.setScalar(1);
+  obj.position.set(0, 0, 0);
+  obj.rotation.y = size.ry ?? 0;
+  wrap.add(obj);
+  wrap.updateMatrixWorld(true);
+  _box.setFromObject(obj);
+  if (_box.isEmpty()) return obj;
+  _box.getSize(_v);
+  const c = _box.getCenter(new THREE.Vector3());
+  const k = new THREE.Vector3(size.box.x / (_v.x || 1), size.box.y / (_v.y || 1), size.box.z / (_v.z || 1));
+  obj.position.set(-c.x, -_box.min.y, -c.z);
+  wrap.scale.copy(k);
+  return wrap;
 }
 
 /** How far a player may resize a thing: half to half again. */
@@ -203,7 +232,7 @@ export function placeModel(id, standIn, size = null, look = null) {
   if (id) {
     loadModel(id).then((m) => {
       if (!m || g.userData.disposed) return;
-      if (standIn) g.remove(standIn);
+      if (standIn) g.remove(standIn.parent === g ? standIn : standIn.parent);
       if (look?.style) {
         if (hasStyles) styleModel(m, id, look.style);
         else tintObject(m, look.style);

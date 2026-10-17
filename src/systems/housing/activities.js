@@ -16,12 +16,14 @@ import { mealPct, BOON } from './boons.js';
    WHAT THEY PAY is in boons.js — this file only decides when they have been
    earned.
 
+   THE POSES ARE DRAWN (Oct 2026): 'pray' at the shrine, 'bath' - a head and
+   a towel on the water - in the onsen, 'futon' asleep under the covers
+   (Player.setHomeArt). Each falls back to the pose it replaced when its file
+   is missing: the star's reach, the eating crouch, hiding her.
+
    PLACEHOLDERS, all listed in docs/notes/housing.md:
-     - the prayer wears the star's reach pose; Richard asked for a prayer
-       sheet, four directions x three or four frames;
-     - the onsen and the meal wear the eating crouch; there are no bathing
-       suits — the "poof" is a puff of steam;
-     - the nap hides her (under the covers) — there is no lying-down drawing;
+     - the prayer is one still, not Richard's four-direction sheet;
+     - the meal still wears the eating crouch, which is what a meal is;
      - the drum and the cups game are a line and a sound, not games yet.
 --------------------------------------------------------------------------- */
 
@@ -103,7 +105,7 @@ export class HomeActivities {
   _pray(p, s) {
     const G = this.game;
     this._hold(p, 'pray', HOLD.pray, { s });
-    p.homePose = 'bless';
+    p.homePose = 'pray';
     /* THE SONG STARTS ONCE. A second kitten praying while it plays joins
        it, rather than starting it over under her sister. */
     if (!this.prayer) {
@@ -134,7 +136,7 @@ export class HomeActivities {
     p.group?.position?.copy?.(p.position);
     this._puff(p.position);
     this._hold(p, 'soak', HOLD.soak, { s });
-    p.homePose = 'eat';
+    p.homePose = 'bath';
     this.game.toast(`POOF! ${p.name} is in her bathing suit and sinks into the onsen… ahhh.`, p.index);
     this.game.audio?.play?.('menu');
   }
@@ -143,7 +145,7 @@ export class HomeActivities {
 
   _nap(p, s) {
     this._hold(p, 'nap', HOLD.nap, { s });
-    p.homePose = 'hidden';
+    p.homePose = 'futon';
     this.game.toast(`${p.name} snuggles under the futon… zzz`, p.index);
   }
 

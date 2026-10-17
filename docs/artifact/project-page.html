@@ -485,7 +485,7 @@ footer b { color: var(--text); }
 <div class="wrap">
 
 <header class="mast">
-  <div class="stamp">Last updated <span>·</span> 12 Oct 2026</div>
+  <div class="stamp">Last updated <span>·</span> 17 Oct 2026</div>
   <h1>Katana Kitties<em>The whole project on one page</em></h1>
   <p class="lede">A <b>split-screen co-op browser game for up to four players</b>: samurai kittens
     knocking over a chain of floating Japanese islands, riding storm dragons between them, and
@@ -1114,10 +1114,18 @@ git push origin alpha</code></pre>
       <tr>
         <td><b>Her statue at the bridge</b></td>
         <td>Tripo image-to-3D off her champion drawing, magenta keyed out first, scaled by its own
-          bounding box and tinted to her colour — two runs, four statues. <b>Not yet run</b>: the
-          drawn statue stands until it is, and without <code>--go</code> the tool only prints the
-          plan and the price.</td>
+          bounding box and tinted to her colour — two runs, four statues. Run Oct 2026; the raw
+          takes are kept in <code>out/statues-raw/</code>. Without <code>--go</code> the tool only
+          prints the plan and the price.</td>
         <td><code>statue-bake.mjs</code></td>
+      </tr>
+      <tr>
+        <td><b>Housing's props</b></td>
+        <td>Tripo text-to-model for what Polyfork has no match for — the shoji door panel, the angel
+          wings, a pet's mess — into <code>public/models/props/</code>, raw takes kept in
+          <code>out/props-raw/</code>. About 30 credits each; without <code>--go</code> it prints the
+          plan and the price.</td>
+        <td><code>prop-bake.mjs</code></td>
       </tr>
       <tr>
         <td><b>The furniture's colourways</b></td>
@@ -1260,7 +1268,8 @@ git push origin alpha</code></pre>
       </tr>
       <tr>
         <td><b>Tripo</b></td>
-        <td>Image-to-3D, for the statues at the foot of each home bridge. The key is a user
+        <td>Image-to-3D, for the statues at the foot of each home bridge, and text-to-model for
+          housing's props. The key is a user
           environment variable and lives nowhere else.</td>
         <td>≈30 credits a textured model; the tool says the total first</td>
       </tr>

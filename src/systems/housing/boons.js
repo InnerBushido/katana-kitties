@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { placeModel } from './models.js';
 
 /* ---------------------------------------------------------------------------
    HOME BOONS — what an afternoon at home is worth in the NEXT arena battle.
@@ -213,8 +214,10 @@ export class HomeBoons {
       F.glow.material.color.lerp(new THREE.Color(c), Math.min(1, dt * 4));
       F.glow.material.opacity = 0.18 * alpha;
     }
-    /* THE WINGS. PLACEHOLDER ART: two white feathered fans drawn here, flapping;
-       they blink for the last second, which is the "land now" warning. */
+    /* THE WINGS: Tripo's pair (tools/prop-bake.mjs `angel-wings`), or the two
+       drawn fans until it loads; they blink for the last second, which is
+       the "land now" warning. The model is ONE mesh, so it flaps by
+       squeezing across rather than by hinging. */
     const W = F.wings;
     W.visible = p.wingT > 0 && !(p.wingT < BOON.wingBlink && Math.floor(p.wingT * 10) % 2 === 0);
     if (W.visible) {
@@ -223,7 +226,12 @@ export class HomeBoons {
       W.children[1].rotation.y = -0.5 - flap;
       W.rotation.y = p.facing ?? p.group?.rotation?.y ?? 0;
       const fade = Math.min(1, p.wingT / BOON.wingBlink);
-      for (const w of W.children) w.material.opacity = 0.35 + 0.6 * fade;
+      for (const w of W.children) if (w.material) w.material.opacity = 0.35 + 0.6 * fade;
+      const M = F.wingModel;
+      if (M?.userData.real) {
+        M.scale.set(1 - 0.35 * Math.abs(flap), 1, 1);
+        M.traverse((o) => { if (o.isMesh) { o.material.transparent = true; o.material.opacity = 0.45 + 0.55 * fade; } });
+      }
     }
   }
 
@@ -262,8 +270,13 @@ export class HomeBoons {
       pivot.position.set(0.2 * side, 1.9, -0.3);
       wings.add(pivot);
     }
+    const pivots = [...wings.children];
+    const wingModel = placeModel('props/angel-wings', null, { box: { x: 3.4, y: 2.3, z: 0.7 }, ry: Math.PI / 2 });
+    wingModel.position.set(0, 1.0, -0.4);
+    wingModel.userData.onReal = () => { for (const pv of pivots) pv.visible = false; };
+    wings.add(wingModel);
     wings.visible = false;
     group.add(wings);
-    return { group, sparks, glow, wings, t: 0 };
+    return { group, sparks, glow, wings, wingModel, t: 0 };
   }
 }

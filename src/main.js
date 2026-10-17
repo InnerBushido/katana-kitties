@@ -1902,9 +1902,16 @@ class Game {
       ['frost_kendo', 'kittens/frost/kendo.png', false],
       ['ember_kiai', 'kittens/ember/kiai.png', false],
       ['frost_kiai', 'kittens/frost/kiai.png', false],
+      /* ...the match's ceremony - seiza, the reach for the shinai, the rei -
+         and the three home poses: the prayer, the onsen and the futon. Each
+         missing file falls back to the pose it replaced (Player._homeAs, and
+         the guard squashed/tipped in the kendo branch). */
+      ...['ember', 'frost'].flatMap((s) => ['seiza', 'reach', 'rei', 'pray', 'bath', 'futon'].map((p) => (
+        [`${s}_${p}`, `kittens/${s}/${p}.png`, false]))),
       /* THE PEN'S ANIMALS (housing/farm.js). Side-on, facing LEFT. A missing
          one keeps its primitive body. */
       ['farm_chick', 'farm/chick.png', false],
+      ['farm_chick_fly', 'farm/chick_fly.png', false],
       ['farm_bunny', 'farm/bunny.png', false],
       ['farm_goat', 'farm/goat.png', false],
       /* THE CONJURED INSECT. Loaded with the other animals because it is one,
@@ -1970,7 +1977,7 @@ class Game {
       mantis: critterArt.mantis && { calm: critterArt.mantis, shock: critterArt.mantis },
     };
     this.critterArt.wings = critterArt.angel_wings;
-    this.farmArt = { chick: critterArt.farm_chick, bunny: critterArt.farm_bunny, goat: critterArt.farm_goat };
+    this.farmArt = { chick: critterArt.farm_chick, chickFly: critterArt.farm_chick_fly, bunny: critterArt.farm_bunny, goat: critterArt.farm_goat };
 
     /* THE EATING POSE IS PER STYLE, RECOLOURED, AND IT USED TO BE PER SLOT.
        `p.index === 0 ? ember_eat : frost_eat` is the same mistake `palette.js`
@@ -2058,13 +2065,24 @@ class Game {
       return a;
     });
     /* AND AN EIGHTH AND NINTH, FOR KENDO. By STYLE, never by slot. */
+    const posePack = (s, names) => {
+      const out = {};
+      for (const [k, file] of names) {
+        const a = critterArt[`${s.sheet}_${file}`];
+        out[k] = a && s.recolour ? recolourAtlas(a, s.recolour) : (a ?? null);
+      }
+      return Object.values(out).some(Boolean) ? out : null;
+    };
     this.kendoArt = PLAYER_STYLE.map((s) => {
-      const guard = s.sheet === 'ember' ? critterArt.ember_kendo : critterArt.frost_kendo;
-      const kiai = s.sheet === 'ember' ? critterArt.ember_kiai : critterArt.frost_kiai;
-      if (!guard && !kiai) return null;
-      if (!s.recolour) return { guard, kiai };
-      console.log(`[art] ${s.name} kendo poses ← ${s.sheet}_kendo/kiai recoloured`);
-      return { guard: guard && recolourAtlas(guard, s.recolour), kiai: kiai && recolourAtlas(kiai, s.recolour) };
+      const pack = posePack(s, [['guard', 'kendo'], ['kiai', 'kiai'], ['seiza', 'seiza'], ['reach', 'reach'], ['rei', 'rei']]);
+      if (pack && s.recolour) console.log(`[art] ${s.name} kendo poses ← ${s.sheet}_kendo/kiai/seiza/reach/rei recoloured`);
+      return pack;
+    });
+    /* THE HOME POSES, by style like the rest; `ref` is her own bless drawing,
+       the yardstick the prayer is sized against (Player.setHomeArt). */
+    this.homeArt = PLAYER_STYLE.map((s, i) => {
+      const pack = posePack(s, [['pray', 'pray'], ['bath', 'bath'], ['futon', 'futon']]);
+      return pack && { ...pack, ref: this.blessArt?.[i] ?? null };
     });
 
     /* --- one emblem per clan, shown over her head when she swears ---
@@ -2409,6 +2427,7 @@ class Game {
     p.setSweepArt(this.sweepArt?.[this.roster[p.index]] ?? null);
     p.setRiposteArt(this.riposteArt?.[this.roster[p.index]] ?? null);
     p.setKendoArt(this.kendoArt?.[this.roster[p.index]] ?? null);
+    p.setHomeArt(this.homeArt?.[this.roster[p.index]] ?? null);
   }
 
   /**

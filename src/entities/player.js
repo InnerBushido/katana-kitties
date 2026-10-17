@@ -174,6 +174,15 @@ export const COMBAT = tune('COMBAT', {
 export const KENDO_DODGE = { speed: 24, t: 0.24, cool: 0.75 };
 /** The kendo drawings stand this much bigger than her — the bogu is a size up. */
 export const KENDO_SCALE = 1.25;
+/* The home poses' sizes as a fraction of her height (setHomeArt). The bath is
+   a head, so it is sized as one; the futon drawing is half as tall as it is
+   wide, so this makes it about two of her long. Measured on screen. */
+/** The ceremony's drawings' heights as a fraction of the standing guard. */
+export const KENDO_CEREMONY_H = { seizaPose: 0.72, reachPose: 0.8, reiPose: 0.92 };
+export const HOME_BATH_H = 0.55;
+export const HOME_FUTON_H = 0.9;
+/** homePose -> [the drawing it needs, the old pose it wears without it]. */
+const HOME_FALLBACK = { pray: ['prayPose', 'bless'], bath: ['bathPose', 'eat'], futon: ['futonPose', 'hidden'] };
 export const BASE_REACH = 3.4;
 
 export const MAX_HP = COMBAT.maxHp;
@@ -1719,13 +1728,21 @@ export class Player {
    * only draws it, and with no art kendo.js keeps its drawn men and shinai.
    */
   setKendoArt(art) {
-    for (const [key, a] of [['kendoPose', art?.guard], ['kiaiPose', art?.kiai]]) {
+    for (const [key, a] of [['kendoPose', art?.guard], ['kiaiPose', art?.kiai],
+      ['seizaPose', art?.seiza], ['reachPose', art?.reach], ['reiPose', art?.rei]]) {
       if (this[key]) { this.group.remove(this[key]); this[key] = null; }
       if (!a?.texture) continue;
       /* KENDO_SCALE BIGGER than her: Richard, "The Kendo gear that player
          puts on looks too small, should be probably 25% bigger." The bogu is
-         armour over the kitten, so the drawing in it stands a size up. */
-      const quad = this.height * KENDO_SCALE / (a.contentScale || 1);
+         armour over the kitten, so the drawing in it stands a size up.
+         THE CEREMONY'S THREE are a FRACTION of her standing height
+         (`KENDO_CEREMONY_H`). Normalising a kneeling cat on her bounding box
+         stands her up to full height, and ink area does not save it either:
+         measured, the five drawings' `contentArea` sit inside 0.50-0.57,
+         because the generator fills the frame whatever the pose - seiza came
+         out a head TALLER than the guard. The fractions were set by matching
+         the size of the men across the drawings on screen. */
+      const quad = this.height * KENDO_SCALE * (KENDO_CEREMONY_H[key] ?? 1) / (a.contentScale || 1);
       this[key] = new Billboard(a.texture, {
         cols: 1,
         rows: 1,
@@ -1740,6 +1757,61 @@ export class Player {
       this[key].visible = false;
       this.group.add(this[key]);
     }
+  }
+
+  /**
+   * THE HOME POSES (housing/activities.js): praying at the shrine, a head and
+   * a towel in the onsen, asleep under the futon. `{ pray, bath, futon, ref }`,
+   * any of them null; `ref` is her bless drawing, the yardstick the prayer is
+   * sized against by ink area. Before these were drawn the three borrowed the
+   * bless reach, the eating crouch and simply vanishing, and with a file
+   * missing they still do — `_homeAs` is the fallback.
+   *
+   * The prayer is side-on and mirrors; the bath is a front-on head with a flat
+   * cut at the water line, drawn ON the water (the spring's surface is the
+   * floor she stands on), and the futon is drawn whole - bedding and all -
+   * lying over the furniture's own futon.
+   */
+  setHomeArt(art) {
+    const ref = art?.ref;
+    for (const [key, a] of [['prayPose', art?.pray], ['bathPose', art?.bath], ['futonPose', art?.futon]]) {
+      if (this[key]) { this.group.remove(this[key]); this[key] = null; }
+      if (!a?.texture) continue;
+      let quad;
+      if (key === 'prayPose') {
+        quad = ref?.contentArea && a.contentArea
+          ? this.height * BLESS_STRETCH / (ref.contentScale || 1) * (ref.contentArea / a.contentArea)
+          : this.height * 0.8 / (a.contentScale || 1);
+      } else if (key === 'bathPose') {
+        quad = this.height * HOME_BATH_H / (a.contentScale || 1);
+      } else {
+        quad = this.height * HOME_FUTON_H / (a.contentScale || 1);
+      }
+      this[key] = new Billboard(a.texture, {
+        cols: 1,
+        rows: 1,
+        mirror: key === 'prayPose',
+        artFacesRight: key === 'prayPose',
+        width: quad,
+        height: quad,
+        footOffset: (a.pad ?? 0) * quad,
+      });
+      this[key].visible = false;
+      this.group.add(this[key]);
+    }
+  }
+
+  /**
+   * Does `homePose` read as the OLD pose `name`? True when it IS that name,
+   * and also when it is one of the drawn home poses whose file is missing -
+   * 'pray' falls back to 'bless', 'bath' to 'eat', 'futon' to 'hidden'. One
+   * place, so every branch that asks about the old three still answers.
+   */
+  _homeAs(name) {
+    const hp = this.homePose;
+    if (hp === name) return true;
+    const fall = HOME_FALLBACK[hp];
+    return !!fall && fall[1] === name && !this[fall[0]];
   }
 
   /* ------------------------ Powerup Kotodama ---------------------------- */
@@ -6081,7 +6153,7 @@ export class Player {
        this the eat reads as the game having frozen rather than as her eating.
        It is deliberately the same squash-and-stretch the jump and the landing
        use, one octave up: the vocabulary is already established. */
-    const chew = (this.eatT > 0 || this.homePose === 'eat') ? Math.sin(this.idlePhase * 9) * 0.09 : 0;
+    const chew = (this.eatT > 0 || this._homeAs('eat')) ? Math.sin(this.idlePhase * 9) * 0.09 : 0;
 
     /* THE CROSS SLASH'S WIND-UP, AS A CROUCH. She plants for CROSS.wind before
        the first cut and there is no drawn pose for it — and "stood perfectly
@@ -6310,9 +6382,9 @@ export class Player {
        'hidden' under a futon. It is a name, not a timer, and the activity
        that set it is the one that clears it. PLACEHOLDER: the prayer has no
        drawing of its own yet, so it wears the star's reach. */
-    if (this.homePose === 'hidden') this.sprite.mesh.visible = false;
+    if (this._homeAs('hidden')) this.sprite.mesh.visible = false;
     if (this.eatPose) {
-      const eating = this.eatT > 0 || this.homePose === 'eat';
+      const eating = this.eatT > 0 || this._homeAs('eat');
       this.eatPose.visible = eating;
       if (eating) {
         this.sprite.mesh.visible = false;
@@ -6336,8 +6408,8 @@ export class Player {
        frame one would read as a sprite swap, which is exactly what it is and
        exactly what it must not look like. */
     if (this.blessPose) {
-      const blessed = (this.aloftT > 0 || this.homePose === 'bless') && this.eatT <= 0
-        && this.homePose !== 'eat' && this.onGround && !this.mount && !this.rideAlong && !this.ko;
+      const blessed = (this.aloftT > 0 || this._homeAs('bless')) && this.eatT <= 0
+        && !this._homeAs('eat') && this.onGround && !this.mount && !this.rideAlong && !this.ko;
       this.blessPose.visible = blessed;
       if (blessed) {
         this.sprite.mesh.visible = false;
@@ -6350,6 +6422,31 @@ export class Player {
         this.blessPose.mat.color.copy(mat.color);
         this.blessPose.mat.opacity = mat.opacity;
       }
+    }
+
+    /* --- the home poses with drawings of their own ---
+       AFTER THE MEAL AND THE BLESSING, which they replace; `_homeAs` has
+       already kept those two off when the drawing exists. The prayer sways a
+       hair, the bath bobs on the water, the futon breathes. */
+    for (const [hp, key] of [['pray', 'prayPose'], ['bath', 'bathPose'], ['futon', 'futonPose']]) {
+      const pose = this[key];
+      if (!pose) continue;
+      const on = this.homePose === hp && !this.ko && !this.mount && !this.rideAlong;
+      pose.visible = on;
+      if (!on) continue;
+      this.sprite.mesh.visible = false;
+      const ph = this.idlePhase ?? 0;
+      if (hp === 'pray') {
+        pose.facing = this.facing;
+        pose.mesh.rotation.z = Math.sin(ph * 1.6) * 0.015;
+      } else if (hp === 'bath') {
+        pose.mesh.position.y = Math.sin(ph * 2.2) * 0.04;
+      } else {
+        const b = Math.sin(ph * 1.3) * 0.025;
+        pose.mesh.scale.set(1 + b * 0.3, 1 + b, 1);
+      }
+      pose.mat.color.copy(mat.color);
+      pose.mat.opacity = mat.opacity;
     }
 
     /* --- 息 Dragon Breath: fill your lungs, then empty them ---
@@ -6446,9 +6543,15 @@ export class Player {
       const geared = !!this.kendoGeared && !this.ko && !this.mount && !this.rideAlong;
       const kiai = geared && this.kiaiT > 0 && !!this.kiaiPose;
       const guard = geared && !kiai && !!this.kendoPose;
-      if (this.kendoPose) this.kendoPose.visible = guard;
+      /* THE MATCH'S CEREMONY (kendo.js `kendoStance`) - kneeling, reaching
+         for the shinai, the bow - wears its own drawing where there is one,
+         and the guard faked below where there is not. */
+      const st = guard ? this.kendoStance : null;
+      const cer = st === 'kneel' ? this.seizaPose : st === 'grab' ? this.reachPose : st === 'bow' ? this.reiPose : null;
+      for (const k of ['seizaPose', 'reachPose', 'reiPose']) if (this[k]) this[k].visible = !!cer && this[k] === cer;
+      if (this.kendoPose) this.kendoPose.visible = guard && !cer;
       if (this.kiaiPose) this.kiaiPose.visible = kiai;
-      const pose = kiai ? this.kiaiPose : guard ? this.kendoPose : null;
+      const pose = kiai ? this.kiaiPose : cer ?? (guard ? this.kendoPose : null);
       if (pose) {
         this.sprite.mesh.visible = false;
         pose.facing = this.facing;
@@ -6457,14 +6560,12 @@ export class Player {
         pose.mesh.position.y = kiai ? 0 : Math.abs(Math.sin(this._kendoBob)) * (moving ? 0.12 : 0.03);
         pose.mesh.rotation.z = 0;
         pose.mesh.scale.y = 1;
-        /* THE MATCH'S CEREMONY (kendo.js `kendoStance`): kneeling, reaching
-           for the shinai, and the bow. PLACEHOLDER — the guard drawing sunk
-           and squashed for seiza, and tipped toward her opponent for the rei,
-           until each has a drawing of its own (docs/notes/housing.md). The
-           tip is in the billboard's plane, toward whichever side the drawing
-           points, which `_pointsRight` already knows. */
-        const st = !kiai ? this.kendoStance : null;
-        if (st === 'kneel' || st === 'grab') {
+        /* THE FALLBACK for a ceremony with no drawing: the guard sunk and
+           squashed for seiza, and tipped toward her opponent for the rei.
+           The tip is in the billboard's plane, toward whichever side the
+           drawing points, which `_pointsRight` already knows. */
+        if (cer) pose.mesh.position.y = 0;
+        else if (st === 'kneel' || st === 'grab') {
           pose.mesh.scale.y = st === 'grab' ? 0.8 : 0.66;
         } else if (st === 'bow') {
           pose.mesh.rotation.z = (pose._pointsRight ? -1 : 1) * 0.42;
