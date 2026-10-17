@@ -1,8 +1,12 @@
 import * as THREE from 'three';
-import { HOUSE_BY_ID, ITEM_BY_ID } from './catalog.js';
-import { fits, footprint, gridOf, wallSlots, wallFree, yardWhy, yardR, addOutdoor } from './editor.js';
+import { HOUSE_BY_ID, ITEM_BY_ID, LINK_BY_ID, houseSpecs, homeRooms, roomById } from './catalog.js';
+import { fits, footprint, gridOf, wallSlots, wallFree, yardWhy, yardR, addOutdoor, houseWhy } from './editor.js';
 import { drawItem, placeModel } from './models.js';
 import { WALL_Y, YARD_BUILT, roomLook } from './homeisle.js';
+import { buildHouseShell, houseFoot, houseRadius } from './homehouse.js';
+import { mergeParts } from '../../world/build.js';
+import { toonVertexMat } from '../../core/gfx.js';
+import { linkWhy, linkGeom, linkParts, portSpots, endAt, LINK_MAX } from './links.js';
 
 /* ---------------------------------------------------------------------------
    BUILD MODE — placing a thing in the world, not on a chart.
@@ -79,22 +83,38 @@ export function cellLocal(room, it, gx, gz, rot = 0) {
  * world-check asks it with hand-made homes.
  */
 export function buildWhy(H, top, siteR = 50) {
+  const env = typeof siteR === 'number' ? { r: siteR } : siteR;
+  if (top.kind === 'house') {
+    return houseWhy(H, { hk: top.sel === -1 ? null : top.sel, house: top.id, x: top.x, z: top.z, rot: top.rot ?? 0 }, env);
+  }
+  if (top.kind === 'link') {
+    if (!top.a) return null;
+    return linkWhy(H, { a: top.a, b: top.cur, style: top.style }, env);
+  }
   const it = ITEM_BY_ID[top.id];
   if (!it) return 'Nothing to place.';
   if (top.kind === 'room') {
-    const room = HOUSE_BY_ID[H.house]?.rooms.find((r) => r.id === top.room);
+    const room = roomById(H, top.room);
     const R = H.rooms?.[top.room];
     if (!room) return 'That room is gone.';
     return fits(room, R?.items ?? [], it, top.gx, top.gz, top.rot, top.sel) ? null
       : "It doesn't fit there — move it to a clear spot.";
   }
   if (top.kind === 'wall') {
-    const room = HOUSE_BY_ID[H.house]?.rooms.find((r) => r.id === top.room);
-    const ok = room && wallSlots(H.house, room).some((s) => s.side === top.side && s.k === top.k);
-    if (!ok) return 'There is no wall there.';
+    const room = roomById(H, top.room);
+    const S = room && wallSlots(room.house, room).find((s) => s.side === top.side && s.k === top.k);
+    if (!S) return 'There is no wall there.';
+    // a bridge's doorway is a hole: nothing hangs in it
+    const at = S.side % 2 ? S.z : S.x;
+    for (const L of H.links ?? []) {
+      for (const e of [L.a, L.b]) {
+        const w = (LINK_BY_ID[L.style] ?? LINK_BY_ID.plank).w;
+        if (e.hk === room.hk && e.floor === room.floor && e.side === S.side && Math.abs(e.at - at) < w / 2 + 1.1) return 'A bridge door is there.';
+      }
+    }
     return wallFree(H.rooms?.[top.room], top.side, top.k, top.sel) ? null : 'Something already hangs there.';
   }
-  return yardWhy(H, it, top.x, top.z, top.sel, siteR);
+  return yardWhy(H, it, top.x, top.z, top.sel, { ...env, rot: top.rot ?? 0 });
 }
 
 /**
@@ -130,11 +150,18 @@ export function removeBuilt(H, kind, room, sel) {
 /** Her things of this kind, with house-local positions, for the selector. */
 export function pickList(H, kind, roomId) {
   if (kind === 'yard') return (H.outdoor ?? []).map((q, k) => ({ k, id: q.id, x: q.x, z: q.z }));
-  const room = HOUSE_BY_ID[H.house]?.rooms.find((r) => r.id === roomId);
+  if (kind === 'house') return houseSpecs(H).map((s, k) => ({ k, hk: s.hk, id: s.house, x: s.x, z: s.z, rot: s.rot }));
+  if (kind === 'link') {
+    return (H.links ?? []).map((L, k) => {
+      const G = linkGeom(H, L);
+      return G && { k, uid: L.uid, id: L.style, x: (G.A.x + G.B.x) / 2, z: (G.A.z + G.B.z) / 2 };
+    }).filter(Boolean);
+  }
+  const room = roomById(H, roomId);
   const R = H.rooms?.[roomId];
   if (!room || !R) return [];
   if (kind === 'wall') {
-    const slots = wallSlots(H.house, room);
+    const slots = wallSlots(room.house, room);
     return (R.wall ?? []).map((q, k) => {
       const S = slots.find((s) => s.side === q.side && s.k === q.k);
       return S && { k, id: q.id, x: S.x, z: S.z };
@@ -194,7 +221,7 @@ export class BuildMode {
 
   isle(top) { return this.H.isleOf(top.site); }
   home(top) { return this.H.store.homes[top.site]; }
-  roomOf(H, top) { return HOUSE_BY_ID[H.house]?.rooms.find((r) => r.id === top.room) ?? null; }
+  roomOf(H, top) { return roomById(H, top.room); }
 
   /** House-local position of whatever the view is pointing at. */
   localOf(top) {
@@ -204,14 +231,28 @@ export class BuildMode {
       const L = pickList(H, top.kind, top.room);
       return L[Math.min(top.at ?? 0, L.length - 1)] ?? { x: 0, z: 0 };
     }
-    if (top.kind === 'yard') return { x: top.x, z: top.z };
+    if (top.kind === 'yard' || top.kind === 'house') return { x: top.x, z: top.z };
+    if (top.kind === 'link') return top.cur ? (endAt(H, top.cur) ?? { x: 0, z: 0 }) : { x: 0, z: 0 };
     const room = this.roomOf(H, top);
     if (!room) return { x: 0, z: 0 };
     if (top.kind === 'wall') {
-      const S = wallSlots(H.house, room).find((s) => s.side === top.side && s.k === top.k);
+      const S = wallSlots(room.house, room).find((s) => s.side === top.side && s.k === top.k);
       return S ?? { x: room.cx, z: room.cz };
     }
     return cellLocal(room, ITEM_BY_ID[top.id], top.gx, top.gz, top.rot);
+  }
+
+  /**
+   * WHERE A THING IS, IN THE WORLD. A room or wall thing's position is in its
+   * HOUSE's frame and a yard thing's (and a house's, and a bridge door's) in
+   * the island's — the one place that knows which.
+   */
+  worldOf(I, H, top, L) {
+    if (top.kind === 'room' || top.kind === 'wall') {
+      const room = this.roomOf(H, top);
+      if (room) return I.roomLocal(room, L.x, L.z);
+    }
+    return I.local(L.x, L.z);
   }
 
   /* -------------------------------- input ------------------------------- */
@@ -242,7 +283,15 @@ export class BuildMode {
       return push;
     }
     // ---- build
-    if (top.kind === 'yard') {
+    if (top.kind === 'link') {
+      // the stick hops between the doorways on this floor; ATTACK goes up a floor
+      if (this._repeat(top, push, dt)) this.hopPort(top, mx, my);
+      if (pad.pressed('attack')) { pad.consume?.('attack'); this.portFloor(top); }
+      if (pad.pressed('jump')) { pad.consume?.('jump'); C.placeHere(index, top); return true; }
+      if (pad.pressed('sprint')) { pad.consume?.('sprint'); C.linkBack(index, top); return true; }
+      return true;
+    }
+    if (top.kind === 'yard' || top.kind === 'house') {
       if (push) {
         const I = this.isle(top);
         top.x += mx * YARD_SPEED * dt;
@@ -295,9 +344,47 @@ export class BuildMode {
     this.H.game.audio?.play?.('menu');
   }
 
+  /** The bridge-door spots she can pick from now: this floor, every house. */
+  ports(top) {
+    const H = this.home(top);
+    const w = (LINK_BY_ID[top.style] ?? LINK_BY_ID.plank).w;
+    const g = this.H.envOf?.(this.isle(top))?.gyAt;
+    return portSpots(H, w, g).filter((s) => s.floor === top.floor && (!top.a || s.hk !== top.a.hk));
+  }
+
+  hopPort(top, dx, dz) {
+    const list = this.ports(top);
+    if (!list.length) return;
+    const H = this.home(top);
+    const cur = top.cur && endAt(H, top.cur);
+    // the stick is screen-relative and the screen is the island's frame turned by `I.ry` (see `camera`)
+    const k = cur ? stepToward(list, cur, dx, dz) : 0;
+    if (k < 0) return;
+    const s = list[k];
+    top.cur = { hk: s.hk, floor: s.floor, side: s.side, at: s.at };
+    this.H.game.audio?.play?.('menu');
+  }
+
+  /** Up a floor (and round to the ground again), landing on the nearest doorway there. */
+  portFloor(top) {
+    const H = this.home(top);
+    const most = Math.max(...houseSpecs(H).map((s) => HOUSE_BY_ID[s.house].floors));
+    const from = top.cur && endAt(H, top.cur);
+    for (let i = 1; i <= most; i++) {
+      top.floor = (top.floor + 1) % most;
+      const list = this.ports(top);
+      if (!list.length) continue;
+      let best = list[0];
+      if (from) for (const s of list) if (Math.hypot(s.x - from.x, s.z - from.z) < Math.hypot(best.x - from.x, best.z - from.z)) best = s;
+      top.cur = { hk: best.hk, floor: best.floor, side: best.side, at: best.at };
+      break;
+    }
+    this.H.game.audio?.play?.('menu');
+  }
+
   rotate(top) {
     if (top.kind === 'wall') return; // a wall thing faces the room, always
-    if (top.kind === 'yard') top.rot = ((top.rot ?? 0) + Math.PI / 4) % (Math.PI * 2);
+    if (top.kind === 'yard' || top.kind === 'house') top.rot = ((top.rot ?? 0) + Math.PI / 4) % (Math.PI * 2);
     else { top.rot = ((top.rot ?? 0) + 1) % 4; this.nudge(top, 0, 0); }
     this.H.game.audio?.play?.('menu');
   }
@@ -316,23 +403,34 @@ export class BuildMode {
     if (F.item || F.roomOnly) return this._frameCam(F);
     const { top, I, H } = F;
     const L = this.localOf(top);
-    const lw = I.local(L.x, L.z);
-    let c = L, dist = 34, y = I.island.heightAt(lw.x, lw.z) ?? I.groundY;
-    if (top.kind !== 'yard') {
-      const room = this.roomOf(H, top);
-      if (room) {
-        c = { x: room.cx, z: room.cz };
-        dist = Math.max(room.w, room.d) * 1.5 + 9;
-        y = I.groundY + (I.shell?.floorY[room.floor] ?? 0);
+    const lw = this.worldOf(I, H, top, L);
+    let dist = 34, y = I.island.heightAt(lw.x, lw.z) ?? I.groundY;
+    let w = I.local(L.x, L.z + dist * 0.12);
+    const room = top.kind === 'room' || top.kind === 'wall' ? this.roomOf(H, top) : null;
+    if (room) {
+      dist = Math.max(room.w, room.d) * 1.5 + 9;
+      y = I.floorY(room);
+      const hs = I.houseOf(room);
+      // toward the front of the SCREEN, which is the island's front, from inside her house's frame
+      const c = I.roomLocal(room, room.cx, room.cz);
+      w = { x: c.x + Math.sin(I.ry) * dist * 0.12, z: c.z + Math.cos(I.ry) * dist * 0.12 };
+      void hs;
+    } else {
+      if (top.kind === 'yard') {
+        const it = ITEM_BY_ID[top.v === 'pick' ? pickList(H, 'yard')[top.at ?? 0]?.id : top.id];
+        dist = Math.max(30, yardR(it) * 3.2 + 12);
+      } else if (top.kind === 'house') {
+        const id = top.v === 'pick' ? pickList(H, 'house')[top.at ?? 0]?.id : top.id;
+        dist = Math.max(40, houseRadius(id) * 3 + 14);
+      } else if (top.kind === 'link') {
+        dist = 40;
+        const e = top.cur && endAt(H, top.cur, this.H.envOf?.(I)?.gyAt);
+        if (e) y = I.groundY + e.y;
       }
+      /* The card sits over the bottom of the pane, so the thing is framed a
+         little ABOVE the middle: aim a touch toward the front (screen-down). */
+      w = I.local(L.x, L.z + dist * 0.12);
     }
-    if (top.kind === 'yard') {
-      const it = ITEM_BY_ID[top.v === 'pick' ? pickList(H, 'yard')[top.at ?? 0]?.id : top.id];
-      dist = Math.max(30, yardR(it) * 3.2 + 12);
-    }
-    /* The card sits over the bottom of the pane, so the thing is framed a
-       little ABOVE the middle: aim a touch toward the front (screen-down). */
-    const w = I.local(c.x, c.z + dist * 0.12);
     (top._cam ??= new THREE.Vector3()).set(w.x, y + 1, w.z);
     // the house's front, wrapped to within a half-turn of the usual yaw, so the
     // camera swings the short way round (the same as the door shot)
@@ -361,9 +459,10 @@ export class BuildMode {
     const I = this.isle(top);
     const H = this.home(top);
     if (!I || !H) return null;
-    if (top.v === 'build' || top.v === 'pick') return { top, I, H, room: top.kind === 'yard' ? null : this.roomOf(H, top) };
-    if (top.v === 'custom') return { top, I, H, room: top.kind === 'yard' ? null : this.roomOf(H, top), item: true };
-    const rooms = HOUSE_BY_ID[H.house]?.rooms ?? [];
+    const inRoom = top.kind === 'room' || top.kind === 'wall';
+    if (top.v === 'build' || top.v === 'pick') return { top, I, H, room: inRoom ? this.roomOf(H, top) : null };
+    if (top.v === 'custom') return { top, I, H, room: inRoom ? this.roomOf(H, top) : null, item: true };
+    const rooms = homeRooms(H);
     const cur = this.H.game.inspector?.cards?.[index]?.i ?? 0;
     let id = null;
     if (top.v === 'rooms') id = rooms[cur]?.id;
@@ -382,8 +481,8 @@ export class BuildMode {
       const it = ITEM_BY_ID[row?.id];
       if (!row || !it) return null;
       c = top.kind === 'yard' ? { x: row.x, z: row.z } : cellLocal(room, it, row.gx, row.gz, row.rot);
-      const lw = I.local(c.x, c.z);
-      y = top.kind === 'yard' ? (I.island.heightAt(lw.x, lw.z) ?? I.groundY) : I.groundY + (I.shell?.floorY[room?.floor ?? 0] ?? 0);
+      const lw = top.kind === 'yard' ? I.local(c.x, c.z) : I.roomLocal(room, c.x, c.z);
+      y = top.kind === 'yard' ? (I.island.heightAt(lw.x, lw.z) ?? I.groundY) : I.floorY(room);
       /* CLOSE, AND FROM THE SIDE ENOUGH TO SEE THE CEILING: "the camera
          should be focused on it ... so the player can see the final result".
          Framed on the thing's measured height, so a bigger one stays in. */
@@ -394,10 +493,10 @@ export class BuildMode {
       pitch = top.kind === 'yard' ? 0.62 : 0.86;
       (top._cam ??= new THREE.Vector3()).set(lw.x, y + h * 0.45, lw.z);
     } else {
-      c = { x: room.cx, z: room.cz };
       dist = Math.max(room.w, room.d) * 1.5 + 9;
-      y = I.groundY + (I.shell?.floorY[room.floor] ?? 0);
-      const w = I.local(c.x, c.z + dist * 0.12);
+      y = I.floorY(room);
+      const rc = I.roomLocal(room, room.cx, room.cz);
+      const w = { x: rc.x + Math.sin(I.ry) * dist * 0.12, z: rc.z + Math.cos(I.ry) * dist * 0.12 };
       (top._cam ??= new THREE.Vector3()).set(w.x, y + 1, w.z);
     }
     let yaw = I.ry;
@@ -406,15 +505,15 @@ export class BuildMode {
     return { centre: top._cam, aim: true, dist, pitch, yaw };
   }
 
-  /** The floor to cut the house to for a pane where somebody builds indoors, or -1. */
+  /** The house and floor to cut to for a pane where somebody builds indoors: `{ hk, f }` or null. */
   cutFloor(I, members) {
-    let f = -1;
+    let out = null;
     for (const i of members ?? []) {
       const F = this.frameOf(i);
       if (!F?.room || F.I !== I) continue;
-      f = f < 0 ? F.room.floor : Math.min(f, F.room.floor);
+      if (!out || F.room.floor < out.f) out = { hk: F.room.hk ?? 'main', f: F.room.floor };
     }
-    return f;
+    return out;
   }
 
   /* -------------------------------- ghosts ------------------------------ */
@@ -475,6 +574,7 @@ export class BuildMode {
     const G = this.ghosts.get(i);
     if (!G) return;
     G.group.parent?.remove(G.group);
+    for (const mk of G.marks ?? []) mk.parent?.remove(mk);
     if (G.hid) { G.hid.visible = true; G.hid.userData.held = false; }
     this.ghosts.delete(i);
   }
@@ -483,6 +583,7 @@ export class BuildMode {
     const I = this.isle(top);
     const H = this.home(top);
     if (!I || !H) return;
+    if (top.kind === 'house' || top.kind === 'link') return this._bigGhost(index, top, t, I, H);
     const id = top.v === 'pick' ? null : top.id;
     const key = `${top.v}:${id}:${top.kind}:${top.sel}`;
     let G = this.ghosts.get(index);
@@ -522,12 +623,13 @@ export class BuildMode {
     G.hid = real ?? null;
 
     const L = this.localOf(top);
-    const w = I.local(L.x, L.z);
+    const w = this.worldOf(I, H, top, L);
+    const room = top.kind === 'yard' ? null : this.roomOf(H, top);
+    const hry = room ? (I.houseOf(room)?.ry ?? I.ry) : I.ry;
     let y, ry;
     if (top.v === 'pick') {
-      y = top.kind === 'yard' ? (I.island.heightAt(w.x, w.z) ?? I.groundY)
-        : I.groundY + (I.shell?.floorY[this.roomOf(H, top)?.floor ?? 0] ?? 0);
-      ry = I.ry;
+      y = top.kind === 'yard' ? (I.island.heightAt(w.x, w.z) ?? I.groundY) : I.floorY(room);
+      ry = hry;
       G.ring.material.color.copy(this._sel);
       G.arrow.visible = false;
       const pulse = 1 + Math.sin(t * 6) * 0.08;
@@ -545,18 +647,109 @@ export class BuildMode {
         y = I.island.heightAt(w.x, w.z) ?? I.groundY;
         ry = I.ry + (top.rot ?? 0);
       } else if (top.kind === 'wall') {
-        const room = this.roomOf(H, top);
-        const S = wallSlots(H.house, room).find((s) => s.side === top.side && s.k === top.k);
-        y = I.groundY + (I.shell?.floorY[room.floor] ?? 0) + (WALL_Y[top.id] ?? 1);
-        ry = I.ry + (S?.ry ?? 0);
+        const S = wallSlots(room.house, room).find((s) => s.side === top.side && s.k === top.k);
+        y = I.floorY(room) + (WALL_Y[top.id] ?? 1);
+        ry = hry + (S?.ry ?? 0);
       } else {
-        const room = this.roomOf(H, top);
-        y = I.groundY + (I.shell?.floorY[room.floor] ?? 0);
-        ry = I.ry + (top.rot ?? 0) * (Math.PI / 2);
+        y = I.floorY(room);
+        ry = hry + (top.rot ?? 0) * (Math.PI / 2);
       }
     }
     G.group.position.set(w.x, y, w.z);
     G.group.rotation.y = ry;
+  }
+
+  /**
+   * A HOUSE OR A BRIDGE, ghosted. A house is its real shell, see-through, on
+   * a footprint ring; a bridge is the real bridge from the first doorway to
+   * the one under the cursor, or — before the first is picked — a marker on
+   * the doorway. Rebuilt only when what it shows changes.
+   */
+  _bigGhost(index, top, t, I, H) {
+    let key, make;
+    if (top.kind === 'house') {
+      const id = top.v === 'pick' ? pickList(H, 'house')[top.at ?? 0]?.id : top.id;
+      key = `house:${top.v}:${id}`;
+      make = () => {
+        const g = new THREE.Group();
+        if (top.v === 'build') {
+          const S = buildHouseShell(id);
+          const parts = [...S.floors.flat(), ...S.roof, ...S.tint];
+          g.add(ghostly(new THREE.Mesh(mergeParts(parts), toonVertexMat())));
+        }
+        const F = houseFoot(id);
+        const ring = new THREE.Mesh(new THREE.PlaneGeometry(F.x1 - F.x0, F.z1 - F.z0),
+          new THREE.MeshBasicMaterial({ color: this._ok, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide }));
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.set(0, 0.15, (F.z0 + F.z1) / 2);
+        ring.renderOrder = 6;
+        g.add(ring);
+        return { g, ring };
+      };
+    } else {
+      key = `link:${top.style}:${JSON.stringify(top.a)}:${JSON.stringify(top.cur)}`;
+      make = () => {
+        const g = new THREE.Group();
+        const env = this.H.envOf?.(I) ?? {};
+        const G = top.a && top.cur ? linkGeom(H, { a: top.a, b: top.cur, style: top.style }, env.gyAt) : null;
+        if (G && G.len <= LINK_MAX * 1.5) {
+          const P = linkParts(G, () => -50);
+          const m = ghostly(new THREE.Mesh(mergeParts([...P.solid, ...P.glow]), toonVertexMat()));
+          g.add(m);
+          g.userData.at = { x: G.A.x, z: G.A.z, y: G.A.y, a: G.a };
+        }
+        const marks = [];
+        for (const e of [top.a, top.cur]) {
+          const E = e && endAt(H, e, env.gyAt);
+          if (!E) continue;
+          const mk = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 3.2, 16, 1, true),
+            new THREE.MeshBasicMaterial({ color: e === top.a ? this._sel : this._ok, transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide }));
+          mk.userData.e = E;
+          marks.push(mk);
+        }
+        return { g, marks };
+      };
+    }
+    let G = this.ghosts.get(index);
+    if (G && G.key !== key) { this._drop(index); G = null; }
+    if (!G) {
+      const m = make();
+      G = { group: m.g, ring: m.ring, marks: m.marks ?? [], key, hid: null };
+      I.group.add(m.g);
+      for (const mk of G.marks) I.group.add(mk);
+      this.ghosts.set(index, G);
+    }
+    const bad = top.v === 'build' ? buildWhy(H, top, this.H.envOf?.(I) ?? I.radius) : null;
+    const col = top.v === 'pick' ? this._sel : bad ? this._bad : this._ok;
+    if (top.kind === 'house') {
+      const L = this.localOf(top);
+      const w = I.local(L.x, L.z);
+      const rot = top.v === 'pick' ? (pickList(H, 'house')[top.at ?? 0]?.rot ?? 0) : (top.rot ?? 0);
+      G.group.position.set(w.x, I.island.heightAt(w.x, w.z) ?? I.groundY, w.z);
+      G.group.rotation.y = I.ry + rot;
+      G.ring.material.color.copy(col);
+      G.ring.material.opacity = 0.25 + Math.sin(t * 5) * 0.08;
+      // hide the real one while it is being moved
+      const hk = top.v === 'build' ? top.sel : null;
+      const real = hk && hk !== -1 ? I.houseOf(hk)?.group : null;
+      if (G.hid && G.hid !== real) G.hid.visible = true;
+      if (real) real.visible = false;
+      G.hid = real ?? null;
+    } else {
+      const at = G.group.userData.at;
+      if (at) {
+        const w = I.local(at.x, at.z);
+        G.group.position.set(w.x, I.groundY + at.y, w.z);
+        G.group.rotation.y = I.ry + at.a;
+        G.group.traverse((o) => { if (o.isMesh) o.material.opacity = bad ? 0.45 : 0.9; });
+      }
+      for (const mk of G.marks) {
+        const E = mk.userData.e;
+        const w = I.local(E.x, E.z);
+        mk.position.set(w.x, I.groundY + E.y + 1.6 + Math.sin(t * 4) * 0.1, w.z);
+        if (mk.material.color.getHex() !== this._sel.getHex()) mk.material.color.copy(col);
+      }
+    }
   }
 
   /* -------------------------------- minimap ----------------------------- */
@@ -575,17 +768,14 @@ export class BuildMode {
     const g = cv.getContext('2d');
     const W = cv.width, Ht = cv.height;
     g.clearRect(0, 0, W, Ht);
-    const def = HOUSE_BY_ID[H.house];
     let scale, ox, oz;
-    if (top.kind === 'yard') {
+    const outdoors = top.kind === 'yard' || top.kind === 'house' || top.kind === 'link';
+    if (outdoors) {
       const R = I.radius;
       scale = (Math.min(W, Ht) - 8) / (R * 2);
       ox = 0; oz = 0;
       g.fillStyle = '#5f9a4a';
       g.beginPath(); g.arc(W / 2, Ht / 2, R * scale, 0, Math.PI * 2); g.fill();
-      // the path to the bridge
-      g.fillStyle = 'rgba(232,214,160,0.7)';
-      g.fillRect(W / 2 - 4.5 * scale, Ht / 2, 9 * scale, R * scale);
     } else {
       const room = this.roomOf(H, top);
       const span = Math.max(room.w, room.d) + 4;
@@ -593,10 +783,39 @@ export class BuildMode {
       ox = room.cx; oz = room.cz;
     }
     const P = (x, z) => [W / 2 + (x - ox) * scale, Ht / 2 + (z - oz) * scale];
+    if (outdoors) {
+      // every house as its ground rectangle, every bridge as a line
+      for (const s of houseSpecs(H)) {
+        if (top.kind === 'house' && top.v === 'build' && s.hk === top.sel) continue;
+        this._mapHouse(g, P, scale, s, s.hk === 'main' ? '#b89a6a' : '#a08a6a');
+      }
+      g.strokeStyle = '#7a4a2a'; g.lineWidth = 3;
+      for (const L of H.links ?? []) {
+        const G = linkGeom(H, L);
+        if (!G) continue;
+        const [ax, az] = P(G.A.x, G.A.z), [bx2, bz2] = P(G.B.x, G.B.z);
+        g.beginPath(); g.moveTo(ax, az); g.lineTo(bx2, bz2); g.stroke();
+      }
+      if (top.kind === 'house' && top.v === 'build') {
+        const bad = buildWhy(H, top, I.radius);
+        this._mapHouse(g, P, scale, { house: top.id, x: top.x, z: top.z, rot: top.rot ?? 0 }, bad ? 'rgba(232,74,74,0.85)' : 'rgba(90,210,122,0.85)');
+      }
+      if (top.kind === 'link') {
+        for (const e of [top.a, top.cur]) {
+          const E = e && endAt(H, e);
+          if (!E) continue;
+          const [x, z] = P(E.x, E.z);
+          g.fillStyle = e === top.a ? '#ffd34a' : '#5ad27a';
+          g.beginPath(); g.arc(x, z, 4, 0, Math.PI * 2); g.fill();
+        }
+      }
+      if (top.kind !== 'yard') return;
+    }
     // the house's rooms (the floor being built on, or the ground floor)
-    const fl = top.kind === 'yard' ? 0 : this.roomOf(H, top)?.floor ?? 0;
-    for (const room of def.rooms) {
-      if (room.floor !== fl) continue;
+    const fl = top.kind === 'yard' ? -1 : this.roomOf(H, top)?.floor ?? 0;
+    const hk = top.kind === 'yard' ? null : this.roomOf(H, top)?.hk ?? 'main';
+    for (const room of homeRooms(H)) {
+      if (room.floor !== fl || room.hk !== hk) continue;
       const [x, z] = P(room.cx - room.w / 2, room.cz - room.d / 2);
       g.fillStyle = room.id === top.room ? '#d9c98a' : '#a89870';
       g.fillRect(x, z, room.w * scale, room.d * scale);
@@ -625,8 +844,24 @@ export class BuildMode {
       g.beginPath(); g.moveTo(x, z); g.lineTo(x + Math.sin(a) * (r + 5), z + Math.cos(a) * (r + 5)); g.stroke();
     }
     // the door, so "down" is never a guess
-    const [dx, dz] = P(0, (I.shell?.door.z ?? 6));
+    if (!outdoors) {
+      const [dx, dz] = P(0, (I.houseOf(this.roomOf(H, top))?.shell?.door.z ?? 6));
+      g.fillStyle = '#b8322a';
+      g.fillRect(dx - 6, dz - 2, 12, 4);
+    }
+  }
+
+  /** One house's ground on the corner map, turned as it stands. */
+  _mapHouse(g, P, scale, s, fill) {
+    const F = houseFoot(s.house);
+    const [x, z] = P(s.x, s.z);
+    g.save();
+    g.translate(x, z);
+    g.rotate(-(s.rot ?? 0));
+    g.fillStyle = fill;
+    g.fillRect(F.x0 * scale, F.z0 * scale, (F.x1 - F.x0) * scale, (F.z1 - F.z0) * scale);
     g.fillStyle = '#b8322a';
-    g.fillRect(dx - 6, dz - 2, 12, 4);
+    g.fillRect(-3, (F.z1 - (F.z1 - F.z0) * 0.15) * scale - 1, 6, 3);
+    g.restore();
   }
 }

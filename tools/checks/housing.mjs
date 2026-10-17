@@ -15,12 +15,14 @@
 import * as THREE from 'three';
 import { readFileSync } from 'node:fs';
 import { Housing, TOUR } from '../../src/systems/housing/housing.js';
-import { HOME_SITES, HOUSES, HOUSE_BY_ID, PRESETS, ITEM_BY_ID, priceOf, HOME_SELL, SPEED_STRIP } from '../../src/systems/housing/catalog.js';
+import { HOME_SITES, HOUSES, HOUSE_BY_ID, PRESETS, ITEM_BY_ID, priceOf, HOME_SELL, SPEED_STRIP, FREE_ANNEX, homeRooms } from '../../src/systems/housing/catalog.js';
+import { linkWhy, linkBlockers, portSpots } from '../../src/systems/housing/links.js';
+const ITEMS_PATHS = () => ITEMS.filter((it) => it.path);
 import { emptyStore, newHome, normalise, saveStore, loadStore, migrateYard, HOME_KEY, homeKey, pruneRows, HOME_ROWS_KEPT } from '../../src/systems/housing/homestore.js';
 import { careLevel, careBuff, stalksAt, BAMBOO_GROW, BAMBOO_MAX } from '../../src/systems/housing/farm.js';
-import { fits, firstFit, gridOf, autoLayout, ITEM_SELL, yardWhy, firstYardSpot, addOutdoor, wallSlots } from '../../src/systems/housing/editor.js';
+import { fits, firstFit, gridOf, autoLayout, ITEM_SELL, yardWhy, yardR, firstYardSpot, addOutdoor, wallSlots, houseWhy, defaultWindows } from '../../src/systems/housing/editor.js';
 import { buildWhy, commitBuild, removeBuilt, pickList, stepToward, BUILD_KEYS } from '../../src/systems/housing/build.js';
-import { houseRadius, houseShape, HEAD_H, SLAB_T, buildHouseShell } from '../../src/systems/housing/homehouse.js';
+import { houseRadius, houseShape, HEAD_H, SLAB_T, buildHouseShell, houseFoot } from '../../src/systems/housing/homehouse.js';
 import { possessive, ownedCount, roomRefund, changeRoomType } from '../../src/systems/housing/cards.js';
 import { JUKEBOX, JUKEBOX_BY_ID, PREVIEW_AT, previewOf } from '../../src/systems/housing/jukebox.js';
 import { MUSIC_FILES } from '../../src/core/musicfiles.js';
@@ -548,15 +550,69 @@ export async function housingChecks({ ok, world }) {
     const it = ITEM_BY_ID.onsen;
     const hr = houseRadius('minka');
     const why = [
-      yardWhy(Hm, it, 0, -48), yardWhy(Hm, it, 0, -(hr + 1)), yardWhy(Hm, it, 0, 20), null,
+      yardWhy(Hm, it, 0, -48), yardWhy(Hm, it, 0, -(hr + 1)), yardWhy(Hm, it, 0, 30, -1, { r: 50, landing: { x: 0, z: 30 } }), null,
     ];
     addOutdoor(Hm, 'koipond', -25, -20, 0);
     why[3] = yardWhy(Hm, it, -25, -14);
-    ok('the yard refuses the rim, the house, the path to the bridge and another thing — each with its reason',
-      /edge/.test(why[0]) && /house/.test(why[1]) && /path/.test(why[2]) && /overlaps the KOI POND/.test(why[3]), why.join(' | '));
+    ok('the yard refuses the rim, the house, the bridge landing and another thing — each with its reason',
+      /edge/.test(why[0]) && /HOUSE/.test(why[1]) && /landing/.test(why[2]) && /overlaps the KOI POND/.test(why[3]), why.join(' | '));
+    /* Richard: "remove the restriction that doesn't let players build in front
+       of their house because of the path ... the 'No build buffer zone'
+       around houses ... should be smaller." The old path strip refused z=20
+       in front of the door; a lantern now stands a step off the wall. */
+    const F = houseFoot('minka'), lan = ITEM_BY_ID.lantern;
+    ok('the yard takes the spot in front of the house that the old path strip refused', yardWhy(Hm, it, 0, 20) === null, yardWhy(Hm, it, 0, 20));
+    ok('...and a small thing a step off the house wall', yardWhy(Hm, lan, F.x1 + yardR(lan) + 0.6, 0) === null, yardWhy(Hm, lan, F.x1 + yardR(lan) + 0.6, 0));
     ok('...and takes a clear spot', yardWhy(Hm, it, 25, -20) === null);
     const spot = firstYardSpot(Hm, ITEM_BY_ID.treehouse, 50);
     ok('...and finds room for the treehouse on an island with a pond on it', !!spot && yardWhy(Hm, ITEM_BY_ID.treehouse, spot.x, spot.z) === null);
+  }
+
+  /* MORE HOUSES, BRIDGES, PATHS, WINDOWS. Richard: "Each island will come with
+     a free (for the first one built), smaller version house of the one they
+     bought"; bridges "should work on the 1st, 2nd, or 3rd floor"; "If a
+     bridge is on the 1st floor, it should prevent building any outdoor
+     objects on it but if the objects fit under the bridge, then they can
+     stay"; paths "can be narrow or wide". */
+  {
+    const Hx = newHome('sunrise', 'minka', ['Ember']);
+    ok('a SMALL HOUSE island comes with a TINY HOUSE, and a DOJO HOUSE island with a SMALL HOUSE',
+      FREE_ANNEX.minka === 'tiny' && FREE_ANNEX.dojohouse === 'minka' && FREE_ANNEX.castle === 'dojohouse' && HOUSE_BY_ID.tiny?.floors === 1);
+    ok('a second house may not stand on the first, and may stand beside it',
+      /SMALL HOUSE/.test(houseWhy(Hx, { hk: null, house: 'minka', x: 8, z: 0, rot: 0 }, 50) ?? '') && houseWhy(Hx, { hk: null, house: 'minka', x: 24, z: 0, rot: 0 }, 50) === null);
+    Hx.annex = [{ uid: 1, house: 'minka', x: 24, z: 0, rot: 0, paid: 0, free: true }];
+    const rs = homeRooms(Hx);
+    ok('the extra house\'s rooms are rooms of the home, named for their house and keyed to it',
+      rs.some((r) => r.hk === 'a1' && r.id.startsWith('a1_') && /SMALL HOUSE/.test(r.name)) && rs.filter((r) => r.hk === 'main').length === HOUSE_BY_ID.minka.rooms.length);
+    const Lk = { a: { hk: 'main', floor: 0, side: 1, at: 0 }, b: { hk: 'a1', floor: 0, side: 3, at: 0 }, style: 'plank' };
+    ok('a bridge between two doors that face each other can be built',
+      linkWhy(Hx, Lk, { r: 50 }) === null, linkWhy(Hx, Lk, { r: 50 }));
+    ok('...but not from a house to itself, nor from doors facing away',
+      !!linkWhy(Hx, { ...Lk, b: { hk: 'main', floor: 0, side: 3, at: 0 } }, { r: 50 }) && !!linkWhy(Hx, { ...Lk, a: { hk: 'main', floor: 0, side: 3, at: 0 } }, { r: 50 }));
+    ok('...nor onto a floor the house does not have', !!linkWhy(Hx, { ...Lk, b: { hk: 'a1', floor: 2, side: 3, at: 0 } }, { r: 50 }));
+    addOutdoor(Hx, 'lantern', 12, 0, 0);
+    addOutdoor(Hx, 'path_stone', 12, 3, 0);
+    const blk = linkBlockers(Hx, Lk, { r: 50 });
+    ok('a lantern taller than a ground-floor bridge is in its way; a path under it is not',
+      blk.length === 1 && Hx.outdoor[blk[0]].id === 'lantern', JSON.stringify(blk));
+    Hx.links = [{ uid: 9, ...Lk, paid: 100 }];
+    ok('...and once it is built, a tall thing cannot go under it',
+      !!yardWhy(Hx, ITEM_BY_ID.lantern, 12, -0.5, -1, 50), yardWhy(Hx, ITEM_BY_ID.lantern, 12, -0.5, -1, 50));
+    addOutdoor(Hx, 'path_wood', -20, -20, 0);
+    addOutdoor(Hx, 'koipond', 20, -25, 0);
+    ok('two paths may cross; a path still may not sit on a pond',
+      yardWhy(Hx, ITEM_BY_ID.path_carpet, -20, -20, -1, { r: 50, rot: Math.PI / 2 }) === null && !!yardWhy(Hx, ITEM_BY_ID.path_carpet, 20, -25, -1, { r: 50 }),
+      yardWhy(Hx, ITEM_BY_ID.path_carpet, -20, -20, -1, { r: 50, rot: Math.PI / 2 }));
+    ok('every path is a narrow or wide strip, and the fancy ones are there',
+      ['path_carpet', 'path_tiki', 'path_lantern'].every((id) => ITEM_BY_ID[id]?.path) && Math.min(...ITEMS_PATHS().map((it) => it.pw)) < 2.5 && Math.max(...ITEMS_PATHS().map((it) => it.pw)) > 4);
+    const plain = buildHouseShell('minka').walls.length, cut = buildHouseShell('minka', [{ floor: 0, side: 1, at: 0, w: 2.6, sill: 0, h: 3.1 }]).walls.length;
+    ok('a bridge door cuts the wall\'s collider in two, so she can walk through it', cut > plain, `${plain} -> ${cut}`);
+    const Hw = newHome('sunrise', 'minka', ['Ember']);
+    defaultWindows(Hw);
+    const wins = Object.values(Hw.rooms).flatMap((R) => R.wall ?? []).filter((q) => q.id === 'window');
+    ok('a new house comes with windows, free, one to an outside wall', wins.length >= 2 && wins.every((q) => q.free));
+    const hsrc2 = readFileSync(new URL('../../src/systems/housing/homeisle.js', import.meta.url), 'utf8');
+    ok('only the first house carries the name board (the front-door camera follows it)', /hs\.hk === 'main'/.test(hsrc2) || /s\.hk === 'main'/.test(hsrc2));
   }
 
   /* BUILD MODE: what the ghost says is what gets written. */
@@ -1445,7 +1501,10 @@ export async function housingChecks({ ok, world }) {
     const sounds = [];
     const g2 = { players: [], toast: (t, i) => said.push([i, t]), audio: { play: (s) => sounds.push(s) }, scene: { add() {} } };
     const room = { id: 'r1', cx: 0, cz: 0, w: 12, d: 8, floor: 0 };
-    const isle = { local: (x, z) => ({ x, z }), groundY: 0, shell: { floorY: [0] }, ry: 0, roomAt: () => room };
+    const isle = {
+      local: (x, z) => ({ x, z }), groundY: 0, shell: { floorY: [0] }, ry: 0, roomAt: () => room,
+      floorY: () => 0, roomLocal: (r, x, z) => ({ x, z }), houseOf: () => ({ ry: 0, toLocal: (x, z) => ({ x, z }) }),
+    };
     const zone = { isle, room, key: 'site:r1' };
     const K = new Kendo({ isles: [], game: g2 });
     // on the tape: inside the room, less 1.4 of margin
@@ -1711,9 +1770,9 @@ export async function housingChecks({ ok, world }) {
     kit.position.set(I2.x, I2.groundY + 0.5, I2.z);
     const fr = H.builder.frameOf(0);
     ok('the room list frames the room under the cursor', fr?.room?.id === castle[k].id && !!H.builder.camera(kit));
-    ok('...cut down to ITS floor, not the one she is standing on', H.builder.cutFloor(I2, [0]) === 2);
+    ok('...cut down to ITS floor, not the one she is standing on', H.builder.cutFloor(I2, [0])?.f === 2 && H.builder.cutFloor(I2, [0])?.hk === 'main');
     const hsrc = readFileSync(new URL('../../src/systems/housing/housing.js', import.meta.url), 'utf8');
-    ok('...and the cutaway takes the framed floor over hers', /if \(bf >= 0\) floor = bf;/.test(hsrc));
+    ok('...and the cutaway takes the framed floor over hers', /if \(bf\) cut\.set\(bf\.hk, bf\.f\);/.test(hsrc));
     I2.cutaway(0);
     const up = [...I2.itemGroup.children].filter((g) => g.userData.floor > 0);
     ok('...and a floor that is cut away takes its furniture with it', up.every((g) => !g.visible));
@@ -1733,6 +1792,50 @@ export async function housingChecks({ ok, world }) {
     let seeThrough = true;
     ghost.traverse((o) => { if (o.isMesh && !(o.material.transparent && o.userData.ghost)) seeThrough = false; });
     ok('...in see-through copies of its materials', seeThrough);
+
+    /* THE NEW MENUS, DRIVEN FOR REAL: build a house and a bridge through the
+       cards and the island, so a view or a ghost that throws is a FAIL here
+       and not a blank card in her pane. */
+    {
+      let err = null;
+      const kid = game.players[0] ?? { index: 0, name: 'EMBER', score: 1e9, style: { name: 'Ember' } };
+      if (!game.players[0]) game.players = [kid];
+      const score0 = kid.score;
+      const touch0 = game.touchUI;
+      game.touchUI = false; // no document.body in node
+      kid.score = 1e9;
+      try {
+        C.st.set(0, { kind: 'home', stack: [{ v: 'home', site: I.site.id }] });
+        for (const v of ['houses', 'houseshop', 'bridges', 'linkshop']) { C._push(0, { v, site: I.site.id }); C._view(0); C._pop(0); }
+        const env = H.envOf(I);
+        // beside the first house and facing the same way, so a side wall faces a side wall
+        const spot = [24, -24, 26, -26].map((x) => ({ x, z: 0, rot: 0 })).find((q) => !houseWhy(Hm, { hk: null, house: 'tiny', ...q }, env));
+        ok('the shop finds a free spot for a house on its own', !!C._houseSpot(Hm, 'tiny', env));
+        const tH = { v: 'build', site: I.site.id, kind: 'house', sel: -1, id: 'tiny', ...spot };
+        C._push(0, tH); C._view(0); H.builder._bigGhost(0, tH, 0, I, Hm); H.builder._drop(0); C._pop(0);
+        ok('the free house is FREE, and building it costs nothing', H.annexPrice(Hm, 'tiny') === 0 && H.placeHouse(kid, Hm, { hk: null, house: 'tiny', ...spot }) && kid.score === 1e9);
+        ok('...and the next one of it is not free', H.annexPrice(Hm, 'tiny') > 0);
+        ok('...and it stands on the island, its own house with its own doors', I.houses.length === 2 && I.houses.flatMap((h) => h.doors).some((d) => d.key === `a${Hm.annex[0].uid}:front`));
+        const ports = portSpots(Hm, 2.6, env.gyAt).filter((q) => q.floor === 0);
+        let built = null;
+        for (const A of ports.filter((q) => q.hk === 'main')) {
+          for (const B of ports.filter((q) => q.hk !== 'main')) {
+            const L = { a: A, b: B, style: 'plank' };
+            if (!linkWhy(Hm, L, env) && !linkBlockers(Hm, L, env).length) { built = L; break; }
+          }
+          if (built) break;
+        }
+        const tL = { v: 'build', site: I.site.id, kind: 'link', sel: -1, style: 'plank', floor: 0, a: built?.a ?? null, cur: built?.b ?? ports[0] };
+        C._push(0, tL); C._view(0); H.builder._bigGhost(0, tL, 0, I, Hm); H.builder._drop(0); C._pop(0);
+        ok('a bridge can be built between the two houses, and it cuts a door at each end',
+          !!built && H.buildLink(kid, Hm, built).ok && I.houses.flatMap((h) => h.doors).filter((d) => /^L/.test(d.key)).length === 2);
+        ok('...and selling the extra house takes its bridge with it', H.sellHouse(kid, Hm, `a${Hm.annex[0].uid}`) > 0 && !(Hm.links ?? []).length && I.houses.length === 1);
+      } catch (e) { err = e; }
+      ok('the house and bridge menus and ghosts run without throwing', !err, err?.message);
+      kid.score = score0;
+      game.touchUI = touch0;
+      C.st.delete(0);
+    }
     delete H.store.homes[I.site.id];
     I.setHome(null, null);
     game.players = [];

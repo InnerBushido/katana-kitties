@@ -167,11 +167,11 @@ export class Kendo {
       });
       if (!near) continue;
       const { isle: I, room } = B.zone;
-      const c = I.local(room.cx, room.cz);
-      const y = I.groundY + (I.shell?.floorY[room.floor] ?? 0);
+      const c = I.roomLocal(room, room.cx, room.cz);
+      const y = I.floorY(room);
       (B._cam ??= new THREE.Vector3()).set(c.x, y + 1.3, c.z);
       // the marks lie along the room's long axis; look across it
-      let yaw = I.ry + (B.alongX ? 0 : Math.PI / 2);
+      let yaw = (I.houseOf(room)?.ry ?? I.ry) + (B.alongX ? 0 : Math.PI / 2);
       while (yaw - CAM_YAW > Math.PI) yaw -= Math.PI * 2;
       while (yaw - CAM_YAW < -Math.PI) yaw += Math.PI * 2;
       return { centre: B._cam, aim: true, dist: Math.max(room.w, room.d) * 0.85 + 7, pitch: 0.7, yaw };
@@ -193,7 +193,7 @@ export class Kendo {
         const q = players[i];
         return q && (q === B.a || q === B.b || I.roomAt?.(q.position.x, q.position.y, q.position.z)?.id === B.zone.room.id);
       });
-      if (watching) return I.groundY + (I.shell?.floorY[B.zone.room.floor] ?? 0) + HALF_WALL;
+      if (watching) return I.floorY(B.zone.room) + HALF_WALL;
     }
     return null;
   }
@@ -228,9 +228,9 @@ export class Kendo {
     const { isle: I, room } = zone;
     const alongX = room.w >= room.d;
     const off = Math.min((alongX ? room.w : room.d) / 2 - 2, 3.2);
-    const y = I.groundY + (I.shell?.floorY[room.floor] ?? 0);
+    const y = I.floorY(room);
     const mark = (s) => {
-      const w = I.local(room.cx + (alongX ? s * off : 0), room.cz + (alongX ? 0 : s * off));
+      const w = I.roomLocal(room, room.cx + (alongX ? s * off : 0), room.cz + (alongX ? 0 : s * off));
       return new THREE.Vector3(w.x, y, w.z);
     };
     const B = {
@@ -453,7 +453,7 @@ export class Kendo {
       if (!Hm || !I.over(p.position.x, p.position.z)) continue;
       const room = I.roomAt(p.position.x, p.position.y, p.position.z);
       if (!room || Hm.rooms?.[room.id]?.type !== 'kendo') continue;
-      const L = I.toLocal(p.position.x, p.position.z);
+      const L = I.houseOf(room).toLocal(p.position.x, p.position.z);
       if (Math.abs(L.x - room.cx) > room.w / 2 - 1.4 || Math.abs(L.z - room.cz) > room.d / 2 - 1.4) continue;
       return { isle: I, room, key: `${I.site.id}:${room.id}` };
     }

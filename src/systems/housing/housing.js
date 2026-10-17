@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { PLAYER_STYLE } from '../../core/palette.js';
 import {
   HOME_SITES, SITE_BY_ID, HOUSE_BY_ID, ITEM_BY_ID, PRESET_BY_ID, ROOM_TYPE_BY_ID, HOME_SELL, priceOf, SPEED_STRIP,
+  FREE_ANNEX, LINK_BY_ID, homeRooms,
 } from './catalog.js';
 import { loadStore, saveStore, newHome, homeOf, normalise, newer, exportFile, importFile, emptyStore, homeKey } from './homestore.js';
 import { HomeIsle } from './homeisle.js';
@@ -12,7 +13,8 @@ import { JUKEBOX, hasRecording, previewOf } from './jukebox.js';
 import { Koi } from './koi.js';
 import { Farm } from './farm.js';
 import { Kendo } from './kendo.js';
-import { autoLayout } from './editor.js';
+import { autoLayout, defaultWindows, houseWhy, brokenLinks, wallSlots, ITEM_SELL } from './editor.js';
+import { linkWhy, linkBlockers } from './links.js';
 import { HousingCards } from './cards.js';
 import { BuildMode } from './build.js';
 import { HomeBoons } from './boons.js';
@@ -144,6 +146,8 @@ export class Housing {
   _applyStore() {
     for (const [k, I] of this.isles.entries()) {
       const H = this.store.homes[I.site.id] ?? null;
+      // a home bought before houses had windows gets them, once (`defaultWindows`)
+      if (H && !H.winV) { defaultWindows(H); H.winV = 1; }
       I.setHome(H, H ? this.coloursOf(H) : null);
       const B = this.bridges[k];
       if (B) this._dressBridge(k);
@@ -383,7 +387,8 @@ export class Housing {
       const B = this.bridges[k];
       if (B?.solid && H && !this.allowed(p, H)) for (const seg of B.doorSegments()) this._doorPush(p, seg, r, H);
       if (!H || !I.shell) continue;
-      if (d2 > (I.houseR + 4) ** 2) {
+      // houses stand anywhere on the island now, so "near a house" is "on it"
+      if (d2 > (I.radius + 4) ** 2) {
         this._obstacles(p, I, r);
         continue;
       }
@@ -391,13 +396,15 @@ export class Housing {
         if (pos.y + 1.5 < w.y0 || pos.y > w.y1) continue;
         this._segPush(p, w, r);
       }
-      // the front door itself
-      if (!this.allowed(p, H) && I.doorWorld) {
-        const D = I.shell.door;
-        const a = I.local(-D.w / 2, D.z);
-        const b = I.local(D.w / 2, D.z);
-        const seg = { ax: a.x, az: a.z, bx: b.x, bz: b.z, y0: I.groundY, y1: I.groundY + 5 };
-        if (this._segPush(p, seg, r)) this._refuse(p, H);
+      // every house's front door, for somebody the lock keeps out
+      if (!this.allowed(p, H)) {
+        for (const hs of I.houses) {
+          const D = hs.shell.door;
+          const a = hs.local(-D.w / 2, D.z);
+          const b = hs.local(D.w / 2, D.z);
+          const seg = { ax: a.x, az: a.z, bx: b.x, bz: b.z, y0: hs.gy, y1: hs.gy + 5 };
+          if (this._segPush(p, seg, r)) this._refuse(p, H);
+        }
       }
       this._roomWall(p, I, H);
       this._obstacles(p, I, r);
@@ -462,14 +469,15 @@ export class Housing {
    * enter" — and a co-owner is a non-owner of HER sister's room.
    */
   _roomWall(p, I, H) {
-    const def = HOUSE_BY_ID[H.house];
-    if (!def || H.owners.length < 2 && !def.rooms.some((r) => r.claim)) return;
+    const rooms = homeRooms(H);
+    if (H.owners.length < 2 && !rooms.some((r) => r.claim)) return;
     const n = p.style?.name;
-    const f = I.floorAt(p.position.x, p.position.y, p.position.z);
-    if (f < 0) return;
-    const L = I.toLocal(p.position.x, p.position.z);
-    for (const room of def.rooms) {
-      if (!room.claim || room.floor !== f) continue;
+    const at = I.houseAt(p.position.x, p.position.y, p.position.z);
+    if (!at) return;
+    const f = at.f;
+    const L = at.hs.toLocal(p.position.x, p.position.z);
+    for (const room of rooms) {
+      if (!room.claim || room.hk !== at.hs.hk || room.floor !== f) continue;
       const who = H.rooms?.[room.id]?.claim;
       if (!who || who === n || H.open?.[who]) continue;
       const hx = room.w / 2;
@@ -482,7 +490,7 @@ export class Housing {
       const pz = hz + 0.6 - Math.abs(oz);
       if (px < pz) L.x = room.cx + Math.sign(ox || 1) * (hx + 0.6);
       else L.z = room.cz + Math.sign(oz || 1) * (hz + 0.6);
-      const w = I.local(L.x, L.z);
+      const w = at.hs.local(L.x, L.z);
       p.position.x = w.x;
       p.position.z = w.z;
       this._nagOnce(p, `That is ${who}'s room — ask her to open it.`);
@@ -535,7 +543,7 @@ export class Housing {
     this.roshi?.update(dt, players);
     if (!up) return;
     for (const I of this.isles) {
-      I.update(dt, this.time);
+      I.update(dt, this.time, players);
       const H = I.home;
       // the bubble shows while it is keeping somebody here out
       I.bubble.visible = !!H && this.locked(H) && players.some((p) => !this.allowed(p, H));
@@ -931,20 +939,24 @@ export class Housing {
     const players = this.game.players ?? [];
     const kits = members.map((i) => players[i]).filter((q) => q && !q.mount && !q.rideAlong);
     for (const I of this.isles) {
-      const S = I.shell;
+      /* THE FIRST HOUSE'S DOOR, WHEREVER IT HAS BEEN MOVED TO: the shot is
+         in its own frame. Richard: "When moving the main house, the camera
+         zooming in on the front-name plate should move with it". */
+      const M = I.main;
+      const S = M?.shell;
       if (!S?.sign || !I.home) continue;
       const atDoor = kits.some((q) => {
         if (!I.over(q.position.x, q.position.z)) return false;
-        const L = I.toLocal(q.position.x, q.position.z);
+        const L = M.toLocal(q.position.x, q.position.z);
         if (Math.abs(L.x) > 6.5 || L.z < S.door.z + 0.4 || L.z > S.door.z + 13) return false;
-        return q.position.y <= I.groundY + S.base + 2.5;
+        return q.position.y <= M.gy + S.base + 2.5;
       });
       if (!atDoor) continue;
-      if (kits.some((q) => I.floorAt(q.position.x, q.position.y, q.position.z) >= 0)) return null;
-      const c = I.local(0, S.door.z + 2.2);
-      (I._doorCentre ??= new THREE.Vector3()).set(c.x, I.groundY + S.sign.y - 1.0, c.z);
+      if (kits.some((q) => I.houseAt(q.position.x, q.position.y, q.position.z)?.hs === M)) return null;
+      const c = M.local(0, S.door.z + 2.2);
+      (I._doorCentre ??= new THREE.Vector3()).set(c.x, M.gy + S.sign.y - 1.0, c.z);
       // the house's front, wrapped to within a half-turn of the usual yaw
-      let yaw = I.ry;
+      let yaw = M.ry;
       while (yaw - CAM_YAW_DEFAULT > Math.PI) yaw -= Math.PI * 2;
       while (yaw - CAM_YAW_DEFAULT < -Math.PI) yaw += Math.PI * 2;
       return { centre: I._doorCentre, aim: true, dist: 12, pitch: 0.16, yaw };
@@ -964,15 +976,16 @@ export class Housing {
     for (const I of this.isles) {
       if (!I.home) continue;
       if (scene) { I.cutaway(-1); I.halfWalls(null); for (const M of I.xrayMats) M.setCuts?.(camera.position, []); continue; }
-      let floor = -1;
+      // each house cut to the lowest floor anybody in this pane is on in IT
+      const cut = new Map();
       const seen = [];
       const floors = [];
       for (const i of members ?? players.map((_, k) => k)) {
         const p = players[i];
         if (!p) continue;
-        const f = I.floorAt(p.position.x, p.position.y, p.position.z);
-        if (f >= 0) floor = floor < 0 ? f : Math.min(floor, f);
-        if (Math.hypot(p.position.x - I.x, p.position.z - I.z) < I.houseR + 14 && seen.length < 4) {
+        const a = I.houseAt(p.position.x, p.position.y, p.position.z);
+        if (a) cut.set(a.hs.hk, Math.min(cut.get(a.hs.hk) ?? 99, a.f));
+        if (Math.hypot(p.position.x - I.x, p.position.z - I.z) < I.radius + 14 && seen.length < 4) {
           seen.push(new THREE.Vector3(p.position.x, p.position.y + 1.4, p.position.z));
           /* A KNEE'S HEIGHT ABOVE HER FEET, not just under them. Richard: the
              x-ray "is cutting into the flooring and the foundation of the
@@ -987,8 +1000,8 @@ export class Housing {
          upstairs had the very floor she was choosing cut away (Richard: "it
          only shows the floor the players are on"). */
       const bf = this.builder.cutFloor(I, members ?? players.map((_, k) => k));
-      if (bf >= 0) floor = bf;
-      I.cutaway(floor);
+      if (bf) cut.set(bf.hk, bf.f);
+      I.cutaway(cut);
       // a kendo match being watched: the walls at half height (kendo.js)
       I.halfWalls(this.kendo.halfWallFor(I, members ?? players.map((_, k) => k)));
       for (const M of I.xrayMats) M.setCuts?.(camera.position, seen, floors);
@@ -1030,6 +1043,8 @@ export class Housing {
       H.paid[p.style.name] = share;
       this.game.onScoreChanged?.(p);
     }
+    defaultWindows(H);
+    H.winV = 1;
     if (presetId && PRESET_BY_ID[presetId]) autoLayout(H, PRESET_BY_ID[presetId], I);
     this.store.homes[siteId] = H;
     this.save();
@@ -1123,8 +1138,7 @@ export class Housing {
    * Only an owner claims. Claims are on the CASTLE ROOMS card, both ways.
    */
   claimShare(H) {
-    const def = HOUSE_BY_ID[H.house];
-    const n = def?.rooms.filter((r) => r.claim).length ?? 0;
+    const n = homeRooms(H).filter((r) => r.claim).length;
     return H.owners.length ? Math.floor(n / H.owners.length) : 0;
   }
 
@@ -1135,7 +1149,7 @@ export class Housing {
   /** Why she cannot claim this room, or null. */
   claimWhy(p, H, roomId) {
     const n = p.style?.name;
-    const room = HOUSE_BY_ID[H.house]?.rooms.find((r) => r.id === roomId);
+    const room = homeRooms(H).find((r) => r.id === roomId);
     if (!room?.claim) return 'That room is for everybody — it cannot be claimed.';
     if (!H.owners.includes(n)) return `Only the castle's owners can claim a room — ${H.owners.join(' & ')}.`;
     const who = H.rooms?.[roomId]?.claim;
@@ -1165,6 +1179,177 @@ export class Housing {
     }
     this.save();
     return true;
+  }
+
+  /* ------------------------ houses on the island ------------------------ */
+
+  /** What the pure placing rules need to know about an island's ground. */
+  envOf(I) {
+    const B = this.bridges[this.isles.indexOf(I)];
+    const landing = B?.end ? I.toLocal(B.end.x, B.end.z) : null;
+    const g = (x, z) => {
+      const w = I.local(x, z);
+      return (I.island.heightAt(w.x, w.z) ?? I.groundY) - I.groundY;
+    };
+    return { r: I.radius, landing, gyAt: g, groundAt: g };
+  }
+
+  /**
+   * What an extra house costs HER here: nothing for the first of the one a
+   * size down that came with the island (`FREE_ANNEX` — "the first house is
+   * free that comes with the island, after that they have to buy any
+   * additional houses"), else Roshi's price for it.
+   */
+  annexPrice(H, houseId) {
+    const free = FREE_ANNEX[H.house] === houseId && !(H.annex ?? []).some((a) => a.free);
+    return free ? 0 : this.housePrice(houseId);
+  }
+
+  /**
+   * Put a house down: a new one (`spec.hk` null), or one being moved —
+   * `spec` is `{ hk, house, x, z, rot }` in the island's frame. A bridge to a
+   * moved house that can no longer be built is SOLD BACK, and she is told.
+   * Returns true when it happened.
+   */
+  placeHouse(p, H, spec) {
+    const I = this.isleOf(H.site);
+    const env = this.envOf(I);
+    const why = houseWhy(H, spec, env);
+    if (why) { this.game.toast(why, p.index); return false; }
+    const def = HOUSE_BY_ID[spec.house];
+    const at = { x: +spec.x.toFixed(2), z: +spec.z.toFixed(2), rot: +(spec.rot ?? 0).toFixed(4) };
+    if (!spec.hk) {
+      const price = this.annexPrice(H, spec.house);
+      if (price && !this.spend(p, H, price)) { this.game.toast(`${p.name} needs ${(price - p.score).toLocaleString()} more points.`, p.index); return false; }
+      H.uid = (H.uid ?? 0) + 1;
+      H.annex ??= [];
+      H.annex.push({ uid: H.uid, house: spec.house, ...at, paid: price, free: !price });
+      defaultWindows(H, `a${H.uid}`);
+      this.game.toast(price ? `The ${def.name} is built!` : `The ${def.name} is built — free, it came with the island!`, p.index);
+    } else {
+      const sold = brokenLinks(H, spec, env);
+      if (spec.hk === 'main') H.at = at;
+      else Object.assign(H.annex.find((a) => `a${a.uid}` === spec.hk), at);
+      for (const L of sold) this._dropLink(p, H, L);
+      this.game.toast(sold.length
+        ? `Moved the ${def.name}. ${sold.length === 1 ? 'A bridge' : `${sold.length} bridges`} could not reach it any more — Roshi bought ${sold.length === 1 ? 'it' : 'them'} back.`
+        : `Moved the ${def.name} — and everything inside it.`, p.index);
+    }
+    this.changed(H);
+    this.game.audio?.play?.('land');
+    return true;
+  }
+
+  /** What selling an extra house pays back: the house and everything in it. */
+  annexRefund(H, hk) {
+    const a = (H.annex ?? []).find((x) => `a${x.uid}` === hk);
+    if (!a) return 0;
+    let n = Math.round((a.paid ?? 0) * HOME_SELL);
+    for (const room of homeRooms(H)) {
+      if (room.hk !== hk) continue;
+      const R = H.rooms?.[room.id];
+      for (const q of [...(R?.items ?? []), ...(R?.wall ?? [])]) if (!q.free) n += Math.round(this.itemPrice(q.id) * ITEM_SELL);
+    }
+    for (const L of H.links ?? []) if (L.a.hk === hk || L.b.hk === hk) n += Math.round((L.paid ?? 0) * HOME_SELL);
+    return n;
+  }
+
+  /** Sell an EXTRA house back (the island's own goes with the island). */
+  sellHouse(p, H, hk) {
+    if (hk === 'main') { this.game.toast('Your first house goes with the island — sell the whole home at Roshi\'s to sell it.', p.index); return false; }
+    const k = (H.annex ?? []).findIndex((x) => `a${x.uid}` === hk);
+    if (k < 0) return false;
+    const back = this.annexRefund(H, hk);
+    for (const room of homeRooms(H)) if (room.hk === hk) delete H.rooms[room.id];
+    H.links = (H.links ?? []).filter((L) => L.a.hk !== hk && L.b.hk !== hk);
+    H.annex.splice(k, 1);
+    this._refund(p, H, back);
+    this.changed(H);
+    return back;
+  }
+
+  _refund(p, H, back) {
+    if (!back) return;
+    p.score += back;
+    const n = p.style?.name;
+    if (n && H.paid) H.paid[n] = Math.max(0, (H.paid[n] ?? 0) - back);
+    this.game.onScoreChanged?.(p);
+  }
+
+  _dropLink(p, H, L) {
+    H.links = (H.links ?? []).filter((x) => x !== L);
+    this._refund(p, H, Math.round((L.paid ?? 0) * HOME_SELL));
+  }
+
+  linkPrice(style) { return this.price(LINK_BY_ID[style]?.mult ?? 0.5); }
+
+  /**
+   * BUILD A BRIDGE. `L` is `{ a, b, style }`. Yard things in its way that do
+   * not fit under it are sold first if `sellBlockers` (the card asks — "we
+   * can offer to the player to automatically sell the object interfering and
+   * build the bridge anyways"), else it refuses and names them. Anything
+   * hanging on the wall where a door is cut is sold back: "If the bridge cuts
+   * a hole where there is an object on the wall, then that object gets sold
+   * and paid back to player."
+   */
+  buildLink(p, H, L, sellBlockers = false) {
+    const I = this.isleOf(H.site);
+    const env = this.envOf(I);
+    const why = linkWhy(H, L, env);
+    if (why) { this.game.toast(why, p.index); return { ok: false, why }; }
+    const block = linkBlockers(H, L, env);
+    if (block.length && !sellBlockers) return { ok: false, blockers: block };
+    const price = this.linkPrice(L.style);
+    let back = 0;
+    for (const k of block) { const q = H.outdoor[k]; back += Math.round(this.itemPrice(q.id) * ITEM_SELL); }
+    const w = (LINK_BY_ID[L.style] ?? LINK_BY_ID.plank).w;
+    const onWall = [];
+    for (const e of [L.a, L.b]) {
+      for (const room of homeRooms(H)) {
+        if (room.hk !== e.hk || room.floor !== e.floor) continue;
+        const R = H.rooms?.[room.id];
+        if (!R?.wall?.length) continue;
+        const slots = wallSlots(room.house, room);
+        R.wall.forEach((q, i) => {
+          const S = slots.find((s) => s.side === q.side && s.k === q.k);
+          if (S && S.side === e.side && Math.abs((S.side % 2 ? S.z : S.x) - e.at) < w / 2 + 1.1) onWall.push([R, i, q]);
+        });
+      }
+    }
+    for (const [, , q] of onWall) if (!q.free) back += Math.round(this.itemPrice(q.id) * ITEM_SELL);
+    if (p.score + back < price) { this.game.toast(`${p.name} needs ${(price - p.score - back).toLocaleString()} more points.`, p.index); return { ok: false }; }
+    this._refund(p, H, back);
+    if (!this.spend(p, H, price)) return { ok: false };
+    H.outdoor = H.outdoor.filter((_, k) => !block.includes(k));
+    for (const [R, , q] of onWall) R.wall = R.wall.filter((x) => x !== q);
+    H.uid = (H.uid ?? 0) + 1;
+    H.links ??= [];
+    H.links.push({ uid: H.uid, a: { ...L.a }, b: { ...L.b }, style: L.style, paid: price });
+    this.changed(H);
+    this.game.audio?.play?.('land');
+    this.game.toast(`The ${LINK_BY_ID[L.style].name} is built!${back ? ` Roshi paid ${back.toLocaleString()} points for what was in the way.` : ''}`, p.index);
+    return { ok: true };
+  }
+
+  sellLink(p, H, uid) {
+    const L = (H.links ?? []).find((x) => x.uid === uid);
+    if (!L) return 0;
+    const back = Math.round((L.paid ?? 0) * HOME_SELL);
+    this._dropLink(p, H, L);
+    if (H.doors) { delete H.doors[`L${uid}a`]; delete H.doors[`L${uid}b`]; }
+    this.changed(H);
+    return back;
+  }
+
+  /** INTERACT on a door: pin it open, or let it shut behind her. */
+  toggleDoor(p, H, d) {
+    if (!d) return;
+    d.pinned = !d.pinned;
+    H.doors ??= {};
+    if (d.pinned) H.doors[d.key] = true; else delete H.doors[d.key];
+    this.save();
+    this.game.audio?.play?.('menu');
+    this.game.toast(d.pinned ? 'The door slides OPEN and stays open.' : 'The door will slide shut when nobody is near it.', p.index);
   }
 
   /* ----------------------------- the preview ---------------------------- */
@@ -1242,6 +1427,9 @@ export class Housing {
       roshi: 'TALK TO ROSHI',
       jukebox: own ? 'PICK THE MUSIC' : 'LISTEN',
       door: own ? 'MY HOME' : 'KNOCK',
+      frontdoor: !this.allowed(p, s.home) ? 'KNOCK' : s.door?.pinned ? 'CLOSE THE DOOR' : 'KEEP THE DOOR OPEN',
+      portdoor: s.door?.pinned ? 'CLOSE THE DOOR' : 'KEEP THE DOOR OPEN',
+      window: s.home?.rooms?.[s.room]?.wall?.[s.wk]?.open ? 'CLOSE THE WINDOW' : 'OPEN THE WINDOW',
       koi: 'THE KOI POND',
       rod: 'PICK UP A FISHING ROD',
       clean: 'CLEAN UP THE MESS',
@@ -1304,6 +1492,25 @@ export class Housing {
           ? `Knock knock! ${s.home.owners.join(' & ')}'s door is locked.`
           : `Come on in — ${s.home.owners.join(' & ')} left the door open!`, p.index);
         return true;
+      case 'frontdoor':
+        if (!this.allowed(p, s.home)) {
+          G.toast(`Knock knock! ${s.home.owners.join(' & ')}'s door is locked.`, p.index);
+          G.audio?.play?.('menu');
+          return true;
+        }
+        this.toggleDoor(p, s.home, s.door);
+        return true;
+      case 'portdoor':
+        this.toggleDoor(p, s.home, s.door);
+        return true;
+      case 'window': {
+        const q = s.home.rooms?.[s.room]?.wall?.[s.wk];
+        if (!q) return true;
+        if (q.open) delete q.open; else q.open = true;
+        this.save();
+        G.audio?.play?.('menu');
+        return true;
+      }
       case 'koi':
         C.open(p.index, 'koi', { site: s.home.site });
         return true;

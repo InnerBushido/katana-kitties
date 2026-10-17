@@ -1,5 +1,6 @@
-import { HOUSE_BY_ID, ITEM_BY_ID } from './catalog.js';
-import { houseRadius, houseShape, stairBlocks } from './homehouse.js';
+import { HOUSE_BY_ID, ITEM_BY_ID, houseSpecs, homeRooms } from './catalog.js';
+import { houseFoot, houseShape, stairBlocks } from './homehouse.js';
+import { linkWhy, toIsle, underBridgeWhy } from './links.js';
 
 /* ---------------------------------------------------------------------------
    FURNISHING — the tatami grid, the walls and the yard, as data.
@@ -64,48 +65,160 @@ export function firstFit(room, items, it) {
 
 /** How far in from the island's rim a thing's edge may come. */
 const RIM = 3;
-/** Half-width of the path kept clear from the front door to the bridge. */
-const PATH_W = 4.5;
+/** The landing at the island end of the town bridge stays this clear. */
+const LANDING_R = 4.5;
+/** What a yard thing keeps off a house's plinth. Was a CIRCLE round the
+ *  plinth's corners plus half a unit — 12 from a minka's middle for a lantern
+ *  that fits 7 from it; Richard: "there seems to be a big 'No build buffer
+ *  zone' around houses that should be smaller". Now the plinth's own
+ *  rectangle and this much. */
+const HOUSE_GAP = 0.3;
 
 /** Outdoor footprint radius of an item. */
 export const yardR = (it) => it?.r ?? 2;
 
+/* ----- shapes: a circle, or an oriented rectangle (a path, a house) ----- */
+
+/** An oriented box in the island's frame, turned like `toIsle`. */
+export const obb = (x, z, hx, hz, rot = 0) => ({ x, z, hx, hz, c: Math.cos(rot), s: Math.sin(rot) });
+const _proj = (o, ax, az) => o.hx * Math.abs(o.c * ax - o.s * az) + o.hz * Math.abs(o.s * ax + o.c * az);
+/** Two boxes overlap (separating axes), by more than `pad` if pad < 0. */
+export function obbHit(A, B, pad = 0) {
+  for (const o of [A, B]) {
+    for (const [ax, az] of [[o.c, -o.s], [o.s, o.c]]) {
+      const d = Math.abs((B.x - A.x) * ax + (B.z - A.z) * az);
+      if (d >= _proj(A, ax, az) + _proj(B, ax, az) + pad) return false;
+    }
+  }
+  return true;
+}
+/** A circle and a box overlap. */
+export function circleHit(o, x, z, r) {
+  const dx = x - o.x, dz = z - o.z;
+  const lx = dx * o.c - dz * o.s, lz = dx * o.s + dz * o.c;
+  const qx = Math.max(-o.hx, Math.min(o.hx, lx)), qz = Math.max(-o.hz, Math.min(o.hz, lz));
+  return Math.hypot(lx - qx, lz - qz) < r;
+}
+/** A house's ground as a box, grown by pad. */
+export function houseBox(s, pad = 0) {
+  const R = houseFoot(s.house);
+  const c = toIsle(s, (R.x0 + R.x1) / 2, (R.z0 + R.z1) / 2);
+  return obb(c.x, c.z, (R.x1 - R.x0) / 2 + pad, (R.z1 - R.z0) / 2 + pad, s.rot);
+}
+/** A yard thing's shape where it stands: a box for a path, else a circle. */
+export function thingShape(it, x, z, rot = 0) {
+  if (it?.path) return { box: obb(x, z, it.pw / 2, it.len / 2, rot) };
+  return { x, z, r: yardR(it) };
+}
+const shapesHit = (a, b, pad = 0) => {
+  if (a.box && b.box) return obbHit(a.box, b.box, pad);
+  if (a.box) return circleHit(a.box, b.x, b.z, b.r + pad);
+  if (b.box) return circleHit(b.box, a.x, a.z, a.r + pad);
+  return Math.hypot(a.x - b.x, a.z - b.z) < a.r + b.r + pad;
+};
+/** The four corners of a box. */
+const corners = (o) => [[1, 1], [1, -1], [-1, 1], [-1, -1]].map(([i, j]) => ({
+  x: o.x + i * o.hx * o.c + j * o.hz * o.s, z: o.z - i * o.hx * o.s + j * o.hz * o.c,
+}));
+
+/** `env` was the island's radius; it is `{ r, rot, landing, gyAt, groundAt }` now. Both work. */
+const envOf = (env) => (typeof env === 'number' ? { r: env } : (env ?? {}));
+
 /**
- * May `it` stand at house-local (x, z) on this home's island?
+ * May `it` stand at island-local (x, z) on this home's island?
  *
  *   on the island        — its whole footprint inside the rim
- *   off the house        — clear of the plinth (houseRadius)
- *   off the bridge path  — the strip from the door to the landing stays
- *                          walkable, or a pond could seal her out of her
- *                          own home
- *   not on another thing — circles, `skip` being the one being moved
+ *   off every house      — clear of each one's plinth, by HOUSE_GAP; a path
+ *                          may run right up to the porch steps
+ *   off the landing      — where the town bridge arrives stays clear, or a
+ *                          pond could seal her out of her own home
+ *   not on another thing — paths may cross and touch each other, and a
+ *                          thing may stand BESIDE a path but not on it
+ *   under a bridge       — only if it fits under (links.js)
+ *
+ * The strip from the front door to the bridge used to be kept clear too.
+ * Richard: "Let's remove the restriction that doesn't let players build in
+ * front of their house because of the path". It is gone — the paths are hers
+ * to lay now.
  *
  * Returns null when it fits, or the reason as a sentence when it does not —
  * the ghost turns red and the card says WHY (non-negotiable 6).
  */
-export function yardWhy(H, it, x, z, skip = -1, siteR = 50) {
+export function yardWhy(H, it, x, z, skip = -1, env = 50) {
   if (!it) return 'Nothing to place.';
-  const r = yardR(it);
-  if (Math.hypot(x, z) + r > siteR - RIM) return 'Too close to the edge of the island.';
-  const hr = houseRadius(H.house);
-  if (Math.hypot(x, z) < hr + r + 0.5) return 'That is on top of the house.';
-  if (z > 0 && Math.abs(x) < PATH_W + r) return 'Keep the path from your door to the bridge clear.';
+  const E = envOf(env);
+  const R = E.r ?? 50;
+  const me = thingShape(it, x, z, E.rot ?? 0);
+  const out = me.box ? corners(me.box).some((p) => Math.hypot(p.x, p.z) > R - 1.5) : Math.hypot(x, z) + me.r > R - RIM;
+  if (out) return 'Too close to the edge of the island.';
+  for (const s of houseSpecs(H)) {
+    const B = houseBox(s, it.path ? -0.6 : HOUSE_GAP);
+    if (me.box ? obbHit(B, me.box) : circleHit(B, x, z, me.r)) return `That is on top of the ${HOUSE_BY_ID[s.house].short}.`;
+  }
+  if (E.landing && !it.path && (me.box ? circleHit(me.box, E.landing.x, E.landing.z, LANDING_R) : Math.hypot(x - E.landing.x, z - E.landing.z) < me.r + LANDING_R)) {
+    return 'Keep the landing at the end of your bridge clear.';
+  }
   for (const [k, q] of (H.outdoor ?? []).entries()) {
     if (k === skip) continue;
     const qi = ITEM_BY_ID[q.id];
     if (!qi) continue;
-    if (Math.hypot(x - q.x, z - q.z) < r + yardR(qi) - 0.2) return `It overlaps the ${qi.name}.`;
+    if (it.path && qi.path) continue;
+    if (shapesHit(me, thingShape(qi, q.x, q.z, q.rot ?? 0), -0.2)) return `It overlaps the ${qi.name}.`;
+  }
+  return underBridgeWhy(H, it, x, z, E);
+}
+
+export const yardFits = (H, it, x, z, skip = -1, env = 50) => yardWhy(H, it, x, z, skip, env) == null;
+
+/**
+ * May a house stand at `spec` ({ hk, house, x, z, rot }; hk null for a new
+ * one)? Null, or why not. Bridges to THIS house are re-laid wherever it goes
+ * (and the card warns which would have to be sold back — `brokenLinks`);
+ * a bridge between two OTHER houses that it would land on is a refusal.
+ */
+export function houseWhy(H, spec, env = 50) {
+  const E = envOf(env);
+  const R = E.r ?? 50;
+  const B = houseBox(spec);
+  if (corners(B).some((p) => Math.hypot(p.x, p.z) > R - RIM)) return 'Too close to the edge of the island.';
+  for (const s of houseSpecs(H)) {
+    if (s.hk === spec.hk) continue;
+    if (obbHit(houseBox(s, 0.8), B)) return `It would bump into the ${HOUSE_BY_ID[s.house].short}.`;
+  }
+  if (E.landing && circleHit(B, E.landing.x, E.landing.z, LANDING_R + 1)) return 'Keep the landing at the end of your bridge clear.';
+  for (const q of H.outdoor ?? []) {
+    const qi = ITEM_BY_ID[q.id];
+    if (!qi) continue;
+    if (shapesHit({ box: B }, thingShape(qi, q.x, q.z, q.rot ?? 0), -0.1)) return `The ${qi.name} is in the way — move it first.`;
+  }
+  const T = withHouse(H, spec);
+  for (const L of H.links ?? []) {
+    if (L.a.hk === spec.hk || L.b.hk === spec.hk) continue;
+    if (linkWhy(T, L, E)) return 'A bridge is in the way — move it first.';
   }
   return null;
 }
 
-export const yardFits = (H, it, x, z, skip = -1, siteR = 50) => yardWhy(H, it, x, z, skip, siteR) == null;
+/** Bridges to the house at `spec` that could not be built where it now is. */
+export function brokenLinks(H, spec, env = 50) {
+  const E = envOf(env);
+  const T = withHouse(H, spec);
+  return (H.links ?? []).filter((L) => (L.a.hk === spec.hk || L.b.hk === spec.hk) && linkWhy(T, L, E));
+}
+
+/** A copy of H with the house at `spec` moved there (or added, hk null). */
+export function withHouse(H, spec) {
+  const at = { x: spec.x, z: spec.z, rot: spec.rot ?? 0 };
+  if (spec.hk === 'main') return { ...H, at };
+  const annex = (H.annex ?? []).map((a) => (`a${a.uid}` === spec.hk ? { ...a, ...at } : a));
+  if (!spec.hk) annex.push({ uid: -1, house: spec.house, ...at });
+  return { ...H, annex };
+}
 
 /** The first free spot for `it` outdoors — rings out from the house, back first; or null. */
 export function firstYardSpot(H, it, siteR = 50) {
   const r = yardR(it);
-  const hr = houseRadius(H.house);
-  for (let d = hr + r + 1; d < siteR - RIM - r + 0.01; d += 1.5) {
+  for (let d = r + 4; d < siteR - RIM - r + 0.01; d += 1.5) {
     const n = Math.max(8, Math.round(d * 0.8));
     for (let k = 0; k < n; k++) {
       // start at the back (-z) and fan out both ways
@@ -180,8 +293,7 @@ export function wallFree(R, side, k, skip = -1) {
  * skipped — a preset is a head start, not a promise.
  */
 export function autoLayout(H, preset, isle) {
-  const def = HOUSE_BY_ID[H.house];
-  const rooms = (def?.rooms ?? []).filter((r) => !H.rooms?.[r.id]?.type || H.rooms[r.id].type === 'living');
+  const rooms = homeRooms(H).filter((r) => !H.rooms?.[r.id]?.type || H.rooms[r.id].type === 'living');
   H.rooms ??= {};
   for (const id of preset.room ?? []) {
     const it = ITEM_BY_ID[id];
@@ -198,6 +310,28 @@ export function autoLayout(H, preset, isle) {
     const it = ITEM_BY_ID[id];
     const at = it && firstYardSpot(H, it, isle?.radius ?? 50);
     if (at) addOutdoor(H, id, at.x, at.z, at.rot);
+  }
+  return H;
+}
+
+/**
+ * WINDOWS IN EVERY NEW HOUSE. Richard: "Built houses should have front doors
+ * and windows where appropriate." One shoji window in the middle of each
+ * outside wall of each room, as ordinary wall things she can move or sell —
+ * marked `free`, because they came with the house and sell for nothing.
+ */
+export function defaultWindows(H, hk = 'main') {
+  H.rooms ??= {};
+  for (const room of homeRooms(H)) {
+    if (room.hk !== hk) continue;
+    const R = (H.rooms[room.id] ??= { type: 'living', items: [] });
+    R.wall ??= [];
+    const bySide = {};
+    for (const S of wallSlots(room.house, room)) (bySide[S.side] ??= []).push(S);
+    for (const list of Object.values(bySide)) {
+      const S = list[Math.floor(list.length / 2)];
+      if (wallFree(R, S.side, S.k)) R.wall.push({ id: 'window', side: S.side, k: S.k, free: true });
+    }
   }
   return H;
 }

@@ -52,6 +52,7 @@ const DOOR_W = 2.8;
 
 /** Each house's floors: half-sizes, from the ground up, and its plinth. */
 const SHAPES = {
+  tiny: { base: 0.5, floors: [[4, 4]], roof: 2.0, porch: 1.2 },
   minka: { base: 0.7, floors: [[6, 5]], roof: 2.6, porch: 1.6 },
   dojohouse: { base: 0.9, floors: [[8, 6], [6.6, 5]], roof: 3.0, porch: 1.6 },
   castle: { base: 2.6, floors: [[11, 11], [9, 9], [6.6, 6.6]], roof: 3.6, porch: 2.4, stone: true },
@@ -78,7 +79,21 @@ const box = (w, h, d, c, x = 0, y = 0, z = 0) => {
  *   floorY: number[], half: [hw,hd][], base: number, front: number
  * }}
  */
-export function buildHouseShell(houseId) {
+/**
+ * HOLES IN THE WALLS. Richard, Oct 2026: windows "should be the same as the
+ * shoji window furniture, except that there needs to be a hole in the wall
+ * where the window is, and when opened can show the outside", and a bridge
+ * between two houses needs "a hole ... cut in the wall of the house". An
+ * opening is `{ floor, side, at, w, sill, h, door }` in the house's frame —
+ * `side` as `wallSlots` counts them (0 front, 1 +x, 2 back, 3 -x), `at` the
+ * centre along it, `sill`/`h` from the floor up. A DOOR (sill 0) also cuts the
+ * wall's collider; a window does not, so nobody climbs out of one.
+ */
+export const WINDOW = { w: 1.6, sill: 1.0, h: 1.6 };
+/** A doorway cut for a bridge: as tall as the front door. */
+export const PORT_H = 3.1;
+
+export function buildHouseShell(houseId, openings = []) {
   const S = SHAPES[houseId] ?? SHAPES.minka;
   const floors = [];
   const roof = [];
@@ -154,37 +169,64 @@ export function buildHouseShell(houseId) {
         g.push(box(1.94, 0.06, 1.94, odd ? 0xd8cf94 : 0xcfc489, x, y + 0.03, z));
       }
     }
-    // the walls: four sides, the front with a door (ground) or a window
-    const side = (ax, az, bx, bz, isFront) => {
+    // the walls: four sides, with the front door, windows and bridge doors cut out
+    const side = (ax, az, bx, bz, isFront, sideNo) => {
       const len = Math.hypot(bx - ax, bz - az);
       const mx = (ax + bx) / 2;
       const mz = (az + bz) / 2;
       const along = Math.abs(bx - ax) > Math.abs(bz - az) ? 'x' : 'z';
       const piece = (from, to, h0, h1, colour) => {
         const L = to - from;
-        if (L <= 0.01) return;
+        if (L <= 0.01 || h1 - h0 <= 0.01) return;
         const c = from + L / 2;
         const px = along === 'x' ? ax + (bx - ax) * (c / len) : mx;
         const pz = along === 'z' ? az + (bz - az) * (c / len) : mz;
         g.push(box(along === 'x' ? L : WALL_T, h1 - h0, along === 'z' ? L : WALL_T, colour, px, (h0 + h1) / 2, pz));
       };
+      const pt = (t) => ({ x: ax + (bx - ax) * (t / len), z: az + (bz - az) * (t / len) });
+      /* `at` (house x on the front and back, house z on the sides) to the
+         distance along this side from its start corner. */
+      const tOf = (at) => (sideNo === 0 ? at + hw : sideNo === 1 ? hd - at : sideNo === 2 ? hw - at : at + hd);
+      const holes = [];
       if (isFront && f === 0) {
         const a = (len - DOOR_W) / 2;
-        piece(0, a, y, y + wallH, PALETTE.plaster);
-        piece(a + DOOR_W, len, y, y + wallH, PALETTE.plaster);
-        piece(a, a + DOOR_W, y + 3.1, y + wallH, PALETTE.plaster);
-        walls.push({ ax, az, bx: ax + (bx - ax) * (a / len), bz: az + (bz - az) * (a / len), y0: y, y1: top });
-        walls.push({ ax: ax + (bx - ax) * ((a + DOOR_W) / len), az: az + (bz - az) * ((a + DOOR_W) / len), bx, bz, y0: y, y1: top });
+        holes.push({ t0: a, t1: a + DOOR_W, h0: 0, h1: PORT_H, door: true });
         // the noren — the curtain over the door is the first thing in her colour
         accent[0].push(box(DOOR_W * 0.9, 0.9, 0.08, 0xffffff, 0, y + 2.75, bz + 0.2));
-      } else {
-        piece(0, len, y, y + wallH, PALETTE.plaster);
-        walls.push({ ax, az, bx, bz, y0: y, y1: top });
-        /* NO BUILT-IN WINDOW. There was a paper panel in the middle of every
-           wall; windows are furniture now, hung where she wants them
-           (catalog.js `where: 'wall'`), and a painted one left behind would
-           sit under a real one or contradict an empty wall. */
       }
+      for (const o of openings) {
+        if (o.floor !== f || o.side !== sideNo) continue;
+        const t = tOf(o.at);
+        const t0 = Math.max(0.35, t - o.w / 2), t1 = Math.min(len - 0.35, t + o.w / 2);
+        if (t1 - t0 < 0.3) continue;
+        holes.push({ t0, t1, h0: o.sill, h1: Math.min(wallH - 0.2, o.sill + o.h), door: !o.sill });
+        // a dark timber frame round every cut, so a hole reads as built and not broken
+        const fr = (from, to, h0, h1) => {
+          const L = to - from, c = from + L / 2, P = pt(c);
+          g.push(box(along === 'x' ? L : WALL_T + 0.1, h1 - h0, along === 'z' ? L : WALL_T + 0.1, PALETTE.woodDark, P.x, y + (h0 + h1) / 2, P.z));
+        };
+        const top1 = Math.min(wallH - 0.2, o.sill + o.h);
+        fr(t0 - 0.12, t0, o.sill, top1);
+        fr(t1, t1 + 0.12, o.sill, top1);
+        fr(t0 - 0.12, t1 + 0.12, top1, top1 + 0.12);
+        if (o.sill > 0) fr(t0 - 0.12, t1 + 0.12, o.sill - 0.12, o.sill);
+      }
+      holes.sort((p, q) => p.t0 - q.t0);
+      let t = 0;
+      let c0 = 0;
+      for (const o of holes) {
+        piece(t, o.t0, y, y + wallH, PALETTE.plaster);
+        piece(o.t0, o.t1, y, y + o.h0, PALETTE.plaster);
+        piece(o.t0, o.t1, y + o.h1, y + wallH, PALETTE.plaster);
+        if (o.door) {
+          const A = pt(c0), B = pt(o.t0);
+          if (o.t0 - c0 > 0.01) walls.push({ ax: A.x, az: A.z, bx: B.x, bz: B.z, y0: y, y1: top });
+          c0 = o.t1;
+        }
+        t = Math.max(t, o.t1);
+      }
+      piece(t, len, y, y + wallH, PALETTE.plaster);
+      { const A = pt(c0); walls.push({ ax: A.x, az: A.z, bx, bz, y0: y, y1: top }); }
       /* Timber posts at the ends and a beam along the top — NO FACE OF EITHER
          IN THE PLANE OF ANOTHER. Richard: "The ceiling wooden beams are also
          having some Z-fighting". They were: the beam's top sat exactly on the
@@ -199,10 +241,10 @@ export function buildHouseShell(houseId) {
       g.push(box(0.38, wallH + 0.13, 0.38, PALETTE.woodDark, ax, y + (wallH + 0.13) / 2, az));
       g.push(box(along === 'x' ? len - 0.4 : 0.36, 0.3, along === 'z' ? len - 0.4 : 0.36, PALETTE.woodDark, mx, y + wallH - 0.15 + lift, mz));
     };
-    side(-hw, hd, hw, hd, true);
-    side(hw, hd, hw, -hd, false);
-    side(hw, -hd, -hw, -hd, false);
-    side(-hw, -hd, -hw, hd, false);
+    side(-hw, hd, hw, hd, true, 0);
+    side(hw, hd, hw, -hd, false, 1);
+    side(hw, -hd, -hw, -hd, false, 2);
+    side(-hw, -hd, -hw, hd, false, 3);
     /* The floor deck (the ground floor's is the plinth's) — WITH THE
        STAIRWELL CUT OUT OF IT. Richard: "If player navigated to the 2nd or
        3rd floor in the house, they are getting stuck on that floor. There is
@@ -428,6 +470,27 @@ export function houseShape(houseId) {
 export function houseHeight(houseId) {
   const S = SHAPES[houseId] ?? SHAPES.minka;
   return S.base + S.floors.length * FLOOR_H + S.roof;
+}
+
+/**
+ * The ground a house takes, in its own frame: the plinth and its porch, and
+ * the castle's ramp out of the front door. What a yard thing, another house
+ * and a bridge's feet keep off — a rectangle, not `houseRadius`'s circle round
+ * its corners. Richard: "there seems to be a big 'No build buffer zone'
+ * around houses that should be smaller".
+ */
+export function houseFoot(houseId) {
+  const S = SHAPES[houseId] ?? SHAPES.minka;
+  const [w, d] = S.floors[0];
+  const pw = w + S.porch, pd = d + S.porch;
+  return { x0: -pw, x1: pw, z0: -pd, z1: pd + (S.base > 0.8 ? S.base / 0.32 : 0) };
+}
+
+/** Floor k's outer half-sizes and its floor height, without building it. */
+export function floorOf(houseId, k) {
+  const S = SHAPES[houseId] ?? SHAPES.minka;
+  if (k < 0 || k >= S.floors.length) return null;
+  return { hw: S.floors[k][0], hd: S.floors[k][1], y: S.base + k * FLOOR_H };
 }
 
 /** The footprint radius — plots and the statue keep clear of it. */

@@ -1,6 +1,9 @@
 import {
   HOME_SITES, SITE_BY_ID, HOUSES, HOUSE_BY_ID, ITEMS, ITEM_BY_ID, PRESETS, PRESET_BY_ID, ROOM_TYPES, HOME_SELL,
+  FREE_ANNEX, BUILDABLE_HOUSES, LINK_STYLES, LINK_BY_ID, homeRooms, roomById, houseSpecs,
 } from './catalog.js';
+import { houseWhy } from './editor.js';
+import { portSpots, linkBlockers } from './links.js';
 import { JUKEBOX, hasRecording } from './jukebox.js';
 import { footprint, firstFit, firstYardSpot, wallSlots, wallFree, ITEM_SELL } from './editor.js';
 import { buildWhy, commitBuild, removeBuilt, pickList, stepToward, BUILD_KEYS, PICK_KEYS, CUSTOM_PICK_KEYS } from './build.js';
@@ -206,13 +209,15 @@ export class HousingCards {
   tap(index, act) {
     const top = this._top(index);
     if (top?.v === 'build' || top?.v === 'pick') {
-      const B = this.H.build;
+      const B = this.H.builder;
       const step = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] }[act];
       if (step && top.v === 'pick') {
         const L = pickList(this._home(top), top.kind, top.room);
         const k = L[top.at ?? 0] ? stepToward(L, L[top.at ?? 0], step[0], step[1]) : -1;
         if (k >= 0) top.at = k;
-      } else if (step && top.kind === 'yard') { top.x += step[0] * 1.5; top.z += step[1] * 1.5; }
+      } else if (step && (top.kind === 'yard' || top.kind === 'house')) { top.x += step[0] * 1.5; top.z += step[1] * 1.5; }
+      else if (step && top.kind === 'link') this.H.builder.hopPort(top, step[0], step[1]);
+      else if (act === 'rot' && top.kind === 'link') { this.H.builder.portFloor(top); return; }
       else if (step && top.kind === 'wall') B.hop(top, step[0], step[1]);
       else if (step) B.nudge(top, step[0], step[1]);
       if (act === 'rot') B.rotate(top);
@@ -523,13 +528,19 @@ export class HousingCards {
         go: () => { this.H.setOpen(p, H, !open); this.game.toast(open ? 'Locked! Only the owners can come in now.' : 'Unlocked! Visitors are welcome.', index); return null; },
       },
       { title: 'FURNISH A ROOM', blurb: 'Furniture on the tatami grid, and kendo or holodeck rooms.', go: () => { this._push(index, { v: 'rooms', site: top.site }); return null; } },
-      { title: 'THE YARD', blurb: 'Build anywhere on your island — ponds, a farm, a pen, the treehouse, and decorations.', go: () => { this._push(index, { v: 'yard', site: top.site }); return null; } },
+      { title: 'THE YARD', blurb: 'Build anywhere on your island — ponds, a farm, a pen, the treehouse, paths and decorations.', go: () => { this._push(index, { v: 'yard', site: top.site }); return null; } },
+      { title: 'HOUSES ON MY ISLAND', right: `${houseSpecs(H).length}`, blurb: 'Build more houses, and move any of them — everything inside comes too.', go: () => { this._push(index, { v: 'houses', site: top.site }); return null; } },
+      {
+        title: 'BRIDGES BETWEEN HOUSES', right: `${(H.links ?? []).length}`, blurb: 'Join two houses door to door, on any floor.',
+        disabled: houseSpecs(H).length < 2, why: 'Build a second house first — a bridge joins two.',
+        go: () => { this._push(index, { v: 'bridges', site: top.site }); return null; },
+      },
       /* NO MUSIC ROW AND NO FILE ROWS. Richard: "Changing the music should be
          done from the boombox at the entrance and exit to the bridge", and the
          .json save/load "shouldn't be in the menu. Let's have that as a Debug
          action for now" — main.js `_debugHousingExport`/`_debugHousingImport`. */
     ];
-    if (def.rooms.some((r) => r.claim)) {
+    if (homeRooms(H).some((r) => r.claim)) {
       rows.push({ title: 'CASTLE ROOMS', blurb: 'Claim your fair share of the rooms, or let one go to pick another.', go: () => { this._push(index, { v: 'claims', site: top.site }); return null; } });
     }
     rows.push(
@@ -541,8 +552,7 @@ export class HousingCards {
 
   _v_rooms(index, p, top) {
     const H = this._home(top);
-    const def = HOUSE_BY_ID[H.house];
-    const rows = def.rooms.map((room) => {
+    const rows = homeRooms(H).map((room) => {
       const R = H.rooms?.[room.id];
       const claim = R?.claim;
       const notMine = claim && claim !== p.style.name;
@@ -557,7 +567,7 @@ export class HousingCards {
     return { head: 'WHICH ROOM?', rows };
   }
 
-  _roomDef(H, id) { return HOUSE_BY_ID[H.house].rooms.find((r) => r.id === id); }
+  _roomDef(H, id) { return roomById(H, id); }
 
   _v_room(index, p, top) {
     const H = this._home(top);
@@ -594,7 +604,7 @@ export class HousingCards {
         go: () => { this._push(index, { v: 'pick', site: top.site, room: room.id, kind: 'room', at: 0, mode: 'custom' }); return null; },
       });
     }
-    const slots = wallSlots(H.house, room).length;
+    const slots = wallSlots(room.house, room).length;
     rows.push({
       title: 'HANG SOMETHING ON THE WALL', blurb: 'Windows, scrolls, pictures and your trophy shelf.',
       disabled: !slots, why: 'This room has no outside wall to hang things on.',
@@ -651,13 +661,13 @@ export class HousingCards {
     const room = top.room ? this._roomDef(H, top.room) : null;
     const R = room ? H.rooms[room.id] : null;
     const list = ITEMS.filter((it) => it.where.includes(top.kind === 'wall' ? 'wall' : top.kind === 'yard' ? 'yard' : 'room')
-      && (top.kind !== 'yard' || !!it.deco === !!top.deco));
+      && (top.kind !== 'yard' || (!!it.path === !!top.path && (it.path || !!it.deco === !!top.deco))));
     const rows = list.map((it) => {
       const price = this.H.itemPrice(it.id);
       let spot = null;
       if (top.kind === 'room') spot = firstFit(room, R.items, it);
       else if (top.kind === 'wall') {
-        const S = wallSlots(H.house, room).find((s) => wallFree(R, s.side, s.k));
+        const S = wallSlots(room.house, room).find((s) => wallFree(R, s.side, s.k) && !buildWhy(H, { kind: 'wall', room: room.id, id: it.id, side: s.side, k: s.k, sel: -1 }));
         spot = S && { side: S.side, k: S.k };
       } else spot = firstYardSpot(H, it, I?.radius ?? 50);
       return {
@@ -674,7 +684,7 @@ export class HousingCards {
     });
     const c = this.game.inspector.cards[index];
     this.preview.show(index, rows[Math.min(c?.i ?? 0, rows.length - 1)]?.item);
-    const head = top.kind === 'wall' ? 'FOR THE WALLS' : top.kind === 'yard' ? (top.deco ? 'DECORATIONS' : 'FOR THE YARD') : 'ADD FURNITURE';
+    const head = top.kind === 'wall' ? 'FOR THE WALLS' : top.kind === 'yard' ? (top.path ? 'WALKING PATHS' : top.deco ? 'DECORATIONS' : 'FOR THE YARD') : 'ADD FURNITURE';
     return { head, body: '<canvas class="hs-prev" width="200" height="140"></canvas>', rows };
   }
 
@@ -685,6 +695,8 @@ export class HousingCards {
    * finger (a tap on PUT IT HERE), and for a phone the four keys are buttons.
    */
   _v_build(index, p, top) {
+    if (top.kind === 'house') return this._v_buildhouse(index, p, top);
+    if (top.kind === 'link') return this._v_buildlink(index, p, top);
     const H = this._home(top);
     const I = this.H.isleOf(top.site);
     const it = ITEM_BY_ID[top.id];
@@ -716,6 +728,7 @@ export class HousingCards {
     const H = this._home(top);
     const L = pickList(H, top.kind, top.room);
     if (!L.length) return { head: 'NOTHING HERE', rows: [{ title: 'BACK', go: () => { this._pop(index); return null; } }] };
+    if (top.kind === 'house' || top.kind === 'link') return this._v_pickbig(index, p, top, H, L);
     top.at = Math.min(top.at ?? 0, L.length - 1);
     const q = L[top.at];
     const it = ITEM_BY_ID[q.id];
@@ -864,6 +877,12 @@ export class HousingCards {
     const L = pickList(H, top.kind, top.room);
     const q = L[top.at ?? 0];
     if (!q) return;
+    if (top.kind === 'link') { this.game.toast('A bridge cannot be moved — sell it and build another.', index); return; }
+    if (top.kind === 'house') {
+      this._push(index, { v: 'build', site: top.site, kind: 'house', sel: q.hk, id: q.id, x: q.x, z: q.z, rot: q.rot ?? 0 });
+      this.game.audio?.play?.('menu');
+      return;
+    }
     const row = top.kind === 'yard' ? H.outdoor[q.k] : top.kind === 'wall' ? H.rooms[top.room].wall[q.k] : H.rooms[top.room].items[q.k];
     const v = { v: 'build', site: top.site, room: top.room, kind: top.kind, sel: q.k, id: row.id };
     if (top.kind === 'yard') Object.assign(v, { x: row.x, z: row.z, rot: row.rot ?? 0 });
@@ -878,6 +897,11 @@ export class HousingCards {
     const p = this.game.players[index];
     const H = this._home(top);
     const I = this.H.isleOf(top.site);
+    if (top.kind === 'house') {
+      if (this.H.placeHouse(p, H, { hk: top.sel === -1 ? null : top.sel, house: top.id, x: top.x, z: top.z, rot: top.rot ?? 0 })) this._pop(index);
+      return;
+    }
+    if (top.kind === 'link') return this._linkHere(index, p, H, top);
     const it = ITEM_BY_ID[top.id];
     const bad = buildWhy(H, top, I?.radius ?? 50);
     if (bad) { this.game.toast(bad, index); this.game.audio?.play?.('menu'); return; }
@@ -892,6 +916,19 @@ export class HousingCards {
 
   /** SPRINT in build or pick mode: the "are you sure", if there is a thing to sell. */
   askSell(index, top) {
+    if (top.kind === 'house') {
+      const hk = top.v === 'pick' ? pickList(this._home(top), 'house')[top.at ?? 0]?.hk : top.sel;
+      if (!hk || hk === -1) { this.game.toast('That is not built yet — there is nothing to sell back.', index); return; }
+      if (hk === 'main') { this.game.toast('Your first house goes with the island — sell the whole home at Roshi\'s to sell it.', index); return; }
+      this._push(index, { v: 'sellhouse', site: top.site, hk, cursor: 0 });
+      return;
+    }
+    if (top.kind === 'link') {
+      if (top.v !== 'pick') { this.linkBack(index, top); return; }
+      const uid = pickList(this._home(top), 'link')[top.at ?? 0]?.uid;
+      if (uid != null) this._push(index, { v: 'selllink', site: top.site, uid, cursor: 0 });
+      return;
+    }
     let sel = top.sel;
     if (top.v === 'pick') sel = pickList(this._home(top), top.kind, top.room)[top.at ?? 0]?.k ?? -1;
     if (sel == null || sel < 0) { this.game.toast('That is not yours yet — there is nothing to sell back.', index); return; }
@@ -903,7 +940,8 @@ export class HousingCards {
     const list = top.kind === 'yard' ? H.outdoor : top.kind === 'wall' ? H.rooms?.[top.room]?.wall : H.rooms?.[top.room]?.items;
     const q = list?.[top.sel];
     const it = ITEM_BY_ID[q?.id];
-    const back = this._sellBack(it?.id);
+    // a window that came with the house was free, and sells for what it cost
+    const back = q?.free ? 0 : this._sellBack(it?.id);
     return {
       head: 'SELL IT BACK?',
       body: q?.id === 'pen' || q?.id === 'koipond' ? '<div class="hs-note">The animals and the koi wait for you — build it again and they come back.</div>' : '',
@@ -935,6 +973,7 @@ export class HousingCards {
       rows: [
         { title: 'BUILD SOMETHING', blurb: 'Ponds, the onsen, the farm, the pen, the treehouse — put them anywhere on your island.', go: () => { this._push(index, { v: 'shop', site: top.site, kind: 'yard', deco: false }); return null; } },
         { title: 'DECORATIONS', blurb: 'Cheap and pretty: trees, lanterns, fences, stones. Anywhere outside.', go: () => { this._push(index, { v: 'shop', site: top.site, kind: 'yard', deco: true }); return null; } },
+        { title: 'WALKING PATHS', blurb: 'Stepping stones to a red carpet with tiki torches. Lay them end to end, turn them, cross them.', go: () => { this._push(index, { v: 'shop', site: top.site, kind: 'yard', path: true }); return null; } },
         {
           title: 'MOVE OR SELL', blurb: 'Point at something outside and pick it up.',
           disabled: !(H.outdoor ?? []).length, why: 'There is nothing in the yard yet.',
@@ -951,7 +990,7 @@ export class HousingCards {
 
   _v_claims(index, p, top) {
     const H = this._home(top);
-    const def = HOUSE_BY_ID[H.house];
+    const def = { rooms: homeRooms(H) };
     // (the rules and every refusal are Housing's: `claimWhy`, `setClaim`)
     const me = p.style.name;
     const share = this.H.claimShare(H);
@@ -980,6 +1019,279 @@ export class HousingCards {
       head: 'CASTLE ROOMS',
       body: `<div class="pc-dim">${esc(`A fair share is ${share} room${share === 1 ? '' : 's'} each for ${owners} owner${owners === 1 ? '' : 's'} — you can claim ${left} more.${spare > 0 ? ` ${spare === 1 ? 'One room is' : `${spare} rooms are`} left over for everybody to share.` : ''}`)}</div>`,
       rows,
+    };
+  }
+
+  /* ------------------------- HOUSES AND BRIDGES -------------------------- */
+
+  /**
+   * HOUSES ON HER ISLAND. Richard: "an option in the menu at their house that
+   * allows them to buy and place more houses on the island ... the first
+   * house is free that comes with the island, after that they have to buy
+   * any additional houses they build."
+   */
+  _v_houses(index, p, top) {
+    const H = this._home(top);
+    const n = houseSpecs(H).length;
+    return {
+      head: 'HOUSES ON MY ISLAND',
+      rows: [
+        { title: 'BUILD A HOUSE', blurb: FREE_ANNEX[H.house] && !(H.annex ?? []).some((a) => a.free) ? `Your ${HOUSE_BY_ID[FREE_ANNEX[H.house]].name} is FREE — it came with the island.` : 'Pick one, then put it where you want it.', go: () => { this._push(index, { v: 'houseshop', site: top.site }); return null; } },
+        { title: 'MOVE A HOUSE', blurb: 'Pick one up — the furniture inside goes with it, and the camera at your name board follows.', go: () => { this._push(index, { v: 'pick', site: top.site, kind: 'house', at: 0 }); return null; } },
+        {
+          title: 'SELL A HOUSE', blurb: 'Roshi buys back an extra house with everything in it. Your first house goes with the island.',
+          disabled: n < 2, why: 'You only have your first house — it goes with the island.',
+          go: () => { this._push(index, { v: 'pick', site: top.site, kind: 'house', at: Math.min(1, n - 1) }); return null; },
+        },
+      ],
+    };
+  }
+
+  _v_houseshop(index, p, top) {
+    const H = this._home(top);
+    const I = this.H.isleOf(top.site);
+    const env = this.H.envOf(I);
+    const rows = BUILDABLE_HOUSES.map((id) => {
+      const def = HOUSE_BY_ID[id];
+      const price = this.H.annexPrice(H, id);
+      const spot = this._houseSpot(H, id, env);
+      return {
+        title: def.name, right: price ? pts(price) : 'FREE',
+        blurb: `${def.floors} floor${def.floors > 1 ? 's' : ''} · ${def.rooms.length} room${def.rooms.length > 1 ? 's' : ''}${price ? '' : ' · it came with your island'}`,
+        disabled: !spot || p.score < price,
+        why: !spot ? 'There is no room left on the island for that one.' : `${p.name} needs ${pts(price - p.score)} more.`,
+        go: () => { this._push(index, { v: 'build', site: top.site, kind: 'house', sel: -1, id, ...spot }); return null; },
+      };
+    });
+    return { head: 'BUILD A HOUSE', rows };
+  }
+
+  /** The first place on the island a house fits, back first, facing the middle. */
+  _houseSpot(H, id, env) {
+    const R = env.r ?? 50;
+    for (let d = 10; d < R; d += 2) {
+      const n = Math.max(8, Math.round(d * 0.6));
+      for (let k = 0; k < n; k++) {
+        const s = k % 2 ? 1 : -1;
+        const a = Math.PI + s * Math.ceil(k / 2) * (Math.PI * 2 / n);
+        const x = +(Math.sin(a) * d).toFixed(2), z = +(Math.cos(a) * d).toFixed(2);
+        // its front faces the island's middle: rot is the angle from +z to (-x, -z)
+        const rot = Math.round(Math.atan2(-x, -z) / (Math.PI / 4)) * (Math.PI / 4);
+        if (!houseWhy(H, { hk: null, house: id, x, z, rot }, env)) return { x, z, rot };
+      }
+    }
+    return null;
+  }
+
+  _v_buildhouse(index, p, top) {
+    const H = this._home(top);
+    const I = this.H.isleOf(top.site);
+    const def = HOUSE_BY_ID[top.id];
+    const bad = buildWhy(H, top, this.H.envOf(I));
+    const isNew = top.sel === -1;
+    const price = isNew ? this.H.annexPrice(H, top.id) : 0;
+    const touch = this._touch();
+    const rows = [{
+      title: isNew ? `BUILD IT HERE — ${price ? pts(price) : 'FREE'}` : 'PUT IT HERE',
+      disabled: !!bad || p.score < price,
+      why: bad ?? `${p.name} needs ${pts(price - p.score)} more.`,
+      go: () => { this.placeHere(index, top); return null; },
+    }];
+    if (!isNew && top.sel !== 'main') rows.push({ title: `SELL IT BACK — ${pts(this.H.annexRefund(H, top.sel))}`, go: () => { this.askSell(index, top); return null; } });
+    const keys = BUILD_KEYS.filter(([, w]) => w !== 'sell' || (!isNew && top.sel !== 'main'));
+    return {
+      build: true,
+      head: def.name,
+      body: `<div class="hs-buildrow"><canvas class="hs-map" width="180" height="180"></canvas><div class="hs-buildinfo">
+        <div class="${bad ? 'hs-bad' : 'hs-good'}">${esc(bad ?? (isNew ? 'It fits! Press JUMP to build it here.' : 'It fits here — everything inside comes with it.'))}</div>
+        <div class="hs-keys">${keys.map(([k, w]) => `<span><b>${k}</b> ${w}</span>`).join('')}</div>
+        ${touch ? this._touchPad(index, true, !isNew && top.sel !== 'main') : ''}</div></div>`,
+      rows,
+      foot: ' ',
+    };
+  }
+
+  /** The selector over houses or bridges: a house moves or sells, a bridge sells. */
+  _v_pickbig(index, p, top, H, L) {
+    top.at = Math.min(top.at ?? 0, L.length - 1);
+    const q = L[top.at];
+    const touch = this._touch();
+    const house = top.kind === 'house';
+    const name = house ? `${HOUSE_BY_ID[q.id].name}${q.hk === 'main' ? ' (YOUR FIRST)' : ''}` : LINK_BY_ID[q.id]?.name ?? 'BRIDGE';
+    const rows = house ? [
+      { title: 'PICK IT UP AND MOVE IT', go: () => { this.pickUp(index, top); return null; } },
+      {
+        title: q.hk === 'main' ? 'SELL IT BACK' : `SELL IT BACK — ${pts(this.H.annexRefund(H, q.hk))}`,
+        disabled: q.hk === 'main', why: 'Your first house goes with the island — sell the whole home to sell it.',
+        go: () => { this.askSell(index, top); return null; },
+      },
+    ] : [
+      { title: `SELL IT BACK — ${pts(Math.round((H.links.find((x) => x.uid === q.uid)?.paid ?? 0) * HOME_SELL))}`, go: () => { this.askSell(index, top); return null; } },
+    ];
+    const keys = house ? PICK_KEYS.filter(([, w]) => w !== 'customize') : [['STICK', 'choose'], ['SPRINT', 'sell'], ['INTERACT', 'back']];
+    return {
+      build: true,
+      head: `${name}  (${top.at + 1} of ${L.length})`,
+      body: `<div class="hs-buildrow"><canvas class="hs-map" width="180" height="180"></canvas><div class="hs-buildinfo">
+        <div class="hs-good">The ring shows which one. Move the stick to point at another.</div>
+        <div class="hs-keys">${keys.map(([k, w]) => `<span><b>${k}</b> ${w}</span>`).join('')}</div>
+        ${touch ? `<div class="hs-pad">${['left', 'up', 'down', 'right'].map((d) => `<button type="button" data-hact="${d}" data-side="${index}">${ARROW[d]}</button>`).join('')}</div>` : ''}</div></div>`,
+      rows,
+      foot: ' ',
+    };
+  }
+
+  _v_sellhouse(index, p, top) {
+    const H = this._home(top);
+    const a = (H.annex ?? []).find((x) => `a${x.uid}` === top.hk);
+    const def = HOUSE_BY_ID[a?.house];
+    const back = this.H.annexRefund(H, top.hk);
+    const nl = (H.links ?? []).filter((L) => L.a.hk === top.hk || L.b.hk === top.hk).length;
+    return {
+      head: 'SELL THIS HOUSE?',
+      body: `<div class="hs-note">${esc(`Everything inside it is sold too${nl ? `, and ${nl === 1 ? 'the bridge' : `the ${nl} bridges`} to it` : ''}. Roshi pays ${pts(back)}.`)}</div>`,
+      rows: [
+        { title: `NO, KEEP THE ${def?.name ?? 'HOUSE'}`, go: () => { this._pop(index); return null; } },
+        {
+          title: `YES, SELL IT FOR ${pts(back)}`,
+          go: () => {
+            const n = this.H.sellHouse(p, H, top.hk);
+            if (n === false) return null;
+            this.game.toast(`Roshi paid ${pts(n)} for the ${def?.name ?? 'house'}.`, index);
+            this._pop(index); this._pop(index);
+            return null;
+          },
+        },
+      ],
+    };
+  }
+
+  /** BRIDGES. Richard: "different types of bridges, some more generic and some more elaborate and decorative and fanciful." */
+  _v_bridges(index, p, top) {
+    const H = this._home(top);
+    return {
+      head: 'BRIDGES BETWEEN HOUSES',
+      rows: [
+        { title: 'BUILD A BRIDGE', blurb: 'Pick a style, then the two doors it joins — any floor to any floor.', go: () => { this._push(index, { v: 'linkshop', site: top.site }); return null; } },
+        {
+          title: 'SELL A BRIDGE', disabled: !(H.links ?? []).length, why: 'There are no bridges yet.',
+          go: () => { this._push(index, { v: 'pick', site: top.site, kind: 'link', at: 0 }); return null; },
+        },
+      ],
+    };
+  }
+
+  _v_linkshop(index, p, top) {
+    const H = this._home(top);
+    const rows = LINK_STYLES.map((S) => {
+      const price = this.H.linkPrice(S.id);
+      const first = portSpots(H, S.w).find((s) => s.floor === 0) ?? portSpots(H, S.w)[0];
+      return {
+        title: S.name, right: pts(price), blurb: S.blurb ?? '',
+        disabled: !first || p.score < price,
+        why: !first ? 'No wall has room for a door that wide.' : `${p.name} needs ${pts(price - p.score)} more.`,
+        go: () => {
+          this._push(index, { v: 'build', site: top.site, kind: 'link', sel: -1, style: S.id, floor: first.floor, a: null, cur: { hk: first.hk, floor: first.floor, side: first.side, at: first.at } });
+          return null;
+        },
+      };
+    });
+    return { head: 'WHICH BRIDGE?', rows };
+  }
+
+  _v_buildlink(index, p, top) {
+    const H = this._home(top);
+    const I = this.H.isleOf(top.site);
+    const S = LINK_BY_ID[top.style];
+    const bad = top.a ? buildWhy(H, top, this.H.envOf(I)) : null;
+    const price = this.H.linkPrice(top.style);
+    const keys = [['STICK', 'next door'], ['ATTACK', 'next floor'], ['JUMP', top.a ? 'build it' : 'this door'], ['SPRINT', top.a ? 'other first door' : 'back'], ['INTERACT', 'back']];
+    const msg = !top.a ? `Pick the FIRST door — floor ${top.floor + 1}. ATTACK goes up a floor.`
+      : bad ?? `It reaches! Press JUMP to build it.`;
+    return {
+      build: true,
+      head: `${S.name} — ${top.a ? 'THE OTHER DOOR' : 'THE FIRST DOOR'}`,
+      body: `<div class="hs-buildrow"><canvas class="hs-map" width="180" height="180"></canvas><div class="hs-buildinfo">
+        <div class="${bad ? 'hs-bad' : 'hs-good'}">${esc(msg)}</div>
+        <div class="hs-keys">${keys.map(([k, w]) => `<span><b>${k}</b> ${w}</span>`).join('')}</div>
+        ${this._touch() ? this._touchPad(index, true, false) : ''}</div></div>`,
+      rows: [{
+        title: top.a ? `BUILD IT — ${pts(price)}` : 'THIS DOOR FIRST',
+        disabled: !!bad || (top.a && p.score < price),
+        why: bad ?? `${p.name} needs ${pts(price - p.score)} more.`,
+        go: () => { this.placeHere(index, top); return null; },
+      }],
+      foot: ' ',
+    };
+  }
+
+  /** JUMP on a doorway: the first one is remembered, the second builds. */
+  _linkHere(index, p, H, top) {
+    if (!top.cur) return;
+    if (!top.a) {
+      top.a = { ...top.cur };
+      this.game.audio?.play?.('menu');
+      this.game.toast('Now pick the door on the OTHER house.', index);
+      // hop to the nearest door on another house, so the first press of the stick is not wasted
+      this.H.builder.hopPort(top, 0, 0);
+      return;
+    }
+    const L = { a: top.a, b: top.cur, style: top.style };
+    const r = this.H.buildLink(p, H, L, false);
+    if (r.blockers?.length) { this._push(index, { v: 'linkblock', site: top.site, L, cursor: 0 }); return; }
+    if (r.ok) this._pop(index);
+  }
+
+  /** SPRINT while picking doors: forget the first door, or leave. */
+  linkBack(index, top) {
+    if (top.a) { top.cur = top.a; top.a = null; top.floor = top.cur.floor; this.game.audio?.play?.('menu'); return; }
+    this._pop(index);
+  }
+
+  /** "If ... an object is interfering with building the bridge, then we can offer to the player to automatically sell the object." */
+  _v_linkblock(index, p, top) {
+    const H = this._home(top);
+    const I = this.H.isleOf(top.site);
+    const block = linkBlockers(H, top.L, this.H.envOf(I));
+    const names = block.map((k) => ITEM_BY_ID[H.outdoor[k]?.id]?.name ?? 'thing');
+    const back = block.reduce((s, k) => s + this._sellBack(H.outdoor[k]?.id), 0);
+    return {
+      head: 'SOMETHING IS IN THE WAY',
+      body: `<div class="hs-note">${esc(`The bridge is too low to go over the ${names.join(', the ')}. Roshi can buy ${names.length === 1 ? 'it' : 'them'} back for ${pts(back)} and build the bridge anyway.`)}</div>`,
+      rows: [
+        { title: 'NO, KEEP IT AND DO NOT BUILD', go: () => { this._pop(index); return null; } },
+        {
+          title: `YES, SELL ${names.length === 1 ? 'IT' : 'THEM'} AND BUILD THE BRIDGE`,
+          go: () => {
+            const r = this.H.buildLink(p, H, top.L, true);
+            this._pop(index);
+            if (r.ok) this._pop(index);
+            return null;
+          },
+        },
+      ],
+    };
+  }
+
+  _v_selllink(index, p, top) {
+    const H = this._home(top);
+    const L = (H.links ?? []).find((x) => x.uid === top.uid);
+    const back = Math.round((L?.paid ?? 0) * HOME_SELL);
+    return {
+      head: 'SELL THIS BRIDGE?',
+      body: '<div class="hs-note">Its doors are walled up again.</div>',
+      rows: [
+        { title: `NO, KEEP THE ${LINK_BY_ID[L?.style]?.name ?? 'BRIDGE'}`, go: () => { this._pop(index); return null; } },
+        {
+          title: `YES, SELL IT FOR ${pts(back)}`,
+          go: () => {
+            const n = this.H.sellLink(p, H, top.uid);
+            this.game.toast(`Roshi paid ${pts(n)} for the bridge.`, index);
+            this._pop(index); this._pop(index);
+            return null;
+          },
+        },
+      ],
     };
   }
 

@@ -82,12 +82,12 @@ export const SITE_BY_ID = Object.fromEntries(HOME_SITES.map((s) => [s.id, s]));
  */
 export const HOUSES = [
   {
-    id: 'minka', name: 'SMALL JAPANESE HOUSE', mult: 8, floors: 1, w: 12, d: 10, owners: 1,
+    id: 'minka', name: 'SMALL JAPANESE HOUSE', short: 'SMALL HOUSE', mult: 8, floors: 1, w: 12, d: 10, owners: 1,
     blurb: 'One cosy tatami room with a porch all the way round. Quick to buy and ready to move into.',
     rooms: [{ id: 'main', name: 'TATAMI ROOM', floor: 0, cx: 0, cz: 0, w: 10, d: 8 }],
   },
   {
-    id: 'dojohouse', name: 'DOJO HOUSE', mult: 12, floors: 2, w: 16, d: 12, owners: 1,
+    id: 'dojohouse', name: 'DOJO HOUSE', short: 'DOJO HOUSE', mult: 12, floors: 2, w: 16, d: 12, owners: 1,
     blurb: 'Two floors: a big polished training hall downstairs and a tatami room upstairs.',
     rooms: [
       { id: 'hall', name: 'TRAINING HALL', floor: 0, cx: 0, cz: 0, w: 14, d: 10, kendo: true },
@@ -95,7 +95,7 @@ export const HOUSES = [
     ],
   },
   {
-    id: 'castle', name: 'SKY CASTLE', mult: 20, floors: 3, w: 22, d: 22, owners: 4,
+    id: 'castle', name: 'SKY CASTLE', short: 'SKY CASTLE', mult: 20, floors: 3, w: 22, d: 22, owners: 4,
     blurb: 'Three floors on a stone base, a room for each of up to four owners, and a lookout on top. Share it with your sisters!',
     rooms: [
       { id: 'east', name: 'EAST ROOM', floor: 0, cx: 5, cz: 0, w: 9, d: 18, claim: true },
@@ -106,9 +106,101 @@ export const HOUSES = [
     ],
   },
 ];
-export const HOUSE_BY_ID = Object.fromEntries(HOUSES.map((h) => [h.id, h]));
+
+/**
+ * THE TINY HOUSE — never sold with an island, only ever BUILT on one.
+ * Richard, Oct 2026: "If they buy a Small Japanese House, they will get an
+ * even smaller 'Tiny' Japanese house they can build for free". So it is not
+ * in `HOUSES` (Roshi's list, and every check that walks it), only here.
+ */
+export const TINY_HOUSE = {
+  id: 'tiny', name: 'TINY JAPANESE HOUSE', short: 'TINY HOUSE', mult: 4, floors: 1, w: 8, d: 8, owners: 1, annexOnly: true,
+  blurb: 'One little tatami room under a little roof. A hideaway, a guest house, a reading nook.',
+  rooms: [{ id: 'main', name: 'TINY ROOM', floor: 0, cx: 0, cz: 0, w: 6, d: 6 }],
+};
+
+export const HOUSE_BY_ID = Object.fromEntries([...HOUSES, TINY_HOUSE].map((h) => [h.id, h]));
 // every room knows its house, so the editor can keep furniture off its stairs
-for (const h of HOUSES) for (const r of h.rooms) r.house = h.id;
+for (const h of [...HOUSES, TINY_HOUSE]) for (const r of h.rooms) { r.house = h.id; r.hk = 'main'; }
+
+/**
+ * MORE HOUSES ON ONE ISLAND. Richard, Oct 2026: "there will be an option in
+ * the menu at their house that allows them to buy and place more houses on
+ * the island. Each island will come with a free (for the first one built),
+ * smaller version house of the one they bought ... In this menu, they can
+ * build as many houses on the island as they want, but the first house is
+ * free". The island's own house is `H.house` at `H.at`; every other one is a
+ * row of `H.annex`: `{ uid, house, x, z, rot, paid, free }`, in the ISLAND's
+ * frame — the same frame the yard is in — so moving the main house moves
+ * nothing outdoors, and moving any house moves everything inside it.
+ */
+export const FREE_ANNEX = { castle: 'dojohouse', dojohouse: 'minka', minka: 'tiny' };
+/** What can be built as an extra house, smallest first. */
+export const BUILDABLE_HOUSES = ['tiny', 'minka', 'dojohouse', 'castle'];
+
+/** Every house on a home, the island's own first: `{ hk, house, x, z, rot, row }`. */
+export function houseSpecs(H) {
+  const at = H?.at ?? {};
+  const out = [{ hk: 'main', house: H.house, x: at.x ?? 0, z: at.z ?? 0, rot: at.rot ?? 0, row: H }];
+  for (const a of H?.annex ?? []) {
+    if (!HOUSE_BY_ID[a.house]) continue;
+    out.push({ hk: `a${a.uid}`, house: a.house, x: a.x, z: a.z, rot: a.rot ?? 0, row: a });
+  }
+  return out;
+}
+
+const _roomsMemo = new WeakMap();
+
+/**
+ * EVERY ROOM IN EVERY HOUSE ON A HOME, as one list. The island's own
+ * house's rooms are the catalog's own rows, ids unchanged (so every save
+ * made before there were two houses still finds its furniture); an extra
+ * house's rooms are copies with the id `a<uid>_<room>`, keyed in the same
+ * `H.rooms` — which is why nothing that furnishes, claims or sells a room had
+ * to learn that there can be more than one house. `hk` says whose frame.
+ */
+export function homeRooms(H) {
+  if (!H) return [];
+  const specs = houseSpecs(H);
+  const sig = specs.map((s) => s.hk + s.house).join(',');
+  const hit = _roomsMemo.get(H);
+  if (hit?.sig === sig) return hit.rooms;
+  const rooms = [];
+  const seen = {};
+  for (const s of specs) {
+    const def = HOUSE_BY_ID[s.house];
+    if (s.hk === 'main') { rooms.push(...def.rooms); continue; }
+    seen[s.house] = (seen[s.house] ?? 0) + 1;
+    const label = `${def.short}${seen[s.house] > 1 ? ` ${seen[s.house]}` : ''}`;
+    for (const r of def.rooms) {
+      rooms.push({ ...r, id: `${s.hk}_${r.id}`, name: `${label}: ${r.name}`, hk: s.hk });
+    }
+  }
+  _roomsMemo.set(H, { sig, rooms });
+  return rooms;
+}
+
+export const roomById = (H, id) => homeRooms(H).find((r) => r.id === id) ?? null;
+
+/**
+ * BRIDGES BETWEEN HOUSES. Richard: "a way for houses to be connected together
+ * with bridges ... on the 1st, 2nd, or 3rd floor ... connect a 2nd floor to a
+ * 3rd floor ... different ramps or steps ... different types of bridges, some
+ * more generic and some more elaborate and decorative and fanciful." A link is
+ * `{ uid, a: end, b: end, style }` with an end `{ hk, floor, side, at }` — a
+ * door cut in that house's wall (side 0 front, 1 +x, 2 back, 3 -x; `at` along
+ * it). The bridge is whatever the two doors make it: its angle, its length,
+ * and whether it is level, a ramp or a flight of steps.
+ * `steps` — the climb is drawn as treads (the walk is still the slope).
+ */
+export const LINK_STYLES = [
+  { id: 'plank', name: 'PLANK BRIDGE', w: 2.6, mult: 0.4, steps: false, blurb: 'Boards and a rope rail. Plain and quick.' },
+  { id: 'rope', name: 'ROPE BRIDGE', w: 2.4, mult: 0.5, steps: false, blurb: 'Slats on ropes, with knotted posts — a jungle crossing.' },
+  { id: 'stone', name: 'STONE BRIDGE', w: 3.2, mult: 0.9, steps: true, blurb: 'Grey stone with solid parapets and stone steps.' },
+  { id: 'vermilion', name: 'VERMILION BRIDGE', w: 3.0, mult: 1.4, steps: true, blurb: 'Red lacquer, brass-capped posts and paper lanterns, like a shrine bridge.' },
+  { id: 'sakura', name: 'BLOSSOM BRIDGE', w: 3.4, mult: 2.2, steps: true, blurb: 'The fanciest: an arch of cherry blossom, flower boxes and glowing lanterns.' },
+];
+export const LINK_BY_ID = Object.fromEntries(LINK_STYLES.map((s) => [s.id, s]));
 
 /**
  * What a ROOM can be turned into. A room is one of these at a time; the
@@ -232,6 +324,22 @@ export const ITEMS = [
   { id: 'banner', name: 'NOBORI BANNER', where: ['yard'], r: 0.9, size: { h: 5.5 }, mult: 0.03, model: 'nobori-banner-ae4d88', deco: true },
   { id: 'paddy', name: 'RICE PADDY', where: ['yard'], r: 3, size: { w: 5.5 }, mult: 0.1, model: 'rice-paddy-tile-dc727e', deco: true },
   { id: 'reeds', name: 'REEDS', where: ['yard'], r: 0.9, size: { h: 2.4 }, mult: 0.02, model: 'moat-reed-clump-dd6b60', deco: true },
+  /* WALKING PATHS. Richard: "allow players to build walking paths in the yard
+     on the ground, these can be narrow or wide. Some of it should be fancy like
+     'red carpet' paths ... Can even do some with tiki torches". A piece is
+     `len` long and `pw` wide, laid flat on the grass; pieces may touch and
+     cross each other, and nothing stands in the way of walking on one.
+     `r` is only the ghost's ring. Paths sit on their own shelf (`path`). */
+  { id: 'path_stone', name: 'STEPPING STONES (NARROW)', where: ['yard'], path: true, deco: true, len: 6, pw: 2, r: 3, mult: 0.02, model: null },
+  { id: 'path_wood', name: 'BOARDWALK (NARROW)', where: ['yard'], path: true, deco: true, len: 6, pw: 2.4, r: 3, mult: 0.03, model: null },
+  { id: 'path_gravel', name: 'RAKED GRAVEL PATH', where: ['yard'], path: true, deco: true, len: 6, pw: 3, r: 3, mult: 0.02, model: null },
+  { id: 'path_flag', name: 'FLAGSTONE PATH (WIDE)', where: ['yard'], path: true, deco: true, len: 6, pw: 4.4, r: 3.2, mult: 0.04, model: null },
+  { id: 'path_petal', name: 'SAKURA PETAL PATH', where: ['yard'], path: true, deco: true, len: 6, pw: 2.8, r: 3, mult: 0.05, model: null },
+  { id: 'path_lantern', name: 'LANTERN PATH', where: ['yard'], path: true, deco: true, len: 6, pw: 3.6, r: 3.2, mult: 0.08, model: null },
+  { id: 'path_carpet', name: 'RED CARPET', where: ['yard'], path: true, deco: true, len: 6, pw: 3, r: 3, mult: 0.1, model: null,
+    blurb: 'For VIP kittens only. Gold trim and all.' },
+  { id: 'path_tiki', name: 'TIKI TORCH PATH', where: ['yard'], path: true, deco: true, len: 6, pw: 3.6, r: 3.2, mult: 0.1, model: null,
+    blurb: 'Bamboo torches burning on both sides.' },
   {
     id: 'bladeforest', name: 'BUSHIDO BAMBOO FOREST', where: ['yard'], r: 10, mult: 4, model: null, later: true,
     blurb: 'Coming later: a sparring forest where a clean cut goes straight through the bamboo.',

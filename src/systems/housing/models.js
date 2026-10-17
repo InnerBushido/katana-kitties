@@ -254,6 +254,8 @@ function mesh(parts) {
  */
 export function drawItem(id, sz = 2, opts = {}) {
   const W = sz;
+  // a path piece's stand-in (the real one is homeisle.js `pathParts`)
+  if (id.startsWith('path_')) return mesh([box(1.6, 0.1, 3.2, id === 'path_carpet' ? 0xc0202a : 0xb8a888)]);
   switch (id) {
     case 'futon': return mesh([box(1.6, 0.25, 3.4, 0xf4efe2), box(1.6, 0.12, 2.2, 0x6f8fd8, 0, 0.25, 0.5), box(1.1, 0.2, 0.6, 0xffffff, 0, 0.25, -1.3)]);
     case 'kotatsu': return mesh([box(3, 0.12, 3, 0x7a4a2a, 0, 0.75), box(3.4, 0.6, 3.4, 0xc0504d), cyl(0.3, 0.3, 0.08, 0xffd27a, 0.6, 0.88, 0.4)]);

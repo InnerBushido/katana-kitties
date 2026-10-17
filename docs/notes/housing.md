@@ -162,6 +162,9 @@ Each one degrades: delete the file and the game draws the stand-in.
 | **The chick in flight** | the pen drawing, bobbing in the air — no wings move | a flying frame, or a flap on the billboard |
 | **A mess** | four brown blobs (`PetPlay._pile`) | a drawn pile |
 | **Boosts for kotodama abilities** | not done: the animals boost JUMP HEIGHT, JUMP DISTANCE and SPRINT only | Richard also floated boosting the panda or her kotodama powers; it is a `petBoost` field plus the one line that reads it |
+| **Bridge decoration models** | every bridge is drawn (`linkParts` in links.js) — planks, rope, stone, a vermilion taiko-bashi, the blossom arch | Tripo or Polyfork pieces for the fancy styles; Tripo is paid, so say the price first |
+| **Door panels** | two sliding paper panels per doorway, drawn boxes (`IsleHome._door`) | a shoji door model |
+| **Windows open onto a gap, not glass** | the opening and two sliding panels | nothing needed unless a pane of glass is wanted |
 
 ## Boons — what home is worth in the ring
 
@@ -362,6 +365,35 @@ in the code, and deleting the file brings it back.
 | **Roshi's voice** | five clips in `voice/roshi/`, Arthur ([voices.md](voices.md)) | the toast alone |
 | **Kendo** | `kittens/<sheet>/kendo.png` (the guard) and `kiai.png` (the men strike, held for `KIAI_T` after every swing in the bogu), recoloured by STYLE for Storm and Blossom. `kendo.js` only sets `kendoGeared` and `kiaiT`; `Player` draws them. They MIRROR like the Riposte stance, and world-check measures the shinai reaching right | the drawn men and shinai |
 | **The animals** | `farm/{chick,bunny,goat}.png`, side-on, head LEFT (measured), turned along the circle they walk | the primitive bodies |
+
+## More houses, bridges, paths, windows — Oct 2026
+
+- **An island holds many houses.** `H.at` places the first (the one with the
+  name board and the front-door camera, `I.main`); `H.annex` holds the rest,
+  each `{uid, house, x, z, rot}` in the island's frame. `houseSpecs(H)` lists
+  them, first first. A house's rooms are `a<uid>_<room>` in the one `H.rooms`
+  (`homeRooms`), so every room-reading thing reads them all.
+- **The first of the one-size-down house is free** (`FREE_ANNEX`: castle →
+  dojo house → small house → TINY HOUSE). `annexPrice` says 0 until one is
+  built for free. TINY is built here only, never sold at Roshi's.
+- **Moving a house moves its rooms**: room positions are in the HOUSE's frame
+  (`I.roomLocal`, `I.floorY`, `I.houseOf(room).ry`), so nothing inside is
+  rewritten. A bridge that can no longer reach is sold back, and she is told.
+- **Bridges** (`links.js`, pure): door to door on any floor, `{a, b, style}`
+  with each end `{hk, floor, side, at}`. `linkWhy` refuses doors that do not
+  face, too long, too steep, or through a third house. Steps or a ramp take
+  the rise. Each end cuts a hole in the wall (`buildHouseShell(id, openings)`)
+  with a door; a wall thing in the hole is sold back. A ground-floor bridge
+  refuses yard things too tall to fit under it (`linkBlockers`), and the card
+  offers to sell them. Supports have no colliders.
+- **Doors** slide open when someone is near and shut when nobody is; INTERACT
+  pins one open (`H.doors`). The lock still holds the front door.
+- **Windows** are wall things that cut a real hole, closed by default,
+  INTERACT opens them. Each new house gets one per outside wall, `free` (sells
+  for 0). An old home is given them once (`H.winV`).
+- **The path strip in front of the house is gone**, and the gap round a house
+  is a box 0.3 off its footprint, not a circle. Paths are yard things that
+  may cross each other.
 
 ## Known rough edges
 
