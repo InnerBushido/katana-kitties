@@ -51,6 +51,11 @@ const SPRINT_SPEED = 17;
 const ACCEL = 60;
 const AIR_ACCEL = 26;
 const JUMP_V = 11.2;
+/* THE TREEHOUSE SLIDE (housing/treehouse.js): the speed she rides at. She
+   is put on at `min` whatever she walked on with, gains `accel` a second and
+   tops out at `max` — a little over a sprint, which is what makes it a ride
+   rather than a ramp. */
+export const SLIDE_RIDE = { min: 6, accel: 18, max: 15 };
 /** How far above her feet her head meets a lidded deck (SimWorld.lidAt):
  *  the house's HEAD_H less a little, since a sim kitten is the plain one. */
 export const HEAD_ROOM = 2.2;
@@ -2264,6 +2269,9 @@ export class Player {
        kitten floats up into the headset, or down out of it, the arcade owns
        where she is and her stick owns nothing. See systems/dreamdojo.js. */
     if (this.pinnedAt) pad = FROZEN_PAD;
+    /* ...AND RIDING THE TREEHOUSE SLIDE. The slide owns where she goes until
+       the run at the bottom, where the stick is hers again. */
+    if (this.slide) pad = FROZEN_PAD;
 
     /* NO POWER MOVE SURVIVES GETTING ON AN ANIMAL. `_stepSpecials` only runs
        inside the ground controller, so a ward popped a frame before mounting
@@ -3456,6 +3464,28 @@ export class Player {
     if (this.power.dive && !dodged && !clanned && !parrying && pad.pressed('interact') && !this.onGround
         && !this.diving && !this.busy && !this.dodgePlanted && !this.parryAt) {
       this._startDive(hud);
+    }
+
+    /* THE TREEHOUSE SLIDE. Housing (`_slide`) hands her the way downhill
+       while her feet are on a slide deck, after she has moved; it is spent
+       here, the frame after, so it lasts exactly as long as she is on it and
+       the run at the bottom — not a slide — is where she skids to a stop on
+       the momentum she brought. The ground snap below keeps her ON it. */
+    const sl = this.slide;
+    this.slide = null;
+    if (sl) {
+      /* THE SPEED IS CARRIED, not read back off her velocity: with the stick
+         dead the ground controller above has already braked that toward
+         zero this frame, and reading it back held her at `min` the whole way
+         down (measured: 3-7 a second on a slide built for 15). */
+      const along = this.velocity.x * sl.x + this.velocity.z * sl.z;
+      const was = this.slideT > 0 ? this.slideV : along;
+      const v = Math.min(SLIDE_RIDE.max, Math.max(SLIDE_RIDE.min, was) + SLIDE_RIDE.accel * dt);
+      this.slideV = v;
+      this.velocity.x = sl.x * v;
+      this.velocity.z = sl.z * v;
+      this.facing = Math.atan2(sl.x, sl.z);
+      this.slideT = 0.2;
     }
 
     // --- move + collide ---
@@ -6211,6 +6241,19 @@ export class Player {
       1 - sq * 0.24 + bob + breathe - chew - wind,
       1
     );
+    /* RIDING THE SLIDE: sat down (squashed), arms up (the jump row, the one
+       drawing with her paws in the air) and rattling in the chute. Richard:
+       "can make it a slide instead that players can ride down. Can do a
+       little slide riding animation if so." No new art: the same squash and
+       stretch the jump and the chew are made of. The hit, the KO and the
+       angel below still have the last word. */
+    if (this.slideT > 0) {
+      this.slideT -= dt;
+      this.sprite.row = a.jump;
+      const rattle = Math.sin((this.idlePhase ?? 0) * 11);
+      this.sprite.mesh.scale.set(1.14 + rattle * 0.02, 0.78 - rattle * 0.02, 1);
+      this.sprite.mesh.rotation.z = rattle * 0.05;
+    }
     /* Riding: the seat is solved in _updateFlight, so the sprite sits at the
        group origin â€” but it has to RIDE THE WINGBEAT. Without this the kitten
        hangs perfectly still while the dragon heaves up and down underneath

@@ -5,7 +5,7 @@ import { makeLabelTexture } from '../../core/label.js';
 import { buildHouseShell, houseHeight, houseRadius, floorOf, FLOOR_H, SLAB_T, WINDOW, PORT_H } from './homehouse.js';
 import { ITEMS, ITEM_BY_ID, LINK_BY_ID, houseSpecs, homeRooms } from './catalog.js';
 import { linkGeom, linkParts, linkModels } from './links.js';
-import { placeModel, drawItem } from './models.js';
+import { placeModel, drawItem, clampMul } from './models.js';
 import { wallSlots, yardR } from './editor.js';
 import { buildTreehouse } from './treehouse.js';
 import { HOLO_GEAR_SCALE, HOLO_TUBE, ensureHoloKit, holoCell, holoOut } from './holodeck.js';
@@ -44,7 +44,49 @@ export const WALL_Y = { window: 1.0, scroll: 0.5, picture: 1.2, trophy: 1.9 };
 
 /** The outdoor things that stand in the way, as a radius off their centre.
  *  The rest (a pond, a court, a paddy) are walked on or over. */
-const SOLID = { teahouse: 2.4, belltower: 1.8, well: 1.1, shrine: 2.2, maple: 0.5, cherry: 0.5, pine: 0.5, waterwheel: 1.2, lantern: 0.5, firebasket: 0.3, sake: 0.8, drum: 1.0 };
+const SOLID = {
+  teahouse: 2.4, belltower: 1.8, well: 1.1, shrine: 2.2, maple: 0.5, cherry: 0.5, pine: 0.5, waterwheel: 1.2, lantern: 0.5, firebasket: 0.3, sake: 0.8, drum: 1.0,
+  /* Measured off the loaded models (fitted to their catalogue size), not
+     guessed: the basin is 1.52 across, the azalea's stems 0.9, the bucket
+     0.92 by 0.72, and the banner stands on a weighted foot 1.72 across. */
+  basin: 0.75, azalea: 0.6, bucket: 0.4, banner: 0.6,
+};
+/* THE LONG THIN THINGS ARE BOXES OF WALL, not circles. Richard, Oct 2026:
+   "Bamboo fence has no collider built in the yard of players island. Let's
+   ensure that all objects built on the players island have collider if they
+   should have a collider." A circle round a fence is either a pinprick in
+   the middle of it or a disc four wide that blocks the path beside it.
+   [half-length along its own x, half-depth along z, height], all measured:
+   the fence model is 4.40 x 0.66 x 3.52 and runs along x, the bench
+   3.20 x 1.06 x 0.98. */
+const SOLID_BOX = { fence: [2.2, 0.33, 3.52], bench: [1.6, 0.53, 0.98] };
+/* Things that are solid in more than one place: the torii walk's six posts
+   (models.js `drawItem`, which draws it, puts them at x ±0.9, z -2.4/0/2.4)
+   and nothing between them, since walking UNDER the gates is the point. */
+const SOLID_POSTS = { toriigarden: { r: 0.22, at: [[-0.9, -2.4], [0.9, -2.4], [-0.9, 0], [0.9, 0], [-0.9, 2.4], [0.9, 2.4]] } };
+/* The yard's trees and bushes take the x-ray, weaker than a wall: Richard on
+   the town's, "the shader effect should be smaller and weaker, so as not to
+   make them disappear when player is near it". */
+const XRAY_PLANT = { maple: 0.8, cherry: 0.8, pine: 0.8, azalea: 0.6 };
+
+/**
+ * Put a placed model's vertex-coloured meshes on an x-ray material at
+ * strength `k`. A loaded model's geometry has no `xrayK` (only mergeParts
+ * writes it) and a missing attribute reads as ZERO in the shader — "never
+ * cut" — so the material swap alone would do nothing at all. Geometry is
+ * shared between clones of one cached model, which is fine: every clone of a
+ * yard tree wants the same answer. A mesh with a texture instead of colours
+ * is left as it is.
+ */
+export function xrayModel(root, mat, k) {
+  root?.traverse?.((o) => {
+    const g = o.isMesh ? o.geometry : null;
+    if (!g?.attributes?.color) return;
+    if (!g.attributes.xrayK) g.setAttribute('xrayK', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count).fill(k), 1));
+    o.material = mat;
+  });
+  return root;
+}
 
 /** How far out the bubble stands past the island's rim. */
 const BUBBLE_PAD = 7;
@@ -85,7 +127,11 @@ export class HomeIsle {
     this.roofMat = xrayVertexMat({ color: NEUTRAL_ROOF, ...XR });
     this.soffitMat = xrayVertexMat(XR);
     this.wallMat = xrayVertexMat(XR);
-    this.xrayMats = [this.wallMat, this.roofMat, this.soffitMat, ...this.accentMats];
+    /* The treehouse's trunks, platforms and crowns, and the yard's trees and
+       bushes — their own two, since the walls' carries the kendo clip. */
+    this.treeMat = xrayVertexMat(XR);
+    this.plantMat = xrayVertexMat(XR);
+    this.xrayMats = [this.wallMat, this.roofMat, this.soffitMat, ...this.accentMats, this.treeMat, this.plantMat];
     /** Floor groups and the roof, for the per-pane cutaway. */
     this.floorMeshes = [];
     this.roofMeshes = [];
@@ -652,6 +698,22 @@ export class HomeIsle {
     return null;
   }
 
+  /** An outdoor row's own (fx, fz) to house-local [x, z]: the turn the
+   *  group is drawn with (`rotation.y` = its rot) — the treehouse's too. */
+  _itemToHouse(q, fx, fz) {
+    const a = q.rot ?? 0;
+    return [q.x + fx * Math.cos(a) + fz * Math.sin(a), q.z - fx * Math.sin(a) + fz * Math.cos(a)];
+  }
+
+  /** Four walls round a rectangle in an outdoor row's own frame, world heights. */
+  _boxWalls(q, hx, hz, y0, y1) {
+    const c = [[-hx, -hz], [hx, -hz], [hx, hz], [-hx, hz]].map(([fx, fz]) => this.local(...this._itemToHouse(q, fx, fz)));
+    for (let k = 0; k < 4; k++) {
+      const a = c[k], b = c[(k + 1) % 4];
+      this.walls.push({ ax: a.x, az: a.z, bx: b.x, bz: b.z, y0, y1, item: q.uid });
+    }
+  }
+
   /** Centre of a grid placement in house-local units. 1 cell = 2 units. */
   cellCentre(room, gx, gz, it, rot = 0) {
     const [cw, cd] = (rot % 2) ? [it.cells?.[1] ?? 1, it.cells?.[0] ?? 1] : [it.cells?.[0] ?? 1, it.cells?.[1] ?? 1];
@@ -779,7 +841,7 @@ export class HomeIsle {
             x: q.x + fx * Math.cos(q.rot ?? 0) + fz * Math.sin(q.rot ?? 0),
             z: q.z - fx * Math.sin(q.rot ?? 0) + fz * Math.cos(q.rot ?? 0),
           }),
-          q.rot ?? 0, gy - this.groundY, this.wallMat,
+          q.rot ?? 0, gy - this.groundY, { wall: this.wallMat, tree: this.treeMat },
         );
         add(T.group);
         this.decks.push(...T.decks);
@@ -797,10 +859,34 @@ export class HomeIsle {
       }
       case 'bladeforest': break;
       default: {
-        add(placeModel(it.model, drawItem(it.id, 2), it.size, q.look ? { s: q.look.s, style: q.look.style } : null));
+        const body = add(placeModel(it.model, drawItem(it.id, 2), it.size, q.look ? { s: q.look.s, style: q.look.style } : null));
         if (it.act) spot(it.act, Math.max(2.4, r + 0.8));
+        /* Her BIGGER/SMALLER (`look.s`) scales the collider with the thing:
+           a fence made twice as long was solid along its old length. Only
+           where there is a size for it to multiply — fitTo ignores it
+           otherwise. */
+        const mul = it.size ? clampMul(q.look?.s) : 1;
         const solid = SOLID[it.id];
-        if (solid) this.obstacles.push({ x: w.x, z: w.z, r: solid * Math.max(1, r / 2.5) });
+        if (solid) this.obstacles.push({ x: w.x, z: w.z, r: solid * Math.max(1, r / 2.5) * mul });
+        const B = SOLID_BOX[it.id];
+        if (B) {
+          this._boxWalls(q, B[0] * mul, B[1] * mul, gy, gy + B[2] * mul);
+          /* ...WITH A LID. The walls stop at the top, so a kitten who jumps
+             on was dropped INSIDE the box and the four walls shoved her back
+             and forth between them for good (measured: she never left). Now
+             she stands on it — and walking along the top of a fence is a
+             thing a kid will want to do anyway. */
+          this.decks.push({ x0: -B[0] * mul, x1: B[0] * mul, z0: -B[1] * mul, z1: B[1] * mul, y: gy - this.groundY + B[2] * mul, step: 0.3, frame: { x: q.x, z: q.z, a: q.rot ?? 0 } });
+        }
+        for (const [px, pz] of SOLID_POSTS[it.id]?.at ?? []) {
+          const o = this.local(...this._itemToHouse(q, px * mul, pz * mul));
+          this.obstacles.push({ x: o.x, z: o.z, r: SOLID_POSTS[it.id].r * mul });
+        }
+        const k = XRAY_PLANT[it.id];
+        if (k) {
+          xrayModel(body, this.plantMat, k);
+          body.userData.onReal = (gm) => xrayModel(gm, this.plantMat, k);
+        }
       }
     }
     g.userData.place = P.id;

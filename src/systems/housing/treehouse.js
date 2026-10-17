@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { toonVertexMat, paint } from '../../core/gfx.js';
-import { mergeParts, PALETTE } from '../../world/build.js';
+import { mergeParts, xrayStrength, PALETTE } from '../../world/build.js';
 
 /* ---------------------------------------------------------------------------
    THE TREEHOUSE — a little climbing level, not a prop.
@@ -13,11 +13,11 @@ import { mergeParts, PALETTE } from '../../world/build.js';
 
    FOUR TREES, FOUR PLATFORMS AT FOUR HEIGHTS, AND THE WAYS BETWEEN THEM:
 
-        ground ──ramp──▶ A (4) ──rope──▶ B (8) ──rope──▶ C (12, the cabin)
-                           └───rope──▶ D (6) ── branches ──┘      │
-                                                   roof (15.7) ◀── crates
+        ground ──spiral──▶ A (4) ──rope──▶ B (8) ──rope──▶ C (12, the cabin)
+                             └───rope──▶ D (6) ── branches ──┘      │
+        ground ◀────slide──────────────┘              roof (15.7) ◀── crates
 
-   Every way up is something a kitten already knows how to do: a ramp is a
+   Every way up is something a kitten already knows how to do: a stair is a
    deck with a slope (the house's stairs), a rope bridge is a long thin deck
    with a sag, and a branch is a short deck to JUMP to. The steps between
    branches are at most 2.2 — measured against Player's own jump (JUMP_V
@@ -61,6 +61,26 @@ const BRANCHES = [
   [0, -1.0, 3.8, 6.2],
 ];
 const CABIN = { w: 5, d: 5, h: 3.4, door: 1.8 };
+/* THE WAY UP IS A SPIRAL ROUND A POST, AND THE QUICK WAY DOWN IS A SLIDE.
+   There was a straight ramp off A's +x edge, and it ran out underneath the
+   rope bridge from A to B — the two shared a line on the ground. Richard, Oct
+   2026: "Consider removing the ramp on the ground as it is intersecting with
+   the bridges, or move it somewhere where it is not interfering, can build
+   like a circular spiraling bridge instead that connects better, or can make
+   it a slide instead that players can ride down." So both: the stair turns
+   once round its own post south of A, where no rope passes over it (the A-B
+   rope's hand rope is at z -5.07; the stair's rail stops at -5.95), and
+   steps off radially onto A's corner. The slide leaves D's east edge and
+   curls down into the open middle of the four trees, under nothing lower
+   than D's 10.2 branch. `tools/checks/housing.mjs` measures the clearances.
+   `turns` is under one so the stair never passes under itself. */
+const SPIRAL = { x: -1.2, z: -8.5, r: 1.8, w: 1.5, turns: 0.92, n: 14, onto: { x: -4.2, z: -5.4 } };
+/* `cx, cz` is the centre of the slide's quarter turn and `R` its radius: it
+   starts at (cx, cz + R), which is D's east edge, heading +x, and comes out
+   heading -z into a short flat run that is NOT a slide, so she skids to a
+   stop on her own feet. The drop is (1 - s/L)^1.4 of D's height, which is
+   steepest at the lip and flat where it meets the run. */
+const SLIDE = { cx: -3.25, cz: 1.5, R: 4, w: 1.5, run: 2.6, n: 10, pow: 1.4 };
 
 /** Parent coordinates of a point in a frame at (ox, oz) turned by `a`. */
 function out(ox, oz, a, fx, fz) {
@@ -78,10 +98,14 @@ function out(ox, oz, a, fx, fz) {
  * @returns {{ group: THREE.Group, decks: object[], walls: object[], trunks: {x,z,r}[], top: number }}
  *   decks/walls in HOUSE-LOCAL coordinates (decks carry a frame); trunks too.
  */
-export function buildTreehouse(toHouse, rot, y0, wallMat) {
+export function buildTreehouse(toHouse, rot, y0, mats) {
+  /* `mats` is the isle's x-ray materials, `{ wall, tree }`; a bare material
+     is the old call, the wall's alone. */
+  const M = mats?.isMaterial ? { wall: mats } : (mats ?? {});
   const group = new THREE.Group();
   const wood = [];
   const leaf = [];
+  const slide = [];
   const decks = [];
   const walls = [];
   const trunks = [];
@@ -98,6 +122,50 @@ export function buildTreehouse(toHouse, rot, y0, wallMat) {
     // yAt is written in the treehouse's heights; the deck answers in the isle's
     const f = extra.yAt;
     decks.push({ x0, x1, z0, z1, y: y0 + y, step: 0.5, ...extra, yAt: f ? (x, z) => y0 + f(x, z) : undefined, frame: { x: o.x, z: o.z, a: rot + a } });
+  };
+  /** A rope rail along `pts` ({x, z, y} the deck under each post): a post at
+   *  each, and a rope between the tops that SAGS. Richard: "connect the
+   *  railings above the steps so they look more like rope" — the ramp's two
+   *  rails were straight bars floating 0.9 over it on nothing. */
+  const ropeRail = (pts, H = 1.1) => {
+    for (const p of pts) wood.push(box(0.14, H + 0.1, 0.14, 0x5a3820, p.x, p.y + (H + 0.1) / 2, p.z));
+    for (let k = 0; k + 1 < pts.length; k++) {
+      const a = pts[k], b = pts[k + 1];
+      const span = Math.hypot(b.x - a.x, b.z - a.z);
+      const sag = Math.min(0.22, span * 0.1);
+      const at = (t) => ({ x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t, y: a.y + (b.y - a.y) * t + H - Math.sin(t * Math.PI) * sag });
+      for (let j = 0; j < 3; j++) {
+        const p = at(j / 3), q = at((j + 1) / 3);
+        const L = Math.hypot(q.x - p.x, q.y - p.y, q.z - p.z);
+        const seg = new THREE.BoxGeometry(0.07, 0.07, L + 0.03);
+        paint(seg, 0xd8c08a);
+        seg.rotateX(-Math.atan2(q.y - p.y, Math.hypot(q.x - p.x, q.z - p.z)));
+        seg.rotateY(Math.atan2(q.x - p.x, q.z - p.z));
+        seg.translate((p.x + q.x) / 2, (p.y + q.y) / 2, (p.z + q.z) / 2);
+        wood.push(seg);
+      }
+    }
+  };
+  /** A plank from a to b ({x, z, y}), `w` wide, tipped to the slope. */
+  const plank = (list, a, b, w, t, c) => {
+    const run = Math.hypot(b.x - a.x, b.z - a.z);
+    const g = new THREE.BoxGeometry(w, t, Math.hypot(run, b.y - a.y) + 0.04);
+    paint(g, c);
+    g.rotateX(-Math.atan2(b.y - a.y, run));
+    g.rotateY(Math.atan2(b.x - a.x, b.z - a.z));
+    g.translate((a.x + b.x) / 2, (a.y + b.y) / 2 - t / 2, (a.z + b.z) / 2);
+    list.push(g);
+  };
+  /** A deck from a to b ({x, z, y}), `w` wide, its height running straight
+   *  between the two — a stair flight or a stretch of slide. */
+  const chord = (a, b, w, extra = {}) => {
+    const len = Math.hypot(b.x - a.x, b.z - a.z);
+    const ang = Math.atan2(b.x - a.x, b.z - a.z);
+    deck(a.x, a.z, ang, -w / 2, w / 2, -0.05, len + 0.05, Math.max(a.y, b.y), {
+      yAt: (x, z) => a.y + (b.y - a.y) * Math.min(1, Math.max(0, z / len)),
+      step: 0.6,
+      ...extra,
+    });
   };
   /** A wall from treehouse-local a to b, from y to y + h above its ground. */
   const wall = (ax, az, bx, bz, y, h) => {
@@ -145,31 +213,83 @@ export function buildTreehouse(toHouse, rot, y0, wallMat) {
     deck(T.x, T.z, 0, -P.w / 2, P.w / 2, -P.w / 2, P.w / 2, P.y);
   }
 
-  // ---- the ramp from the ground up to A
+  // ---- the spiral stair from the ground up to A (see SPIRAL)
   {
-    const A = PLAT[0];
-    const T = TRUNKS[A.t];
-    const rise = A.y;
-    const len = rise / 0.45;
-    // runs out from A's +x edge, down toward +x
-    const sx = T.x + A.w / 2;
-    deck(sx, T.z, Math.PI / 2, -1.2, 1.2, 0, len, A.y, {
-      yAt: (x, z) => A.y * (1 - Math.min(1, Math.max(0, z / len))),
-      step: 0.7,
-    });
-    const g = new THREE.BoxGeometry(2.4, 0.3, Math.hypot(len, rise));
-    paint(g, PALETTE.wood);
-    g.rotateX(Math.atan2(rise, len));
-    g.rotateY(Math.PI / 2);
-    g.translate(sx + len / 2, rise / 2 - 0.15, T.z);
-    wood.push(g);
-    for (const s of [-1, 1]) {
-      const r = new THREE.BoxGeometry(0.1, 0.1, Math.hypot(len, rise));
-      paint(r, 0xc8a46a);
-      r.rotateX(Math.atan2(rise, len));
-      r.rotateY(Math.PI / 2);
-      r.translate(sx + len / 2, rise / 2 + 0.9, T.z + s * 1.2);
-      wood.push(r);
+    const S = SPIRAL;
+    const top = PLAT[0].y;
+    const ux = S.onto.x - S.x, uz = S.onto.z - S.z;
+    const ul = Math.hypot(ux, uz);
+    const end = Math.atan2(ux, uz);
+    // t = 0 at the ground, 1 at the top; it climbs with the angle falling
+    const at = (t, r = S.r) => {
+      const a = end + Math.PI * 2 * S.turns * (1 - t);
+      return { x: S.x + Math.sin(a) * r, z: S.z + Math.cos(a) * r, y: top * t };
+    };
+    const rail = [];
+    for (let k = 0; k < S.n; k++) {
+      const a = at(k / S.n), b = at((k + 1) / S.n);
+      chord(a, b, S.w, { part: 'stair' });
+      plank(wood, a, b, S.w, 0.22, k % 2 ? 0x8a6a40 : 0x9a7848);
+      // an arm from the post under each tread, so it hangs off something
+      const m = at((k + 0.5) / S.n, S.r * 0.5);
+      if (m.y > 0.6) wood.push(box(0.16, 0.16, S.r, 0x5a3820, m.x, m.y - 0.3, m.z, Math.atan2(m.x - S.x, m.z - S.z)));
+      rail.push(at(k / S.n, S.r + S.w / 2 - 0.1));
+      const o0 = at(k / S.n, S.r + S.w / 2 - 0.05), o1 = at((k + 1) / S.n, S.r + S.w / 2 - 0.05);
+      if (k + 1 < S.n) wall(o0.x, o0.z, o1.x, o1.z, Math.min(o0.y, o1.y) - 0.3, Math.abs(o1.y - o0.y) + 1.6);
+    }
+    ropeRail(rail);
+    // the post, up through the middle and a little past the top
+    const pole = new THREE.CylinderGeometry(0.28, 0.36, top + 1.4, 9);
+    paint(pole, 0x6a4428);
+    pole.translate(S.x, (top + 1.4) / 2, S.z);
+    wood.push(pole);
+    const o = toHouse(S.x, S.z);
+    trunks.push({ x: o.x, z: o.z, r: 0.36 });
+    // and off the top, straight out onto A's corner
+    const p0 = at(1);
+    const p1 = { x: S.x + (ux / ul) * (ul + 0.4), z: S.z + (uz / ul) * (ul + 0.4), y: top };
+    chord({ ...p0, x: p0.x - (ux / ul) * 0.5, z: p0.z - (uz / ul) * 0.5 }, p1, S.w, { part: 'stair' });
+    plank(wood, p0, p1, S.w, 0.22, 0x9a7848);
+  }
+
+  // ---- the slide from D down into the middle (see SLIDE)
+  {
+    const S = SLIDE;
+    const D = PLAT[3];
+    const La = (Math.PI / 2) * S.R;
+    const y = (s) => D.y * Math.pow(1 - Math.min(1, s / La), S.pow) + 0.12 * Math.min(1, s / La);
+    const at = (s) => {
+      if (s <= La) {
+        const th = s / S.R;
+        return { x: S.cx + Math.sin(th) * S.R, z: S.cz + Math.cos(th) * S.R, y: y(s) };
+      }
+      return { x: S.cx + S.R, z: S.cz - (s - La), y: 0.12 };
+    };
+    const side = (p, q, s) => {
+      // the chute's side, offset to one side of the run from p to q
+      const L = Math.hypot(q.x - p.x, q.z - p.z) || 1;
+      const nx = (q.z - p.z) / L, nz = -(q.x - p.x) / L;
+      return [{ x: p.x + nx * s, z: p.z + nz * s, y: p.y }, { x: q.x + nx * s, z: q.z + nz * s, y: q.y }];
+    };
+    const marks = [];
+    for (let k = 0; k <= S.n; k++) marks.push(at((La * k) / S.n));
+    marks.push(at(La + S.run));
+    for (let k = 0; k + 1 < marks.length; k++) {
+      const a = marks[k], b = marks[k + 1];
+      const riding = k < S.n;
+      chord(a, b, S.w, riding ? { slide: true, step: 0.8, part: 'slide' } : { part: 'slide' });
+      plank(slide, a, b, S.w, 0.18, 0xe0503a);
+      for (const s of [-1, 1]) {
+        const [p, q] = side(a, b, s * (S.w / 2 + 0.06));
+        // a lip, so she rides IN it — and it is a wall, so she stays in it
+        plank(slide, { ...p, y: p.y + 0.45 }, { ...q, y: q.y + 0.45 }, 0.12, 0.6, 0xf2c14e);
+        wall(p.x, p.z, q.x, q.z, Math.min(p.y, q.y) - 0.2, Math.abs(q.y - p.y) + 0.9);
+      }
+      // legs down to the ground under every joint that is off it
+      if (a.y > 0.5) for (const s of [-1, 1]) {
+        const [p] = side(a, b, s * (S.w / 2 - 0.1));
+        wood.push(box(0.2, a.y, 0.2, 0x5a3820, p.x, a.y / 2, p.z));
+      }
     }
   }
 
@@ -185,7 +305,7 @@ export function buildTreehouse(toHouse, rot, y0, wallMat) {
       const t = Math.min(1, Math.max(0, z / len));
       return ya + (yb - ya) * t - Math.sin(t * Math.PI) * 0.45;
     };
-    deck(a.x, a.z, ang, -0.9, 0.9, 0, len, Math.max(ya, yb), { yAt, step: 0.6 });
+    deck(a.x, a.z, ang, -0.9, 0.9, 0, len, Math.max(ya, yb), { yAt, step: 0.6, part: 'rope' });
     const n = Math.max(4, Math.round(len / 0.7));
     for (let k = 0; k < n; k++) {
       const t = (k + 0.5) / n;
@@ -241,8 +361,17 @@ export function buildTreehouse(toHouse, rot, y0, wallMat) {
        way onto the roof is a stack of crates on the -x side instead. */
     const cx = TC.x + 0.6, cz = TC.z + 0.6;
     for (const [z, top] of [[cz - 1, y + 1.8], [cz + 1.2, y + 3.6]]) {
-      cab.push(box(1.4, top - y, 1.4, 0x9a7848, cx - hw - 0.85, (y + top) / 2, z));
-      deck(cx - hw - 0.85, z, 0, -0.7, 0.7, -0.7, 0.7, top, { step: 0.3 });
+      const bx = cx - hw - 0.85;
+      cab.push(box(1.4, top - y, 1.4, 0x9a7848, bx, (y + top) / 2, z));
+      deck(bx, z, 0, -0.7, 0.7, -0.7, 0.7, top, { step: 0.3, part: 'crate' });
+      /* AND SOLID. Richard: the x-ray "should work in the house and boxes
+         and ensure they have colliders" — the crates were a lid and nothing
+         else, so she walked into one and out of the other side. Four walls,
+         as tall as the crate: from on top of it she is above them. */
+      const e = 0.7;
+      for (const [ax, az, bx2, bz] of [[-e, -e, e, -e], [e, -e, e, e], [e, e, -e, e], [-e, e, -e, -e]]) {
+        wall(bx + ax, z + az, bx + bx2, z + bz, y, top - y);
+      }
     }
     const W = (ax, az, bx, bz) => {
       const L = Math.hypot(bx - ax, bz - az);
@@ -269,13 +398,24 @@ export function buildTreehouse(toHouse, rot, y0, wallMat) {
     deck(cx, cz, 0, -hw - 0.3, hw + 0.3, -hd - 0.3, hd + 0.3, ry + 0.3, { step: 0.4 });
   }
 
-  const woodMesh = new THREE.Mesh(mergeParts(wood), toonVertexMat());
-  const leafMesh = new THREE.Mesh(mergeParts(leaf), toonVertexMat());
-  // the cabin on the x-ray material, so she is never lost inside it
-  const cabMesh = new THREE.Mesh(mergeParts(cab), wallMat);
-  group.add(woodMesh, leafMesh, cabMesh);
+  /* EVERYTHING ON THE X-RAY, not just the cabin. Richard: "Xray shader used
+     to work on the treehouse, but seems to not be working anymore ... Also
+     should work on the trees and bushes." The cabin's cut had not broken —
+     measured, it opens round her as it always did — but it was the only
+     thing on the material: the trunk that goes up THROUGH the room, the
+     crowns over the roof and the platform over her head were plain toon, and
+     from the camera's height those are what hide her. The crowns take the
+     full cut; the wood a little less, since a trunk is narrow and a platform
+     she is standing on is under her feet, which the cut never takes. */
+  const treeMat = M.tree ?? toonVertexMat();
+  const woodMesh = new THREE.Mesh(mergeParts(xrayStrength(wood, 0.85)), treeMat);
+  const leafMesh = new THREE.Mesh(mergeParts(xrayStrength(leaf, 1)), treeMat);
+  const slideMesh = new THREE.Mesh(mergeParts(xrayStrength(slide, 0.85)), treeMat);
+  // the cabin on the house's own wall material, so she is never lost inside it
+  const cabMesh = new THREE.Mesh(mergeParts(cab), M.wall ?? treeMat);
+  group.add(woodMesh, leafMesh, slideMesh, cabMesh);
   return { group, decks, walls, trunks, top: C.y + CABIN.h + 0.3 };
 }
 
 /** For checks: the platforms and the top, in the treehouse's frame. */
-export const TREEHOUSE_PLAN = { TRUNKS, PLAT, ROPES, BRANCHES, CABIN };
+export const TREEHOUSE_PLAN = { TRUNKS, PLAT, ROPES, BRANCHES, CABIN, SPIRAL, SLIDE };

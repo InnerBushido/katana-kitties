@@ -75,6 +75,41 @@ inside (`aimView` → `xrayVertexMat.setCuts`). Furniture sits on a **tatami gri
 a room's kind decides what may go in it, and a preset furnishes the whole house
 in one go (`autoLayout`).
 
+**The yard is solid, and its trees take the x-ray** (Oct 2026: "Bamboo fence has
+no collider ... ensure that all objects built on the players island have
+collider if they should"). Round things are circles in `SOLID`; long thin ones
+(fence, bench) are four walls AND a lid in `SOLID_BOX`, because walls alone
+dropped a kitten who jumped on top inside the box for good; the torii walk is
+six posts. All of it scales with the item's BIGGER/SMALLER. Every number was
+measured off the fitted model. `world-check` builds every yard item in a
+sandbox and fails any that adds no collider and is not on its WALK_ON list
+with a reason. The yard's trees and bushes are on `plantMat` via
+`xrayModel`, which has to WRITE `xrayK` onto a loaded model's geometry: a
+missing attribute reads as zero in the shader, which means "never cut", so a
+material swap alone does nothing.
+
+**The treehouse** (`treehouse.js`) had its x-ray on the cabin only, and that cut
+still worked. What hid her was the trunk through the room and the crowns over
+the roof, so trunks, platforms, crowns and the slide are now on `treeMat` too.
+The straight ramp off A ran underneath the A→B rope bridge ("intersecting with
+the bridges"). It is now two things:
+- a **spiral stair** round a post south of A (under one turn, so it never
+  passes under itself), with sagging rope rails on posts;
+- a **slide** from D's east edge into the open middle.
+
+On the slide, housing (`_slide`) hands Player the downhill direction while her
+feet are on a `slide` deck. Player takes the stick, carries the ride speed
+(`SLIDE_RIDE`) and sits her down arms-up in the jump row. The speed is carried
+because reading it back off her velocity found it already braked, which held
+her at the minimum the whole way down. The flat run at the bottom is not a
+slide, so she skids out on her own feet. The crates have walls now.
+`world-check` checks five things:
+- no rope deck lies over the stair or slide lower than her head;
+- a walker climbs the stair onto A;
+- `_slide` carries one from D to the run, never uphill;
+- the crates stop her;
+- every treehouse mesh is on an x-ray material.
+
 **The holodeck** is the Dream Dojo's own way in, not a copy:
 `DreamDojo.enterFrom(p, spot)` stands her at her tube, suits her up if she is
 not already (the poof) and rises her in. `Housing._holoHome` puts her back in

@@ -39,6 +39,8 @@ import { existsSync } from 'node:fs';
 import { mealPct, BOON } from '../../src/systems/housing/boons.js';
 import { DOOR_SWING } from '../../src/systems/housing/homebridge.js';
 import { napFade } from '../../src/systems/housing/activities.js';
+import { xrayModel } from '../../src/systems/housing/homeisle.js';
+import { TREEHOUSE_PLAN } from '../../src/systems/housing/treehouse.js';
 import { holoLayout, HOLO_GRAB, HOLO_TUBE, holoKit, ensureHoloKit, holoWhyRemove, holoTubes, holoCell, HOLO_TUBE_ID, HOLO_MAX_TUBES } from '../../src/systems/housing/holodeck.js';
 import { GEAR_ITEMS } from '../../src/systems/dream/gear.js';
 import { fits as fitsGrid } from '../../src/systems/housing/editor.js';
@@ -711,6 +713,214 @@ export async function housingChecks({ ok, world }) {
     const h = I.heightAt(c.x, c.z, Infinity);
     ok('...and the island stands her ON it: heightAt over the cabin is the roof', Math.abs(h.y - (I.groundY + roof.y)) < 0.01, `${h?.y} vs ${I.groundY + roof.y}`);
     ok('...with its four trunks as obstacles and the cabin as walls', I.obstacles.length >= 4 && I.walls.length > (I.houseWalls?.length ?? 0) + 4);
+
+    /* THE STAIR, THE SLIDE, THE CRATES. Richard, Oct 2026: "Consider removing
+       the ramp on the ground as it is intersecting with the bridges ... can
+       build like a circular spiraling bridge instead ... or can make it a
+       slide instead that players can ride down", and the crates were to have
+       colliders. Each is checked for what it DOES: nothing of the stair or
+       the slide has a rope bridge lower than a kitten's head over it; a
+       kitten walks up the stair a tenth at a time onto A; one put on the
+       slide is carried down it, never uphill, to the run at the bottom; and
+       one walking at a crate stops outside it. */
+    {
+      const q = Hm.outdoor.find((o) => o.id === 'treehouse');
+      const tc = Math.cos(q.rot), ts = Math.sin(q.rot);
+      const th = (fx, fz) => [q.x + fx * tc + fz * ts, q.z - fx * ts + fz * tc];
+      const part = (k) => tree.map((d, i) => [d, pts[i]]).filter(([d]) => d.part === k);
+      const stair = part('stair'), chute = part('slide'), rope = part('rope');
+      let worst = Infinity;
+      /* OVER is "inside the rope deck's own rectangle, grown by her radius" —
+         asked in the deck's frame. A distance between sampled edge points
+         was the first try, and it called a stair 1.2 to the SIDE of a rope
+         "under" it. A point where the two meet at the same height (the stair
+         stepping onto A, the slide's lip at D) is a junction, not overhead. */
+      for (const [, P] of [...stair, ...chute]) {
+        for (const p of P) {
+          for (const [r] of rope) {
+            const c = Math.cos(r.frame.a), s = Math.sin(r.frame.a);
+            const dx = p.x - r.frame.x, dz = p.z - r.frame.z;
+            const lx = dx * c - dz * s, lz = dx * s + dz * c;
+            if (lx < r.x0 - 0.6 || lx > r.x1 + 0.6 || lz < r.z0 - 0.6 || lz > r.z1 + 0.6) continue;
+            const ry = r.yAt(Math.max(r.x0, Math.min(r.x1, lx)), Math.max(r.z0, Math.min(r.z1, lz)));
+            if (ry - p.y < 0.5) continue;
+            worst = Math.min(worst, ry - p.y);
+          }
+        }
+      }
+      ok('the treehouse stair and slide pass under no rope bridge lower than her head (the old ramp ran under A to B)',
+        stair.length >= 10 && chute.length >= 8 && worst > 3.3, `${stair.length} stair, ${chute.length} slide decks; closest rope overhead ${worst === Infinity ? 'none' : worst.toFixed(2)}`);
+
+      // walk it, as the doorway check above walks a house
+      const walker = fakePlayer(0, 0, 0, 0);
+      const stepTo = (tx, tz) => {
+        const tw = I.local(tx, tz);
+        for (let n = 0; n < 600; n++) {
+          const dx = tw.x - walker.position.x, dz = tw.z - walker.position.z;
+          const d = Math.hypot(dx, dz);
+          if (d < 0.15) return true;
+          const wx = walker.position.x, wz = walker.position.z;
+          walker.position.x += (dx / d) * 0.1;
+          walker.position.z += (dz / d) * 0.1;
+          const g = I.heightAt(walker.position.x, walker.position.z, walker.position.y);
+          if (g) walker.position.y = g.y;
+          H.wall(walker, wx, wz, null);
+          walker.slide = null;
+        }
+        return false;
+      };
+      const S = TREEHOUSE_PLAN.SPIRAL;
+      const end = Math.atan2(S.onto.x - S.x, S.onto.z - S.z);
+      const sp = (t) => { const a = end + Math.PI * 2 * S.turns * (1 - t); return th(S.x + Math.sin(a) * S.r, S.z + Math.cos(a) * S.r); };
+      const b0 = I.local(...sp(-0.04));
+      walker.position.set(b0.x, (I.heightAt(b0.x, b0.z, I.groundY + 1)?.y ?? I.groundY), b0.z);
+      let walked = true;
+      for (let k = 0; k <= 40 && walked; k++) walked = stepTo(...sp(k / 40));
+      if (walked) walked = stepTo(...th(S.onto.x, S.onto.z));
+      const onA = walker.position.y - I.groundY - ground;
+      ok('...a kitten walks up the spiral stair a tenth at a time and steps off onto platform A',
+        walked && Math.abs(onA - TREEHOUSE_PLAN.PLAT[0].y) < 0.15, `walked ${walked}, at ${onA.toFixed(2)} (A is ${TREEHOUSE_PLAN.PLAT[0].y})`);
+
+      // the slide: put her on its lip and let `_slide` carry her
+      const L = TREEHOUSE_PLAN.SLIDE;
+      const lip = I.local(...th(L.cx + 0.15, L.cz + L.R));
+      // asked from just over D, not from the sky: D's own branch is over the lip
+      walker.position.set(lip.x, I.heightAt(lip.x, lip.z, I.groundY + ground + TREEHOUSE_PLAN.PLAT[3].y + 0.3).y, lip.z);
+      const ys = [walker.position.y];
+      let rode = 0, uphill = 0;
+      for (let n = 0; n < 400; n++) {
+        walker.slide = null;
+        H._slide(walker, I);
+        if (!walker.slide) break;
+        rode++;
+        const wx = walker.position.x, wz = walker.position.z;
+        walker.position.x += walker.slide.x * 0.1;
+        walker.position.z += walker.slide.z * 0.1;
+        const g = I.heightAt(walker.position.x, walker.position.z, walker.position.y + 0.2);
+        if (g) walker.position.y = g.y;
+        H.wall(walker, wx, wz, null);
+        if (walker.position.y > ys[ys.length - 1] + 0.02) uphill++;
+        ys.push(walker.position.y);
+      }
+      const drop = ys[0] - ys[ys.length - 1];
+      ok('...and the slide carries a kitten from D down to the run at the bottom, never uphill',
+        rode > 40 && uphill === 0 && drop > TREEHOUSE_PLAN.PLAT[3].y - 0.6 && ys[ys.length - 1] - I.groundY - ground < 0.4,
+        `${rode} steps, ${uphill} uphill, dropped ${drop.toFixed(2)}, ends ${(ys[ys.length - 1] - I.groundY - ground).toFixed(2)} up`);
+      const psrc2 = readFileSync(new URL('../../src/entities/player.js', import.meta.url), 'utf8');
+      ok('...and Player rides what housing hands her: the stick is taken, and the slide sets her speed before she moves',
+        /if \(this\.slide\) pad = FROZEN_PAD/.test(psrc2) && /const sl = this\.slide;[\s\S]{0,1800}\/\/ --- move \+ collide ---/.test(psrc2));
+
+      // a crate: walk at it across the cabin's platform, from the -z side
+      const crates = part('crate');
+      const stops = crates.map(([d], i) => {
+        const c = d.frame;
+        // from the side away from the other crate: the gap between them is narrower than she is
+        const o = crates[1 - i]?.[0].frame ?? { x: c.x - 1, z: c.z };
+        const ul = Math.hypot(c.x - o.x, c.z - o.z) || 1;
+        const from = [c.x + ((c.x - o.x) / ul) * 1.6, c.z + ((c.z - o.z) / ul) * 1.6];
+        const f = I.local(...from);
+        walker.position.set(f.x, I.heightAt(f.x, f.z, I.groundY + 13).y, f.z);
+        stepTo(c.x, c.z);
+        const w = I.toLocal(walker.position.x, walker.position.z);
+        return Math.hypot(w.x - c.x, w.z - c.z);
+      });
+      ok('...and both crates on the cabin\'s platform are solid: walked at, she stops outside them',
+        stops.length === 2 && stops.every((s) => s > 1.1), stops.map((s) => s.toFixed(2)).join(' / '));
+
+      /* THE X-RAY. Every mesh of the treehouse is on a material the cutaway
+         points (`xrayMats`), with an x-ray strength that is not zero — the
+         cabin alone was, and the trunk through the room hid her. */
+      const tg = I.itemMeshes.get('o' + q.uid);
+      const meshes = [];
+      tg.traverse((o) => { if (o.isMesh) meshes.push(o); });
+      const cut = meshes.filter((m) => I.xrayMats.includes(m.material) && m.geometry.attributes.xrayK?.array.some((k) => k > 0));
+      ok('...and every part of it takes the x-ray: trunks, crowns, platforms, slide and cabin',
+        meshes.length >= 4 && cut.length === meshes.length, `${cut.length}/${meshes.length}`);
+    }
+
+    /* THE YARD'S COLLIDERS. Richard, Oct 2026: "Bamboo fence has no collider
+       built in the yard of players island. Let's ensure that all objects
+       built on the players island have collider if they should have a
+       collider." Each yard thing is built in a sandbox (as build mode's ghost
+       is) and must add an obstacle or a wall — unless it is on this list, of
+       things she walks on or into, each with its reason. A new yard item
+       that is neither fails here until somebody decides which it is. */
+    {
+      const WALK_ON = {
+        koipond: 'fished from the rim', onsen: 'soaked in', volleyball: 'played on', bamboofarm: 'harvested in',
+        pen: 'the animals are inside it', stones: 'stepping stones', paddy: 'a flat field', reeds: 'a clump to wade through',
+        bladeforest: 'built elsewhere',
+      };
+      const missing = [];
+      for (const it of ITEMS.filter((i) => i.where?.includes?.('yard') && !i.path && !i.later)) {
+        if (WALK_ON[it.id]) continue;
+        const keep = [I.places, I.spots, I.obstacles, I.decks, I.walls];
+        I.places = new Map(); I.spots = []; I.obstacles = []; I.decks = []; I.walls = [];
+        try {
+          I._yardItem(it, { uid: -1, id: it.id, x: 0, z: 0, rot: 0 });
+          if (!I.obstacles.length && !I.walls.length) missing.push(it.id);
+        } finally {
+          [I.places, I.spots, I.obstacles, I.decks, I.walls] = keep;
+        }
+      }
+      ok('every yard thing she should bump into has a collider', missing.length === 0, missing.join(', ') || 'all');
+
+      // the fence, for real: walked at it stops her, and she can stand on it
+      const Hf = newHome(I.site.id, 'minka', ['Ember']);
+      const sp = firstYardSpot(Hf, ITEM_BY_ID.fence, I.radius);
+      addOutdoor(Hf, 'fence', sp.x, sp.z, 0.6);
+      I.setHome(Hf, null);
+      const fq = Hf.outdoor.find((o) => o.id === 'fence');
+      const fr = fq.rot;
+      const fw = (fx, fz) => I.local(fq.x + fx * Math.cos(fr) + fz * Math.sin(fr), fq.z - fx * Math.sin(fr) + fz * Math.cos(fr));
+      const walker = fakePlayer(0);
+      const s0 = fw(0.8, 3);
+      walker.position.set(s0.x, I.heightAt(s0.x, s0.z, I.groundY + 5).y, s0.z);
+      const tgt = fw(0.8, -3);
+      for (let n = 0; n < 80; n++) {
+        const dx = tgt.x - walker.position.x, dz = tgt.z - walker.position.z;
+        const d = Math.hypot(dx, dz) || 1;
+        const wx = walker.position.x, wz = walker.position.z;
+        walker.position.x += (dx / d) * 0.1;
+        walker.position.z += (dz / d) * 0.1;
+        H.wall(walker, wx, wz, null);
+      }
+      const fl = I.toLocal(walker.position.x, walker.position.z);
+      const side = (fl.x - fq.x) * Math.sin(fr) + (fl.z - fq.z) * Math.cos(fr);
+      const top = fw(0, 0);
+      const lid = I.heightAt(top.x, top.z, I.groundY + 10);
+      ok('...the bamboo fence among them: walked straight at, she stops on her own side of it',
+        side > 0.9, `stopped ${side.toFixed(2)} from its line`);
+      ok('...and one who jumps onto it stands on top, rather than dropping inside it',
+        lid?.deck && Math.abs(lid.y - (I.island.heightAt(top.x, top.z) + 3.52)) < 0.05, `${lid?.y?.toFixed(2)}`);
+      // a BIGGER fence is solid along its new length
+      fq.look = { s: 1.5 };
+      I.setHome(Hf, null);
+      const len = Math.max(...I.walls.filter((w) => w.item === fq.uid).map((w) => Math.hypot(w.bx - w.ax, w.bz - w.az)));
+      ok('...and made BIGGER, its collider grows with it', Math.abs(len - 4.4 * 1.5) < 0.05, `${len.toFixed(2)} long`);
+
+      /* The yard's trees and bushes are on the isle's plant x-ray, and a
+         loaded model — whose geometry carries no `xrayK`, which the shader
+         reads as ZERO — is given one. */
+      const keep = [I.places, I.spots, I.obstacles, I.decks, I.walls];
+      let mapleOk = false;
+      try {
+        const g = I._yardItem(ITEM_BY_ID.maple, { uid: -1, id: 'maple', x: 0, z: 0, rot: 0 });
+        const ms = [];
+        g.traverse((o) => { if (o.isMesh) ms.push(o); });
+        mapleOk = ms.length > 0 && ms.every((m) => m.material === I.plantMat) && I.xrayMats.includes(I.plantMat)
+          && typeof g.children[0]?.userData.onReal === 'function';
+      } finally {
+        [I.places, I.spots, I.obstacles, I.decks, I.walls] = keep;
+      }
+      const bare = new THREE.BufferGeometry();
+      bare.setAttribute('position', new THREE.BufferAttribute(new Float32Array(9), 3));
+      bare.setAttribute('color', new THREE.BufferAttribute(new Float32Array(9), 3));
+      const loaded = new THREE.Group().add(new THREE.Mesh(bare, new THREE.MeshBasicMaterial()));
+      xrayModel(loaded, I.plantMat, 0.8);
+      ok('the yard\'s trees and bushes take the x-ray, and a loaded model is given the strength the shader reads',
+        mapleOk && Math.abs(bare.attributes.xrayK?.array[0] - 0.8) < 1e-6 && loaded.children[0].material === I.plantMat);
+    }
     I.setHome(null);
   }
 

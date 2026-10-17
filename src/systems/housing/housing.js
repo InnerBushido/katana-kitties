@@ -411,6 +411,7 @@ export class Housing {
       }
       this._roomWall(p, I, H);
       this._obstacles(p, I, r);
+      this._slide(p, I);
       // ...and her head against the ceiling (HomeIsle `ceilingAt`)
       const c = I.ceilingAt(pos.x, pos.y, pos.z);
       if (c != null && pos.y + HEAD_H > c) {
@@ -418,6 +419,25 @@ export class Housing {
         if (p.velocity.y > 0) p.velocity.y = 0;
       }
     }
+  }
+
+  /**
+   * THE TREEHOUSE SLIDE: while her feet are on a `slide` deck, which way is
+   * downhill, as `p.slide` ({x, z}, world, unit). Player rides it (see
+   * `SLIDE_RIDE`). A slide deck's own +z is downhill (treehouse.js `chord`),
+   * so the direction is the deck's frame turned onto the island. Nobody on an
+   * animal: a panda does not fit in the chute.
+   */
+  _slide(p, I) {
+    if (p.mount || p.pandaMount || p.rideAlong || p.ko) return;
+    const pos = p.position;
+    const h = I.heightAt(pos.x, pos.z, pos.y + 0.2);
+    const d = h?.deck;
+    if (!d?.slide || !d.frame || pos.y - h.y > 0.45) return;
+    const o = I.local(0, 0);
+    const e = I.local(Math.sin(d.frame.a), Math.cos(d.frame.a));
+    const L = Math.hypot(e.x - o.x, e.z - o.z) || 1;
+    p.slide = { x: (e.x - o.x) / L, z: (e.z - o.z) / L };
   }
 
   _obstacles(p, I, r) {
