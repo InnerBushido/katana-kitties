@@ -25,7 +25,7 @@ import { fits, firstFit, gridOf, autoLayout, ITEM_SELL, yardWhy, yardR, firstYar
 import { buildWhy, commitBuild, removeBuilt, pickList, stepToward, BUILD_KEYS, carry, uncarry } from '../../src/systems/housing/build.js';
 import { houseRadius, houseShape, HEAD_H, SLAB_T, buildHouseShell, houseFoot, WINDOW, PORT_H } from '../../src/systems/housing/homehouse.js';
 import { possessive, ownedCount, roomRefund, changeRoomType, roomTypeRefund } from '../../src/systems/housing/cards.js';
-import { JUKEBOX, JUKEBOX_BY_ID, PREVIEW_AT, previewOf } from '../../src/systems/housing/jukebox.js';
+import { JUKEBOX, JUKEBOX_BY_ID, PREVIEW_AT, previewOf, ACTIVITY_MUSIC } from '../../src/systems/housing/jukebox.js';
 import { MUSIC_FILES } from '../../src/core/musicfiles.js';
 import { JUKEBOX_FILES } from '../../src/systems/housing/jukeboxfiles.js';
 import { rollFish, FISH } from '../../src/systems/housing/fishing.js';
@@ -38,8 +38,11 @@ import { Billboard } from '../../src/core/gfx.js';
 import { voicePath } from '../../src/core/audio.js';
 import { existsSync } from 'node:fs';
 import { mealPct, BOON } from '../../src/systems/housing/boons.js';
-import { DOOR_SWING, HomeBridge } from '../../src/systems/housing/homebridge.js';
-import { napFade, napFacing, HomeActivities, LOOK_SHOT } from '../../src/systems/housing/activities.js';
+import { DOOR_SWING, HomeBridge, GATE, STATUE_SLOTS, faceCamera, bannerYaw } from '../../src/systems/housing/homebridge.js';
+import { napFade, napFacing, HomeActivities, LOOK_SHOT, lookShot } from '../../src/systems/housing/activities.js';
+import { DOOR_PATHS, doorPathId, doorWalk, doorWalkBox, layDoorPath } from '../../src/systems/housing/editor.js';
+import { ringR, RING_R } from '../../src/systems/housing/build.js';
+import { LOOK_FADE } from '../../src/entities/player.js';
 import { xrayModel, PANEL_GAP, WINDOW_IN, furnScale, FURN_REACH, FURN_INSET, pathParts, steppingStones } from '../../src/systems/housing/homeisle.js';
 import { PathFX, FLARE_T, FLARE_COLOURS, LAMP_TINT } from '../../src/systems/housing/pathfx.js';
 import { ZEN, ZEN_STONES, ZEN_RAKE, RAKE_T } from '../../src/systems/housing/zengarden.js';
@@ -383,39 +386,179 @@ export async function housingChecks({ ok, world }) {
     const B = H.bridges[0];
     const Hs = H.store.homes.sunrise;
     ok('her bridge has a gate, a jukebox and a statue at BOTH ends',
-      B.gates?.length === 2 && B.doorSegments().length === 2 && B.jukeboxSpots?.length === 2 && !!B.statue2);
+      B.gates?.length === 2 && B.doorSegments().length === 2 && B.jukeboxSpots?.length === 2
+      && B.statue.children.length === 1 && B.statue2.children.length === 1);
     const [G0, G1] = B.gates;
-    const gyEnd = I0.island.heightAt(B.statue2.position.x, B.statue2.position.z) ?? I0.groundY;
+    const S2 = B.statue2.children[0].position;
+    const gyEnd = I0.island.heightAt(S2.x, S2.z) ?? I0.groundY;
     ok('...and the far end stands on HER island, not out over the sky',
-      Math.abs(B.statue2.position.y - gyEnd) < 0.5 && Math.hypot(G1.cx - B.end.x, G1.cz - B.end.z) < 3,
-      `${B.statue2.position.y.toFixed(2)} vs ${gyEnd.toFixed(2)}`);
+      Math.abs(S2.y - gyEnd) < 0.5 && Math.hypot(G1.cx - B.end.x, G1.cz - B.end.z) < 3,
+      `${S2.y.toFixed(2)} vs ${gyEnd.toFixed(2)}`);
+    /* "Remove the 'Snake way' statue (the snake head) from her island." */
+    const bsrc = readFileSync(new URL('../../src/systems/housing/homebridge.js', import.meta.url), 'utf8');
+    ok('there is no snake head at her end of the bridge any more', !/buildSnakeHead\s*[,(}]/.test(bsrc) && !B.headMesh);
+    /* FACING. "The boombox and the player's flag face the entrance the player
+       walks in from" at the town end; at hers, toward the bridge if that
+       faces the camera, else turned round, and "both flags face the same way
+       as the statue". A thing's front is (sin θ, cos θ). */
+    const front = (o) => ({ x: Math.sin(o.rotation.y), z: Math.cos(o.rotation.y) });
+    const camF = { x: Math.sin(-Math.PI / 4), z: Math.cos(-Math.PI / 4) };
+    const fT = front(B.statue.children[0]), fJ = front(B.jukebox);
+    ok('at the town end, her statue and the boombox face the way she walks in from',
+      fT.x * -B.fx + fT.z * -B.fz > 0.999 && fJ.x * -B.fx + fJ.z * -B.fz > 0.999,
+      `${(fT.x * -B.fx + fT.z * -B.fz).toFixed(3)} ${(fJ.x * -B.fx + fJ.z * -B.fz).toFixed(3)}`);
+    const fI = front(B.statue2.children[0]);
+    const flags2 = []; B.endGroup.traverse((o) => { if (o.name === 'banner') flags2.push(o); });
+    ok('...and at hers they face the camera, with both flags turned the same way as the statue',
+      fI.x * camF.x + fI.z * camF.z >= 0.5 - 1e-6 && flags2.length === 2
+      && flags2.every((f) => Math.abs(f.rotation.y - B.statue2.children[0].rotation.y) < 1e-9)
+      && Math.abs(front(B.jukebox2).x - fI.x) < 1e-9,
+      `dot ${(fI.x * camF.x + fI.z * camF.z).toFixed(3)} flags ${flags2.length}`);
+    ok('faceCamera turns a thing round only when it would show the camera its back, and bannerYaw stops a flag going edge-on',
+      faceCamera(-Math.PI / 4) === -Math.PI / 4 && Math.abs(faceCamera(Math.PI * 0.75) - Math.PI * 1.75) < 1e-9
+      && Math.abs(bannerYaw(-Math.PI / 4 + 1.48) - (-Math.PI / 4 + Math.acos(0.5))) < 1e-9 && bannerYaw(0.1) === 0.1);
+    /* "Every owner's statue, in her colour, at the entrance: one each side,
+       and a third or fourth next to those." */
+    B.setOwners([0, 1, 2].map((i) => ({ name: PLAYER_STYLE[i].name, colour: PLAYER_STYLE[i].colour ?? 0xffffff })));
+    const E0 = B.ends[0];
+    const sideOf = (o) => Math.sign((o.position.x - E0.at.x) * E0.rx + (o.position.z - E0.at.z) * E0.rz);
+    const three = B.statue.children;
+    ok('a home of three has three statues at each end, either side of the road, and three statues\' worth of colliders',
+      three.length === 3 && B.statue2.children.length === 3 && new Set(three.map(sideOf)).size === 2
+      && B.solids.filter((o) => o.kind === 'statue').length === 6 && STATUE_SLOTS.length === 4,
+      `${three.length} ${B.statue2.children.length} sides ${three.map(sideOf)}`);
+    ok('...and the boombox steps back out of the third one\'s way',
+      B.solids.filter((o) => o.kind === 'jukebox').every((J) => B.solids.filter((o) => o.kind === 'statue').every((S) => Math.hypot(J.x - S.x, J.z - S.z) >= J.r + S.r - 1e-6)));
+    B.setOwners([{ name: 'Ember', colour: 0xff8a3d }]);
+    /* "The players statues and entrance decorations and boom box need to
+       have colliders." Stood inside each, she is pushed to its edge. */
+    const solidKinds = ['statue', 'jukebox', 'lantern', 'pole', 'torii'];
+    const pushed = B.solids.filter((o) => solidKinds.includes(o.kind)).map((o) => {
+      const kid = fakePlayer(2, o.x + 0.05, o.z, o.y0 + 1);
+      H.wall(kid, kid.position.x, kid.position.z, null);
+      return Math.hypot(kid.position.x - o.x, kid.position.z - o.z) >= o.r - 1e-6;
+    });
+    const kinds = new Set(B.solids.map((o) => o.kind));
+    ok('the statues, the boombox, the lanterns, the banner poles and the torii are all solid',
+      solidKinds.every((k) => kinds.has(k)) && pushed.length >= 8 && pushed.every(Boolean),
+      `${[...kinds]} ${pushed.filter((v) => !v).length} not pushed`);
+    ok('...and the ends have their ramps, and the barrier runs along the entrance\'s edges as well as across it',
+      B.aprons?.length === 2 && B.barrierSegments().length > B.doorSegments().length);
     const at = (pl, Gt) => { pl.position.set(Gt.cx + Gt.fx * 1.5, Gt.y, Gt.cz + Gt.fz * 1.5); };
     const own = fakePlayer(0);
     at(own, G0);
-    ok('an owner at the gate is offered it', H._spotFor(own)?.act === 'gates' && /CLOSE THE GATES/.test(H.prompt(own, 'E') ?? ''));
-    B.update(DOOR_SWING * 2, 0);   // the unlock above has swung them open by now
+    /* "When it says 'Close the gates', should say 'Close the gates for visitors'" */
+    ok('an owner at the gate is offered it', H._spotFor(own)?.act === 'gates' && /CLOSE THE GATES FOR VISITORS/.test(H.prompt(own, 'E') ?? ''));
+    B.update(DOOR_SWING * 2, 0, [false, false]);   // the unlock above has swung them open by now
     const wasLocked = H.locked(Hs);
     H.interact(own);
-    ok('...and pressing it SHUTS them', !wasLocked && H.locked(Hs) && B.openWant === 0);
-    B.update(DOOR_SWING / 2, 0);
+    /* THE DOORS OPEN FOR AN OWNER; the button moves the hologram. "When an
+       owner gets near the entrance of the bridge, the doors animate open for
+       them" — so locking with her stood there leaves her end open. */
+    const slow = Math.max(DOOR_SWING, GATE.fade) * 2;
+    B.update(slow, 0, H._ownersNear(B, Hs, [own]));
+    ok('...and pressing it puts the hologram up across BOTH ends, and the doors stay open for the owner standing there',
+      !wasLocked && H.locked(Hs) && G0.openK === 1 && G1.openK === 0
+      && B.gates.every((Gt) => Gt.field.visible && Gt.sides.every((m) => m.visible)),
+      `k ${G0.openK} ${G1.openK}`);
+    ok('...and the toast says it is the barrier that moved', toasts.some(([i, t]) => i === 0 && /hologram barrier hums ON/.test(t)));
+    own.position.set(G0.cx + G0.fx * 40, G0.y, G0.cz + G0.fz * 40);
+    B.update(DOOR_SWING / 2, 0, H._ownersNear(B, Hs, [own]));
     const halfK = B.openK;
     const halfRot = G0.leaves[0].rotation.y;
-    B.update(DOOR_SWING, 0);
-    ok('...swinging, not snapping: halfway through the swing they are halfway shut',
+    B.update(DOOR_SWING, 0, H._ownersNear(B, Hs, [own]));
+    ok('...and when she walks away they swing shut, not snap: halfway through the swing they are halfway',
       Math.abs(halfK - 0.5) < 0.01 && Math.abs(halfRot - G0.leaves[0].userData.ry) > 0.1 && B.openK === 0
       && Math.abs(G0.leaves[0].rotation.y - G0.leaves[0].userData.ry) < 1e-9,
       `k ${halfK} rot ${halfRot} ry ${G0.leaves[0].userData.ry} final ${B.openK} ${G0.leaves[0].rotation.y}`);
-    ok('...and the force field is up across BOTH ends while they are shut', B.gates.every((Gt) => Gt.field.visible && Gt.fieldMat.opacity > 0.05));
     const n0 = toasts.length;
     const visitor = fakePlayer(1);
     at(visitor, G1);
+    ok('...and they do not open for a visitor who walks up', H._ownersNear(B, Hs, [visitor]).every((v) => !v));
     H.interact(visitor);
     ok('a visitor at the gate is told whose gates they are, and they stay shut',
       H.locked(Hs) && toasts.slice(n0).some(([i, t]) => i === 1 && /only she can open them/.test(t)));
+    /* "if a player that is not an owner tries to jump on the bridge while
+       'the gates are closed' then they will pass-through it as if it doesn't
+       exist". A point on the deck, found from the gate along the road. */
+    const P = B.platform;
+    let deck = null;
+    for (let d = 7; d < 40 && !deck; d += 1) {
+      for (const sg of [1, -1]) {
+        const x = G0.cx + G0.fx * d * sg, z = G0.cz + G0.fz * d * sg;
+        const y = P.yAt(x, z, Infinity);
+        if (y != null) { deck = { x, y, z }; break; }
+      }
+    }
+    const jumper = fakePlayer(1, deck?.x, deck?.z, (deck?.y ?? 0) + 1);
+    jumper.footing = null;
+    const owner2 = fakePlayer(0, deck?.x, deck?.z, (deck?.y ?? 0) + 1);
+    const hJ = deck && H.heightAt(deck.x, deck.z, deck.y + 1, jumper);
+    const hO = deck && H.heightAt(deck.x, deck.z, deck.y + 1, owner2);
+    ok('a visitor jumping onto a locked bridge falls through it, while it stays solid for the owner',
+      !!deck && H.ghostFor(jumper, 0) && hO?.platform === P && hJ?.platform !== P,
+      `deck ${!!deck} owner ${hO?.platform === P} visitor ${hJ?.platform === P}`);
+    ok('...and the deck shows itself as a hologram round her, and not round the owner',
+      H._holoPoints(0, [jumper]).length === 1 && H._holoPoints(0, [owner2]).length === 0);
+    jumper.footing = P;
+    const hOn = deck && H.heightAt(deck.x, deck.z, deck.y + 1, jumper);
+    ok('...and a visitor already ON it when it locked keeps her feet, and can walk off',
+      hOn?.platform === P && !H.ghostFor(jumper, 0));
+    jumper.footing = null;
     at(own, G1);
     H.interact(own);
-    B.update(DOOR_SWING * 2, 0);
-    ok('...and the owner opens them again from her own end', !H.locked(Hs) && B.openK === 1 && B.gates.every((Gt) => !Gt.field.visible));
+    B.update(slow, 0, H._ownersNear(B, Hs, [own]));
+    ok('...and the owner opens them again from her own end', !H.locked(Hs) && B.openK === 1 && B.gates.every((Gt) => !Gt.field.visible) && !H.ghostFor(jumper, 0));
+  }
+
+  /* THE PATH TO THE DOOR. "There was a Cherry Tree infront of the door ...
+     we should ensure there is no objects directly in the walking path of the
+     front door ... walking paths from the bridge gate to the front of the
+     door. The Castle should get red carpet or sakura petals, Dojo house
+     should get Flagstone path or Raked Gravel Path, and Small Japanese house
+     should get Stepping Stone or Boardwalk." */
+  {
+    const Ip = H.isles[3];
+    const envP = () => ({ r: Ip.radius, landing: { x: 0, z: Ip.radius - 4 } });
+    for (const house of ['minka', 'dojohouse', 'castle']) {
+      const Hp = newHome(Ip.site.id, house, ['Ember']);
+      const env = envP();
+      const n = layDoorPath(Hp, env);
+      const ids = new Set((Hp.outdoor ?? []).map((q) => q.id));
+      const W = doorWalk(Hp, env);
+      ok(`a new ${house} comes with a path from its door to the bridge, in its own style (${doorPathId(Hp)})`,
+        n >= 2 && ids.size === 1 && DOOR_PATHS[house].includes([...ids][0]) && Hp.outdoor.every((q) => q.free)
+        && !!W && W.len > 8, `${n} pieces of ${[...ids]}, ${W?.len?.toFixed(1)} long`);
+    }
+    // the walk as a box with no pad: nothing but path may have its middle on it
+    const onWalk = PRESETS.map((PR) => {
+      const Hp = newHome(Ip.site.id, 'minka', ['Ember']);
+      const env = envP();
+      layDoorPath(Hp, env);
+      autoLayout(Hp, PR, Ip, env);
+      const W = doorWalk(Hp, env);
+      const half = 1.5;
+      return Hp.outdoor.filter((q) => !ITEM_BY_ID[q.id]?.path).filter((q) => {
+        const dx = q.x - W.a.x, dz = q.z - W.a.z;
+        const along = dx * Math.sin(W.rot) + dz * Math.cos(W.rot);
+        const across = dx * Math.cos(W.rot) - dz * Math.sin(W.rot);
+        return along > 0 && along < W.len && Math.abs(across) < half;
+      }).map((q) => `${PR.id}:${q.id}`);
+    }).flat();
+    ok('...and nothing a preset brings stands on that walk', onWalk.length === 0, onWalk.join(', '));
+    ok('...and doorWalkBox is the walk, padded', !!doorWalkBox(newHome(Ip.site.id, 'minka', ['Ember']), envP()));
+  }
+
+  /* "The yellow selection circle below big items like the table is not
+     visible, it should scale with the size of the item and its collision
+     area ... unless it is a small item where it can stay its current size." */
+  {
+    const big = ringR(ITEM_BY_ID.kotatsu), long = ringR(ITEM_BY_ID.futon), small = ringR(ITEM_BY_ID.katana);
+    ok('the selection ring is past the edge of a table and a futon, and a small thing keeps the old ring',
+      big > 1.8 && long > 2.7 && small === RING_R && ringR(ITEM_BY_ID.kotatsu, { s: 1.5 }) > big,
+      `table ${big.toFixed(2)} futon ${long.toFixed(2)} katana ${small.toFixed(2)}`);
+    const bsrc2 = readFileSync(new URL('../../src/systems/housing/build.js', import.meta.url), 'utf8');
+    ok('...both while she places one and while she picks one', /top\.kind === 'room' \? ringR\(/.test(bsrc2) && /this\.pickRingR\(H, top\) \/ RING_R/.test(bsrc2));
   }
 
   /* THE CASTLE: pooled, and every owner refunded. */
@@ -686,10 +829,12 @@ export async function housingChecks({ ok, world }) {
     ok('a new house comes with windows, free, one to an outside wall', wins.length >= 2 && wins.every((q) => q.free));
     const hsrc2 = readFileSync(new URL('../../src/systems/housing/homeisle.js', import.meta.url), 'utf8');
     ok('only the first house carries the name board (the front-door camera follows it)', /hs\.hk === 'main'/.test(hsrc2) || /s\.hk === 'main'/.test(hsrc2));
-    /* "reintroduce [look out the window] but have the camera be a bit further
-       away from the player ... a few feet back". Opening a window starts the
-       look; the camera is aimed OUT of the wall (its own turn, not the
-       island's middle) and stands LOOK_SHOT.back behind her. */
+    /* THE WINDOW: "Looking out the window should be an option when
+       interacting with the window, not every time you open it ... the player
+       fade away as the camera gets near to her ... more of a 'first person'
+       view". The camera is aimed OUT of the wall (its own turn, not the
+       island's middle) and stands LOOK_SHOT.back inside the frame, in front
+       of her, so she is behind the lens. */
     {
       const toasts = [];
       const A = new HomeActivities({ game: { toast: (m) => toasts.push(m) } });
@@ -699,15 +844,35 @@ export async function housingChecks({ ok, world }) {
       A.start(kit, spot);
       const F = A.cameraFocus(kit);
       const out = { x: -Math.sin(face), z: -Math.cos(face) };
-      // the camera: back from the centre along -yaw's view, dist away
-      const cam = F && { x: F.centre.x + Math.sin(F.yaw) * F.dist * Math.cos(F.pitch), z: F.centre.z + Math.cos(F.yaw) * F.dist * Math.cos(F.pitch) };
-      const behind = cam && ((kit.position.x - cam.x) * out.x + (kit.position.z - cam.z) * out.z);
+      // the camera, exactly as the rig places it: centre + (sin yaw·cos p, sin p, cos yaw·cos p)·dist
+      const cam = F && {
+        x: F.centre.x + Math.sin(F.yaw) * F.dist * Math.cos(F.pitch),
+        y: F.centre.y + Math.sin(F.pitch) * F.dist,
+        z: F.centre.z + Math.cos(F.yaw) * F.dist * Math.cos(F.pitch),
+      };
+      const inFrom = cam && ((3 - cam.x) * out.x + (4 - cam.z) * out.z);   // how far inside the frame
+      const herAhead = cam && ((kit.position.x - cam.x) * out.x + (kit.position.z - cam.z) * out.z);
       ok('a window spot starts a LOOK hold, and she faces out of the wall',
         A.held.get(0)?.act === 'look' && Math.abs(Math.atan2(out.x, out.z) - kit.facing) < 1e-6);
-      ok('...and the camera is a few feet back behind her, inside, looking out',
-        !!F && Math.abs(behind - LOOK_SHOT.back) < 0.15 && behind > 3, behind?.toFixed(2));
+      ok('...and the camera is first person: just inside the frame, at the middle of the opening, with her BEHIND the lens',
+        !!F && Math.abs(inFrom - LOOK_SHOT.back) < 1e-6 && Math.abs(cam.y - LOOK_SHOT.eye) < 1e-6
+        && herAhead < 0 && F.exact && F.fadeHer && LOOK_SHOT.eye > 1.0 && LOOK_SHOT.eye < 2.6,
+        `${inFrom?.toFixed(2)} in, ${cam?.y.toFixed(2)} up, her ${herAhead?.toFixed(2)}`);
+      const L = lookShot(spot, out);
+      ok('...and lookShot\'s eye is where the rig really puts the lens', Math.hypot(L.eye.x - cam.x, L.eye.y - cam.y, L.eye.z - cam.z) < 1e-6);
+      ok('...and she fades on the way: whole at LOOK_FADE.far, gone by near, and the lens ends inside near of her chest',
+        LOOK_FADE.far > LOOK_FADE.near && Math.hypot(kit.position.x - cam.x, 1.2 - cam.y, kit.position.z - cam.z) <= LOOK_FADE.near,
+        Math.hypot(kit.position.x - cam.x, 1.2 - cam.y, kit.position.z - cam.z).toFixed(2));
+      const psrc = readFileSync(new URL('../../src/entities/player.js', import.meta.url), 'utf8');
+      ok('...by alpha AND alphaTest, so it is a fade and not a pop at 0.35, and the split screen does not push the lens back through the wall',
+        psrc.includes('mat.alphaTest = this._alphaTest0 * Math.max(0.04, 1 - lf)') && psrc.includes('this.focus?.exact ?'));
       const hsrc3 = readFileSync(new URL('../../src/systems/housing/housing.js', import.meta.url), 'utf8');
-      ok('...and the window\'s INTERACT opens it AND looks out', /OPEN THE WINDOW AND LOOK OUT/.test(hsrc3) && /act: 'look' \}\)/.test(hsrc3));
+      const csrc3 = readFileSync(new URL('../../src/systems/housing/cards.js', import.meta.url), 'utf8');
+      const v = csrc3.slice(csrc3.indexOf('_v_window('), csrc3.indexOf('_v_window(') + 1600);
+      ok('...and the window\'s INTERACT asks first: no, look out, open or shut, and "no" is first',
+        hsrc3.includes("C.open(p.index, 'window', { spot: s })")
+        && v.indexOf("'NO, LEAVE IT'") > 0 && v.indexOf("'NO, LEAVE IT'") < v.indexOf("'LOOK OUT OF THE WINDOW'")
+        && v.includes("'SHUT THE WINDOW' : 'OPEN THE WINDOW'") && !v.includes('primary'));
     }
   }
 
@@ -951,6 +1116,32 @@ export async function housingChecks({ ok, world }) {
     ok('...and a futon at 150% has a 125% collider',
       fw.length === 4 && Math.abs(sides[0] - want[0]) < 1e-6 && Math.abs(sides[3] - want[1]) < 1e-6,
       `${sides.map((v) => v.toFixed(2))} vs ${want.map((v) => v.toFixed(2))}`);
+    /* "The player does not collide with the paper floor lamp, samurai armor,
+       katana stand etc. All furniture placed needs colliders." Anything
+       under 1.2 across used to be skipped as too slight. EVERY furnishing a
+       room sells gets its four sides, and walking at the lamp's middle stops
+       her outside its drawn edge. */
+    const floorIds = ITEMS.filter((it) => !it.holo && (it.where ?? []).includes('room')).map((it) => it.id);
+    const bare = floorIds.filter((id) => {
+      Hf.rooms[room.id].items = [{ id, gx: 1, gz: 1, rot: 0 }];
+      I.setHome(Hf, null);
+      return I.walls.filter((w) => w.furn === id).length !== 4;
+    });
+    ok(`every furnishing a room sells is solid (${floorIds.length}: ${floorIds.join(', ')})`,
+      floorIds.length >= 8 && floorIds.includes('andon') && floorIds.includes('yoroi') && floorIds.includes('katana') && !bare.length,
+      `no collider: ${bare.join(', ')}`);
+    Hf.rooms[room.id].items = [{ id: 'andon', gx: 1, gz: 1, rot: 0 }];
+    I.setHome(Hf, null);
+    const an = I.itemMeshes.get(`r:${room.id}:0`);
+    const ac = hs.toLocal(an.position.x, an.position.z);
+    const ab = new THREE.Box3().setFromObject(an);
+    const aHalf = (ab.max.z - ab.min.z) / 2;
+    const a0 = hs.local(ac.x, ac.z - 2.5);
+    walker.position.set(a0.x, y, a0.z);
+    const aL = walk([[ac.x, ac.z]]);
+    const aGap = (ac.z - aHalf) - aL.z;
+    ok('...and she stops outside the paper lamp instead of walking through it',
+      aGap > 0.2 && aGap < 1, `${aGap.toFixed(3)} short of its edge`);
     const hsrc6 = readFileSync(new URL('../../src/systems/housing/housing.js', import.meta.url), 'utf8');
     ok('...and a kitten lying on it or sat at the table is not shoved out of it', /if \(held && w\.furn\) continue;/.test(hsrc6));
     H.debugOpen = was.dbg;
@@ -963,7 +1154,7 @@ export async function housingChecks({ ok, world }) {
      own `_dress`, run into a bare group, against the yard's lantern. */
   {
     const g = new THREE.Group();
-    HomeBridge.prototype._dress.call({ fx: 0, fz: 1, rx: 1, rz: 0, accentMats: [], colour: 0xffffff }, { x: 0, y: 0, z: 0 }, 1, null, g);
+    HomeBridge.prototype._dress.call({ fx: 0, fz: 1, rx: 1, rz: 0, accentMats: [], colour: 0xffffff, solids: [] }, { x: 0, y: 0, z: 0 }, 1, null, g);
     const tall = (o) => { o.updateMatrixWorld(true); const b = new THREE.Box3().setFromObject(o); return b.max.y - b.min.y; };
     const gate = tall(g.children[0]);
     const yard = tall(placeModel(ITEM_BY_ID.lantern.model, drawItem('lantern'), ITEM_BY_ID.lantern.size));
@@ -1967,8 +2158,59 @@ export async function housingChecks({ ok, world }) {
   const t2 = H.musicTrack();
   if (kept) JUKEBOX_FILES[rec.id] = kept;
   ok('...and a procedural piece when it is not', t2 === rec?.fallback, t2);
-  ok('...and every recording in the table is a jukebox track with a loop', Object.entries(JUKEBOX_FILES).every(([id, F]) =>
-    JUKEBOX.some((j) => j.id === id) && F.loop?.[1] > F.loop?.[0] && F.mix > 0), Object.keys(JUKEBOX_FILES).join(' '));
+  ok('...and every recording in the table is a jukebox or an activity track with a loop', Object.entries(JUKEBOX_FILES).every(([id, F]) =>
+    [...JUKEBOX, ...ACTIVITY_MUSIC].some((j) => j.id === id) && F.loop?.[1] > F.loop?.[0] && F.mix > 0), Object.keys(JUKEBOX_FILES).join(' '));
+  /* WHAT SHE IS DOING HAS ITS OWN SONG. "Add music for the onsen, for
+     fishing, and for any other activity the player can do for 15s or more."
+     Each one set up for real on this island, then asked: its song while it
+     is going on, the procedural stand-in with the mp3 gone, the boombox back
+     once it stops, and the hop-along game left alone (its rhythm is hers to
+     copy). Highest first: a kendo match over all of them. */
+  {
+    const site = 'sunrise';
+    const Ia = H.isles.find((J) => J.site.id === site);
+    /* An onsen's spot where the island's middle is, if this home has none
+       built: it passed vacuously without one, which is no check at all. */
+    let soak = Ia.spots.find((s) => s.act === 'soak');
+    const added = !soak && { act: 'soak', x: Ia.x, z: Ia.z, y: Ia.groundY, r: 3 };
+    if (added) { Ia.spots.push(added); soak = added; }
+    const keep = { bouts: H.kendo.bouts, lineOf: H.angling.lineOf, playing: H.pets.playing, players: game.players, aud: game.audio };
+    const kit = fakePlayer(0, Ia.x + Ia.radius * 3, Ia.z, 0);
+    game.players = [kit];
+    const none = H.activityNow(site);
+    const asked = {};
+    H.angling.lineOf = (i) => (i === 0 ? { site } : null);
+    asked.fishing = H.activityNow(site)?.act;
+    H.angling.lineOf = keep.lineOf;
+    H.pets.playing = (i) => (i === 0 ? { site, kind: 'fetch' } : null);
+    asked.pets = H.activityNow(site)?.act;
+    H.pets.playing = (i) => (i === 0 ? { site, kind: 'hop' } : null);
+    asked.hop = H.activityNow(site)?.act ?? null;
+    H.pets.playing = keep.playing;
+    if (soak) kit.position.set(soak.x, soak.y, soak.z);
+    asked.onsen = H.activityNow(site)?.act ?? null;
+    H.kendo.bouts = new Map([['k', { key: `${site}:room1` }]]);
+    asked.kendo = H.activityNow(site)?.act;
+    const songKendo = H.activityTrack(site);
+    game.audio = { fileMissing: () => true };
+    const standIn = H.activityTrack(site);
+    game.audio = keep.aud;
+    H.kendo.bouts = keep.bouts;
+    kit.position.set(Ia.x + Ia.radius * 3, 0, Ia.z);
+    const after = H.activityNow(site);
+    game.players = keep.players;
+    if (added) Ia.spots.splice(Ia.spots.indexOf(added), 1);
+    ok('each activity has its song: fishing, pet play, the onsen, and a kendo match over all of them',
+      !none && asked.fishing === 'fishing' && asked.pets === 'pets' && asked.hop === null
+      && asked.onsen === 'onsen' && asked.kendo === 'kendo' && !after, JSON.stringify(asked));
+    const K = ACTIVITY_MUSIC.find((T) => T.act === 'kendo');
+    ok('...the recording when it is in the build, and its procedural stand-in when it is not, never silence',
+      songKendo === (JUKEBOX_FILES[K.id] ? K.id : K.fallback) && standIn === K.fallback
+      && ACTIVITY_MUSIC.every((T) => JUKEBOX.some((j) => j.fallback === T.fallback)), `${songKendo} / ${standIn}`);
+    const hsrc9 = readFileSync(new URL('../../src/systems/housing/housing.js', import.meta.url), 'utf8');
+    ok('...and it outranks the boombox but not the prayer, the tea, or a sister auditioning a song',
+      /if \(prayer\) return prayer;[\s\S]{0,400}!this\.audition && this\.musicSite \? this\.activityTrack/.test(hsrc9));
+  }
   /* ...AND IT LOOPS THE WHOLE ARRANGEMENT, ending and all. Richard: the takes
      loop "2 or 3 times before reaching the end and looping it all over
      again". A loop region inside the file never reaches the ending; this pins

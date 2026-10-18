@@ -28,6 +28,10 @@ import { BOON } from '../systems/housing/boons.js';
 
 const CAM_YAW = -Math.PI * 0.25;
 const CAM_PITCH_GROUND = 0.66;
+/** The window look's fade (`lookFade`): whole with the lens this far from her
+ *  chest, gone at `near`. She stands ~1.3 in from the frame and the lens
+ *  ends 0.9 in, so it passes through her (activities.js LOOK_SHOT). */
+export const LOOK_FADE = { far: 3.2, near: 0.9 };
 const CAM_PITCH_AIR = 0.60;
 
 const GRAVITY = 26;
@@ -3548,7 +3552,7 @@ export class Player {
        the fall counts every deck the frame crossed; rising, it is the old
        question unchanged. (Thicker colliders were the other offer; they
        would only move the frame rate it breaks at.) */
-    const g = world.heightAt(this.position.x, this.position.z, Math.max(this.position.y, wasY));
+    const g = world.heightAt(this.position.x, this.position.z, Math.max(this.position.y, wasY), this);
     const wasGrounded = this.onGround;
 
     /* Ground snapping. Running DOWN a slope, gravity alone leaves the kitten
@@ -3591,6 +3595,10 @@ export class Player {
 
     // Time spent genuinely airborne, for the animation to threshold against.
     this.airTime = this.onGround ? 0 : (this.airTime ?? 0) + dt;
+    /* WHAT SHE LAST STOOD ON (a platform, or null for terrain). Housing's
+       `ghostFor` reads it: a visitor already on a home bridge when it locks
+       keeps her feet on it, and one who jumps onto it does not. */
+    if (this.onGround) this.footing = g?.platform ?? null;
 
     this._stepSnake(dt, pad, g);
 
@@ -6331,6 +6339,18 @@ export class Player {
        everybody else, unconditionally, or a kitten who was ever an angel stays
        half-there for the rest of the afternoon. */
     mat.opacity = this.angel ? ANGEL_ALPHA : 1;
+    /* AND FADED for a lens coming through her (`lookFade`, the window look).
+       `alphaTest` is 0.35 against alpha with opacity folded in, so opacity
+       alone would hold her solid to 0.35 and then drop her in one frame; the
+       test is scaled down with her, which makes it a fade. Restored to the
+       material's own value whenever she is whole. The drawing is the one
+       every pane shares, so a sister's pane sees her fade too — she is in a
+       window with her back to the room, and the alternative is a second
+       material per pane for the length of one look. */
+    this._alphaTest0 ??= mat.alphaTest;
+    const lf = this.lookFade ?? 0;
+    mat.opacity *= 1 - lf;
+    mat.alphaTest = this._alphaTest0 * Math.max(0.04, 1 - lf);
 
     if (this.angel) {
       /* WASHED OUT, NOT TINTED. `toneMapped: false` hands the colour straight
@@ -7153,7 +7173,11 @@ export class Player {
        whole two-player game — see `paneWiden`, which refuses to answer for an
        even split precisely so that game cannot move. */
     const pw = Number.isFinite(this.paneWiden) ? Math.max(1, this.paneWiden) : 1;
-    wantDist *= pw;
+    /* ...EXCEPT a focus that puts the lens at an exact spot (a window's
+       first-person look, housing/activities.js), which the pull-back would
+       shove back through the wall behind her. Eased on `focusT` like the
+       rest, so walking into it is not a jump. */
+    wantDist *= this.focus?.exact ? THREE.MathUtils.lerp(pw, 1, this.focusT) : pw;
 
     /* Easing back down after a dismount. The flight camera sits up to 130
        units out and the ground camera at 24, so snapping between them at the
@@ -7172,6 +7196,19 @@ export class Player {
 
     this.camera.position.copy(this.camTarget).add(this._offset);
     this.camera.lookAt(this.camTarget);
+    /* SHE FADES AS THE LENS COMES THROUGH HER (a focus with `fadeHer`, the
+       window's first-person look). Richard: "have the player fade away as the
+       camera gets near to her". Measured from the lens to her chest: whole at
+       `LOOK_FADE.far`, gone by `near`. Kept on the way OUT as well, on the
+       last focus's flag, or she would pop back in front of a lens still
+       inside her for the half second it takes to back away. */
+    if (this.focus) this._lastFadeHer = !!this.focus.fadeHer;
+    if (this._lastFadeHer && this.focusT > 0.001 && !flying) {
+      const d = Math.hypot(this.camera.position.x - this.position.x,
+        this.camera.position.y - (this.position.y + 1.2), this.camera.position.z - this.position.z);
+      const u = THREE.MathUtils.clamp((LOOK_FADE.far - d) / (LOOK_FADE.far - LOOK_FADE.near), 0, 1);
+      this.lookFade = u * u * (3 - 2 * u);
+    } else this.lookFade = 0;
     /* THE LOOK ACROSS, walking up to a sim bridge, and THE RIDE ON TOP once
        she is on it. Both are layers over the pose above, in that order, so
        the ride starts from wherever the look across left the lens and there

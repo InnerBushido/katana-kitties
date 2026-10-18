@@ -2051,7 +2051,7 @@ export class World {
    * bridge, and you pass underneath it from below instead of being snapped up
    * through it. Callers that don't care (shadows, props) can omit it.
    */
-  heightAt(x, z, fromY = Infinity) {
+  heightAt(x, z, fromY = Infinity, who = null) {
     let best = null;
     for (const isl of this.islands) {
       /* A SHUT ARENA HAS NO GROUND. This is what stops a kid flying a dragon
@@ -2121,7 +2121,11 @@ export class World {
        `islands` or `platforms`, on purpose: they come and go with a purchase,
        and every count, seed and check over those two lists — `worldSig` among
        them — must not move because somebody bought a house. */
-    const hg = this.homeGround?.heightAt(x, z, fromY);
+    /* `who`: the kitten asking for her own feet, and only her. A locked
+       home bridge is a hologram to a visitor (Housing `ghostFor`), so the
+       answer can depend on who is standing there — everything else asks
+       without a name and gets the solid world. */
+    const hg = this.homeGround?.heightAt(x, z, fromY, who);
     if (hg && (best == null || hg.y > best.y)) best = { ...hg, island: hg.island ?? over };
     return best;
   }

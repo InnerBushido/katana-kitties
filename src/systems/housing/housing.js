@@ -6,14 +6,14 @@ import {
 } from './catalog.js';
 import { loadStore, saveStore, newHome, homeOf, normalise, newer, exportFile, importFile, emptyStore, homeKey } from './homestore.js';
 import { HomeIsle } from './homeisle.js';
-import { HomeBridge, solveHomeRoads } from './homebridge.js';
+import { HomeBridge, solveHomeRoads, GATE, HOLO_DECK } from './homebridge.js';
 import { Roshi } from './roshi.js';
 import { PurchaseScene } from './purchasescene.js';
-import { JUKEBOX, hasRecording, previewOf } from './jukebox.js';
+import { JUKEBOX, ACTIVITY_MUSIC, hasRecording, previewOf } from './jukebox.js';
 import { Koi } from './koi.js';
 import { Farm } from './farm.js';
 import { Kendo } from './kendo.js';
-import { autoLayout, defaultWindows, houseWhy, brokenLinks, wallSlots, ITEM_SELL } from './editor.js';
+import { autoLayout, defaultWindows, houseWhy, brokenLinks, wallSlots, ITEM_SELL, layDoorPath } from './editor.js';
 
 /** How far toward its bridge a NEW house of this kind stands (see `buy`). */
 export const HOME_FORWARD = { castle: 7 };
@@ -319,9 +319,11 @@ export class Housing {
     const H = this.store.homes[this.isles[k].site.id];
     if (!H) { B.group.visible = false; B.solid = false; return; }
     B.build(this.game.scene);
-    const owner = H.owners[0];
-    const st = styleByName(owner);
-    B.setOwner(H.owners.length > 1 ? H.owners.join(' & ') : owner, st?.colour ?? 0xf4c542, st?.sheet);
+    // a statue for EVERY owner, in her own colour (homebridge.js STATUE_SLOTS)
+    B.setOwners(H.owners.map((n) => {
+      const st = styleByName(n);
+      return { name: n, colour: st?.colour ?? 0xf4c542, sheet: st?.sheet };
+    }));
     B.setLocked(this.locked(H), true);  // a load, not a press: no swing
     if (!this.purchase?.active || this.purchase.k !== k) {
       B.group.visible = true;
@@ -333,23 +335,61 @@ export class Housing {
 
   /* ------------------------------ ground ------------------------------- */
 
-  /** `World.heightAt`'s last loop. */
-  heightAt(x, z, fromY = Infinity) {
+  /** The window card's two answers (cards.js `_v_window`). `open`: true to
+   *  open, false to shut; `look`: open it and look out (activities `_look`). */
+  windowDo(p, s, { open = null, look = false } = {}) {
+    const q = s?.home?.rooms?.[s.room]?.wall?.[s.wk];
+    if (!q) return false;
+    const want = look ? true : open;
+    if (want === true && !q.open) { q.open = true; this.save(); }
+    if (want === false && q.open) { delete q.open; this.save(); }
+    if (look) return this.activities.start(p, { ...s, act: 'look' });
+    return true;
+  }
+
+  /** `World.heightAt`'s last loop. `who`, when a kitten asks for her own
+   *  feet, is what lets a locked bridge be a hologram to her (`ghostFor`). */
+  heightAt(x, z, fromY = Infinity, who = null) {
     if (!this.isUp()) return null;
     let best = null;
     for (const I of this.isles) {
       const h = I.heightAt(x, z, fromY);
       if (h && (!best || h.y > best.y)) best = h;
     }
-    for (const B of this.bridges) {
+    for (const [k, B] of this.bridges.entries()) {
       if (!B?.solid) continue;
+      // the ramp off each end (`buildLandingApron`), solid to everybody
+      for (const a of B.aprons ?? []) {
+        if (x < a.x0 || x > a.x1 || z < a.z0 || z > a.z1) continue;
+        const y = a.yAt(x, z, fromY);
+        if (y == null || fromY + (a.step ?? 0.6) < y) continue;
+        if (!best || y > best.y) best = { y, platform: a, island: null };
+      }
       const p = B.platform;
       if (x < p.x0 || x > p.x1 || z < p.z0 || z > p.z1) continue;
+      if (who && this.ghostFor(who, k)) continue;
       const y = p.yAt(x, z, fromY);
       if (y == null || fromY + (p.step ?? 0.6) < y) continue;
       if (!best || y > best.y) best = { y, platform: p, island: null };
     }
     return best;
+  }
+
+  /**
+   * IS BRIDGE k A HOLOGRAM TO HER? Richard, Oct 2026: "if a player that is
+   * not an owner tries to jump on the bridge while 'the gates are closed'
+   * then they will pass-through it as if it doesn't exist". Yes when the
+   * island is locked, she is not let in, and she did not get onto the deck
+   * the honest way: `footing` is what she last stood on (player.js), so a
+   * visitor who was ON the bridge when its owner shut the gates keeps her
+   * feet and can walk off it, and one who jumps or glides onto it from
+   * anywhere else — round the gate, off a roof — goes straight through.
+   */
+  ghostFor(p, k) {
+    const B = this.bridges[k];
+    const H = this.isles[k]?.home;
+    if (!B || !H || !this.locked(H) || this.allowed(p, H)) return false;
+    return p.footing !== B.platform;
   }
 
   /* ------------------------------- walls -------------------------------- */
@@ -371,7 +411,7 @@ export class Housing {
       const R = I.bubbleRadius();
       if (d2 > (R + 30) ** 2) {
         const B = this.bridges[k];
-        if (B?.solid && H && !this.allowed(p, H)) for (const seg of B.doorSegments()) this._doorPush(p, seg, r, H);
+        this._bridgeWalls(p, B, H, r);
         continue;
       }
       if (H && !this.allowed(p, H) && pos.y > I.groundY - 60 && pos.y < I.groundY + R) {
@@ -386,9 +426,8 @@ export class Housing {
           continue;
         }
       }
-      // The bridge door, at the town end.
-      const B = this.bridges[k];
-      if (B?.solid && H && !this.allowed(p, H)) for (const seg of B.doorSegments()) this._doorPush(p, seg, r, H);
+      // The bridge's two ends: the hologram, and the statues and things there.
+      this._bridgeWalls(p, this.bridges[k], H, r);
       if (!H || !I.shell) continue;
       // houses stand anywhere on the island now, so "near a house" is "on it"
       if (d2 > (I.radius + 4) ** 2) {
@@ -421,6 +460,34 @@ export class Housing {
         pos.y = c - HEAD_H;
         if (p.velocity.y > 0) p.velocity.y = 0;
       }
+    }
+  }
+
+  /**
+   * A BRIDGE'S ENDS. To a visitor while it is locked, the hologram — across
+   * each doorway and along the deck's edges round it — unless her feet are
+   * already on the deck (`ghostFor`'s rule), when it lets her walk off. And
+   * to EVERYBODY, the things that stand there: Richard, "The players statues
+   * and entrance decorations and boom box need to have colliders"
+   * (`HomeBridge.solids`: the statues, the boombox, the lanterns, the banner
+   * poles and the torii's posts).
+   */
+  _bridgeWalls(p, B, H, r) {
+    if (!B?.solid || !H) return;
+    const pos = p.position;
+    if (!this.allowed(p, H) && p.footing !== B.platform) {
+      for (const seg of B.barrierSegments()) this._doorPush(p, seg, r, H);
+    }
+    for (const o of B.solids ?? []) {
+      if (pos.y + 1.5 < o.y0 || pos.y > o.y1) continue;
+      const dx = pos.x - o.x;
+      const dz = pos.z - o.z;
+      const m = o.r + r;
+      if (dx * dx + dz * dz >= m * m) continue;
+      const d = Math.hypot(dx, dz);
+      if (d < 1e-6) continue;
+      pos.x = o.x + (dx / d) * m;
+      pos.z = o.z + (dz / d) * m;
     }
   }
 
@@ -582,7 +649,8 @@ export class Housing {
     for (const [k, B] of this.bridges.entries()) {
       const H = this.isles[k].home;
       if (B && H) B.setLocked(this.locked(H));
-      B?.update?.(dt, this.time);
+      B?.update?.(dt, this.time, B && H ? this._ownersNear(B, H, players) : null);
+      if (B && H) B.setHolo(this._holoPoints(k, players));
     }
     this._mounts(players);
     this.holo.update(dt, players);
@@ -602,6 +670,38 @@ export class Housing {
       P.k = Math.min(1, P.k + dt / 1.6);
       P.isle.setColours(P.colours, P.k);
     }
+  }
+
+  /** Per gate: is an OWNER near enough that its leaves swing open for her? */
+  _ownersNear(B, H, players) {
+    return (B.gates ?? []).map((G) => players.some((p) => p?.position && H.owners.includes(p.style?.name)
+      && Math.hypot(p.position.x - G.cx, p.position.z - G.cz) < GATE.near
+      && Math.abs(p.position.y - G.y) < GATE.nearY));
+  }
+
+  /**
+   * WHERE THE DECK SHOWS ITSELF AS A HOLOGRAM: round every kitten bridge k
+   * is a hologram to (`ghostFor`) who is over its deck or within reach of
+   * it — "when they get near it or step on it". Up to HOLO_DECK.max.
+   */
+  _holoPoints(k, players) {
+    const B = this.bridges[k];
+    const out = [];
+    if (!B?.solid) return out;
+    const P = B.platform;
+    for (const p of players) {
+      if (!p?.position || out.length >= HOLO_DECK.max || !this.ghostFor(p, k)) continue;
+      const { x, y, z } = p.position;
+      if (x < P.x0 - 8 || x > P.x1 + 8 || z < P.z0 - 8 || z > P.z1 + 8) continue;
+      // over the deck, or a few steps off its edge in any direction
+      let near = null;
+      for (const [dx, dz] of [[0, 0], [4, 0], [-4, 0], [0, 4], [0, -4]]) {
+        const py = P.yAt(x + dx, z + dz, Infinity);
+        if (py != null && Math.abs(py - y) < 8) { near = py; break; }
+      }
+      if (near != null) out.push({ x, y: near, z, k: 1 });
+    }
+    return out;
   }
 
   /**
@@ -688,12 +788,45 @@ export class Housing {
     if (!any) this.musicSite = null;
   }
 
+  /**
+   * Which activity on island `site` is going on now, by ACTIVITY_MUSIC's
+   * order: a kendo match in one of its rooms, a kitten in its onsen (soaking,
+   * or just stood in the water after), one holding a rod at its pond, one
+   * walking, playing fetch or catching with one of its animals. Pure on the
+   * game's state, so a check can set each up and ask.
+   */
+  activityNow(site, players = this.game.players ?? []) {
+    const I = this.isles.find((J) => J.site.id === site);
+    const here = (p) => p?.position && I?.over(p.position.x, p.position.z, 4);
+    const doing = {
+      kendo: () => [...(this.kendo?.bouts?.values() ?? [])].some((B) => B.key?.startsWith(`${site}:`)),
+      onsen: () => players.some((p) => here(p) && (this.activities?.held.get(p.index)?.act === 'soak'
+        || I.spots.some((s) => s.act === 'soak' && Math.hypot(p.position.x - s.x, p.position.z - s.z) < (s.r ?? 3) && Math.abs(p.position.y - s.y) < 3))),
+      fishing: () => players.some((p) => p && this.angling?.lineOf?.(p.index)?.site === site),
+      pets: () => players.some((p) => { const S = p && this.pets?.playing?.(p.index); return S?.site === site && S.kind !== 'hop'; }),
+    };
+    return ACTIVITY_MUSIC.find((T) => doing[T.act]?.()) ?? null;
+  }
+
+  /** `activityNow`'s song, or its procedural stand-in when the mp3 is not there. */
+  activityTrack(site) {
+    const T = this.activityNow(site);
+    if (!T) return null;
+    if (this.game.audio?.fileMissing?.(T.id) || !hasRecording(T.id)) return T.fallback;
+    return T.id;
+  }
+
   /** The jukebox's track for `_wantedTrack`, or null. */
   musicTrack() {
     /* THE SHRINE'S SONG OUTRANKS THE BOOMBOX while it plays — "stop all
        music; temple music while she prays and on to the song's end". */
     const prayer = this.musicSite ? this.activities?.prayerTrack() : null;
     if (prayer) return prayer;
+    /* ...and so does whatever she is DOING on this island (jukebox.js
+       ACTIVITY_MUSIC) — but not over a sister auditioning a boombox song,
+       which is her asking to hear it. */
+    const act = !this.audition && this.musicSite ? this.activityTrack(this.musicSite) : null;
+    if (act) return act;
     /* A kitten browsing the boombox hears the row under her cursor (cards.js
        `drive`), and only for as long as the card is open. */
     const id = this.audition?.id ?? (this.musicSite ? this.store.jukebox?.[this.musicSite] ?? JUKEBOX[0].id : null);
@@ -1122,7 +1255,14 @@ export class Housing {
     }
     defaultWindows(H);
     H.winV = 1;
-    if (presetId && PRESET_BY_ID[presetId]) autoLayout(H, PRESET_BY_ID[presetId], I);
+    // the walk from her bridge to her door, and nothing of a preset's on it (editor.js `layDoorPath`)
+    const env = this.envOf(I);
+    /* No bridge wound yet (the roads solve in the background): the landing
+       is where it always lands, the rim straight out from the front of the
+       island, which is its +z (the house faces home). */
+    env.landing ??= { x: 0, z: I.radius - 4 };
+    layDoorPath(H, env);
+    if (presetId && PRESET_BY_ID[presetId]) autoLayout(H, PRESET_BY_ID[presetId], I, env);
     this.store.homes[siteId] = H;
     this.save();
     I.setHome(H, this.coloursOf(H));
@@ -1268,7 +1408,15 @@ export class Housing {
       const w = I.local(x, z);
       return (I.island.heightAt(w.x, w.z) ?? I.groundY) - I.groundY;
     };
-    return { r: I.radius, landing, gyAt: g, groundAt: g };
+    /* WHAT STANDS AT HER END OF THE BRIDGE — the statues, the boombox, the
+       lanterns and the banners (`HomeBridge.solids`) — as island-local
+       circles, which a yard thing keeps off (editor.js `yardWhy`). Only the
+       island end's: the town end is not on her island. */
+    const G1 = B?.gates?.[1];
+    const entrance = G1 ? (B.solids ?? [])
+      .filter((o) => Math.hypot(o.x - G1.cx, o.z - G1.cz) < 25)
+      .map((o) => ({ ...I.toLocal(o.x, o.z), r: o.r })) : [];
+    return { r: I.radius, landing, entrance, gyAt: g, groundAt: g };
   }
 
   /**
@@ -1540,7 +1688,8 @@ export class Housing {
       pray: 'PRAY',
       sit: this.activities.carrying(p.index) ? 'SET THE TABLE WITH THE FOOD'
         : this.activities.platesOn(this.activities.tableKey(s)) ? 'EAT TOGETHER' : 'SIT AT THE KOTATSU',
-      gates: own ? (this.locked(s.home) ? 'OPEN THE GATES' : 'CLOSE THE GATES') : null,
+      // "When it says 'Close the gates', should say 'Close the gates for visitors'"
+      gates: own ? (this.locked(s.home) ? 'OPEN THE GATES' : 'CLOSE THE GATES FOR VISITORS') : null,
       look: 'LOOK OUT',
       trophies: 'TROPHIES',
     }[s.act];
@@ -1575,8 +1724,11 @@ export class Housing {
         const shut = this.locked(H);
         this.setOpen(p, H, shut);
         G.audio?.play?.(shut ? 'menu' : 'land');
-        G.toast(shut ? 'The gates swing OPEN — visitors are welcome!'
-          : 'The gates swing SHUT and the force field hums — only the owners can come in now.', p.index);
+        /* THE DOORS ARE ALREADY OPEN FOR HER — they swing for any owner who
+           walks up (homebridge.js GATE) — so what this button moves is the
+           hologram. */
+        G.toast(shut ? 'The hologram barrier switches OFF — visitors are welcome!'
+          : 'The hologram barrier hums ON — the gates open for the owners and nobody else.', p.index);
         return true;
       }
       case 'door':
@@ -1597,20 +1749,16 @@ export class Housing {
         this.toggleDoor(p, s.home, s.door);
         return true;
       case 'window': {
-        /* OPENING A WINDOW IS LOOKING OUT OF IT. Richard, Oct 2026: "The 'zoom
-           in and look out the window' option is no longer there, we should
-           reintroduce that". It went when windows became real holes that open
-           and shut, because INTERACT became the latch and the window's spot
-           stopped being a 'look'. One button, so: a shut window slides open
-           and she looks out (the hold, activities.js `_look`); an open one
-           shuts. Every opening is a look. */
-        const q = s.home.rooms?.[s.room]?.wall?.[s.wk];
-        if (!q) return true;
+        /* A WINDOW ASKS. Richard, Oct 2026: "Looking out the window should be
+           an option when interacting with the window, not every time you
+           open it. We can have a menu dialog appear like what appears in the
+           simulator with Kata Trace or Kotodama Gallery." It was one button:
+           a shut window opened AND started the look, an open one shut — so
+           airing a room meant a nine-second camera move. The card is
+           `_v_window` (cards.js): no, look out, open/shut. */
+        if (!s.home.rooms?.[s.room]?.wall?.[s.wk]) return true;
         G.audio?.play?.('menu');
-        if (q.open) { delete q.open; this.save(); return true; }
-        q.open = true;
-        this.save();
-        this.activities.start(p, { ...s, act: 'look' });
+        if (!C.open(p.index, 'window', { spot: s })) G.toast('Not right now — finish what you are doing first.', p.index);
         return true;
       }
       case 'koi':

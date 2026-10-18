@@ -1460,6 +1460,32 @@ export class HousingCards {
     };
   }
 
+  /* ------------------------------ WINDOW -------------------------------- */
+
+  /** Looking out is a choice, not what opening it does (housing.js 'window'). */
+  _v_window(index, p, top) {
+    const s = top.spot;
+    const q = s?.home?.rooms?.[s.room]?.wall?.[s.wk];
+    const busy = this.H.activities.holds(index);
+    return {
+      head: 'THE WINDOW',
+      body: `<div class="hs-note">The window is ${q?.open ? 'open' : 'shut'}.</div>`,
+      rows: [
+        { title: 'NO, LEAVE IT', go: () => 'close' },
+        {
+          title: 'LOOK OUT OF THE WINDOW', blurb: 'She opens it and takes a long look at the yard.',
+          disabled: !q || busy, why: busy ? 'Finish what you are doing first.' : 'The window is gone.',
+          go: () => (this.H.windowDo(p, s, { look: true }) ? 'close' : null),
+        },
+        {
+          title: q?.open ? 'SHUT THE WINDOW' : 'OPEN THE WINDOW',
+          disabled: !q, why: 'The window is gone.',
+          go: () => (this.H.windowDo(p, s, { open: !q.open }) ? 'close' : null),
+        },
+      ],
+    };
+  }
+
   /* ------------------------------- KOI ---------------------------------- */
 
   _v_koi(index, p, top) {

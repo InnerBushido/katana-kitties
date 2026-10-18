@@ -747,9 +747,15 @@ export class HomeIsle {
     if (!it || it.holo || box.isEmpty()) return;
     const s = placed.look?.s ?? 1;
     const k = furnScale(s) / s;   // the box already has `s` in it
-    const hx = ((box.max.x - box.min.x) / 2) * k - FURN_INSET;
-    const hz = ((box.max.z - box.min.z) / 2) * k - FURN_INSET;
-    if (hx < 0.05 || hz < 0.05) return;   // too slight to stand in her way
+    /* A FLOOR, NOT A SKIP. This returned for anything under 0.05 after the
+       inset, as "too slight to stand in her way" — and the inset is 0.555, so
+       that was everything under 1.2 across: Richard, Oct 2026, "the player
+       does not collide with the paper floor lamp, samurai armor, katana
+       stand etc." (measured: andon 1.2, yoroi 1.05 deep, katana 0.76). A
+       slight thing keeps FURN_MIN_HALF, so she stops a little further from
+       its edge than from a big one's, and never inside it. */
+    const hx = Math.max(FURN_MIN_HALF, ((box.max.x - box.min.x) / 2) * k - FURN_INSET);
+    const hz = Math.max(FURN_MIN_HALF, ((box.max.z - box.min.z) / 2) * k - FURN_INSET);
     const cx = (box.min.x + box.max.x) / 2, cz = (box.min.z + box.max.z) / 2;
     const c = Math.cos(g.rotation.y), sn = Math.sin(g.rotation.y);
     const at = (lx, lz) => ({ x: g.position.x + lx * c + lz * sn, z: g.position.z - lx * sn + lz * c });
@@ -1398,6 +1404,8 @@ export const WINDOW_IN = 0.22;
 export const furnScale = (s) => (s <= 1 ? s : 1 + (s - 1) * 0.5);
 /** How close her middle comes to a furnishing's edge: half her radius (Player 0.75). */
 export const FURN_REACH = 0.375;
+/** The least half-size of a furnishing's collider after the inset (`_furnWalls`). */
+export const FURN_MIN_HALF = 0.12;
 /** ...so the rectangle is drawn in from the edge by her push distance (radius + `_segPush`'s 0.18) less that. */
 export const FURN_INSET = 0.75 + 0.18 - FURN_REACH;
 

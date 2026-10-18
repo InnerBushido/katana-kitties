@@ -33,7 +33,9 @@ export const HOLD = {
   pray: 5,
   soak: 6,
   nap: 4,
-  look: 5,
+  /* Longer than it was (5): a first-person look is a look at something,
+     and the first second of it is the camera arriving. */
+  look: 9,
   sit: 2.5,
   /** The meal: everybody sitting down, the prayer, the eating. */
   mealSit: 1,
@@ -41,9 +43,32 @@ export const HOLD = {
   mealEat: 3,
 };
 
-/** The look out of a window: the point it aims at is `ahead` past the frame
- *  at `eye` over the floor, and the camera is `back` behind her. */
-export const LOOK_SHOT = { ahead: 7, eye: 2.2, back: 4.5, pitch: 0.12 };
+/**
+ * THE LOOK OUT OF A WINDOW, FIRST PERSON. Richard, Oct 2026: "let's have the
+ * player fade away as the camera gets near to her and let's have the camera
+ * take more of a 'first person' view here. The camera is too high and too far
+ * away and the player sprite is blocking the view." It was a shot from
+ * `back` 4.5 behind her at 2.2 up, aimed 7 past the frame — her sprite filled
+ * the middle of the window.
+ * Now the lens stands `back` inside the frame at `eye` over the floor — the
+ * middle of the opening, which is `WINDOW.sill` 1.0 to 2.6 (homehouse.js) —
+ * and looks `ahead` out, tipped down by `pitch` onto her yard. She stands
+ * further in than `back`, so she ends up behind the lens, and fades out on
+ * the way past (`fadeHer`, player.js).
+ */
+export const LOOK_SHOT = { ahead: 8, eye: 1.8, back: 0.9, pitch: 0.1 };
+
+/** The window spot's first-person camera: where the lens stands and the
+ *  focus that puts it there. Pure, so the checks can ask it. */
+export function lookShot(s, out, W = LOOK_SHOT) {
+  const wx = s.wx ?? s.x, wz = s.wz ?? s.z;
+  const eye = { x: wx - out.x * W.back, y: s.y + W.eye, z: wz - out.z * W.back };
+  const c = Math.cos(W.pitch), sn = Math.sin(W.pitch);
+  // the rig sits at centre + (sin yaw·cos p, sin p, cos yaw·cos p)·dist, and yaw
+  // is the way back IN; so the centre is the eye pushed `ahead` out and down
+  const centre = { x: eye.x + out.x * c * W.ahead, y: eye.y - sn * W.ahead, z: eye.z + out.z * c * W.ahead };
+  return { eye, centre, dist: W.ahead, pitch: W.pitch, yaw: Math.atan2(-out.x, -out.z) };
+}
 
 /** The temple piece: once through, then the second gong (jukebox.js). */
 export const PRAYER_TRACK = 'shrinePrayer';
@@ -329,26 +354,21 @@ export class HomeActivities {
     p.position.z = s.z;
     p.facing = Math.atan2(out.x, out.z);
     this._hold(p, 'look', HOLD.look, { s, out });
-    this.game.toast(`${p.name} slides the window open and looks out…`, p.index);
+    this.game.toast(`${p.name} looks out of the window…`, p.index);
   }
 
   /**
-   * LOOKING OUT: through the window at her own yard, from a few steps back in
-   * the room. Richard: "have the camera be a bit further away from the
-   * player, not necessarily over their shoulders but a few feet back". It was
-   * 2 behind her (dist 12.5 to a point 9 out); it is `LOOK_SHOT.back` now, so
-   * she stands in the shot in front of the frame, with the yard beyond it.
+   * LOOKING OUT, first person (`LOOK_SHOT`, `lookShot`). `exact`: the lens
+   * is where this says, so the split screen's pull-back (`paneWiden`) must
+   * not push it back through the room. `fadeHer`: she is between the lens
+   * and where it was, so she fades as it closes on her.
    */
   cameraFocus(p) {
     const h = this.held.get(p.index);
     if (h?.act !== 'look') return null;
-    const { s, out } = h;
-    const W = LOOK_SHOT;
-    const wx = s.wx ?? s.x, wz = s.wz ?? s.z;
-    // from the window: she is `inside` in from it, the camera `back` behind her
-    const inside = Math.hypot(s.x - wx, s.z - wz);
-    (h.centre ??= new THREE.Vector3()).set(wx + out.x * W.ahead, s.y + W.eye, wz + out.z * W.ahead);
-    return { centre: h.centre, aim: true, dist: W.ahead + inside + W.back, pitch: W.pitch, yaw: Math.atan2(-out.x, -out.z) };
+    const L = lookShot(h.s, h.out);
+    (h.centre ??= new THREE.Vector3()).set(L.centre.x, L.centre.y, L.centre.z);
+    return { centre: h.centre, aim: true, dist: L.dist, pitch: L.pitch, yaw: L.yaw, exact: true, fadeHer: true };
   }
 
   /* ---------------------------- kitchen + kotatsu ---------------------------- */

@@ -196,6 +196,34 @@ export function removeBuilt(H, kind, room, sel) {
 }
 
 /** Her things of this kind, with house-local positions, for the selector. */
+/** The ring under a small thing, and how far past a big thing's edge it shows (`ringR`). */
+export const RING_R = 1.4;
+export const RING_PAD = 0.45;
+const _ringR = new Map();
+
+/**
+ * THE RING FITS THE THING. Richard, Oct 2026: "The yellow selection circle
+ * below big items like the table is not visible, it should scale with the
+ * size of the item and its collision area when placing/selecting, unless it
+ * is a small item where it can stay its current size." Every furnishing had
+ * the same 1.4 ring, and a kotatsu is 3.6 across, so its ring was under it.
+ * Now: the drawn footprint's longer half, past it by RING_PAD, and never
+ * smaller than RING_R. Measured off the same model the room draws
+ * (`placeModel`, at her `look`), once per item and size.
+ */
+export function ringR(it, look = null) {
+  if (!it) return RING_R;
+  const key = `${it.id}:${look?.s ?? 1}:${look?.style ?? ''}`;
+  let r = _ringR.get(key);
+  if (r == null) {
+    const b = new THREE.Box3().setFromObject(placeModel(it.model, drawItem(it.id, 2), it.size, look));
+    const half = b.isEmpty() ? 0 : Math.max(b.max.x - b.min.x, b.max.z - b.min.z) / 2;
+    r = Math.max(RING_R, half + RING_PAD);
+    _ringR.set(key, r);
+  }
+  return r;
+}
+
 export function pickList(H, kind, roomId) {
   if (kind === 'yard') return (H.outdoor ?? []).map((q, k) => ({ k, id: q.id, x: q.x, z: q.z }));
   if (kind === 'house') return houseSpecs(H).map((s, k) => ({ k, hk: s.hk, id: s.house, x: s.x, z: s.z, rot: s.rot }));
@@ -707,6 +735,17 @@ export class BuildMode {
     return ghostly(body);
   }
 
+  /** The selector's ring for the thing it is on: the yard's own radius, a
+   *  furnishing's footprint (`ringR`), or the plain one for a wall's. */
+  pickRingR(H, top) {
+    if (top.kind === 'yard') return Math.max(RING_R, yardR(ITEM_BY_ID[pickList(H, 'yard')[top.at ?? 0]?.id]));
+    if (top.kind !== 'room') return RING_R;
+    const q = pickList(H, 'room', top.room)[top.at ?? 0];
+    const row = q ? H.rooms?.[top.room]?.items?.[q.k] : null;
+    const it = row && ITEM_BY_ID[row.id];
+    return it ? ringR(it, roomLook(it, row)) : RING_R;
+  }
+
   update(dt, t) {
     const players = this.H.game.players ?? [];
     for (const [i, G] of this.ghosts) {
@@ -747,7 +786,10 @@ export class BuildMode {
         mesh = this._ghostBody(I, H, top, ITEM_BY_ID[id]);
         group.add(mesh);
       }
-      const r = top.kind === 'yard' && id ? yardR(ITEM_BY_ID[id]) : 1.4;
+      const row = top.kind === 'room' && top.sel >= 0 ? H.rooms?.[top.room]?.items?.[top.sel] : null;
+      const r = !id ? RING_R
+        : top.kind === 'yard' ? yardR(ITEM_BY_ID[id])
+          : top.kind === 'room' ? ringR(ITEM_BY_ID[id], roomLook(ITEM_BY_ID[id], row)) : RING_R;
       const ring = new THREE.Mesh(new THREE.RingGeometry(Math.max(0.3, r - 0.25), r, 48),
         new THREE.MeshBasicMaterial({ color: this._ok, transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide }));
       ring.rotation.x = -Math.PI / 2;
@@ -784,7 +826,7 @@ export class BuildMode {
       G.ring.material.color.copy(this._sel);
       G.arrow.visible = false;
       const pulse = 1 + Math.sin(t * 6) * 0.08;
-      G.group.scale.setScalar(pulse * (top.kind === 'yard' ? Math.max(1, yardR(ITEM_BY_ID[pickList(H, 'yard')[top.at ?? 0]?.id]) / 1.4) : 1));
+      G.group.scale.setScalar(pulse * this.pickRingR(H, top) / RING_R);
     } else {
       const bad = buildWhy(H, top, I.radius);
       const c = bad ? this._bad : this._ok;

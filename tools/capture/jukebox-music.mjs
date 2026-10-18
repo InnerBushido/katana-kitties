@@ -49,7 +49,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { measure } from './music-beats.mjs';
 import { SR, decodeStereo, beatFeatures, findLoop, bandOnsets, seamLag, seamCut, rmsOf, sim, encoderDelay, encode } from './music-loop.mjs';
-import { JUKEBOX } from '../../src/systems/housing/jukebox.js';
+import { JUKEBOX, ACTIVITY_MUSIC } from '../../src/systems/housing/jukebox.js';
 
 const ROOT = new URL('../../', import.meta.url);
 const P = (rel) => fileURLToPath(new URL(rel, ROOT));
@@ -64,6 +64,10 @@ const GEN = {
   homeGarden: 'g8RoUUalOEMy5JyMHp4h',
   homeChiptune: 'U4TriowQSrbwFULdbQuA',
   homeSunset: '9Vq5ndYiki2lSoDDWkzs',
+  homeOnsen: 'vf4bxm73itYPsByTA6tH',
+  homeKendo: 'J5r22NZyzczhW77ZLqNW',
+  homeFishing: 'y6TXGbPdG1zulGn4xBwG',
+  homePets: 'e27mbXoxXD8CKWnL9MUh',
 };
 
 /**
@@ -88,6 +92,16 @@ export const ARRANGE = {
   homeSurf: { passes: 2, ending: 'fade', fade: 5, gap: 1.5 },
   homeChiptune: { passes: 2, ending: 'fade', fade: 4, gap: 1.2 },
   homeSunset: { passes: 2, ending: 'fade', fade: 5, gap: 1.5 },
+  /* THE ACTIVITIES' SONGS were asked for at 90s WITH "a clear, complete
+     ending", as the note above says a new take should be, and all four
+     have one: measured (ffmpeg silencedetect, -45dB) each ends in 1.4-2.2s
+     of real silence — onsen 1.71, kendo 2.16, fishing 1.68, pets 1.38. So
+     the whole take is the loop, its own silence the breath before it starts
+     again. */
+  homeOnsen: { whole: true },
+  homeKendo: { whole: true },
+  homeFishing: { whole: true },
+  homePets: { whole: true },
 };
 const XF = 0.040; // the crossfade at every join, seconds
 
@@ -153,7 +167,8 @@ function fadeAndGap(out, sec, gap) {
 const dry = process.argv.includes('--dry');
 const meta = {};
 mkdirSync(P('public/music'), { recursive: true });
-for (const T of JUKEBOX) {
+// the boombox's list, and the activities' songs (jukebox.js ACTIVITY_MUSIC) the same way
+for (const T of [...JUKEBOX, ...ACTIVITY_MUSIC]) {
   const src = P(`${RAW}${T.id}.mp3`);
   if (!existsSync(src)) { console.log(`${T.id}: no take in ${RAW} — stays procedural (${T.fallback})`); continue; }
   const A = ARRANGE[T.id] ?? { passes: 2, ending: 'fade', fade: 4, gap: 1.2 };

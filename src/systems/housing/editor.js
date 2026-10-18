@@ -174,6 +174,8 @@ export function yardWhy(H, it, x, z, skip = -1, env = 50) {
   if (E.landing && !it.path && (me.box ? circleHit(me.box, E.landing.x, E.landing.z, LANDING_R) : Math.hypot(x - E.landing.x, z - E.landing.z) < me.r + LANDING_R)) {
     return 'Keep the landing at the end of your bridge clear.';
   }
+  // her statues and the boombox by the gate (Housing.envOf `entrance`)
+  if (!it.path && (E.entrance ?? []).some((o) => shapesHit(me, o, -0.1))) return 'That is in the way of your statues and the boombox at the gate.';
   for (const [k, q] of (H.outdoor ?? []).entries()) {
     if (k === skip) continue;
     const qi = ITEM_BY_ID[q.id];
@@ -236,8 +238,91 @@ export function withHouse(H, spec) {
   return { ...H, annex };
 }
 
-/** The first free spot for `it` outdoors — rings out from the house, back first; or null. */
-export function firstYardSpot(H, it, siteR = 50) {
+/* ------------------------- the walk to the door ------------------------- */
+
+/**
+ * THE PATH IT COMES WITH. Richard, Oct 2026: "When I bought an island, there
+ * was a Cherry Tree infront of the door/walking path, we should ensure there
+ * is no objects directly in the walking path of the front door. We should
+ * also include some walking paths from the bridge gate to the front of the
+ * door. Depending on the housetype, it should define the quality of the
+ * walking paths. The Castle should get red carpet or sakura petals, Dojo
+ * house should get Flagstone path or Raked Gravel Path, and Small Japanese
+ * house should get Stepping Stone or Boardwalk." Which of the two is the
+ * island's (`doorPathId`), so a home always gets the same one.
+ */
+export const DOOR_PATHS = {
+  castle: ['path_carpet', 'path_petal'],
+  dojohouse: ['path_flag', 'path_gravel'],
+  minka: ['path_stone', 'path_wood'],
+};
+/** How much wider than the path the strip kept clear of a preset's yard is, each side. */
+export const DOOR_WALK_PAD = 1.2;
+
+/** The path piece for this home: one of its house's two, by the island. */
+export function doorPathId(H) {
+  const pair = DOOR_PATHS[H.house] ?? DOOR_PATHS.minka;
+  let h = 0;
+  for (const c of String(H.site ?? '')) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return pair[h % pair.length];
+}
+
+/**
+ * From the foot of the main house's front steps to the landing, in the
+ * island's frame: `{ a, b, len, rot }`, or null when there is no landing to
+ * walk to. The front is the house's +z, and `houseFoot` already reaches the
+ * bottom of a raised house's ramp (homehouse.js).
+ */
+export function doorWalk(H, env = 50) {
+  const E = envOf(env);
+  const s = houseSpecs(H)[0];
+  if (!s || !E.landing) return null;
+  const a = toIsle(s, 0, houseFoot(s.house).z1 + 0.4);
+  const b = { x: E.landing.x, z: E.landing.z };
+  const len = Math.hypot(b.x - a.x, b.z - a.z);
+  if (len < 1) return null;
+  return { a, b, len, rot: Math.atan2(b.x - a.x, b.z - a.z) };
+}
+
+/** The walk as a box, `pad` wider each side than the path (DOOR_WALK_PAD). */
+export function doorWalkBox(H, env = 50, pad = DOOR_WALK_PAD) {
+  const W = doorWalk(H, env);
+  if (!W) return null;
+  const it = ITEM_BY_ID[doorPathId(H)];
+  return obb((W.a.x + W.b.x) / 2, (W.a.z + W.b.z) / 2, (it?.pw ?? 3) / 2 + pad, W.len / 2, W.rot);
+}
+
+/**
+ * Lay the walk: pieces of the house's path end to end from the door to the
+ * landing, overlapping a little so no grass shows at a joint. Each is an
+ * ordinary yard row she can move or sell, marked `free` like the windows a
+ * house comes with — it sells for nothing because it cost nothing. A piece
+ * the yard refuses (`yardWhy`) is left out rather than forced. Returns how
+ * many were laid.
+ */
+export function layDoorPath(H, env = 50) {
+  const W = doorWalk(H, env);
+  const id = doorPathId(H);
+  const it = ITEM_BY_ID[id];
+  if (!W || !it) return 0;
+  const n = Math.max(1, Math.ceil(W.len / (it.len - 0.6)));
+  const step = W.len / n;
+  let laid = 0;
+  for (let k = 0; k < n; k++) {
+    const t = (k + 0.5) * step;
+    const x = +(W.a.x + Math.sin(W.rot) * t).toFixed(2);
+    const z = +(W.a.z + Math.cos(W.rot) * t).toFixed(2);
+    const rot = +W.rot.toFixed(4);
+    if (yardWhy(H, it, x, z, -1, { ...envOf(env), rot })) continue;
+    addOutdoor(H, id, x, z, rot).free = true;
+    laid++;
+  }
+  return laid;
+}
+
+/** The first free spot for `it` outdoors — rings out from the house, back first; or null.
+ *  `keep`: boxes nothing may stand on (the walk to the door, `doorWalkBox`). */
+export function firstYardSpot(H, it, siteR = 50, keep = []) {
   const r = hitR(it);
   /* FROM THE MIDDLE, IN 1-UNIT RINGS. It started at r + 4 in 1.5 steps with
      a point every 1.25 units of arc, on the theory that the middle is always a
@@ -251,6 +336,7 @@ export function firstYardSpot(H, it, siteR = 50) {
       const a = Math.PI + s * Math.ceil(k / 2) * (Math.PI * 2 / n);
       const x = Math.sin(a) * d;
       const z = Math.cos(a) * d;
+      if (keep.some((B) => B && shapesHit({ box: B }, thingShape(it, x, z, 0)))) continue;
       if (yardFits(H, it, x, z, -1, siteR)) return { x: +x.toFixed(2), z: +z.toFixed(2), rot: 0 };
     }
   }
@@ -317,7 +403,7 @@ export function wallFree(R, side, k, skip = -1) {
  * and its yard things into the first free spots. Whatever does not fit is
  * skipped — a preset is a head start, not a promise.
  */
-export function autoLayout(H, preset, isle) {
+export function autoLayout(H, preset, isle, env = null) {
   const rooms = homeRooms(H).filter((r) => !H.rooms?.[r.id]?.type || H.rooms[r.id].type === 'living');
   H.rooms ??= {};
   for (const id of preset.room ?? []) {
@@ -331,9 +417,11 @@ export function autoLayout(H, preset, isle) {
     }
   }
   H.outdoor ??= [];
+  // nothing a preset brings may stand on the walk from the bridge to the door
+  const keep = env ? [doorWalkBox(H, env)] : [];
   for (const id of preset.yard ?? []) {
     const it = ITEM_BY_ID[id];
-    const at = it && firstYardSpot(H, it, isle?.radius ?? 50);
+    const at = it && firstYardSpot(H, it, isle?.radius ?? 50, keep);
     if (at) addOutdoor(H, id, at.x, at.z, at.rot);
   }
   return H;

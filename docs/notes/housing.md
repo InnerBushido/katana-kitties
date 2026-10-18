@@ -181,6 +181,21 @@ Two pieces play ONCE rather than loop, and outrank the jukebox while they do
 whisking and has faded by the time the kittens stand; `jukebox.js` has the
 measurements). Both are levelled in `mix`, not in the file.
 
+**What she is doing has its own song** (`ACTIVITY_MUSIC` in `jukebox.js`,
+`Housing.activityNow`). Richard: "Add music for the onsen, for fishing, and for
+any other activity the player can do for 15s or more." Measured against the
+15s bar: a kendo match (up to three 60s rounds), pet play (walk, fetch, catch),
+fishing and the onsen qualify; the nap (4s), the meal (5.6s), raking (2.5s) and
+the koi do not. The hop-along pet game is left out on purpose, because she copies
+the animal's rhythm there and a song would be the wrong beat. The order is the
+prayer and the tea first, then kendo, onsen, fishing, pets, then the boombox.
+A sister auditioning a boombox song still hears it. Four new 90s takes,
+1350 credits each (5,400, ~$1.08), all asked for "a clear, complete ending".
+Each ends in 1.4–2.2s of measured silence, so each loops as a whole file
+(`whole: true`). Tea take 1 could not be reused: its audio is not on disk and
+could not be fetched again without its session id. Delete the mp3s and each
+plays its procedural fallback.
+
 ## Placeholders — the work that is left
 
 Each one degrades: delete the file and the game draws the stand-in.
@@ -234,12 +249,33 @@ has her second statue and a second jukebox that plays her island's music. The is
 hidden until the bridge has grown all the way (`setGrow` k ≥ 1), so a
 half-built bridge does not end in a gate floating in the sky.
 
-The lock is the doors. The owner presses ACTION at either end to open or
-close them. The leaves SWING over `DOOR_SWING` (1.6s) rather than snap,
-except on load (`setLocked(locked, true)`), and a pulsing force field fills
-both doorways while they are shut. `doorSegments()` is what the push-back reads,
-so a shut door blocks at both ends. A visitor who presses ACTION is told whose
-gates they are (non-negotiable 6), and nothing happens.
+**The lock is the hologram, not the doors (Oct 2026).** Richard: "When an
+owner gets near the entrance of the bridge, the doors animate open for them
+... the force field barrier should still be applied to prevent non-owners from
+getting in when the doors are closed." So the leaves SWING (`DOOR_SWING`,
+1.6s) open for any owner within `GATE.near` of a gate (`_ownersNear`), and
+shut behind her when she walks on. They are visual only. The button now reads
+"CLOSE THE GATES FOR VISITORS" and turns the hologram barrier on: across both
+doorways AND along the entrance's edges (`barrierSegments()`). "OPEN THE GATES"
+only takes the barrier away, because the doors are already open for her.
+
+A visitor who **jumps onto a locked deck falls through it** (`ghostFor`). The
+deck draws as a hologram round her (`holoDeckMat`, `_holoPoints`) and
+`heightAt(..., who)` leaves it out of her ground. It stays solid for the
+owners. A visitor already ON the deck when it locked keeps her feet
+(`player.footing`), so she can walk off rather than drop mid-crossing. A
+visitor who presses ACTION is told whose gates they are (non-negotiable 6).
+
+**Facing.** At the town end the statues, the boombox and the banners face the
+town, which is where she walks in from. At her end they face the bridge if that
+faces the camera, else are turned round (`faceCamera`), then turned toward the
+camera until no more than 60° off (`bannerYaw`). On the first island the road
+was 85° off the camera, so both banners showed edge-on. **Every owner has a
+statue** in her colour at both ends (`STATUE_SLOTS`: one each side, a third and
+fourth outside those), and the boombox steps back when there are three or more.
+**Everything there is solid** (`HomeBridge.solids`: statues, boombox, lanterns,
+banner poles, torii posts). The snake's head that stood on her island is gone,
+and each end has Snake Way's own landing apron (rocks, grass, a ramp).
 
 ## Fishing, in the world
 
@@ -496,6 +532,35 @@ the height difference".
 Item 21 of the same playthrough — "when building a bridge on the 2nd or 3rd
 floor, show that floor" — was already done by `outdoorCuts` with `hard`, and
 has a check that quotes it.
+
+## Smaller fixes — Oct 2026
+
+- **The boombox was inside its barrel.** It sat at 0.47 of the barrel's scale,
+  and the barrel measures 2.20 tall at 2.2×, so its lid is at 1.0 of the
+  scale (`BARREL_TOP`). The boombox Richard reported "facing the wrong way"
+  could not be seen at all.
+- **The walk to the door.** Richard: "there was a Cherry Tree in front of the
+  door ... include some walking paths from the bridge gate to the front of the
+  door". `layDoorPath` lays free path pieces from the foot of the front steps
+  to the landing, in one of the house's two styles (`DOOR_PATHS`, chosen by the
+  island so a home always gets the same one). A preset's yard keeps off it
+  (`doorWalkBox`), and nothing may be built on the statues and boombox at the
+  gate (`E.entrance` in `yardWhy`).
+- **The window asks** (`_v_window`): no, look out, or open/shut. Looking out is
+  first person (`lookShot`): the lens stands 0.9 inside the frame at 1.8 up,
+  which is the middle of the opening, and she is 0.3 behind it. She fades as it
+  comes through her (`LOOK_FADE`), by alpha AND by scaling `alphaTest`. Opacity
+  alone holds her solid to 0.35 and then drops her in one frame. The split
+  screen's pull-back does not apply to that shot (`focus.exact`), or it would
+  push the lens back through the wall. **Tried and dropped:** the old shot,
+  4.5 behind her at 2.2 up, which put her sprite across the middle of the window.
+- **Every furnishing is solid.** `_furnWalls` skipped anything under 0.05
+  after its 0.555 inset, which meant anything under 1.2 across: the andon
+  (1.2), the yoroi (1.05 deep) and the katana stand (0.76). They now keep
+  `FURN_MIN_HALF`.
+- **The selection ring fits the thing** (`ringR`): the drawn footprint's
+  longer half plus 0.45, never under the old 1.4. Measured: a table 2.25, a
+  futon 3.15, a katana stand 1.40.
 
 ## Known rough edges
 

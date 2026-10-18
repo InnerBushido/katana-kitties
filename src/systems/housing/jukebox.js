@@ -89,6 +89,42 @@ export const JUKEBOX = [
 
 export const JUKEBOX_BY_ID = Object.fromEntries(JUKEBOX.map((t) => [t.id, t]));
 
+/**
+ * WHAT SHE IS DOING HAS ITS OWN SONG. Richard, Oct 2026: "Tea ceremony and
+ * shrine already have music. Add music for the onsen, for fishing, and for
+ * any other activity the player can do for 15s or more." Measured against
+ * that bar: a kendo match is up to three 60s rounds, a pet game (a 90-unit
+ * walk, three fetches, three catches) runs well past 15s, fishing and the
+ * onsen last as long as she likes. The nap (4s), the meal (5.6s), raking
+ * (2.5s) and feeding the koi do not.
+ *   act      — what `Housing.activityTrack` asks about, highest first
+ *   fallback — the procedural piece when the mp3 is not there (non-negotiable 9)
+ * The hop-along pet game is LEFT OUT on purpose: she copies the animal's
+ * rhythm with JUMP, and a song at another tempo under it is the wrong beat.
+ * These loop the WHOLE FILE like the boombox's (jukebox-music.mjs makes them
+ * too), and are not on the boombox's list — they are not hers to pick.
+ * ElevenLabs Music v2.5, 90s each, 1350 credits a take, flow
+ * LRBTaBnKWB4SFA1bf00O. The prompts are what each was asked for.
+ */
+export const ACTIVITY_MUSIC = [
+  {
+    id: 'homeKendo', act: 'kendo', name: 'KENDO MATCH', fallback: 'bamboo',
+    prompt: 'Energetic but friendly kendo practice-match music for a children\'s game: driving taiko drums, sharp wooden clappers, a bold shinobue flute melody and shamisen stabs, focused and spirited, sporty not scary, 126 BPM. A complete piece with a strong drum opening, a steady middle that could repeat, and a clear, complete ending on a final big taiko hit. Instrumental, no vocals.',
+  },
+  {
+    id: 'homeOnsen', act: 'onsen', name: 'ONSEN STEAM', fallback: 'frost',
+    prompt: 'Warm, steamy Japanese hot spring (onsen) music for a children\'s game: soft koto and gentle shakuhachi over a slow warm pad, light water-drip percussion, a distant wind chime, very relaxing and cosy, 70 BPM. A complete piece with a soft opening, a long calm middle that could repeat, and a clear, complete ending that resolves on a long koto chord and fades to silence. Instrumental, no vocals.',
+  },
+  {
+    id: 'homeFishing', act: 'fishing', name: 'GONE FISHING', fallback: 'saucer',
+    prompt: 'Lazy, sunny Japanese fishing-pond music for a children\'s game: plucked shamisen and soft acoustic guitar, a gentle walking bass, light brushed percussion and a playful flute, patient and cheerful like waiting for a bite, 84 BPM. A complete piece with an easy opening, a relaxed middle that could repeat, and a clear, complete ending on a bright final chord. Instrumental, no vocals.',
+  },
+  {
+    id: 'homePets', act: 'pets', name: 'PET PLAYTIME', fallback: 'dojo',
+    prompt: 'Bouncy, playful farmyard pet-play music for a children\'s game: pizzicato strings, marimba and a cheeky koto, hand claps and a little toy whistle, happy and silly like playing fetch with a goat and chasing a chick, 112 BPM. A complete piece with a cheerful opening, a playful middle that could repeat, and a clear, complete ending on a cute final pluck. Instrumental, no vocals.',
+  },
+];
+
 /* THE PREVIEW STARTS WHERE THE MUSIC DOES. Richard: "When selecting Matsuri
    Night and Moss Garden from boombox to preview how it sounds, there is just
    silence at the beginning of the song, can we skip to further in the song".
