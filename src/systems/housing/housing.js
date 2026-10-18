@@ -17,7 +17,7 @@ import { autoLayout, defaultWindows, houseWhy, brokenLinks, wallSlots, ITEM_SELL
 
 /** How far toward its bridge a NEW house of this kind stands (see `buy`). */
 export const HOME_FORWARD = { castle: 7 };
-import { linkWhy, linkBlockers } from './links.js';
+import { linkWhy, linkBlockers, linkPriceK } from './links.js';
 import { HousingCards, roomTypeRefund } from './cards.js';
 import { BuildMode } from './build.js';
 import { HomeBoons } from './boons.js';
@@ -1366,7 +1366,11 @@ export class Housing {
     this._refund(p, H, Math.round((L.paid ?? 0) * HOME_SELL));
   }
 
-  linkPrice(style) { return this.price(LINK_BY_ID[style]?.mult ?? 0.5); }
+  /** A bridge's price: its style's, and a quarter more for each turn and each smooth one (links.js `linkPriceK`). */
+  linkPrice(style, L = null) {
+    const base = this.price(LINK_BY_ID[style]?.mult ?? 0.5);
+    return L?.via?.length ? Math.round(base * linkPriceK(L)) : base;
+  }
 
   /**
    * BUILD A BRIDGE. `L` is `{ a, b, style }`. Yard things in its way that do
@@ -1384,7 +1388,7 @@ export class Housing {
     if (why) { this.game.toast(why, p.index); return { ok: false, why }; }
     const block = linkBlockers(H, L, env);
     if (block.length && !sellBlockers) return { ok: false, blockers: block };
-    const price = this.linkPrice(L.style);
+    const price = this.linkPrice(L.style, L);
     let back = 0;
     for (const k of block) { const q = H.outdoor[k]; back += Math.round(this.itemPrice(q.id) * ITEM_SELL); }
     const w = (LINK_BY_ID[L.style] ?? LINK_BY_ID.plank).w;
@@ -1409,7 +1413,9 @@ export class Housing {
     for (const [R, , q] of onWall) R.wall = R.wall.filter((x) => x !== q);
     H.uid = (H.uid ?? 0) + 1;
     H.links ??= [];
-    H.links.push({ uid: H.uid, a: { ...L.a }, b: { ...L.b }, style: L.style, paid: price });
+    // a turned bridge keeps its corners; a straight one's row is what it always was
+    const via = L.via?.length ? { via: L.via.map((v) => ({ x: +v.x.toFixed(2), z: +v.z.toFixed(2), smooth: !!v.smooth })) } : {};
+    H.links.push({ uid: H.uid, a: { ...L.a }, b: { ...L.b }, style: L.style, paid: price, ...via });
     this.changed(H);
     this.game.audio?.play?.('land');
     this.game.toast(`The ${LINK_BY_ID[L.style].name} is built!${back ? ` Roshi paid ${back.toLocaleString()} points for what was in the way.` : ''}`, p.index);

@@ -466,6 +466,37 @@ in `out/props-raw/` (gitignored — keep them). The poses were 13 more
   it and the music; the others have six seconds to kneel too; then the bowls
   go round and everybody bows. 26 seconds, one kitten or four.
 
+## Bridges with turns — Oct 2026
+
+Richard: "she sets the number of turns or parts, and places each turn's start
+and end ... each additional turn adds 25% to the price ... smooth 90 degree
+turns, each also +25% ... flat and level at the junction ... segments take up
+the height difference".
+
+- **A turned bridge is the same row plus `via`**: island-frame corners
+  `{x, z, smooth}`. A straight bridge has none and `linkGeom` returns exactly
+  what it always did, so every bridge already saved is untouched.
+- **The card**: RIDE (or the TURNS button on a phone) sets 0–3 turns while she
+  picks the doors, and the ghost bends round default corners at once
+  (`defaultVia`: an L where the two doors' lines cross, otherwise a step
+  straight out of each door). JUMP on the second door hands her each corner to
+  slide with the stick; ATTACK makes it a curve; SPRINT steps back a turn.
+- **The rise is shared out by length**, so every run has the same grade and
+  every junction is level. A sharp corner is a round landing of radius
+  w·√2 with the runs cut back half a width; a smooth one is a level arc
+  of radius w. **Tried and failed:** a landing the bridge's own width — the
+  floor a step off the middle of the turn was 0.05 off level, enough for her
+  feet to catch.
+- **Price** `linkPriceK` = 1 + ¼ per turn + ¼ per smooth one; the BUILD row
+  shows it. Torii and end gates stand at the two doors only.
+- `linkWhy` refuses a turned bridge whose runs leave a door at an angle, a
+  corner off the island or too tight to turn in, or a middle run through a
+  house.
+
+Item 21 of the same playthrough — "when building a bridge on the 2nd or 3rd
+floor, show that floor" — was already done by `outdoorCuts` with `hard`, and
+has a check that quotes it.
+
 ## Known rough edges
 
 - The tour camera frames each island partly behind the card — try `dist ~130`.

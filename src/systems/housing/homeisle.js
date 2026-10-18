@@ -7,7 +7,7 @@ import { ITEMS, ITEM_BY_ID, LINK_BY_ID, houseSpecs, homeRooms, pathPosts } from 
 import { PathFX, makeFlame, makeLamp } from './pathfx.js';
 import { TEA, teaK, teaSet } from './teahouse.js';
 import { ZenGarden, zenParts, ZEN, ZEN_ROCKS, ZEN_STONES, ZEN_STONE_R, ZEN_RAKE } from './zengarden.js';
-import { linkGeom, linkParts, linkModels } from './links.js';
+import { linkGeom, linkAll, linkColliders } from './links.js';
 import { placeModel, drawItem, clampMul, SHOJI, shojiPair, PANEL_GAP, STONES } from './models.js';
 import { wallSlots, yardR } from './editor.js';
 import { buildTreehouse } from './treehouse.js';
@@ -660,16 +660,15 @@ export class HomeIsle {
     for (const L of H.links ?? []) {
       const G = linkGeom(H, L, gyAt);
       if (!G) continue;
-      const ground = (d) => gyAt(G.A.x + G.ux * d, G.A.z + G.uz * d) - G.A.y;
-      G.models = true;
-      const P = linkParts(G, ground);
+      // every run and turn, in the first run's frame (links.js `linkAll`)
+      const P = linkAll(G, gyAt, true);
       const g = new THREE.Group();
       const w0 = this.local(G.A.x, G.A.z);
       g.position.set(w0.x, this.groundY + G.A.y, w0.z);
       g.rotation.y = this.ry + G.a;
       if (P.solid.length) g.add(new THREE.Mesh(mergeParts(P.solid), toonVertexMat()));
       if (P.glow.length) g.add(new THREE.Mesh(mergeParts(P.glow), new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false })));
-      for (const m of linkModels(G)) {
+      for (const m of P.models) {
         const mg = placeModel(m.id, m.stand ? planterStandIn() : null, { h: m.h });
         mg.position.set(m.x, m.y, m.z);
         mg.rotation.y = m.ry;
@@ -678,17 +677,12 @@ export class HomeIsle {
       g.userData.link = L.uid;
       this.itemGroup.add(g);
       this.linkMeshes.set(L.uid, g);
-      const hw = G.w / 2;
-      this.decks.push({
-        x0: -hw, x1: hw, z0: -0.4, z1: G.len + 0.4, y: Math.max(G.A.y, G.B.y), step: 0.6, link: L.uid,
-        frame: { x: G.A.x, z: G.A.z, a: G.a },
-        yAt: (x, z) => G.A.y + G.rise * Math.min(1, Math.max(0, z / G.len)),
-      });
-      const lo = Math.min(G.A.y, G.B.y), hi = Math.max(G.A.y, G.B.y);
-      for (const s of [-1, 1]) {
-        const a = this.local(G.A.x + G.uz * s * (hw - 0.05), G.A.z - G.ux * s * (hw - 0.05));
-        const b = this.local(G.B.x + G.uz * s * (hw - 0.05), G.B.z - G.ux * s * (hw - 0.05));
-        this.walls.push({ ax: a.x, az: a.z, bx: b.x, bz: b.z, y0: this.groundY + lo + 0.2, y1: this.groundY + hi + 1.3, rail: true, link: L.uid });
+      // a deck per run and per turn, the rails as walls: links.js `linkColliders`, which world-check walks
+      const C = linkColliders(G);
+      for (const d of C.decks) this.decks.push({ ...d, link: L.uid });
+      for (const w of C.walls) {
+        const a = this.local(w.ax, w.az), b = this.local(w.bx, w.bz);
+        this.walls.push({ ax: a.x, az: a.z, bx: b.x, bz: b.z, y0: this.groundY + w.y0, y1: this.groundY + w.y1, rail: true, link: L.uid });
       }
     }
   }

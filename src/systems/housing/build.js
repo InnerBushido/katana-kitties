@@ -6,7 +6,7 @@ import { WALL_Y, YARD_BUILT, roomLook } from './homeisle.js';
 import { buildHouseShell, houseFoot, houseRadius } from './homehouse.js';
 import { mergeParts } from '../../world/build.js';
 import { toonVertexMat } from '../../core/gfx.js';
-import { linkWhy, linkGeom, linkParts, portSpots, endAt, LINK_MAX } from './links.js';
+import { linkWhy, linkGeom, linkAll, portSpots, endAt, defaultVia, LINK_MAX, LINK_TURNS_MAX } from './links.js';
 
 /* ---------------------------------------------------------------------------
    BUILD MODE — placing a thing in the world, not on a chart.
@@ -114,6 +114,19 @@ export function uncarry(G) {
 }
 
 /**
+ * THE BRIDGE A LINK VIEW IS ABOUT: its two doors (the other one is the cursor
+ * until it is chosen) and, with turns, their corners — the defaults while she
+ * is still picking the door, so the ghost already bends, and hers once she is
+ * placing them.
+ */
+export function linkOf(H, top) {
+  const n = top.turns ?? 0;
+  const b = top.b ?? top.cur;
+  const via = !n ? undefined : top.vk != null ? top.via.slice(0, n) : defaultVia(H, top.a, b, n);
+  return { a: top.a, b, style: top.style, via };
+}
+
+/**
  * Why `top` cannot go where it is, as a sentence; null when it can. Pure:
  * world-check asks it with hand-made homes.
  */
@@ -124,7 +137,7 @@ export function buildWhy(H, top, siteR = 50) {
   }
   if (top.kind === 'link') {
     if (!top.a) return null;
-    return linkWhy(H, { a: top.a, b: top.cur, style: top.style }, env);
+    return linkWhy(H, linkOf(H, top), env);
   }
   const it = ITEM_BY_ID[top.id];
   if (!it) return 'Nothing to place.';
@@ -280,7 +293,10 @@ export class BuildMode {
       return L[Math.min(top.at ?? 0, L.length - 1)] ?? { x: 0, z: 0 };
     }
     if (top.kind === 'yard' || top.kind === 'house') return { x: top.x, z: top.z };
-    if (top.kind === 'link') return top.cur ? (endAt(H, top.cur) ?? { x: 0, z: 0 }) : { x: 0, z: 0 };
+    if (top.kind === 'link') {
+      if (top.vk != null && top.via?.[top.vk]) return top.via[top.vk];
+      return top.cur ? (endAt(H, top.cur) ?? { x: 0, z: 0 }) : { x: 0, z: 0 };
+    }
     const room = this.roomOf(H, top);
     if (!room) return { x: 0, z: 0 };
     if (top.kind === 'wall') {
@@ -332,9 +348,22 @@ export class BuildMode {
     }
     // ---- build
     if (top.kind === 'link') {
-      // the stick hops between the doorways on this floor; ATTACK goes up a floor
-      if (this._repeat(top, push, dt)) this.hopPort(top, mx, my);
-      if (pad.pressed('attack')) { pad.consume?.('attack'); this.portFloor(top); }
+      if (top.vk != null) {
+        // placing a turn: the stick slides it like a yard thing; ATTACK makes it a curve or a corner
+        const v = top.via?.[top.vk];
+        if (push && v) {
+          v.x += mx * YARD_SPEED * dt;
+          v.z += my * YARD_SPEED * dt;
+          const r = Math.hypot(v.x, v.z), max = (this.isle(top)?.radius ?? 50) - 2;
+          if (r > max) { v.x *= max / r; v.z *= max / r; }
+        }
+        if (pad.pressed('attack')) { pad.consume?.('attack'); this.turnSmooth(index, top); }
+      } else {
+        // the stick hops between the doorways on this floor; ATTACK goes up a floor; RIDE, how many turns
+        if (this._repeat(top, push, dt)) this.hopPort(top, mx, my);
+        if (pad.pressed('attack')) { pad.consume?.('attack'); this.portFloor(top); }
+        if (pad.pressed('mount')) { pad.consume?.('mount'); this.linkTurns(index, top); }
+      }
       if (pad.pressed('jump')) { pad.consume?.('jump'); C.placeHere(index, top); return true; }
       if (pad.pressed('sprint')) { pad.consume?.('sprint'); C.linkBack(index, top); return true; }
       return true;
@@ -357,6 +386,24 @@ export class BuildMode {
     if (pad.pressed('jump')) { pad.consume?.('jump'); C.placeHere(index, top); return true; }
     if (pad.pressed('sprint')) { pad.consume?.('sprint'); C.askSell(index, top); return true; }
     return true;
+  }
+
+  /** RIDE on a bridge: no turns → 1 → 2 → 3 → none, and what each costs, out loud. */
+  linkTurns(index, top) {
+    const n = ((top.turns ?? 0) + 1) % (LINK_TURNS_MAX + 1);
+    top.turns = n;
+    this.H.game.toast(n ? `${n} turn${n > 1 ? 's' : ''} — the bridge comes in ${n + 1} parts. Each turn adds a quarter to its price.`
+      : 'A straight bridge, no turns.', index);
+    this.H.game.audio?.play?.('menu');
+  }
+
+  /** ATTACK on a turn being placed: a sharp corner or a smooth curve (another quarter). */
+  turnSmooth(index, top) {
+    const v = top.via?.[top.vk];
+    if (!v) return;
+    v.smooth = !v.smooth;
+    this.H.game.toast(v.smooth ? 'A smooth curve here — it adds a quarter to the price.' : 'A sharp corner here.', index);
+    this.H.game.audio?.play?.('menu');
   }
 
   /** RIDE: 15 → 30 → 45 → 15 degrees a turn, said out loud each time. */
@@ -791,20 +838,24 @@ export class BuildMode {
         return { g, ring };
       };
     } else {
-      key = `link:${top.style}:${JSON.stringify(top.a)}:${JSON.stringify(top.cur)}`;
+      const LT = linkOf(H, top);
+      // the turns to a tenth, so a turn being slid does not rebuild the ghost every frame
+      key = `link:${top.style}:${JSON.stringify(top.a)}:${JSON.stringify(LT.b)}:${(LT.via ?? []).map((v) => `${v.x.toFixed(1)},${v.z.toFixed(1)},${+!!v.smooth}`).join(';')}:${top.vk}`;
       make = () => {
         const g = new THREE.Group();
         const env = this.H.envOf?.(I) ?? {};
-        const G = top.a && top.cur ? linkGeom(H, { a: top.a, b: top.cur, style: top.style }, env.gyAt) : null;
+        const G = top.a && LT.b ? linkGeom(H, LT, env.gyAt) : null;
         if (G && G.len <= LINK_MAX * 1.5) {
-          const P = linkParts(G, () => -50);
+          const P = linkAll(G, (x, z) => env.gyAt?.(x, z) ?? 0);
           const m = ghostly(new THREE.Mesh(mergeParts([...P.solid, ...P.glow]), toonVertexMat()));
           g.add(m);
           g.userData.at = { x: G.A.x, z: G.A.z, y: G.A.y, a: G.a };
         }
         const marks = [];
-        for (const e of [top.a, top.cur]) {
-          const E = e && endAt(H, e, env.gyAt);
+        const turnAt = top.vk != null && LT.via?.[top.vk];
+        const ends = [top.a, top.b ?? top.cur, turnAt && { turn: turnAt }];
+        for (const e of ends) {
+          const E = e?.turn ? { x: e.turn.x, z: e.turn.z, y: G?.turns[top.vk]?.y ?? G?.A.y ?? 0 } : e && endAt(H, e, env.gyAt);
           if (!E) continue;
           const mk = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 3.2, 16, 1, true),
             new THREE.MeshBasicMaterial({ color: e === top.a ? this._sel : this._ok, transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide }));
@@ -895,11 +946,19 @@ export class BuildMode {
         this._mapHouse(g, P, scale, s, s.hk === 'main' ? '#b89a6a' : '#a08a6a');
       }
       g.strokeStyle = '#7a4a2a'; g.lineWidth = 3;
-      for (const L of H.links ?? []) {
-        const G = linkGeom(H, L);
-        if (!G) continue;
-        const [ax, az] = P(G.A.x, G.A.z), [bx2, bz2] = P(G.B.x, G.B.z);
-        g.beginPath(); g.moveTo(ax, az); g.lineTo(bx2, bz2); g.stroke();
+      // a turned bridge as its corners, through every turn
+      const line = (L) => {
+        const pts = [L.a && endAt(H, L.a), ...(L.via ?? []), L.b && endAt(H, L.b)];
+        if (pts.some((q) => !q)) return;
+        g.beginPath();
+        pts.forEach((q, k) => { const [x, z] = P(q.x, q.z); if (k) g.lineTo(x, z); else g.moveTo(x, z); });
+        g.stroke();
+      };
+      for (const L of H.links ?? []) line(L);
+      if (top.kind === 'link' && top.a && top.turns) {
+        g.save(); g.strokeStyle = 'rgba(90,210,122,0.9)'; g.setLineDash([4, 3]);
+        line(linkOf(H, top));
+        g.restore();
       }
       if (top.kind === 'house' && top.v === 'build') {
         const bad = buildWhy(H, top, I.radius);

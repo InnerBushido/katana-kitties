@@ -14,9 +14,10 @@
 --------------------------------------------------------------------------- */
 import * as THREE from 'three';
 import { readFileSync } from 'node:fs';
+import { mergeParts } from '../../src/world/build.js';
 import { Housing, TOUR, HOME_FORWARD } from '../../src/systems/housing/housing.js';
 import { HOME_SITES, HOUSES, HOUSE_BY_ID, PRESETS, ITEM_BY_ID, priceOf, HOME_SELL, SPEED_STRIP, FREE_ANNEX, homeRooms } from '../../src/systems/housing/catalog.js';
-import { linkWhy, linkBlockers, portSpots, linkModels } from '../../src/systems/housing/links.js';
+import { linkWhy, linkBlockers, portSpots, linkModels, linkGeom, linkParts, linkAll, linkColliders, linkPriceK, defaultVia, endAt, overStrip, turnArc, TURN_PRICE } from '../../src/systems/housing/links.js';
 const ITEMS_PATHS = () => ITEMS.filter((it) => it.path);
 import { emptyStore, newHome, normalise, saveStore, loadStore, migrateYard, HOME_KEY, homeKey, pruneRows, HOME_ROWS_KEPT } from '../../src/systems/housing/homestore.js';
 import { careLevel, careBuff, stalksAt, BAMBOO_GROW, BAMBOO_MAX } from '../../src/systems/housing/farm.js';
@@ -2874,6 +2875,163 @@ export async function housingChecks({ ok, world }) {
     delete H.store.homes[I.site.id];
     I.setHome(null, null);
     game.players = [];
+  }
+
+  /* BRIDGES WITH TURNS. "she sets the number of turns or parts, and places
+     each turn's start and end; each extra turn adds 25% to the price;
+     optional smooth 90° turns, each also +25%, flat and level at the
+     junction; the segments take up the height difference." A dojo house and
+     a small house side by side, joined from the dojo's upstairs back wall to
+     the small house's back wall — which no straight bridge can do — then
+     walked, sharp and smooth, through the real island. */
+  {
+    const I = H.isles[0];
+    const Hm = newHome(I.site.id, 'dojohouse', ['Ember']);
+    Hm.annex = [{ uid: 1, house: 'minka', x: 24, z: 0, rot: 0, paid: 0, free: true }];
+    H.store.homes[I.site.id] = Hm;
+    I.setHome(Hm, null);
+    const env = H.envOf(I);
+    // a straight bridge is the same bridge it was: one run, its numbers, its very triangles
+    const Ls = { a: { hk: 'main', floor: 0, side: 1, at: 0 }, b: { hk: 'a1', floor: 0, side: 3, at: 0 }, style: 'sakura' };
+    const Gs = linkGeom(Hm, Ls, env.gyAt);
+    const A0 = endAt(Hm, Ls.a, env.gyAt), B0 = endAt(Hm, Ls.b, env.gyAt);
+    const pos = (gs) => mergeParts(gs).attributes.position.array;
+    const same = (p, q) => p.length === q.length && p.every((v, i) => Math.abs(v - q[i]) < 1e-9);
+    ok('a bridge with no turns is one run, and draws exactly the triangles it always did',
+      Gs.runs.length === 1 && !Gs.turns.length && Math.abs(Gs.len - Math.hypot(B0.x - A0.x, B0.z - A0.z)) < 1e-9
+      && same(pos(linkAll(Gs, () => 0).solid), pos(linkParts(Gs, () => -Gs.A.y).solid)) && linkPriceK(Ls) === 1);
+    // back to back: both doors face -z, so the straight rule refuses and two turns make a U
+    const Lu = { a: { hk: 'main', floor: 1, side: 2, at: 0 }, b: { hk: 'a1', floor: 0, side: 2, at: 0 }, style: 'plank' };
+    const viaU = defaultVia(Hm, Lu.a, Lu.b, 2, env.gyAt);
+    const LU = { ...Lu, via: viaU };
+    ok('two back walls cannot be joined straight, and can with two turns',
+      !!linkWhy(Hm, Lu, env) && linkWhy(Hm, LU, env) === null, `${linkWhy(Hm, Lu, env)} / ${linkWhy(Hm, LU, env)}`);
+    const G = linkGeom(Hm, LU, env.gyAt);
+    const grades = G.runs.map((r) => r.rise / r.len);
+    const level = G.turns.every((T, i) => Math.abs(G.runs[i].B.y - T.y) < 1e-9 && Math.abs(G.runs[i + 1].A.y - T.y) < 1e-9);
+    ok('...its three runs share the climb at one grade, and every turn is level where they meet',
+      G.runs.length === 3 && Math.max(...grades) - Math.min(...grades) < 1e-9 && grades[0] < 0 && level
+      && Math.abs(G.runs.reduce((s, r) => s + r.rise, 0) - (G.B.y - G.A.y)) < 1e-9,
+      `grades ${grades.map((g) => g.toFixed(4)).join(' ')}, turns at ${G.turns.map((T) => T.y.toFixed(2)).join(' ')}`);
+    const smoothU = { ...Lu, via: viaU.map((v) => ({ ...v, smooth: true })) };
+    const GS = linkGeom(Hm, smoothU, env.gyAt);
+    ok('...a smooth turn is an arc of one bridge-width that cuts both runs back by exactly its tangent, and still builds',
+      linkWhy(Hm, smoothU, env) === null && GS.turns.every((T) => Math.abs(T.theta - Math.PI / 2) < 0.1 && Math.abs(T.t - GS.w * Math.tan(T.theta / 2)) < 1e-9)
+      && Math.abs(GS.runs[0].len + GS.turns[0].t - (G.runs[0].len + G.turns[0].t)) < 1e-9, `${GS.turns.map((T) => (T.theta * 180 / Math.PI).toFixed(1))}° ${linkWhy(Hm, smoothU, env)}`);
+    const base = H.linkPrice('plank');
+    ok('each turn adds a quarter of the price, and each smooth one a quarter more',
+      TURN_PRICE === 0.25 && H.linkPrice('plank', LU) === Math.round(base * 1.5) && H.linkPrice('plank', smoothU) === Math.round(base * 2)
+      && H.linkPrice('plank', { via: [viaU[0]] }) === Math.round(base * 1.25), `${base} → ${H.linkPrice('plank', LU)} → ${H.linkPrice('plank', smoothU)}`);
+    ok('...a turn too near its door, off the island, or doubling back through a house is refused out loud',
+      /too tight/.test(linkWhy(Hm, { ...Lu, via: [{ x: viaU[0].x, z: endAt(Hm, Lu.a, env.gyAt).z - 0.4 }, viaU[1]] }, env) ?? '')
+      && /off the edge/.test(linkWhy(Hm, { ...Lu, via: [viaU[0], { x: 0, z: -80 }] }, env) ?? '')
+      && /straight through/.test(linkWhy(Hm, { ...Ls, via: [{ x: 11, z: 2 }, { x: -2, z: 2 }, { x: 14, z: 2 }] }, env) ?? ''),
+      linkWhy(Hm, { ...Ls, via: [{ x: 11, z: 2 }, { x: -2, z: 2 }, { x: 14, z: 2 }] }, env));
+    // the lowest deck over it is what a thing has to fit under; at a turn that is the level landing, or a run sloping away below it
+    const under = overStrip(G, G.turns[1].x, G.turns[1].z, 0.5);
+    ok('...and a thing under a turn is in its way the same as under a run, and one far off is not',
+      under != null && under <= G.turns[1].y + 1e-9 && under > G.turns[1].y - 0.2 && overStrip(G, G.turns[1].x + 30, G.turns[1].z + 30, 0.5) == null,
+      `${under?.toFixed(3)} at a turn ${G.turns[1].y.toFixed(3)}`);
+    // WALK IT: the real island, the real walls, out of one back door, round both turns and in at the other
+    const kid = fakePlayer(0);
+    const walk = (L, label) => {
+      Hm.links = [{ uid: 50, ...L, paid: 1 }];
+      I.setHome(Hm, null);
+      const g = linkGeom(Hm, L, env.gyAt);
+      const C = linkColliders(g);
+      const W = (x, z) => I.local(x, z);
+      const a = W(g.A.x + g.A.nx * 0.9, g.A.z + g.A.nz * 0.9);
+      kid.position.set(a.x, I.groundY + g.A.y, a.z);
+      let jump = 0, worst = 0, reached = true;
+      const to = (x, z) => {
+        const t = W(x, z);
+        for (let n = 0; n < 800; n++) {
+          const dx = t.x - kid.position.x, dz = t.z - kid.position.z, d = Math.hypot(dx, dz);
+          if (d < 0.15) return true;
+          const wx = kid.position.x, wz = kid.position.z, wy = kid.position.y;
+          kid.position.x += (dx / d) * Math.min(0.1, d);
+          kid.position.z += (dz / d) * Math.min(0.1, d);
+          const h = I.heightAt(kid.position.x, kid.position.z, kid.position.y);
+          if (h) kid.position.y = h.y;
+          H.wall(kid, wx, wz, null);
+          jump = Math.max(jump, Math.abs(kid.position.y - wy));
+        }
+        return false;
+      };
+      // the middle of every run and the corner of every turn, then the far door
+      const marks = [];
+      for (const [k, r] of g.runs.entries()) {
+        marks.push([r.A.x + r.ux * r.len / 2, r.A.z + r.uz * r.len / 2]);
+        if (g.turns[k]) marks.push(g.turns[k].smooth ? [g.runs[k + 1].A.x, g.runs[k + 1].A.z] : [g.turns[k].x, g.turns[k].z]);
+      }
+      marks.push([g.B.x + g.B.nx * 0.9, g.B.z + g.B.nz * 0.9]);
+      for (const [x, z] of marks) { if (!to(x, z)) { reached = false; break; } }
+      const end = I.toLocal(kid.position.x, kid.position.z);
+      const off = Math.hypot(end.x - (g.B.x + g.B.nx * 0.9), end.z - (g.B.z + g.B.nz * 0.9));
+      // level at every junction: the floor round each corner is its height, a hand's width either way
+      // (a sharp turn's whole landing out to its runs' ends; a smooth one's arc, end to end down its middle)
+      for (const T of g.turns) {
+        const probe = [];
+        if (T.smooth) {
+          const C = turnArc(T);
+          for (let k = 0; k <= 8; k++) { const a = C.a0 + (C.sweep * k) / 8; probe.push([C.cx + Math.sin(a) * C.R, C.cz + Math.cos(a) * C.R]); }
+        } else {
+          for (let k = 0; k < 8; k++) for (const rr of [0, 0.5, g.w / 2 - 0.05]) probe.push([T.x + Math.sin(k * Math.PI / 4) * rr, T.z + Math.cos(k * Math.PI / 4) * rr]);
+        }
+        for (const [x, z] of probe) {
+          const p = W(x, z);
+          const h = I.heightAt(p.x, p.z, I.groundY + T.y + 0.3);
+          worst = Math.max(worst, Math.abs((h?.y ?? -99) - I.groundY - T.y));
+        }
+      }
+      // ...and the rail holds her: from the middle run, straight out sideways
+      const m = g.runs[1];
+      const mid = W(m.A.x + m.ux * m.len / 2, m.A.z + m.uz * m.len / 2);
+      kid.position.set(mid.x, I.groundY + m.A.y + m.rise / 2, mid.z);
+      to(m.A.x + m.ux * m.len / 2 + m.uz * 6, m.A.z + m.uz * m.len / 2 - m.ux * 6);
+      const L2 = I.toLocal(kid.position.x, kid.position.z);
+      const side = Math.abs((L2.x - m.A.x) * m.uz - (L2.z - m.A.z) * m.ux);
+      ok(`a ${label} U-bridge is walked door to door round both turns, never a step over its deck's, level at its turns, and its rail holds her`,
+        reached && off < 0.2 && jump < 0.35 && worst < 1e-6 && side < g.w / 2, `reached ${reached} (${off.toFixed(2)} off), biggest step ${jump.toFixed(2)}, turns level to ${worst.toFixed(3)}, ${side.toFixed(2)} out of ${(g.w / 2).toFixed(2)}, ${C.decks.length} decks`);
+    };
+    walk(LU, 'sharp-cornered');
+    walk(smoothU, 'smooth');
+    // THE CARD: RIDE for two turns, the doors, each turn placed, the price with them
+    {
+      const Cd = game.housingCards;
+      const touch0 = game.touchUI;
+      game.touchUI = false;
+      game.players = [kid];
+      kid.score = 1e9;
+      Hm.links = [];
+      I.setHome(Hm, null);
+      const top = { v: 'build', site: I.site.id, kind: 'link', sel: -1, style: 'plank', floor: 1, a: null, cur: { ...Lu.a } };
+      Cd.st.set(0, { kind: 'home', stack: [{ v: 'home', site: I.site.id }] });
+      Cd._push(0, top);
+      Cd.placeHere(0, top);           // the first door
+      top.cur = { ...Lu.b }; top.floor = 0;
+      H.builder.linkTurns(0, top); H.builder.linkTurns(0, top);
+      const said = toasts.at(-1)?.[1] ?? '';
+      const V1 = Cd._view(0);
+      Cd.placeHere(0, top);           // the other door: now the turns
+      const placing = top.vk === 0 && top.via?.length === 2;
+      H.builder.turnSmooth(0, top);
+      Cd.placeHere(0, top);           // turn 1 done
+      const V2 = Cd._view(0);
+      const before = kid.score;
+      Cd.placeHere(0, top);           // turn 2: builds
+      const row = Hm.links.at(-1);
+      ok('the bridge card: RIDE sets two turns and says what they cost, JUMP hands her each corner, and the last JUMP builds it at the turned price',
+        /2 turns/.test(said) && /PLACE THE TURNS/.test(V1.rows[0].title) && placing && /BUILD IT/.test(V2.rows[0].title)
+        && row?.via?.length === 2 && row.via[0].smooth === true && !row.via[1].smooth && before - kid.score === Math.round(base * 1.75) && row.paid === before - kid.score,
+        `${said} | ${V1.rows[0].title} | ${V2.rows[0].title} | paid ${row?.paid}`);
+      Cd.st.delete(0);
+      game.touchUI = touch0;
+      game.players = [];
+    }
+    Hm.links = [];
+    delete H.store.homes[I.site.id];
+    I.setHome(null, null);
   }
 
   /* THE PLACEHOLDERS THAT WERE REPLACED, Oct 2026. Every one of them is a FILE

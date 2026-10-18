@@ -35,6 +35,44 @@ export const LINK_GRADE = 0.5;
 /** A bridge door stays this far from a corner post and from another door. */
 const PORT_EDGE = 1.4;
 
+/* ---------------------------------------------------------------------------
+   TURNS. Richard, Oct 2026: "she sets the number of turns or parts, and
+   places each turn's start and end; each extra turn adds 25% to the price;
+   optional smooth 90° turns, each also +25%, flat and level at the junction;
+   the segments take up the height difference."
+
+   A bridge with turns is its two doors and `via`, the corners between them in
+   the island's frame (`{ x, z, smooth }`), in order from A. Between every two
+   points is a RUN — a straight bridge exactly like a turnless one, drawn by
+   the same `linkParts` — and at every corner a LEVEL junction:
+     sharp  — both runs stop half a width short of the corner, and a round
+              landing of radius half a width times √2 joins them. That radius
+              passes exactly through the four corners of the two runs' square
+              ends whatever the angle, so the landing closes every gap at any
+              turn and its rail is the circle less the two openings. (The
+              first try ran the runs right INTO the corner with a landing the
+              bridge's own width: no gaps, but each run's slope started at the
+              corner itself, and the floor a step from the middle of the turn
+              was 0.05 off level — measured, and not "flat at the junction".)
+     smooth — the corner is cut back on both runs and a level arc of radius
+              one bridge-width joins them.
+   The rise is shared between the runs in proportion to their length, so the
+   whole bridge is one grade and every junction is flat. With no turns there
+   is one run and every number is the turnless bridge's, bit for bit.
+--------------------------------------------------------------------------- */
+
+/** Each turn adds this much of the bridge's price; a smooth one the same again. */
+export const TURN_PRICE = 0.25;
+/** The most turns a bridge can have (four parts). */
+export const LINK_TURNS_MAX = 3;
+/** A run shorter than this between two turns is "too tight". */
+export const RUN_MIN = 1;
+/** A smooth turn's middle radius, in bridge widths. */
+const ARC_W = 1;
+
+/** The price multiplier for bridge L: 1 + 25% a turn + 25% a smooth turn. */
+export const linkPriceK = (L) => 1 + TURN_PRICE * ((L?.via?.length ?? 0) + (L?.via ?? []).filter((v) => v.smooth).length);
+
 /** A house's spec by key. */
 export const specOf = (H, hk) => houseSpecs(H).find((s) => s.hk === hk) ?? null;
 
@@ -79,11 +117,193 @@ export function linkGeom(H, L, gyAt) {
   const A = endAt(H, L.a, gyAt);
   const B = endAt(H, L.b, gyAt);
   if (!A || !B) return null;
-  const dx = B.x - A.x, dz = B.z - A.z;
-  const len = Math.hypot(dx, dz) || 1e-6;
-  const ux = dx / len, uz = dz / len;
   const st = LINK_BY_ID[L.style] ?? LINK_BY_ID.plank;
-  return { A, B, len, ux, uz, a: Math.atan2(ux, uz), w: st.w, style: st, rise: B.y - A.y };
+  const w = st.w, hw = w / 2;
+  const via = L.via ?? [];
+  const pts = [A, ...via, B];
+  // each leg, corner to corner
+  const legs = [];
+  for (let k = 0; k + 1 < pts.length; k++) {
+    const dx = pts[k + 1].x - pts[k].x, dz = pts[k + 1].z - pts[k].z;
+    const len = Math.hypot(dx, dz) || 1e-6;
+    legs.push({ len, ux: dx / len, uz: dz / len });
+  }
+  // each corner: how far it turns, which side is inside, and how much it cuts off both legs
+  const turns = via.map((v, i) => {
+    const a = legs[i], b = legs[i + 1];
+    const c = a.ux * b.uz - a.uz * b.ux;
+    const theta = Math.acos(Math.max(-1, Math.min(1, a.ux * b.ux + a.uz * b.uz)));
+    const smooth = !!v.smooth;
+    const R = w * ARC_W;
+    const t = smooth ? R * Math.tan(Math.min(theta, Math.PI * 0.9) / 2) : hw;
+    // the side (as `linkParts` numbers them: +1 is (uz, -ux)) the bridge turns toward
+    const inner = c > 1e-9 ? -1 : c < -1e-9 ? 1 : 0;
+    return { x: v.x, z: v.z, smooth, theta, t, inner, R, pad: hw * Math.SQRT2, in: a, out: b };
+  });
+  // the runs: each leg less what its turns cut off
+  const runs = legs.map((g, k) => {
+    const t0 = k > 0 ? turns[k - 1].t : 0, t1 = k < turns.length ? turns[k].t : 0;
+    const p = pts[k];
+    return { ...g, raw: g.len, len: g.len - t0 - t1, x0: p.x + g.ux * t0, z0: p.z + g.uz * t0 };
+  });
+  const total = runs.reduce((s, r) => s + Math.max(0, r.len), 0) || 1e-6;
+  const rise = B.y - A.y;
+  let walked = 0;
+  const out = runs.map((r, k) => {
+    const len = Math.max(r.len, 1e-6);
+    const y0 = A.y + rise * (walked / total);
+    walked += Math.max(0, r.len);
+    const y1 = k === runs.length - 1 ? B.y : A.y + rise * (walked / total);
+    const a0 = k === 0 ? A : { x: r.x0, z: r.z0, y: y0 };
+    const b0 = k === runs.length - 1 ? B : { x: r.x0 + r.ux * len, z: r.z0 + r.uz * len, y: y1 };
+    return {
+      A: a0, B: b0, len, ux: r.ux, uz: r.uz, a: Math.atan2(r.ux, r.uz), w, style: st, rise: y1 - y0,
+      first: k === 0, last: k === runs.length - 1, k, tight: r.len < (via.length ? RUN_MIN : 0),
+    };
+  });
+  turns.forEach((T, i) => { T.y = out[i].B.y; });
+  const r0 = out[0];
+  return {
+    A, B, w, style: st, rise, runs: out, turns,
+    // the first run's, so a turnless bridge is the same object it always was
+    len: via.length ? total : r0.len, ux: r0.ux, uz: r0.uz, a: r0.a,
+    tight: out.some((r) => r.tight),
+  };
+}
+
+/**
+ * WHERE n TURNS START, before she moves them: a bridge that can already be
+ * built, wherever that is easy to find. One turn goes where the two doors'
+ * straight-out lines cross (two walls at right angles: an L); otherwise
+ * every shape steps straight out of each door first, so the first and last
+ * runs always leave their doors square.
+ */
+export function defaultVia(H, a, b, n, gyAt) {
+  const A = a && endAt(H, a, gyAt), B = b && endAt(H, b, gyAt);
+  if (!A || !B || !n) return [];
+  const dx = B.x - A.x, dz = B.z - A.z;
+  const D = Math.hypot(dx, dz) || 1;
+  const pt = (x, z) => ({ x: +x.toFixed(2), z: +z.toFixed(2), smooth: false });
+  if (n === 1) {
+    const den = A.nx * B.nz - A.nz * B.nx;
+    if (Math.abs(den) > 0.3) {
+      const s = (dx * B.nz - B.nx * dz) / den, t = (dx * A.nz - A.nx * dz) / den;
+      if (s > 2 && t > 2) return [pt(A.x + A.nx * s, A.z + A.nz * s)];
+    }
+    // facing doors: a shallow V off to one side
+    return [pt((A.x + B.x) / 2 + A.nz * D / 4, (A.z + B.z) / 2 - A.nx * D / 4)];
+  }
+  const h = Math.max(3, D / 4);
+  const pa = { x: A.x + A.nx * h, z: A.z + A.nz * h }, pb = { x: B.x + B.nx * h, z: B.z + B.nz * h };
+  if (n === 2) return [pt(pa.x, pa.z), pt(pb.x, pb.z)];
+  const sx = pb.x - pa.x, sz = pb.z - pa.z, sl = Math.hypot(sx, sz) || 1;
+  return [pt(pa.x, pa.z), pt((pa.x + pb.x) / 2 + (sz / sl) * D / 6, (pa.z + pb.z) / 2 - (sx / sl) * D / 6), pt(pb.x, pb.z)];
+}
+
+/** A smooth turn's arc: centre, radius and the two angles (atan2(dx, dz)), sweeping `sweep`. */
+export function turnArc(T) {
+  const sx = T.x - T.in.ux * T.t, sz = T.z - T.in.uz * T.t;
+  // the centre is R to the inside of where the arc starts
+  const s = T.inner || 1;
+  const cx = sx + s * T.in.uz * T.R, cz = sz - s * T.in.ux * T.R;
+  const a0 = Math.atan2(sx - cx, sz - cz);
+  const ex = T.x + T.out.ux * T.t, ez = T.z + T.out.uz * T.t;
+  let sweep = Math.atan2(ex - cx, ez - cz) - a0;
+  while (sweep > Math.PI) sweep -= Math.PI * 2;
+  while (sweep < -Math.PI) sweep += Math.PI * 2;
+  return { cx, cz, R: T.R, a0, sweep };
+}
+
+/** Points along a smooth turn's arc at radius `rad`, in the island's frame. */
+function arcCurve(T, rad, n) {
+  const C = turnArc(T);
+  const pts = [];
+  for (let j = 0; j <= n; j++) {
+    const a = C.a0 + (C.sweep * j) / n;
+    pts.push({ x: C.cx + Math.sin(a) * rad, z: C.cz + Math.cos(a) * rad });
+  }
+  return pts;
+}
+
+/**
+ * A sharp turn's landing rail: its circle at radius `rad`, less the two
+ * openings where the runs come in. Each run's square end spans 45° either side
+ * of its axis on the landing's edge (that is what the √2 is for), so the
+ * circle is sampled and every stretch outside both openings is a rail —
+ * at any angle of turn, with no case for which side is inside.
+ */
+function padRails(T, rad) {
+  const N = 48;
+  const c45 = Math.SQRT1_2 - 1e-6;
+  const open = [];
+  for (let j = 0; j < N; j++) {
+    const a = (j / N) * Math.PI * 2, dx = Math.sin(a), dz = Math.cos(a);
+    open.push(-(dx * T.in.ux + dz * T.in.uz) >= c45 || dx * T.out.ux + dz * T.out.uz >= c45);
+  }
+  const s0 = open.indexOf(true);
+  if (s0 < 0) return [];
+  const lines = [];
+  let cur = null;
+  for (let k = 1; k <= N; k++) {
+    const j = (s0 + k) % N;
+    if (open[j]) { if (cur?.length > 1) lines.push(cur); cur = null; continue; }
+    const a = (j / N) * Math.PI * 2;
+    (cur ??= []).push({ x: T.x + Math.sin(a) * rad, z: T.z + Math.cos(a) * rad });
+  }
+  if (cur?.length > 1) lines.push(cur);
+  return lines;
+}
+
+/**
+ * THE BRIDGE'S COLLIDERS, pure, in the island's frame with heights relative
+ * to its ground: a deck per run and per turn (`homeisle.js` reads a deck's
+ * `frame` as a treehouse branch's), and the rails as walls. World-check
+ * walks these.
+ */
+export function linkColliders(G) {
+  const hw = G.w / 2;
+  const decks = [];
+  const walls = [];
+  for (const r of G.runs) {
+    const y0 = r.A.y;
+    decks.push({
+      x0: -hw, x1: hw, z0: r.first ? -0.4 : 0, z1: r.last ? r.len + 0.4 : r.len, y: Math.max(r.A.y, r.B.y), step: 0.6,
+      frame: { x: r.A.x, z: r.A.z, a: r.a },
+      yAt: (x, z) => y0 + r.rise * Math.min(1, Math.max(0, z / r.len)),
+    });
+    const lo = Math.min(r.A.y, r.B.y), hi = Math.max(r.A.y, r.B.y);
+    for (const s of [-1, 1]) {
+      const ox = r.uz * s * (hw - 0.05), oz = -r.ux * s * (hw - 0.05);
+      walls.push({
+        ax: r.A.x + ox, az: r.A.z + oz, bx: r.B.x + ox, bz: r.B.z + oz,
+        y0: lo + 0.2, y1: hi + 1.3, rail: true,
+      });
+    }
+  }
+  for (const T of G.turns) {
+    const rails = [];
+    if (T.smooth) {
+      const C = turnArc(T);
+      const n = Math.max(4, Math.ceil(Math.abs(C.sweep) / (Math.PI / 12)));
+      const mid = arcCurve(T, T.R, n);
+      for (let j = 0; j < n; j++) {
+        const p = mid[j], q = mid[j + 1];
+        const l = Math.hypot(q.x - p.x, q.z - p.z);
+        decks.push({ x0: -hw, x1: hw, z0: -0.15, z1: l + 0.15, y: T.y, step: 0.6, frame: { x: p.x, z: p.z, a: Math.atan2(q.x - p.x, q.z - p.z) }, turn: true });
+      }
+      rails.push(arcCurve(T, T.R - hw + 0.05, n), arcCurve(T, T.R + hw - 0.05, n));
+    } else {
+      // the landing: the square round it (the rail keeps her off its corners), square to the run coming in
+      decks.push({ x0: -T.pad, x1: T.pad, z0: -T.pad, z1: T.pad, y: T.y, step: 0.6, frame: { x: T.x, z: T.z, a: G.runs[G.turns.indexOf(T)].a }, turn: true });
+      rails.push(...padRails(T, T.pad - 0.05));
+    }
+    for (const c of rails) {
+      for (let j = 0; j + 1 < c.length; j++) {
+        walls.push({ ax: c[j].x, az: c[j].z, bx: c[j + 1].x, bz: c[j + 1].z, y0: T.y + 0.2, y1: T.y + 1.3, rail: true });
+      }
+    }
+  }
+  return { decks, walls };
 }
 
 /** The floor height along the bridge at distance d from A. */
@@ -131,27 +351,46 @@ export function linkWhy(H, L, env = {}) {
   if (pb) return pb;
   const G = linkGeom(H, L, gyAt);
   if (!G) return 'One of those doors is not there any more.';
+  const turned = G.turns.length > 0;
+  const r0 = G.runs[0], rN = G.runs[G.runs.length - 1];
   // the two doors have to look at each other, or the bridge would go through a house
-  if (G.ux * G.A.nx + G.uz * G.A.nz < 0.25 || -(G.ux * G.B.nx + G.uz * G.B.nz) < 0.25) {
-    return 'Those two walls face away from each other — pick walls that look at each other.';
+  if (r0.ux * G.A.nx + r0.uz * G.A.nz < 0.25 || -(rN.ux * G.B.nx + rN.uz * G.B.nz) < 0.25) {
+    return turned ? 'The bridge has to leave each door straight out — move the first or last turn in front of its door.'
+      : 'Those two walls face away from each other — pick walls that look at each other.';
   }
-  if (G.len > LINK_MAX) return `Too far apart for one bridge — ${Math.round(G.len)} long, and ${LINK_MAX} is the most.`;
+  if (turned) {
+    const lim = (env.r ?? 50) - 1;
+    if (L.via.some((v) => Math.hypot(v.x, v.z) > lim)) return 'A turn is off the edge of the island — bring it back in.';
+    if (G.tight) return 'A turn is too tight — move it further from the door or from the next turn.';
+  }
+  if (G.len > LINK_MAX) return `Too ${turned ? 'long' : 'far apart'} for one bridge — ${Math.round(G.len)} long, and ${LINK_MAX} is the most.`;
   if (G.len < LINK_MIN) return 'Those houses are too close together for a bridge.';
   if (Math.abs(G.rise) / G.len > LINK_GRADE) {
-    return 'Too steep to climb — move the houses further apart, or join floors nearer in height.';
+    return turned ? 'Too steep to climb — make the bridge longer with its turns, or join floors nearer in height.'
+      : 'Too steep to climb — move the houses further apart, or join floors nearer in height.';
   }
-  // through a third house?
+  /* Through a house? A straight bridge is only asked about the houses it does
+     not join (its two doors face each other, which keeps it off its own).
+     A turned one can double back, so it is asked about its own two as well,
+     everywhere but the run out of each one's door. */
+  const hw = G.w / 2;
   for (const s of houseSpecs(H)) {
-    if (s.hk === L.a.hk || s.hk === L.b.hk) continue;
+    const own = s.hk === L.a.hk || s.hk === L.b.hk;
+    if (own && !turned) continue;
     const top = houseHeight(s.house) + gyAt(s.x, s.z);
-    for (let d = 0; d <= G.len; d += 0.5) {
-      const y = linkY(G, d);
-      if (y > top) continue;
-      for (const o of [-G.w / 2, 0, G.w / 2]) {
-        const x = G.A.x + G.ux * d + G.uz * o, z = G.A.z + G.uz * d - G.ux * o;
-        if (inFoot(s, x, z)) return `It would go straight through the ${HOUSE_BY_ID[s.house].short}.`;
+    const name = `It would go straight through the ${HOUSE_BY_ID[s.house].short}.`;
+    for (const r of G.runs) {
+      if ((r.first && s.hk === L.a.hk) || (r.last && s.hk === L.b.hk)) continue;
+      for (let d = 0; d <= r.len; d += 0.5) {
+        const y = linkY(r, d);
+        if (y > top) continue;
+        for (const o of [-hw, 0, hw]) {
+          const x = r.A.x + r.ux * d + r.uz * o, z = r.A.z + r.uz * d - r.ux * o;
+          if (inFoot(s, x, z)) return name;
+        }
       }
     }
+    for (const T of G.turns) if (T.y <= top && inFoot(s, T.x, T.z, hw)) return name;
   }
   return null;
 }
@@ -166,6 +405,14 @@ export function yardH(it) {
 
 /** Circle (x, z, r) against the bridge strip of G; the deck's height there or null. */
 export function overStrip(G, x, z, r) {
+  if (G.runs?.length > 1) {
+    let lo = null;
+    for (const R of G.runs) { const y = overStrip(R, x, z, r); if (y != null) lo = lo == null ? y : Math.min(lo, y); }
+    for (const T of G.turns) {
+      if (Math.hypot(x - T.x, z - T.z) < (T.smooth ? G.w / 2 + T.t * 1.5 : T.pad) + r) lo = lo == null ? T.y : Math.min(lo, T.y);
+    }
+    return lo;
+  }
   const vx = x - G.A.x, vz = z - G.A.z;
   const d = vx * G.ux + vz * G.uz;
   const off = Math.abs(vx * G.uz - vz * G.ux);
@@ -261,8 +508,7 @@ export function linkParts(G, ground) {
   const solid = [];
   const glow = [];
   const Y = (d) => rise * Math.min(1, Math.max(0, d / len));
-  const deckC = { plank: PALETTE.wood, rope: 0x9a7448, stone: 0x9a958e, vermilion: 0x6a4630, sakura: 0x7a5236 }[st.id] ?? PALETTE.wood;
-  const railC = { plank: PALETTE.woodDark, rope: 0xcdb27a, stone: 0x8a857c, vermilion: 0xc0302a, sakura: 0xd96a8a }[st.id] ?? PALETTE.woodDark;
+  const { deckC, railC } = linkColours(st);
   const sloped = (wd, h, d0, d1, c, x = 0, lift = 0) => {
     const L = Math.hypot(d1 - d0, Y(d1) - Y(d0));
     const g = new THREE.BoxGeometry(wd, h, L);
@@ -381,6 +627,101 @@ export function linkParts(G, ground) {
   return { solid, glow };
 }
 
+/** A style's deck and rail colours (a run's and a turn's are the same bridge). */
+export function linkColours(st) {
+  return {
+    deckC: { plank: PALETTE.wood, rope: 0x9a7448, stone: 0x9a958e, vermilion: 0x6a4630, sakura: 0x7a5236 }[st.id] ?? PALETTE.wood,
+    railC: { plank: PALETTE.woodDark, rope: 0xcdb27a, stone: 0x8a857c, vermilion: 0xc0302a, sakura: 0xd96a8a }[st.id] ?? PALETTE.woodDark,
+  };
+}
+
+/** A level box from p to q (island frame, relative to an origin), its top at `top`. */
+function chord(wd, h, p, q, top, c) {
+  const l = Math.hypot(q.x - p.x, q.z - p.z);
+  const g = new THREE.BoxGeometry(wd, h, l + 0.04);
+  paint(g, c);
+  g.rotateY(Math.atan2(q.x - p.x, q.z - p.z));
+  g.translate((p.x + q.x) / 2, top - h / 2, (p.z + q.z) / 2);
+  return g;
+}
+
+/**
+ * One turn's parts, in the ISLAND's axes with the corner at the origin and
+ * its level deck's top at y 0: the landing or the arc, its rails, and a post
+ * down to `ground` (the island's height under the corner, relative to the
+ * deck) if it is high enough to need one.
+ */
+export function turnParts(G, T, ground) {
+  const st = G.style;
+  const hw = G.w / 2;
+  const { deckC, railC } = linkColours(st);
+  const solid = [];
+  const rel = (c) => c.map((p) => ({ x: p.x - T.x, z: p.z - T.z }));
+  const rails = [];
+  if (T.smooth) {
+    const C = turnArc(T);
+    const n = Math.max(4, Math.ceil(Math.abs(C.sweep) / (Math.PI / 12)));
+    const mid = rel(arcCurve(T, T.R, n));
+    for (let j = 0; j < n; j++) solid.push(chord(G.w, 0.3, mid[j], mid[j + 1], 0, j % 2 ? deckC : new THREE.Color(deckC).multiplyScalar(0.9).getHex()));
+    rails.push(rel(arcCurve(T, T.R - hw + 0.1, n)), rel(arcCurve(T, T.R + hw - 0.1, n)));
+  } else {
+    const d = new THREE.CylinderGeometry(T.pad, T.pad, 0.3, 32);
+    paint(d, deckC);
+    d.translate(0, -0.15, 0);
+    solid.push(d);
+    rails.push(...padRails(T, T.pad - 0.1).map(rel));
+  }
+  for (const c of rails) {
+    for (let j = 0; j + 1 < c.length; j++) {
+      if (st.id === 'stone') {
+        solid.push(chord(0.36, 1.05, c[j], c[j + 1], 1.05, railC), chord(0.46, 0.14, c[j], c[j + 1], 1.12 + 0.07, 0xb0aba3));
+      } else {
+        const [t, b] = st.id === 'rope' ? [0.07, 0.05] : [0.14, 0.08];
+        solid.push(chord(t, t, c[j], c[j + 1], (st.id === 'rope' ? 1.05 : 1.1) + t / 2, railC), chord(b, b, c[j], c[j + 1], 0.55 + b / 2, railC));
+      }
+    }
+    if (st.id !== 'stone') for (const p of [c[0], c[c.length - 1]]) solid.push(bx(0.22, 1.2, 0.22, st.id === 'rope' ? 0x6a4a2a : railC, p.x, 0.6, p.z));
+  }
+  const h = -0.3 - ground;
+  if (h > 0.6) solid.push(bx(st.id === 'stone' ? G.w * 0.5 : 0.4, h, st.id === 'stone' ? G.w * 0.5 : 0.4, 0x5a3e26, 0, -0.3 - h / 2, 0));
+  return { solid };
+}
+
+/**
+ * THE WHOLE BRIDGE AS ONE GROUP'S PARTS: every run's `linkParts` and models
+ * and every turn's `turnParts`, all in the FIRST run's frame (A at the origin,
+ * its turn), which is where homeisle.js and the build ghost stand the group.
+ * `ground(x, z)` is the island's height there, relative to its ground. With
+ * no turns this is `linkParts(G)` and `linkModels(G)` unchanged.
+ */
+export function linkAll(G, ground, models = false) {
+  const A0 = G.runs[0].A, a0 = G.runs[0].a;
+  const c0 = Math.cos(a0), s0 = Math.sin(a0);
+  const into = (x, z) => { const dx = x - A0.x, dz = z - A0.z; return { x: dx * c0 - dz * s0, z: dx * s0 + dz * c0 }; };
+  const solid = [], glow = [], mods = [];
+  for (const r of G.runs) {
+    const run = { ...r, models };
+    const P = linkParts(run, (d) => ground(r.A.x + r.ux * d, r.A.z + r.uz * d) - r.A.y);
+    const o = into(r.A.x, r.A.z);
+    const da = r.a - a0;
+    const place = (g) => { g.rotateY(da); g.translate(o.x, r.A.y - A0.y, o.z); return g; };
+    solid.push(...P.solid.map(place));
+    glow.push(...P.glow.map(place));
+    if (models) {
+      const cd = Math.cos(da), sd = Math.sin(da);
+      for (const m of linkModels(run)) {
+        mods.push({ ...m, x: o.x + m.x * cd + m.z * sd, z: o.z - m.x * sd + m.z * cd, y: m.y + r.A.y - A0.y, ry: m.ry + da });
+      }
+    }
+  }
+  for (const T of G.turns) {
+    const P = turnParts(G, T, ground(T.x, T.z) - T.y);
+    const o = into(T.x, T.z);
+    solid.push(...P.solid.map((g) => { g.rotateY(-a0); g.translate(o.x, T.y - A0.y, o.z); return g; }));
+  }
+  return { solid, glow, models: mods };
+}
+
 /** The door heights a bridge needs: as tall as the front door. */
 export const LINK_DOOR_H = PORT_H;
 
@@ -403,14 +744,16 @@ export function linkModels(G) {
   const hw = w / 2;
   const Y = (d) => rise * Math.min(1, Math.max(0, d / len));
   const out = [];
+  // a run of a turned bridge has its end pieces only at the bridge's own two ends
+  const atA = G.first ?? true, atB = G.last ?? true;
   if (st.id === 'plank' || st.id === 'rope') {
-    out.push({ id: 'lantern-post-f47665', x: hw + 0.35, y: Y(0.6), z: 0.6, ry: -Math.PI / 2, h: 2.4 });
-    out.push({ id: 'lantern-post-f47665', x: -(hw + 0.35), y: Y(len - 0.6), z: len - 0.6, ry: Math.PI / 2, h: 2.4 });
+    if (atA) out.push({ id: 'lantern-post-f47665', x: hw + 0.35, y: Y(0.6), z: 0.6, ry: -Math.PI / 2, h: 2.4 });
+    if (atB) out.push({ id: 'lantern-post-f47665', x: -(hw + 0.35), y: Y(len - 0.6), z: len - 0.6, ry: Math.PI / 2, h: 2.4 });
   } else if (st.id === 'stone') {
-    for (const d of [0.9, len - 0.9]) for (const s of [-1, 1]) out.push({ id: 'stone-lantern-d56d0a', x: s * (hw - 0.5), y: Y(d), z: d, ry: 0, h: 1.3 });
+    for (const d of [atA && 0.9, atB && len - 0.9]) if (d !== false) for (const s of [-1, 1]) out.push({ id: 'stone-lantern-d56d0a', x: s * (hw - 0.5), y: Y(d), z: d, ry: 0, h: 1.3 });
   } else if (st.id === 'vermilion') {
     // a torii is 2.6 wide for 3.19 tall: fit it to the bridge's width and it stands ~4 high, over the 3.1 door
-    if (len > 4) for (const d of [1.2, len - 1.2]) out.push({ id: 'torii-gate-402f30', x: 0, y: Y(d), z: d, ry: 0, h: 3.19 * (w + 0.9) / 2.6 });
+    if (len > 4) for (const d of [atA && 1.2, atB && len - 1.2]) if (d !== false) out.push({ id: 'torii-gate-402f30', x: 0, y: Y(d), z: d, ry: 0, h: 3.19 * (w + 0.9) / 2.6 });
   } else if (st.id === 'sakura') {
     for (let d = 1; d < len - 0.6; d += 2.2) {
       for (const s of [-1, 1]) out.push({ id: 'flower-planter-500ed2', x: s * (hw - 0.45), y: Y(d), z: d, ry: Math.PI / 2, h: 0.5, stand: s });

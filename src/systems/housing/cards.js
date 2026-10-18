@@ -3,10 +3,10 @@ import {
   FREE_ANNEX, BUILDABLE_HOUSES, LINK_STYLES, LINK_BY_ID, homeRooms, roomById, houseSpecs,
 } from './catalog.js';
 import { houseWhy } from './editor.js';
-import { portSpots, linkBlockers } from './links.js';
+import { portSpots, linkBlockers, defaultVia } from './links.js';
 import { JUKEBOX, hasRecording } from './jukebox.js';
 import { footprint, firstFit, firstYardSpot, wallSlots, wallFree, ITEM_SELL } from './editor.js';
-import { buildWhy, commitBuild, removeBuilt, pickList, stepToward, BUILD_KEYS, PICK_KEYS, CUSTOM_PICK_KEYS, freeTurn, rotStepOf } from './build.js';
+import { buildWhy, commitBuild, removeBuilt, pickList, stepToward, BUILD_KEYS, PICK_KEYS, CUSTOM_PICK_KEYS, freeTurn, rotStepOf, linkOf } from './build.js';
 import { stylesFor, LOOK_MUL } from './models.js';
 import { YARD_BUILT } from './homeisle.js';
 import { Preview } from './preview.js';
@@ -183,6 +183,9 @@ export class HousingCards {
     const p = this.game.players[index];
     return [this.st.get(index)?.stack.length, top?.v, top?.room, top?.kind, top?.sel, top?.gx, top?.gz, top?.rot, top?.rotStep, top?.side, top?.k, top?.at, top?.rev,
       top?.v === 'build' && top.kind === 'yard' ? `${Math.round(top.x * 2)},${Math.round(top.z * 2)}` : '',
+      // a bridge's card says whether it reaches, which changes with every door, turn count and corner
+      top?.v === 'build' && top.kind === 'link'
+        ? JSON.stringify([top.a, top.cur, top.turns, top.vk, top.vk != null ? top.via?.map((v) => [Math.round(v.x * 2), Math.round(v.z * 2), !!v.smooth]) : 0]) : '',
       p?.score, this.H.store.at, this.pending ? [...this.pending.yes].join(',') : '', c.i].join('|');
   }
 
@@ -236,8 +239,10 @@ export class HousingCards {
         const k = L[top.at ?? 0] ? stepToward(L, L[top.at ?? 0], step[0], step[1]) : -1;
         if (k >= 0) top.at = k;
       } else if (step && (top.kind === 'yard' || top.kind === 'house')) { top.x += step[0] * 1.5; top.z += step[1] * 1.5; }
+      else if (step && top.kind === 'link' && top.vk != null) { const v = top.via?.[top.vk]; if (v) { v.x += step[0] * 1.5; v.z += step[1] * 1.5; } }
       else if (step && top.kind === 'link') this.H.builder.hopPort(top, step[0], step[1]);
-      else if (act === 'rot' && top.kind === 'link') { this.H.builder.portFloor(top); return; }
+      else if (act === 'rot' && top.kind === 'link') { if (top.vk != null) B.turnSmooth(index, top); else this.H.builder.portFloor(top); return; }
+      else if (act === 'step' && top.kind === 'link') { if (top.vk == null) B.linkTurns(index, top); return; }
       else if (step && top.kind === 'wall') B.hop(top, step[0], step[1]);
       else if (step) B.nudge(top, step[0], step[1]);
       if (act === 'rot') B.rotate(top);
@@ -926,7 +931,8 @@ export class HousingCards {
 
   _touchPad(index, turn, sell, step = 0) {
     const b = (act, label) => `<button type="button" data-hact="${act}" data-side="${index}">${label}</button>`;
-    return `<div class="hs-pad">${['left', 'up', 'down', 'right'].map((d) => b(d, ARROW[d])).join('')}${turn ? b('rot', '⟳') : ''}${step ? b('step', `${step}°`) : ''}${sell ? b('sell', 'SELL') : ''}</div>`;
+    // `step` is the RIDE button: a number of degrees, or (a bridge's) its own word
+    return `<div class="hs-pad">${['left', 'up', 'down', 'right'].map((d) => b(d, ARROW[d])).join('')}${turn ? b('rot', '⟳') : ''}${step ? b('step', typeof step === 'string' ? step : `${step}°`) : ''}${sell ? b('sell', 'SELL') : ''}</div>`;
   }
 
   _sellBack(id) { return Math.round(this.H.itemPrice(id) * ITEM_SELL); }
@@ -1261,25 +1267,41 @@ export class HousingCards {
     return { head: 'WHICH BRIDGE?', rows };
   }
 
+  /* A BRIDGE WITH TURNS. "she sets the number of turns or parts, and places
+     each turn's start and end". RIDE sets how many while she picks the doors
+     (the ghost bends round its default corners at once); JUMP on the second
+     door then hands her each corner in turn, to slide with the stick and make
+     a curve with ATTACK; JUMP on the last builds. The price on the button is
+     the price with them. */
   _v_buildlink(index, p, top) {
     const H = this._home(top);
     const I = this.H.isleOf(top.site);
     const S = LINK_BY_ID[top.style];
+    const n = top.turns ?? 0;
+    const placing = top.vk != null;
+    const last = placing && top.vk >= n - 1;
+    const toTurns = top.a && n && !placing;
     const bad = top.a ? buildWhy(H, top, this.H.envOf(I)) : null;
-    const price = this.H.linkPrice(top.style);
-    const keys = [['STICK', 'next door'], ['ATTACK', 'next floor'], ['JUMP', top.a ? 'build it' : 'this door'], ['SPRINT', top.a ? 'other first door' : 'back'], ['INTERACT', 'back']];
+    const price = this.H.linkPrice(top.style, linkOf(H, top));
+    const v = placing ? top.via[top.vk] : null;
+    const keys = placing
+      ? [['STICK', `move turn ${top.vk + 1}`], ['ATTACK', v?.smooth ? 'make it a corner' : 'make it a curve'], ['JUMP', last ? 'build it' : 'next turn'], ['SPRINT', 'back'], ['INTERACT', 'back']]
+      : [['STICK', 'next door'], ['ATTACK', 'next floor'], ['RIDE', n ? `${n} turn${n > 1 ? 's' : ''}` : 'add a turn'],
+        ['JUMP', !top.a ? 'this door' : toTurns ? 'place the turns' : 'build it'], ['SPRINT', top.a ? 'other first door' : 'back'], ['INTERACT', 'back']];
     const msg = !top.a ? `Pick the FIRST door — floor ${top.floor + 1}. ATTACK goes up a floor.`
+      : placing ? (bad ?? `Turn ${top.vk + 1} of ${n} — ${v?.smooth ? 'a smooth curve' : 'a sharp corner'}. ${last ? 'It reaches! JUMP builds it.' : 'JUMP for the next turn.'}`)
+      : toTurns ? `Pick the other door, then JUMP to place the ${n} turn${n > 1 ? 's' : ''}.`
       : bad ?? `It reaches! Press JUMP to build it.`;
     return {
       build: true,
-      head: `${S.name} — ${top.a ? 'THE OTHER DOOR' : 'THE FIRST DOOR'}`,
+      head: `${S.name} — ${placing ? `TURN ${top.vk + 1} OF ${n}` : top.a ? 'THE OTHER DOOR' : 'THE FIRST DOOR'}`,
       body: `<div class="hs-buildrow"><canvas class="hs-map" width="180" height="180"></canvas><div class="hs-buildinfo">
-        <div class="${bad ? 'hs-bad' : 'hs-good'}">${esc(msg)}</div>
+        <div class="${bad && !toTurns ? 'hs-bad' : 'hs-good'}">${esc(msg)}</div>
         <div class="hs-keys">${keys.map(([k, w]) => `<span><b>${k}</b> ${w}</span>`).join('')}</div>
-        ${this._touch() ? this._touchPad(index, true, false) : ''}</div></div>`,
+        ${this._touch() ? this._touchPad(index, true, false, placing ? 0 : 'TURNS') : ''}</div></div>`,
       rows: [{
-        title: top.a ? `BUILD IT — ${pts(price)}` : 'THIS DOOR FIRST',
-        disabled: !!bad || (top.a && p.score < price),
+        title: !top.a ? 'THIS DOOR FIRST' : toTurns ? 'PLACE THE TURNS' : placing && !last ? 'NEXT TURN' : `BUILD IT — ${pts(price)}`,
+        disabled: toTurns || (placing && !last) ? false : !!bad || (top.a && p.score < price),
         why: bad ?? `${p.name} needs ${pts(price - p.score)} more.`,
         go: () => { this.placeHere(index, top); return null; },
       }],
@@ -1298,7 +1320,23 @@ export class HousingCards {
       this.H.builder.hopPort(top, 0, 0);
       return;
     }
-    const L = { a: top.a, b: top.cur, style: top.style };
+    const n = top.turns ?? 0;
+    if (n && top.vk == null) {
+      // the doors are chosen: hand her the corners, starting where the ghost already showed them
+      top.b = { ...top.cur };
+      top.via = defaultVia(H, top.a, top.b, n, this.H.envOf(this.H.isleOf(top.site)).gyAt);
+      top.vk = 0;
+      this.game.audio?.play?.('menu');
+      this.game.toast('Slide turn 1 with the stick — ATTACK makes it a smooth curve. JUMP when it is in place.', index);
+      return;
+    }
+    if (n && top.vk < n - 1) {
+      top.vk++;
+      this.game.audio?.play?.('menu');
+      this.game.toast(`Now turn ${top.vk + 1}.`, index);
+      return;
+    }
+    const L = linkOf(H, top);
     const r = this.H.buildLink(p, H, L, false);
     if (r.blockers?.length) { this._push(index, { v: 'linkblock', site: top.site, L, cursor: 0 }); return; }
     if (r.ok) this._pop(index);
@@ -1306,6 +1344,13 @@ export class HousingCards {
 
   /** SPRINT while picking doors: forget the first door, or leave. */
   linkBack(index, top) {
+    // placing turns: back a turn, and from the first back to choosing the other door
+    if (top.vk != null) {
+      if (top.vk > 0) top.vk--;
+      else { top.vk = null; top.cur = top.b; top.b = null; }
+      this.game.audio?.play?.('menu');
+      return;
+    }
     if (top.a) { top.cur = top.a; top.a = null; top.floor = top.cur.floor; this.game.audio?.play?.('menu'); return; }
     this._pop(index);
   }
