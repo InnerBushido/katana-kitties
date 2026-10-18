@@ -3,6 +3,7 @@ import { POWER_ORBS, PowerOrbPickup, WARD, AEGIS, DODGE, CHARGE, PARRY, lockRang
 import { SIM, HOLO } from '../../world/simworld.js';
 import { HoloPanel } from './holo.js';
 import { Post, Tile, Mat, HoloKitten, BLADE_KINDS, holoMat } from './targets.js';
+import { SCREEN } from './kata.js';
 import { COMBAT } from '../../entities/player.js';
 
 /* ---------------------------------------------------------------------------
@@ -161,12 +162,36 @@ export const LEAP_CLIMB = [
   { up: LEAP_STEP, turn: 26 },
   { up: LEAP_DECK, turn: 40 },
 ];
+/** 跳: the CHECKPOINT is the second-to-last step (`LEAP_CHECK` from the
+ *  top): once she has stood on it, a fall puts her back on it, and her camera
+ *  is behind her and above, looking up the last tall step. */
+export const LEAP_CHECK = 2;
+/* Above the walking camera's 0.66 ("from a distance and from above"), and
+   a little further out than its 24, so the step she is on and the one she
+   is jumping to are both in the pane. */
+export const LEAP_CAM = { dist: 26, pitch: 0.78 };
+/** 跳: what a missed tall step says, and the checkpoint's line. */
+export const LEAP_MISS = 'Missed it! The tall steps need a TRIPLE JUMP — press jump THREE times';
+export const LEAP_BACK = 'Back up you go — TRIPLE JUMP to the star!';
 /** 壁: three stars — no bolt landed, and done inside this. */
 export const WARD_GOLD = 18;
 /** 十: posts stand CROSS_R from her; in the air, CROSS_AIR up, and answering
  *  only to a kitten above the floor (CROSS_AIR_UP narrows the window: from
- *  the floor its middle is 3.3 over her, past 3.4 - 1.2). */
-export const CROSS_R = 2.4;
+ *  the floor its middle is 3.3 over her, past 3.4 - 1.2).
+ *  FURTHER OUT, AND AIMED AT. Richard, Oct 2026: "have the targets be further
+ *  away from the player (although within striking distance) so that it is
+ *  slightly harder to hit them because the player has to aim where they
+ *  swing." 2.4 -> 3.2, against a reach of 4.0 (A.reach 3.4 + the post's 0.6).
+ *  Further alone changes nothing — the gate's test is an ANGLE, and the
+ *  Cross Slash's is a 150-degree fan (cos -0.25) at any distance — so each
+ *  post also asks to be aimed at within CROSS_AIM (cos 0.5, 60 degrees
+ *  either side): wide enough for a keyboard's eight directions (22.5 off at
+ *  worst), narrow enough that two posts a third of a turn apart are two cuts. */
+export const CROSS_R = 3.2;
+export const CROSS_AIM = 0.5;
+/** 十: the last level's next post fades in where it will be for this long
+ *  before it can be cut — "Maybe 0.5s before the first cut". */
+export const CROSS_GHOST = { t: 0.5, alpha: 0.4 };
 export const CROSS_AIR = 2.0;
 export const CROSS_AIR_UP = -1.2;
 export const CROSS_LEVELS = [
@@ -183,21 +208,43 @@ export const CROSS_LEVELS = [
 export const CHARGE_ONE = 2.4;
 export const CHARGE_TWO = 4.2;
 export const AIR_BAND = 0.9;
+/* ON THE SCREEN'S OWN AXES. Richard, Oct 2026: "it is hard to do these drills
+   on keyboard since they require the diagonal movements (like Northwest,
+   Southwest, etc. which require two fingers per key rather than 1), we should
+   instead rotate them so they require more cardinal movements with the
+   Charge ... We can have half of the first 2 drills be diagonal, but after
+   that, should be cardinal directions." The parts were laid out on the
+   island's own `fwd`, which is a spoke off the hub and nothing to do with the
+   camera — whose yaw never turns in here (kata.js `SCREEN`) — so every row
+   came out at some angle to the screen. Now `at` is [screen-up, screen-right]
+   from the floor's middle and `dir` is degrees from screen-up toward
+   screen-right: 0/90/180/270 are one key, 45/135 two. Parts 1 and 2 have two
+   of each; 3, 4 and 5 are all one key. */
 export const CHARGE_PARTS = [
   { name: 'Four sets', start: [-3, 0], sets: [
     { at: [8, 0], dir: 90, gap: 3 }, { at: [-8, 0], dir: 90, gap: 3 },
-    { at: [0, 8], dir: 0, gap: 3 }, { at: [0, -8], dir: 0, gap: 3 }] },
+    { at: [0, 8], dir: 45, gap: 3 }, { at: [0, -8], dir: 135, gap: 3 }] },
   { name: 'Spread out — start at the first one', start: [-3, 0], sets: [
     { at: [11, 0], dir: 90, gap: 5.5 }, { at: [-11, 0], dir: 90, gap: 5.5 },
-    { at: [0, 11], dir: 0, gap: 5.5 }, { at: [0, -11], dir: 0, gap: 5.5 }] },
+    { at: [0, 11], dir: 45, gap: 5.5 }, { at: [0, -11], dir: 135, gap: 5.5 }] },
   { name: 'In the air — jump, then charge', start: [-3, 0], sets: [
     { at: [8, 0], dir: 90, gap: 3, h: CHARGE_ONE }, { at: [-8, 0], dir: 90, gap: 3, h: CHARGE_TWO },
     { at: [0, 8], dir: 0, gap: 3, h: CHARGE_ONE }, { at: [0, -8], dir: 0, gap: 3, h: CHARGE_TWO }] },
   { name: 'In the air AND spread out', start: [-3, 0], sets: [
     { at: [11, 0], dir: 90, gap: 5.5, h: CHARGE_ONE }, { at: [-11, 0], dir: 90, gap: 5.5, h: CHARGE_TWO },
     { at: [0, 11], dir: 0, gap: 5.5, h: CHARGE_ONE }, { at: [0, -11], dir: 0, gap: 5.5, h: CHARGE_TWO }] },
-  { name: 'Low set, jump, high set — no landing', start: [-7, 0], combo: true, sets: [
-    { at: [3, 0], dir: 0, gap: 3, h: CHARGE_ONE }, { at: [13, 5.5], dir: 90, gap: 3, h: CHARGE_TWO }] },
+  /* THE L, OUT OF PART 4. Richard, Oct 2026: "where the player has to jump
+     charge twice in the L-shape, it is currently too difficult and the blocks
+     are not in the correct placement, we can use the placement of the blocks
+     on part 4 for the placement of part 5." So these are two of part 4's sets
+     exactly — its top row (one jump) and its left column (two) — and the
+     corner between them is the L: charge LEFT along the top, jump, charge
+     DOWN the left. The old L had its high row 13 out against a charge that
+     ended wherever she had started it; from this start (7 right of the top
+     row's middle) the first charge ends at -9, two from the column's line
+     against a charge radius of 3.3 (CHARGE.radius 2.4 + a mat's 0.9). */
+  { name: 'Low set, jump, high set — no landing', start: [11, 7], face: 0, combo: true, sets: [
+    { at: [11, 0], dir: 270, gap: 5.5, h: CHARGE_ONE }, { at: [0, -11], dir: 180, gap: 5.5, h: CHARGE_TWO }] },
 ];
 /** The Long Guard beam: past a bare Ward (2.2s), well short of the lent pair
  *  (3.4s) — once GUARD.grow is added, which is how long she sees it coming. */
@@ -525,10 +572,22 @@ export const DRILLS = {
      the LAST of a chain is the weak one (x0.86) — so her SECOND jump is a
      full one, two full jumps top out at 4.82, and 5.0 was 0.22 under the
      0.4 a deck lands from. That is the "just 2 jumps" he saw. world-check now
-     models it the same way. */
+     models it the same way.
+     THE SECOND PASS, Richard, Oct 2026: "On platforms that require triple
+     jump, if a player misses the platform and falls, lets send a message to
+     remind them to TRIPLE JUMP ... At the 2nd to last platform, we should have
+     the camera change to be behind the player, from a distance and from above
+     and we should have them spawn from up there if they fall and hit the
+     ground, also remind them to triple jump." So `leapStep` knows which step
+     she is standing on: landing lower than the step under a tall one says
+     LEAP_MISS; once she has stood on the checkpoint, landing anywhere below
+     it puts her back on it (LEAP_BACK); and `camera` turns her lens to look
+     from the checkpoint up at the last step. The x-ray on the steps and the
+     shadow drawn over them are SimWorld's (`cutDeckMat`, `slab.renderOrder`). */
   leap: (g, p) => ({
     title: 'LEAP DRILL', goal: 1, time: 150, bands: [150, 75, 45], showCount: false,
     goalText: 'Climb to the star — TRIPLE jump the tall steps',
+    camera: (d) => leapCam(d),
     setup(d) {
       d.climb = leapClimb(d);
       for (const s of d.climb) {
@@ -545,8 +604,11 @@ export const DRILLS = {
       const top = d.climb[d.climb.length - 1];
       d.star({ x: top.x, y: top.y, z: top.z, onTake: () => d.progress() });
       d.bonks = 0;
+      d.onStep = -1;
+      d.best = -1;
     },
     tick(d) {
+      leapStep(d);
       for (const s of d.climb) {
         if (!s.sway) continue;
         const k = Math.sin(d.t * (Math.PI * 2) / LEAP_SWAY_T) * s.sway;
@@ -904,6 +966,58 @@ export function leapClimb(d) {
   });
 }
 
+/** Which step of the tower is under her feet: its index, or -1 for the floor. */
+export function leapStandingOn(d) {
+  const p = d.p;
+  const g = d.dream.sim.heightAt(p.position.x, p.position.z, p.position.y + 0.1);
+  return d.climb.findIndex((s) => s.deck === g?.platform);
+}
+
+/**
+ * Every LANDING on the tower, judged: higher is progress, lower is a miss. A
+ * miss from under a tall step says how the tall ones are done; any landing
+ * below the checkpoint, once she has stood on it, puts her back on it.
+ */
+function leapStep(d) {
+  const p = d.p;
+  const was = d.grounded ?? true;
+  d.grounded = !!p.onGround;
+  if (!p.onGround || was) return;
+  const i = leapStandingOn(d);
+  const from = d.onStep;
+  const cp = d.climb.length - LEAP_CHECK;
+  if (d.best >= cp && i < cp) {
+    leapToCheck(d);
+    d.dream.hint(p, LEAP_BACK);
+    return;
+  }
+  if (i < from && d.climb[from + 1]?.up === LEAP_DECK) d.dream.hint(p, LEAP_MISS);
+  d.onStep = i;
+  d.best = Math.max(d.best, i);
+}
+
+/** Stand her on the checkpoint, facing the last step. */
+function leapToCheck(d) {
+  const cp = d.climb[d.climb.length - LEAP_CHECK];
+  const top = d.climb[d.climb.length - 1];
+  d.put({ x: cp.deck.x, y: cp.deck.y, z: cp.deck.z, facing: Math.atan2(top.x - cp.deck.x, top.z - cp.deck.z) });
+  d.onStep = d.climb.length - LEAP_CHECK;
+  d.grounded = true;
+}
+
+/** From the checkpoint on, her lens is behind and above her, looking up at the star. */
+function leapCam(d) {
+  if (d.best == null || d.best < d.climb.length - LEAP_CHECK) return null;
+  const cp = d.climb[d.climb.length - LEAP_CHECK];
+  const top = d.climb[d.climb.length - 1];
+  const hx = top.x - cp.x;
+  const hz = top.z - cp.z;
+  const f = (d._cam ??= { centre: new THREE.Vector3(), aim: true, dist: LEAP_CAM.dist, pitch: LEAP_CAM.pitch, yaw: 0 });
+  f.yaw = Math.atan2(-hx, -hz);
+  f.centre.set((cp.x + top.x) / 2 + SIM.dx, (cp.y + top.y) / 2, (cp.z + top.z) / 2 + SIM.dz);
+  return f;
+}
+
 /* -------------------------------- 壁 ward -------------------------------- */
 
 /** The Ward drill's turret rig. */
@@ -962,19 +1076,30 @@ function crossLevel(g, spec) {
         const lift = spec.air ? CROSS_AIR : 0;
         const t = d.target(Post, {
           x: c.x + Math.sin(a) * CROSS_R, y: c.y + lift, z: c.z + Math.cos(a) * CROSS_R,
-          hits: spec.hits ?? 1, kinds: ['tri'],
+          hits: spec.hits ?? 1, kinds: ['tri'], aimArc: CROSS_AIM, onePerSwing: true,
           // In the air, out of reach from the floor: see CROSS_AIR.
           ...(spec.air ? { hitUp: CROSS_AIR_UP } : {}),
           onRefuse: () => d.dream.hint(d.p, `That was a tap — HOLD [${g.key(d.p, 'attack')}] for the Cross Slash`),
           onBreak: () => spec.chain && i < spec.posts.length - 1 && crossReveal(d, L, i + 1),
         });
         t.ang = a;
-        if (spec.chain && i) { t.live = false; t.group.visible = false; }
+        if (spec.air) airMarks(d, t, lift);
+        if (spec.chain && i) crossHide(t);
         return t;
       });
     },
     tick(d, L, dt) {
       L.t += dt;
+      if (spec.chain) {
+        /* THE FIRST ONE'S NEXT, AS SOON AS SHE PRESSES. The hold before a
+           Cross Slash is CROSS.hold + CROSS.wind = 0.5s, and the press is the
+           moment we know it is coming. */
+        const p = d.p;
+        if ((p._triPend || p.triWindT > 0) && L.posts[0].live && !L.posts[1].ghost && !L.posts[1].live) {
+          crossGhost(d, L, 1, Math.atan2(L.posts[0].local.x - (p.position.x - SIM.dx), L.posts[0].local.z - (p.position.z - SIM.dz)));
+        }
+        for (const t of L.posts) if (t.ghost) t.fade = Math.min(CROSS_GHOST.alpha, (t.fade ?? 0) + dt * CROSS_GHOST.alpha / CROSS_GHOST.t);
+      }
       if (spec.orbit) {
         L.posts.forEach((t, i) => {
           const a = t.ang + L.t * spec.orbit;
@@ -995,29 +1120,87 @@ function crossLevel(g, spec) {
   };
 }
 
-/** The final level's next post: somewhere she is NOT facing, round her. */
+/* THE LAST LEVEL'S NEXT POST: BEHIND HER, AND SHOWN BEFORE IT IS LIVE.
+   Richard, Oct 2026: "When they are quickly appearing randomly placed at the
+   end, lets make them appear always behind the player in a randomized 180
+   degree area, to force the player to have to change directions while
+   cutting. Maybe 0.5s before the first cut ... we can show where the next one
+   will appear by having it fade in before the previous target is cut down,
+   that way giving the player some time to react". It was a quarter turn
+   either way or a half turn, off whatever way she happened to be facing.
+   Now: "behind" is behind the post she is about to cut (`toward`, her
+   bearing to it), anywhere in that half circle; it fades in as a ghost
+   (`fade`, not `live`, so a cut cannot find it) and stands up for real the
+   moment the one before it breaks — when the next one's ghost appears,
+   behind THAT one. */
+export function crossBehind(toward, r = Math.random()) {
+  return toward + Math.PI + (r - 0.5) * Math.PI;
+}
+
+function crossGhost(d, L, i, toward) {
+  const t = L.posts[i];
+  if (!t || t.live || t.ghost) return;
+  const p = d.p;
+  const a = crossBehind(toward);
+  t.moveTo(p.position.x - SIM.dx + Math.sin(a) * CROSS_R, L.c.y, p.position.z - SIM.dz + Math.cos(a) * CROSS_R);
+  t.ghost = true;
+  t.fade = 0;
+  t.group.visible = true;
+}
+
 function crossReveal(d, L, i) {
   const t = L.posts[i];
   const p = d.p;
-  const turn = [Math.PI / 2, -Math.PI / 2, Math.PI][Math.floor(Math.random() * 3)];
-  const a = (p.facing ?? 0) + turn;
-  const x = p.position.x - SIM.dx;
-  const z = p.position.z - SIM.dz;
-  t.moveTo(x + Math.sin(a) * CROSS_R, L.c.y, z + Math.cos(a) * CROSS_R);
+  const bearing = (q) => Math.atan2(q.local.x - (p.position.x - SIM.dx), q.local.z - (p.position.z - SIM.dz));
+  // Cut before it was ever shown (the press came too late to see): place it now.
+  if (!t.ghost) crossGhost(d, L, i, bearing(L.posts[i - 1]));
+  t.ghost = false;
+  t.fade = 1;
   t.revive();
+  crossGhost(d, L, i + 1, bearing(t));
+}
+
+/** Not here yet: hidden, uncuttable, and no ghost. */
+function crossHide(t) {
+  t.live = false;
+  t.ghost = false;
+  t.fade = 1;
+  t.group.visible = false;
+  t.hp = t.maxHits;
 }
 
 function crossReset(d, L, spec) {
   L.posts.forEach((t, i) => {
-    if (spec.chain && i) {
-      t.live = false;
-      t.group.visible = false;
-      t.hp = t.maxHits;
-      return;
-    }
+    if (spec.chain && i) { crossHide(t); return; }
     if (!t.live) t.revive();
     t.hp = t.maxHits;
   });
+}
+
+/* A POST IN THE AIR SAYS SO. Richard, Oct 2026: "When the targets are in the
+   air, they have no shadow, so it is hard to see they are in the air ... can
+   potentially put a lazer underneath them like we do for Leap Drill and the
+   platforms." A beam from the floor up to its peg, and a shadow and a ring on
+   the floor under it — parented to the post, so they go when it breaks and
+   come back with it. */
+function airMarks(d, t, lift) {
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.06, 0.06, lift, 6),
+    new THREE.MeshBasicMaterial({ color: d.colour, transparent: true, opacity: 0.55, toneMapped: false, depthWrite: false })
+  );
+  beam.position.y = -lift / 2;
+  const shadow = new THREE.Mesh(
+    new THREE.CircleGeometry(0.75, 24).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ color: 0x02060a, transparent: true, opacity: 0.55, depthWrite: false })
+  );
+  shadow.position.y = -lift + 0.04;
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.75, 0.92, 32).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ color: d.colour, transparent: true, opacity: 0.8, toneMapped: false, depthWrite: false })
+  );
+  ring.position.y = -lift + 0.05;
+  t.group.add(beam, shadow, ring);
+  t.airMarks = { beam, shadow, ring };
 }
 
 /* -------------------------------- 突 charge ------------------------------ */
@@ -1029,12 +1212,26 @@ function crossReset(d, L, spec) {
  * put back. `combo` (the L) is judged when she LANDS instead: all of it
  * before her feet touch, or all of it back.
  */
+/** A charge drill point: `a` up the screen, `b` to its right, from the floor's middle. */
+export function chargeSpot(d, a, b) {
+  const c = d.spot(0, 0);
+  return { x: c.x + SCREEN.up.x * a + SCREEN.right.x * b, y: c.y, z: c.z + SCREEN.up.z * a + SCREEN.right.z * b };
+}
+
+/** A charge drill direction: degrees from screen-up toward screen-right, as a flat unit vector. */
+export function chargeDir(deg) {
+  const r = THREE.MathUtils.degToRad(deg);
+  return { x: SCREEN.up.x * Math.cos(r) + SCREEN.right.x * Math.sin(r), z: SCREEN.up.z * Math.cos(r) + SCREEN.right.z * Math.sin(r) };
+}
+
 function chargePart(g, P) {
   return {
     name: P.name,
     build(d, L) {
-      const c = d.spot(0, 0);
-      d.put({ ...d.spot(...P.start), facing: Math.atan2(c.x - d.spot(...P.start).x, c.z - d.spot(...P.start).z) });
+      const s = chargeSpot(d, ...P.start);
+      // Facing the floor's middle, or the first set when the part says so.
+      const to = P.face != null ? chargeSpot(d, ...P.sets[P.face].at) : d.spot(0, 0);
+      d.put({ ...s, facing: Math.atan2(to.x - s.x, to.z - s.z) });
       L.sets = P.sets.map((S) => chargeSet(g, d, S));
       L.was = d.p.chargeT > 0;
       L.air = !d.p.onGround;
@@ -1067,15 +1264,13 @@ function chargePart(g, P) {
   };
 }
 
-/** Three mats along a row: `at` [a, b], `dir` degrees off fwd, `gap` apart, `h` up. */
+/** Three mats along a row: `at` [up, right], `dir` degrees on the screen, `gap` apart, `h` up. */
 function chargeSet(g, d, S) {
-  const f = d.at.fwd;
-  const yawF = Math.atan2(f.x, f.z);
-  const yaw = yawF + THREE.MathUtils.degToRad(S.dir);
-  const da = Math.cos(THREE.MathUtils.degToRad(S.dir));
-  const db = Math.sin(THREE.MathUtils.degToRad(S.dir));
+  const v = chargeDir(S.dir);
+  const yaw = Math.atan2(v.x, v.z);
+  const mid = chargeSpot(d, ...S.at);
   const mats = [-1, 0, 1].map((k) => {
-    const q = d.spot(S.at[0] + da * k * S.gap, S.at[1] + db * k * S.gap);
+    const q = { x: mid.x + v.x * k * S.gap, y: mid.y, z: mid.z + v.z * k * S.gap };
     const air = S.h ? {
       y: q.y + S.h - 0.3,
       // dy from her feet to its middle is h + 1.0 - her y; answer only near h.
@@ -1087,15 +1282,65 @@ function chargeSet(g, d, S) {
     });
     if (S.h) {
       const stalk = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.04, 0.04, S.h - 0.3, 6),
-        new THREE.MeshBasicMaterial({ color: d.colour, transparent: true, opacity: 0.3, toneMapped: false, depthWrite: false })
+        new THREE.CylinderGeometry(0.05, 0.05, S.h - 0.3, 6),
+        new THREE.MeshBasicMaterial({ color: d.colour, transparent: true, opacity: 0.55, toneMapped: false, depthWrite: false })
       );
       stalk.position.set(q.x, q.y + (S.h - 0.3) / 2, q.z);
-      d.root.add(stalk);
+      // ...and its shadow on the floor, the mat's own footprint.
+      const shadow = new THREE.Mesh(
+        new THREE.PlaneGeometry(2.6, 0.7).rotateX(-Math.PI / 2).rotateY(yaw),
+        new THREE.MeshBasicMaterial({ color: 0x02060a, transparent: true, opacity: 0.55, depthWrite: false })
+      );
+      shadow.position.set(q.x, q.y + 0.04, q.z);
+      d.root.add(stalk, shadow);
     }
     return m;
   });
+  if (S.h) jumpSign(d, mid, v, S.h > CHARGE_ONE + AIR_BAND ? 2 : 1);
   return { mats, done: false };
+}
+
+/* HOW HIGH, WRITTEN ON THE FLOOR. Richard, Oct 2026: "it is hard to see that
+   the platforms are high up, they need a shadow or some kind of indicator to
+   show they are double jump needed rather than single jump." Each mat has a
+   shadow (above), and each set a sign beside it, toward the floor's middle
+   where she comes from: one arrow and 1 JUMP, or two and 2 JUMPS, in gold.
+   Lying flat and turned to read upright on the screen, whose yaw never
+   changes in here (kata.js `SCREEN`). */
+export const JUMP_SIGN = { w: 3.4, h: 1.3, off: 2.4 };
+function jumpSign(d, mid, v, n) {
+  const cv = document.createElement('canvas');
+  cv.width = 256;
+  cv.height = 98;
+  const g = cv.getContext('2d');
+  g.fillStyle = 'rgba(2, 8, 14, 0.7)';
+  g.fillRect(0, 0, 256, 98);
+  g.strokeStyle = n > 1 ? '#ffd56a' : '#5ff6ff';
+  g.lineWidth = 5;
+  g.strokeRect(3, 3, 250, 92);
+  g.fillStyle = g.strokeStyle;
+  g.font = 'bold 50px sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(`${'▲'.repeat(n)} ${n} JUMP${n > 1 ? 'S' : ''}`, 128, 52);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sign = new THREE.Mesh(
+    new THREE.PlaneGeometry(JUMP_SIGN.w, JUMP_SIGN.h).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false })
+  );
+  // Beside the row, on the side toward the middle of the floor.
+  const c = d.spot(0, 0);
+  let px = -v.z;
+  let pz = v.x;
+  if (px * (c.x - mid.x) + pz * (c.z - mid.z) < 0) { px = -px; pz = -pz; }
+  sign.position.set(mid.x + px * JUMP_SIGN.off, mid.y + 0.05, mid.z + pz * JUMP_SIGN.off);
+  // Its top edge toward screen-up: the plane's +y lies along -z once flat.
+  sign.rotation.y = Math.atan2(-SCREEN.up.x, -SCREEN.up.z);
+  sign.userData.jumps = n;
+  sign.name = 'jump-sign';
+  d.root.add(sign);
+  return sign;
 }
 
 /* ------------------------------ 守 long guard ---------------------------- */

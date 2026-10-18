@@ -68,11 +68,19 @@ export const HOLO = {
 
 /* ------------------------------- shaders --------------------------------- */
 
+/* `vView` and `vP11` are for the code rain (below): where this fragment is ON
+   THE SCREEN, worked out per fragment from its view-space position and the
+   lens's own focal length, so a split pane's rain is that pane's height. */
 const VOID_VERT = /* glsl */`
   varying vec3 vDir;
+  varying vec3 vView;
+  varying float vP11;
   void main() {
     vDir = normalize(position);
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    vView = mv.xyz;
+    vP11 = projectionMatrix[1][1];
+    gl_Position = projectionMatrix * mv;
   }
 `;
 /* The void: deep navy over a green lifestream glow that drifts in bands
@@ -83,7 +91,36 @@ const VOID_FRAG = /* glsl */`
   uniform float uTime;
   uniform float uGloom;
   varying vec3 vDir;
+  varying vec3 vView;
+  varying float vP11;
   float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  /* One sheet of code rain on the screen: ROWS cells up the pane, columns
+     0.62 of a cell wide. Each column has its own speed, trail length and
+     phase; the head is the bright cell, the trail fades above it, and every
+     cell is a 3x5 block of bits that re-rolls now and then — a glyph without
+     a font. x is the trail, y the head. (No backticks in
+     here: this is a JS template literal.) */
+  vec2 codeRain(vec2 s, float rows, float seed, float density, float speed) {
+    float cell = 2.0 / rows;
+    vec2 g = vec2(s.x / (cell * 0.62), s.y / cell);
+    float cid = floor(g.x);
+    vec2 f = fract(g);
+    float rid = floor(g.y);
+    float live = step(1.0 - density, hash(vec2(cid, seed)));
+    float sp = speed * (0.6 + 0.8 * hash(vec2(cid, seed + 1.0)));
+    float len = rows * (0.25 + 0.45 * hash(vec2(cid, seed + 4.0)));
+    float span = rows * 1.3 + len;
+    float headRow = rows * 0.6 - fract(uTime * sp / span + hash(vec2(cid, seed + 2.0))) * span;
+    float dh = rid - floor(headRow);
+    float trail = (dh >= 0.0 && dh < len) ? 1.0 - dh / len : 0.0;
+    float head = (dh >= 0.0 && dh < 1.0) ? 1.0 : 0.0;
+    vec2 sub = floor(vec2(f.x * 3.0, f.y * 5.0));
+    float roll = floor(uTime * (0.7 + 4.0 * hash(vec2(rid, cid + seed))));
+    float bit = step(0.45, hash(vec2(cid * 7.0 + sub.x + roll * 3.1, rid * 13.0 + sub.y + seed)));
+    float on = step(0.12, f.x) * step(f.x, 0.88) * step(0.08, f.y) * step(f.y, 0.92);
+    float glyph = live * bit * on;
+    return vec2(trail * glyph, head * glyph);
+  }
   float noise(vec2 p) {
     vec2 i = floor(p), f = fract(p);
     vec2 u = f * f * (3.0 - 2.0 * f);
@@ -109,30 +146,31 @@ const VOID_FRAG = /* glsl */`
     float st = step(0.985, hash(floor(sp))) * smoothstep(0.05, 0.4, y);
     col += vec3(0.7, 0.95, 1.0) * st * (0.5 + 0.5 * sin(uTime * 2.0 + hash(floor(sp)) * 40.0));
     /* SHADOW LIONHEART'S GLOOM (SimWorld.setGloom): the sky goes dark and the
-       code rains down it. Columns round the horizon by angle, each with its
-       own speed and phase; a bright head falling, a fading trail above it,
-       and every cell a 3x5 block of bits that re-rolls now and then — a
-       glyph, without a font. */
+       code rains down it.
+       ON THE SCREEN, NOT ROUND THE HORIZON. Richard, Oct 2026: "The Matrix
+       effect ... should be visible in the background from the default camera
+       view. The matrix text should be smaller so it looks like matrix rain
+       effects and be in the distance ... it just mainly needs to look good
+       from that point of view and not necessarily from any 3D camera angle."
+       The first rain was a band of columns by ANGLE round the horizon, from
+       just under it to near the zenith — and the default camera looks DOWN at
+       0.66, so what fills the back of its pane is the void beneath the
+       islands, where the rain had faded to nothing. It also had 42 rows per
+       unit of height: big blocks, close. Now it is laid out in the pane's own
+       screen space (vView, vP11), so it falls straight down whatever the lens
+       is looking at, behind everything because it IS the sky: two sheets, a
+       far fine one (84 rows a pane) and a sparser nearer one (52), both dim
+       and fogged toward the void so they sit in the distance. */
     if (uGloom > 0.001) {
       col *= 1.0 - 0.88 * uGloom;
-      float u = a / 6.2831853 + 0.5;
-      float cid = floor(u * 180.0);
-      float fx = fract(u * 180.0);
-      float rid = floor(y * 42.0);
-      float fy = fract(y * 42.0);
-      float live = step(0.4, hash(vec2(cid, 3.0)));
-      float sp = 0.18 + 0.4 * hash(vec2(cid, 1.0));
-      float head = 1.15 - fract(uTime * sp * 0.25 + hash(vec2(cid, 2.0))) * 2.3;
-      float dh = y - head;
-      float trail = dh >= 0.0 ? exp(-dh * 5.0) : 0.0;
-      vec2 sub = floor(vec2(fx * 3.0, fy * 5.0));
-      float roll = floor(uTime * (1.0 + 5.0 * hash(vec2(rid, cid))));
-      float bit = step(0.45, hash(vec2(cid * 7.0 + sub.x + roll * 3.1, rid * 13.0 + sub.y)));
-      float cell = step(0.12, fx) * step(fx, 0.88) * step(0.08, fy) * step(fy, 0.92);
-      float fade = smoothstep(-0.3, 0.05, y) * smoothstep(0.97, 0.75, y);
-      float rain = live * bit * cell * fade;
-      col += vec3(0.15, 1.0, 0.4) * trail * rain * 0.75 * uGloom;
-      col += vec3(0.75, 1.0, 0.85) * exp(-abs(dh) * 70.0) * rain * uGloom;
+      if (vView.z < 0.0) {
+        vec2 s = vView.xy / -vView.z * vP11;
+        vec2 far = codeRain(s, 84.0, 3.0, 0.55, 9.0);
+        vec2 near = codeRain(s + vec2(0.013, 0.0), 52.0, 11.0, 0.22, 13.0);
+        vec3 rain = vec3(0.10, 0.75, 0.32) * pow(far.x, 1.6) * 0.32 + vec3(0.55, 1.0, 0.7) * far.y * 0.4
+          + vec3(0.14, 0.95, 0.42) * pow(near.x, 1.4) * 0.5 + vec3(0.75, 1.0, 0.85) * near.y * 0.65;
+        col += rain * uGloom;
+      }
     }
     gl_FragColor = vec4(col, 1.0);
   }
@@ -572,6 +610,49 @@ function rimGeometry(r, mouths) {
 
 /* ------------------------------ the layer -------------------------------- */
 
+/* THE X-RAY ON A FLOATING STEP. Richard, Oct 2026, on the Leap Drill: "we
+   need the xray shader on the platforms so player can see where they are and
+   where the platform is." A lidded deck is 0.92 opaque and a kitten under or
+   behind one — which on a spiral climbing toward the camera is half the
+   tower — vanished behind it. The town's walls have the same problem and the
+   same answer (gfx.js `xrayVertexMat`): a hole along the camera->kitten
+   segment, discarded rather than faded so it never has to be sorted, and
+   never below her own feet, so the step she is standing on stays solid. This
+   is that cut on a MeshBasicMaterial, sharing one set of uniforms
+   (`SimWorld.setCuts`, once per pane). */
+export const DECK_CUT = { r: 1.9, flare: 0.6, soft: 0.7, max: 4 };
+function cutDeckMat(mat, U) {
+  mat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, U);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vCutW;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\nvCutW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+        varying vec3 vCutW;
+        uniform vec3 uCamPos;
+        uniform vec3 uCutPos[${DECK_CUT.max}];
+        uniform float uCutOn[${DECK_CUT.max}];
+        uniform float uCutFloor[${DECK_CUT.max}];`)
+      .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+        float cut = 0.0;
+        for (int i = 0; i < ${DECK_CUT.max}; i++) {
+          if (uCutOn[i] < 0.5) continue;
+          if (vCutW.y < uCutFloor[i]) continue;
+          vec3 ab = uCutPos[i] - uCamPos;
+          float t = dot(vCutW - uCamPos, ab) / max(dot(ab, ab), 1e-4);
+          if (t <= 0.0 || t >= 1.0) continue;
+          float r = ${DECK_CUT.r.toFixed(2)} * (1.0 + ${DECK_CUT.flare.toFixed(2)} * (1.0 - t));
+          float d = length(vCutW - (uCamPos + ab * t));
+          cut = max(cut, 1.0 - smoothstep(r - ${DECK_CUT.soft.toFixed(2)}, r, d));
+        }
+        float ign = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+        if (cut > ign) discard;`);
+  };
+  mat.customProgramCacheKey = () => 'sim-deck-cut';
+  return mat;
+}
+
 export class SimWorld {
   /**
    * @param {THREE.Scene} scene  the game's one scene — see the header for why
@@ -604,6 +685,13 @@ export class SimWorld {
 
     this.fog = new THREE.Fog(SIM_FOG, 150, 1050);
     this._uniforms = [];
+    /** The floating steps' x-ray (`cutDeckMat`), shared by every one of them. */
+    this._cutU = {
+      uCamPos: { value: new THREE.Vector3() },
+      uCutPos: { value: Array.from({ length: DECK_CUT.max }, () => new THREE.Vector3()) },
+      uCutOn: { value: new Float32Array(DECK_CUT.max) },
+      uCutFloor: { value: new Float32Array(DECK_CUT.max).fill(-1e9) },
+    };
     this._buildVoid();
     this._buildHub();
   }
@@ -894,9 +982,21 @@ export class SimWorld {
     const grp = new THREE.Group();
     const slab = new THREE.Mesh(
       new THREE.CylinderGeometry(r, r * 0.9, thick, 32),
-      new THREE.MeshBasicMaterial({ color: 0x0a2230, transparent: true, opacity: ceiling ? 0.92 : 0.8 })
+      cutDeckMat(new THREE.MeshBasicMaterial({ color: 0x0a2230, transparent: true, opacity: ceiling ? 0.92 : 0.8 }), this._cutU)
     );
     slab.position.set(x, y - thick / 2, z);
+    /* DRAWN BEFORE THE KITTENS' SHADOWS, ALWAYS. Richard, Oct 2026: "sometimes
+       the players shadow/indicator under them is not appearing, usually if
+       they are above the center point of the platform". Her blob shadow and
+       ring are transparent, sit 0.05 over the deck's top and write no depth;
+       the slab is transparent too, so the two were sorted by distance — the
+       slab's middle against her feet. With her on the half of the deck AWAY
+       from the camera (up the screen), her shadow was the farther of the two,
+       went first, and the 0.92 slab was painted straight over it. Drawn
+       first, the slab is under whatever stands on it whichever half she is
+       on. */
+    slab.renderOrder = -1;
+    deck._slab = slab;
     if (ceiling) {
       const lip = new THREE.Mesh(
         new THREE.TorusGeometry(r * 0.9 - 0.08, 0.06, 6, 48),
@@ -1159,6 +1259,24 @@ export class SimWorld {
     const k = Math.max(0, Math.min(1, Number.isFinite(g) ? g : 0));
     this._uGloom.value = k;
     this.fog.color.setHex(SIM_FOG).lerp(_gloomFog, k);
+  }
+
+  /**
+   * The floating steps' x-ray, for the lens about to draw: a hole from the
+   * camera to each kitten's chest, never below her feet (`cutDeckMat`).
+   * @param {THREE.Vector3} camPos  the lens, in the world
+   * @param {object[]} kittens      who to cut for (up to DECK_CUT.max)
+   */
+  setCuts(camPos, kittens = []) {
+    const U = this._cutU;
+    U.uCamPos.value.copy(camPos);
+    for (let i = 0; i < DECK_CUT.max; i++) {
+      const p = kittens[i];
+      U.uCutOn.value[i] = p ? 1 : 0;
+      if (!p) continue;
+      U.uCutPos.value[i].set(p.position.x, p.position.y + (p.height ?? 2.6) * 0.5, p.position.z);
+      U.uCutFloor.value[i] = p.position.y - 0.1;
+    }
   }
 
   /** Before a sim pane draws: put the sky on this lens. */

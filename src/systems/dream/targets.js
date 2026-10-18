@@ -73,6 +73,15 @@ export class TrainingGate {
     const range = A.reach * clanK;
     const swing = ++this.swing;
     let n = 0;
+    const dmg = (A.dmg ?? ATTACKS.stand.dmg) * (kind === 'tri' ? triDmgK(attacker) : 1);
+    const one = (t, dx, dz, dist) => {
+      const k = dist > 1e-3 ? 1 / dist : 0;
+      if (!t.hit({ attacker, kind, dmg, dist, swing, dir: { x: dx * k, z: dz * k } })) return false;
+      spent?.add?.(t);
+      n++;
+      return true;
+    };
+    const solo = [];
     for (const t of [...this.targets]) {
       if (!t.live) continue;
       if (t.owner != null && t.owner !== attacker.index) continue;
@@ -84,14 +93,20 @@ export class TrainingGate {
       if (dist > range + t.pad) continue;
       if (dy > COMBAT.strikeHeight + t.hitUp || -dy > COMBAT.strikeHeight + t.hitDown) continue;
       const dot = dist > 1e-3 ? (dx * dir.x + dz * dir.y) / dist : 1;
-      if (dot < A.arc) continue;
-      const dmg = (A.dmg ?? ATTACKS.stand.dmg) * (kind === 'tri' ? triDmgK(attacker) : 1);
-      const k = dist > 1e-3 ? 1 / dist : 0;
-      if (t.hit({ attacker, kind, dmg, dist, swing, dir: { x: dx * k, z: dz * k } })) {
-        spent?.add?.(t);
-        n++;
-      }
+      // A target may ask to be AIMED at, with a narrower cone than the blow's own.
+      if (dot < (t.o.aimArc ?? A.arc)) continue;
+      if (t.o.onePerSwing) { solo.push({ t, dx, dz, dist, dot }); continue; }
+      one(t, dx, dz, dist);
     }
+    /* ONE PER SWING, AND THE ONE SHE AIMED AT. Richard, Oct 2026, on the Cross
+       Slash drill: "Let's make it that only 1 target can get hit per swing".
+       Every target that asks (`onePerSwing`) is a candidate, and the cut lands
+       on the one nearest the line it was thrown along — not on whichever was
+       built first, which would make "which one broke" a fact about the drill's
+       code rather than about her stick. A refusal (a tap on a post that wants
+       the Cross Slash) still rocks it and says why, and the cut moves on. */
+    solo.sort((a, b) => b.dot - a.dot);
+    for (const s of solo) if (one(s.t, s.dx, s.dz, s.dist)) break;
     return n;
   }
 }
@@ -313,8 +328,11 @@ export class Target {
     this.wob += this.wobV * dt;
     this.body.rotation.x = this.wobDir.z * this.wob * 0.08;
     this.body.rotation.z = -this.wobDir.x * this.wob * 0.08;
+    /* `fade` is a target not here yet: the Cross Slash drill's next post,
+       showing where it will be before it can be cut. 1 is all there. */
+    const fade = this.fade ?? 1;
     for (const m of this.body.userData.mats ?? []) {
-      m.opacity = (m.isLineBasicMaterial ? 0.95 : (m.userData.base ?? 0.22)) + this.flash * 0.6;
+      m.opacity = ((m.isLineBasicMaterial ? 0.95 : (m.userData.base ?? 0.22)) + this.flash * 0.6) * fade;
     }
     if (this.bar) this.bar.setFrac(this.hp / this.maxHits, dt);
   }

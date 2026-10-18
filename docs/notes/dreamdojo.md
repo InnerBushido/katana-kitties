@@ -2742,6 +2742,76 @@ drill. Every number below is exported from `gallery.js` and measured by
   asks the state (`drilling`), not a getter on Drill, because world-check hands
   stations plain `{ state }` objects. A getter broke three checks.
 
+### The second gallery pass, after a playthrough (Oct 2026)
+
+- **影 The Matrix rain** on Shadow Lionheart's island. "should be visible in
+  the background from the default camera view ... smaller so it looks like
+  matrix rain ... in the distance ... it just mainly needs to look good from
+  that point of view". The rain was a band round the horizon, by angle, fading
+  out below it. The default camera looks DOWN at 0.66, so the back of its pane
+  is the void under the islands, where there was no rain at all. It is now
+  laid out in the pane's own screen space (`vView`, `vP11` in the sky's
+  shader), so it falls straight down behind everything whatever the lens sees.
+  It is two sheets, 84 and 52 rows a pane, dim. The old cells were 42 rows per
+  unit of sky height.
+- **跳 Leap.**
+  - **The x-ray.** "xray shader on the platforms so player can see where they
+    are and where the platform is". It is `cutDeckMat` in `simworld.js`, the
+    town walls' cut (`xrayVertexMat`) on a basic material: a discarded hole
+    along camera → her chest, floored at her feet, set once per pane by
+    `SimWorld.setCuts`.
+  - **The shadow.** "sometimes the players shadow/indicator under them is not
+    appearing, usually if they are above the center point". Her shadow and
+    ring are transparent and sit 0.05 over the deck, and the slab is
+    transparent too. They were sorted by distance, slab middle against her
+    feet, so on the half of the deck away from the camera the slab drew last,
+    right over her shadow. The slab is now `renderOrder -1`.
+  - **Missing a tall step.** A landing lower than the step under a tall one
+    says `LEAP_MISS` ("TRIPLE JUMP — press jump THREE times").
+  - **The checkpoint.** Once she has stood on the second-to-last step
+    (`LEAP_CHECK`), any landing below it puts her back on it, facing the star,
+    with `LEAP_BACK`. Her camera turns to `LEAP_CAM`: behind her on the line
+    from that step to the last, 26 out, pitch 0.78, above the walking camera's
+    0.66.
+- **十 Cross Slash.**
+  - **Further out.** "further away ... (although within striking distance) ...
+    the player has to aim". `CROSS_R` went 2.4 → 3.2, against a reach of 4.0.
+    Distance alone changes nothing, because the gate tests an ANGLE: a
+    150-degree fan at any range. So each post also asks to be aimed at within
+    `CROSS_AIM` (60 degrees either side), which is wide enough for a
+    keyboard's eight directions.
+  - **One per cut.** "only 1 target can get hit per swing". Targets that ask
+    (`onePerSwing`) compete, and the cut lands on the best-aimed one, not on
+    whichever was built first (`TrainingGate.strike`).
+  - **In the air.** Each post has a beam down to a shadow and a ring on the
+    floor (`airMarks`).
+  - **The last level.** Each next post appears "always behind the player in a
+    randomized 180 degree area". That means behind the post she is about to
+    cut (`crossBehind`). It fades in as an uncuttable ghost from the moment she
+    PRESSES (`_triPend`, the 0.5s hold before the first cut), and stands up when
+    the one before it breaks. Then the next one's ghost appears behind it. It
+    used to be a quarter or half turn off whatever way she was facing.
+- **突 Charge.**
+  - **Keyboard.** "rotate them so they require more cardinal movements ... half
+    of the first 2 drills be diagonal, but after that, should be cardinal".
+    The parts were laid out on the island's `fwd`, a spoke off the hub with
+    nothing to do with the camera. So every row came out at some angle to the
+    screen, and a keyboard needs two keys for a diagonal. `at` and `dir` are
+    now on the screen's own axes (`chargeSpot`, `chargeDir`, kata.js
+    `SCREEN`). Parts 1 and 2 have two diagonal rows out of four; parts 3–5 are
+    all one key.
+  - **Height.** "need a shadow or some kind of indicator to show they are
+    double jump". Each mat in the air has a floor shadow and a brighter stalk,
+    and each set has a flat sign beside it reading ▲ 1 JUMP or ▲▲ 2 JUMPS
+    (`jumpSign`).
+  - **The L.** "too difficult and the blocks are not in the correct placement,
+    we can use the placement of the blocks on part 4". The L is now two of
+    part 4's sets exactly: the top row (one jump), charged left, then the left
+    column (two jumps), charged down. The old high row sat 13 out, against a
+    charge that ended wherever she started it. From the new start, the first
+    charge ends 2 off the column's line, against a reach of 3.3. world-check
+    measures this from the table.
+
 ## Still to build (stages 2–5)
 
 1. ~~**Kotodama Gallery**, the rundown of her equipped orbs, and the Clan Trial

@@ -3817,6 +3817,8 @@ export class DreamDojo {
       for (const k of this.mapKiosks ?? []) k.faceCamera(camera);
       // Shadow Lionheart's gloom, as deep as the deepest kitten in this pane is in it.
       this.sim.setGloom(this.paneGloom(members));
+      // The floating steps' x-ray: a hole in any that is in front of a kitten in here.
+      this.sim.setCuts(camera.position, this.simKittens());
       this.sim.faceCamera(camera);
       this.gallery?.faceCamera(camera);
       this.hall?.faceCamera(camera);

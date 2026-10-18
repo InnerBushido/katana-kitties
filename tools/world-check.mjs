@@ -37118,7 +37118,10 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         const lift = GAL.CROSS_AIR + 1.3;
         const win = PL.COMBAT.strikeHeight + GAL.CROSS_AIR_UP;
         ok('...and the posts in the air cannot be cut from the floor, and can from the top of one jump',
-          lift > win + 0.3 && lift - (V_ONE()) <= win - 0.3 && A.reach >= GAL.CROSS_R + 0.5, `${lift.toFixed(2)} vs ${win.toFixed(2)}`);
+          lift > win + 0.3 && lift - (V_ONE()) <= win - 0.3, `${lift.toFixed(2)} vs ${win.toFixed(2)}`);
+        // "further away from the player (although within striking distance)": 2.4 -> 3.2, against 3.4 + a post's 0.6.
+        ok('...and the posts stand further out than they did, still half a unit inside her reach',
+          GAL.CROSS_R >= 3 && A.reach + post.pad >= GAL.CROSS_R + 0.5, `${GAL.CROSS_R} of ${A.reach + post.pad}`);
         d.dispose(); D.drills[0] = null;
       }
 
@@ -37139,7 +37142,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         ok('...five parts, the last an L of a low set and a high one, done before she lands',
           GAL.CHARGE_PARTS.length === 5 && GAL.CHARGE_PARTS[4].combo && GAL.CHARGE_PARTS[4].sets.length === 2
           && GAL.CHARGE_PARTS[4].sets[0].h === GAL.CHARGE_ONE && GAL.CHARGE_PARTS[4].sets[1].h === GAL.CHARGE_TWO
-          && GAL.CHARGE_PARTS[4].sets[1].dir - GAL.CHARGE_PARTS[4].sets[0].dir === 90);
+          && Math.abs(GAL.CHARGE_PARTS[4].sets[1].dir - GAL.CHARGE_PARTS[4].sets[0].dir) % 180 === 90);
         // The two heights, against the real jump: one (11.2) and one plus a last, weak (x0.86).
         const one = V_ONE();
         const two = one + ((11.2 * 0.86) ** 2) / 52;
@@ -37157,6 +37160,207 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         ok('...and a set at the top of one jump cannot be charged from the floor, or from the top of two',
           floorHit === 0 && topHit === 1 && twoHit === 0, `${floorHit} ${topHit} ${twoHit}`);
         d.dispose(); D.drills[0] = null;
+      }
+
+      /* --- THE SECOND OCT 2026 PASS: Leap, Cross Slash and Charge, after a
+         playthrough. Each of Richard's notes, measured. --- */
+      const said = [];
+      const realHint = D.hint;
+      D.hint = (p, t) => said.push(t);
+      const KTm = await import('../src/systems/dream/kata.js');
+      const toLevel = (d, i) => { d.lv = i - 1; d.lvNext = 1e-6; d.update(1 / 60); return d.lv === i; };
+
+      /* 跳 "xray shader on the platforms ... remind them to TRIPLE JUMP ... the
+         shadow/indicator under them is not appearing ... At the 2nd to last
+         platform ... camera ... behind the player ... spawn from up there". */
+      {
+        const d = run('leap');
+        // On the island first: the check before this one leaves her far off it, and the drill stops itself.
+        lay(at.x, at.y, at.z);
+        const leapLive = golive(d);
+        const C = d.climb;
+        const n = C.length;
+        // Every move is a LANDING: up in the air for a frame, then down where it says.
+        const drop = (x, y, z) => {
+          her.onGround = false; d.update(1 / 60);
+          her.position.set(x + SW.SIM.dx, y, z + SW.SIM.dz); her.velocity.set(0, 0, 0); her.onGround = true; d.update(1 / 60);
+        };
+        const stand = (s) => drop(s.deck.x, s.deck.y, s.deck.z);
+        const under = C.findIndex((s, i) => C[i + 1]?.up === GAL.LEAP_DECK);
+        const plain = C.findIndex((s, i) => i > under && C[i + 1] && C[i + 1].up !== GAL.LEAP_DECK && !C[i + 1].sway && !s.sway);
+        said.length = 0;
+        stand(C[plain]); drop(C[plain].deck.x, at.y, C[plain].deck.z);
+        const quietMiss = !said.includes(GAL.LEAP_MISS);
+        stand(C[under]); drop(C[under].deck.x, at.y, C[under].deck.z);
+        ok('跳 falling from under a TALL step reminds her to TRIPLE JUMP', leapLive && said.includes(GAL.LEAP_MISS), `${d.state} ${said.join(' | ')}`);
+        ok('...and falling from under an ordinary one does not', quietMiss);
+        const cp = C[n - GAL.LEAP_CHECK];
+        const top = C[n - 1];
+        stand(C[n - GAL.LEAP_CHECK - 1]);
+        const before = D.drillFocus(her);
+        stand(cp);
+        const f = D.drillFocus(her);
+        const hx = top.x - cp.x; const hz = top.z - cp.z; const hn = Math.hypot(hx, hz);
+        const back = f ? (Math.sin(f.yaw) * hx + Math.cos(f.yaw) * hz) / hn : 0;
+        ok('...her camera is her own until the second-to-last step, then behind her and above, looking up at the last',
+          !before && !!f && back < -0.99 && f.pitch > 0.66 && f.dist >= 24, f ? `behind ${back.toFixed(3)} pitch ${f.pitch} dist ${f.dist}` : 'none');
+        said.length = 0;
+        drop(cp.deck.x + 3, at.y, cp.deck.z);
+        const onCp = Math.hypot(her.position.x - SW.SIM.dx - cp.deck.x, her.position.z - SW.SIM.dz - cp.deck.z) < 0.01 && Math.abs(her.position.y - cp.deck.y - 0.05) < 0.01;
+        ok('...and once she has stood on it, hitting the ground puts her back up there, told to triple jump',
+          onCp && said.includes(GAL.LEAP_BACK) && GAL.LEAP_BACK.includes('TRIPLE JUMP'), `${onCp} ${said.join(' | ')}`);
+        const toTop = Math.atan2(top.x - cp.deck.x, top.z - cp.deck.z);
+        ok('...facing the last step', Math.abs(Math.atan2(Math.sin(her.facing - toTop), Math.cos(her.facing - toTop))) < 1e-6);
+        // The shadow: the slab is drawn before her shadow and ring, whichever half of it she stands on.
+        const slab = cp.deck._slab;
+        ok('...every step is drawn before the shadow and ring on top of it',
+          C.every((s) => s.deck._slab.renderOrder < her.shadow.renderOrder && s.deck._slab.renderOrder < her.marker.renderOrder),
+          `${slab.renderOrder} vs ${her.shadow.renderOrder}`);
+        // The x-ray: the real shader chunks, rewritten — and the cut sits on her chest, floored at her feet.
+        const sh = { uniforms: {}, vertexShader: THREE.ShaderLib.basic.vertexShader, fragmentShader: THREE.ShaderLib.basic.fragmentShader };
+        slab.material.onBeforeCompile(sh);
+        ok('...with the x-ray on the steps: a hole along the camera to her, discarded, in the real basic shader',
+          /vCutW = \(modelMatrix/.test(sh.vertexShader) && /uCutFloor\[i\]\) continue;[\s\S]*if \(cut > ign\) discard;/.test(sh.fragmentShader)
+          && sh.uniforms.uCutPos === sim._cutU.uCutPos && slab.material.customProgramCacheKey() === 'sim-deck-cut');
+        sim.setCuts(new THREE.Vector3(0, 50, 0), [her]);
+        const U = sim._cutU;
+        ok('...cut for each kitten at her chest, never below her feet, and for nobody who is not there',
+          U.uCutOn.value[0] === 1 && U.uCutOn.value[1] === 0 && U.uCutFloor.value[0] < her.position.y && U.uCutFloor.value[0] > her.position.y - 0.5
+          && Math.abs(U.uCutPos.value[0].y - her.position.y - (her.height ?? 2.6) * 0.5) < 1e-6
+          && /this\.sim\.setCuts\(camera\.position, this\.simKittens\(\)\);/.test(readFileSync(new URL('../src/systems/dreamdojo.js', import.meta.url), 'utf8')));
+        sim.setCuts(new THREE.Vector3(), []);
+        d.dispose(); D.drills[0] = null;
+      }
+
+      /* 十 "only 1 target can get hit per swing ... the player has to aim
+         where they swing". Through the real gate. */
+      {
+        const gate = new TG.TrainingGate();
+        her.position.set(SW.SIM.dx, 0, SW.SIM.dz);
+        const mk = (deg) => {
+          const a = THREE.MathUtils.degToRad(deg);
+          return gate.add(new TG.Post({ x: Math.sin(a) * GAL.CROSS_R, y: 0, z: Math.cos(a) * GAL.CROSS_R, owner: 0, kinds: ['tri'], aimArc: GAL.CROSS_AIM, onePerSwing: true }));
+        };
+        const p35 = mk(35); const p0 = mk(0); const p75 = mk(75);
+        const swing = (deg) => gate.strike(her, 'tri', PL.BASE_REACH, { x: Math.sin(THREE.MathUtils.degToRad(deg)), y: Math.cos(THREE.MathUtils.degToRad(deg)) });
+        const a = swing(0); const firstDown = !p0.live && p35.live && p75.live;
+        const b = swing(0); const secondDown = !p35.live && p75.live;
+        const c = swing(0);
+        const stillUp = p75.live;
+        const e = swing(75);
+        ok('十 one Cross Slash cut breaks ONE post — the one nearest where it was aimed, not the first built',
+          a === 1 && firstDown && b === 1 && secondDown, `${a} ${b}`);
+        ok('...and a post more than 60 degrees off the cut is not reached, until she turns to it',
+          c === 0 && stillUp && e === 1 && !p75.live && Math.cos(THREE.MathUtils.degToRad(60)) - GAL.CROSS_AIM < 1e-9, `${c} ${e}`);
+        let worst = Infinity;
+        for (let r = 0; r <= 1.0001; r += 0.05) {
+          const a2 = GAL.crossBehind(0.7, r) - 0.7;
+          worst = Math.min(worst, Math.abs(Math.atan2(Math.sin(a2), Math.cos(a2))));
+        }
+        ok('...the last level\'s posts appear behind her, anywhere in that half circle', worst >= Math.PI / 2 - 1e-9, worst.toFixed(3));
+      }
+      {
+        const d = run('tri');
+        golive(d);
+        const lvl6 = toLevel(d, 5);
+        const L = d.L;
+        const me = () => ({ x: her.position.x - SW.SIM.dx, z: her.position.z - SW.SIM.dz });
+        const turn = (t, u) => {
+          const o = me();
+          const a1 = Math.atan2(t.local.x - o.x, t.local.z - o.z); const a2 = Math.atan2(u.local.x - o.x, u.local.z - o.z);
+          return Math.abs(Math.atan2(Math.sin(a1 - a2), Math.cos(a1 - a2)));
+        };
+        const [p0, p1, p2] = L.posts;
+        const hidden = !p1.group.visible && !p1.live && !p1.ghost;
+        her._triPend = true;
+        d.update(1 / 60);
+        const ghost0 = p1.ghost && !p1.live && p1.group.visible && p1.fade < 0.1;
+        her._triPend = false; her.triWindT = 0.2;
+        for (let i = 0; i < 40; i++) d.update(1 / 60);
+        const faded = Math.abs(p1.fade - GAL.CROSS_GHOST.alpha) < 1e-6;
+        ok('十 the last level: pressing for the Cross Slash shows where the next post will be, fading in, uncuttable',
+          lvl6 && hidden && ghost0 && faded && Math.abs(Math.hypot(p1.local.x - me().x, p1.local.z - me().z) - GAL.CROSS_R) < 1e-6,
+          `${lvl6} ${hidden} ${ghost0} ${p1.fade}`);
+        ok('...behind her, against the one she is about to cut', turn(p1, p0) >= Math.PI / 2 - 1e-6, turn(p1, p0).toFixed(3));
+        p0.breakNow();
+        ok('...and it stands up the moment that one breaks, with the next one\'s ghost behind IT',
+          p1.live && !p1.ghost && p1.fade === 1 && p2.ghost && !p2.live && turn(p2, p1) >= Math.PI / 2 - 1e-6, turn(p2, p1).toFixed(3));
+        her.triWindT = 0; d.update(1 / 60);
+        ok('...and a Cross Slash that leaves one standing takes the ghosts away with the rest',
+          p0.live && !p1.live && !p1.ghost && !p1.group.visible && !p2.ghost && !p2.group.visible);
+        // "When the targets are in the air, they have no shadow": a beam, a shadow and a ring under each.
+        toLevel(d, 4);
+        const c0 = d.spot(0, 0);
+        const marks = d.L.posts.map((t) => t.airMarks);
+        ok('...and the posts in the air each have a beam down to a shadow and a ring on the floor under them',
+          d.lv === 4 && marks.every((m) => m && Math.abs(d.L.posts[0].local.y + m.ring.position.y - c0.y) < 0.1
+            && Math.abs(m.beam.geometry.parameters.height - GAL.CROSS_AIR) < 1e-6 && m.shadow.material.opacity >= 0.5),
+          `${marks.filter(Boolean).length}`);
+        d.dispose(); D.drills[0] = null;
+      }
+
+      /* 突 "rotate them so they require more cardinal movements ... half of the
+         first 2 drills be diagonal, but after that, should be cardinal", "they
+         need a shadow or some kind of indicator", and the L "can use the
+         placement of the blocks on part 4". Measured on the built mats. */
+      {
+        const d = run('charge');
+        golive(d);
+        const S = KTm.SCREEN;
+        const diag = [];
+        const signsOk = [];
+        for (let i = 0; i < GAL.CHARGE_PARTS.length; i++) {
+          if (i) toLevel(d, i);
+          let n = 0;
+          let off = 0;
+          for (const set of d.L.sets) {
+            const m0 = set.mats[0].local; const m2 = set.mats[2].local;
+            const vx = m2.x - m0.x; const vz = m2.z - m0.z;
+            const deg = (Math.atan2(vx * S.right.x + vz * S.right.z, vx * S.up.x + vz * S.up.z) * 180) / Math.PI;
+            const r = ((deg % 90) + 90) % 90;
+            if (Math.abs(r - 45) < 1e-6) n++;
+            else if (Math.min(r, 90 - r) > 1e-6) off++;
+          }
+          diag.push(off ? `${n}+${off}?` : n);
+          const signs = d.root.children.filter((o) => o.name === 'jump-sign');
+          const want = GAL.CHARGE_PARTS[i].sets.filter((s) => s.h).map((s) => (s.h === GAL.CHARGE_TWO ? 2 : 1)).sort().join();
+          signsOk.push(signs.map((o) => o.userData.jumps).sort().join() === want);
+        }
+        ok('突 every row runs along the screen: two of four diagonal in parts 1 and 2, none after',
+          diag.join() === '2,2,0,0,0', diag.join());
+        ok('...and every set in the air has its sign beside it — 1 JUMP or 2 JUMPS — and a shadow under each mat',
+          signsOk.every(Boolean) && GAL.JUMP_SIGN.off > 1.5, signsOk.join());
+        const P4 = GAL.CHARGE_PARTS[3].sets;
+        const P5 = GAL.CHARGE_PARTS[4];
+        const same = P5.sets.every((s) => P4.some((q) => q.at[0] === s.at[0] && q.at[1] === s.at[1] && q.h === s.h && q.gap === s.gap && (q.dir - s.dir) % 180 === 0));
+        // Where the first charge ENDS, against the second row's line: inside the charge's reach of a mat.
+        const v0 = [Math.cos(P5.sets[0].dir * Math.PI / 180), Math.sin(P5.sets[0].dir * Math.PI / 180)];
+        const v1 = [Math.cos(P5.sets[1].dir * Math.PI / 180), Math.sin(P5.sets[1].dir * Math.PI / 180)];
+        const end = [P5.start[0] + v0[0] * PO.CHARGE.dist, P5.start[1] + v0[1] * PO.CHARGE.dist];
+        const rel = [end[0] - P5.sets[1].at[0], end[1] - P5.sets[1].at[1]];
+        const sideOff = Math.abs(rel[0] * v1[1] - rel[1] * v1[0]);
+        const reach = PO.CHARGE.radius + 0.9;
+        // ...and from the start, the first charge passes through all three of the low set.
+        const s0 = P5.sets[0];
+        const through = [-1, 0, 1].every((k) => {
+          const m = [s0.at[0] + v0[0] * k * s0.gap - P5.start[0], s0.at[1] + v0[1] * k * s0.gap - P5.start[1]];
+          const along = m[0] * v0[0] + m[1] * v0[1];
+          return along > 0 && along < PO.CHARGE.dist && Math.abs(m[0] * v0[1] - m[1] * v0[0]) < 0.5;
+        });
+        ok('...and the L is two of part 4\'s sets, the first charge ending in reach of the second row\'s line',
+          same && through && sideOff <= reach - 1, `same ${same} through ${through} off ${sideOff.toFixed(2)} of ${reach}`);
+        d.dispose(); D.drills[0] = null;
+      }
+      D.hint = realHint;
+
+      /* The Matrix rain on Shadow Lionheart's island: "visible in the background
+         from the default camera view ... smaller ... in the distance". */
+      {
+        const ws = readFileSync(new URL('../src/world/simworld.js', import.meta.url), 'utf8');
+        const rows = [...ws.matchAll(/codeRain\(s(?: \+ vec2\([^)]*\))?, ([\d.]+),/g)].map((m) => +m[1]);
+        ok('影 the code rain is on the screen, not round the horizon: laid out in the pane, fine, and dim',
+          /vec2 s = vView\.xy \/ -vView\.z \* vP11;/.test(ws) && /vP11 = projectionMatrix\[1\]\[1\];/.test(ws)
+          && !/smoothstep\(-0\.3, 0\.05, y\)/.test(ws) && rows.length === 2 && Math.min(...rows) >= 50, rows.join());
       }
 
       /* 守 three turrets, a warning, a beam she sees coming, three levels. */
@@ -42346,8 +42550,8 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
           /this\._vrLevel = swell \* \(1 - \(this\.dream\?\.hush \?\? 0\)\)/.test(msrc) && /if \(swell > 0\) return 'vr'/.test(msrc)
           && msrc.indexOf("this.dream?.shadow?.state === 'live'") < msrc.indexOf('this._vrLevel = swell'));
         ok('...and the dark sky carries the code rain, scaled by the same gloom — set for each pane before its sky is placed',
-          /uniform float uGloom;[\s\S]*if \(uGloom > 0\.001\) \{[\s\S]*trail \* rain/.test(wsrc)
-          && /this\.sim\.setGloom\(this\.paneGloom\(members\)\);\s*this\.sim\.faceCamera\(camera\);/.test(readFileSync(new URL('../src/systems/dreamdojo.js', import.meta.url), 'utf8')));
+          /uniform float uGloom;[\s\S]*if \(uGloom > 0\.001\) \{[\s\S]*col \+= rain \* uGloom/.test(wsrc)
+          && /this\.sim\.setGloom\(this\.paneGloom\(members\)\);[\s\S]{0,200}?this\.sim\.faceCamera\(camera\);/.test(readFileSync(new URL('../src/systems/dreamdojo.js', import.meta.url), 'utf8')));
         /* HER FOUND ORBS STAY OUTSIDE. "it is bringing the worlds regular,
            large kotodama orbs into the simulator with the player. It should
            leave that outside" — Richard, Oct 2026. They circle her body in
