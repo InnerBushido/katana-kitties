@@ -130,7 +130,14 @@ export class Drill {
   }
 
   star(o) {
-    const s = new HoloStar({ parent: this.root, owner: this.p.index, ...o });
+    /* A STAR TAKEN SAYS SO. Richard, Oct 2026: "Play a sound when a goal item
+       is picked up." Hers only — a rival taking it is its own drill's news. */
+    const take = o.onTake;
+    const onTake = (who, s) => {
+      if (who === this.p) this.dream.game.sfx?.('starfound');
+      take?.(who, s);
+    };
+    const s = new HoloStar({ parent: this.root, owner: this.p.index, floorY: this.at.y, ...o, onTake });
     this.stars.push(s);
     return s;
   }

@@ -8,7 +8,7 @@ import { JUKEBOX, hasRecording } from './jukebox.js';
 import { footprint, firstFit, firstYardSpot, wallSlots, wallFree, ITEM_SELL } from './editor.js';
 import { buildWhy, commitBuild, removeBuilt, pickList, stepToward, BUILD_KEYS, PICK_KEYS, CUSTOM_PICK_KEYS, freeTurn, rotStepOf, linkOf } from './build.js';
 import { stylesFor, LOOK_MUL } from './models.js';
-import { YARD_BUILT } from './homeisle.js';
+import { YARD_BUILT, RAISE_T } from './homeisle.js';
 import { Preview } from './preview.js';
 import { holoKit, holoWhyRemove, holoTubes, HOLO_TUBE_ID, HOLO_MAX_TUBES } from './holodeck.js';
 import { KOI_COLOURS } from './koi.js';
@@ -41,6 +41,8 @@ import { petBoost, petLevel, BOOST_NAME, PLAY } from './petplay.js';
 --------------------------------------------------------------------------- */
 
 const ARROW = { left: '◀', up: '▲', down: '▼', right: '▶' };
+/** How long the camera stays on a new house after its rise has finished (`_v_raising`). */
+export const RAISE_HOLD = 0.8;
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const pts = (n) => `${Math.round(n).toLocaleString()} pts`;
 /** "EMBER'S", "EMBER & FROST'S" — the whole thing in capitals or none of it. */
@@ -146,6 +148,8 @@ export class HousingCards {
     if (was.v === 'site' || was.v === 'house') this.H.stopPreview();
     if (was.v === 'jukebox' && this.H.audition?.who === index) this.H.audition = null;
     if (was.v === 'shop') this.preview.hide(index);
+    // backing out of a placement, or out of the shop, forgets where the last one went (`lastPut`)
+    if ((was.v === 'build' && !was.placed) || was.v === 'shop') st.lastPut = null;
     return true;
   }
 
@@ -162,6 +166,9 @@ export class HousingCards {
   }
 
   closed(index) {
+    // a knock left unanswered is a NO, and the visitor is told so
+    const kn = this.st.get(index)?.stack.find((v) => v.v === 'knock');
+    if (kn && !kn.answered) { kn.answered = true; this.H.answerKnock(this.game.players[index], kn, false); }
     this.H.browsing.delete(index);
     this.H.endWatch(index);
     if (this.H.preview?.who === index) this.H.stopPreview();
@@ -185,12 +192,13 @@ export class HousingCards {
       top?.v === 'build' && top.kind === 'yard' ? `${Math.round(top.x * 2)},${Math.round(top.z * 2)}` : '',
       // a bridge's card says whether it reaches, which changes with every door, turn count and corner
       top?.v === 'build' && top.kind === 'link'
-        ? JSON.stringify([top.a, top.cur, top.turns, top.vk, top.vk != null ? top.via?.map((v) => [Math.round(v.x * 2), Math.round(v.z * 2), !!v.smooth]) : 0]) : '',
+        ? JSON.stringify([top.a, top.cur, top.counting, top.turns, top.vk, top.vk != null ? top.via?.map((v) => [Math.round(v.x * 2), Math.round(v.z * 2), !!v.smooth]) : 0]) : '',
       p?.score, this.H.store.at, this.pending ? [...this.pending.yes].join(',') : '', c.i].join('|');
   }
 
   back(index) {
     const top = this._top(index);
+    if (top?.v === 'raising') { this.game.toast('Hold on — it is going up!', index); return true; }
     if (top?.v === 'consent') { this._answer(index, false); return false; }
     return this._pop(index);
   }
@@ -212,6 +220,11 @@ export class HousingCards {
   /** The editor and the rod take the pad themselves. */
   drive(index, pad, dt, c) {
     const top = this._top(index);
+    if (top?.v === 'raising') {
+      top.t += dt;
+      if (top.t >= top.dur) this._pop(index);
+      return true;
+    }
     if (top?.v === 'build' || top?.v === 'pick') {
       const spent = this.H.builder.drive(index, pad, dt);
       this.H.builder.drawMap(index, c.el?.querySelector('canvas.hs-map'));
@@ -240,9 +253,10 @@ export class HousingCards {
         if (k >= 0) top.at = k;
       } else if (step && (top.kind === 'yard' || top.kind === 'house')) { top.x += step[0] * 1.5; top.z += step[1] * 1.5; }
       else if (step && top.kind === 'link' && top.vk != null) { const v = top.via?.[top.vk]; if (v) { v.x += step[0] * 1.5; v.z += step[1] * 1.5; } }
+      else if (step && top.kind === 'link' && top.counting) { if (step[0]) B.linkCount(index, top, step[0]); }
       else if (step && top.kind === 'link') this.H.builder.hopPort(top, step[0], step[1]);
       else if (act === 'rot' && top.kind === 'link') { if (top.vk != null) B.turnSmooth(index, top); else this.H.builder.portFloor(top); return; }
-      else if (act === 'step' && top.kind === 'link') { if (top.vk == null) B.linkTurns(index, top); return; }
+      else if (act === 'step' && top.kind === 'link') { if (top.counting && top.vk == null) B.linkTurns(index, top); return; }
       else if (step && top.kind === 'wall') B.hop(top, step[0], step[1]);
       else if (step) B.nudge(top, step[0], step[1]);
       if (act === 'rot') B.rotate(top);
@@ -722,6 +736,15 @@ export class HousingCards {
         const S = wallSlots(room.house, room).find((s) => wallFree(R, s.side, s.k) && !buildWhy(H, { kind: 'wall', room: room.id, id: it.id, side: s.side, k: s.k, sel: -1 }));
         spot = S && { side: S.side, k: S.k };
       } else spot = firstYardSpot(H, it, I?.radius ?? 50);
+      /* THE NEXT ONE STARTS WHERE THE LAST ONE WENT. Richard, Oct 2026: "after
+         placing an object outside, the next placement should start where the
+         previous one was placed. Backing out or reopening the menu resets to
+         the default." `lastPut` lives in this opening of the menu (`open`
+         makes a fresh one) and `_pop` drops it on a back-out. The drop still
+         asks `yardWhy`, so starting on top of the last thing only means the
+         first nudge of the stick is to one side of it. */
+      const last = this.st.get(index)?.lastPut;
+      if (top.kind === 'yard' && last && !it.later) spot = { x: last.x, z: last.z, rot: last.rot };
       /* NO SPOT FOUND IS NOT "NO ROOM". The search is a grid and she has eyes:
          a yard thing with nowhere found for it still goes into build mode,
          behind the house, and the drop says exactly what is in the way
@@ -964,7 +987,17 @@ export class HousingCards {
     const H = this._home(top);
     const I = this.H.isleOf(top.site);
     if (top.kind === 'house') {
-      if (this.H.placeHouse(p, H, { hk: top.sel === -1 ? null : top.sel, house: top.id, x: top.x, z: top.z, rot: top.rot ?? 0 })) this._pop(index);
+      const isNew = top.sel === -1;
+      if (!this.H.placeHouse(p, H, { hk: isNew ? null : top.sel, house: top.id, x: top.x, z: top.z, rot: top.rot ?? 0 })) return;
+      this._pop(index);
+      /* WATCH IT GO UP. Richard, Oct 2026: "the camera should go to the front
+         of the door and show the house being built, with menu selection
+         temporarily disabled. The camera then returns to the player." The
+         house is already written down; this view only holds her card still
+         (`drive` takes the whole pad) while `Builder.camera` frames the door,
+         and steps back by itself when the rise is done. START still closes
+         the card, as it does on every card. */
+      if (isNew) this._push(index, { v: 'raising', site: top.site, hk: `a${H.uid}`, id: top.id, t: 0, dur: RAISE_T + RAISE_HOLD });
       return;
     }
     if (top.kind === 'link') return this._linkHere(index, p, H, top);
@@ -975,6 +1008,8 @@ export class HousingCards {
     if (price && !this.H.spend(p, H, price)) { this.game.toast(`${p.name} needs ${pts(price - p.score)} more.`, index); return; }
     commitBuild(H, top);
     this.H.changed(H);
+    top.placed = true;
+    if (top.kind === 'yard') this.st.get(index).lastPut = { x: top.x, z: top.z, rot: top.rot ?? 0 };
     this.game.audio?.play?.('land');
     this.game.toast(top.sel < 0 ? `The ${it.name} is in!` : `Moved the ${it.name}.`, index);
     this._pop(index);
@@ -1181,6 +1216,35 @@ export class HousingCards {
     };
   }
 
+  /**
+   * SOMEBODY IS KNOCKING (`Housing.knock`): the owner's question, NO first and
+   * no `.primary` (non-negotiable 7). Closing it unanswered is a NO (`closed`).
+   */
+  _v_knock(index, p, top) {
+    const who = this.game.players[top.visitor]?.name ?? 'Somebody';
+    const done = (yes) => () => { top.answered = true; this.H.answerKnock(p, top, yes); return 'close'; };
+    return {
+      head: `${who.toUpperCase()} IS KNOCKING`,
+      body: `<div class="hs-note">${esc(`${who} is knocking at your door. Open it for ${who}?`)}</div>`,
+      rows: [
+        { title: 'NO, KEEP IT SHUT', go: done(false) },
+        { title: `YES, LET ${who.toUpperCase()} IN`, go: done(true) },
+      ],
+    };
+  }
+
+  /** A new house going up (`placeHere`): nothing to choose, only to watch. */
+  _v_raising(index, p, top) {
+    const def = HOUSE_BY_ID[top.id];
+    return {
+      head: def?.name ?? 'HOUSE',
+      body: '<div class="hs-good">It is going up — watch!</div>',
+      rows: [],
+      foot: ' ',
+      backWord: 'WAIT',
+    };
+  }
+
   /** The selector over houses or bridges: a house moves or sells, a bridge sells. */
   _v_pickbig(index, p, top, H, L) {
     top.at = Math.min(top.at ?? 0, L.length - 1);
@@ -1270,40 +1334,44 @@ export class HousingCards {
   }
 
   /* A BRIDGE WITH TURNS. "she sets the number of turns or parts, and places
-     each turn's start and end". RIDE sets how many while she picks the doors
-     (the ghost bends round its default corners at once); JUMP on the second
-     door then hands her each corner in turn, to slide with the stick and make
-     a curve with ATTACK; JUMP on the last builds. The price on the button is
-     the price with them. */
+     each turn's start and end". The two doors first; then HOW MANY TURNS,
+     LEFT and RIGHT, with the ghost bending round its default corners as the
+     number changes (`counting`); JUMP hands her each corner in turn, to slide
+     with the stick and make a curve with ATTACK; JUMP on the last asks "are
+     you sure?" (`_v_linkconfirm`) — Richard, Oct 2026: "once a bridge is
+     complete and valid, ask 'Are you sure you want to build this bridge?'".
+     The price on the button is the price with them. */
   _v_buildlink(index, p, top) {
     const H = this._home(top);
     const I = this.H.isleOf(top.site);
     const S = LINK_BY_ID[top.style];
     const n = top.turns ?? 0;
     const placing = top.vk != null;
+    const counting = !!top.counting && !placing;
     const last = placing && top.vk >= n - 1;
-    const toTurns = top.a && n && !placing;
+    const toTurns = counting && n;
     const bad = top.a ? buildWhy(H, top, this.H.envOf(I)) : null;
     const price = this.H.linkPrice(top.style, linkOf(H, top));
     const v = placing ? top.via[top.vk] : null;
     const keys = placing
       ? [['STICK', `move turn ${top.vk + 1}`], ['ATTACK', v?.smooth ? 'make it a corner' : 'make it a curve'], ['JUMP', last ? 'build it' : 'next turn'], ['SPRINT', 'back'], ['INTERACT', 'back']]
-      : [['STICK', 'next door'], ['ATTACK', 'next floor'], ['RIDE', n ? `${n} turn${n > 1 ? 's' : ''}` : 'add a turn'],
-        ['JUMP', !top.a ? 'this door' : toTurns ? 'place the turns' : 'build it'], ['SPRINT', top.a ? 'other first door' : 'back'], ['INTERACT', 'back']];
+      : counting
+        ? [['◀ ▶', 'fewer or more turns'], ['JUMP', n ? 'place the turns' : 'build it'], ['SPRINT', 'other door'], ['INTERACT', 'back']]
+        : [['STICK', 'next door'], ['ATTACK', 'next floor'], ['JUMP', !top.a ? 'this door' : 'that door'], ['SPRINT', top.a ? 'other first door' : 'back'], ['INTERACT', 'back']];
     const msg = !top.a ? `Pick the FIRST door — floor ${top.floor + 1}. ATTACK goes up a floor.`
       : placing ? (bad ?? `Turn ${top.vk + 1} of ${n} — ${v?.smooth ? 'a smooth curve' : 'a sharp corner'}. ${last ? 'It reaches! JUMP builds it.' : 'JUMP for the next turn.'}`)
-      : toTurns ? `Pick the other door, then JUMP to place the ${n} turn${n > 1 ? 's' : ''}.`
-      : bad ?? `It reaches! Press JUMP to build it.`;
+      : counting ? (n ? `${n} turn${n > 1 ? 's' : ''} — ◀ ▶ to change it, JUMP to place ${n > 1 ? 'them' : 'it'}.` : (bad ?? 'Straight across — ◀ ▶ adds turns, JUMP builds it.'))
+      : 'Now pick the door on the OTHER house.';
     return {
       build: true,
-      head: `${S.name} — ${placing ? `TURN ${top.vk + 1} OF ${n}` : top.a ? 'THE OTHER DOOR' : 'THE FIRST DOOR'}`,
+      head: `${S.name} — ${placing ? `TURN ${top.vk + 1} OF ${n}` : counting ? `TURNS: ${n}` : top.a ? 'THE OTHER DOOR' : 'THE FIRST DOOR'}`,
       body: `<div class="hs-buildrow"><canvas class="hs-map" width="180" height="180"></canvas><div class="hs-buildinfo">
-        <div class="${bad && !toTurns ? 'hs-bad' : 'hs-good'}">${esc(msg)}</div>
+        <div class="${bad && (placing || (counting && !n)) ? 'hs-bad' : 'hs-good'}">${esc(msg)}</div>
         <div class="hs-keys">${keys.map(([k, w]) => `<span><b>${k}</b> ${w}</span>`).join('')}</div>
-        ${this._touch() ? this._touchPad(index, true, false, placing ? 0 : 'TURNS') : ''}</div></div>`,
+        ${this._touch() ? this._touchPad(index, true, false, counting ? 'TURNS' : 0) : ''}</div></div>`,
       rows: [{
-        title: !top.a ? 'THIS DOOR FIRST' : toTurns ? 'PLACE THE TURNS' : placing && !last ? 'NEXT TURN' : `BUILD IT — ${pts(price)}`,
-        disabled: toTurns || (placing && !last) ? false : !!bad || (top.a && p.score < price),
+        title: !top.a ? 'THIS DOOR FIRST' : !counting && !placing ? 'THAT DOOR' : toTurns ? 'PLACE THE TURNS' : placing && !last ? 'NEXT TURN' : `BUILD IT — ${pts(price)}`,
+        disabled: !top.a || (!counting && !placing) || toTurns || (placing && !last) ? false : !!bad || p.score < price,
         why: bad ?? `${p.name} needs ${pts(price - p.score)} more.`,
         go: () => { this.placeHere(index, top); return null; },
       }],
@@ -1311,7 +1379,30 @@ export class HousingCards {
     };
   }
 
-  /** JUMP on a doorway: the first one is remembered, the second builds. */
+  /** "Are you sure you want to build this bridge?" — NO first, and no `.primary` (non-negotiable 7). */
+  _v_linkconfirm(index, p, top) {
+    const S = LINK_BY_ID[top.L.style];
+    const n = top.L.via?.length ?? 0;
+    return {
+      head: 'BUILD THIS BRIDGE?',
+      body: `<div class="hs-note">${esc(`Are you sure you want to build this ${S.name.toLowerCase()}${n ? ` with ${n} turn${n > 1 ? 's' : ''}` : ''}? It costs ${pts(top.price)}.`)}</div>`,
+      rows: [
+        { title: 'NO, KEEP CHANGING IT', go: () => { this._pop(index); return null; } },
+        {
+          title: `YES, BUILD IT — ${pts(top.price)}`,
+          go: () => {
+            const r = this.H.buildLink(this.game.players[index], this._home(top), top.L, false);
+            this._pop(index);
+            if (r.blockers?.length) { this._push(index, { v: 'linkblock', site: top.site, L: top.L, cursor: 0 }); return null; }
+            if (r.ok) this._pop(index);
+            return null;
+          },
+        },
+      ],
+    };
+  }
+
+  /** JUMP on a doorway: the first one is remembered, the second asks how many turns, the last asks if she is sure. */
   _linkHere(index, p, H, top) {
     if (!top.cur) return;
     if (!top.a) {
@@ -1323,9 +1414,16 @@ export class HousingCards {
       return;
     }
     const n = top.turns ?? 0;
-    if (n && top.vk == null) {
-      // the doors are chosen: hand her the corners, starting where the ghost already showed them
+    if (!top.counting && top.vk == null) {
+      // the doors are chosen: how many turns?
       top.b = { ...top.cur };
+      top.counting = true;
+      this.game.audio?.play?.('menu');
+      this.game.toast('How many turns? LEFT and RIGHT — then JUMP.', index);
+      return;
+    }
+    if (n && top.vk == null) {
+      // hand her the corners, starting where the ghost already showed them
       top.via = defaultVia(H, top.a, top.b, n, this.H.envOf(this.H.isleOf(top.site)).gyAt);
       top.vk = 0;
       this.game.audio?.play?.('menu');
@@ -1338,10 +1436,14 @@ export class HousingCards {
       this.game.toast(`Now turn ${top.vk + 1}.`, index);
       return;
     }
+    // complete: buildable and affordable BEFORE she is asked whether she is sure
     const L = linkOf(H, top);
-    const r = this.H.buildLink(p, H, L, false);
-    if (r.blockers?.length) { this._push(index, { v: 'linkblock', site: top.site, L, cursor: 0 }); return; }
-    if (r.ok) this._pop(index);
+    const env = this.H.envOf(this.H.isleOf(top.site));
+    const bad = buildWhy(H, top, env);
+    const price = this.H.linkPrice(top.style, L);
+    if (bad && !linkBlockers(H, L, env).length) { this.game.toast(bad, index); this.game.audio?.play?.('menu'); return; }
+    if (p.score < price) { this.game.toast(`${p.name} needs ${pts(price - p.score)} more.`, index); return; }
+    this._push(index, { v: 'linkconfirm', site: top.site, L, price, cursor: 0 });
   }
 
   /** SPRINT while picking doors: forget the first door, or leave. */
@@ -1349,10 +1451,11 @@ export class HousingCards {
     // placing turns: back a turn, and from the first back to choosing the other door
     if (top.vk != null) {
       if (top.vk > 0) top.vk--;
-      else { top.vk = null; top.cur = top.b; top.b = null; }
+      else top.vk = null;   // back to how many
       this.game.audio?.play?.('menu');
       return;
     }
+    if (top.counting) { top.counting = false; top.cur = top.b; top.b = null; this.game.audio?.play?.('menu'); return; }
     if (top.a) { top.cur = top.a; top.a = null; top.floor = top.cur.floor; this.game.audio?.play?.('menu'); return; }
     this._pop(index);
   }

@@ -427,6 +427,17 @@ export function drawItem(id, sz = 2, opts = {}) {
       g.add(shojiPair(W, Hh).group);
       return g;
     }
+    case 'slidedoor': {
+      // the doorway's shoji, door-high (homehouse PORT_H 3.1), in the same dark frame as a window
+      const g = new THREE.Group();
+      const W = 1.8, Hh = 3.04;
+      g.add(mesh([
+        box(0.2, Hh, 0.38, 0x3a2418, -(W / 2 + 0.1) + 0.04, 0, 0),
+        box(0.2, Hh, 0.38, 0x3a2418, W / 2 + 0.1 - 0.04, 0, 0),
+        box(W + 0.4, 0.16, 0.4, 0x3a2418, 0, Hh - 0.04, 0)]));
+      g.add(shojiPair(W, Hh).group);
+      return g;
+    }
     case 'scroll': return mesh([
       box(1.0, 2.4, 0.03, 0xf3ead2, 0, 0, 0.03), box(0.9, 1.8, 0.035, 0xfffaee, 0, 0.3, 0.04),
       box(1.2, 0.1, 0.1, 0x3a2418, 0, 2.38, 0.06),

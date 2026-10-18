@@ -21224,7 +21224,8 @@ console.log('\n--- seeing through the arena ---');
   /* FOUR CUTS, BECAUSE FOUR PLAY. This was two, written when two was the whole
      game, so kittens three and four were never cut for at all. */
   const gfx = readFileSync(new URL('../src/core/gfx.js', import.meta.url), 'utf8');
-  ok('the x-ray material cuts for four kittens', /const MAX = 4;/.test(gfx));
+  // four by default; a house asks for more (`XRAY_SLOTS`), for the doors it hides as well
+  ok('the x-ray material cuts for four kittens', /const MAX = opts\.max \?\? 4;/.test(gfx) && xrayVertexMat().userData.xray.uCutOn.value.length === 4);
 
   const mat = xrayVertexMat();
   /* Compile it by hand — there is no GL here, so drive `onBeforeCompile` with
@@ -37010,11 +37011,25 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         // Drawn over the gold circle and over her: the beams are the last transparent thing.
         const ring = d.root.children.find((o) => o.geometry?.type === 'RingGeometry');
         const L0 = d.lasers[0];
-        let herTop = 0;
-        her.group.traverse((o) => { herTop = Math.max(herTop, o.renderOrder ?? 0); });
-        ok('...and its beams are drawn after the gold circle and after her (Richard: "behind the yellow circle")',
-          L0.glow.renderOrder > (ring?.renderOrder ?? 0) && L0.core.renderOrder > L0.glow.renderOrder && L0.glow.renderOrder > herTop,
-          `beam ${L0.glow.renderOrder} ring ${ring?.renderOrder} her ${herTop}`);
+        /* ...but UNDER her UI. Richard, Oct 2026: "The lasers draw in front of
+           the player UI and make text hard to read." Her UI is the 20-25
+           band — her name label (20, depth-tested), her bar (20-21), her rank
+           badge (22), her team mark (24), the daze stars (25) — and her body
+           is everything under it; the beams go between the two. (Split by
+           `depthTest` first, which put the name label and the badge in her
+           body.) */
+        const UI_BAND = 20;
+        let herTop = 0, herUI = Infinity;
+        her.group.traverse((o) => {
+          if (!o.material) return;
+          const r = o.renderOrder ?? 0;
+          if (r >= UI_BAND) herUI = Math.min(herUI, r);
+          else herTop = Math.max(herTop, r);
+        });
+        ok('...and its beams are drawn after the gold circle and after her, and under her UI (Richard: "behind the yellow circle", "in front of the player UI")',
+          L0.glow.renderOrder > (ring?.renderOrder ?? 0) && L0.core.renderOrder > L0.glow.renderOrder && L0.glow.renderOrder > herTop
+          && L0.core.renderOrder < herUI,
+          `beam ${L0.glow.renderOrder}/${L0.core.renderOrder} ring ${ring?.renderOrder} her ${herTop} UI ${herUI}`);
         ok('...and each throws a line on the floor straight under it, the length of the beam',
           L0.shadow?.visible && Math.abs(L0.shadow.position.y - at.y) < 0.1
           && Math.abs(L0.shadow.scale.z - Math.hypot(L0.b.x - L0.a.x, L0.b.z - L0.a.z)) < 1e-6, `${L0.shadow?.position.y} ${L0.shadow?.scale.z}`);

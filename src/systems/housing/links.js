@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { paint } from '../../core/gfx.js';
 import { PALETTE } from '../../world/build.js';
 import { HOUSE_BY_ID, ITEM_BY_ID, LINK_BY_ID, houseSpecs } from './catalog.js';
-import { floorOf, houseFoot, houseHeight, PORT_H } from './homehouse.js';
+import { floorOf, houseFoot, houseHeight, stairBlocks, PORT_H } from './homehouse.js';
 
 /* ---------------------------------------------------------------------------
    BRIDGES BETWEEN HOUSES — a door in one house's wall, a door in another's,
@@ -27,8 +27,13 @@ import { floorOf, houseFoot, houseHeight, PORT_H } from './homehouse.js';
    under a house's centre (zero in a check, the island's real hill in the game).
 --------------------------------------------------------------------------- */
 
-/** The longest bridge: a long walk, not a road. */
-export const LINK_MAX = 40;
+/** The longest bridge: a long walk, not a road. Richard, Oct 2026: "there is
+ *  a limit for how long a bridge can be, is there a specific reason for this?
+ *  If not, we can remove the length restriction or at least double it". There
+ *  was no reason but taste; it is doubled, from 40. The island's edge is the
+ *  real limit now (a turn off it is refused), and a bridge that climbs is
+ *  still held to LINK_GRADE. */
+export const LINK_MAX = 80;
 export const LINK_MIN = 1.5;
 /** Steepest climb, rise over run: a staircase's (homehouse.js STAIR_GRADE). */
 export const LINK_GRADE = 0.5;
@@ -63,8 +68,12 @@ const PORT_EDGE = 1.4;
 
 /** Each turn adds this much of the bridge's price; a smooth one the same again. */
 export const TURN_PRICE = 0.25;
-/** The most turns a bridge can have (four parts). */
-export const LINK_TURNS_MAX = 3;
+/** The most turns a bridge can have. Richard, Oct 2026: "Player should be able
+ *  to build as many bridge sections as they want instead of limiting it to
+ *  only 3". It was 3; twelve is more than an island has room for, and keeps
+ *  the price (a quarter a turn) and the card's count readable. LEFT/RIGHT on
+ *  the HOW MANY TURNS step sets it (cards.js `_v_linkturns`). */
+export const LINK_TURNS_MAX = 12;
 /** A run shorter than this between two turns is "too tight". */
 export const RUN_MIN = 1;
 /** A smooth turn's middle radius, in bridge widths. */
@@ -105,7 +114,7 @@ export function endAt(H, e, gyAt = () => 0) {
   if (lx == null) return null;
   const p = toIsle(s, lx, lz);
   const n = toIsle({ ...s, x: 0, z: 0 }, nx, nz);
-  return { x: p.x, z: p.z, y: F.y + gyAt(s.x, s.z), nx: n.x, nz: n.z, spec: s, F };
+  return { x: p.x, z: p.z, y: F.y + gyAt(s.x, s.z), nx: n.x, nz: n.z, spec: s, F, floor: e.floor };
 }
 
 /**
@@ -135,10 +144,21 @@ export function linkGeom(H, L, gyAt) {
     const theta = Math.acos(Math.max(-1, Math.min(1, a.ux * b.ux + a.uz * b.uz)));
     const smooth = !!v.smooth;
     const R = w * ARC_W;
-    const t = smooth ? R * Math.tan(Math.min(theta, Math.PI * 0.9) / 2) : hw;
+    /* A SHARP TURN TIGHTER THAN A RIGHT ANGLE STOPS ITS RUNS FURTHER BACK.
+       Richard, Oct 2026: "if the corner angle is less than 90 degrees on a
+       corner piece, then the railings are passing through the model". They
+       were: both runs stopped half a width short of the corner whatever the
+       angle, and the two INNER rails only meet at hw * tan(theta / 2) from it —
+       exactly hw at a right angle, further out past one, so each run's inner
+       rail ran on through the other run. Now a run stops where its inner rail
+       meets the other's, and the landing's radius is the distance to the
+       corners of those square ends, so the landing still closes every gap. At
+       a right angle or wider, every number is what it was. */
+    const t = smooth ? R * Math.tan(Math.min(theta, Math.PI * 0.9) / 2) : hw * Math.max(1, Math.tan(Math.min(theta, Math.PI * 0.8) / 2));
     // the side (as `linkParts` numbers them: +1 is (uz, -ux)) the bridge turns toward
     const inner = c > 1e-9 ? -1 : c < -1e-9 ? 1 : 0;
-    return { x: v.x, z: v.z, smooth, theta, t, inner, R, pad: hw * Math.SQRT2, in: a, out: b };
+    const pad = smooth ? hw * Math.SQRT2 : Math.hypot(t, hw);
+    return { x: v.x, z: v.z, smooth, theta, t, inner, R, pad, open: smooth ? Math.SQRT1_2 : t / pad, in: a, out: b };
   });
   // the runs: each leg less what its turns cut off
   const runs = legs.map((g, k) => {
@@ -226,32 +246,83 @@ function arcCurve(T, rad, n) {
 }
 
 /**
- * A sharp turn's landing rail: its circle at radius `rad`, less the two
- * openings where the runs come in. Each run's square end spans 45° either side
- * of its axis on the landing's edge (that is what the √2 is for), so the
- * circle is sampled and every stretch outside both openings is a rail —
- * at any angle of turn, with no case for which side is inside.
+ * A sharp turn's landing rail, as ARCS of its circle (`{ a0, sweep }`, angles
+ * as atan2(dx, dz)): the circle less the two openings where the runs come in.
+ * Each run's square end spans `atan(hw / t)` either side of its axis on the
+ * landing's edge (45° at a right angle or wider — the √2), and the rail is
+ * whatever lies outside both, at any angle of turn, with no case for which
+ * side is inside.
  */
+export function padArcs(T) {
+  const h = Math.acos(Math.min(1, T.open ?? Math.SQRT1_2));
+  const ai = Math.atan2(-T.in.ux, -T.in.uz), ao = Math.atan2(T.out.ux, T.out.uz);
+  // the two openings as [from, to], then the gaps between them going round
+  const norm = (a) => ((a % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+  const ops = [[norm(ai - h), 2 * h], [norm(ao - h), 2 * h]].sort((p, q) => p[0] - q[0]);
+  const out = [];
+  for (let k = 0; k < 2; k++) {
+    const [s, w] = ops[k];
+    const e = s + w;
+    const next = ops[(k + 1) % 2][0] + (k === 1 ? Math.PI * 2 : 0);
+    if (next - e > 0.02) out.push({ a0: e, sweep: next - e });
+  }
+  return out;
+}
+
+/** The landing rail as polylines at radius `rad`, for the colliders and the check. */
 function padRails(T, rad) {
-  const N = 48;
-  const c45 = Math.SQRT1_2 - 1e-6;
-  const open = [];
-  for (let j = 0; j < N; j++) {
-    const a = (j / N) * Math.PI * 2, dx = Math.sin(a), dz = Math.cos(a);
-    open.push(-(dx * T.in.ux + dz * T.in.uz) >= c45 || dx * T.out.ux + dz * T.out.uz >= c45);
+  return padArcs(T).map(({ a0, sweep }) => {
+    const n = Math.max(2, Math.ceil(sweep / (Math.PI / 24)));
+    const pts = [];
+    for (let j = 0; j <= n; j++) {
+      const a = a0 + (sweep * j) / n;
+      pts.push({ x: T.x + Math.sin(a) * rad, z: T.z + Math.cos(a) * rad });
+    }
+    return pts;
+  });
+}
+
+/**
+ * A CURVED SOLID — the part of a ring between radii r0 and r1, heights y0 to
+ * y1, from angle a0 round by `sweep` — as ONE closed mesh, about (cx, cz).
+ * Richard, Oct 2026: "The curve on the stone bridge is having some z-fighting
+ * issues and is not very smooth, seems like just stretched cubes fanning out
+ * instead of being one polygonal smooth model." It was: every 15° a box, each
+ * 0.04 longer than its chord so the joins closed, and every two neighbours
+ * overlapping in a wedge whose faces were coplanar — alternate colours, too.
+ * This is the deck, the parapet and every rail round a turn: one surface,
+ * faceted every 5° or less.
+ */
+export function ringBand(cx, cz, r0, r1, y0, y1, a0, sweep, colour) {
+  const n = Math.max(3, Math.ceil(Math.abs(sweep) / (Math.PI / 36)));
+  const pos = [];
+  const idx = [];
+  // per step: inner bottom, inner top, outer top, outer bottom
+  for (let j = 0; j <= n; j++) {
+    const a = a0 + (sweep * j) / n, s = Math.sin(a), c = Math.cos(a);
+    pos.push(cx + s * r0, y0, cz + c * r0, cx + s * r0, y1, cz + c * r0, cx + s * r1, y1, cz + c * r1, cx + s * r1, y0, cz + c * r1);
   }
-  const s0 = open.indexOf(true);
-  if (s0 < 0) return [];
-  const lines = [];
-  let cur = null;
-  for (let k = 1; k <= N; k++) {
-    const j = (s0 + k) % N;
-    if (open[j]) { if (cur?.length > 1) lines.push(cur); cur = null; continue; }
-    const a = (j / N) * Math.PI * 2;
-    (cur ??= []).push({ x: T.x + Math.sin(a) * rad, z: T.z + Math.cos(a) * rad });
+  // wound so the faces point out whichever way it sweeps
+  const flip = sweep > 0;
+  const quad = (a, b, c, d) => (flip ? idx.push(a, c, b, a, d, c) : idx.push(a, b, c, a, c, d));
+  for (let j = 0; j < n; j++) {
+    const p = j * 4, q = p + 4;
+    quad(p + 1, q + 1, q + 2, p + 2);   // top
+    quad(p + 3, q + 3, q, p);           // bottom
+    quad(p, q, q + 1, p + 1);           // inner
+    quad(p + 2, q + 2, q + 3, p + 3);   // outer
   }
-  if (cur?.length > 1) lines.push(cur);
-  return lines;
+  const e = n * 4;
+  quad(0, 1, 2, 3);                     // the start's end
+  quad(e + 3, e + 2, e + 1, e);         // the finish's end
+  // un-indexed, so every face has its own flat normal (a toon edge, not a smear)
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  const flat = g.toNonIndexed();
+  flat.computeVertexNormals();
+  paint(flat, colour);
+  return flat;
 }
 
 /**
@@ -260,6 +331,9 @@ function padRails(T, rad) {
  * `frame` as a treehouse branch's), and the rails as walls. World-check
  * walks these.
  */
+/** How long one piece of a run's rail collider is (see `linkColliders`). */
+export const RAIL_SEG = 1;
+
 export function linkColliders(G) {
   const hw = G.w / 2;
   const decks = [];
@@ -271,13 +345,23 @@ export function linkColliders(G) {
       frame: { x: r.A.x, z: r.A.z, a: r.a },
       yAt: (x, z) => y0 + r.rise * Math.min(1, Math.max(0, z / r.len)),
     });
-    const lo = Math.min(r.A.y, r.B.y), hi = Math.max(r.A.y, r.B.y);
+    /* The rails IN PIECES, each a metre long with its own heights. One wall
+       the length of a sloping run spanned from its lowest deck to its highest
+       rail, so a bridge climbing to a third floor put an invisible wall in
+       the room under it. Richard: "a bridge base going through the 1st-floor
+       ceiling collides with a player inside". */
+    const n = Math.max(1, Math.ceil(r.len / RAIL_SEG));
     for (const s of [-1, 1]) {
       const ox = r.uz * s * (hw - 0.05), oz = -r.ux * s * (hw - 0.05);
-      walls.push({
-        ax: r.A.x + ox, az: r.A.z + oz, bx: r.B.x + ox, bz: r.B.z + oz,
-        y0: lo + 0.2, y1: hi + 1.3, rail: true,
-      });
+      for (let j = 0; j < n; j++) {
+        const t0 = j / n, t1 = (j + 1) / n;
+        const ya = y0 + r.rise * t0, yb = y0 + r.rise * t1;
+        walls.push({
+          ax: r.A.x + (r.B.x - r.A.x) * t0 + ox, az: r.A.z + (r.B.z - r.A.z) * t0 + oz,
+          bx: r.A.x + (r.B.x - r.A.x) * t1 + ox, bz: r.A.z + (r.B.z - r.A.z) * t1 + oz,
+          y0: Math.min(ya, yb) + 0.2, y1: Math.max(ya, yb) + 1.3, rail: true,
+        });
+      }
     }
   }
   for (const T of G.turns) {
@@ -309,6 +393,9 @@ export function linkColliders(G) {
 /** The floor height along the bridge at distance d from A. */
 export const linkY = (G, d) => G.A.y + G.rise * Math.min(1, Math.max(0, d / G.len));
 
+/** How far into the room a bridge door's floor has to be clear of the stairs. */
+export const PORT_IN = 2.6;
+
 /** Is a doorway at `at` on this wall a possible place for a bridge door? */
 export function portWhy(H, e, w, skipUid = null) {
   const s = specOf(H, e.hk);
@@ -317,6 +404,20 @@ export function portWhy(H, e, w, skipUid = null) {
   const half = e.side % 2 ? F.hd : F.hw;
   if (Math.abs(e.at) > half - PORT_EDGE - w / 2 + 0.2) return 'Too close to the corner of the house.';
   if (e.side === 0 && e.floor === 0 && Math.abs(e.at) < 1.4 + w / 2 + 0.3) return 'That is the front door!';
+  /* NOT BESIDE THE STAIRS. Richard, Oct 2026: "Bridges entrance/exit
+     shouldn't be able to be built on second floor next to the stairs". A door
+     opens onto the strip of floor inside it — PORT_IN deep, a step wider than
+     the doorway each side — and that strip may not touch the stairs coming
+     up through this floor or the stairs going on up from it. */
+  const lo = e.at - w / 2 - 0.6, hi = e.at + w / 2 + 0.6;
+  const strip = [
+    // `at` is house x on the front and back walls and house z on the sides (`endAt`)
+    { x0: lo, x1: hi, z0: F.hd - PORT_IN, z1: F.hd }, { x0: F.hw - PORT_IN, x1: F.hw, z0: lo, z1: hi },
+    { x0: lo, x1: hi, z0: -F.hd, z1: -F.hd + PORT_IN }, { x0: -F.hw, x1: -F.hw + PORT_IN, z0: lo, z1: hi },
+  ][e.side];
+  if (strip && stairBlocks(s.house, e.floor).some((W) => strip.x0 < W.x1 && strip.x1 > W.x0 && strip.z0 < W.z1 && strip.z1 > W.z0)) {
+    return 'The stairs are right there — pick a spot further along the wall.';
+  }
   for (const L of H.links ?? []) {
     if (L.uid === skipUid) continue;
     for (const o of [L.a, L.b]) {
@@ -392,7 +493,43 @@ export function linkWhy(H, L, env = {}) {
     }
     for (const T of G.turns) if (T.y <= top && inFoot(s, T.x, T.z, hw)) return name;
   }
+  /* NOT THROUGH ANOTHER BRIDGE — but under or over one, with room for a
+     kitten between. Richard, Oct 2026: "Bridges shouldn't be able to be built
+     intersecting through each other, but should be able to be built under
+     another bridge if not intersecting or colliding." Every half unit along
+     this bridge, middle and both edges, and every landing, asks the other
+     bridges for their deck there; nearer than LINK_CLEAR in height is through. */
+  const others = (H.links ?? []).filter((M) => M !== L && (L.uid == null || M.uid !== L.uid)).map((M) => linkGeom(H, M, gyAt)).filter(Boolean);
+  if (others.length) {
+    const near = (x, z, y, r) => others.some((GM) => { const yo = overStrip(GM, x, z, r); return yo != null && Math.abs(yo - y) < LINK_CLEAR; });
+    for (const r of G.runs) {
+      for (let d = 0; d <= r.len; d += 0.5) {
+        const y = linkY(r, d);
+        for (const o of [-hw, 0, hw]) if (near(r.A.x + r.ux * d + r.uz * o, r.A.z + r.uz * d - r.ux * o, y, 0.2)) return 'It would run into another bridge — go over or under it, with room to walk.';
+      }
+    }
+    for (const T of G.turns) if (near(T.x, T.z, T.y, T.smooth ? hw : T.pad)) return 'It would run into another bridge — go over or under it, with room to walk.';
+  }
   return null;
+}
+
+/** How far apart two bridges that cross have to be: a kitten (2.9), a deck and a rail between. */
+export const LINK_CLEAR = 3.4;
+
+/**
+ * WHERE A BRIDGE'S POSTS MAY STAND: `(x, z, y)` — an island point under a deck
+ * at height y — to the ground there, or NULL where a post would go into
+ * something: any house (its plinth, and its eave band beyond it) or another
+ * bridge lower down. `linkAll` and `turnParts` skip a null post.
+ */
+export function supportGround(H, L, gyAt = () => 0) {
+  const others = (H?.links ?? []).filter((M) => M !== L && (L?.uid == null || M.uid !== L.uid)).map((M) => linkGeom(H, M, gyAt)).filter(Boolean);
+  const specs = H ? houseSpecs(H) : [];
+  return (x, z, y = Infinity) => {
+    for (const s of specs) if (inFoot(s, x, z, 1.4)) return null;
+    for (const GM of others) { const yo = overStrip(GM, x, z, 0.4); if (yo != null && yo < y) return null; }
+    return gyAt(x, z);
+  };
 }
 
 /** How high a yard thing stands, for "does it fit under the bridge?". */
@@ -535,6 +672,16 @@ export function linkParts(G, ground) {
       for (let d = 0.4; d < len; d += 0.8) solid.push(bx(w + 0.1, 0.05, 0.12, 0x5a3e26, 0, Y(d) + 0.01, d));
     }
   }
+  /* ---- THE THRESHOLD: the deck carried on through the doorway to the
+     room's floor. Richard, Oct 2026: "The entrance/exit of the bridge should
+     be merged better with the doorway to the house." The deck stopped 0.2
+     past the wall's outside face and the floor stops at the wall's middle, so
+     an upstairs doorway was a slot of sky between the two. A slab 0.45 deep
+     fills it, a hair under the floor so the two tops are never one plane.
+     Upstairs only: on the ground floor the plinth is already there. */
+  const atA0 = G.first ?? true, atB0 = G.last ?? true;
+  if (atA0 && (G.A?.floor ?? 0) > 0) solid.push(bx(w, 0.3, 0.45, deckC, 0, -0.162, -0.42));
+  if (atB0 && (G.B?.floor ?? 0) > 0) solid.push(bx(w, 0.3, 0.45, deckC, 0, rise - 0.162, len + 0.42));
   // ---- posts and rails, both sides
   const postEvery = st.id === 'stone' ? len : 2.6;
   const postsAt = [];
@@ -546,6 +693,9 @@ export function linkParts(G, ground) {
       // a solid parapet, stepped with the treads
       solid.push(sloped(0.36, 1.05, 0, len, railC, x, 1.05));
       solid.push(sloped(0.46, 0.14, 0, len, 0xb0aba3, x, 1.12));
+      // a squared pillar where the parapet meets the house: an end, not a cut
+      if (atA0) solid.push(bx(0.48, 1.4, 0.5, railC, x, 0.7, 0.3));
+      if (atB0) solid.push(bx(0.48, 1.4, 0.5, railC, x, rise + 0.7, len - 0.3));
     } else if (st.id === 'rope') {
       solid.push(sloped(0.07, 0.07, 0, len, railC, x, 1.05));
       solid.push(sloped(0.05, 0.05, 0, len, railC, x, 0.55));
@@ -612,14 +762,22 @@ export function linkParts(G, ground) {
       solid.push(b);
     }
   }
-  // ---- supports down to the ground (no colliders), every few units
+  /* ---- supports down to the ground (no colliders), every few units — but
+     NONE THAT WOULD STAND IN SOMETHING. Richard, Oct 2026: "a bridge going to
+     the 3rd floor is drawing supports underneath that are going into the 1st
+     floor ... if a bridge is above another bridge, supports should not be
+     drawn beneath it if it would collide/intersect with a bridge below it."
+     `ground(d, o)` is null over a house or a lower bridge (`supportGround`),
+     and each post asks for its own foot, so one side of a pair can stand
+     while the other, over a roof, does not. */
   const deep = { plank: 0x5a3e26, rope: 0x5a3e26, stone: 0x8a857c, vermilion: 0x8a2a22, sakura: 0x6a4630 }[st.id] ?? 0x5a3e26;
   for (let d = Math.min(3, len / 2); d < len - 1; d += 5) {
     const top = Y(d) - 0.3;
-    const g = ground(d);
-    const h = top - g;
-    if (h < 0.6) continue;
     for (const s of st.id === 'stone' ? [0] : [-1, 1]) {
+      const g = ground(d, s * (hw - 0.3));
+      if (g == null) continue;
+      const h = top - g;
+      if (h < 0.6) continue;
       const wd = st.id === 'stone' ? w * 0.7 : 0.3;
       solid.push(bx(wd, h, st.id === 'stone' ? 1.0 : 0.3, deep, s * (hw - 0.3), g + h / 2, d));
     }
@@ -635,55 +793,61 @@ export function linkColours(st) {
   };
 }
 
-/** A level box from p to q (island frame, relative to an origin), its top at `top`. */
-function chord(wd, h, p, q, top, c) {
-  const l = Math.hypot(q.x - p.x, q.z - p.z);
-  const g = new THREE.BoxGeometry(wd, h, l + 0.04);
-  paint(g, c);
-  g.rotateY(Math.atan2(q.x - p.x, q.z - p.z));
-  g.translate((p.x + q.x) / 2, top - h / 2, (p.z + q.z) / 2);
-  return g;
-}
-
 /**
  * One turn's parts, in the ISLAND's axes with the corner at the origin and
- * its level deck's top at y 0: the landing or the arc, its rails, and a post
- * down to `ground` (the island's height under the corner, relative to the
- * deck) if it is high enough to need one.
+ * its level deck's top at y 0: the landing or the arc and its rails — each
+ * ONE curved solid (`ringBand`) — and a post down to the ground under it if
+ * it is high enough to need one. `groundAt(x, z)` is the ground at an island
+ * point relative to the deck, or null where a post may not stand (a house,
+ * a lower bridge: `supportGround`).
+ *
+ * THE POST STANDS UNDER THE DECK. Richard, Oct 2026: "Seems the corner pieces
+ * of the bridges are floating in space needlessly on sharp turns ... if the
+ * support is not connected to the bridge or underneath it, let's remove it".
+ * It stood under the CORNER — the point the two runs would meet at — and a
+ * smooth turn's arc cuts inside that point by most of a width, so the post was
+ * a beam on its own beside the curve. It is under the arc's middle now.
  */
-export function turnParts(G, T, ground) {
+export function turnParts(G, T, groundAt = () => null) {
   const st = G.style;
   const hw = G.w / 2;
   const { deckC, railC } = linkColours(st);
   const solid = [];
-  const rel = (c) => c.map((p) => ({ x: p.x - T.x, z: p.z - T.z }));
+  // each curve: centre (relative to the corner), radius, start angle, sweep
   const rails = [];
+  let post = { x: 0, z: 0 };
   if (T.smooth) {
     const C = turnArc(T);
-    const n = Math.max(4, Math.ceil(Math.abs(C.sweep) / (Math.PI / 12)));
-    const mid = rel(arcCurve(T, T.R, n));
-    for (let j = 0; j < n; j++) solid.push(chord(G.w, 0.3, mid[j], mid[j + 1], 0, j % 2 ? deckC : new THREE.Color(deckC).multiplyScalar(0.9).getHex()));
-    rails.push(rel(arcCurve(T, T.R - hw + 0.1, n)), rel(arcCurve(T, T.R + hw - 0.1, n)));
+    const cx = C.cx - T.x, cz = C.cz - T.z;
+    solid.push(ringBand(cx, cz, T.R - hw, T.R + hw, -0.3, 0, C.a0, C.sweep, deckC));
+    rails.push({ cx, cz, r: T.R - hw + 0.1, a0: C.a0, sweep: C.sweep }, { cx, cz, r: T.R + hw - 0.1, a0: C.a0, sweep: C.sweep });
+    const am = C.a0 + C.sweep / 2;
+    post = { x: cx + Math.sin(am) * T.R, z: cz + Math.cos(am) * T.R };
   } else {
-    const d = new THREE.CylinderGeometry(T.pad, T.pad, 0.3, 32);
+    const d = new THREE.CylinderGeometry(T.pad, T.pad, 0.3, 48);
     paint(d, deckC);
     d.translate(0, -0.15, 0);
     solid.push(d);
-    rails.push(...padRails(T, T.pad - 0.1).map(rel));
+    for (const A of padArcs(T)) rails.push({ cx: 0, cz: 0, r: T.pad - 0.1, ...A });
   }
   for (const c of rails) {
-    for (let j = 0; j + 1 < c.length; j++) {
-      if (st.id === 'stone') {
-        solid.push(chord(0.36, 1.05, c[j], c[j + 1], 1.05, railC), chord(0.46, 0.14, c[j], c[j + 1], 1.12 + 0.07, 0xb0aba3));
-      } else {
-        const [t, b] = st.id === 'rope' ? [0.07, 0.05] : [0.14, 0.08];
-        solid.push(chord(t, t, c[j], c[j + 1], (st.id === 'rope' ? 1.05 : 1.1) + t / 2, railC), chord(b, b, c[j], c[j + 1], 0.55 + b / 2, railC));
+    const band = (wd, y0, y1, col) => solid.push(ringBand(c.cx, c.cz, c.r - wd / 2, c.r + wd / 2, y0, y1, c.a0, c.sweep, col));
+    if (st.id === 'stone') {
+      band(0.36, 0, 1.05, railC);
+      band(0.46, 1.12, 1.26, 0xb0aba3);
+    } else {
+      const [t, b] = st.id === 'rope' ? [0.07, 0.05] : [0.14, 0.08];
+      const top = st.id === 'rope' ? 1.05 : 1.1;
+      band(t, top, top + t, railC);
+      band(b, 0.55, 0.55 + b, railC);
+      for (const a of [c.a0, c.a0 + c.sweep]) {
+        solid.push(bx(0.22, 1.2, 0.22, st.id === 'rope' ? 0x6a4a2a : railC, c.cx + Math.sin(a) * c.r, 0.6, c.cz + Math.cos(a) * c.r));
       }
     }
-    if (st.id !== 'stone') for (const p of [c[0], c[c.length - 1]]) solid.push(bx(0.22, 1.2, 0.22, st.id === 'rope' ? 0x6a4a2a : railC, p.x, 0.6, p.z));
   }
-  const h = -0.3 - ground;
-  if (h > 0.6) solid.push(bx(st.id === 'stone' ? G.w * 0.5 : 0.4, h, st.id === 'stone' ? G.w * 0.5 : 0.4, 0x5a3e26, 0, -0.3 - h / 2, 0));
+  const g = groundAt(T.x + post.x, T.z + post.z);
+  const h = g == null ? 0 : -0.3 - g;
+  if (h > 0.6) solid.push(bx(st.id === 'stone' ? G.w * 0.5 : 0.4, h, st.id === 'stone' ? G.w * 0.5 : 0.4, 0x5a3e26, post.x, -0.3 - h / 2, post.z));
   return { solid };
 }
 
@@ -701,7 +865,11 @@ export function linkAll(G, ground, models = false) {
   const solid = [], glow = [], mods = [];
   for (const r of G.runs) {
     const run = { ...r, models };
-    const P = linkParts(run, (d) => ground(r.A.x + r.ux * d, r.A.z + r.uz * d) - r.A.y);
+    // (d along the run, o across it) to the ground there, relative to the run's start; null: no post here
+    const P = linkParts(run, (d, o = 0) => {
+      const v = ground(r.A.x + r.ux * d + r.uz * o, r.A.z + r.uz * d - r.ux * o, r.A.y + r.rise * Math.min(1, Math.max(0, d / r.len)));
+      return v == null ? null : v - r.A.y;
+    });
     const o = into(r.A.x, r.A.z);
     const da = r.a - a0;
     const place = (g) => { g.rotateY(da); g.translate(o.x, r.A.y - A0.y, o.z); return g; };
@@ -715,12 +883,16 @@ export function linkAll(G, ground, models = false) {
     }
   }
   for (const T of G.turns) {
-    const P = turnParts(G, T, ground(T.x, T.z) - T.y);
+    const P = turnParts(G, T, (x, z) => { const v = ground(x, z, T.y); return v == null ? null : v - T.y; });
     const o = into(T.x, T.z);
     solid.push(...P.solid.map((g) => { g.rotateY(-a0); g.translate(o.x, T.y - A0.y, o.z); return g; }));
   }
   return { solid, glow, models: mods };
 }
+
+/** How far in from its door a stone bridge's parapet lanterns and a vermilion bridge's torii stand. */
+export const LANTERN_IN = 1.8;
+export const TORII_IN = 3.6;
 
 /** The door heights a bridge needs: as tall as the front door. */
 export const LINK_DOOR_H = PORT_H;
@@ -750,10 +922,21 @@ export function linkModels(G) {
     if (atA) out.push({ id: 'lantern-post-f47665', x: hw + 0.35, y: Y(0.6), z: 0.6, ry: -Math.PI / 2, h: 2.4 });
     if (atB) out.push({ id: 'lantern-post-f47665', x: -(hw + 0.35), y: Y(len - 0.6), z: len - 0.6, ry: Math.PI / 2, h: 2.4 });
   } else if (st.id === 'stone') {
-    for (const d of [atA && 0.9, atB && len - 0.9]) if (d !== false) for (const s of [-1, 1]) out.push({ id: 'stone-lantern-d56d0a', x: s * (hw - 0.5), y: Y(d), z: d, ry: 0, h: 1.3 });
+    /* ON THE PARAPET, not on the deck. Richard, Oct 2026: "The stone bridge
+       has some lanterns on the ground that get in the way, maybe they should
+       be on the railing instead and make sure they are not going through the
+       houses wall". They stood on the deck 0.5 in from each edge, 0.9 from the
+       door — in her way, and half in the wall. Now each sits on the parapet's
+       cap (1.26 up), a lantern's width clear of the end pillar. */
+    if (len > 4.2) for (const d of [atA && LANTERN_IN, atB && len - LANTERN_IN]) if (d !== false) for (const s of [-1, 1]) out.push({ id: 'stone-lantern-d56d0a', x: s * (hw - 0.1), y: Y(d) + 1.26, z: d, ry: 0, h: 0.85, parapet: true });
   } else if (st.id === 'vermilion') {
-    // a torii is 2.6 wide for 3.19 tall: fit it to the bridge's width and it stands ~4 high, over the 3.1 door
-    if (len > 4) for (const d of [atA && 1.2, atB && len - 1.2]) if (d !== false) out.push({ id: 'torii-gate-402f30', x: 0, y: Y(d), z: d, ry: 0, h: 3.19 * (w + 0.9) / 2.6 });
+    /* A torii is 2.6 wide for 3.19 tall: fit it to the bridge's width and it
+       stands ~4 high, over the 3.1 door. TORII_IN FROM THE DOOR, three times
+       what it was. Richard, Oct 2026: "the torii gates on the vermillion bridge
+       are intersecting with the roofs of the building. Easy solution is to
+       have them built further away from the building ... Maybe twice or 3
+       times further away." At 1.2 a 4.6-tall gate stood under the eave. */
+    if (len > 4) for (const d of [atA && Math.min(TORII_IN, len * 0.3), atB && len - Math.min(TORII_IN, len * 0.3)]) if (d !== false) out.push({ id: 'torii-gate-402f30', x: 0, y: Y(d), z: d, ry: 0, h: 3.19 * (w + 0.9) / 2.6 });
   } else if (st.id === 'sakura') {
     for (let d = 1; d < len - 0.6; d += 2.2) {
       for (const s of [-1, 1]) out.push({ id: 'flower-planter-500ed2', x: s * (hw - 0.45), y: Y(d), z: d, ry: Math.PI / 2, h: 0.5, stand: s });

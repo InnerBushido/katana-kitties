@@ -806,6 +806,23 @@ export class Audio {
 
     const v = vol;
     switch (name) {
+      case 'boing':
+        // a futon's spring: a wobbling rise, the wobble is what says "bed"
+        this._tone({ type: 'sine', from: 180, to: 520, dur: 0.22, gain: 0.24 * v });
+        this._tone({ type: 'triangle', from: 260, to: 700, dur: 0.16, gain: 0.1 * v, delay: 0.05 });
+        break;
+      case 'bonk':
+        // a head on a ceiling: a dull wooden thud, a little higher than a landing
+        this._tone({ type: 'square', from: 340, to: 120, dur: 0.09, gain: 0.14 * v });
+        this._noise({ from: 1800, to: 600, dur: 0.07, gain: 0.14 * v, q: 1.4 });
+        break;
+      case 'knock':
+        // knuckles on a wooden door: two short raps
+        for (const d of [0, 0.16]) {
+          this._tone({ type: 'triangle', from: 210, to: 140, dur: 0.06, gain: 0.3 * v, delay: d });
+          this._noise({ from: 1200, to: 500, dur: 0.05, gain: 0.18 * v, q: 2, delay: d });
+        }
+        break;
       case 'jump':
         this._tone({ type: 'triangle', from: 300, to: 660, dur: 0.13, gain: 0.22 * v });
         break;

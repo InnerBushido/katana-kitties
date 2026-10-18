@@ -586,8 +586,10 @@ the height difference".
 - **A turned bridge is the same row plus `via`**: island-frame corners
   `{x, z, smooth}`. A straight bridge has none and `linkGeom` returns exactly
   what it always did, so every bridge already saved is untouched.
-- **The card**: RIDE (or the TURNS button on a phone) sets 0–3 turns while she
-  picks the doors, and the ghost bends round default corners at once
+- **The card**: once both doors are picked, LEFT/RIGHT set 0–`LINK_TURNS_MAX` (12) turns (the
+  TURNS button on a phone), with a refusal said out loud at either end — it
+  was RIDE while she picked the doors, which nobody found — and the ghost
+  bends round default corners at once
   (`defaultVia`: an L where the two doors' lines cross, otherwise a step
   straight out of each door). JUMP on the second door hands her each corner to
   slide with the stick; ATTACK makes it a curve; SPRINT steps back a turn.
@@ -635,6 +637,60 @@ has a check that quotes it.
 - **The selection ring fits the thing** (`ringR`): the drawn footprint's
   longer half plus 0.45, never under the old 1.4. Measured: a table 2.25, a
   futon 3.15, a katana stand 1.40.
+
+## Some fixes — Oct 2026
+
+Twenty-four notes from one playthrough. The ones a future session would undo
+without the reason:
+
+- **Low furniture is a floor** (`FURN_STAND`): anything whose measured top is
+  0.3–1.8 gets a deck on it, and its walls stop just under that deck. The step
+  is 0.15, so she jumps on and never walks on. Measured: a futon is 0.71, a
+  kotatsu 1.02.
+- **A futon bounces her** (`Housing._bed`, `BED`). Each launch is sized to put
+  her head 0.25 past the ceiling, so the bonk comes from the ceiling clamp
+  itself. The seventh launch in a row is aimed a metre over the next slab or
+  the roof, and the clamp stands aside while she rises. **The bug that nearly
+  shipped:** `_bed` runs after this frame's gravity step and before Player's
+  ground test. That test found her 0.007 under the deck and landed her again,
+  so the bounce zeroed itself on the frame it began (measured: 701 boings and
+  no height). She is lifted `BED.lift` off the deck as she is launched. The
+  check drops a REAL Player onto a real futon.
+- **Roofs and eaves are solid** (`roofY`, `roofDecks`, `ceilingAt`). The
+  eaves are a ceiling from underneath and a floor from on top, and `houseAt`
+  now stops at each storey's lid. A head more than a metre into the tiles is
+  let through rather than bonked, because that bonk would be a 2 m teleport
+  down through whatever she was standing on.
+- **A bridge notches the eave it passes** (`EAVE_GAP`) and the notch closes
+  when the bridge goes. The roof decks are split round the notch too.
+- **Knocking** (`opensFor`, `knock`, `answerKnock`, `KNOCK`). A door opens on
+  its own only when it is pinned open, for an owner, for a guest, or for
+  somebody already inside it. To everybody else a shut door is a wall
+  (`doorSeg`) that says KNOCK. The third knock within 6 s puts a card in front
+  of a free owner: NO is first, and closing the card is a NO. A NO makes that
+  visitor wait 30 s. Guests last for this game only.
+- **Sliding doors** are a wall item on the ground floor that cuts a doorway
+  (`SLIDE_W`) and hangs a door in it keyed `S<room>:<side>:<k>`. The knock
+  rules cover them like any other door. **A castle's ground room stops short
+  of its outer walls and has no wall slots at all**, so a castle gets neither
+  windows nor sliding doors downstairs. That was true before this pass.
+- **A door the house hides** gets an x-ray bite at `DOOR_XRAY.k` (0.25), sized
+  to the doorway and capped at its lintel. That needed per-slot strength
+  (`uCutK`) and more slots (`XRAY_SLOTS` = 8) in `xrayVertexMat`.
+- **Behind a castle on the ground** (within `BEHIND_HOP` of it), the castle
+  is cut to its ground floor with its roofs off. Jumping up, or walking round
+  to the front, puts it back.
+- **A new house is watched going up** (`_v_raising`). The menu takes no input
+  until it is finished, and BACK says so.
+- **A bridge asks before it is built** (`_v_linkconfirm`: "NO, KEEP CHANGING
+  IT" first). The next yard placement starts where the last one went
+  (`lastPut`, per opening of the menu); backing out forgets it.
+- **A moved koi pond** carries its fish by the move and drops their
+  waypoints.
+- **The Flash Step drill's lasers** are drawn at order 16, under her UI
+  (20–25). They are red (`LASER_COLOUR`) over a dim red core where the core
+  used to be white, so where two beams cross they no longer burn to white.
+  Stars cast a floor shadow and play `starfound` when she takes one.
 
 ## Known rough edges
 

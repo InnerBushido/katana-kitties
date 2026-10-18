@@ -80,7 +80,9 @@ export function xrayVertexMat(opts = {}) {
      around visible. The two-player answer is bit-identical either way: the
      extra slots arrive with `uCutOn` at zero and `continue` out of the loop on
      the first line of it, which is the fifth non-negotiable holding. */
-  const MAX = 4;
+  /* ...and MORE, opted into: the houses take 8, four kittens and the doors
+     the building hides (housing.js `aimView`). Every other caller keeps 4. */
+  const MAX = opts.max ?? 4;
   /* PER-MATERIAL CUT SHAPE, for the housing walls (housing/homeisle.js). The
      defaults are the numbers every existing caller has always had, so nothing
      else moves. `cutNear` is new: a fragment must be at least this much
@@ -90,7 +92,7 @@ export function xrayVertexMat(opts = {}) {
      between the player and the camera". A side wall she is standing beside
      is the same distance from the camera as she is, and inside the cone; a
      wall that is actually in the way is a room's width nearer. 0 = off. */
-  const { cutR = 2.1, cutSoft = 1.0, cutNear = 0, ...rest } = opts;
+  const { cutR = 2.1, cutSoft = 1.0, cutNear = 0, max: _max, ...rest } = opts;
   const mat = new THREE.MeshToonMaterial({
     gradientMap: RAMP,
     vertexColors: true,
@@ -140,6 +142,11 @@ export function xrayVertexMat(opts = {}) {
        caller is bit-identical. */
     uCutScale: { value: new Float32Array(MAX).fill(1) },
     uCutCeil: { value: new Float32Array(MAX).fill(1e9) },
+    /* PER SUBJECT, HOW STRONG: 1 is a hole, below 1 a THINNING (the dither
+       threshold, as `xrayK` already does for a lantern). A door the house
+       hides gets a quarter: Richard, Oct 2026, "an x-ray highlight, about 25%
+       strength and no bigger than the door path". */
+    uCutK: { value: new Float32Array(MAX).fill(1) },
   };
 
   mat.onBeforeCompile = (shader) => {
@@ -173,6 +180,7 @@ export function xrayVertexMat(opts = {}) {
         uniform float uCutFloor[${MAX}];
         uniform float uCutScale[${MAX}];
         uniform float uCutCeil[${MAX}];
+        uniform float uCutK[${MAX}];
 
         // 4x4 Bayer, so the cut edge dissolves instead of stair-stepping.
         float xrayDither(vec2 p) {
@@ -232,7 +240,7 @@ export function xrayVertexMat(opts = {}) {
                weaker is the dither threshold, which at k below 1 leaves a
                thinning rather than a hole. */
             float rad = uCutR * uCutScale[i] * vXrayK * mix(uCutFlare, 1.0, t);
-            cut = max(cut, (1.0 - smoothstep(rad, rad + uCutSoft * uCutScale[i] * vXrayK, d)) * vXrayK);
+            cut = max(cut, (1.0 - smoothstep(rad, rad + uCutSoft * uCutScale[i] * vXrayK, d)) * vXrayK * uCutK[i]);
           }
           if (cut > 0.001 && cut > xrayDither(gl_FragCoord.xy)) discard;
         }`);
@@ -240,7 +248,7 @@ export function xrayVertexMat(opts = {}) {
   };
   // three keys its program cache on this; without it every material sharing
   // the same source would collide with the plain toon one.
-  mat.customProgramCacheKey = () => 'xray-toon';
+  mat.customProgramCacheKey = () => (MAX === 4 ? 'xray-toon' : `xray-toon-${MAX}`);
 
   /**
    * Point the cut at whoever is on screen. Call once per view, before drawing.
@@ -251,8 +259,9 @@ export function xrayVertexMat(opts = {}) {
    *        subject is standing on — nothing below it is cut. Omit it and
    *        nothing is protected, which is what every caller did before the
    *        announcer's box needed its own lid back.
-   * @param {{scale?: number[], ceil?: number[]}} [more] per point, the hole's
-   *        size (1) and the height above which it cuts nothing (none).
+   * @param {{scale?: number[], ceil?: number[], k?: number[]}} [more] per
+   *        point, the hole's size (1), the height above which it cuts nothing
+   *        (none), and how strong it is (1, a hole).
    */
   mat.setCuts = (camPos, points, floors = null, more = null) => {
     u.uCamPos.value.copy(camPos);
@@ -270,6 +279,8 @@ export function xrayVertexMat(opts = {}) {
       u.uCutScale.value[i] = Number.isFinite(s) && s > 0 ? s : 1;
       const c = more?.ceil?.[i];
       u.uCutCeil.value[i] = Number.isFinite(c) ? c : 1e9;
+      const k = more?.k?.[i];
+      u.uCutK.value[i] = Number.isFinite(k) && k >= 0 ? k : 1;
     }
   };
   // read-only, for world-check: two materials' cuts compared (the teahouse's is smaller)

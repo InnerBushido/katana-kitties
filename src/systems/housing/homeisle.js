@@ -2,12 +2,12 @@ import * as THREE from 'three';
 import { toonVertexMat, xrayVertexMat, paint } from '../../core/gfx.js';
 import { Island, mergeParts, PALETTE } from '../../world/build.js';
 import { makeLabelTexture } from '../../core/label.js';
-import { buildHouseShell, houseHeight, houseRadius, floorOf, FLOOR_H, SLAB_T, WINDOW, PORT_H } from './homehouse.js';
+import { buildHouseShell, roofY, houseHeight, houseRadius, floorOf, FLOOR_H, SLAB_T, WINDOW, PORT_H } from './homehouse.js';
 import { ITEMS, ITEM_BY_ID, LINK_BY_ID, houseSpecs, homeRooms, pathPosts, kendoArea, kendoMarks } from './catalog.js';
 import { PathFX, makeFlame, makeLamp } from './pathfx.js';
 import { TEA, teaK, teaSet } from './teahouse.js';
 import { ZenGarden, zenParts, ZEN, ZEN_ROCKS, ZEN_STONES, ZEN_STONE_R, ZEN_RAKE } from './zengarden.js';
-import { linkGeom, linkAll, linkColliders } from './links.js';
+import { linkGeom, linkAll, linkColliders, supportGround } from './links.js';
 import { placeModel, drawItem, clampMul, SHOJI, shojiPair, PANEL_GAP, STONES } from './models.js';
 import { wallSlots, yardR } from './editor.js';
 import { buildTreehouse } from './treehouse.js';
@@ -70,6 +70,10 @@ const SOLID_POSTS = { toriigarden: { r: 0.22, at: [[-0.9, -2.4], [0.9, -2.4], [-
 /* The yard's trees and bushes take the x-ray, weaker than a wall: Richard on
    the town's, "the shader effect should be smaller and weaker, so as not to
    make them disappear when player is near it". */
+/** How many cuts the houses' x-ray takes: four kittens, and the doors the building hides (`aimView`). */
+export const XRAY_SLOTS = 8;
+/** A sliding door's doorway: a wall slot is 2 across, and the posts either side keep 0.1 each. */
+export const SLIDE_W = 1.8;
 const XRAY_PLANT = { maple: 0.8, cherry: 0.8, pine: 0.8, azalea: 0.6 };
 
 /**
@@ -125,7 +129,9 @@ export class HomeIsle {
        plain toon. The cut is narrower than the town's (1.6 against 2.1) and
        only bites what is a good step NEARER the camera than she is
        (`cutNear`), so the side walls of the room she is in are left alone. */
-    const XR = { cutR: 1.6, cutSoft: 0.7, cutNear: 1.4 };
+    const XR = { cutR: 1.6, cutSoft: 0.7, cutNear: 1.4, max: XRAY_SLOTS };
+    /** The houses' cut radius, for a hole sized to a doorway (housing.js `aimView`). */
+    this.xrayR = XR.cutR;
     this.accentMats = [0, 1, 2, 3].map(() => xrayVertexMat({ color: NEUTRAL_ACCENT, ...XR }));
     this.roofMat = xrayVertexMat({ color: NEUTRAL_ROOF, ...XR });
     this.soffitMat = xrayVertexMat(XR);
@@ -138,7 +144,12 @@ export class HomeIsle {
        aggressive x-ray". Its roof is one mesh with its posts, so a house's
        1.6 cone took the whole front of it off. */
     this.teaMat = xrayVertexMat({ cutR: 1.0, cutSoft: 0.5, cutNear: 1.4 });
-    this.xrayMats = [this.wallMat, this.roofMat, this.soffitMat, ...this.accentMats, this.treeMat, this.plantMat, this.teaMat];
+    /* HER BRIDGES, x-ray like the house. Richard, Oct 2026: "The xray shader
+       should work on custom built bridges in the players island if the player
+       is below the bridge." They were plain toon, so a kitten walking under
+       one to the front door went out of sight under a deck. */
+    this.bridgeMat = xrayVertexMat(XR);
+    this.xrayMats = [this.wallMat, this.roofMat, this.soffitMat, ...this.accentMats, this.treeMat, this.plantMat, this.teaMat, this.bridgeMat];
     /** Floor groups and the roof, for the per-pane cutaway. */
     this.floorMeshes = [];
     this.roofMeshes = [];
@@ -314,12 +325,16 @@ export class HomeIsle {
     for (const room of homeRooms(H)) {
       if (room.hk !== hk) continue;
       const R = H.rooms?.[room.id];
-      if (!R?.wall?.some((q) => q.id === 'window')) continue;
+      if (!R?.wall?.some((q) => q.id === 'window' || q.id === 'slidedoor')) continue;
       const slots = wallSlots(room.house, room);
       for (const q of R.wall) {
-        if (q.id !== 'window') continue;
+        if (q.id !== 'window' && q.id !== 'slidedoor') continue;
         const S = slots.find((x) => x.side === q.side && x.k === q.k);
-        if (S) out.push({ floor: room.floor, side: S.side, at: S.side % 2 ? S.z : S.x, ...WINDOW });
+        if (!S) continue;
+        const at = S.side % 2 ? S.z : S.x;
+        // a sliding door is a doorway with a door in it, keyed like a bridge's (`_door`, `H.doors`)
+        if (q.id === 'slidedoor') out.push({ floor: room.floor, side: S.side, at, w: SLIDE_W, sill: 0, h: PORT_H, key: `S${room.id}:${q.side}:${q.k}` });
+        else out.push({ floor: room.floor, side: S.side, at, ...WINDOW });
       }
     }
     for (const L of H.links ?? []) {
@@ -578,7 +593,9 @@ export class HomeIsle {
         if (!it || !S) continue;
         const w = hs.local(S.x, S.z);
         let g;
-        if (q.id === 'window') {
+        if (q.id === 'slidedoor') {
+          continue;   // the shell's doorway and `_door`'s panels ARE the thing
+        } else if (q.id === 'window') {
           g = this._windowPanels(q);
           g.position.set(w.x, y + WINDOW.sill, w.z);
         } else {
@@ -617,6 +634,10 @@ export class HomeIsle {
         const [lx, lz] = [[d.at, F.hd - 1.3], [F.hw - 1.3, d.at], [d.at, -F.hd + 1.3], [-F.hw + 1.3, d.at]][d.side];
         const p = hs.local(lx, lz);
         this.spots.push({ x: p.x, z: p.z, y: hs.gy + F.y, r: 1.6, act: 'portdoor', door: d, hk: hs.hk });
+        // ...and OUTSIDE it, on the bridge, where a visitor knocks (`Housing.knock`)
+        const [ox, oz] = [[d.at, F.hd + 1.4], [F.hw + 1.4, d.at], [d.at, -F.hd - 1.4], [-F.hw - 1.4, d.at]][d.side];
+        const q = hs.local(ox, oz);
+        this.spots.push({ x: q.x, z: q.z, y: hs.gy + F.y, r: 1.6, act: 'portknock', door: d, hk: hs.hk });
       }
     }
   }
@@ -660,13 +681,13 @@ export class HomeIsle {
     for (const L of H.links ?? []) {
       const G = linkGeom(H, L, gyAt);
       if (!G) continue;
-      // every run and turn, in the first run's frame (links.js `linkAll`)
-      const P = linkAll(G, gyAt, true);
+      // every run and turn, in the first run's frame (links.js `linkAll`); no post into a house or a bridge below
+      const P = linkAll(G, supportGround(H, L, gyAt), true);
       const g = new THREE.Group();
       const w0 = this.local(G.A.x, G.A.z);
       g.position.set(w0.x, this.groundY + G.A.y, w0.z);
       g.rotation.y = this.ry + G.a;
-      if (P.solid.length) g.add(new THREE.Mesh(mergeParts(P.solid), toonVertexMat()));
+      if (P.solid.length) g.add(new THREE.Mesh(mergeParts(P.solid), this.bridgeMat));
       if (P.glow.length) g.add(new THREE.Mesh(mergeParts(P.glow), new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false })));
       for (const m of P.models) {
         const mg = placeModel(m.id, m.stand ? planterStandIn() : null, { h: m.h });
@@ -760,9 +781,27 @@ export class HomeIsle {
     const c = Math.cos(g.rotation.y), sn = Math.sin(g.rotation.y);
     const at = (lx, lz) => ({ x: g.position.x + lx * c + lz * sn, z: g.position.z - lx * sn + lz * c });
     const P = [[-hx, -hz], [hx, -hz], [hx, hz], [-hx, hz]].map(([fx, fz]) => at(cx + fx, cz + fz));
+    /* LOW FURNITURE IS STOOD ON. Richard, Oct 2026: "Furniture that isn't
+       too tall (bed, table) should be jumpable onto". Anything whose measured
+       top is between FURN_STAND.min and .max gets a deck on that top — the
+       measured box, a little in from its edge so she is not caught by a
+       corner in mid-air — and its walls stop just under it, so a kitten on
+       top is above them. The step is small: she JUMPS up, she never walks up.
+       A futon is a `bed`, which `Housing._bed` bounces her on. */
+    const top = box.max.y;
+    const stand = top >= FURN_STAND.min && top <= FURN_STAND.max;
+    if (stand) {
+      const ex = Math.max(0.2, ((box.max.x - box.min.x) / 2) * k - FURN_STAND.inset);
+      const ez = Math.max(0.2, ((box.max.z - box.min.z) / 2) * k - FURN_STAND.inset);
+      const o = this.toLocal(g.position.x, g.position.z);
+      this.decks.push({
+        x0: cx - ex, x1: cx + ex, z0: cz - ez, z1: cz + ez, y: y - this.groundY + top, step: FURN_STAND.step,
+        frame: { x: o.x, z: o.z, a: g.rotation.y - this.ry }, furn: placed.id, bed: it.act === 'nap',
+      });
+    }
     for (let q = 0; q < 4; q++) {
       const a = P[q], b = P[(q + 1) % 4];
-      this.walls.push({ ax: a.x, az: a.z, bx: b.x, bz: b.z, y0: y, y1: y + Math.max(1, box.max.y), furn: placed.id, hk });
+      this.walls.push({ ax: a.x, az: a.z, bx: b.x, bz: b.z, y0: y, y1: y + (stand ? top - 0.05 : Math.max(1, top)), furn: placed.id, hk });
     }
   }
 
@@ -1284,6 +1323,23 @@ export class HomeIsle {
         if (W && L.x > W.x0 && L.x < W.x1 && L.z > W.z0 && L.z < W.z1) return null;
         return hs.gy + lid;
       }
+      /* Outside the walls: the underside of an eave or the roof. Richard:
+         "Her head should bonk on the eaves instead of passing through." The
+         tiles are about 0.3 thick, and only a kitten whose feet are under
+         them is under them — one standing ON the band is not. */
+      let lo = null;
+      for (const E of S.eaves ?? []) {
+        const k = E.band ? E.f : n - 1;
+        const [hw, hd] = S.half[k];
+        if (Math.abs(L.x) <= hw && Math.abs(L.z) <= hd) continue;
+        const sy = roofY(E, L.x, L.z);
+        /* a head more than a metre into the tiles came from somewhere a bonk
+           would turn into a 2m teleport down (off the edge of a bridge, say):
+           let that one through rather than drop her through a deck */
+        if (sy == null || ly >= sy - 0.3 || ly + 2.4 > sy + 0.7) continue;
+        if (lo == null || sy - 0.3 < lo) lo = sy - 0.3;
+      }
+      if (lo != null) return hs.gy + lo;
     }
     return null;
   }
@@ -1297,7 +1353,12 @@ export class HomeIsle {
       for (let k = 0; k < S.floorY.length; k++) {
         const [hw, hd] = S.half[k];
         if (Math.abs(L.x) > hw + 0.2 || Math.abs(L.z) > hd + 0.2) continue;
-        if (y >= hs.gy + S.floorY[k] - 0.6) f = k;
+        /* ...and UNDER that storey's lid. Without this a kitten on a roof, or
+           on a bridge passing over the eaves, counted as inside the storey
+           below and the pane took the roof off. Richard: "a player on a
+           bridge shouldn't see into a house until near or passing through
+           the door". */
+        if (y >= hs.gy + S.floorY[k] - 0.6 && y < hs.gy + S.floorY[k] + FLOOR_H - 0.2) f = k;
       }
       if (f >= 0) return { hs, f };
     }
@@ -1329,11 +1390,12 @@ export class HomeIsle {
     const U = this.bubble.material.uniforms;
     U.uTime.value = t;
     U.uHitT.value += dt;
-    // the doors: pinned open, or open while somebody stands at them
+    /* the doors: pinned open, or open while somebody it OPENS FOR stands at
+       them (`Housing.opensFor`: an owner, a guest let in, anybody leaving) */
     for (const hs of this.houses ?? []) {
       for (const d of hs.doors) {
         const near = players.some((p) => p && Math.hypot(p.position.x - d.wx, p.position.z - d.wz) < 3.6
-          && Math.abs(p.position.y - d.y) < 3);
+          && Math.abs(p.position.y - d.y) < 3 && (this.opensFor?.(p, hs, d) ?? true));
         const want = d.pinned || near ? 1 : 0;
         d.k += Math.sign(want - d.k) * Math.min(Math.abs(want - d.k), dt * 3.5);
         d.panels.forEach((m, i) => { m.position.x = (i ? 1 : -1) * (d.w / 4 + d.k * (d.w / 2 + 0.05)); });
@@ -1426,6 +1488,9 @@ export { FLOOR_H };
 export { PANEL_GAP };
 /** From a window's slot back to the middle of its wall (`wallSlots`: hw - 0.22). */
 export const WINDOW_IN = 0.22;
+
+/** Furniture with a top in this band is stood on (`_furnWalls`). A rug is not furniture to jump on, a wardrobe is too tall. */
+export const FURN_STAND = { min: 0.3, max: 1.8, inset: 0.15, step: 0.15 };
 
 /** A furnishing's collider at scale `s`: as big as it, but past 100% only half the extra counts. */
 export const furnScale = (s) => (s <= 1 ? s : 1 + (s - 1) * 0.5);

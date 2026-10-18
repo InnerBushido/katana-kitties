@@ -5,7 +5,7 @@ import {
   FREE_ANNEX, LINK_BY_ID, homeRooms,
 } from './catalog.js';
 import { loadStore, saveStore, newHome, homeOf, normalise, newer, exportFile, importFile, emptyStore, homeKey } from './homestore.js';
-import { HomeIsle } from './homeisle.js';
+import { HomeIsle, XRAY_SLOTS } from './homeisle.js';
 import { HomeBridge, solveHomeRoads, GATE, HOLO_DECK } from './homebridge.js';
 import { Roshi } from './roshi.js';
 import { PurchaseScene } from './purchasescene.js';
@@ -23,7 +23,67 @@ import { BuildMode } from './build.js';
 import { HomeBoons } from './boons.js';
 import { HomeActivities, TABLE_SEATS } from './activities.js';
 import { migrateCastleRooms } from './migrate.js';
-import { HEAD_H } from './homehouse.js';
+import { HEAD_H, roofY, PORT_H, floorOf } from './homehouse.js';
+
+/** "Hana", "Hana and Mei", "Hana, Mei and Rin". */
+export const ownerNames = (H) => {
+  const n = H?.owners ?? [];
+  return n.length < 2 ? (n[0] ?? 'Somebody') : `${n.slice(0, -1).join(', ')} and ${n[n.length - 1]}`;
+};
+
+/** The wall a shut door makes, in world units: across its doorway, from its sill to its lintel. */
+export function doorSeg(hs, d) {
+  const F = floorOf(hs.house, d.floor);
+  const h = d.w / 2 + 0.2;
+  const [lx, lz] = d.front ? [0, hs.shell.door.z] : [[d.at, F.hd], [F.hw, d.at], [d.at, -F.hd], [-F.hw, d.at]][d.side];
+  const along = !d.front && d.side % 2 ? [[lx, lz - h], [lx, lz + h]] : [[lx - h, lz], [lx + h, lz]];
+  const a = hs.local(...along[0]);
+  const b = hs.local(...along[1]);
+  return { ax: a.x, az: a.z, bx: b.x, bz: b.z, y0: d.y - 0.6, y1: d.y + PORT_H };
+}
+
+/**
+ * A DOOR THE HOUSE HIDES (`aimView`): within `near` of a kitten in the pane
+ * and facing away from its camera, it gets a cut `k` strong — a thinning, not
+ * a hole — no wider than the doorway (`scale` of the houses' cutR 1.6 is its
+ * half-width) and stopping at its lintel. Richard, Oct 2026: "an x-ray
+ * highlight, about 25% strength and no bigger than the door path".
+ */
+export const DOOR_XRAY = { near: 18, k: 0.25, lintel: 0.2 };
+
+/** How high off a tall house's ground floor she may be and still count as "on the ground" behind it (a jump, not a bridge). */
+export const BEHIND_HOP = 3.5;
+
+/**
+ * KNOCKING (`Housing.knock`). Richard, Oct 2026: "A non-owner gets a 'knock'
+ * option in front of a closed door ... After 3 knocks the owner gets a
+ * message asking whether to open the door ... The request is limited to once
+ * every 30s". `count` knocks inside `window` seconds of each other ask; a
+ * NO makes her `wait` before the next three count.
+ */
+export const KNOCK = { count: 3, window: 6, wait: 30 };
+
+/** Does the segment (ax, az)-(bx, bz) cross the rectangle |x| < hw, |z| < hd? (slab test) */
+export function segHitsRect(ax, az, bx, bz, hw, hd) {
+  let t0 = 0, t1 = 1;
+  for (const [p, d, h] of [[ax, bx - ax, hw], [az, bz - az, hd]]) {
+    if (Math.abs(d) < 1e-9) { if (Math.abs(p) > h) return false; continue; }
+    let u = (-h - p) / d, v = (h - p) / d;
+    if (u > v) [u, v] = [v, u];
+    t0 = Math.max(t0, u); t1 = Math.min(t1, v);
+    if (t0 > t1) return false;
+  }
+  return true;
+}
+
+/**
+ * The bed (`Housing._bed`): `g` is Player's GRAVITY (26), so a launch of
+ * sqrt(2 g h) rises h; `over` is how far past the ceiling it aims, so the
+ * head really meets it; `through` bounces in a row go on to the next; `clear`
+ * is how far over the floor above (or the roof) that one aims; `hop` is the
+ * rise where there is no ceiling at all.
+ */
+export const BED = { g: 26, over: 0.25, through: 6, clear: 1, hop: 1.6, lift: 0.02 };
 import { HoloDeck } from './holodeck.js';
 import { Angling } from './angling.js';
 import { PetPlay } from './petplay.js';
@@ -135,6 +195,10 @@ export class Housing {
     this.roadsReady = false;
     this._solve = null;
     this._nag = new Map();
+    /** "site:hk" → the names let in by an owner this game (`answerKnock`). */
+    this.guests = new Map();
+    /** "visitor:site:hk" → { n, at, until, asking } (`knock`). */
+    this.knocks = new Map();
     this.time = 0;
     /** Which site's jukebox is playing, and since when (the most recent
      *  kitten onto a bridge picks — see `_trackMusic`). */
@@ -175,6 +239,7 @@ export class Housing {
     for (const I of this.isles) {
       I.build(scene);
       I.cupsFor = (H) => this.cupsOf(H);
+      I.opensFor = (p, hs, d) => this.opensFor(I, p, hs, d);
     }
     this.bridges = this.isles.map(() => null);
     /* THE TWO HOOKS. `homeGround` is read at the bottom of `World.heightAt`;
@@ -236,6 +301,75 @@ export class Housing {
 
   locked(home) {
     return !!home && !home.owners.some((o) => home.open?.[o]);
+  }
+
+  /**
+   * DOES DOOR `d` OPEN FOR HER? Richard, Oct 2026: "a door must not
+   * auto-open for a non-owner ... If the owner left the door open, anyone
+   * may enter. A player inside can always leave, with the doors auto-opening,
+   * and can open doors from inside. The same rules apply to bridge doors."
+   * So: a door left open (`pinned`), an owner, a guest she let in
+   * (`letIn`, for this house and this game), or somebody already INSIDE it.
+   */
+  opensFor(I, p, hs, d) {
+    const H = I.home;
+    if (!H || d.pinned) return true;
+    const n = p?.style?.name;
+    if (H.owners.includes(n)) return true;
+    if (this.guests.get(`${H.site}:${hs.hk}`)?.has(n)) return true;
+    return I.houseAt(p.position.x, p.position.y, p.position.z)?.hs === hs;
+  }
+
+  /**
+   * A KNOCK on door `d` of house `hs`. The third inside `KNOCK.window` asks
+   * an owner who is playing and has no card up, on a card of her own
+   * (`_v_knock`, NO first); everything else says what is happening — nobody
+   * home, she is busy, she is still deciding, how long to wait.
+   */
+  knock(p, I, hs) {
+    const H = I.home;
+    const G = this.game;
+    G.audio?.play?.('knock');
+    const key = `${p.index}:${H.site}:${hs.hk}`;
+    const K = this.knocks.get(key) ?? { n: 0, at: -99, until: -99, asking: false };
+    this.knocks.set(key, K);
+    if (K.asking) { G.toast(`Knock knock! ${ownerNames(H)} is deciding…`, p.index); return; }
+    if (this.time < K.until) { G.toast(`Wait ${Math.ceil(K.until - this.time)} more seconds before knocking again.`, p.index); return; }
+    if (this.time - K.at > KNOCK.window) K.n = 0;
+    K.n++;
+    K.at = this.time;
+    if (K.n < KNOCK.count) { G.toast(`Knock${' knock'.repeat(K.n - 1)}…`, p.index); return; }
+    K.n = 0;
+    const home = (G.players ?? []).filter((q) => q && H.owners.includes(q.style?.name));
+    if (!home.length) { G.toast(`Nobody is home — ${ownerNames(H)} is not playing right now.`, p.index); return; }
+    const free = home.find((q) => !G.inspector?.cards?.[q.index]?.state);
+    if (!free) { G.toast(`${ownerNames(H)} is busy — knock again in a moment.`, p.index); return; }
+    if (!G.housingCards?.open(free.index, 'knock', { site: H.site, hk: hs.hk, visitor: p.index, key })) {
+      G.toast(`${ownerNames(H)} is busy — knock again in a moment.`, p.index);
+      return;
+    }
+    K.asking = true;
+    G.toast(`${free.name} heard you knocking!`, p.index);
+    G.toast(`${p.name} is knocking at your door — look at your card!`, free.index);
+  }
+
+  /** The owner's answer to a knock (cards.js `_v_knock`); closing the card unanswered is a NO. */
+  answerKnock(owner, A, yes) {
+    const K = this.knocks.get(A.key);
+    if (K) K.asking = false;
+    const p = this.game.players?.[A.visitor];
+    if (!p) return;
+    const H = this.store.homes[A.site];
+    if (yes && H) {
+      const g = `${A.site}:${A.hk}`;
+      if (!this.guests.has(g)) this.guests.set(g, new Set());
+      this.guests.get(g).add(p.style.name);
+      this.game.toast(`${owner.name} let you in — come in!`, p.index);
+      this.game.audio?.play?.('doors');
+    } else {
+      if (K) K.until = this.time + KNOCK.wait;
+      this.game.toast(`${owner.name} says not right now — try again in ${KNOCK.wait} seconds.`, p.index);
+    }
   }
 
   /** The price of `mult` orbs, today. */
@@ -496,15 +630,35 @@ export class Housing {
           const seg = { ax: a.x, az: a.z, bx: b.x, bz: b.z, y0: hs.gy, y1: hs.gy + 5 };
           if (this._segPush(p, seg, r)) this._refuse(p, H);
         }
+      } else {
+        /* ...and every SHUT door to a visitor the island lets in: it is a
+           door, and it opens when she is let in (`opensFor`). SHUT is the
+           panels: a door her sister has just slid open for herself is an open
+           door, and a wall standing in an open doorway would be the one thing
+           worse than her slipping in behind. */
+        for (const hs of I.houses) {
+          for (const d of hs.doors) {
+            if (d.k > 0.5 || this.opensFor(I, p, hs, d)) continue;
+            const seg = doorSeg(hs, d);
+            if (pos.y + 1.5 < seg.y0 || pos.y > seg.y1) continue;
+            if (this._segPush(p, seg, r)) this._nagOnce(p, `This is ${ownerNames(H)}'s house — KNOCK, and wait to be let in.`);
+          }
+        }
       }
       this._roomWall(p, I, H);
       this._obstacles(p, I, r);
       this._slide(p, I);
-      // ...and her head against the ceiling (HomeIsle `ceilingAt`)
+      this._bed(p, I, hud);
+      /* ...and her head against the ceiling (HomeIsle `ceilingAt`) — except
+         on the seventh bounce off a bed, which goes THROUGH it */
       const c = I.ceilingAt(pos.x, pos.y, pos.z);
-      if (c != null && pos.y + HEAD_H > c) {
+      if (p._bed?.through && p.velocity.y <= 0) p._bed.through = false;
+      if (c != null && pos.y + HEAD_H > c && !p._bed?.through) {
         pos.y = c - HEAD_H;
-        if (p.velocity.y > 0) p.velocity.y = 0;
+        if (p.velocity.y > 0) {
+          p.velocity.y = 0;
+          hud?.sfx?.('bonk', 0.7);
+        }
       }
     }
   }
@@ -535,6 +689,55 @@ export class Housing {
       pos.x = o.x + (dx / d) * m;
       pos.z = o.z + (dz / d) * m;
     }
+  }
+
+  /**
+   * A BED BOUNCES. Richard, Oct 2026: "Landing on the bed plays a bouncing
+   * sound and bounces her up and down quickly; she hits her head on the
+   * ceiling and falls back down. After more than 6 bounces she goes through
+   * the ceiling to the floor above, or through the roof and lands on top of
+   * it." A kitten standing on a `bed` deck (`_furnWalls`) is launched as hard
+   * as it takes to put her head on the ceiling a hair early — the bonk is the
+   * ceiling clamp's own — and the seventh launch in a row is aimed a metre
+   * over the next floor up (or the roof over her) with the clamp switched off
+   * until she starts to fall. Landing on anything that is not a bed starts
+   * the count again. Nobody on an animal or held by an activity (a nap lies
+   * ON the futon, and is not a bounce).
+   */
+  _bed(p, I, hud) {
+    if (!p.onGround || p.mount || p.pandaMount || p.rideAlong || p.ko) return;
+    const pos = p.position;
+    const h = I.heightAt(pos.x, pos.z, pos.y + 0.05);
+    const B = (p._bed ??= { n: 0, through: false });
+    if (!h?.deck?.bed || Math.abs(pos.y - h.y) > 0.05 || this.activities?.holds?.(p.index)) {
+      B.n = 0;
+      return;
+    }
+    B.n++;
+    let want = BED.hop;
+    const c = I.ceilingAt(pos.x, pos.y, pos.z);
+    if (c != null) want = c - HEAD_H - pos.y + BED.over;
+    if (B.n > BED.through) {
+      const at = I.houseAt(pos.x, pos.y, pos.z);
+      const S = at?.hs.shell;
+      if (S) {
+        const L = at.hs.toLocal(pos.x, pos.z);
+        const roof = S.eaves?.find((E) => E.roof);
+        const up = at.f + 1 < S.floorY.length ? S.floorY[at.f + 1] : roofY(roof, L.x, L.z);
+        if (up != null) {
+          want = at.hs.gy + up + BED.clear - pos.y;
+          B.through = true;
+          B.n = 0;
+        }
+      }
+    }
+    p.velocity.y = Math.sqrt(2 * BED.g * Math.max(0.4, want));
+    /* ...and OFF it. This runs after this frame's gravity step and before
+       Player's ground test, which finds her a hair under the deck and lands
+       her again — velocity zeroed, the bounce gone before it began. */
+    pos.y = h.y + BED.lift;
+    p.onGround = false;
+    hud?.sfx?.('boing', 0.8);
   }
 
   /**
@@ -1269,6 +1472,32 @@ export class Housing {
         scale.push(1);
         ceil.push(null);
       }
+      /* BEHIND A TALL HOUSE, ON THE GROUND: its first floor with the roofs
+         off. Richard, Oct 2026: "The castle obstructs the backyard. When the
+         player is on the ground outside (or jumping from the ground), not on a
+         bridge or in a house, and is directly behind the castle, show the
+         castle's 1st floor with the roofs removed. Otherwise the roofs stay
+         on." Directly behind is the camera-to-her line crossing the house's
+         ground floor, eaves and all; a house somebody in the pane is inside is
+         already cut to her floor and keeps that. Two storeys or more — a
+         one-storey house is cut to its first floor already by losing its roof,
+         and there is nothing over it to hide her. */
+      for (const hs of I.houses ?? []) {
+        const S = hs.shell;
+        if (cut.has(hs.hk) || S.floorY.length < 2) continue;
+        const [hw, hd] = S.half[0];
+        const behind = who.some((i) => {
+          const p = players[i];
+          if (!p || p.mount || p.rideAlong || !I.over(p.position.x, p.position.z)) return false;
+          if (p.position.y > hs.gy + S.floorY[0] + BEHIND_HOP) return false;
+          if (I.heightAt(p.position.x, p.position.z, p.position.y + 0.1)?.deck?.link != null) return false;
+          const a = hs.toLocal(camera.position.x, camera.position.z);
+          const b = hs.toLocal(p.position.x, p.position.z);
+          if (Math.abs(b.x) < hw && Math.abs(b.z) < hd) return false;
+          return segHitsRect(a.x, a.z, b.x, b.z, hw * 1.32, hd * 1.32);
+        });
+        if (behind) cut.set(hs.hk, 0);
+      }
       /* A card about a room cuts the house to THAT room's floor, whatever
          floor she is standing on — the camera has to see the tatami. It
          used to be the lower of the two, so a girl downstairs choosing a room
@@ -1283,9 +1512,29 @@ export class Housing {
         else if (!soft.has(c.hk)) cut.set(c.hk, Math.min(cut.get(c.hk) ?? 99, c.f));
       }
       I.cutaway(cut);
+      const k = seen.map(() => 1);
+      /* THE DOORS THE HOUSE HIDES: every doorway on a floor this pane shows,
+         facing away from its camera, near somebody in it (`DOOR_XRAY`). */
+      const cam = camera.position;
+      for (const hs of I.houses ?? []) {
+        const f = cut.get(hs.hk);
+        for (const d of hs.doors ?? []) {
+          if (seen.length >= XRAY_SLOTS) break;
+          if (f != null && f >= 0 && d.floor > f) continue;
+          const o = hs.local(0, 0);
+          const n = hs.local([0, 1, 0, -1][d.side], [1, 0, -1, 0][d.side]);
+          if ((cam.x - d.wx) * (n.x - o.x) + (cam.z - d.wz) * (n.z - o.z) > 0) continue;
+          if (!who.some((i) => players[i] && Math.hypot(players[i].position.x - d.wx, players[i].position.z - d.wz) < DOOR_XRAY.near)) continue;
+          seen.push(new THREE.Vector3(d.wx, d.y + PORT_H / 2, d.wz));
+          floors.push(d.y + 0.05);
+          scale.push(Math.min(1, (d.w / 2) / I.xrayR));
+          ceil.push(d.y + PORT_H + DOOR_XRAY.lintel);
+          k.push(DOOR_XRAY.k);
+        }
+      }
       // a kendo match being watched: the walls at half height (kendo.js)
       I.halfWalls(this.kendo.halfWallFor(I, members ?? players.map((_, k) => k)));
-      for (const M of I.xrayMats) M.setCuts?.(camera.position, seen, floors, { scale, ceil });
+      for (const M of I.xrayMats) M.setCuts?.(camera.position, seen, floors, { scale, ceil, k });
     }
   }
 
@@ -1758,9 +2007,12 @@ export class Housing {
     const words = {
       roshi: 'TALK TO ROSHI',
       jukebox: own ? 'PICK THE MUSIC' : 'LISTEN',
-      door: own ? 'MY HOME' : 'KNOCK',
-      frontdoor: !this.allowed(p, s.home) ? 'KNOCK' : s.door?.pinned ? 'CLOSE THE DOOR' : 'KEEP THE DOOR OPEN',
-      portdoor: s.door?.pinned ? 'CLOSE THE DOOR' : 'KEEP THE DOOR OPEN',
+      // inside the door: the card is hers; a visitor is behind the door, where nobody knocks
+      door: own ? 'MY HOME' : null,
+      frontdoor: !own ? (!this.allowed(p, s.home) || !this.opensFor(s.isle, p, s.door.hs, s.door) ? 'KNOCK' : null)
+        : s.door?.pinned ? 'CLOSE THE DOOR' : 'KEEP THE DOOR OPEN',
+      portdoor: own ? (s.door?.pinned ? 'CLOSE THE DOOR' : 'KEEP THE DOOR OPEN') : null,
+      portknock: !own && !this.opensFor(s.isle, p, s.door.hs, s.door) ? 'KNOCK' : null,
       // the window asks what she wants (cards.js `_v_window`)
       window: 'THE WINDOW',
       koi: 'THE KOI POND',
@@ -1826,10 +2078,8 @@ export class Housing {
         return true;
       }
       case 'door':
-        if (s.home.owners.includes(p.style.name)) C.open(p.index, 'home', { site: s.home.site });
-        else G.toast(this.locked(s.home)
-          ? `Knock knock! ${s.home.owners.join(' & ')}'s door is locked.`
-          : `Come on in — ${s.home.owners.join(' & ')} left the door open!`, p.index);
+        if (!s.home.owners.includes(p.style.name)) return false;
+        C.open(p.index, 'home', { site: s.home.site });
         return true;
       case 'frontdoor':
         if (!this.allowed(p, s.home)) {
@@ -1837,10 +2087,23 @@ export class Housing {
           G.audio?.play?.('menu');
           return true;
         }
+        if (!s.home.owners.includes(p.style.name)) {
+          if (this.opensFor(s.isle, p, s.door.hs, s.door)) G.toast('The door is open for you — come in!', p.index);
+          else this.knock(p, s.isle, s.door.hs);
+          return true;
+        }
         this.toggleDoor(p, s.home, s.door);
         return true;
       case 'portdoor':
+        if (!s.home.owners.includes(p.style.name)) {
+          G.toast(`Only ${ownerNames(s.home)} can keep this door open — it opens for you on the way out.`, p.index);
+          return true;
+        }
         this.toggleDoor(p, s.home, s.door);
+        return true;
+      case 'portknock':
+        if (s.home.owners.includes(p.style.name) || this.opensFor(s.isle, p, s.door.hs, s.door)) return false;
+        this.knock(p, s.isle, s.door.hs);
         return true;
       case 'window': {
         /* A WINDOW ASKS. Richard, Oct 2026: "Looking out the window should be

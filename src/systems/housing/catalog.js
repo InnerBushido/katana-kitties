@@ -361,6 +361,13 @@ export const ITEMS = [
      one 2-unit span of a room's OUTER wall (`wallSlots` in editor.js). */
   { id: 'window', name: 'SHOJI WINDOW', where: ['wall'], size: { w: 2.0 }, mult: 0.2, model: null, act: 'look',
     blurb: 'A paper window that slides open. LOOK OUT and see your island.' },
+  /* Richard, Oct 2026: "Sliding doors: buildable like windows, leading
+     outside." A wall thing on a GROUND-floor outer wall (`buildWhy`); the
+     shell cuts it a doorway (`HomeIsle._openings`) and it is a door like a
+     bridge's — it slides for whoever it opens for, an owner keeps it open
+     from inside, and a visitor knocks on the outside (`Housing.knock`). */
+  { id: 'slidedoor', name: 'SLIDING DOOR', where: ['wall'], size: { w: 2.0 }, mult: 0.3, model: null, ground: true,
+    blurb: 'A shoji door out to the garden, on the ground floor. It slides open as you walk up to it.' },
   { id: 'scroll', name: 'HANGING SCROLL', where: ['wall'], size: { w: 1.1 }, mult: 0.1, model: null, deco: true,
     blurb: 'A kakejiku with a brushed word on it.' },
   { id: 'picture', name: 'FRAMED PICTURE', where: ['wall'], size: { w: 1.8 }, mult: 0.1, model: null, deco: true,

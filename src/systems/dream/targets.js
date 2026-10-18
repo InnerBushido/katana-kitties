@@ -593,7 +593,7 @@ export class HoloStar {
    *   with a layer-space `group.position`). `onTake` is handed whichever got
    *   there first, so a drill can tell her from them.
    */
-  constructor({ parent, x, y, z, owner = null, colour = HOLO.gold, onTake, lock = 0, rivals = [], reach = 1.5 }) {
+  constructor({ parent, x, y, z, owner = null, colour = HOLO.gold, onTake, lock = 0, rivals = [], reach = 1.5, floorY = null }) {
     this.local = new THREE.Vector3(x, y, z);
     /** How near (flat) she must come. 1.5 is a walk-up; a prize in the air
      *  that she reaches by a TELEPORT is passed over in no frames at all, so
@@ -615,6 +615,19 @@ export class HoloStar {
     beam.position.y = 7;
     this.group.add(beam);
     parent.add(this.group);
+    /* ITS SHADOW. Richard, Oct 2026: "Give the lasers and the pickups
+       shadows or depth so their placement reads." A dark disc on the floor
+       straight under it, smaller and fainter the higher it floats — so a
+       star in the air reads as "over THERE, this high", like a beam's
+       footprint does. `floorY` is the drill's floor; without one, its own foot. */
+    const fy = floorY ?? y;
+    const lift = Math.max(0, y + 1.0 - fy);
+    this.shadow = new THREE.Mesh(new THREE.CircleGeometry(0.75, 24).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: Math.max(0.22, 0.55 - lift * 0.07), depthWrite: false, toneMapped: false }));
+    this.shadow.position.set(x, fy + 0.04, z);
+    this.shadow.scale.setScalar(Math.max(0.55, 1 - lift * 0.08));
+    this.shadow.renderOrder = LASER_ORDER - 2;
+    parent.add(this.shadow);
     /* THE LOCK, DRAWN. A grey ring on the floor that shrinks onto the orb as
        the seconds run out — "wait" said without a word, in the place both of
        them are looking. It is a sibling of the group, so it does not bob. */
@@ -664,11 +677,12 @@ export class HoloStar {
   _take(who) {
     this.taken = true;
     this.group.visible = false;
+    if (this.shadow) this.shadow.visible = false;
     if (this.lockRing) this.lockRing.visible = false;
     this.onTake?.(who, this);
   }
 
-  dispose() { this.group.removeFromParent(); this.lockRing?.removeFromParent(); }
+  dispose() { this.group.removeFromParent(); this.lockRing?.removeFromParent(); this.shadow?.removeFromParent(); }
 }
 
 /* -------------------------------- hazards -------------------------------- */
@@ -690,7 +704,20 @@ export class HoloStar {
      · UNDER THE FLOOR, FAINT: the beam's own shader drops to UNDER_ALPHA of
        itself below `floorY` (per fragment, by world height) — still there, so
        a beam passing under a deck is not a beam that vanished. */
-export const LASER_ORDER = 30;
+/* ...and UNDER HER UI. Richard, Oct 2026, on the Flash Step drill: "The
+   lasers draw in front of the player UI and make text hard to read." Her
+   name, health bar and marks are `depthTest: false` at 20-25 (player.js,
+   label.js), and a beam at 30 was drawn over all of them. 16 is still after
+   the floor's circles (12-15) and her sprite (0), which is what the first
+   fix was for. */
+export const LASER_ORDER = 16;
+/* REDDER AND DIMMER. Richard: "too bright: make them more red, less pink or
+   white, and dimmer." The glow was 0xff3b6b (pink) pulsing 0.30-0.60 over a
+   WHITE core at 0.9 — additive, so where the beams crossed it burned to
+   white. Now a red glow pulsing LASER_GLOW.lo-hi round a hot-red core. */
+export const LASER_COLOUR = 0xd8261c;
+export const LASER_CORE = { colour: 0xff6a4a, opacity: 0.5 };
+export const LASER_GLOW = { mid: 0.3, swing: 0.08, warm: 0.12 };
 export const UNDER_ALPHA = 0.22;
 const BEAM_VERT = /* glsl */`
   varying float vY;
@@ -731,7 +758,7 @@ function beamMat(colour, opacity, floorY) {
  * be jumped are the ones you are meant to block or Flash-Step.
  */
 export class Laser {
-  constructor({ parent, a, b, thick = 0.35, colour = 0xff3b6b, dmg = 10, owner = null, move = null, warm = 0, onHit, floorY = null }) {
+  constructor({ parent, a, b, thick = 0.35, colour = LASER_COLOUR, dmg = 10, owner = null, move = null, warm = 0, onHit, floorY = null }) {
     this.a = new THREE.Vector3(a.x, a.y, a.z);
     this.b = new THREE.Vector3(b.x, b.y, b.z);
     this.thick = thick;
@@ -745,8 +772,8 @@ export class Laser {
     this.floorY = floorY;
     const geo = new THREE.CylinderGeometry(1, 1, 1, 10, 1, true);
     geo.rotateX(Math.PI / 2);
-    this.core = new THREE.Mesh(geo, beamMat(0xffffff, 0.9, floorY));
-    this.glow = new THREE.Mesh(geo, beamMat(colour, 0.45, floorY));
+    this.core = new THREE.Mesh(geo, beamMat(LASER_CORE.colour, LASER_CORE.opacity, floorY));
+    this.glow = new THREE.Mesh(geo, beamMat(colour, LASER_GLOW.mid, floorY));
     this.core.renderOrder = LASER_ORDER + 1;
     this.glow.renderOrder = LASER_ORDER;
     this.group = new THREE.Group();
@@ -803,7 +830,7 @@ export class Laser {
     const k = live ? 1 : 0.25;
     this.core.scale.set(this.thick * 0.25 * k, this.thick * 0.25 * k, len);
     this.glow.scale.set(this.thick * k, this.thick * k, len);
-    this.glow.material.uniforms.uOpacity.value = live ? 0.45 + 0.15 * Math.sin(this.t * 30) : 0.18;
+    this.glow.material.uniforms.uOpacity.value = live ? LASER_GLOW.mid + LASER_GLOW.swing * Math.sin(this.t * 30) : LASER_GLOW.warm;
     this._placeShadow(live);
   }
 

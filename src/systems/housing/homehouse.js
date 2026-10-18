@@ -49,6 +49,10 @@ export const SLAB_T = 0.34;
 export const HEAD_H = 2.4;
 const WALL_T = 0.3;
 const DOOR_W = 2.8;
+/** How far in each course of the castle's stone base steps from the one below. */
+export const CASTLE_COURSE = 0.45;
+/** A storey's wall collider stops this far under the floor above (its slab). */
+export const WALL_UNDER = SLAB_T;
 
 /** Each house's floors: half-sizes, from the ground up, and its plinth. */
 const SHAPES = {
@@ -110,6 +114,8 @@ export function buildHouseShell(houseId, openings = []) {
   const half = [];
   /** The front edge of the ground floor's eave band, where there is one. */
   let eave = null;
+  /** Every eave band and the roof, as surfaces she can land on and bonk into (`bandOf`, `roofOf`). */
+  const eaves = [];
   const base = S.base;
   const [bw, bd] = S.floors[0];
 
@@ -130,13 +136,19 @@ export function buildHouseShell(houseId, openings = []) {
      castle's stone base is a storey and has a ramp: it keeps its step, and
      its sides are WALLS instead, but for the ramp's mouth. */
   if (S.stone) {
-    plinth.push(box(pw * 2, base + PLINTH_SINK, pd * 2, PALETTE.stone, 0, (base - PLINTH_SINK) / 2, 0));
-    // battered courses, so the base reads as Ishigaki and not as a box
+    /* ISHIGAKI IN STEPS SHE CAN CLIMB. Richard, Oct 2026: "Unable to walk up
+       the steps around the castle edges". They looked like steps — four thin
+       courses proud of a sheer storey of stone, which was a wall all round
+       but for the ramp — and were not. Now the base IS four courses, each
+       CASTLE_COURSE in from the one under it and a quarter of the base high,
+       and each is a deck (`course`), so she walks up any side of it; the top
+       course is the porch the castle stands on. All inside the footprint the
+       old base had (`houseFoot` does not move), and each course's foot is a
+       hair lower than the last so no two undersides share a plane. */
     for (let k = 0; k < 4; k++) {
-      // + 0.012: the top course was exactly the plinth's size, and its four
-      // sides flickered in the plinth's (tools/checks/zfight.mjs)
-      const s = 1.012 + (3 - k) * 0.025;
-      plinth.push(box(pw * 2 * s, 0.12, pd * 2 * s, 0x7f7a74, 0, (k + 0.5) * (base / 4), 0));
+      const i = (3 - k) * CASTLE_COURSE;
+      const top = (k + 1) * (base / 4), foot = -PLINTH_SINK - k * 0.01;
+      plinth.push(box((pw - i) * 2, top - foot, (pd - i) * 2, k % 2 ? PALETTE.stone : 0x8f8a83, 0, (top + foot) / 2, 0));
     }
   } else {
     plinth.push(box(pw * 2, base + PLINTH_SINK, pd * 2, PALETTE.wood, 0, (base - PLINTH_SINK) / 2, 0));
@@ -145,15 +157,14 @@ export function buildHouseShell(houseId, openings = []) {
       plinth.push(box(0.4, base + 0.1 + PLINTH_SINK - 0.1, 0.4, PALETTE.woodDark, sx * (pw - 0.3), (base + 0.1 - PLINTH_SINK + 0.1) / 2, sz * (pd - 0.3)));
     }
   }
-  decks.push({ x0: -pw, x1: pw, z0: -pd, z1: pd, y: base, step: S.stone ? 0.75 : base + PLINTH_SINK, plinth: true });
   if (S.stone) {
-    // the stone base's four sides, open where the ramp comes up the front
-    const lo = -PLINTH_SINK, hi = base - 0.15;
-    walls.push({ ax: -pw, az: -pd, bx: pw, bz: -pd, y0: lo, y1: hi, plinth: true });
-    walls.push({ ax: -pw, az: -pd, bx: -pw, bz: pd, y0: lo, y1: hi, plinth: true });
-    walls.push({ ax: pw, az: -pd, bx: pw, bz: pd, y0: lo, y1: hi, plinth: true });
-    walls.push({ ax: -pw, az: pd, bx: -STAIR_W, bz: pd, y0: lo, y1: hi, plinth: true });
-    walls.push({ ax: STAIR_W, az: pd, bx: pw, bz: pd, y0: lo, y1: hi, plinth: true });
+    // the courses, each a step of a quarter of the base; the lowest takes her from anything down to PLINTH_SINK
+    for (let k = 0; k < 4; k++) {
+      const i = (3 - k) * CASTLE_COURSE;
+      decks.push({ x0: -pw + i, x1: pw - i, z0: -pd + i, z1: pd - i, y: (k + 1) * (base / 4), step: k ? 0.75 : base / 4 + PLINTH_SINK, plinth: k === 3, course: k });
+    }
+  } else {
+    decks.push({ x0: -pw, x1: pw, z0: -pd, z1: pd, y: base, step: base + PLINTH_SINK, plinth: true });
   }
 
   /* The way up onto the plinth: a ramp out of the front door. For the
@@ -258,13 +269,21 @@ export function buildHouseShell(houseId, openings = []) {
         piece(o.t0, o.t1, y + o.h1, y + wallH, PALETTE.plaster);
         if (o.door) {
           const A = pt(c0), B = pt(o.t0);
-          if (o.t0 - c0 > 0.01) walls.push({ ax: A.x, az: A.z, bx: B.x, bz: B.z, y0: y, y1: top });
+          if (o.t0 - c0 > 0.01) walls.push({ ax: A.x, az: A.z, bx: B.x, bz: B.z, y0: y, y1: top - WALL_UNDER });
           c0 = o.t1;
         }
         t = Math.max(t, o.t1);
       }
       piece(t, len, y, y + wallH, PALETTE.plaster);
-      { const A = pt(c0); walls.push({ ax: A.x, az: A.z, bx, bz, y0: y, y1: top }); }
+      /* ...TO THE UNDERSIDE OF THE FLOOR ABOVE, not to its top. Richard, Oct
+         2026: "when building a bridge to the 2nd or 3rd floor, there is
+         something blocking the doorway". There was: a storey's walls stood
+         to `top`, which is the floor ABOVE's surface, and a wall is solid to
+         anyone whose feet are not above its top — so a kitten walking in
+         off a bridge, feet exactly at `top`, was walled by the lower storey's
+         wall wherever that storey is wider than hers (the castle, the dojo
+         house: the eave band's lap). WALL_UNDER is the slab. */
+      { const A = pt(c0); walls.push({ ax: A.x, az: A.z, bx, bz, y0: y, y1: top - WALL_UNDER }); }
       /* Timber posts at the ends and a beam along the top — NO FACE OF EITHER
          IN THE PLANE OF ANOTHER. Richard: "The ceiling wooden beams are also
          having some Z-fighting". They were: the beam's top sat exactly on the
@@ -305,10 +324,29 @@ export function buildHouseShell(houseId, openings = []) {
        it over the timber (world-check casts down on every post and beam). */
     if (f < S.floors.length - 1) {
       const [uw, ud] = S.floors[f + 1];
-      const skirt = eaveBand(hw, hd, uw, ud, top);
+      /* CUT WHERE A BRIDGE LEAVES THE STOREY ABOVE. Richard, Oct 2026: "When
+         bridge is going to 2nd or 3rd floor, seems the bridge is going
+         through the roof overhang of 1st or 2nd floor ... Let's remove
+         sections of the protruding roof to accommodate for the bridge ... If
+         the bridge is removed, then this cut roof can be repaired". A door on
+         floor f + 1 opens at this band's height, so the band has a notch the
+         bridge's width and a step more each side, straight out from the door
+         — and since the shell is built from its openings, selling the bridge
+         rebuilds the band whole. With no doors upstairs it is exactly the old
+         band. */
+      const gaps = openings.filter((o) => o.floor === f + 1 && !o.sill).map((o) => ({ side: o.side, lo: o.at - o.w / 2 - EAVE_GAP, hi: o.at + o.w / 2 + EAVE_GAP }));
+      const skirt = eaveBand(hw, hd, uw, ud, top, gaps);
       paint(skirt, 0xe6e6e6);
       tint.push(skirt);
-      ridge[f % 4].push(box(hw * 2 + 0.4, 0.22, 0.12, 0xffffff, 0, top + SKIRT_EAVE - 0.18, hd * (1 + SKIRT_OVER) - 0.02));
+      eaves.push(bandOf(hw, hd, uw, ud, top, gaps, f));
+      // the trim along the front, in pieces round a notch on that side
+      const tx = hw + 0.2;
+      let from = -tx;
+      for (const G of gaps.filter((q) => q.side === 0).sort((p, q) => p.lo - q.lo)) {
+        if (G.lo - from > 0.05) ridge[f % 4].push(box(G.lo - from, 0.22, 0.12, 0xffffff, (from + G.lo) / 2, top + SKIRT_EAVE - 0.18, hd * (1 + SKIRT_OVER) - 0.02));
+        from = Math.max(from, G.hi);
+      }
+      if (tx - from > 0.05) ridge[f % 4].push(box(tx - from, 0.22, 0.12, 0xffffff, (from + tx) / 2, top + SKIRT_EAVE - 0.18, hd * (1 + SKIRT_OVER) - 0.02));
       // its trim hangs 0.18 + 0.11 under the band's edge: that is the lowest
       // thing in front of the name board (`doorPitch`)
       if (f === 0) eave = { z: hd * (1 + SKIRT_OVER), y: top + SKIRT_EAVE - 0.29 };
@@ -342,15 +380,39 @@ export function buildHouseShell(houseId, openings = []) {
     const n = Math.max(4, Math.round(rise / STEP_RISE));
     const h = rise / n;
     const run = L / n;
+    /* ONE SOLID, NOT n BOXES. Richard, Oct 2026: "it seems like the
+       staircases, each step is a separate model, they should be joined
+       together as one model if possible so that the xray shader works
+       properly on them." Each step was a box down to the floor, so an x-ray
+       hole through the flight showed n boxes' worth of insides, every one a
+       different depth. `stairSolid` is the side profile — the sawtooth of
+       treads and risers — swept across the stair's width: one closed shape. */
+    g.push(stairSolid(xc - STAIR_W / 2, xc + STAIR_W / 2, zTop, zBot, y0, n, h, run));
     for (let k = 0; k < n; k++) {
-      // step k: from the front (zBot) back; its top at (k + 1) rises
       const za = zBot - (k + 1) * run;
       const top = y0 + (k + 1) * h;
-      g.push(box(STAIR_W, top - y0, run, k % 2 ? PALETTE.wood : 0xb98a52, xc, y0 + (top - y0) / 2, za + run / 2));
       // the dark nosing along each tread's front edge, 0.01 proud of the riser
       // so its face is not the step's face (zfight.mjs)
       g.push(box(STAIR_W + 0.04, 0.06, 0.1, PALETTE.woodDark, xc, top + 0.01, za + run - 0.04));
     }
+    /* AND SOLID FROM THE FLOOR. Richard, Oct 2026: "Player can walk under the
+       staircases in the house, this shouldn't be possible". The stairs were a
+       deck she could stand on and nothing she could walk INTO, so from the
+       side or the back, where a step is taller than she can step up, she
+       walked straight into the flight. Walls down both sides and across the
+       back — in lengths of STAIR_SEG, each as tall as the LOWEST tread it
+       runs past less a hair, so a kitten ON the stairs is always above the
+       piece beside her, and none where a tread is low enough to step onto
+       from the floor. The back stops STAIR_BACK under the top, because she
+       walks up to within a radius of it on the last steps. */
+    const tread = (z) => y0 + rise * Math.min(1, Math.max(0, (zBot - z) / L));
+    for (let z1 = zBot; z1 > zTop + 1e-6; z1 -= STAIR_SEG) {
+      const z0 = Math.max(zTop, z1 - STAIR_SEG);
+      const y1 = tread(z1 + 0.9) - 0.1;
+      if (y1 - y0 < 0.6) continue;
+      for (const x of [xc - STAIR_W / 2, xc + STAIR_W / 2]) walls.push({ ax: x, az: z0, bx: x, bz: z1, y0: y0 - 0.5, y1, stairSide: f });
+    }
+    walls.push({ ax: xc - STAIR_W / 2, az: zTop, bx: xc + STAIR_W / 2, bz: zTop, y0: y0 - 0.5, y1: y0 + rise - STAIR_BACK, stairSide: f });
     decks.push({
       x0: xc - STAIR_W / 2, x1: xc + STAIR_W / 2, z0: zTop, z1: zBot, y: y0 + rise, step: 0.6, stair: f,
       yAt: (x, z) => y0 + rise * Math.min(1, Math.max(0, (zBot - z) / L)),
@@ -389,6 +451,17 @@ export function buildHouseShell(houseId, openings = []) {
   paint(R, 0xe6e6e6);
   R.translate(0, yTop - 0.12, 0);
   tint.push(R);
+  /* THE ROOF IS SOMETHING TO STAND ON. Richard, Oct 2026: "when jumping on
+     the roof, the player falls through ... if they are outside and land on
+     top of the roof, then the roof should be drawn and the player should be
+     able to collide with the roof and run around the roof." It was drawn
+     and nothing else. Now it is a deck that is the roof's own surface
+     (`roofOf`), reached only from above (a deck is one-way), and its eaves
+     are a ceiling to a kitten jumping up under them (`HomeIsle.ceilingAt`). */
+  const roofSurf = roofOf(tw, td, S.roof, yTop - 0.12);
+  eaves.push(roofSurf);
+  decks.push(...roofDecks(roofSurf));
+  for (const E of eaves) if (E.band) decks.push(...roofDecks(E));
   const soff = pagodaSoffit(tw, td, S.roof, { overhang: 0.42, cornerLift: 0.6 });
   paint(soff, PALETTE.woodDark);
   soff.translate(0, yTop - 0.12, 0);
@@ -410,7 +483,7 @@ export function buildHouseShell(houseId, openings = []) {
   }
 
   return {
-    floors, roof, accent, ridge, tint, walls, decks, floorY, half, base, front: pd, wells, eave,
+    floors, roof, accent, ridge, tint, walls, decks, floorY, half, base, front: pd, wells, eave, eaves,
     door: { x: 0, z: bd, w: DOOR_W, y: base },
     /* The name board over the door, in the wall above the opening (3.1 to
        4.25 up). Richard: "the placard above the houses door frame ... is not
@@ -448,6 +521,64 @@ export function stairWells(houseId) {
   return out;
 }
 
+/** The stairs' side walls come in lengths this long, each its own height. */
+const STAIR_SEG = 1;
+/** ...and the wall across the back stops this far under the top step. */
+const STAIR_BACK = 0.6;
+
+/**
+ * A FLIGHT OF STAIRS AS ONE CLOSED SOLID: the side profile in (z, y) — up the
+ * front riser, along each tread and up each riser to the top at zTop, down
+ * the back and along the floor — swept from x0 to x1. Treads alternate the two
+ * woods the box steps had, risers take the darker; flat-shaded, one mesh.
+ */
+export function stairSolid(x0, x1, zTop, zBot, y0, n, h, run) {
+  const P = [[zBot, y0]];
+  for (let k = 0; k < n; k++) {
+    const z = zBot - k * run, y = y0 + (k + 1) * h;
+    P.push([z, y], [Math.max(zTop, z - run), y]);
+  }
+  P.push([zTop, y0]);
+  // the outline's turn: + is anticlockwise in (z, y)
+  let area = 0;
+  for (let i = 0; i < P.length; i++) { const [a, b] = P[i], [c, d] = P[(i + 1) % P.length]; area += a * d - c * b; }
+  const sgn = Math.sign(area) || 1;
+  const pos = [];
+  const col = [];
+  const tri = (A, B, C, nrm, c) => {
+    // wind it to face `nrm`
+    const e1 = [B[0] - A[0], B[1] - A[1], B[2] - A[2]], e2 = [C[0] - A[0], C[1] - A[1], C[2] - A[2]];
+    const cr = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
+    const flip = cr[0] * nrm[0] + cr[1] * nrm[1] + cr[2] * nrm[2] < 0;
+    for (const V of flip ? [A, C, B] : [A, B, C]) { pos.push(...V); col.push(c.r, c.g, c.b); }
+  };
+  const C = (hex) => new THREE.Color(hex);
+  const lightW = C(PALETTE.wood), darkW = C(0xb98a52);
+  // the two side faces
+  const flat = P.map(([z, y]) => new THREE.Vector2(z, y));
+  const faces = THREE.ShapeUtils.triangulateShape(flat, []);
+  for (const [x, nx] of [[x0, -1], [x1, 1]]) {
+    for (const [a, b, c] of faces) tri([x, P[a][1], P[a][0]], [x, P[b][1], P[b][0]], [x, P[c][1], P[c][0]], [nx, 0, 0], darkW);
+  }
+  // round the outline: each edge swept across
+  for (let i = 0; i < P.length; i++) {
+    const [za, ya] = P[i], [zb, yb] = P[(i + 1) % P.length];
+    if (Math.hypot(zb - za, yb - ya) < 1e-6) continue;
+    // outward: the edge's right-hand normal on an anticlockwise outline
+    const nz = (yb - ya) * sgn, ny = -(zb - za) * sgn;
+    const k = Math.round((zBot - Math.max(za, zb)) / run);
+    const c = Math.abs(yb - ya) < 1e-6 && ya > y0 + 1e-6 ? (k % 2 ? lightW : darkW) : darkW;
+    const A = [x0, ya, za], B = [x1, ya, za], Cc = [x1, yb, zb], D = [x0, yb, zb];
+    tri(A, B, Cc, [0, ny, nz], c);
+    tri(A, Cc, D, [0, ny, nz], c);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.computeVertexNormals();
+  return g;
+}
+
 /** Rects of the room grid that furniture may not cover: stairs below, a hole above. */
 export function stairBlocks(houseId, floor) {
   return stairWells(houseId).filter((W) => W.floor === floor || W.floor + 1 === floor);
@@ -477,7 +608,8 @@ const SKIRT_FOOT = 0.3;
  * to the foot of the storey above (uw, ud, at top + SKIRT_FOOT), faces up and
  * out like `pagodaRoof`'s. The eave corners lift, as the roof's do.
  */
-function eaveBand(hw, hd, uw, ud, top) {
+function eaveBand(hw, hd, uw, ud, top, gaps = []) {
+  if (gaps.length) return notchedBand(hw, hd, uw, ud, top, gaps);
   const ox = hw * (1 + SKIRT_OVER), oz = hd * (1 + SKIRT_OVER);
   const ix = uw + 0.05, iz = ud + 0.05;
   const y0 = top + SKIRT_EAVE, y1 = top + SKIRT_FOOT;
@@ -502,6 +634,120 @@ function eaveBand(hw, hd, uw, ud, top) {
   geo.setIndex(idx);
   geo.computeVertexNormals();
   return geo;
+}
+
+/** A bridge's notch in the eave band is this much wider than its doorway, each side. */
+export const EAVE_GAP = 0.5;
+
+/**
+ * An eave band with NOTCHES: the same frustum as `eaveBand`, side by side,
+ * cut into pieces along each side at every gap's ends and at the corners, and
+ * the pieces inside a gap left out. A side's outer edge lifts toward its
+ * corners exactly as the whole band's does; each piece's inner edge is the
+ * point straight in from its outer one (clamped to the inner corners, which
+ * makes the hips), so a notch's two cuts run square out from the wall.
+ */
+function notchedBand(hw, hd, uw, ud, top, gaps) {
+  const ox = hw * (1 + SKIRT_OVER), oz = hd * (1 + SKIRT_OVER);
+  const ix = uw + 0.05, iz = ud + 0.05;
+  const y0 = top + SKIRT_EAVE, y1 = top + SKIRT_FOOT;
+  const lift = 0.3;
+  const pos = [];
+  /* band side k runs from corner k to k + 1 as `eaveBand` numbers them:
+     front (+z, x falling), -x (z falling), back (-z, x rising), +x (z rising);
+     `door` is the opening side the same wall has (0 front, 1 +x, 2 back, 3 -x) */
+  const SIDES = [
+    { door: 0, o: ox, i: ix, from: ox, to: -ox, at: (u, w, y) => [u, y, w], w0: oz, w1: iz },
+    { door: 3, o: oz, i: iz, from: oz, to: -oz, at: (u, w, y) => [-w, y, u], w0: ox, w1: ix },
+    { door: 2, o: ox, i: ix, from: -ox, to: ox, at: (u, w, y) => [u, y, -w], w0: oz, w1: iz },
+    { door: 1, o: oz, i: iz, from: -oz, to: oz, at: (u, w, y) => [w, y, u], w0: ox, w1: ix },
+  ];
+  for (const S of SIDES) {
+    const G = gaps.filter((g) => g.side === S.door);
+    const cuts = new Set([S.from, S.to, -S.i, S.i, 0]);
+    for (const g of G) { cuts.add(Math.max(-S.o, Math.min(S.o, g.lo))); cuts.add(Math.max(-S.o, Math.min(S.o, g.hi))); }
+    const us = [...cuts].sort((a, b) => (S.to > S.from ? a - b : b - a));
+    for (let j = 0; j + 1 < us.length; j++) {
+      const ua = us[j], ub = us[j + 1];
+      const lo = Math.min(ua, ub), hi = Math.max(ua, ub);
+      if (hi - lo < 1e-4 || G.some((g) => lo < g.hi - 1e-6 && hi > g.lo + 1e-6)) continue;
+      const O = (u) => S.at(u, S.w0, y0 + lift * Math.abs(u) / S.o);
+      const I = (u) => S.at(Math.max(-S.i, Math.min(S.i, u)), S.w1, y1);
+      // as `eaveBand` winds a half-side: outer, inner, inner next; outer, inner next, outer next
+      pos.push(...O(ua), ...I(ua), ...I(ub), ...O(ua), ...I(ub), ...O(ub));
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/**
+ * The eave band round storey f as a SURFACE: where it is, how high it is at
+ * a point (`roofY`), and its notches. The lift at the corners is left out —
+ * 0.3 at the very tip of a hip — so a kitten on a corner stands a hair inside
+ * the tiles rather than on a seam.
+ */
+function bandOf(hw, hd, uw, ud, top, gaps, f) {
+  return {
+    band: true, f, ox: hw * (1 + SKIRT_OVER), oz: hd * (1 + SKIRT_OVER), ix: uw + 0.05, iz: ud + 0.05,
+    y0: top + SKIRT_EAVE, y1: top + SKIRT_FOOT, gaps,
+  };
+}
+
+/** The top roof as a surface: `pagodaRoof`'s own height, ring by ring (no corner lift). */
+function roofOf(tw, td, h, y) {
+  return { roof: true, ox: tw * 1.42, oz: td * 1.42, ix: tw, iz: td, y, h, gaps: [] };
+}
+
+/**
+ * The height of roof surface E over house-local (x, z), or null off it (or in
+ * a notch). A band runs from its eave up to the foot of the storey above; the
+ * roof is `pagodaRoof`'s y = h * t^1.75 with t = 1 - the ring the point is on.
+ */
+export function roofY(E, x, z) {
+  if (E.band) {
+    const qx = (E.ox - Math.abs(x)) / (E.ox - E.ix), qz = (E.oz - Math.abs(z)) / (E.oz - E.iz);
+    const q = Math.min(qx, qz);
+    if (q < 0 || q > 1) return null;
+    // which side's band it is on, and how far along that side
+    const door = qx < qz ? (x > 0 ? 1 : 3) : (z > 0 ? 0 : 2);
+    const along = qx < qz ? z : x;
+    if (E.gaps.some((g) => g.side === door && along > g.lo && along < g.hi)) return null;
+    return E.y0 + (E.y1 - E.y0) * q;
+  }
+  const s = Math.max(Math.abs(x) / E.ox, Math.abs(z) / E.oz);
+  if (s > 1) return null;
+  return E.y + E.h * Math.pow(1 - s, 1.75);
+}
+
+/**
+ * A roof surface as decks, in the house's frame: rectangles that cover it,
+ * each reading its height off `roofY` — the band's four sides round the
+ * storey above, each in pieces round its notches; the roof one rectangle.
+ */
+function roofDecks(E) {
+  const mk = (x0, x1, z0, z1) => ({
+    x0, x1, z0, z1, y: E.band ? E.y1 : E.y + E.h, step: 0.6, roof: E.band ? E.f : 'top',
+    yAt: (x, z) => roofY(E, x, z) ?? (E.band ? E.y0 : E.y),
+  });
+  if (!E.band) return [mk(-E.ox, E.ox, -E.oz, E.oz)];
+  const out = [];
+  // a strip from a to b along one axis, less the notches on that side
+  const strip = (lo, hi, door, put) => {
+    let from = lo;
+    for (const g of E.gaps.filter((q) => q.side === door).sort((p, q) => p.lo - q.lo)) {
+      if (g.lo - from > 0.05) put(from, Math.min(hi, g.lo));
+      from = Math.max(from, g.hi);
+    }
+    if (hi - from > 0.05) put(from, hi);
+  };
+  strip(-E.ox, E.ox, 0, (a, b) => out.push(mk(a, b, E.iz, E.oz)));
+  strip(-E.ox, E.ox, 2, (a, b) => out.push(mk(a, b, -E.oz, -E.iz)));
+  strip(-E.iz, E.iz, 1, (a, b) => out.push(mk(E.ix, E.ox, a, b)));
+  strip(-E.iz, E.iz, 3, (a, b) => out.push(mk(-E.ox, -E.ix, a, b)));
+  return out;
 }
 
 /** The shape table's row, for the editor's wall slots (no geometry built). */

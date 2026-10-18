@@ -3,10 +3,10 @@ import { HOUSE_BY_ID, ITEM_BY_ID, LINK_BY_ID, houseSpecs, homeRooms, roomById } 
 import { fits, footprint, gridOf, wallSlots, wallFree, yardWhy, yardR, addOutdoor, houseWhy } from './editor.js';
 import { drawItem, placeModel } from './models.js';
 import { WALL_Y, YARD_BUILT, roomLook } from './homeisle.js';
-import { buildHouseShell, houseFoot, houseRadius } from './homehouse.js';
+import { buildHouseShell, houseFoot, houseRadius, houseHeight } from './homehouse.js';
 import { mergeParts } from '../../world/build.js';
 import { toonVertexMat } from '../../core/gfx.js';
-import { linkWhy, linkGeom, linkAll, portSpots, endAt, defaultVia, LINK_MAX, LINK_TURNS_MAX } from './links.js';
+import { linkWhy, linkGeom, linkAll, portSpots, endAt, defaultVia, supportGround, LINK_MAX, LINK_TURNS_MAX } from './links.js';
 
 /* ---------------------------------------------------------------------------
    BUILD MODE — placing a thing in the world, not on a chart.
@@ -152,6 +152,7 @@ export function buildWhy(H, top, siteR = 50) {
     const room = roomById(H, top.room);
     const S = room && wallSlots(room.house, room).find((s) => s.side === top.side && s.k === top.k);
     if (!S) return 'There is no wall there.';
+    if (it.ground && room.floor !== 0) return 'A sliding door goes on the ground floor — it has to lead outside.';
     // a bridge's doorway is a hole: nothing hangs in it
     const at = S.side % 2 ? S.z : S.x;
     for (const L of H.links ?? []) {
@@ -386,11 +387,13 @@ export class BuildMode {
           if (r > max) { v.x *= max / r; v.z *= max / r; }
         }
         if (pad.pressed('attack')) { pad.consume?.('attack'); this.turnSmooth(index, top); }
+      } else if (top.counting) {
+        // both doors chosen: LEFT and RIGHT say how many turns (`linkCount`)
+        if (this._repeat(top, push && Math.abs(mx) > Math.abs(my), dt)) this.linkCount(index, top, Math.sign(mx));
       } else {
-        // the stick hops between the doorways on this floor; ATTACK goes up a floor; RIDE, how many turns
+        // the stick hops between the doorways on this floor; ATTACK goes up a floor
         if (this._repeat(top, push, dt)) this.hopPort(top, mx, my);
         if (pad.pressed('attack')) { pad.consume?.('attack'); this.portFloor(top); }
-        if (pad.pressed('mount')) { pad.consume?.('mount'); this.linkTurns(index, top); }
       }
       if (pad.pressed('jump')) { pad.consume?.('jump'); C.placeHere(index, top); return true; }
       if (pad.pressed('sprint')) { pad.consume?.('sprint'); C.linkBack(index, top); return true; }
@@ -416,13 +419,32 @@ export class BuildMode {
     return true;
   }
 
-  /** RIDE on a bridge: no turns → 1 → 2 → 3 → none, and what each costs, out loud. */
-  linkTurns(index, top) {
-    const n = ((top.turns ?? 0) + 1) % (LINK_TURNS_MAX + 1);
+  /**
+   * LEFT or RIGHT once both doors are chosen: one turn fewer or more, and
+   * what that costs, out loud. Richard, Oct 2026: "Player should be able to
+   * build as many bridge sections as they want instead of limiting it to
+   * only 3 currently. This may require user to press left/right when
+   * selecting to inc/dec the amount rather than pressing a button." It was
+   * RIDE cycling 0-3 while she was still picking doors. At either end it
+   * stops and says so rather than wrapping (non-negotiable 6).
+   */
+  linkCount(index, top, d) {
+    const was = top.turns ?? 0;
+    const n = Math.max(0, Math.min(LINK_TURNS_MAX, was + d));
+    if (n === was) {
+      this.H.game.toast(n ? `${n} turns is the most a bridge can have.` : 'No turns is a straight bridge — RIGHT adds one.', index);
+      return;
+    }
     top.turns = n;
     this.H.game.toast(n ? `${n} turn${n > 1 ? 's' : ''} — the bridge comes in ${n + 1} parts. Each turn adds a quarter to its price.`
       : 'A straight bridge, no turns.', index);
     this.H.game.audio?.play?.('menu');
+  }
+
+  /** The touch pad's TURNS button: one more, round to none after the most. */
+  linkTurns(index, top) {
+    const n = top.turns ?? 0;
+    this.linkCount(index, top, n >= LINK_TURNS_MAX ? -n : 1);
   }
 
   /** ATTACK on a turn being placed: a sharp corner or a smooth curve (another quarter). */
@@ -542,6 +564,7 @@ export class BuildMode {
   camera(p) {
     const F = this.frameOf(p.index);
     if (!F) return null;
+    if (F.raising) return this._raiseCam(F);
     if (F.item || F.roomOnly) return this._frameCam(F);
     const { top, I, H } = F;
     const L = this.localOf(top);
@@ -609,6 +632,7 @@ export class BuildMode {
     const inRoom = top.kind === 'room' || top.kind === 'wall';
     if (top.v === 'build' || top.v === 'pick') return { top, I, H, room: inRoom ? this.roomOf(H, top) : null };
     if (top.v === 'custom') return { top, I, H, room: inRoom ? this.roomOf(H, top) : null, item: true };
+    if (top.v === 'raising') return { top, I, H, raising: true };
     const rooms = homeRooms(H);
     const cur = this.H.game.inspector?.cards?.[index]?.i ?? 0;
     let id = null;
@@ -617,6 +641,26 @@ export class BuildMode {
     else if (['room', 'roomtype', 'shop', 'sellitem'].includes(top.v) && top.kind !== 'yard') id = top.room;
     const room = id ? rooms.find((r) => r.id === id) : null;
     return room ? { top, I, H, room, roomOnly: true } : null;
+  }
+
+  /**
+   * A NEW HOUSE GOING UP, from in front of its door (cards.js `_v_raising`):
+   * far enough back for the whole house at its full height — measured off
+   * the shell, so a castle backs off further than a tiny house — and low,
+   * looking up a little at the roof as it arrives.
+   */
+  _raiseCam(F) {
+    const { top, I } = F;
+    const hs = I.houseOf(top.hk);
+    const S = hs?.shell;
+    if (!S) return null;
+    const h = houseHeight(top.id);
+    const c = hs.local(0, S.door.z + 1);
+    (top._cam ??= new THREE.Vector3()).set(c.x, hs.gy + h * 0.42, c.z);
+    let yaw = hs.ry;
+    while (yaw - CAM_YAW > Math.PI) yaw -= Math.PI * 2;
+    while (yaw - CAM_YAW < -Math.PI) yaw += Math.PI * 2;
+    return { centre: top._cam, aim: true, dist: Math.max(18, h * 1.6 + houseRadius(top.id) * 1.2), pitch: 0.3, yaw };
   }
 
   /** The camera for a framed room, or close on one thing she is customising. */
@@ -917,7 +961,8 @@ export class BuildMode {
         const env = this.H.envOf?.(I) ?? {};
         const G = top.a && LT.b ? linkGeom(H, LT, env.gyAt) : null;
         if (G && G.len <= LINK_MAX * 1.5) {
-          const P = linkAll(G, (x, z) => env.gyAt?.(x, z) ?? 0);
+          // the ghost is the bridge that will be built: its posts skip the houses and bridges the real one's will
+          const P = linkAll(G, supportGround(H, LT, (x, z) => env.gyAt?.(x, z) ?? 0));
           const m = ghostly(new THREE.Mesh(mergeParts([...P.solid, ...P.glow]), toonVertexMat()));
           g.add(m);
           g.userData.at = { x: G.A.x, z: G.A.z, y: G.A.y, a: G.a };

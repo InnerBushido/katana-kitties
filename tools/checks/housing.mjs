@@ -33,7 +33,10 @@ import { PLAYER_STYLE } from '../../src/core/palette.js';
 import { worldSig } from '../../src/systems/savegame.js';
 import { ROSHI_LINES, ROSHI_VOICE } from '../../src/systems/housing/roshi.js';
 import { Kendo, KIAI_T, BOUT, SEIZA, KENDO_HIT, KENDO_TURN, yawAcross } from '../../src/systems/housing/kendo.js';
-import { LOWER_XRAY } from '../../src/systems/housing/housing.js';
+import { LOWER_XRAY, BEHIND_HOP, KNOCK, DOOR_XRAY, doorSeg } from '../../src/systems/housing/housing.js';
+import { roofY } from '../../src/systems/housing/homehouse.js';
+import { XRAY_SLOTS, SLIDE_W } from '../../src/systems/housing/homeisle.js';
+import { HoloStar, LASER_ORDER, LASER_COLOUR } from '../../src/systems/dream/targets.js';
 import { kendoArea, kendoMarks } from '../../src/systems/housing/catalog.js';
 import { KENDO_DODGE, KENDO_SCALE, KENDO_CEREMONY_H, Player } from '../../src/entities/player.js';
 import { Billboard } from '../../src/core/gfx.js';
@@ -3346,9 +3349,34 @@ export async function housingChecks({ ok, world }) {
       const linkCut = !roofsShown() && fm[0].visible && fm[1].visible && !fm[2].visible;
       C._pop(0);
       C.st.delete(0);   // no card at all: she is just standing on the lawn
+      // ...with her camera where a camera is: out beyond her, up, looking back past nothing
+      cam.position.set(kit.position.x + 18, kit.position.y + 12, kit.position.z);
       H.aimView(cam, [0], false);
       ok('building in the yard takes every roof off; a bridge cuts its house to the bridge\'s floor; done, the roofs are back',
         yardOff && linkCut && roofsShown(), `${yardOff} ${linkCut}`);
+      /* BEHIND THE CASTLE, ON THE GROUND. Richard, Oct 2026: "When the player
+         is on the ground outside ... and is directly behind the castle, show
+         the castle's 1st floor with the roofs removed. Otherwise the roofs
+         stay on." The same kitten, her camera on the far side of the castle;
+         then the same kitten jumped up past BEHIND_HOP, where she is not. */
+      const M = I2.houseOf('main');
+      const back = M.local(0, -M.shell.half[0][1] - 6);
+      const front = M.local(0, M.shell.half[0][1] + 30);
+      kit.position.set(back.x, M.gy + 0.1, back.z);
+      cam.position.set(front.x, M.gy + 14, front.z);
+      H.aimView(cam, [0], false);
+      const behindCut = !roofsShown() && M.floorMeshes.every((m, f) => m.visible === (f === 0));
+      kit.position.y = M.gy + M.shell.floorY[0] + BEHIND_HOP + 1;
+      H.aimView(cam, [0], false);
+      const upWhole = roofsShown() && M.floorMeshes.every((m) => m.visible);
+      const far = M.local(0, M.shell.half[0][1] + 50);
+      kit.position.set(front.x, M.gy + 0.1, front.z);
+      cam.position.set(far.x, M.gy + 14, far.z);
+      H.aimView(cam, [0], false);
+      const frontWhole = roofsShown();
+      ok('behind the castle on the ground: its first floor with the roofs off; up off the ground, or in front of it, the castle stands whole',
+        behindCut && upWhole && frontWhole, `${behindCut} ${upWhole} ${frontWhole}`);
+      kit.position.set(I2.x + I2.radius * 0.8, I2.groundY + 0.5, I2.z);
 
       /* TWO SISTERS IN ONE PANE, ONE UPSTAIRS. Richard, Oct 2026: "Show the
          upper floor for the player who is upstairs. Make the lower player's
@@ -3487,6 +3515,11 @@ export async function housingChecks({ ok, world }) {
     ok('...a smooth turn is an arc of one bridge-width that cuts both runs back by exactly its tangent, and still builds',
       linkWhy(Hm, smoothU, env) === null && GS.turns.every((T) => Math.abs(T.theta - Math.PI / 2) < 0.1 && Math.abs(T.t - GS.w * Math.tan(T.theta / 2)) < 1e-9)
       && Math.abs(GS.runs[0].len + GS.turns[0].t - (G.runs[0].len + G.turns[0].t)) < 1e-9, `${GS.turns.map((T) => (T.theta * 180 / Math.PI).toFixed(1))}° ${linkWhy(Hm, smoothU, env)}`);
+    /* Doubling back through the dojo, square-cornered — six turns, which the
+       old cap of three could not even express. (The old test reversed 180°
+       twice, and a turn that sharp now trims its runs back by hw * tan(θ/2)
+       and is refused as too tight first, which is also true.) */
+    const THROUGH = [{ x: 13, z: 0 }, { x: 13, z: 5 }, { x: -3, z: 5 }, { x: -3, z: 12 }, { x: 14, z: 12 }, { x: 14, z: 0 }];
     const base = H.linkPrice('plank');
     ok('each turn adds a quarter of the price, and each smooth one a quarter more',
       TURN_PRICE === 0.25 && H.linkPrice('plank', LU) === Math.round(base * 1.5) && H.linkPrice('plank', smoothU) === Math.round(base * 2)
@@ -3494,8 +3527,8 @@ export async function housingChecks({ ok, world }) {
     ok('...a turn too near its door, off the island, or doubling back through a house is refused out loud',
       /too tight/.test(linkWhy(Hm, { ...Lu, via: [{ x: viaU[0].x, z: endAt(Hm, Lu.a, env.gyAt).z - 0.4 }, viaU[1]] }, env) ?? '')
       && /off the edge/.test(linkWhy(Hm, { ...Lu, via: [viaU[0], { x: 0, z: -80 }] }, env) ?? '')
-      && /straight through/.test(linkWhy(Hm, { ...Ls, via: [{ x: 11, z: 2 }, { x: -2, z: 2 }, { x: 14, z: 2 }] }, env) ?? ''),
-      linkWhy(Hm, { ...Ls, via: [{ x: 11, z: 2 }, { x: -2, z: 2 }, { x: 14, z: 2 }] }, env));
+      && /straight through/.test(linkWhy(Hm, { ...Ls, via: THROUGH }, env) ?? ''),
+      linkWhy(Hm, { ...Ls, via: THROUGH }, env));
     // the lowest deck over it is what a thing has to fit under; at a turn that is the level landing, or a run sloping away below it
     const under = overStrip(G, G.turns[1].x, G.turns[1].z, 0.5);
     ok('...and a thing under a turn is in its way the same as under a run, and one far off is not',
@@ -3565,7 +3598,7 @@ export async function housingChecks({ ok, world }) {
     };
     walk(LU, 'sharp-cornered');
     walk(smoothU, 'smooth');
-    // THE CARD: RIDE for two turns, the doors, each turn placed, the price with them
+    // THE CARD: the doors, RIGHT twice for two turns, each turn placed, "are you sure?", the price with them
     {
       const Cd = game.housingCards;
       const touch0 = game.touchUI;
@@ -3579,21 +3612,34 @@ export async function housingChecks({ ok, world }) {
       Cd._push(0, top);
       Cd.placeHere(0, top);           // the first door
       top.cur = { ...Lu.b }; top.floor = 0;
-      H.builder.linkTurns(0, top); H.builder.linkTurns(0, top);
+      Cd.placeHere(0, top);           // the other door: how many turns?
+      const counting = top.counting === true;
+      H.builder.linkCount(0, top, -1);    // already none: refused out loud, not wrapped round
+      const floor = toasts.at(-1)?.[1] ?? '';
+      H.builder.linkCount(0, top, 1); H.builder.linkCount(0, top, 1);
       const said = toasts.at(-1)?.[1] ?? '';
       const V1 = Cd._view(0);
-      Cd.placeHere(0, top);           // the other door: now the turns
+      Cd.placeHere(0, top);           // now the turns
       const placing = top.vk === 0 && top.via?.length === 2;
       H.builder.turnSmooth(0, top);
       Cd.placeHere(0, top);           // turn 1 done
       const V2 = Cd._view(0);
       const before = kid.score;
-      Cd.placeHere(0, top);           // turn 2: builds
+      Cd.placeHere(0, top);           // turn 2: are you sure?
+      const ask = Cd._top(0);
+      const VA = Cd._view(0);
+      const unbuilt = Hm.links.length === 0 && kid.score === before;
+      VA.rows[0].go();                // NO: back to the bridge, nothing built
+      const kept = Cd._top(0) === top && Hm.links.length === 0;
+      Cd.placeHere(0, top);
+      Cd._view(0).rows[1].go();       // YES
       const row = Hm.links.at(-1);
-      ok('the bridge card: RIDE sets two turns and says what they cost, JUMP hands her each corner, and the last JUMP builds it at the turned price',
-        /2 turns/.test(said) && /PLACE THE TURNS/.test(V1.rows[0].title) && placing && /BUILD IT/.test(V2.rows[0].title)
-        && row?.via?.length === 2 && row.via[0].smooth === true && !row.via[1].smooth && before - kid.score === Math.round(base * 1.75) && row.paid === before - kid.score,
-        `${said} | ${V1.rows[0].title} | ${V2.rows[0].title} | paid ${row?.paid}`);
+      ok('the bridge card: the doors, LEFT/RIGHT for the turns (stopping at none, out loud), JUMP hands her each corner, the last JUMP asks "are you sure?" with NO first, and YES builds it at the turned price',
+        counting && /straight bridge/i.test(floor) && /2 turns/.test(said) && /PLACE THE TURNS/.test(V1.rows[0].title) && placing && /BUILD IT/.test(V2.rows[0].title)
+        && ask?.v === 'linkconfirm' && /are you sure/i.test(VA.body) && /^NO/.test(VA.rows[0].title) && /^YES/.test(VA.rows[1].title) && unbuilt && kept
+        && row?.via?.length === 2 && row.via[0].smooth === true && !row.via[1].smooth && before - kid.score === Math.round(base * 1.75) && row.paid === before - kid.score
+        && Cd._top(0)?.v !== 'build',
+        `${floor} | ${said} | ${V1.rows[0].title} | ${V2.rows[0].title} | ${ask?.v} | paid ${row?.paid}`);
       Cd.st.delete(0);
       game.touchUI = touch0;
       game.players = [];
@@ -3654,6 +3700,248 @@ export async function housingChecks({ ok, world }) {
     const C = KENDO_CEREMONY_H;
     ok('kneeling is shorter than reaching, reaching than bowing, bowing than standing',
       C.seizaPose < C.reachPose && C.reachPose < C.reiPose && C.reiPose < 1, JSON.stringify(C));
+  }
+
+  /* "SOME FIXES", Oct 2026 — the beds, the roofs, the knock, the sliding
+     door, the doors the house hides, the pond that moves and the drill's
+     lasers. Each through the real thing it is about: the bed bounce is a
+     REAL Player falling under real gravity onto a real futon, because the
+     first version of it was cancelled on the same frame by Player's own
+     ground test and a fake kitten would have bounced beautifully. */
+  {
+    const I = H.isles[3];
+    const hud = { sfx: (n) => hud.heard.push(n), heard: [] };
+    const idle = { mx: 0, my: 0, down: () => false, pressed: () => false };
+    const bounce = (kind, gx, gz) => {
+      const Hb = newHome(I.site.id, kind, ['Ember']);
+      const room = HOUSE_BY_ID[kind].rooms[0];
+      Hb.rooms = { [room.id]: { type: 'living', items: [{ id: 'futon', gx, gz, rot: 0 }, { id: 'kotatsu', gx: 3, gz: 0, rot: 0 }] } };
+      H.store.homes[I.site.id] = Hb;
+      I.setHome(Hb, null);
+      const m = I.itemMeshes.get(`r:${room.id}:0`);
+      const p = new Player({ texture: new THREE.Texture(), index: 0, spawn: new THREE.Vector3(m.position.x, m.position.y + 2, m.position.z), cols: 8, rows: 4, mirror: false });
+      hud.heard = [];
+      const peaks = [];
+      let last = p.position.y, rising = false;
+      for (let f = 0; f < 60 * 12; f++) {
+        p.update(1 / 60, idle, world, [], hud);
+        if (p.position.y < last && rising) peaks.push(last - m.position.y);
+        rising = p.position.y > last;
+        last = p.position.y;
+      }
+      return { I, room, m, p, peaks, hs: I.houseOf('main'), count: (n) => hud.heard.filter((s) => s === n).length };
+    };
+    const decks = () => I.decks.filter((d) => d.furn);
+    /* LOW FURNITURE IS A FLOOR. "Furniture that isn't too tall (bed,
+       table) should be jumpable onto": the futon and the kotatsu get a deck
+       on their measured tops, and only the futon is a bed. */
+    const mk = bounce('minka', 0, 0);
+    const fd = decks();
+    ok('low furniture is stood on: the futon and the kotatsu each get a deck on their tops, and only the futon bounces',
+      fd.length === 2 && fd.find((d) => d.furn === 'futon')?.bed === true && fd.find((d) => d.furn === 'kotatsu')?.bed === false
+      && fd.every((d) => d.step <= 0.2 && d.y - mk.hs.shell.floorY[0] >= 0.3),
+      fd.map((d) => `${d.furn}:${(d.y - mk.hs.shell.floorY[0]).toFixed(2)}${d.bed ? ' bed' : ''}`).join(' '));
+    /* THE BED BOUNCES. "bounces her up and down quickly; she hits her head
+       on the ceiling and falls back down. After more than 6 bounces she
+       goes through the ceiling ... or through the roof and lands on top of
+       it." Six bonks, then the seventh bounce stands her on the roof. */
+    const roofUnder = I.heightAt(mk.p.position.x, mk.p.position.z, mk.p.position.y + 0.1);
+    ok('a futon bounces her into the ceiling six times with a boing and a bonk, and the seventh puts her on the minka\'s roof',
+      mk.count('boing') === 7 && mk.count('bonk') === 6 && mk.peaks.length >= 6
+      && mk.peaks.slice(0, 6).every((y) => Math.abs(y - mk.peaks[0]) < 0.05)
+      && mk.p.onGround && !!roofUnder?.deck?.roof && I.houseAt(mk.p.position.x, mk.p.position.y + 0.1, mk.p.position.z) == null,
+      `boing ${mk.count('boing')} bonk ${mk.count('bonk')} peaks ${mk.peaks.slice(0, 7).map((y) => y.toFixed(2))} on ${roofUnder?.deck?.roof ?? 'not a roof'}`);
+    ok('...a head that reaches the ceiling, not one that stops short of it',
+      Math.abs(mk.peaks[0] + mk.m.position.y + HEAD_H - (mk.hs.gy + mk.hs.shell.floorY[0] + FLOOR_H - 0.12)) < 0.05,
+      `head at ${(mk.peaks[0] + mk.m.position.y + HEAD_H - mk.hs.gy).toFixed(2)}, lid ${(mk.hs.shell.floorY[0] + FLOOR_H - 0.12).toFixed(2)}`);
+    // the castle: through the ceiling onto the floor above, on its slab
+    const cs = bounce('castle', 5, 4);
+    const at = I.houseAt(cs.p.position.x, cs.p.position.y + 0.1, cs.p.position.z);
+    ok('...and in a castle the seventh goes through the ceiling onto the floor above',
+      cs.count('bonk') === 6 && cs.p.onGround && at?.f === 1
+      && Math.abs(cs.p.position.y - (cs.hs.gy + cs.hs.shell.floorY[1])) < 0.05,
+      `bonk ${cs.count('bonk')} floor ${at?.f} at ${(cs.p.position.y - cs.hs.gy).toFixed(2)}`);
+    /* THE ROOF AND THE EAVES. "Roofs and eaves need collision, and her
+       head should bonk on the eaves." `roofY` is the tiles' height at a
+       point; a kitten under an eave has a ceiling there, one on it a floor. */
+    const S = cs.hs.shell;
+    const band = S.eaves.find((E) => E.band && E.f === 0);
+    const [hw0] = S.half[0];
+    const ex = hw0 + (band.ox - hw0) * 0.5;
+    const ey = roofY(band, ex, 0);
+    const ew = cs.hs.local(ex, 0);
+    const under = I.ceilingAt(ew.x, cs.hs.gy + ey - 2.6, ew.z);
+    const onTop = I.heightAt(ew.x, ew.z, cs.hs.gy + ey + 0.5);
+    ok('an eave is a ceiling from under it and a floor from on top of it',
+      ey != null && under != null && Math.abs(under - (cs.hs.gy + ey - 0.3)) < 1e-6
+      && onTop != null && Math.abs(onTop.y - (cs.hs.gy + ey)) < 0.35,
+      `eave at ${ey?.toFixed(2)}, ceiling ${under != null ? (under - cs.hs.gy).toFixed(2) : 'none'}, floor ${onTop ? (onTop.y - cs.hs.gy).toFixed(2) : 'none'}`);
+    const c0 = cs.hs.local(0, 0);
+    const lidTop = cs.hs.gy + S.floorY[S.floorY.length - 1] + FLOOR_H;
+    ok('...and a kitten on a roof is not inside the storey under it, while one under its lid is',
+      I.houseAt(c0.x, lidTop + 0.5, c0.z) == null && I.houseAt(c0.x, lidTop - 1, c0.z)?.f === S.floorY.length - 1);
+
+    /* THE KNOCK. "A non-owner gets KNOCK in front of a closed door ... 3
+       knocks send the owner a prompt; if she accepts, the door opens for the
+       visitor ... once every 30s ... A player inside can always leave." */
+    const owner = fakePlayer(0);
+    const vis = fakePlayer(1);
+    const vis2 = fakePlayer(2);
+    game.players = [owner, vis, vis2];
+    const home = I.home;
+    home.open = { Ember: true };   // the island is open; the HOUSE is what she knocks at
+    const hs = I.houseOf('main');
+    const front = hs.doors.find((d) => d.front);
+    const outside = hs.local(0, hs.shell.door.z + 1.5);
+    for (const q of [vis, vis2]) q.position.set(outside.x, front.y + 0.05, outside.z);
+    ok('a front door does not open for a visitor, and does for an owner',
+      !H.opensFor(I, vis, hs, front) && H.opensFor(I, owner, hs, front));
+    const C = game.housingCards;
+    C.st.delete(0);
+    H.time = 100;
+    const n0 = toasts.length;
+    H.knock(vis, I, hs);
+    H.knock(vis, I, hs);
+    const asked0 = C._top(0)?.v === 'knock';
+    H.knock(vis, I, hs);
+    const card = C._top(0);
+    ok('two knocks are only knocks; the third puts a card in front of the owner',
+      !asked0 && card?.v === 'knock' && card.visitor === 1 && toasts.slice(n0).some(([i, t]) => i === 0 && /knocking at your door/.test(t)),
+      toasts.slice(n0).map((t) => t[1]).join(' | '));
+    const v = C._view(0);
+    ok('...and its first row is NO, and nothing on it is primary', /^NO/.test(v.rows[0].title) && /^YES, LET FROST IN/.test(v.rows[1].title)
+      && !v.rows.some((r) => r.primary), v.rows.map((r) => r.title).join(' / '));
+    v.rows[1].go();
+    ok('...YES lets her in: the door opens for her this game, and she is told', H.opensFor(I, vis, hs, front)
+      && toasts.some(([i, t]) => i === 1 && /let you in/.test(t)));
+    C.st.delete(0);
+    for (let k = 0; k < 3; k++) H.knock(vis2, I, hs);
+    C.closed(0);   // the card shut unanswered
+    const n1 = toasts.length;
+    H.knock(vis2, I, hs);
+    ok('...a card closed unanswered is a NO, and a NO means wait 30 seconds before the next knock counts',
+      !H.opensFor(I, vis2, hs, front) && toasts.slice(n1).some(([i, t]) => i === 2 && /Wait 30 more seconds/.test(t)),
+      toasts.slice(n1).map((t) => t[1]).join(' | '));
+    H.time += KNOCK.wait + 1;
+    C.st.delete(0);
+    for (let k = 0; k < 3; k++) H.knock(vis2, I, hs);
+    ok('...and after the wait she can ask again', C._top(0)?.v === 'knock' && C._top(0).visitor === 2);
+    C._top(0).answered = true;
+    H.answerKnock(owner, C._top(0), false);
+    C.st.delete(0);
+    // a shut door is a wall to her: walk into it from outside and be stopped, and told
+    const inner = hs.local(0, hs.shell.door.z - 0.6);
+    vis2.position.set(inner.x, front.y + 0.05, inner.z);
+    front.k = 0;
+    const seg = doorSeg(hs, front);
+    const side = (q) => Math.sign((seg.bx - seg.ax) * (q.position.z - seg.az) - (seg.bz - seg.az) * (q.position.x - seg.ax));
+    const outSide = side({ position: new THREE.Vector3(outside.x, 0, outside.z) });
+    vis2.position.set((seg.ax + seg.bx) / 2, front.y + 0.05, (seg.az + seg.bz) / 2);
+    const mid = vis2.position.clone();
+    const towardOut = new THREE.Vector3(outside.x - mid.x, 0, outside.z - mid.z).normalize();
+    vis2.position.addScaledVector(towardOut, 0.2);
+    const n2 = toasts.length;
+    H.wall(vis2, outside.x, outside.z, null);
+    ok('...a SHUT door is a wall to a visitor: walking into the doorway she is pushed back out, and told to knock',
+      side(vis2) === outSide && Math.hypot(vis2.position.x - mid.x, vis2.position.z - mid.z) >= vis2.radius - 0.05
+      && toasts.slice(n2).some(([i, t]) => i === 2 && /KNOCK, and wait/.test(t)),
+      `${Math.hypot(vis2.position.x - mid.x, vis2.position.z - mid.z).toFixed(2)} from the door`);
+    // somebody inside (shut in when the door closed behind her) always gets out
+    const deep = hs.local(0, 0);
+    vis2.position.set(deep.x, hs.gy + S.floorY[0] + 0.05, deep.z);
+    ok('...and a girl already INSIDE always gets out: the door opens for her', H.opensFor(I, vis2, hs, front));
+    front.pinned = true;
+    vis2.position.set(outside.x, front.y + 0.05, outside.z);
+    ok('...and a door the owner left open lets anybody in', H.opensFor(I, vis2, hs, front));
+    front.pinned = false;
+    ok('the KNOCK prompt is the outside of a door, never the inside', /door: own \? 'MY HOME' : null/.test(readFileSync(new URL('../../src/systems/housing/housing.js', import.meta.url), 'utf8')));
+
+    /* THE DOOR THE HOUSE HIDES. "A door the building hides from the camera
+       gets an x-ray highlight at about 25% strength, no bigger than the door
+       path." Her at the front door, the camera round the back. */
+    const cam = new THREE.PerspectiveCamera();
+    const back = hs.local(0, -S.half[0][1] - 30);
+    cam.position.set(back.x, hs.gy + 14, back.z);
+    owner.position.set(outside.x, front.y + 0.05, outside.z);
+    game.players = [owner];
+    H.aimView(cam, [0], false);
+    const XU = I.wallMat.userData.xray;
+    const slot = [...Array(XRAY_SLOTS).keys()].find((s) => XU.uCutOn.value[s] === 1 && XU.uCutK.value[s] < 1);
+    ok('a door the house hides from the camera gets a faint x-ray of its own, door-sized',
+      slot != null && Math.abs(XU.uCutK.value[slot] - DOOR_XRAY.k) < 1e-6 && XU.uCutScale.value[slot] <= (front.w / 2) / I.xrayR + 1e-6,
+      slot != null ? `k ${XU.uCutK.value[slot]} scale ${XU.uCutScale.value[slot].toFixed(2)}` : 'no door slot');
+    const frontCam = hs.local(0, S.half[0][1] + 40);
+    cam.position.set(frontCam.x, hs.gy + 14, frontCam.z);
+    H.aimView(cam, [0], false);
+    ok('...and a door facing the camera gets none', ![...Array(XRAY_SLOTS).keys()].some((s) => XU.uCutOn.value[s] === 1 && XU.uCutK.value[s] < 1));
+
+    /* THE SLIDING DOOR. "Sliding doors, buildable like windows, leading
+       outside": a wall thing, on the ground floor only, that cuts a doorway
+       and hangs a door in it that the knock rules keep. */
+    /* (a castle's ground room stops short of its outer walls and has no wall
+       slots at all — no windows either — so the door is tried on a minka's
+       ground floor, and refused on a castle's first) */
+    const sdHome = newHome(I.site.id, 'minka', ['Ember']);
+    sdHome.open = { Ember: true };
+    H.store.homes[I.site.id] = sdHome;
+    const room0 = HOUSE_BY_ID.minka.rooms.find((r) => r.floor === 0);
+    const roomUp = HOUSE_BY_ID.castle.rooms.find((r) => r.floor === 1 && (r.hk ?? 'main') === 'main');
+    const sl0 = wallSlots('minka', room0);
+    const slU = wallSlots('castle', roomUp);
+    ok('a sliding door goes on a ground-floor wall, and upstairs is refused with a reason',
+      buildWhy(sdHome, { kind: 'wall', room: room0.id, id: 'slidedoor', sel: -1, side: sl0[0].side, k: sl0[0].k }) === null
+      && /ground floor/.test(buildWhy(home, { kind: 'wall', room: roomUp.id, id: 'slidedoor', sel: -1, side: slU[0].side, k: slU[0].k }) ?? ''));
+    commitBuild(sdHome, { kind: 'wall', room: room0.id, id: 'slidedoor', sel: -1, side: sl0[0].side, k: sl0[0].k });
+    I.setHome(sdHome, null);
+    const hs2 = I.houseOf('main');
+    const sd = hs2.doors.find((d) => d.key.startsWith('S'));
+    ok('...it is a real doorway with a door in it, on that wall', !!sd && sd.floor === 0 && sd.side === sl0[0].side && !sd.front && sd.w <= SLIDE_W,
+      sd ? `${sd.key} w ${sd.w}` : 'no door');
+    ok('...and the knock rules keep it: shut to a stranger, open to the sister let in',
+      !!sd && !H.opensFor(I, vis2, hs2, sd) && H.opensFor(I, vis, hs2, sd));
+
+    /* THE POND THAT MOVES. "Moving the koi pond resets the fish waypoints
+       to the new spot." */
+    H.store.homes[I.site.id] = home;
+    home.outdoor = (home.outdoor ?? []).filter((q) => q.id !== 'koipond');
+    const spot = firstYardSpot(home, ITEM_BY_ID.koipond, 50);
+    const pond = addOutdoor(home, 'koipond', spot.x, spot.z);
+    I.setHome(home, null);
+    H.angling.sync();
+    const fish = H.angling.ponds.get(I.site.id)?.fish ?? [];
+    for (const f of fish) f.to = { x: 999, z: 999 };
+    const was = fish.map((f) => [f.x, f.z]);
+    pond.x += 1.5;
+    I.setHome(home, null);
+    H.angling.sync();
+    const now = H.angling.ponds.get(I.site.id)?.fish ?? [];
+    const P = I.placeOf('koipond');
+    ok('a moved koi pond takes its fish with it, and forgets where they were swimming to',
+      fish.length > 0 && now.length === fish.length && now.every((f, k) => f === fish[k] && f.to?.x !== 999
+        && Math.hypot(f.x - P.x, f.z - P.z) < ITEM_BY_ID.koipond.r) && was.length === now.length,
+      now.map((f) => Math.hypot(f.x - P.x, f.z - P.z).toFixed(1)).join(','));
+    home.outdoor = home.outdoor.filter((q) => q !== pond);
+    I.setHome(home, null);
+    H.angling.sync();
+    game.players = [];
+  }
+  /* THE LASERS. "The lasers draw in front of the player UI ... too bright:
+     make them more red, less pink or white, and dimmer ... give the lasers
+     and the pickups shadows ... play a sound when a goal item is picked up." */
+  {
+    const r = (LASER_COLOUR >> 16) & 255, g = (LASER_COLOUR >> 8) & 255, b = LASER_COLOUR & 255;
+    ok('the drill\'s lasers draw under her UI (20-25), and are red, not pink',
+      LASER_ORDER < 20 && LASER_ORDER > 15 && r > 180 && g < 60 && b < 60, `order ${LASER_ORDER} rgb ${r},${g},${b}`);
+    const parent = new THREE.Group();
+    const star = new HoloStar({ parent, x: 0, y: 3, z: 0, floorY: 0 });
+    const low = new HoloStar({ parent, x: 0, y: 0.5, z: 0, floorY: 0 });
+    ok('...a star has a shadow on the floor under it, smaller and fainter the higher it floats',
+      !!star.shadow && Math.abs(star.shadow.position.y - 0.04) < 1e-6 && star.shadow.scale.x < low.shadow.scale.x
+      && star.shadow.material.opacity < low.shadow.material.opacity);
+    star._take({ index: 0 });
+    ok('...which goes when the star is taken', !star.shadow.visible);
+    const dsrc = readFileSync(new URL('../../src/systems/dream/drill.js', import.meta.url), 'utf8');
+    ok('...and taking one of hers plays a sound', /if \(who === this\.p\) this\.dream\.game\.sfx\?\.\('starfound'\)/.test(dsrc));
   }
 
   localStorage.removeItem(HOME_KEY);
