@@ -525,6 +525,27 @@ export async function housingChecks({ ok, world }) {
     at(own, G0);
     /* "When it says 'Close the gates', should say 'Close the gates for visitors'" */
     ok('an owner at the gate is offered it', H._spotFor(own)?.act === 'gates' && /CLOSE THE GATES FOR VISITORS/.test(H.prompt(own, 'E') ?? ''));
+    /* THE CALLOUT NEVER THROWS, for an owner or a visitor, at any spot. Its
+       words are one object literal, so every entry is evaluated at every spot;
+       a `s.door.hs` in one of them threw at Roshi and at every doorless spot
+       for a visitor, once per frame, and froze the game (Richard, Oct 2026). */
+    {
+      const vis = fakePlayer(2), real = H._spotFor;
+      const spots = [{ act: 'roshi' }, { act: 'jukebox', k: 0, home: Hs }, { act: 'gates', k: 0, home: Hs },
+        ...H.isles.flatMap((I) => (I.home ? I.spots.map((s) => ({ ...s, isle: I, home: I.home })) : []))];
+      // a bridge doorway's knock, which this island has no bridge for: the front door's, relabelled
+      const fd = spots.find((s) => s.act === 'frontdoor');
+      if (fd) spots.push({ ...fd, act: 'portknock' }, { ...fd, act: 'portdoor' });
+      const threw = [];
+      for (const s of spots) {
+        H._spotFor = () => s;
+        for (const p of [own, vis]) { try { H.prompt(p, 'E'); } catch (e) { threw.push(`${s.act} (${p === own ? 'owner' : 'visitor'}): ${e.message}`); } }
+      }
+      H._spotFor = real;
+      ok('...and no spot\'s callout throws, for an owner or a visitor — Roshi, the gates, every door and seat',
+        threw.length === 0 && spots.some((s) => s.act === 'frontdoor') && spots.some((s) => s.act === 'portknock'),
+        threw.length ? threw.slice(0, 4).join(' · ') : `${spots.length} spots, acts ${[...new Set(spots.map((s) => s.act))].join(' ')}`);
+    }
     B.update(DOOR_SWING * 2, 0, [false, false]);   // the unlock above has swung them open by now
     const wasLocked = H.locked(Hs);
     H.interact(own);

@@ -2016,15 +2016,21 @@ export class Housing {
     const s = this._spotFor(p);
     if (!s) return null;
     const own = s.home && s.home.owners.includes(p.style.name);
+    /* LAZY, because `words` below is an object literal and EVERY entry in it
+       is evaluated, whichever spot she is at. Written inline, this read
+       `s.door.hs` at Roshi, at a gate, at a sister's kotatsu — any spot that
+       has no door — and threw every frame for a visitor: the game froze, the
+       menus still worked (Richard, Oct 2026, near Roshi and behind a castle). */
+    const shut = () => !!s.door && !this.opensFor(s.isle, p, s.door.hs, s.door);
     const words = {
       roshi: 'TALK TO ROSHI',
       jukebox: own ? 'PICK THE MUSIC' : 'LISTEN',
       // inside the door: the card is hers; a visitor is behind the door, where nobody knocks
       door: own ? 'MY HOME' : null,
-      frontdoor: !own ? (!this.allowed(p, s.home) || !this.opensFor(s.isle, p, s.door.hs, s.door) ? 'KNOCK' : null)
+      frontdoor: s.act !== 'frontdoor' ? null : !own ? (!this.allowed(p, s.home) || shut() ? 'KNOCK' : null)
         : s.door?.pinned ? 'CLOSE THE DOOR' : 'KEEP THE DOOR OPEN',
       portdoor: own ? (s.door?.pinned ? 'CLOSE THE DOOR' : 'KEEP THE DOOR OPEN') : null,
-      portknock: !own && !this.opensFor(s.isle, p, s.door.hs, s.door) ? 'KNOCK' : null,
+      portknock: s.act === 'portknock' && !own && shut() ? 'KNOCK' : null,
       // the window asks what she wants (cards.js `_v_window`)
       window: 'THE WINDOW',
       koi: 'THE KOI POND',
