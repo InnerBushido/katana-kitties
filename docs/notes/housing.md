@@ -112,6 +112,29 @@ slide, so she skids out on her own feet. The crates have walls now.
 - the crates stop her;
 - every treehouse mesh is on an x-ray material.
 
+**The slide is asked for** (`sliderider.js`, Oct 2026). Richard: "a menu
+appears and the player can choose 'Ride down in normal view' and 'Ride down in
+First Person View'". Standing on the roof by the gap in the rail opens a card,
+NO first, once per visit. Either ride sets `Player.autoWalk` — a point lined up
+behind the mouth on the chute's axis, the mouth, then down it — so she walks in
+on her own, and `_slide` takes her from there exactly as it takes somebody who
+walks in by hand (which still works, and closes the card).
+- **What blocked her** was the chute's lip colliders, `S.w/2 + 0.06` off the
+  centre line: inside her own radius (0.75, `PLAYER_RADIUS`, plus `_segPush`'s
+  0.18), so both lips pushed her out and the mouth was a wall. They stand at
+  `LIP_WALL` now; the drawn lips did not move.
+- **Normal view** is a chase lens (`RIDE_CAM`, `Player._applyRideCam`) behind
+  her on the line she is travelling, with its OWN smoothed heading — a
+  `focus` yaw lerps from `CAM_YAW` and whipped a full turn each time the spiral
+  crossed the half-turn opposite it.
+- **First person** puts the lens at her eyes and looks `SLIDE_LOOK` (4m) down
+  the path (`aheadOnPath`, forward-only, because the helix lies over itself),
+  at eye height over it. Along her heading it stared out over the rail at the
+  tangent; easing the look POINT trailed it under her (57°); aiming a hand
+  over the path was 55°; at eye height the steepest is 42°. Past the end it
+  runs on level. She is hidden from HER pane only (`hiddenFrom`, per pane in
+  `_faceAll`) and stays hidden until the lens has eased out of her head.
+
 **The holodeck** is the Dream Dojo's own way in, not a copy:
 `DreamDojo.enterFrom(p, spot)` stands her at her tube, suits her up if she is
 not already (the poof) and rises her in. `Housing._holoHome` puts her back in
@@ -212,7 +235,6 @@ Each one degrades: delete the file and the game draws the stand-in.
 | **Taiko, the cups game, volleyball** | a line and a sound | the mini-games |
 | **The Bushido Blade forest** | shown, locked, "later" | Richard's later feature |
 | **Boosts for kotodama abilities** | not done: the animals boost JUMP HEIGHT, JUMP DISTANCE and SPRINT only | Richard also floated boosting the panda or her kotodama powers; it is a `petBoost` field plus the one line that reads it |
-| **Seiza with a tea bowl** | the tea ceremony kneels in the PRAYER drawing and sips in the MEAL's (`_tea`); the kendo seiza is in armour | a kneeling-with-a-bowl pose, all four kittens |
 | **Windows open onto a gap, not glass** | the opening and two sliding panels | nothing needed unless a pane of glass is wanted |
 
 ## Boons — what home is worth in the ring
@@ -572,9 +594,22 @@ in `out/props-raw/` (gitignored — keep them). The poses were 13 more
   she walks UNDER, so without them she stood in the floor up to her chest.
   It is a third bigger (h 8), has its own smaller x-ray (`teaMat`), and a
   camera (`teaShotFor`, in `groupShot` beside the door's) that frames the
-  room from the street at 10 back. KNEEL FOR TEA: whoever kneels first starts
+  room from the street at `TEA_SHOT` — 14 back, aimed 1.8 over the tatami,
+  same angle. It was 10 and 1.0, and "the user can't read the text above the
+  players head": the check projects the callout over all four seats through
+  her real lens in a tall half pane. KNEEL FOR TEA: whoever kneels first starts
   it and the music; the others have six seconds to kneel too; then the bowls
   go round and everybody bows. 26 seconds, one kitten or four.
+- **The ceremony is animated** (Oct 2026: "little or no bouncing ... stays in
+  seiza ... drinking from the cup 5 - 10x's ... 32 would be good"). Each
+  kitten has a 32-frame sheet (`TEA_SHEET`, 8x4, cut from a video —
+  [art.md](art.md)): turn to face you, lift the bowl, sip, set it down, pray.
+  `teaFrameAt` is the pure clock; the sip segment plays forward and back
+  `teaSips()` times (6), staggered 0.35s a seat, and turns back side-on for
+  the bow. While her drawing holds the bowl the 3D one is hidden; a kitten
+  with no sheet stays in her prayer and the bowl rises to her. No sway, no
+  bob. Sounds: whisking while they kneel, a sip on each mouth, a clink as
+  the bowl is lifted and set down, a rin at the bow (`audio.js`).
 
 ## Bridges with turns — Oct 2026
 

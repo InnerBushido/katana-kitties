@@ -444,7 +444,12 @@ export class Billboard extends THREE.Object3D {
       cols = 4, rows = 1, width = 1.6, height = 1.6,
       artFacesRight = true, mirror = true, footOffset = 0, footX = 0,
       dirSense = DIR_SENSE, rowSense = null,
+      /* FRAMES, not views: every cell is one moment of an animation drawn
+         from one side (the tea ceremony). `this.frame` picks the cell and
+         facing only decides the mirror, held once per turn like any sheet. */
+      anim = false,
     } = opts;
+    this.anim = anim;
 
     /** Per-sheet override for the cell ordering — see DIR_SENSE. */
     this.dirSense = dirSense;
@@ -576,6 +581,16 @@ export class Billboard extends THREE.Object3D {
 
     let idx;
     let flip = false;
+
+    if (this.anim) {
+      const s = Math.sin(rel);
+      if (Math.abs(s) > 0.12 || this._pointsRight === undefined) this._pointsRight = s > 0;
+      flip = this.mirror && (this.artFacesRight ? !this._pointsRight : this._pointsRight);
+      const n = this.cols * this.rows;
+      const f = Math.max(0, Math.min(n - 1, Math.floor(this.frame)));
+      this._setCell(f % this.cols, Math.floor(f / this.cols), flip);
+      return;
+    }
 
     if (this.mirror) {
       /* Half-turn atlas: cells cover facing-toward-camera round to

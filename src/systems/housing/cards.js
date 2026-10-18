@@ -1233,6 +1233,24 @@ export class HousingCards {
     };
   }
 
+  /**
+   * AT THE TOP OF THE SLIDE (sliderider.js). Richard: "Ride down in normal
+   * view" and "Ride down in First Person View". Staying is first and is the
+   * one that does nothing, like every question here.
+   */
+  _v_slide(index, p) {
+    const go = (fpv) => () => (this.H.slides.start(p, fpv) ? 'close' : null);
+    return {
+      head: 'THE SLIDE',
+      body: `<div class="hs-note">${esc('All the way down, round and round the pole! How do you want to ride it?')}</div>`,
+      rows: [
+        { title: 'NO, STAY UP HERE', go: () => 'close' },
+        { title: 'RIDE DOWN IN NORMAL VIEW', go: go(false) },
+        { title: 'RIDE DOWN IN FIRST PERSON VIEW', go: go(true) },
+      ],
+    };
+  }
+
   /** A new house going up (`placeHere`): nothing to choose, only to watch. */
   _v_raising(index, p, top) {
     const def = HOUSE_BY_ID[top.id];

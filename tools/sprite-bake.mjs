@@ -68,6 +68,7 @@ import { mkdirSync, writeFileSync, statSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { dirname } from 'node:path';
 import { readPNG, writePNG } from './png.mjs';
+import { TEA_SHEET } from '../src/systems/housing/teahouse.js';
 import {
   floodBackground, clearSealedPockets, chromaKey, CHROMA_MAGENTA,
 } from '../src/core/spritesheet.js';
@@ -258,6 +259,13 @@ const WORK = [
      girls of nine and under, and the water hides the rest anyway. */
   ...['ember', 'frost'].flatMap((s) => ['seiza', 'reach', 'rei', 'pray', 'bath', 'futon'].map((p) => (
     { file: `${s}_${p}.png`, out: `kittens/${s}/${p}.png`, to: [768, 768], chroma: true }))),
+  /* THE TEA CEREMONY, 32 frames 8 x 4 (tools/capture/tea-sheet.mjs, which
+     cuts them out of a video of her). Shipped at TEA_SHEET.ship a cell, 192:
+     at 256 each sheet was 1.6MB, over world-check's 1.5MB line for a first
+     load, and she is ~150px tall on screen at the tea shot, so 192 draws the
+     same. Read from TEA_SHEET so the check and the bake cannot disagree. */
+  ...['ember', 'frost'].filter((s) => existsSync(`${MASTERS}/${s}_tea.png`)).map((s) => (
+    { file: `${s}_tea.png`, out: `kittens/${s}/tea.png`, to: [TEA_SHEET.cols * TEA_SHEET.ship, TEA_SHEET.rows * TEA_SHEET.ship], chroma: true })),
   /* The chick's flutter frame, off `chick.png`; drawn facing right and
      MIRRORED in the master so it faces left like the rest of the pen. */
   { file: 'chick_fly.png', out: 'farm/chick_fly.png', to: [512, 512], chroma: true },

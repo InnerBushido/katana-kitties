@@ -90,6 +90,7 @@ import { Feats } from './systems/feats.js';
 import { Inspector } from './systems/inspector.js';
 import { Payne, PAYNE_CLIPS, PAYNE_TOWN } from './systems/payne.js';
 import { Housing } from './systems/housing/housing.js';
+import { TEA_SHEET } from './systems/housing/teahouse.js';
 import { DreamDojo } from './systems/dreamdojo.js';
 import { SIM } from './world/simworld.js';
 
@@ -1914,6 +1915,13 @@ class Game {
          the guard squashed/tipped in the kendo branch). */
       ...['ember', 'frost'].flatMap((s) => ['seiza', 'reach', 'rei', 'pray', 'bath', 'futon'].map((p) => (
         [`${s}_${p}`, `kittens/${s}/${p}.png`, false]))),
+      /* THE TEA CEREMONY: 32 frames, 8 x 4, one crop for all of them
+         (tools/capture/tea-sheet.mjs) — so `uniform`, and the loader takes
+         each cell whole instead of centring her on her own ink every frame.
+         1536 x 768 is its ship size (TEA_SHEET.ship); a missing file keeps
+         her in the prayer. */
+      ...['ember', 'frost'].map((s) => [`${s}_tea`, `kittens/${s}/tea.png`, false,
+        { views: TEA_SHEET.cols, rows: TEA_SHEET.rows, uniform: true, maxAtlas: 2048 }]),
       /* THE PEN'S ANIMALS (housing/farm.js). Side-on, facing LEFT. A missing
          one keeps its primitive body. */
       ['farm_chick', 'farm/chick.png', false],
@@ -2087,7 +2095,7 @@ class Game {
     /* THE HOME POSES, by style like the rest; `ref` is her own bless drawing,
        the yardstick the prayer is sized against (Player.setHomeArt). */
     this.homeArt = PLAYER_STYLE.map((s, i) => {
-      const pack = posePack(s, [['pray', 'pray'], ['bath', 'bath'], ['futon', 'futon']]);
+      const pack = posePack(s, [['pray', 'pray'], ['bath', 'bath'], ['futon', 'futon'], ['tea', 'tea']]);
       return pack && { ...pack, ref: this.blessArt?.[i] ?? null };
     });
 
@@ -12810,7 +12818,11 @@ class Game {
              through the glass, and it is hers (housing/activities.js
              `lookingOut`). Richard: "A player looking out of a window gets her
              own split-screen pane if she is sharing one." */
-          || this.housing?.activities?.lookingOut?.(p))
+          || this.housing?.activities?.lookingOut?.(p)
+          /* ...and a kitten riding the treehouse slide with a ride camera:
+             it is hers, in her head or chasing her round the pole
+             (housing/sliderider.js). */
+          || this.housing?.slides?.riding?.(p))
       ),
       prev: this._clusterOf,
       mergeIn: MERGE_IN,
@@ -13784,6 +13796,17 @@ class Game {
    *  hides his bubble from a lens that cannot see him (`DreamDojo.faceCamera`). */
   _faceAll(camera, members = null) {
     for (const p of this.players) {
+      /* FIRST PERSON DOWN THE SLIDE: out of HER lens and nobody else's
+         (sliderider.js `hiddenFrom`) — "if there is another player on the
+         island ... they see the player in their splitscreen, but on the
+         user's view riding the slide, they don't see the sprite". What the
+         group was is kept, so a scene that hid her stays in charge of her. */
+      const hide = !!this.housing?.slides?.hiddenFrom?.(p, members);
+      if (hide || p._fpvHid) {
+        if (!p._fpvHid) p._fpvWas = p.group.visible;
+        p.group.visible = hide ? false : p._fpvWas;
+        p._fpvHid = hide;
+      }
       p.faceCamera(camera);
       p.panda?.faceCamera(camera);
       for (const o of p.orbs ?? []) o.faceCamera(camera);

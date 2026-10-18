@@ -60,6 +60,20 @@ const JUMP_V = 11.2;
    tops out at `max` — a little over a sprint, which is what makes it a ride
    rather than a ramp. */
 export const SLIDE_RIDE = { min: 6, accel: 18, max: 15 };
+/** Her walk to the slide's mouth when she asked to ride (sliderider.js): a calm walk, and "there" is this close. */
+export const AUTO_WALK = { speed: 4.5, reach: 0.25 };
+/**
+ * THE RIDE CAMERA (`rideCam`, sliderider.js), laid over the ordinary one.
+ * `fpv`: the lens at her eyes, `eye` up, looking `ahead` along the line she
+ * is travelling and `dip` down it. `chase`: `back` behind and `up` over her,
+ * aimed `lead` ahead — a third-person lens that swings round the pole with
+ * her. `turn` is how fast the heading it uses catches up with hers, `ease`
+ * how fast it blends in and out of the ordinary camera, `follow` how fast the
+ * chase lens catches up with where it should be.
+ */
+const _rcWant = new THREE.Vector3();
+const _rcLook = new THREE.Vector3();
+export const RIDE_CAM = { eye: 1.55, ahead: 6, dip: 1.6, back: 6.5, up: 3.6, lead: 2.5, turn: 5, ease: 2.5, follow: 5 };
 /** How far above her feet her head meets a lidded deck (SimWorld.lidAt):
  *  the house's HEAD_H less a little, since a sim kitten is the plain one. */
 export const HEAD_ROOM = 2.2;
@@ -192,6 +206,8 @@ export const COMBAT = tune('COMBAT', {
  * its own clock, `immune`, longer than the move: the step is the dodge, the
  * immunity is what makes it one.
  */
+/** Her body, for every wall: Housing `_segPush` adds a 0.18 skin, so a gap has to be 1.86 wide. */
+export const PLAYER_RADIUS = 0.75;
 export const KENDO_DODGE = { dist: 2.2, t: 0.14, immune: 0.36, cool: 0.75 };
 /**
  * The kendo drawings' size against her own. Richard, Oct 2026: "The kendo
@@ -211,7 +227,13 @@ export const KENDO_CEREMONY_H = { seizaPose: 0.72, reachPose: 0.8, reiPose: 0.92
 export const HOME_BATH_H = 0.55;
 export const HOME_FUTON_H = 0.9;
 /** homePose -> [the drawing it needs, the old pose it wears without it]. */
-const HOME_FALLBACK = { pray: ['prayPose', 'bless'], bath: ['bathPose', 'eat'], futon: ['futonPose', 'hidden'] };
+const HOME_FALLBACK = { pray: ['prayPose', 'bless'], bath: ['bathPose', 'eat'], futon: ['futonPose', 'hidden'], tea: ['teaPose', 'bless'] };
+/* How tall she is in her tea sheet's cell: the ink's height over the cell's,
+   measured by tools/capture/tea-sheet.mjs (Ember 874/898, Frost 868/892). The
+   loader's `contentScale` on a `uniform` sheet is the CELL's, so this is what
+   turns it into her — and it is what sizes her seiza in the tea sheet to her
+   seiza in the prayer drawing, which is frame 0's twin. */
+export const TEA_INK = 0.973;
 export const BASE_REACH = 3.4;
 
 export const MAX_HP = COMBAT.maxHp;
@@ -502,7 +524,7 @@ export class Player {
      *  aboard without steering anything. See Player._updatePassenger. */
     this.rideAlong = null;
     this.score = 0;
-    this.radius = 0.75;
+    this.radius = PLAYER_RADIUS;
     this.height = height;
 
     this.attackTimer = 0;
@@ -1803,11 +1825,21 @@ export class Player {
    */
   setHomeArt(art) {
     const ref = art?.ref;
-    for (const [key, a] of [['prayPose', art?.pray], ['bathPose', art?.bath], ['futonPose', art?.futon]]) {
+    for (const [key, a] of [['prayPose', art?.pray], ['bathPose', art?.bath], ['futonPose', art?.futon], ['teaPose', art?.tea]]) {
       if (this[key]) { this.group.remove(this[key]); this[key] = null; }
       if (!a?.texture) continue;
       let quad;
-      if (key === 'prayPose') {
+      if (key === 'teaPose') {
+        /* As tall as her prayer: frame 0 IS the prayer drawing, animated, so
+           the cut from one to the other must not change her size. The
+           prayer's ink height is its quad times its contentScale. */
+        const P = art?.pray;
+        const prayQuad = P?.texture && ref?.contentArea && P.contentArea
+          ? this.height * BLESS_STRETCH / (ref.contentScale || 1) * (ref.contentArea / P.contentArea)
+          : this.height * 0.8 / (P?.contentScale || 1);
+        const inkH = prayQuad * (P?.contentScale || 0.8);
+        quad = inkH / ((a.contentScale || 1) * TEA_INK);
+      } else if (key === 'prayPose') {
         quad = ref?.contentArea && a.contentArea
           ? this.height * BLESS_STRETCH / (ref.contentScale || 1) * (ref.contentArea / a.contentArea)
           : this.height * 0.8 / (a.contentScale || 1);
@@ -1816,15 +1848,17 @@ export class Player {
       } else {
         quad = this.height * HOME_FUTON_H / (a.contentScale || 1);
       }
+      const anim = key === 'teaPose';
       this[key] = new Billboard(a.texture, {
-        cols: 1,
-        rows: 1,
+        cols: anim ? a.cols : 1,
+        rows: anim ? a.rows : 1,
+        anim,
         /* The futon turns too: both drawings (Ember's and Frost's, measured)
            lie with the head on the LEFT, so `artFacesRight: false` and she is
            mirrored when the pillow is on the screen's right. It was a fixed
            quad, head left from every side of the bed. */
         mirror: key !== 'bathPose',
-        artFacesRight: key === 'prayPose',
+        artFacesRight: key === 'prayPose' || anim,
         width: quad,
         height: quad,
         footOffset: (a.pad ?? 0) * quad,
@@ -2227,7 +2261,7 @@ export class Player {
        face it was a card seen at a slant — and, since `faceCamera` is also
        what picks the mirror side from `facing`, a kneeling kitten could face
        away from the opponent she was set facing. */
-    for (const k of ['seizaPose', 'reachPose', 'reiPose', 'kparryPose', 'prayPose', 'bathPose', 'futonPose']) {
+    for (const k of ['seizaPose', 'reachPose', 'reiPose', 'kparryPose', 'prayPose', 'bathPose', 'futonPose', 'teaPose']) {
       if (this[k]?.visible) this[k].faceCamera(camera);
     }
 
@@ -2337,6 +2371,9 @@ export class Player {
     /* ...AND RIDING THE TREEHOUSE SLIDE. The slide owns where she goes until
        the run at the bottom, where the stick is hers again. */
     if (this.slide) pad = FROZEN_PAD;
+    /* ...AND WALKING HERSELF TO IT, when she asked to ride (sliderider.js
+       `start`): `autoWalk` is a list of waypoints and the stick waits. */
+    if (this.autoWalk?.length) pad = FROZEN_PAD;
 
     /* NO POWER MOVE SURVIVES GETTING ON AN ANIMAL. `_stepSpecials` only runs
        inside the ground controller, so a ward popped a frame before mounting
@@ -3569,6 +3606,19 @@ export class Player {
       this.velocity.z = sl.z * v;
       this.facing = Math.atan2(sl.x, sl.z);
       this.slideT = 0.2;
+    } else if (this.autoWalk?.length) {
+      /* HER OWN FEET TAKE HER THERE. Set after the ground controller has
+         braked the dead stick, like the slide's speed above, so it is the
+         velocity she moves on and her walk cycle reads it like any other. */
+      const w = this.autoWalk[0];
+      const dx = w.x - this.position.x, dz = w.z - this.position.z, d = Math.hypot(dx, dz);
+      if (d < AUTO_WALK.reach) this.autoWalk.shift();
+      else {
+        const v = Math.min(AUTO_WALK.speed, d / Math.max(dt, 1e-3));
+        this.velocity.x = (dx / d) * v;
+        this.velocity.z = (dz / d) * v;
+        this.facing = Math.atan2(dx, dz);
+      }
     }
 
     // --- move + collide ---
@@ -6622,7 +6672,7 @@ export class Player {
        AFTER THE MEAL AND THE BLESSING, which they replace; `_homeAs` has
        already kept those two off when the drawing exists. The prayer sways a
        hair, the bath bobs on the water, the futon breathes. */
-    for (const [hp, key] of [['pray', 'prayPose'], ['bath', 'bathPose'], ['futon', 'futonPose']]) {
+    for (const [hp, key] of [['pray', 'prayPose'], ['bath', 'bathPose'], ['futon', 'futonPose'], ['tea', 'teaPose']]) {
       const pose = this[key];
       if (!pose) continue;
       const on = this.homePose === hp && !this.ko && !this.mount && !this.rideAlong;
@@ -6630,11 +6680,19 @@ export class Player {
       if (!on) continue;
       this.sprite.mesh.visible = false;
       const ph = this.idlePhase ?? 0;
-      if (hp === 'pray') {
+      if (hp === 'tea') {
+        /* NO SWAY AND NO BOB: the drawing does all the moving. Richard: "There
+           should be little or no bouncing animation while drinking tea, it
+           should be a calm and peaceful ceremony." `teaFrame` is set by the
+           ceremony's clock (activities.js `_updateTea`). */
+        pose.facing = this.facing;
+        pose.frame = this.teaFrame ?? 0;
+      } else if (hp === 'pray') {
         pose.facing = this.facing;
         pose.mesh.rotation.z = Math.sin(ph * 1.6) * 0.015;
       } else if (hp === 'bath') {
-        pose.mesh.position.y = Math.sin(ph * 2.2) * 0.04;
+        // `homeLift`: the spring's water line over the ground she stands on (activities.js `_soak`)
+        pose.mesh.position.y = (this.homeLift ?? 0) + Math.sin(ph * 2.2) * 0.04;
       } else {
         pose.facing = this.facing;
         const b = Math.sin(ph * 1.3) * 0.025;
@@ -7107,6 +7165,60 @@ export class Player {
   }
 
   /** What the ride camera needs to frame her alone, or null off the roads. */
+  /**
+   * THE RIDE CAMERA (RIDE_CAM): over whatever the camera did above, blended
+   * in on `rideCamW`. Its own heading, smoothed — NOT a `focus`, whose yaw is
+   * lerped from CAM_YAW and would whip a full turn round her each time the
+   * spiral carried her heading across the half-turn opposite it. Kept on the
+   * way out on the last mode, so the lens eases back from where it was.
+   */
+  _applyRideCam(dt) {
+    const R = this.rideCam;
+    this.rideCamW = (this.rideCamW ?? 0) + ((R ? 1 : 0) - (this.rideCamW ?? 0)) * Math.min(1, dt * RIDE_CAM.ease);
+    if (this.rideCamW < 0.002) { this.rideCamW = 0; this._rc = null; return; }
+    if (R) this._rcFpv = !!R.fpv;
+    const sp = Math.hypot(this.velocity.x, this.velocity.z);
+    let hx = Math.sin(this.facing), hz = Math.cos(this.facing);
+    if (sp > 0.5) { hx = this.velocity.x / sp; hz = this.velocity.z / sp; }
+    const rc = this._rc ??= { hx, hz, pos: this.camera.position.clone(), look: new THREE.Vector3() };
+    const k = 1 - Math.exp(-dt * RIDE_CAM.turn);
+    rc.hx += (hx - rc.hx) * k;
+    rc.hz += (hz - rc.hz) * k;
+    const hl = Math.hypot(rc.hx, rc.hz) || 1;
+    rc.hx /= hl; rc.hz /= hl;
+    const p = this.position;
+    const C = RIDE_CAM;
+    if (this._rcFpv) {
+      rc.pos.set(p.x + rc.hx * 0.2, p.y + C.eye, p.z + rc.hz * 0.2);
+      /* Down the chute when the ride says where it goes (sliderider.js
+         SLIDE_LOOK), eased so a corner of the path is a turn of the head;
+         otherwise along her heading. What is eased is the DIRECTION from
+         her eye, not the point: an eased point trails behind a kitten doing
+         ten metres a second until it is nearly under her, and the lens
+         tipped 57 degrees down into the chute (housing check). And it is
+         where her EYES will be, `eye` over the path, not a hand over it: on
+         a helix this tight, 4m of path is a 2m chord that has dropped 2m,
+         and her whole eye height added to that drop was 55 degrees. Handing
+         back, the last direction is HELD — snapping to the heading was a
+         lurch. */
+      const L = R?.look;
+      if (L) {
+        _rcWant.set(L.x - rc.pos.x, L.y + C.eye - rc.pos.y, L.z - rc.pos.z);
+        if (!rc.fpvDir) rc.fpvDir = _rcWant.clone();
+        else rc.fpvDir.lerp(_rcWant, k);
+      }
+      if (rc.fpvDir) rc.look.copy(rc.pos).add(rc.fpvDir);
+      else rc.look.set(rc.pos.x + rc.hx * C.ahead, rc.pos.y - C.dip, rc.pos.z + rc.hz * C.ahead);
+    } else {
+      const f = 1 - Math.exp(-dt * C.follow);
+      rc.pos.lerp(_rcWant.set(p.x - rc.hx * C.back, p.y + C.up, p.z - rc.hz * C.back), f);
+      rc.look.set(p.x + rc.hx * C.lead, p.y + 1.1, p.z + rc.hz * C.lead);
+    }
+    const w = this.rideCamW;
+    this.camera.position.lerp(rc.pos, w);
+    this.camera.lookAt(_rcLook.copy(this.camTarget).lerp(rc.look, w));
+  }
+
   snakeSubject() {
     const R = this.snakeRide;
     if (!R || this.mount || this.rideAlong) return null;
@@ -7300,6 +7412,7 @@ export class Player {
        she is on it. Both are layers over the pose above, in that order, so
        the ride starts from wherever the look across left the lens and there
        is no cut between them — see dream/peek.js and `SnakeCam`. */
+    this._applyRideCam(dt);
     const ride = this.snakeSubject();
     this.bridgePeek.apply(dt, this.peekAt, this.camera, this.camTarget, peekHold(this.snakeCam, ride));
     this.snakeCam.apply(dt, ride, this.camera, this.camTarget);

@@ -10,7 +10,7 @@ import { ZenGarden, zenParts, ZEN, ZEN_ROCKS, ZEN_STONES, ZEN_STONE_R, ZEN_RAKE 
 import { linkGeom, linkAll, linkColliders, supportGround } from './links.js';
 import { placeModel, drawItem, clampMul, SHOJI, shojiPair, PANEL_GAP, STONES } from './models.js';
 import { wallSlots, yardR } from './editor.js';
-import { buildTreehouse } from './treehouse.js';
+import { buildTreehouse, slidePath } from './treehouse.js';
 import { HOLO_GEAR_SCALE, HOLO_TUBE, ensureHoloKit, holoCell, holoOut } from './holodeck.js';
 import { GEAR_ITEMS, GEAR_SCALE, GEAR_LIFT, gearModel, TUBE_VERT, TUBE_FRAG } from '../dream/gear.js';
 
@@ -72,6 +72,17 @@ const SOLID_POSTS = { toriigarden: { r: 0.22, at: [[-0.9, -2.4], [0.9, -2.4], [-
    make them disappear when player is near it". */
 /** How many cuts the houses' x-ray takes: four kittens, and the doors the building hides (`aimView`). */
 export const XRAY_SLOTS = 8;
+/** How far past a yard thing's collider its INTERACT spot reaches: her radius (0.6) and a step. */
+export const SPOT_PAST = 1.6;
+/**
+ * THE ONSEN'S HEIGHTS, over the ground: its rock rim and its water. Shared
+ * with the bath pose (activities.js `_soak`): Richard, Oct 2026, "the
+ * player's head is too deep in the water, it should mainly be the neck area
+ * that is in the water." Her feet are on the ground, under `water`, and the
+ * drawing is a head cut flat at the neck — so the cut was 0.64 under the
+ * surface. It is lifted to `water - neck` now.
+ */
+export const ONSEN = { rim: 0.6, water: 0.64, neck: 0.12 };
 /** A sliding door's doorway: a wall slot is 2 across, and the posts either side keep 0.1 each. */
 export const SLIDE_W = 1.8;
 const XRAY_PLANT = { maple: 0.8, cherry: 0.8, pine: 0.8, azalea: 0.6 };
@@ -541,6 +552,8 @@ export class HomeIsle {
     this._syncHouses();
     this.walls = [...(this.houseWalls ?? [])];
     this.decks = [...(this.houseDecks ?? [])];
+    /** Every treehouse slide's line, in world space (sliderider.js asks it). */
+    this.slides = [];
     this.itemMeshes = new Map();
     const H = this.home;
     if (!H) return;
@@ -975,7 +988,7 @@ export class HomeIsle {
         break;
       }
       case 'onsen': {
-        flat([disc(r - 0.5, 0.6, 0x7d7870), disc(r - 1.2, 0.62, 0x8fd0d8, 0.02)]);
+        flat([disc(r - 0.5, ONSEN.rim, 0x7d7870), disc(r - 1.2, ONSEN.water - 0.02, 0x8fd0d8, 0.02)]);
         const rocks = [];
         for (let k = 0; k < 14; k++) {
           const s = new THREE.DodecahedronGeometry(0.8 + (k % 3) * 0.2, 0);
@@ -1035,13 +1048,20 @@ export class HomeIsle {
         /* A LEVEL, not a prop (treehouse.js). Its geometry is in its own frame
            and goes in this group; its decks, walls and trunks come back in
            the house's frame and join the island's. */
-        const T = buildTreehouse(
-          (fx, fz) => ({
-            x: q.x + fx * Math.cos(q.rot ?? 0) + fz * Math.sin(q.rot ?? 0),
-            z: q.z - fx * Math.sin(q.rot ?? 0) + fz * Math.cos(q.rot ?? 0),
-          }),
-          q.rot ?? 0, gy - this.groundY, { wall: this.wallMat, tree: this.treeMat },
-        );
+        const toHouse = (fx, fz) => ({
+          x: q.x + fx * Math.cos(q.rot ?? 0) + fz * Math.sin(q.rot ?? 0),
+          z: q.z - fx * Math.sin(q.rot ?? 0) + fz * Math.cos(q.rot ?? 0),
+        });
+        const T = buildTreehouse(toHouse, q.rot ?? 0, gy - this.groundY, { wall: this.wallMat, tree: this.treeMat });
+        {
+          const SP = slidePath();
+          const marks = SP.marks.map((m) => {
+            const h = toHouse(m.x, m.z);
+            const w = this.local(h.x, h.z);
+            return { x: w.x, z: w.z, y: gy + m.y };
+          });
+          this.slides.push({ uid: q.uid, marks, top: gy + SP.top });
+        }
         add(T.group);
         this.decks.push(...T.decks);
         for (const wl of T.walls) {
@@ -1074,14 +1094,21 @@ export class HomeIsle {
       case 'bladeforest': break;
       default: {
         const body = add(placeModel(it.model, drawItem(it.id, 2), it.size, q.look ? { s: q.look.s, style: q.look.style } : null));
-        if (it.act) spot(it.act, Math.max(2.4, r + 0.8));
         /* Her BIGGER/SMALLER (`look.s`) scales the collider with the thing:
            a fence made twice as long was solid along its old length. Only
            where there is a size for it to multiply — fitTo ignores it
            otherwise. */
         const mul = it.size ? clampMul(q.look?.s) : 1;
         const solid = SOLID[it.id];
-        if (solid) this.obstacles.push({ x: w.x, z: w.z, r: solid * Math.max(1, r / 2.5) * mul });
+        const solidR = solid ? solid * Math.max(1, r / 2.5) * mul : 0;
+        if (solid) this.obstacles.push({ x: w.x, z: w.z, r: solidR });
+        /* ...AND ITS SPOT WITH IT. Richard, Oct 2026: "Can't bow at the
+           shrine when its scale is above 100%, its collider around it is too
+           big." The spot stayed r + 0.8 (5.3 for the shrine) while the
+           collider grew past it (5.94 at 150%), so she was held outside the
+           only circle that answered INTERACT. It always reaches SPOT_PAST
+           beyond the collider now, whatever the size. */
+        if (it.act) spot(it.act, Math.max(2.4, r + 0.8, solidR + SPOT_PAST));
         const B = SOLID_BOX[it.id];
         if (B) {
           this._boxWalls(q, B[0] * mul, B[1] * mul, gy, gy + B[2] * mul);

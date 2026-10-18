@@ -33,7 +33,7 @@ import { PLAYER_STYLE } from '../../src/core/palette.js';
 import { worldSig } from '../../src/systems/savegame.js';
 import { ROSHI_LINES, ROSHI_VOICE } from '../../src/systems/housing/roshi.js';
 import { Kendo, KIAI_T, BOUT, SEIZA, KENDO_HIT, KENDO_TURN, yawAcross } from '../../src/systems/housing/kendo.js';
-import { LOWER_XRAY, BEHIND_HOP, KNOCK, DOOR_XRAY, doorSeg } from '../../src/systems/housing/housing.js';
+import { LOWER_XRAY, BEHIND_HOP, KNOCK, DOOR_XRAY, TEA_SHOT, doorSeg } from '../../src/systems/housing/housing.js';
 import { roofY } from '../../src/systems/housing/homehouse.js';
 import { XRAY_SLOTS, SLIDE_W } from '../../src/systems/housing/homeisle.js';
 import { HoloStar, LASER_ORDER, LASER_COLOUR } from '../../src/systems/dream/targets.js';
@@ -49,13 +49,16 @@ import { DOOR_SWING, HomeBridge, GATE, STATUE_SLOTS, faceCamera, bannerYaw, BARR
 import { napFade, napFacing, HomeActivities, LOOK_SHOT, lookShot } from '../../src/systems/housing/activities.js';
 import { DOOR_PATHS, doorPathId, doorWalk, doorWalkBox, layDoorPath } from '../../src/systems/housing/editor.js';
 import { ringR, RING_R } from '../../src/systems/housing/build.js';
-import { LOOK_FADE } from '../../src/entities/player.js';
+import { LOOK_FADE, PLAYER_RADIUS } from '../../src/entities/player.js';
 import { xrayModel, PANEL_GAP, WINDOW_IN, furnScale, FURN_REACH, FURN_INSET, pathParts, steppingStones } from '../../src/systems/housing/homeisle.js';
 import { PathFX, FLARE_T, FLARE_COLOURS, LAMP_TINT } from '../../src/systems/housing/pathfx.js';
 import { ZEN, ZEN_STONES, ZEN_RAKE, RAKE_T } from '../../src/systems/housing/zengarden.js';
-import { TEA, TEA_T, TEA_LEN } from '../../src/systems/housing/teahouse.js';
+import { TEA, TEA_T, TEA_LEN, TEA_ANIM, TEA_SHEET, teaFrameAt, teaSips } from '../../src/systems/housing/teahouse.js';
 import { zFights } from './zfight.mjs';
-import { TREEHOUSE_PLAN, slidePath } from '../../src/systems/housing/treehouse.js';
+import { TREEHOUSE_PLAN, slidePath, LIP_WALL } from '../../src/systems/housing/treehouse.js';
+import { aheadOnPath, SLIDE_LOOK } from '../../src/systems/housing/sliderider.js';
+/** The slide drops her from the roof (SP.top 15.7) to the run; "all the way down" is most of it. */
+const SLIDE_DROP_MIN = 14;
 import { holoLayout, HOLO_GRAB, HOLO_TUBE, holoKit, ensureHoloKit, holoWhyRemove, holoTubes, holoCell, HOLO_TUBE_ID, HOLO_MAX_TUBES } from '../../src/systems/housing/holodeck.js';
 import { GEAR_ITEMS } from '../../src/systems/dream/gear.js';
 import { fits as fitsGrid } from '../../src/systems/housing/editor.js';
@@ -75,7 +78,8 @@ const DAY = 24 * 3600 * 1000;
 function fakePlayer(i, x = 0, z = 0, y = 0) {
   const style = PLAYER_STYLE[i];
   return {
-    index: i, style, name: style.name, score: 0, radius: 0.6,
+    // a REAL kitten's radius: at 0.6 the slide check walked a body 0.3 thinner than any girl into a chute she could not enter
+    index: i, style, name: style.name, score: 0, radius: PLAYER_RADIUS,
     position: new THREE.Vector3(x, y, z), velocity: new THREE.Vector3(),
   };
 }
@@ -315,7 +319,11 @@ export async function housingChecks({ ok, world }) {
         const up = walk([[Wk.xc, Wk.z1 + 0.5], [Wk.xc, Wk.z0 + 0.2], [Wk.xc, landZ], [inward, landZ], [inward, 0]]);
         const fUp = I.floorAt(walker.position.x, walker.position.y, walker.position.z);
         if (up || fUp !== Wk.floor + 1) stuck.push(`up ${Wk.floor}->${Wk.floor + 1}: ${up ?? `ended on floor ${fUp}`} (${uw})`);
-        const down = walk([[inward, landZ], [Wk.xc, landZ], [Wk.xc, Wk.z0 + 0.2], [Wk.xc, Wk.z1 + 1]]);
+        /* ...to 0.6 past the stair's foot, not 1: in the dojo house the wall
+           behind it is 1.6 past, and a REAL kitten (PLAYER_RADIUS 0.75 + the
+           0.18 skin) stops 0.93 short of it. At the old fake 0.6 radius the
+           point was reachable; at her real size it was a wall doing its job. */
+        const down = walk([[inward, landZ], [Wk.xc, landZ], [Wk.xc, Wk.z0 + 0.2], [Wk.xc, Wk.z1 + 0.6]]);
         const fDn = I.floorAt(walker.position.x, walker.position.y, walker.position.z);
         if (down || fDn !== Wk.floor) stuck.push(`down ${Wk.floor + 1}->${Wk.floor}: ${down ?? `ended on floor ${fDn}`}`);
       }
@@ -952,7 +960,7 @@ export async function housingChecks({ ok, world }) {
       const together = clusterPlayers({ pts: near, solo: [false, false], mergeIn: MERGE_IN, mergeOut: MERGE_OUT });
       ok('looking out of a window, she gets a pane of her own, and her sister a step away keeps hers',
         A.lookingOut(kit) && !A.lookingOut({ index: 1 }) && apart.groups.length === 2 && together.groups.length === 1
-        && /solo: this\.players\.map\([\s\S]{0,1600}this\.housing\?\.activities\?\.lookingOut\?\.\(p\)\)/.test(msrc));
+        && /solo: this\.players\.map\([\s\S]{0,1600}this\.housing\?\.activities\?\.lookingOut\?\.\(p\)[\s\S]{0,600}this\.housing\?\.slides\?\.riding\?\.\(p\)\)/.test(msrc));
     }
   }
 
@@ -1505,9 +1513,36 @@ export async function housingChecks({ ok, world }) {
     const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
     putAt(0, -TEA.floor.z1 - 8);
     const behind = H.teaShotFor([0]);
-    ok('...in front of it the camera frames its room from the street, closer than a house\'s door shot',
-      !!shot && shot.dist < 12 && Math.abs(wrap(shot.yaw - T.a)) < 1e-6 && Math.abs(shot.centre.y - T.floorY - 1) < 1e-6 && !behind,
+    ok('...in front of it the camera frames its room from the street, at TEA_SHOT, square on to it',
+      !!shot && shot.dist === TEA_SHOT.dist && Math.abs(wrap(shot.yaw - T.a)) < 1e-6 && Math.abs(shot.centre.y - T.floorY - TEA_SHOT.aimY) < 1e-6 && !behind,
       shot ? `dist ${shot.dist}, yaw off ${wrap(shot.yaw - T.a).toFixed(4)}, behind ${behind}` : 'no shot');
+    /* ...AND THE WORDS OVER THEIR HEADS ARE IN IT. Richard, Oct 2026: "the
+       camera zooms in too much and user can't read the text above the players
+       head." Measured through her real lens (fov 38) in the worst pane, a
+       tall half (aspect 0.9): the top of the callout over every seat - the
+       highest it sits, with her health bar showing - must be inside the frame
+       with a margin at TEA_SHOT, and must NOT have been at the old 10 / 1.0,
+       which is the report. */
+    {
+      const kitH = new Player({ texture: new THREE.Texture(), index: 0, spawn: new THREE.Vector3(), cols: 8, rows: 4, mirror: false }).height;
+      const topOf = (dist, aimY) => {
+        const cam = new THREE.PerspectiveCamera(38, 0.9, 0.5, 4000);
+        const c = shot.centre.clone().setY(T.floorY + aimY);
+        cam.position.set(c.x + Math.sin(shot.yaw) * Math.cos(shot.pitch) * dist, c.y + Math.sin(shot.pitch) * dist, c.z + Math.cos(shot.yaw) * Math.cos(shot.pitch) * dist);
+        cam.lookAt(c);
+        cam.updateMatrixWorld();
+        let worst = -Infinity;
+        for (let k = 0; k < 4; k++) {
+          const at = T.seat(k);
+          const v = new THREE.Vector3(at.x, T.floorY + kitH * 1.98 + 0.6, at.z).project(cam);
+          worst = Math.max(worst, v.y, Math.abs(v.x));
+        }
+        return worst;
+      };
+      const now = topOf(TEA_SHOT.dist, TEA_SHOT.aimY), was = topOf(10, 1.0);
+      ok("...and the words over four kneeling kittens' heads are inside the frame now, and were not at the old 10 / 1.0",
+        now < 0.9 && was > 0.9, `top of the words at ndc ${now.toFixed(2)} (was ${was.toFixed(2)}), her height ${kitH}`);
+    }
     // THE CEREMONY
     const ps = [0, 1, 2].map((i) => fakePlayer(i));
     game.players = ps;
@@ -1524,18 +1559,66 @@ export async function housingChecks({ ok, world }) {
       && Math.hypot(seat0.x - TEA.seats[0][0], seat0.z - TEA.seats[0][1]) < 1e-6 && Math.hypot(seat1.x - TEA.seats[1][0], seat1.z - TEA.seats[1][1]) < 1e-6
       && Math.abs(ps[0].position.y - T.floorY) < 1e-6 && music === 'teaCeremony' && !!MUSIC_FILES.teaCeremony,
       `music ${music}`);
-    let late = null, sipped = [], lifted = 0, endAt = null;
-    for (let t = 1; t < 32; t += 0.1) {
-      A.update(0.1, ps);
+    /* ps[0] has her tea drawing (all `_updateTea` asks is that there is one)
+       and ps[1] does not, so both roads are walked in one ceremony. */
+    ps[0].teaPose = {};
+    let late = null, lifted = 0, endAt = null, ate = false, hidden0 = false, home1 = true;
+    const frames = [[], []], mouth = [0, 0], wasMouth = [false, false];
+    const poses = [new Set(), new Set()];
+    const b0 = T.bowls[A.teaParty.seats[0].k], b1 = T.bowls[A.teaParty.seats[1].k];
+    for (let t = 1; t < 32; t += 0.05) {
+      const ct = A.teaParty?.t;
+      A.update(0.05, ps);
       if (late == null && t > TEA_T.join + 0.5) { A.start(ps[2], { ...spots[0], isle: I, home: Hm }); late = !A.holds(2) && /already being served/.test(toasts.at(-1)?.[1] ?? ''); }
-      for (const p of ps.slice(0, 2)) if (p.homePose === 'eat' && !sipped.includes(p.index)) sipped.push(p.index);
-      for (const b of T.bowls) lifted = Math.max(lifted, b.position.y - b.userData.home.y);
+      ps.slice(0, 2).forEach((p, j) => {
+        if (!A.holds(p.index)) return;
+        if (p.homePose === 'eat') ate = true;
+        poses[j].add(p.homePose);
+        frames[j].push(p.teaFrame);
+        const r = ct != null && teaFrameAt(ct + 0.05 - TEA_T.whisk - j * TEA_ANIM.stagger);
+        if (r?.mouth && !wasMouth[j]) mouth[j]++;
+        wasMouth[j] = !!r?.mouth;
+      });
+      if (A.teaParty && A.teaParty.t > TEA_T.whisk + TEA_ANIM.turn + TEA_ANIM.pick + 0.5 && A.teaParty.t < TEA_T.whisk + TEA_T.sip * 4 - 1) {
+        hidden0 ||= !b0.visible;
+        home1 &&= b1.visible;
+      }
+      lifted = Math.max(lifted, b1.position.y - b1.userData.home.y);
       if (endAt == null && !A.holds(0) && !A.holds(1)) endAt = t;
     }
+    delete ps[0].teaPose;
     ok('...a kitten arriving after the tea is served is told so rather than ignored', late === true);
-    ok('...each of them is handed her bowl and sips, then everybody stands together',
-      sipped.join() === '0,1' && lifted > 0.8 && Math.abs(endAt - TEA_LEN) < 0.25 && !ps[0].homePose && !A.teaParty,
-      `sipped ${sipped}, bowl up ${lifted.toFixed(2)}, over at ${endAt?.toFixed(1)}s of ${TEA_LEN}`);
+    /* CALM, IN SEIZA, AND SHE DRINKS FIVE TO TEN TIMES. Richard, Oct 2026:
+       "little or no bouncing ... the player stays in seiza the whole time ...
+       drinking from the cup 5 - 10x's". The bounce was the meal's pose. */
+    ok('...nobody is ever put in the eating pose: in seiza, or in her tea drawing, the whole time',
+      !ate && [...poses[0]].every((q) => q === 'tea' || q === 'pray') && [...poses[1]].every((q) => q === 'pray'),
+      `with the drawing ${[...poses[0]]}, without ${[...poses[1]]}`);
+    ok(`...they all drink together, ${teaSips()} slow sips each (5 to 10), and everybody stands together at the end`,
+      teaSips() >= 5 && teaSips() <= 10 && mouth[0] === teaSips() && mouth[1] === teaSips()
+      && Math.abs(endAt - TEA_LEN) < 0.25 && !ps[0].homePose && !A.teaParty,
+      `sips ${mouth}, over at ${endAt?.toFixed(1)}s of ${TEA_LEN}`);
+    const f0 = frames[0];
+    const seg = TEA_SHEET.seg;
+    ok('...her drawing plays the turn, the lift, the sips, the bowl going down, the prayer, and the turn back for the bow',
+      Object.values(seg).every(([a, b]) => f0.some((f) => f >= a && f < b)) && f0.every((f) => f >= 0 && f < TEA_SHEET.cols * TEA_SHEET.rows)
+      && f0.at(-1) === seg.turn[0],
+      `frames ${[...new Set(f0)].join(' ')}`);
+    ok('...with the drawing her bowl is in her paws (the 3D one hidden); without it the bowl rises to her',
+      hidden0 && home1 && lifted > 0.8, `hidden ${hidden0}, the other bowl shown ${home1}, lifted ${lifted.toFixed(2)}`);
+    {
+      // the last of four to kneel finishes before the bow
+      const last = teaFrameAt(TEA_T.sip * 4 - TEA_ANIM.stagger * 3 - 0.01);
+      ok('...the fourth kitten to kneel has set her bowl down and prayed before everybody bows', last.beat === 'done', last.beat);
+    }
+    {
+      /* THE SHEETS: 8 x 4 of TEA_SHEET.ship, for both kittens a sheet is
+         drawn for (Storm and Blossom are them recoloured). */
+      const dims = (s) => { try { const b = readFileSync(new URL(`../../public/sprites/kittens/${s}/tea.png`, import.meta.url)); return [b.readUInt32BE(16), b.readUInt32BE(20)]; } catch { return null; } };
+      const want = [TEA_SHEET.cols * TEA_SHEET.ship, TEA_SHEET.rows * TEA_SHEET.ship];
+      ok('...and both tea sheets are on disk, 8 x 4 cells of TEA_SHEET.ship',
+        ['ember', 'frost'].every((s) => dims(s)?.join() === want.join()), ['ember', 'frost'].map((s) => `${s} ${dims(s)}`).join(', '));
+    }
     ok('...it runs 20 to 30 seconds, its bowls are back on the tray and its music has ended',
       TEA_LEN >= 20 && TEA_LEN <= 30 && T.bowls.every((b) => b.position.equals(b.userData.home)) && H.musicTrack() !== 'teaCeremony');
     H.musicSite = null;
@@ -1705,7 +1788,13 @@ export async function housingChecks({ ok, world }) {
       };
       const S = TREEHOUSE_PLAN.SPIRAL;
       const end = Math.atan2(S.onto.x - S.x, S.onto.z - S.z);
-      const sp = (t) => { const a = end + Math.PI * 2 * S.turns * (1 - t); return th(S.x + Math.sin(a) * S.r, S.z + Math.cos(a) * S.r); };
+      /* ...ON THE LINE A REAL KITTEN CAN STAND ON. The rail is a wall at
+         r + w/2 - 0.1 = 2.45 from the newel, so her centre (PLAYER_RADIUS
+         0.75 + the 0.18 skin) stays inside 1.52 — the stair's 1.8 centre line
+         was only reachable by the old fake walker at 0.6. A real one climbs
+         a hand's width inside it, which is still on the treads (1.05 out). */
+      const walkR = S.r + S.w / 2 - 0.1 - (PLAYER_RADIUS + 0.18) - 0.05;
+      const sp = (t) => { const a = end + Math.PI * 2 * S.turns * (1 - t); return th(S.x + Math.sin(a) * walkR, S.z + Math.cos(a) * walkR); };
       const b0 = I.local(...sp(-0.04));
       walker.position.set(b0.x, (I.heightAt(b0.x, b0.z, I.groundY + 1)?.y ?? I.groundY), b0.z);
       let walked = true;
@@ -1761,6 +1850,137 @@ export async function housingChecks({ ok, world }) {
       ok('...and carries her from the roof round the pole to the run at the bottom, never uphill',
         rode > 200 && uphill === 0 && drop > SP.top - 1.5 && ys[ys.length - 1] - I.groundY - ground < 0.4,
         `${rode} steps, ${uphill} uphill, dropped ${drop.toFixed(2)}, ends ${(ys[ys.length - 1] - I.groundY - ground).toFixed(2)} up`);
+
+      /* ...AND A REAL KITTEN, NOT A FAKE ONE. Richard, Oct 2026: "the player
+         doesn't seem to be able to walk to the start of the ride ... is there
+         a collider?" There was — the chute's lips stood 0.81 off its line and
+         a real Player is 0.75 + the 0.18 skin, so she was pinched to a stop
+         0.45 short of the mouth while the walker above, at radius 0.6, sailed
+         in. So: a real Player, real physics, the stick held at the chute. */
+      ok("...the chute's walls clear a real kitten: LIP_WALL >= PLAYER_RADIUS + the skin",
+        LIP_WALL >= PLAYER_RADIUS + 0.18 + 0.05, `LIP_WALL ${LIP_WALL}, needs ${(PLAYER_RADIUS + 0.23).toFixed(2)}`);
+      const wasPlayers = game.players;
+      const SL = I.slides[0];
+      const [s0, s1, s2] = SL.marks;
+      const sl = Math.hypot(s1.x - s0.x, s1.z - s0.z);
+      const ux = (s1.x - s0.x) / sl, uz = (s1.z - s0.z) / sl;
+      const pad0 = { mx: 0, my: 0, down: () => false, pressed: () => false };
+      const real = (x, z) => {
+        const k = new Player({ texture: new THREE.Texture(), index: 0, spawn: new THREE.Vector3(x, SL.top + 0.3, z), cols: 8, rows: 4, mirror: false });
+        k.style = PLAYER_STYLE[0]; k.name = k.style.name;
+        game.players = [k];
+        return k;
+      };
+      const hudS = { sfx() {}, toast() {} };
+      const stepK = (k, pad, n = 1) => { for (let f = 0; f < n; f++) { k.update(1 / 60, pad, world, [], hudS); H.update(1 / 60); } };
+      {
+        const k = real(s0.x - ux * 2.1, s0.z - uz * 2.1);
+        const push = { ...pad0, my: -1 };
+        let boardedR = false;
+        for (let f = 0; f < 180 && !boardedR; f++) {
+          k.camYaw = Math.atan2(-(s2.x - k.position.x), -(s2.z - k.position.z));
+          stepK(k, push);
+          boardedR = k.slideT > 0;
+        }
+        ok('...a REAL kitten on the roof, stick held at the chute, walks in and is riding it',
+          boardedR, `stopped ${Math.hypot(k.position.x - s0.x, k.position.z - s0.z).toFixed(2)} from the mouth`);
+        H.slides.drop(0);
+      }
+      /* THE QUESTION AT THE TOP, AND BOTH ANSWERS. "a menu appears and the
+         player can choose 'Ride down in normal view' and 'Ride down in First
+         Person View'" — and either walks her to the mouth on her own. She is
+         stood off to one side of it, so the walk has to line her up first. */
+      for (const fpv of [false, true]) {
+        const k = real(s0.x - ux * 1.6 - uz * 0.9, s0.z - uz * 1.6 + ux * 0.9);
+        stepK(k, pad0, 10);
+        const asked = game.housingCards._top(0)?.v === 'slide';
+        const rows = asked ? game.housingCards._view(0).rows.map((r) => r.title) : [];
+        const started = H.slides.start(k, fpv);
+        let rodeR = false, minY = k.position.y, camW = 0, hidMine = false, hidHers = false, n = 0, steep = 0;
+        while (H.slides.riding(k) && n++ < 60 * 14) {
+          stepK(k, pad0);
+          rodeR ||= k.slideT > 0;
+          minY = Math.min(minY, k.position.y);
+          camW = Math.max(camW, k.rideCamW ?? 0);
+          hidMine ||= H.slides.hiddenFrom(k, [0]);
+          hidHers ||= H.slides.hiddenFrom(k, [1]);
+          if (fpv && k._rc && (k.rideCamW ?? 0) > 0.95) {
+            const e = k._rc.pos, l = k._rc.look;
+            steep = Math.max(steep, Math.atan2(e.y - l.y, Math.hypot(l.x - e.x, l.z - e.z)));
+          }
+        }
+        /* HANDING BACK: the lens eases out of her head after the ride has
+           ended, and she stays hidden from it until it is out (> 0.6 in),
+           then is drawn again. She reappeared the frame the ride ended, round
+           a lens still inside her: one frame of a giant kitten. */
+        let outOk = true, seenAgain = false;
+        for (let f = 0; f < 120; f++) {
+          stepK(k, pad0);
+          const inHead = (k.rideCamW ?? 0) > 0.6;
+          if (fpv && inHead && !H.slides.hiddenFrom(k, [0])) outOk = false;
+          if (!inHead && H.slides.hiddenFrom(k, [0])) outOk = false;
+          seenAgain ||= !inHead && !H.slides.hiddenFrom(k, [0]);
+        }
+        if (fpv) {
+          /* DOWN THE CHUTE, NOT INTO IT. "they walk to the top of the slide and
+             slide down in first person view": the lens looks SLIDE_LOOK down
+             the path. Along her heading it looked out over the rail (the
+             tangent of a spiral); clamped at the path's end it looked
+             straight down into the bed. Measured here as the steepest the lens
+             ever pointed below level, fully in her head: 57.4 deg with the
+             look POINT eased (it trailed under her), 55.5 eased as a direction
+             but aimed a hand over the path, 42.4 aimed at eye height over it —
+             on the tightest lap of the helix, where 4m of path is a 2.1m chord.
+             Fixed-step, so the number does not wander. */
+          ok('...first person looks down the chute, never steeper than 45 degrees, and hides her until the lens is out of her head',
+            steep > 0.05 && steep < Math.PI / 4 && outOk && seenAgain, `steepest ${(steep * 180 / Math.PI).toFixed(1)} deg, hand-back ${outOk}, seen again ${seenAgain}`);
+        }
+        const bottom = minY - s2.y - (SL.top - s0.y);
+        ok(`...the top of the slide asks, NO first, and "${fpv ? 'FIRST PERSON' : 'NORMAL VIEW'}" walks her in and rides her down`,
+          asked && /^NO/.test(rows[0]) && rows.includes(fpv ? 'RIDE DOWN IN FIRST PERSON VIEW' : 'RIDE DOWN IN NORMAL VIEW')
+          && started && rodeR && SL.top - minY > SLIDE_DROP_MIN && camW > 0.95 && !H.slides.riding(k) && k.rideCam == null && k.autoWalk == null,
+          `asked ${asked} [${rows.join(' / ')}], rode ${rodeR}, dropped ${(SL.top - minY).toFixed(2)}, camera ${camW.toFixed(2)}, ${n} frames`);
+        ok(`...${fpv ? "first person hides her from HER lens and from nobody else's" : 'normal view hides her from nobody'}`,
+          fpv ? hidMine && !hidHers : !hidMine && !hidHers, `hers ${hidMine}, a sister's ${hidHers}`);
+        game.inspector.closeOne?.(0);
+        game.housingCards.st.delete(0);
+        H.slides.drop(0);
+        void bottom;
+      }
+      game.players = wasPlayers;
+      {
+        /* aheadOnPath only ever runs FORWARD from her last segment (the
+           spiral lies over itself, so the nearest segment can be a lap
+           below), is SLIDE_LOOK of path further on, and past the end carries
+           on level along the run-out. */
+        const M = SL.marks;
+        const arc = (k, P) => { let s = 0; for (let j = 0; j < k; j++) s += Math.hypot(M[j + 1].x - M[j].x, M[j + 1].y - M[j].y, M[j + 1].z - M[j].z); return s + Math.hypot(P.x - M[k].x, P.y - M[k].y, P.z - M[k].z); };
+        let fwd = true, len = true, prev = 0, worst = 0;
+        for (let k = 0; k < M.length - 1; k++) {
+          const a = M[k], b = M[k + 1];
+          const A = aheadOnPath(M, (a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2, SLIDE_LOOK, prev);
+          if (A.seg < prev || A.seg !== k) fwd = false;
+          prev = A.seg;
+          const end = arc(M.length - 1, M[M.length - 1]);
+          const want = arc(k, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: (a.z + b.z) / 2 }) + SLIDE_LOOK;
+          // and the point is ON the path (its nearest segment, measured)
+          let dist = Infinity;
+          for (let j = 0; j < M.length - 1; j++) {
+            const p0 = M[j], p1 = M[j + 1];
+            const ex = p1.x - p0.x, ey = p1.y - p0.y, ez = p1.z - p0.z, L2 = ex * ex + ey * ey + ez * ez || 1;
+            const u = Math.max(0, Math.min(1, ((A.x - p0.x) * ex + (A.y - p0.y) * ey + (A.z - p0.z) * ez) / L2));
+            dist = Math.min(dist, Math.hypot(p0.x + ex * u - A.x, p0.y + ey * u - A.y, p0.z + ez * u - A.z));
+          }
+          if (want < end && dist > 1e-6) len = false;
+          worst = Math.max(worst, want < end ? dist : 0);
+        }
+        const e = M[M.length - 1], e0 = M[M.length - 2];
+        const P = aheadOnPath(M, e.x, e.y, e.z, SLIDE_LOOK, M.length - 2);
+        const level = Math.abs(P.y - e.y) < 1e-9 && Math.abs(Math.hypot(P.x - e.x, P.z - e.z) - SLIDE_LOOK) < 1e-6
+          && ((P.x - e.x) * (e.x - e0.x) + (P.z - e.z) * (e.z - e0.z)) > 0;
+        ok('...the first-person look point walks the path forward only, lies ON it, and past the end runs on level',
+          fwd && len && level, `forward ${fwd}, on the path ${len} (off by ${worst.toExponential(1)}), level past the end ${level}`);
+      }
 
       /* ROUND THE MAST, INSIDE THE CABIN. "the tree trunk is going through it
          and the player cant get in or walk around it". She walks a ring round
@@ -2564,7 +2784,7 @@ export async function housingChecks({ ok, world }) {
     let n1 = toasts.length;
     throwFor(1);
     ok('a short throw does not count, and she is told how far it wants to run',
-      F.wins === 0 && toasts.slice(n1).some(([i, t]) => i === 0 && /throw it further/.test(t)), `${F.wins} wins, ${toasts.slice(n1).map((t) => t[1]).join(' | ')}`);
+      F.wins === 0 && toasts.slice(n1).some(([i, t]) => i === 0 && /throw it further/.test(t)), `goat joy ${pen.animals.find((A) => A.kind === 'goat').joy ?? 0}, ${F.wins} wins, ${toasts.slice(n1).map((t) => t[1]).join(' | ')}`);
     const jg = pen.animals.find((A) => A.kind === 'goat').joy ?? 0;
     n1 = toasts.length;
     for (let k = 0; k < PLAY.wins; k++) throwFor(30);

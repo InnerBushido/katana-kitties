@@ -22,6 +22,7 @@ import { HousingCards, roomTypeRefund } from './cards.js';
 import { BuildMode } from './build.js';
 import { HomeBoons } from './boons.js';
 import { HomeActivities, TABLE_SEATS } from './activities.js';
+import { SlideRides } from './sliderider.js';
 import { migrateCastleRooms } from './migrate.js';
 import { HEAD_H, roofY, PORT_H, floorOf } from './homehouse.js';
 
@@ -49,6 +50,8 @@ export function doorSeg(hs, d) {
  * half-width) and stopping at its lintel. Richard, Oct 2026: "an x-ray
  * highlight, about 25% strength and no bigger than the door path".
  */
+/** The teahouse shot (`teaShotFor`): how far back, and how high over the tatami it aims. Was 10 and 1.0. */
+export const TEA_SHOT = { dist: 14, aimY: 1.8 };
 export const DOOR_XRAY = { near: 18, k: 0.25, lintel: 0.2 };
 
 /** How high off a tall house's ground floor she may be and still count as "on the ground" behind it (a jump, not a bridge). */
@@ -222,6 +225,8 @@ export class Housing {
     /** What home is worth in the next battle, and the things that earn it. */
     this.boons = new HomeBoons(this);
     this.activities = new HomeActivities(this);
+    /** The treehouse slide's question at the top, and the ride it starts (sliderider.js). */
+    this.slides = new SlideRides(this);
     /** The holodeck's racks and her tube (`holodeck.js`). */
     this.holo = new HoloDeck(this);
     /** The rod, the lure and the wild fish at the koi pond (`angling.js`). */
@@ -404,6 +409,7 @@ export class Housing {
     for (const p of this.game.players ?? []) {
       this.holo.drop(p.index);
       this.angling.drop(p.index);
+      this.slides.drop(p.index);
       this.pets.drop(p.index);
       p.homeBoon = null;
     }
@@ -915,6 +921,7 @@ export class Housing {
     this.kendo.update(dt, players);
     this.builder.update(dt, this.time);
     this.activities.update(dt, players);
+    this.slides.update(dt, players);
     if (this.purchase?.active) this.purchase.update(dt);
     // Roshi's preview fades in on whichever island is being looked at
     if (this.preview) {
@@ -1365,11 +1372,16 @@ export class Housing {
           return Math.abs(lx) <= 3.6 * T.k && lz >= -2.4 * T.k && lz <= 2.96 * T.k + 6 && q.position.y <= T.gy + 4;
         });
         if (!near) continue;
-        (T._centre ??= new THREE.Vector3()).set(T.x + 0.4 * T.k * s, T.floorY + 1.0, T.z + 0.4 * T.k * c);
+        /* PULLED BACK, SAME ANGLE. Richard, Oct 2026: "the camera zooms in too
+           much and user can't read the text above the players head." At 10 the
+           names and the toast over four kneeling kittens ran off the top of
+           the pane; TEA_SHOT moves the camera back along its own ray (the
+           angle he liked stays) and aims at their heads rather than the mat. */
+        (T._centre ??= new THREE.Vector3()).set(T.x + 0.4 * T.k * s, T.floorY + TEA_SHOT.aimY, T.z + 0.4 * T.k * c);
         let yaw = T.a;
         while (yaw - CAM_YAW_DEFAULT > Math.PI) yaw -= Math.PI * 2;
         while (yaw - CAM_YAW_DEFAULT < -Math.PI) yaw += Math.PI * 2;
-        return { centre: T._centre, aim: true, dist: 10, pitch: 0.18, yaw };
+        return { centre: T._centre, aim: true, dist: TEA_SHOT.dist, pitch: 0.18, yaw };
       }
     }
     return null;

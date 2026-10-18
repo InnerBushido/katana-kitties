@@ -45,11 +45,75 @@ export const TEA = {
   tray: [0.1, -0.25],
 };
 
+/**
+ * HER TEA, DRAWN: 32 frames, 8 x 4, cut from one video of her by
+ * tools/capture/tea-sheet.mjs. `seg` is which cells are which beat — the
+ * turn from side-on seiza to facing you, the reach and lift, a sip that plays
+ * forward and back, the bowl going down, and the prayer — and the only thing
+ * the game knows about the sheet (activities.js `teaFrame`).
+ */
+export const TEA_SHEET = {
+  cols: 8, rows: 4,
+  /** The master's cell (docs/art-masters/<s>_tea.png) and the shipped one (sprite-bake `to`). */
+  master: 512, ship: 192,
+  seg: { turn: [0, 6], pick: [6, 14], sip: [14, 22], down: [22, 28], pray: [28, 32] },
+};
+
 /** How long the ceremony runs, and its beats (activities.js `_tea`). */
 export const TEA_T = { join: 6, whisk: 6, sip: 4, bow: 4 };
 /** The ceremony is 26s however many kneel: the sips share TEA_T.sip * 4 between them. */
 export const TEA_LEN = TEA_T.whisk + TEA_T.sip * 4 + TEA_T.bow;
 export const sipLen = (n) => (TEA_T.sip * 4) / Math.max(1, Math.min(4, n));
+
+/**
+ * THE DRINK, BEAT BY BEAT, for one kitten with the sheet (seconds). Richard:
+ * "a repeated animation of her drinking from the cup 5 - 10x's". They all
+ * drink TOGETHER now — the sips used to be taken in turns, 4 seconds each
+ * with four kneeling, and four seconds holds one sip, not five. Each kitten
+ * starts `stagger` after the one on her right, so four of them are four
+ * people and not one drawing four times; `turnBack` is the bow's, the turn
+ * played backwards while her bowl goes back to the tray.
+ */
+export const TEA_ANIM = { stagger: 0.35, turn: 1.2, pick: 2.0, sip: 1.4, down: 1.5, pray: 1.0, turnBack: 1.2, sips: [5, 10] };
+const DRINK_FIXED = TEA_ANIM.turn + TEA_ANIM.pick + TEA_ANIM.down + TEA_ANIM.pray;
+/** How many sips fit in the drinking time, for the last of four to kneel. */
+export const teaSips = () => {
+  const room = TEA_T.sip * 4 - TEA_ANIM.stagger * 3 - DRINK_FIXED;
+  return Math.max(TEA_ANIM.sips[0], Math.min(TEA_ANIM.sips[1], Math.floor(room / TEA_ANIM.sip)));
+};
+
+/**
+ * Her frame `u` seconds into her drink (`TEA_SHEET.seg`), and which beat it
+ * is: `wait` (seiza, side-on), `turn`, `pick`, `sip` (with `k`, which sip, and
+ * `mouth`, true on the frames the bowl is at her lips), `down`, `pray` and
+ * `done`. `back` > 0 is seconds into the bow, which turns her back side-on.
+ * Pure, so the check walks every beat without a game.
+ */
+export function teaFrameAt(u, sips = teaSips(), back = -1) {
+  const S = TEA_SHEET.seg, A = TEA_ANIM;
+  const run = ([a, b], f) => a + Math.min(b - a - 1, Math.floor(f * (b - a)));
+  if (back >= 0) {
+    const f = Math.min(1, back / A.turnBack);
+    return { frame: S.turn[1] - 1 - Math.min(S.turn[1] - 1, Math.floor(f * (S.turn[1] - S.turn[0]))), beat: f >= 1 ? 'seiza' : 'turnBack' };
+  }
+  if (u < 0) return { frame: S.turn[0], beat: 'wait' };
+  let t = u;
+  if (t < A.turn) return { frame: run(S.turn, t / A.turn), beat: 'turn' };
+  t -= A.turn;
+  if (t < A.pick) return { frame: run(S.pick, t / A.pick), beat: 'pick' };
+  t -= A.pick;
+  if (t < sips * A.sip) {
+    const k = Math.floor(t / A.sip), p = (t - k * A.sip) / A.sip;
+    // up to her lips in the first 40%, held 20%, and down again
+    const f = p < 0.4 ? p / 0.4 : p < 0.6 ? 1 : 1 - (p - 0.6) / 0.4;
+    return { frame: run(S.sip, f), beat: 'sip', k, mouth: p >= 0.4 && p < 0.6 };
+  }
+  t -= sips * A.sip;
+  if (t < A.down) return { frame: run(S.down, t / A.down), beat: 'down' };
+  t -= A.down;
+  if (t < A.pray) return { frame: run(S.pray, t / A.pray), beat: 'pray' };
+  return { frame: S.pray[1] - 1, beat: 'done' };
+}
 
 /** The tray, the kettle and a bowl per seat, at the measured spots; origin at the house's. */
 export function teaSet(k) {

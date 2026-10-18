@@ -816,6 +816,36 @@ export class Audio {
         this._tone({ type: 'square', from: 340, to: 120, dur: 0.09, gain: 0.14 * v });
         this._noise({ from: 1800, to: 600, dur: 0.07, gain: 0.14 * v, q: 1.4 });
         break;
+      /* THE TEA CEREMONY (housing/activities.js `_updateTea`). Richard: "We
+         can add some sound effects to go with the ceremony and the animation
+         of player drinking tea." Quiet ones, all four — it is the calmest
+         minute in the game and nothing here may be louder than the music. */
+      case 'teawhisk':
+        // the chasen: a quick bristly stroke through froth, two of them a hair apart
+        this._noise({ type: 'bandpass', from: 5200, to: 3400, dur: 0.07, gain: 0.07 * v, q: 2.5 });
+        this._noise({ type: 'bandpass', from: 4200, to: 6000, dur: 0.06, gain: 0.05 * v, q: 2.5, delay: 0.09 });
+        break;
+      case 'teasip':
+        // a small, polite slurp: air drawn over hot tea, falling, then a soft swallow
+        this._noise({ type: 'bandpass', from: 2600, to: 900, dur: 0.32, gain: 0.08 * v, q: 3 });
+        this._tone({ type: 'sine', from: 220, to: 150, dur: 0.12, gain: 0.06 * v, delay: 0.36 });
+        break;
+      case 'teaclink':
+        // a ceramic bowl set on wood: a bright short tick and a damped ring
+        this._tone({ type: 'sine', from: 2350, dur: 0.18, gain: 0.07 * v });
+        this._tone({ type: 'sine', from: 3410, dur: 0.12, gain: 0.04 * v });
+        this._noise({ from: 1800, to: 900, dur: 0.03, gain: 0.08 * v, q: 1.5 });
+        break;
+      case 'rin':
+        /* the bow: a rin, the temple bowl-bell. Inharmonic partials (1, 2.76,
+           5.4 — a bowl's, not a string's) with a slow beat between two close
+           fundamentals, which is the shimmer a real one has. */
+        this._tone({ type: 'sine', from: 880, dur: 4.5, gain: 0.10 * v });
+        this._tone({ type: 'sine', from: 883.5, dur: 4.2, gain: 0.07 * v });
+        this._tone({ type: 'sine', from: 880 * 2.76, dur: 2.2, gain: 0.04 * v });
+        this._tone({ type: 'sine', from: 880 * 5.4, dur: 0.9, gain: 0.02 * v });
+        this._noise({ from: 6000, to: 3000, dur: 0.02, gain: 0.05 * v, q: 1 });
+        break;
       case 'knock':
         // knuckles on a wooden door: two short raps
         for (const d of [0, 0.16]) {

@@ -450,7 +450,14 @@ export class PetPlay {
       if (k >= 1) {
         S.stick.rotation.set(0, Math.random() * 3, 0);
         const onIsle = S.v.I.over(S.to.x, S.to.z, -1);
-        S.run = Math.hypot(S.to.x - S.pos.x, S.to.z - S.pos.z);
+        /* THE THROW, FROM HER HAND — not the goat's run from wherever it
+           was trotting. It trots 2.2 behind her, so measured from the goat the
+           shortest throw there is (3 + a frame of charge) was a run of 5.7
+           against a level-1 goat's 5, and EVERY throw counted; the check that
+           said a short one did not had only ever caught the goat standing
+           nearer the stick. Found when the checks' kitten grew to her real
+           radius and moved the goat. "Throw it further" is about the throw. */
+        S.run = Math.hypot(S.to.x - S.from.x, S.to.z - S.from.z);
         S.good = onIsle && S.run >= PLAY.fetchNeed[petLevel(S.A) - 1];
         S.phase = onIsle ? 'chase' : 'back';
         if (!onIsle) G.toast?.(`Whoops — over the edge! The ${def.name} fetches you another stick.`, p.index);

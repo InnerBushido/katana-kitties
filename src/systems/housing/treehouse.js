@@ -102,6 +102,17 @@ const SPIRAL = { x: -1.2, z: -8.5, r: 1.8, w: 1.5, turns: 0.92, n: 14, onto: { x
    three ropes further, and C's corner — the one thing over the ring — is
    7.7 above the second time round. */
 const SLIDE = { cx: 0, cz: 1.2, R: 2.8, w: 1.5, turns: 1.5, flat: 0.7, run: 2.6, n: 36, pow: 1.15 };
+/* THE CHUTE'S WALLS ARE WIDER THAN ITS LIPS. Richard, Oct 2026: "the player
+   doesn't seem to be able to walk to the start of the ride ... is there a
+   collider?" There was: the lips were walls at w/2 + 0.06 = 0.81 either side
+   of the line, and a kitten is PLAYER_RADIUS 0.75 plus `_segPush`'s 0.18 skin
+   = 0.93 — so the mouth was 1.62 wide for a body 1.86 wide, and a real Player
+   was pinched to a stop 0.45 short of it with both lips pushing. The check
+   that said she boarded walked a fake at radius 0.6. The walls now stand
+   LIP_WALL out, which clears her with 0.07 to spare; the drawn lips stay
+   where they were, and her sprite overlapping a painted rail by a hair is
+   invisible where a chute she cannot enter is not. */
+export const LIP_WALL = 1.0;
 
 /**
  * The slide's path in the treehouse's frame: marks `{x, z, y}` from the roof's
@@ -395,7 +406,8 @@ export function buildTreehouse(toHouse, rot, y0, mats) {
         // a lip, so she rides IN it — and it is a wall, so she stays in it
         if (!k) lips[i].push({ x: p.x, z: p.z, y: p.y + 0.42 });
         lips[i].push({ x: q.x, z: q.z, y: q.y + 0.42 });
-        wall(p.x, p.z, q.x, q.z, Math.min(p.y, q.y) - 0.2, Math.abs(q.y - p.y) + 0.9);
+        const [pw, qw] = side(a, b, s * LIP_WALL);
+        wall(pw.x, pw.z, qw.x, qw.z, Math.min(p.y, q.y) - 0.2, Math.abs(q.y - p.y) + 0.9);
       });
       // legs to the ground under the OUTSIDE edge, every other joint off it
       if (a.y > 0.5 && k % 2 === 0) {

@@ -574,3 +574,33 @@ as well while in the tube." There are twelve masters
   that its blade sticks out to the RIGHT (ember 0.22/0.45, frost 0.26/0.44),
   because the billboard mirrors on `artFacesRight`. Frost's closes a pocket,
   so the fill count is twenty-five, and the kitten-pose count is fifteen.
+
+## An animation cut from a video — the tea ceremony, Oct 2026
+
+Richard: "a new animated sprite sheet that shows the player drinking the tea
+... 24 or more sprites, 32 would be good. Get creative, show me what can be
+done with animated sprites." An image model cannot draw 32 frames of one cat
+that agree with each other; a video model can, because they are one
+performance.
+
+- **The take.** Each kitten's PRAYER master (already her seiza, side-on) went
+  to Higgsfield `grok_video` as the start frame: 9 credits, 6 seconds, flat
+  magenta, locked-off camera. The mp4s are kept in
+  `docs/art-masters/video/` (not shipped) — they are the real masters.
+- **The cut** (`tools/capture/tea-sheet.mjs`). 32 of 145 frames, picked BY
+  HAND per kitten off a contact sheet (the two takes keep different time) into
+  the five segments `TEA_SHEET.seg` names. Ember's 22–32 are skipped: the bowl
+  fades in out of nothing there, and the game covers it with the 3D bowl
+  arriving at her knees.
+- **One crop for all 32.** The union of her ink over every pick, squared, feet
+  on the bottom. The loader is told `uniform: true` and takes each cell WHOLE
+  (`uniformBoxes`); its usual per-cell centring on the ink would slide her
+  sideways every time she leans for the bowl.
+- **Sized off the prayer**, since frame 0 IS that drawing animated: the
+  billboard's quad is the prayer's ink height over the cell's ink fraction
+  (`TEA_INK`, 0.973, measured). The cut between the two does not change her.
+- **Played by `Billboard`'s `anim` mode**, which picks the cell from `frame`
+  and mirrors on facing like any one-cell pose. 512 a cell in the master, 192
+  shipped (1536×768, ~1MB each): at 256 they were 1.6MB, over world-check's
+  1.5MB first-load line, for a kitten ~150px tall on screen. Storm and
+  Blossom are recoloured.

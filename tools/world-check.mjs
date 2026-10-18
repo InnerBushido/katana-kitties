@@ -6350,6 +6350,8 @@ console.log('\n--- background removal keeps the drawn whites ---');
     'farm/chick_fly.png',
     // ...and 返 in the bogu, the riposte guard (`kparry`).
     'kittens/ember/kparry.png', 'kittens/frost/kparry.png',
+    // ...and the tea ceremony's 32 frames, cut out of a video (tools/capture/tea-sheet.mjs).
+    'kittens/ember/tea.png', 'kittens/frost/tea.png',
   ];
   {
     const dir = new URL('../public/sprites/', import.meta.url);
@@ -6529,8 +6531,11 @@ console.log('\n--- background removal keeps the drawn whites ---');
        IS her first kiai drawing, so it brings its pocket with it; her new kiai
        (the wind-up) closes one too, over the helmet; Frost's `kparry` closes
        none. Measured by this loop. Not filled: CRITTER_ART, like the kiai. */
-    ok('turning the fill on for every sheet would repaint thirty-seven of them',
-      touched.length === 37 && touched.includes('kittens/ember/kparry.png') && !touched.includes('kittens/frost/kparry.png') && touched.includes('farm/chick_fly.png') && touched.includes('kittens/ember/pray.png') && touched.includes('roshi/roshi.png')
+    /* THIRTY-EIGHT SINCE THE TEA CEREMONY: Ember's `tea` sheet starts on her
+       prayer drawing, paws to her chest, and brings that pocket with it;
+       Frost's closes none. Not filled: CRITTER_ART with `uniform`, no ask. */
+    ok('turning the fill on for every sheet would repaint thirty-eight of them',
+      touched.length === 38 && touched.includes('kittens/ember/tea.png') && !touched.includes('kittens/frost/tea.png') && touched.includes('kittens/ember/kparry.png') && !touched.includes('kittens/frost/kparry.png') && touched.includes('farm/chick_fly.png') && touched.includes('kittens/ember/pray.png') && touched.includes('roshi/roshi.png')
       && touched.includes('kittens/ember/kiai.png') && touched.includes('kittens/frost/kiai.png')
       && touched.includes('lionheart/defeated.png') && touched.includes('beasts/dragon_sheet.png')
       && touched.filter((f) => /\/vr_/.test(f)).length === 8 && touched.includes('kittens/frost/vr_riposte.png')
@@ -6813,10 +6818,11 @@ console.log('\n--- the art that ships is smaller than the art that made it ---')
        `kiai.png`, the men strike (systems/housing/kendo.js).
        TWENTY-THREE SINCE THE HOME POSES: kendo's `seiza`, `reach` and `rei`,
        and `pray`, `bath` and `futon` (Player.setHomeArt).
-       TWENTY-FOUR SINCE THE RIPOSTE IN THE BOGU: `kparry.png`. */
-    ok('...with the same twenty-four poses drawn for each of them',
+       TWENTY-FOUR SINCE THE RIPOSTE IN THE BOGU: `kparry.png`.
+       TWENTY-FIVE SINCE THE TEA CEREMONY: `tea.png`, 32 frames in one sheet. */
+    ok('...with the same twenty-five poses drawn for each of them',
       posesOf('ember') === posesOf('frost')
-      && posesOf('ember').split(' ').length === 24, posesOf('ember'));
+      && posesOf('ember').split(' ').length === 25, posesOf('ember'));
   }
 
   /* --- and nothing else in public/ is quietly enormous ----------------------

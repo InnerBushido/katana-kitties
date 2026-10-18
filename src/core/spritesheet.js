@@ -860,6 +860,14 @@ export function findViewBoxes(imgData, w, h, expected, expectedRows = 1) {
  * @returns {Promise<{texture: THREE.CanvasTexture, cols: number, rows: number,
  *                    aspect: number}>}
  */
+/** Every cell of an exact cols x rows grid, whole (`loadSpriteAtlas`'s `uniform`). */
+export function uniformBoxes(w, h, cols, rows) {
+  const cw = Math.floor(w / cols), ch = Math.floor(h / rows);
+  return Array.from({ length: rows }, (_, r) => Array.from({ length: cols }, (_, c) => ({
+    x0: c * cw, x1: c * cw + cw - 1, y0: r * ch, y1: r * ch + ch - 1, w: cw, h: ch,
+  })));
+}
+
 export async function loadSpriteAtlas(url, opts = {}) {
   /* `pad` is transparent margin left around every cell's art. Sprite atlases
      bleed without it: bilinear filtering and mipmaps sample past the cell
@@ -881,6 +889,14 @@ export async function loadSpriteAtlas(url, opts = {}) {
        the same reason, and named for what it repairs rather than for the sheet
        that needed it, because the next one will be a different sheet. */
     fillHoles = false,
+    /* AN ANIMATION, NOT A TURNAROUND: the sheet is an exact `views` x `rows`
+       grid of frames cut from one locked-off video with ONE crop
+       (tools/capture/tea-sheet.mjs), and every cell is taken whole. The blob
+       finder centres each frame on its own ink, which is right for drawings
+       of a cat from eight sides and wrong for 32 frames of one cat: she leans
+       for the bowl, the box moves, and the recentring would slide her back
+       and forth across the tatami. Registration is the cell. */
+    uniform = false,
   } = opts;
 
   const img = await new Promise((res, rej) => {
@@ -900,7 +916,8 @@ export async function loadSpriteAtlas(url, opts = {}) {
   const keyed = keyOutBackground(
     sctx, src.width, src.height, clearPockets, fillHoles
   );
-  const grid = findViewBoxes(keyed, src.width, src.height, views, wantRows);
+  const grid = uniform ? uniformBoxes(src.width, src.height, views, wantRows)
+    : findViewBoxes(keyed, src.width, src.height, views, wantRows);
 
   const flat = grid.flat();
   if (flat.length === 0) throw new Error(`no sprite content found in ${url}`);

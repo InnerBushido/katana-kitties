@@ -29,10 +29,10 @@ export const JUKEBOX_FILES = {
     "first": 0,
     "loop": [
       0,
-      60
+      143.9591
     ],
-    "length": 60,
-    "arranged": "whole",
+    "length": 143.959,
+    "arranged": "segs 6",
     "mix": 0.269
   },
   "homeFestival": {

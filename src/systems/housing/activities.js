@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mealPct, BOON } from './boons.js';
-import { TEA_T, TEA_LEN, sipLen } from './teahouse.js';
+import { TEA_T, TEA_LEN, TEA_ANIM, TEA_SHEET, teaFrameAt, teaSips } from './teahouse.js';
+import { ONSEN } from './homeisle.js';
 
 /* ---------------------------------------------------------------------------
    THINGS TO DO AT HOME — the furniture that answers back.
@@ -75,6 +76,9 @@ export const PRAYER_TRACK = 'shrinePrayer';
 export const PRAYER_LEN = 45;
 /** The tea ceremony's piece (jukebox.js): once through, from its first kneel. */
 export const TEA_TRACK = 'teaCeremony';
+/** How far in front of her knees, toward the tray, her bowl is set down (teahouse metres). */
+export const TEA_BOWL_KNEES = 0.5;
+const smooth = (x) => { const t = Math.max(0, Math.min(1, x)); return t * t * (3 - 2 * t); };
 export const TEA_MUSIC_LEN = 30;
 
 /**
@@ -135,7 +139,7 @@ export class HomeActivities {
   _release(p) {
     const h = this.held.get(p?.index);
     this.held.delete(p.index);
-    if (p) p.homePose = null;
+    if (p) { p.homePose = null; p.homeLift = 0; }
     // she was lifted onto the futon; she gets up where she lay down from
     if (h?.back && p?.position) { p.position.x = h.back.x; p.position.z = h.back.z; }
   }
@@ -171,9 +175,13 @@ export class HomeActivities {
    * go round, one sip each, every kitten's share of the same 16 seconds, and
    * everybody bows. 26 seconds, one kitten or four.
    *
-   * SEIZA IS THE PRAYER DRAWING, AND A SIP IS THE MEAL'S. There is no
-   * kneeling-with-a-bowl drawing for the four kittens yet (housing.md's
-   * placeholder list), and the kendo seiza is in armour.
+   * SEIZA IS THE PRAYER DRAWING until the bowls go round, and then it is
+   * her tea sheet (`teaFrameAt`): she turns to you, takes the bowl up, sips
+   * slowly six times, sets it down and prays — and on the bow turns back
+   * side-on while her bowl goes back to the tray. Richard: "the player stays
+   * in seiza the whole time ... little or no bouncing". The sip used to be
+   * the MEAL's pose, which is the bounce he meant. Without the drawing she
+   * keeps the prayer and the bowl rises to her instead.
    */
   _tea(p, s) {
     const G = this.game;
@@ -212,39 +220,69 @@ export class HomeActivities {
     if (!C.seats.length || C.T.group.userData.disposed) { this._endTea(C, players); return; }
     C.t += dt;
     C.T.group.updateWorldMatrix?.(true, false);
-    const n = C.seats.length;
-    const t0 = TEA_T.whisk, sl = sipLen(n);
-    const sipT = C.t - t0;
-    const k = sipT >= 0 ? Math.floor(sipT / sl) : -1;
-    // the bowls: hers rises from the tray to her, tips, and goes back
+    const t0 = TEA_T.whisk, bowAt = t0 + TEA_T.sip * 4;
+    const sips = C.sips ??= teaSips();
+    /* THE KETTLE IS WHISKED while the others may still kneel: the chasen's
+       brisk little strokes, soft, and they stop a beat before the bowls go. */
+    if (C.t > 1 && C.t < t0 - 0.6 && (C.whisk = (C.whisk ?? 0) - dt) <= 0) {
+      C.whisk = 0.22 + Math.random() * 0.08;
+      G.audio?.play?.('teawhisk', 0.5);
+    }
+    if (C.t >= t0 && !C.served) {
+      C.served = true;
+      for (const q of C.seats) if (players[q.i]) G.toast('The bowls go round… everybody drinks the matcha, slowly. Mmm!', q.i);
+    }
     C.seats.forEach((q, j) => {
+      const p = players[q.i];
       const b = C.T.bowls[q.k];
+      const drawn = !!p?.teaPose;
+      const u = C.t - t0 - j * TEA_ANIM.stagger;
+      const r = teaFrameAt(u, sips, C.t >= bowAt ? C.t - bowAt : -1);
+      if (p) {
+        p.homePose = drawn ? 'tea' : 'pray';
+        p.teaFrame = r.frame;
+      }
+      // her sounds, on the edges of her own beats — four kittens are four sips, not one
+      const was = q.beat;
+      if (r.beat === 'sip' && r.mouth && !q.mouth) G.audio?.play?.('teasip', 0.55);
+      if (r.beat === 'sip' && was === 'pick') G.audio?.play?.('teaclink', 0.4);
+      if (r.beat === 'pray' && was === 'down') G.audio?.play?.('teaclink', 0.6);
+      q.beat = r.beat;
+      q.mouth = !!r.mouth;
       if (!b) return;
-      const u = j === k ? (sipT - j * sl) / sl : -1;
-      const lift = u < 0 ? 0 : Math.min(1, u / 0.25, (1 - u) / 0.2);
+      /* THE BOWL. With the drawing: during her turn the tray's bowl slides to
+         the floor in front of her knees and is hidden the moment she has one
+         in her paws (the drawing's own — the sheet's pick frames hold it at
+         exactly that spot); on the bow it is there again and slides home.
+         Without it: the bowl rises to her on every sip. */
       const at = C.T.seat(q.k);
       const lp = C.T.group.worldToLocal?.(new THREE.Vector3(at.x, C.T.floorY, at.z));
-      if (lp) b.position.lerpVectors(b.userData.home, lp.setY(b.userData.home.y + 1.25).addScaledVector(lp.clone().sub(b.userData.home).setY(0).normalize(), -0.55), lift);
-      b.rotation.x = lift * Math.sin(Math.max(0, u) * Math.PI) * 0.6;
-    });
-    if (k !== C.sipper && k >= 0 && k < n) {
-      C.sipper = k;
-      const p = players[C.seats[k].i];
-      if (p) {
-        p.homePose = 'eat';
-        G.toast(`${p.name} turns the bowl and sips the matcha… mmm!`, p.index);
+      if (!lp) return;
+      const home = b.userData.home;
+      const knees = lp.clone().setY(home.y).addScaledVector(home.clone().sub(lp).setY(0).normalize(), TEA_BOWL_KNEES);
+      b.visible = true;
+      b.rotation.x = 0;
+      if (drawn) {
+        if (r.beat === 'wait') b.position.copy(home);
+        else if (r.beat === 'turn') b.position.lerpVectors(home, knees, smooth(Math.max(0, u) / TEA_ANIM.turn));
+        else if (r.beat === 'turnBack' || r.beat === 'seiza') b.position.lerpVectors(knees, home, smooth(Math.min(1, (C.t - bowAt) / TEA_ANIM.turnBack)));
+        else b.visible = false;
+      } else {
+        const S = TEA_SHEET.seg.sip;
+        const lift = r.beat === 'sip' ? (r.frame - S[0]) / (S[1] - 1 - S[0]) : 0;
+        b.position.lerpVectors(home, lp.setY(home.y + 1.25).addScaledVector(lp.clone().sub(home).setY(0).normalize(), -0.55), lift);
+        b.rotation.x = lift * 0.5;
       }
-      if (k > 0) { const prev = players[C.seats[k - 1].i]; if (prev) prev.homePose = 'pray'; }
-    }
-    if (C.t >= t0 + TEA_T.sip * 4 && !C.bowed) {
+    });
+    if (C.t >= bowAt && !C.bowed) {
       C.bowed = true;
       for (const q of C.seats) {
         const p = players[q.i];
         if (!p) continue;
-        p.homePose = 'pray';
         G.toast('Everybody bows together… ARIGATOU GOZAIMASU!', p.index);
       }
-      G.audio?.play?.('menu');
+      // the rin: a small temple bowl-bell, struck once, left to ring out
+      G.audio?.play?.('rin', 0.8);
     }
     if (C.t >= TEA_LEN) this._endTea(C, players);
   }
@@ -254,7 +292,8 @@ export class HomeActivities {
       const p = players[q.i];
       if (p && this.held.get(q.i)?.act === 'tea') this._release(p);
     }
-    for (const b of C.T.bowls) { b.position.copy(b.userData.home); b.rotation.x = 0; }
+    for (const b of C.T.bowls) { b.position.copy(b.userData.home); b.rotation.x = 0; b.visible = true; }
+    for (const q of C.seats) { const p = players[q.i]; if (p) p.teaFrame = 0; }
     this.teaParty = null;
   }
 
@@ -274,6 +313,8 @@ export class HomeActivities {
     this._puff(p.position);
     this._hold(p, 'soak', HOLD.soak, { s });
     p.homePose = 'bath';
+    // the drawing's neck at the water line, not under it (`ONSEN`)
+    p.homeLift = ONSEN.water - ONSEN.neck;
     this.game.toast(`POOF! ${p.name} is in her bathing suit and sinks into the onsen… ahhh.`, p.index);
     this.game.audio?.play?.('menu');
   }
