@@ -3,7 +3,7 @@ import { toonVertexMat, xrayVertexMat, paint } from '../../core/gfx.js';
 import { Island, mergeParts, PALETTE } from '../../world/build.js';
 import { makeLabelTexture } from '../../core/label.js';
 import { buildHouseShell, houseHeight, houseRadius, floorOf, FLOOR_H, SLAB_T, WINDOW, PORT_H } from './homehouse.js';
-import { ITEMS, ITEM_BY_ID, LINK_BY_ID, houseSpecs, homeRooms, pathPosts } from './catalog.js';
+import { ITEMS, ITEM_BY_ID, LINK_BY_ID, houseSpecs, homeRooms, pathPosts, kendoArea, kendoMarks } from './catalog.js';
 import { PathFX, makeFlame, makeLamp } from './pathfx.js';
 import { TEA, teaK, teaSet } from './teahouse.js';
 import { ZenGarden, zenParts, ZEN, ZEN_ROCKS, ZEN_STONES, ZEN_STONE_R, ZEN_RAKE } from './zengarden.js';
@@ -1078,24 +1078,51 @@ export class HomeIsle {
     g.position.set(c.x, y, c.z);
     g.rotation.y = hs.ry;
     if (type === 'kendo') {
-      const floor = new THREE.BoxGeometry(room.w - 1, 0.08, room.d - 1);
+      /* THE DOJO IS ITS `kendoArea`, not the room (catalog.js): the floor,
+         the tape and the rack all stand inside that rect, which is measured
+         clear of every stairwell. It was the whole room, and on the castle's
+         ground floor the room's stairs ran up through the middle of the
+         square — "a kendo dojo there collides with the stairs". */
+      const A = kendoArea(room);
+      const ax = A.cx - room.cx;
+      const az = A.cz - room.cz;
+      const floor = new THREE.BoxGeometry(A.w, 0.08, A.d);
       paint(floor, 0xc89a5a);
-      floor.translate(0, 0.1, 0);
-      // the sparring square, in red tape — the ONLY floor outside the ring where a blow lands
+      floor.translate(ax, 0.1, az);
+      // the sparring square, in red tape round the edge of the area — the ONLY floor outside the ring where a blow lands
       const tape = [];
-      const hw = room.w / 2 - 1.6;
-      const hd = room.d / 2 - 1.6;
+      const hw = A.w / 2 - 0.15;
+      const hd = A.d / 2 - 0.15;
       for (const [w, d, x, z] of [[hw * 2, 0.18, 0, hd], [hw * 2, 0.18, 0, -hd], [0.18, hd * 2, hw, 0], [0.18, hd * 2, -hw, 0]]) {
         const b = new THREE.BoxGeometry(w, 0.1, d);
         paint(b, 0xc0302a);
-        b.translate(x, 0.16, z);
+        b.translate(ax + x, 0.16, az + z);
         tape.push(b);
       }
+      /* THE TWO SEIZA MARKS (kendo.js `marksOf`): where the two kneel to start.
+         Richard: "Show players where to stand to start." A white tape cross
+         each, with a square round it in her colour-neutral gold. */
+      for (const m of kendoMarks(room)) {
+        for (const [w, d] of [[1.1, 0.14], [0.14, 1.1]]) {
+          const b = new THREE.BoxGeometry(w, 0.1, d);
+          paint(b, 0xfff6de);
+          b.translate(m.x - room.cx, 0.17, m.z - room.cz);
+          tape.push(b);
+        }
+        for (const [w, d, x, z] of [[1.6, 0.1, 0, 0.8], [1.6, 0.1, 0, -0.8], [0.1, 1.6, 0.8, 0], [0.1, 1.6, -0.8, 0]]) {
+          const b = new THREE.BoxGeometry(w, 0.1, d);
+          paint(b, 0xe9c46a);
+          b.translate(m.x - room.cx + x, 0.17, m.z - room.cz + z);
+          tape.push(b);
+        }
+      }
+      // the bogu rack, against the area's back edge, at its west corner
+      const rackL = { x: A.cx - A.w / 2 + 1.6, z: A.cz - A.d / 2 + 0.5 };
       const rack = new THREE.BoxGeometry(2.4, 1.6, 0.3);
       paint(rack, PALETTE.woodDark);
-      rack.translate(-room.w / 2 + 1.6, 0.8, -room.d / 2 + 0.5);
+      rack.translate(rackL.x - room.cx, 0.8, rackL.z - room.cz);
       g.add(new THREE.Mesh(mergeParts([floor, ...tape, rack]), toonVertexMat()));
-      const rackW = hs.local(room.cx - room.w / 2 + 1.6, room.cz - room.d / 2 + 1.4);
+      const rackW = hs.local(rackL.x, rackL.z + 0.9);
       this.spots.push({ x: rackW.x, z: rackW.z, y, r: 2.4, act: 'kendo', room: room.id });
     } else if (type === 'holodeck') {
       /* HER TUBES AND THE THREE RACKS (holodeck.js): the arcade's, smaller.

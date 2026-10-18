@@ -28,6 +28,16 @@ import { fits, gridOf, footprint } from './editor.js';
    who has it (non-negotiable 6). The poof and the un-poof are the arcade's
    own (`suitAt`, `unsuitAt`), so the two ways in look the same.
 
+   A RACK HOLDS ONE SET PER KITTEN ON THE ISLAND (`rackStock`). Richard, Oct
+   2026: "if multiple players are on the player's home island, then there
+   should be extra VR gear for them to grab ... Currently it is possible for
+   players to grab different parts of the VR gear and there are no extra's,
+   therefore neither can obtain all 3 parts and cannot enter the simulator."
+   With one piece a rack, two sisters who each picked up a different piece
+   were stuck for good: each was waiting on the other's. Now `taken` is a set
+   of seats per rack, a rack only shows empty once every kitten there has
+   taken from it, and any tube in the room takes any of them.
+
    `holoLayout` is pure, so world-check can measure that the racks fit in every
    room a holodeck can be bought for.
 
@@ -52,6 +62,13 @@ export const HOLO_GEAR_SCALE = 0.7;
  */
 export const HOLO_TUBE = { bottom: 0.4, top: 3.9, r: 1.25 };
 const _tw = new THREE.Vector3();
+
+/** How many of a rack's piece there are: one for every kitten on the island,
+ *  and never fewer than one. Pure, so the check can ask it. */
+export function rackStock(players, I) {
+  const n = (players ?? []).filter((p) => p?.position && I?.over?.(p.position.x, p.position.z, 2)).length;
+  return Math.max(1, n);
+}
 
 /**
  * Where the tube and the three racks stand, in the room's own frame (x along
@@ -109,7 +126,22 @@ function nearestFit(room, items, id, x, z) {
  */
 export function holoKit(room, have = []) {
   const L = holoLayout(room);
-  const items = have.filter((q) => ITEM_BY_ID[q.id]?.holo);
+  /* A ROW THAT NO LONGER FITS WHERE IT IS GOES TO THE NEAREST CELL THAT DOES.
+     Richard, Oct 2026: "The VR equipment spawns inside the staircase ... no
+     item may stand on the stairs." `fits` has kept the stairs and the hole
+     over them clear since stairwells were cut, but this only ever ADDED the
+     missing pieces — a row saved before that, or carried over from a room
+     whose shape changed (migrate.js), stood where it was for good. Now every
+     kept row is asked `fits` again, in order, and one that fails is moved to
+     the free cell nearest where it was rather than dropped (the tube count
+     is hers). */
+  const items = [];
+  for (const q of have.filter((x) => ITEM_BY_ID[x.id]?.holo)) {
+    if (fits(room, items, ITEM_BY_ID[q.id], q.gx, q.gz, q.rot ?? 0)) { items.push(q); continue; }
+    const c = holoCell(room, q);
+    const s = nearestFit(room, items, q.id, c.x, c.z);
+    if (s) items.push(s);
+  }
   const add = (id, at) => {
     if (items.some((q) => q.id === id)) return;
     const s = nearestFit(room, items, id, at.x, at.z);
@@ -156,7 +188,7 @@ export function holoOut(room, c) {
 export class HoloDeck {
   constructor(housing) {
     this.H = housing;
-    /** `${site}:${room}:${item}` -> the seat holding that piece. */
+    /** `${site}:${room}:${item}` -> the SEATS holding one of that piece. */
     this.taken = new Map();
     /** seat -> { site, room, items: Set, suited, name } */
     this.bags = new Map();
@@ -169,9 +201,15 @@ export class HoloDeck {
 
   /** Everything she was holding goes back on its rack. */
   release(i) {
-    for (const [k, v] of [...this.taken]) if (v === i) this.taken.delete(k);
+    for (const [k, v] of [...this.taken]) {
+      v.delete(i);
+      if (!v.size) this.taken.delete(k);
+    }
     this.bags.delete(i);
   }
+
+  /** How many of rack `key`'s pieces are off it. */
+  _out(key) { return this.taken.get(key)?.size ?? 0; }
 
   drop(i) { this.release(i); }
 
@@ -235,8 +273,10 @@ export class HoloDeck {
           if (inIt?.style?.colour != null) u.uColor.value.set(inIt.style.colour);
           else if (!inIt && u.uGlow.value < 0.05) u.uColor.value.set(0x35d7f0);
         }
+        const stock = rackStock(players ?? g.players, I);
         for (const r of R.racks) {
-          const has = this.taken.has(this._key(I.site.id, R.room, r.id));
+          // empty only once every kitten here has one of it (`rackStock`)
+          const has = this._out(this._key(I.site.id, R.room, r.id)) >= stock;
           r.mesh.visible = !has;
           r.mesh.rotation.y = r.yaw + this.t * 0.8;
           r.mesh.position.y = r.baseY + Math.sin(this.t * 2 + r.phase) * 0.08;
@@ -281,17 +321,17 @@ export class HoloDeck {
     const g = this.game;
     const { I, R, r, key } = on;
     const item = GEAR_ITEMS.find((x) => x.id === r.id);
-    const who = this.taken.get(key);
-    if (who != null) {
-      if (who !== p.index) {
-        g.toast?.(`${p.name} — ${this.bags.get(who)?.name ?? 'somebody'} has the ${item.name}. It comes back when she takes the gear off.`, p.index);
-      }
+    const held = this.taken.get(key) ?? new Set();
+    if (held.has(p.index)) return;
+    if (held.size >= rackStock(g.players, I)) {
+      const who = [...held].map((i) => this.bags.get(i)?.name).filter(Boolean);
+      g.toast?.(`${p.name} — ${who.join(' and ') || 'somebody'} ${who.length > 1 ? 'have' : 'has'} the ${item.name}. It comes back when the gear comes off.`, p.index);
       return;
     }
     let bag = this.bags.get(p.index);
     if (bag && (bag.site !== I.site.id || bag.room !== R.room)) { this.release(p.index); bag = null; }
     if (!bag) { bag = { site: I.site.id, room: R.room, items: new Set(), suited: false, name: p.name }; this.bags.set(p.index, bag); }
-    this.taken.set(key, p.index);
+    this.taken.set(key, held.add(p.index));
     bag.items.add(r.id);
     g.sfx?.('orb');
     g.toast?.(`${p.name} — ${item.name} ✓ (${bag.items.size} of ${GEAR_ITEMS.length})`, p.index);

@@ -574,6 +574,11 @@ export class BuildMode {
       w = I.local(L.x, L.z + dist * 0.12);
     }
     (top._cam ??= new THREE.Vector3()).set(w.x, y + 1, w.z);
+    if (top.kind === 'yard') {
+      // where the ghost stands, for the x-ray (`xrayAt`) — not the framed centre, which leads it
+      (top._at ??= new THREE.Vector3()).set(lw.x, y + 1.4, lw.z);
+      top._atFloor = y + 0.35;
+    }
     // the house's front, wrapped to within a half-turn of the usual yaw, so the
     // camera swings the short way round (the same as the door shot)
     let yaw = I.ry;
@@ -634,6 +639,9 @@ export class BuildMode {
       dist = Math.max(11, h * 3.2 + 6);
       pitch = top.kind === 'yard' ? 0.62 : 0.86;
       (top._cam ??= new THREE.Vector3()).set(lw.x, y + h * 0.45, lw.z);
+      // the thing itself, for the x-ray (`xrayAt`)
+      (top._at ??= new THREE.Vector3()).set(lw.x, y + h * 0.45, lw.z);
+      top._atFloor = y + 0.35;
     } else {
       dist = Math.max(room.w, room.d) * 1.5 + 9;
       y = I.floorY(room);
@@ -680,7 +688,12 @@ export class BuildMode {
       const { top } = F;
       if (top.kind !== 'yard' && top.kind !== 'house' && top.kind !== 'link') continue;
       for (const hs of I.houses ?? []) {
-        let f = hs.shell.floorY.length - 1;
+        /* YARD WORK SEES OVER THE HOUSES: every floor above the first goes.
+           Richard, Oct 2026: "The house, especially a castle, can block the
+           camera ... hide every floor above the first while adjusting outdoor
+           objects." Only the roof came off, which left a castle's three
+           storeys standing between the lens and the lawn behind it. */
+        let f = top.kind === 'yard' ? 0 : hs.shell.floorY.length - 1;
         let hard = false;
         if (top.kind === 'link') {
           const ends = [top.a, top.cur].filter((e) => e?.hk === hs.hk);
@@ -688,6 +701,22 @@ export class BuildMode {
         }
         out.push({ hk: hs.hk, f, hard });
       }
+    }
+    return out;
+  }
+
+  /**
+   * WHAT THE X-RAY KEEPS IN VIEW for yard work: the thing she is placing or
+   * customising, `{ p, floor }` like a kitten's (housing.js `aimView`). The
+   * ground floor still stands after `outdoorCuts`, and from the usual side a
+   * castle's is a wall six units high across the lawn behind it.
+   */
+  xrayAt(I, members) {
+    const out = [];
+    for (const i of members ?? []) {
+      const F = this.frameOf(i);
+      if (!F || F.I !== I || F.room || F.top.kind !== 'yard' || !F.top._at) continue;
+      out.push({ p: F.top._at, floor: F.top._atFloor });
     }
     return out;
   }

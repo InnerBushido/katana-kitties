@@ -3488,9 +3488,17 @@ console.log('\n--- the panda in the ring ---');
          Billboards `artFacesRight: true` and the pen tells its animals `false`,
          and neither is worth anything unless the baked drawing agrees.
          The shinai, in the top 35% of the rows: right minus left reach measured
-         0.254 / 0.199 for Ember's and Frost's guard and 0.092 / 0.116 for the
-         kiai, whose shinai is raised overhead and so reaches less. The bars
-         are 0.1 and 0.05.
+         0.254 / 0.199 for Ember's and Frost's guard, 0.092 / 0.095 for the
+         RIPOSTE guards (`kparry`, the shinai held up across her), and 0.116
+         for Frost's kiai. The bars are 0.1 and 0.05.
+         EMBER'S KIAI IS A WIND-UP, Oct 2026 — Richard: "Generate a new attack
+         sprite for Ember based on Frost's 'kiai' art", the shinai raised up
+         and BACK for a vertical cut. Its blade measures -0.044: it points
+         behind her, which is the drawing, not a mirror. So a wind-up is asked
+         where her TAIL is instead: in the middle 35-65% of the rows the ink
+         runs 0.32 left of the middle and 0.16 right, the tail behind her.
+         Bar 0.1 — and it is asked only of a drawing whose blade fails, so a
+         guard is still held to its blade.
          An animal has no blade, so it is asked where its HEAD is: the centre
          of the top 35% of its ink against the centre of all of it. Measured
          -0.086 chick, -0.024 bunny, -0.201 goat. The bunny's is thin because
@@ -3500,28 +3508,36 @@ console.log('\n--- the panda in the ring ---');
       const ink = (f) => {
         const { w, h, d } = readPNG(new URL(`../public/sprites/${f}.png`, import.meta.url));
         let lo = w; let hi = -1; let sx = 0; let n = 0; let ax = 0; let an = 0;
+        let mlo = w; let mhi = -1;
         for (let y = 0; y < h; y++) {
           for (let x = 0; x < w; x++) {
             if (d[(y * w + x) * 4 + 3] <= 128) continue;
             ax += x; an++;
             if (y < Math.floor(h * 0.35)) { lo = Math.min(lo, x); hi = Math.max(hi, x); sx += x; n++; }
+            if (y >= Math.floor(h * 0.35) && y < Math.floor(h * 0.65)) { mlo = Math.min(mlo, x); mhi = Math.max(mhi, x); }
           }
         }
-        return { f, reach: (hi / w - 0.5) - (0.5 - lo / w), head: (sx / n - ax / an) / w };
+        return { f, reach: (hi / w - 0.5) - (0.5 - lo / w), head: (sx / n - ax / an) / w, tail: (0.5 - mlo / w) - (mhi / w - 0.5) };
       };
       const psrc = readFileSync(new URL('../src/entities/player.js', import.meta.url), 'utf8');
       const guard = ['ember', 'frost'].map((s) => ink(`kittens/${s}/kendo`));
       const kiai = ['ember', 'frost'].map((s) => ink(`kittens/${s}/kiai`));
-      ok('剣 both kendo guards and both kiai hold the shinai out to the RIGHT, which is what the Billboard is told',
-        guard.every((r) => r.reach > 0.1) && kiai.every((r) => r.reach > 0.05)
+      const kparry = ['ember', 'frost'].map((s) => ink(`kittens/${s}/kparry`));
+      ok('剣 both kendo guards, both riposte guards and both kiai face RIGHT — by the shinai, or by the tail behind a wind-up — which is what the Billboard is told',
+        guard.every((r) => r.reach > 0.1) && kparry.every((r) => r.reach > 0.05) && kiai.every((r) => r.reach > 0.05 || r.tail > 0.1)
         // 2000, not 900: the ceremony's sizing comment now sits above the Billboard
         && /setKendoArt\(art\) \{[\s\S]{0,2000}mirror: true,\s*artFacesRight: true,/.test(psrc),
-        [...guard, ...kiai].map((r) => `${r.f} ${r.reach.toFixed(3)}`).join(' '));
+        [...guard, ...kparry, ...kiai].map((r) => `${r.f} ${r.reach.toFixed(3)}/${r.tail.toFixed(3)}`).join(' '));
+      ok('...and the riposte drawings are loaded for both sheets and recoloured for the other two',
+        existsSync(new URL('../public/sprites/kittens/ember/kparry.png', import.meta.url)) && existsSync(new URL('../public/sprites/kittens/frost/kparry.png', import.meta.url))
+        && /\['kparry', 'kparry'\]/.test(readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')));
       /* HER FEET, which a mirror moves. Richard: "moving up/down, the players
          position is jumping left/right, based on the sprite, the feet should
          stay in the same spot." The centre of the lowest 5% of ink against
          the cell's middle, as `feetX` (core/spritesheet.js) measures it live:
-         0.006 / -0.012 for the guards, 0.173 / 0.154 for the kiai — so every
+         0.006 / -0.012 for the guards, 0.173 / 0.154 for the first kiai (0.128
+         for Ember's wind-up, Oct 2026) and 0.173 / 0.182 for the riposte
+         guards — so every
          turn in the kiai slid her a third of her width, and every swing
          (guard to kiai and back) slid her half that again. The kiai has to
          measure as off-centre, or the fix is answering nothing, and the
@@ -3536,8 +3552,8 @@ console.log('\n--- the panda in the ring ---');
         for (let y = bottom; y > bottom - band && y >= 0; y--) for (let x = 0; x < w; x++) if (at(x, y)) { sx += x; n++; }
         return (sx / n + 0.5) / w - 0.5;
       };
-      const kf = ['ember', 'frost'].map((s) => feet(`kittens/${s}/kiai`));
-      ok('...the kiai drawings stand off the middle of their cells, and the Billboard is told where their feet are',
+      const kf = ['ember', 'frost'].flatMap((s) => ['kiai', 'kparry'].map((p) => feet(`kittens/${s}/${p}`)));
+      ok('...the kiai and riposte drawings stand off the middle of their cells, and the Billboard is told where their feet are',
         kf.every((v) => v > 0.08) && /footX: \(a\.feetX \?\? feetX\(a\)\) \* quad/.test(psrc), kf.map((v) => v.toFixed(3)).join(' '));
       const fsrc = readFileSync(new URL('../src/systems/housing/farm.js', import.meta.url), 'utf8');
       const pen = ['chick', 'bunny', 'goat'].map((a) => ink(`farm/${a}`));
@@ -6332,6 +6348,8 @@ console.log('\n--- background removal keeps the drawn whites ---');
     // ...and the home poses: kendo's ceremony, the prayer, the onsen, the futon; the chick's flutter.
     ...['ember', 'frost'].flatMap((s) => ['seiza', 'reach', 'rei', 'pray', 'bath', 'futon'].map((p) => `kittens/${s}/${p}.png`)),
     'farm/chick_fly.png',
+    // ...and 返 in the bogu, the riposte guard (`kparry`).
+    'kittens/ember/kparry.png', 'kittens/frost/kparry.png',
   ];
   {
     const dir = new URL('../public/sprites/', import.meta.url);
@@ -6507,8 +6525,12 @@ console.log('\n--- background removal keeps the drawn whites ---');
        chest), Frost's reach and rei (the shinai arm against the hakama), and
        the chick's flutter frame (a wing over her back). Measured by this loop.
        Not filled: all five come through CRITTER_ART like the kiai. */
-    ok('turning the fill on for every sheet would repaint thirty-six of them',
-      touched.length === 36 && touched.includes('farm/chick_fly.png') && touched.includes('kittens/ember/pray.png') && touched.includes('roshi/roshi.png')
+    /* THIRTY-SEVEN SINCE THE RIPOSTE IN THE BOGU, Oct 2026: Ember's `kparry`
+       IS her first kiai drawing, so it brings its pocket with it; her new kiai
+       (the wind-up) closes one too, over the helmet; Frost's `kparry` closes
+       none. Measured by this loop. Not filled: CRITTER_ART, like the kiai. */
+    ok('turning the fill on for every sheet would repaint thirty-seven of them',
+      touched.length === 37 && touched.includes('kittens/ember/kparry.png') && !touched.includes('kittens/frost/kparry.png') && touched.includes('farm/chick_fly.png') && touched.includes('kittens/ember/pray.png') && touched.includes('roshi/roshi.png')
       && touched.includes('kittens/ember/kiai.png') && touched.includes('kittens/frost/kiai.png')
       && touched.includes('lionheart/defeated.png') && touched.includes('beasts/dragon_sheet.png')
       && touched.filter((f) => /\/vr_/.test(f)).length === 8 && touched.includes('kittens/frost/vr_riposte.png')
@@ -6790,10 +6812,11 @@ console.log('\n--- the art that ships is smaller than the art that made it ---')
        SEVENTEEN SINCE KENDO: `kendo.png`, the guard in the bogu, and
        `kiai.png`, the men strike (systems/housing/kendo.js).
        TWENTY-THREE SINCE THE HOME POSES: kendo's `seiza`, `reach` and `rei`,
-       and `pray`, `bath` and `futon` (Player.setHomeArt). */
-    ok('...with the same twenty-three poses drawn for each of them',
+       and `pray`, `bath` and `futon` (Player.setHomeArt).
+       TWENTY-FOUR SINCE THE RIPOSTE IN THE BOGU: `kparry.png`. */
+    ok('...with the same twenty-four poses drawn for each of them',
       posesOf('ember') === posesOf('frost')
-      && posesOf('ember').split(' ').length === 23, posesOf('ember'));
+      && posesOf('ember').split(' ').length === 24, posesOf('ember'));
   }
 
   /* --- and nothing else in public/ is quietly enormous ----------------------
@@ -21273,6 +21296,24 @@ console.log('\n--- seeing through the arena ---');
   ok('...and it asks that before it works out where the fragment sits',
     shader.fragmentShader.indexOf('uCutFloor[i]) continue;')
       < shader.fragmentShader.indexOf('float t = dot(vXrayWorld'));
+
+  /* --- A BIGGER HOLE, AND A CEILING, PER SUBJECT ------------------------
+     For a kitten downstairs in a pane that shows the floor above (housing.js
+     `aimView`, LOWER_XRAY): "Make the lower player's x-ray 2-3x bigger.
+     Upper-floor items must not be affected by the lower player's x-ray."
+     Unset, both are what every caller has always had. */
+  ok('a cut given no scale and no ceiling is exactly the old one',
+    [...shader.uniforms.uCutScale.value].every((v) => v === 1) && [...shader.uniforms.uCutCeil.value].every((v) => v === 1e9));
+  mat.setCuts(new THREE.Vector3(0, 0, 0), [new THREE.Vector3(1, 2, 3), new THREE.Vector3(4, 5, 6)], [0, 0], { scale: [2.5, NaN], ceil: [4.2, undefined] });
+  ok('...one that is given them carries them, and a bad number is the default, never NaN',
+    shader.uniforms.uCutScale.value[0] === 2.5 && shader.uniforms.uCutScale.value[1] === 1
+    && Math.abs(shader.uniforms.uCutCeil.value[0] - 4.2) < 1e-6 && shader.uniforms.uCutCeil.value[1] === 1e9);
+  mat.setCuts(new THREE.Vector3(0, 0, 0), [new THREE.Vector3(1, 2, 3)]);
+  ok('...and the next frame without them puts them back', shader.uniforms.uCutScale.value[0] === 1 && shader.uniforms.uCutCeil.value[0] === 1e9);
+  ok('the ceiling is asked before the segment maths too, and the scale widens the hole and its soft edge alike',
+    shader.fragmentShader.indexOf('uCutCeil[i]) continue;') > 0
+    && shader.fragmentShader.indexOf('uCutCeil[i]) continue;') < shader.fragmentShader.indexOf('float t = dot(vXrayWorld')
+    && /uCutR \* uCutScale\[i\]/.test(shader.fragmentShader) && /uCutSoft \* uCutScale\[i\]/.test(shader.fragmentShader));
 
   /* --- the arena's own see-through furniture --- */
   const built = buildArena();
@@ -42548,7 +42589,10 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         const wsrc = readFileSync(new URL('../src/world/simworld.js', import.meta.url), 'utf8');
         ok('...the island\'s quiet scales the simulator\'s music, keeping the track so it fades back rather than restarting; his fight\'s own theme is not hushed',
           /this\._vrLevel = swell \* \(1 - \(this\.dream\?\.hush \?\? 0\)\)/.test(msrc) && /if \(swell > 0\) return 'vr'/.test(msrc)
-          && msrc.indexOf("this.dream?.shadow?.state === 'live'") < msrc.indexOf('this._vrLevel = swell'));
+          /* his theme is `_simGameTrack`'s, asked before the swell is (and
+             before the house's jukebox — housing.mjs evaluates that order) */
+          && /_simGameTrack\(\) \{[\s\S]{0,200}this\.dream\?\.shadow\?\.state === 'live'/.test(msrc)
+          && msrc.indexOf('const simSong = this._simGameTrack();') < msrc.indexOf('this._vrLevel = swell'));
         ok('...and the dark sky carries the code rain, scaled by the same gloom — set for each pane before its sky is placed',
           /uniform float uGloom;[\s\S]*if \(uGloom > 0\.001\) \{[\s\S]*col \+= rain \* uGloom/.test(wsrc)
           && /this\.sim\.setGloom\(this\.paneGloom\(members\)\);[\s\S]{0,200}?this\.sim\.faceCamera\(camera\);/.test(readFileSync(new URL('../src/systems/dreamdojo.js', import.meta.url), 'utf8')));

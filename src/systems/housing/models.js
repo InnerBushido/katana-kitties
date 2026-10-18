@@ -67,6 +67,7 @@ export function loadModel(id) {
           o.receiveShadow = false;
         });
         root.userData.clips = gltf.animations ?? [];
+        READY.set(id, root);
         return root;
       } catch (e) {
         console.warn(`[housing] model ${id} not loaded, keeping its stand-in`, e?.message ?? e);
@@ -76,6 +77,27 @@ export function loadModel(id) {
     cache.set(id, p);
   }
   return cache.get(id).then((root) => (root ? root.clone(true) : null));
+}
+
+/**
+ * THE MODELS ALREADY LOADED, by id, for `placeModel` to use WITHOUT A PROMISE.
+ * Richard, Oct 2026: "All the 3D models blink as if respawning while
+ * customising an object or furniture." Every change to a home rebuilds its
+ * island (`HomeIsle.rebuildItems`), and `placeModel` put the drawn stand-in
+ * in and swapped the real model in on a `.then` — a microtask, which runs
+ * AFTER the frame that did the rebuild has been drawn. So every slider step
+ * drew one frame of every stand-in on the island: the whole garden turned
+ * into boxes and back. A model that has loaded once is now placed at once.
+ */
+const READY = new Map();
+
+/** For world-check, which has no fetch: as if `id` had loaded as `root`. */
+export function primeModel(id, root) { READY.set(id, root); cache.set(id, Promise.resolve(root)); }
+
+/** A clone of model `id` if it has already loaded, else null (and the caller waits). */
+export function modelNow(id) {
+  const root = id ? READY.get(id) : null;
+  return root ? root.clone(true) : null;
 }
 
 const _box = new THREE.Box3();
@@ -229,17 +251,27 @@ export function placeModel(id, standIn, size = null, look = null) {
     g.userData.maxMul = standIn.userData.maxMul;
   }
   g.userData.modelId = id ?? null;
-  if (id) {
+  const real = (m) => {
+    if (standIn) g.remove(standIn.parent === g ? standIn : standIn.parent);
+    if (look?.style) {
+      if (hasStyles) styleModel(m, id, look.style);
+      else tintObject(m, look.style);
+    }
+    g.add(fitTo(m, size, look));
+    g.userData.maxMul = m.userData.maxMul;
+    g.userData.real = true;
+  };
+  const now = modelNow(id);
+  if (now) {
+    // already loaded: real from the first frame (`READY`). `onReal` is set by
+    // the caller AFTER this returns, so it is still called a beat later — every
+    // one of them is also applied to the whole group at once, and is idempotent.
+    real(now);
+    queueMicrotask(() => { if (!g.userData.disposed) g.userData.onReal?.(g); });
+  } else if (id) {
     loadModel(id).then((m) => {
       if (!m || g.userData.disposed) return;
-      if (standIn) g.remove(standIn.parent === g ? standIn : standIn.parent);
-      if (look?.style) {
-        if (hasStyles) styleModel(m, id, look.style);
-        else tintObject(m, look.style);
-      }
-      g.add(fitTo(m, size, look));
-      g.userData.maxMul = m.userData.maxMul;
-      g.userData.real = true;
+      real(m);
       g.userData.onReal?.(g);
     });
   }

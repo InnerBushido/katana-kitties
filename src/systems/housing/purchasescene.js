@@ -28,9 +28,15 @@ const SHOTS = [
   { id: 'reform', dur: 3.2, cap: (n) => `${n}'s island is taking shape…` },
   { id: 'gate', dur: 2.6, cap: () => 'A gate appears through the clouds…' },
   { id: 'bridge', dur: 4.4, cap: (n) => `…and a bridge grows in ${n}'s colours!` },
-  { id: 'statue', dur: 2.8, cap: (n) => `A statue of ${n} guards the way.` },
+  { id: 'statue', dur: 2.8, cap: (n, many) => (many ? `Statues of ${n} guard the way.` : `A statue of ${n} guards the way.`) },
   { id: 'wide', dur: 2.6, cap: (n) => `Welcome home, ${n}!` },
 ];
+
+/** The statue shot: how much of the frame the row may fill, and how far back it may go to. */
+const STATUE_FILL = 0.88;
+const STATUE_FAR = 60;
+const _box = new THREE.Box3();
+const _v = new THREE.Vector3();
 
 const ease = (t) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
 
@@ -93,7 +99,7 @@ export class PurchaseScene {
       this.t = 0;
       return;
     }
-    if (this.waiting) { this.waiting = false; this._caption(S.cap(this.name)); }
+    if (this.waiting) { this.waiting = false; this._caption(S.cap(this.name, this.owners.length > 1)); }
     switch (S.id) {
       case 'reform': {
         /* THE HOUSE, NOT ITS PARENT: the house group sits at the island's
@@ -138,7 +144,7 @@ export class PurchaseScene {
       this.shot++;
       this.t = 0;
       if (this.shot >= SHOTS.length) { this.finish(); return; }
-      this._caption(SHOTS[this.shot].cap(this.name));
+      this._caption(SHOTS[this.shot].cap(this.name, this.owners.length > 1));
       if (SHOTS[this.shot].id === 'statue' && B) this.H.game.audio?.play?.('gong');
       if (SHOTS[this.shot].id === 'gate') this.H.game.audio?.play?.('gateform');
     }
@@ -169,15 +175,45 @@ export class PurchaseScene {
   }
 
   _statueCam(B, u) {
-    const p = B.statueSpot;
     const s = B.start;
+    /* EVERY OWNER'S STATUE. Richard, Oct 2026: "The statues shot in the
+       purchase cutscene must include all co-owners' statues." It looked at
+       slot 0 from 8 away, so a castle bought by three showed one statue and
+       an elbow. Now it aims at the middle of the row and backs off ALONG ITS
+       OWN RAY (height with distance, so the angle that was liked is kept)
+       until the TOP HALF of every statue's measured box is inside the frame.
+       The top half because the liked shot is a close-up: one statue at 8
+       has her head at 0.28 and her plinth off the bottom of the frame, and
+       still comes out at exactly 8. A guessed width (3.2) was wrong — the
+       box is 4.8 — so it is measured, here, every frame. */
+    const kids = B.statue?.children ?? [];
+    const ps = kids.map((c) => c.getWorldPosition(new THREE.Vector3()));
+    const p = ps.length
+      ? { x: ps.reduce((t, q) => t + q.x, 0) / ps.length, z: ps.reduce((t, q) => t + q.z, 0) / ps.length }
+      : B.statueSpot;
+    // the boxes at REST, whatever the rise has done to the group (`B._statueY0`)
+    const lift = (B._statueY0 ?? B.statue?.position.y ?? 0) - (B.statue?.position.y ?? 0);
+    const pts = [];
+    for (const c of kids) {
+      _box.setFromObject(c);
+      if (_box.isEmpty()) continue;
+      const mid = (_box.min.y + _box.max.y) / 2 + lift;
+      for (const x of [_box.min.x, _box.max.x]) for (const z of [_box.min.z, _box.max.z]) for (const y of [mid, _box.max.y + lift]) pts.push(new THREE.Vector3(x, y, z));
+    }
     /* FROM THE TOWN SIDE, CLOSE: she faces the people walking up to her
        bridge, so that is where her face is. Close, because the town side is
        where the bamboo is (see `_gateCam`), and 8 units in front of her is
        inside any grove's clearing. */
     const a = Math.atan2(B.fx, B.fz) + Math.PI + 0.45 - u * 0.25;
-    this.camera.position.set(p.x + Math.sin(a) * 8, s.y + 4, p.z + Math.cos(a) * 8);
-    this.camera.lookAt(p.x, s.y + 3, p.z);
+    const place = (d) => {
+      this.camera.position.set(p.x + Math.sin(a) * d, s.y + 4 * (d / 8), p.z + Math.cos(a) * d);
+      this.camera.lookAt(p.x, s.y + 3, p.z);
+      this.camera.updateMatrixWorld(true);
+    };
+    for (let d = 8; d <= STATUE_FAR; d += 0.5) {
+      place(d);
+      if (pts.every((q) => { _v.copy(q).project(this.camera); return Math.abs(_v.x) <= STATUE_FILL && _v.y <= STATUE_FILL && _v.z < 1; })) return;
+    }
   }
 
   _wide(I, u, B = null) {

@@ -385,13 +385,7 @@ export class HomeBridge {
     this.statueSpot = this._slot(this.ends[0], STATUE_SLOTS[0]);
 
     // the jukebox — a boombox on a barrel with a surfboard leaning on it, right of the gate
-    const jb = new THREE.Group();
-    jb.add(placeModel('komodaru-sake-barrel-c5199a', drawItem('sake')));
-    const barrelScale = 2.2;
-    jb.children[0].scale.setScalar(barrelScale);
-    jb.add(drawBoombox(barrelScale));
-    jb.add(drawSurfboard());
-    jb.name = 'jukebox';
+    const jb = makeJukebox();
     this.jukebox = jb;
     this.group.add(jb);
     this.jukeboxSpots = [];
@@ -429,7 +423,12 @@ export class HomeBridge {
     });
     this.statue2 = new THREE.Group();
     this.endGroup.add(this.statue2);
-    const jb2 = jb.clone(true);
+    /* ITS OWN, not `jb.clone(true)`: a clone taken here is taken while the
+       barrel's model is still loading, so it kept the drawn stand-in for good
+       and the real barrel only ever landed in the first one. Richard: "The
+       barrel under the boombox ... is missing or too low. It must look right
+       on both the main island and her island." */
+    const jb2 = makeJukebox();
     this.endGroup.add(jb2);
     this.jukebox2 = jb2;
     this._dress(g1, 1, { fx: etx, fz: etz, rx: erx, rz: erz }, this.endGroup, gy, this.ends[1].face);
@@ -795,16 +794,31 @@ function mergeStrip(parts) {
   return out;
 }
 
-/** The barrel at 2.2× measured 2.20 tall in the game (Box3 over the loaded
- *  Polyfork model, Oct 2026), so its lid is 1.0 of the scale. */
-export const BARREL_TOP = 1.0;
+/** How tall the barrel under the boombox stands, and so where the boombox
+ *  sits. It was a 2.2x SCALE on the Polyfork model (which measured 1.0 tall,
+ *  so 2.2) — but a scale is only right for the model it was measured on, and
+ *  the drawn stand-in the island end was stuck with came out a fraction of
+ *  that, the boombox floating over a squat bottle. Now the barrel is FITTED
+ *  to this height (`fitTo`), model or stand-in, and the boombox sits on it. */
+export const BARREL_H = 2.2;
+
+/** One jukebox: the barrel, the boombox on its lid, the surfboard. */
+export function makeJukebox() {
+  const jb = new THREE.Group();
+  const barrel = placeModel('komodaru-sake-barrel-c5199a', drawItem('sake'), { h: BARREL_H });
+  barrel.name = 'barrel';
+  jb.add(barrel);
+  jb.add(drawBoombox(BARREL_H));
+  jb.add(drawSurfboard());
+  jb.name = 'jukebox';
+  return jb;
+}
 
 /** Roshi's 90s boombox, sitting on the barrel. PLACEHOLDER art (drawn).
  *  ON the barrel: it sat at 0.47 of the scale, which is half way down inside
  *  it, so the boombox Richard reported "facing the wrong way" was a barrel
  *  with a surfboard and no boombox to be seen at all. */
-function drawBoombox(barrelScale) {
-  const top = BARREL_TOP * barrelScale;
+function drawBoombox(top) {
   const parts = [];
   const b = (w, h, d, c, x, y, z) => { const g = new THREE.BoxGeometry(w, h, d); paint(g, c); g.translate(x, y, z); parts.push(g); };
   b(1.9, 1.0, 0.6, 0x2b2b33, 0, top + 0.5, 0);

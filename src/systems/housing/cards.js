@@ -1075,7 +1075,9 @@ export class HousingCards {
       const why = this.H.claimWhy(p, H, room.id);
       return {
         title: who ? room.name : `CLAIM THE ${room.name}`, right: who ? possessive(who) : 'UNCLAIMED',
-        blurb: who ? `${who} claimed it.` : 'Make it yours: only you can furnish it, and your door lock keeps others out.',
+        blurb: who ? `${who} claimed it.` : room.through
+          ? 'Make it yours: only you can furnish it. Everybody walks through it to the door or the stairs, so it is never locked.'
+          : 'Make it yours: only you can furnish it, and your door lock keeps others out.',
         disabled: !!why, why,
         go: () => { if (this.H.setClaim(p, H, room.id, true)) this.game.toast(`The ${room.name} is ${me}'s now!`, index); return null; },
       };

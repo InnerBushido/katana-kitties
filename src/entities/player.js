@@ -182,10 +182,27 @@ export const COMBAT = tune('COMBAT', {
  * should turn into a dodge and they should dodge in the direction the player is
  * moving in". Here and not in kendo.js so the two files do not import each
  * other; `Kendo.sparStrike` reads `kendoDodgeT` for the immunity.
+ *
+ * A STEP OR TWO, NOT A DASH. Richard, Oct 2026: "It is too powerful and
+ * players fall out of the fighting area. It should move her only 1 or 2 steps
+ * and make her immune to hits for a short time." It was 24 a second for
+ * 0.24s and then the ordinary braking — measured, about 10 units, the width
+ * of the square. Now it covers `dist` in `t` and STOPS (her velocity is
+ * zeroed when the move ends, so no slide is added on), and the immunity is
+ * its own clock, `immune`, longer than the move: the step is the dodge, the
+ * immunity is what makes it one.
  */
-export const KENDO_DODGE = { speed: 24, t: 0.24, cool: 0.75 };
-/** The kendo drawings stand this much bigger than her — the bogu is a size up. */
-export const KENDO_SCALE = 1.25;
+export const KENDO_DODGE = { dist: 2.2, t: 0.14, immune: 0.36, cool: 0.75 };
+/**
+ * The kendo drawings' size against her own. Richard, Oct 2026: "The kendo
+ * gear sprites are too big. Make them about 20% smaller and compare with the
+ * normal sprites: they can be a little bigger because of the armour, but
+ * about the same size, and smaller gives more room in the small fighting
+ * space." It was 1.25 ("probably 25% bigger", asked for earlier); 1.25 x 0.8
+ * is 1. Every drawing is normalised on its ink (`contentScale`), so 1 is her
+ * own standing size, and the men and the do are what reads a size up.
+ */
+export const KENDO_SCALE = 1;
 /* The home poses' sizes as a fraction of her height (setHomeArt). The bath is
    a head, so it is sized as one; the futon drawing is half as tall as it is
    wide, so this makes it about two of her long. Measured on screen. */
@@ -1741,7 +1758,7 @@ export class Player {
    */
   setKendoArt(art) {
     for (const [key, a] of [['kendoPose', art?.guard], ['kiaiPose', art?.kiai],
-      ['seizaPose', art?.seiza], ['reachPose', art?.reach], ['reiPose', art?.rei]]) {
+      ['seizaPose', art?.seiza], ['reachPose', art?.reach], ['reiPose', art?.rei], ['kparryPose', art?.kparry]]) {
       if (this[key]) { this.group.remove(this[key]); this[key] = null; }
       if (!a?.texture) continue;
       /* KENDO_SCALE BIGGER than her: Richard, "The Kendo gear that player
@@ -2150,6 +2167,22 @@ export class Player {
     const pushed = (pad?.mx ?? 0) ** 2 + (pad?.my ?? 0) ** 2 > 1e-4;
     const H = this._peekHold;
     const borrowed = this.viewOwn === false && Number.isFinite(this.viewYaw);
+    /* ...AND A LENS THAT IS TURNING TO A KNOWN PLACE. The kendo match's turns
+       a quarter round when the plane does (housing/kendo.js `KENDO_TURN`).
+       Richard: "a held direction keeps its old meaning until released, then
+       the new input comes from where the camera lands, so it is always a
+       cardinal direction". The first half is the swing rule below, as it
+       stands; `land` is the second — a push let go of mid-turn, or started
+       mid-turn, is read on the lens she is turning TO, not on the angle the
+       turn happens to be at. Null everywhere but a match, so this is the
+       basis it always was (non-negotiable 5). */
+    const land = this.kendoBout && Number.isFinite(this.kendoLandYaw) ? this.kendoLandYaw : null;
+    const wasPushed = !!this._pushedLast;
+    this._pushedLast = pushed;
+    if (land != null && !this.bridgePeek?.live && !borrowed && !(this.camSwing && pushed) && !(H && pushed)) {
+      this._peekHold = null;
+      return this._basis(land);
+    }
     /* ...AND FOR A LENS SWINGING ROUND HER (`camSwing`: a focus turning in or
        out — the front door's shot, the Dojo's). Richard: "Input switching
        when the camera changes to the front door camera, and then when it
@@ -2160,8 +2193,8 @@ export class Player {
        camera never sets it, so the game she knows is untouched. */
     if (!this.bridgePeek?.live && !borrowed && !(this.camSwing && pushed) && !(H && pushed)) { this._peekHold = null; return this._basis(); }
     const view = Number.isFinite(this.viewYaw) ? this.viewYaw : this.camYaw;
-    if (!H) this._peekHold = { yaw: view };
-    else if (!pushed) H.yaw = view;
+    if (!H) this._peekHold = { yaw: land != null && !wasPushed ? land : view };
+    else if (!pushed) H.yaw = land ?? view;
     return this._basis(this._peekHold.yaw);
   }
 
@@ -2186,6 +2219,17 @@ export class Player {
     if (this.ripostePose?.visible) this.ripostePose.faceCamera(camera);
     if (this.kendoPose?.visible) this.kendoPose.faceCamera(camera);
     if (this.kiaiPose?.visible) this.kiaiPose.faceCamera(camera);
+    /* ...AND EVERY OTHER POSE THAT CAN BE THE ONE ON SCREEN. Richard, Oct
+       2026: "Sprites billboard toward the camera correctly, and the two
+       opponents face each other." The match's three ceremony drawings, its
+       riposte and the three home poses were never turned: each kept the
+       rotation it was built with, so from any lens but the one it happened to
+       face it was a card seen at a slant — and, since `faceCamera` is also
+       what picks the mirror side from `facing`, a kneeling kitten could face
+       away from the opponent she was set facing. */
+    for (const k of ['seizaPose', 'reachPose', 'reiPose', 'kparryPose', 'prayPose', 'bathPose', 'futonPose']) {
+      if (this[k]?.visible) this[k].faceCamera(camera);
+    }
 
     /* THE HEALTH BAR IS A FLAT QUAD AND HAS TO BE TURNED, like the leaders'
        speech bubbles are. It is parented to `group`, which never rotates, so
@@ -2251,6 +2295,11 @@ export class Player {
   /* ------------------------------- update ------------------------------- */
 
   update(dt, pad, world, dragons, hud) {
+    /* HER THUMB, BEFORE ANYTHING BELOW TAKES THE PAD AWAY. A kitten kneeling
+       in seiza is pinned (`pinnedAt`, so FROZEN_PAD), and "pressing a move
+       direction stands her up" (housing/kendo.js `_seiza`) — the one thing
+       that asks the stick of a kitten whose stick is not hers to move with. */
+    this.padStick = Math.hypot(pad?.mx ?? 0, pad?.my ?? 0);
     /* A kitten holding a star over her head is not also sprinting off with it.
        Feeding the ground controller a dead stick freezes her without any of
        the three movement modes needing to know this pose exists.
@@ -3085,6 +3134,13 @@ export class Player {
          behind her while she stands still. */
       if (!this.dodgePlanted && !this.parryAt) this.facing = Math.atan2(wish.x, wish.z);
     }
+    /* IN A KENDO ROUND SHE FACES HER OPPONENT, along the fighting plane
+       (housing/kendo.js `_plane`): "the two opponents face each other". The
+       stick walks her and never turns her — a cut is a vertical lane straight
+       out along her facing, and a facing the stick could swing would aim it
+       off the plane the camera is showing. Not through a parry, which faces
+       the push that raised it. */
+    if (this.kendoBout && Number.isFinite(this.kendoFace) && !this.parryAt) this.facing = this.kendoFace;
     /* PLANTED, BUT NOT POINTED. Her FEET are taken and her aim is not, and
        the order of these two lines is what does it: the facing above is set
        from the stick before the stick is thrown away here, so through a whole
@@ -3230,16 +3286,27 @@ export class Player {
       if (!pad.down('jump')) this._kdHeld = false;
       else if (!this._kdHeld && moving && !(this.kendoDodgeCool > 0) && this.onGround) {
         this._kdHeld = true;
-        this.kendoDodgeT = KENDO_DODGE.t;
+        this.kendoDodgeT = KENDO_DODGE.immune;
+        this._kdMoveT = KENDO_DODGE.t;
         this.kendoDodgeCool = KENDO_DODGE.cool;
         (this._kdDir ??= new THREE.Vector3()).copy(target).setY(0).normalize();
         this.squash = 1;
         hud?.sfx('dodgeout');
       }
-      if (this.kendoDodgeT > 0) {
-        this.kendoDodgeT -= dt;
-        this.velocity.x = this._kdDir.x * KENDO_DODGE.speed;
-        this.velocity.z = this._kdDir.z * KENDO_DODGE.speed;
+      if (this.kendoDodgeT > 0) this.kendoDodgeT -= dt;
+      if (this._kdMoveT > 0) {
+        // the last frame covers only what is left of `dist`, so the step is the same at any frame rate
+        const step = Math.min(dt, this._kdMoveT);
+        this._kdMoveT -= dt;
+        const v = (KENDO_DODGE.dist / KENDO_DODGE.t) * (step / dt);
+        this.velocity.x = this._kdDir.x * v;
+        this.velocity.z = this._kdDir.z * v;
+        if (this._kdMoveT <= 0) this._kdStop = true;
+      } else if (this._kdStop) {
+        // and then she STOPS: no slide carried off the step
+        this._kdStop = false;
+        this.velocity.x = 0;
+        this.velocity.z = 0;
       }
     } else if (pad.pressed('jump') && !this.busy && !this.dodgePlanted && !this.arenaBreathAt && !this.parryAt) {
       if (this.coyote > 0 || this.jumpsLeft > 1) {
@@ -4718,9 +4785,23 @@ export class Player {
    * clan power, and gets it on the press exactly as she always did.
    */
   _parryArmed(pad, hud) {
-    if (!this.power.parry || !hud?.arenaLive?.(this)) return false;
+    if (!this._parryLive(hud)) return false;
     if (Math.hypot(pad?.mx ?? 0, pad?.my ?? 0) > PARRY.still) return false;
     return this._parryFree();
+  }
+
+  /**
+   * IS A PARRY POSSIBLE AT ALL HERE? The orb in a live round — or a live
+   * KENDO round, orb or none (`kendoLive`, set by housing/kendo.js `_plane`).
+   * Richard, Oct 2026: "Riposte works on the opponent's attacks, with the
+   * same timing as the default riposte." Her orbs do nothing in the dojo
+   * (`aggregate([])`), so `PARRY`'s own window and wait are the timing, which
+   * is exactly the default's. Outside the dojo this is the old test, word for
+   * word.
+   */
+  _parryLive(hud) {
+    if (this.kendoLive) return true;
+    return !!this.power.parry && !!hud?.arenaLive?.(this);
   }
 
   /** Nothing else owns her: the same list the Flash Step refuses on, plus the
@@ -4754,7 +4835,7 @@ export class Player {
       this.parryHeld = 0;
       return true;
     }
-    if (!this.power.parry || !hud?.arenaLive?.(this) || !this._parryFree()) {
+    if (!this._parryLive(hud) || !this._parryFree()) {
       this.parryPend = false;
       return false;
     }
@@ -6636,7 +6717,8 @@ export class Player {
        asked for, on a pose that is otherwise perfectly still. BEFORE THE
        FRIGHT, like the sweep, so a Cross Slash's hold still wins. */
     if (this.ripostePose) {
-      const guarding = this.parryT > 0 && !this.ko;
+      // in the bogu the guard is the kendo drawing's (`kparryPose`, below), where there is one
+      const guarding = this.parryT > 0 && !this.ko && !(this.kendoGeared && this.kparryPose);
       this.ripostePose.visible = guarding;
       if (guarding) {
         this.sprite.mesh.visible = false;
@@ -6655,8 +6737,13 @@ export class Player {
     if (this.kendoPose || this.kiaiPose) {
       if (this.kiaiT > 0) this.kiaiT -= dt;
       const geared = !!this.kendoGeared && !this.ko && !this.mount && !this.rideAlong;
-      const kiai = geared && this.kiaiT > 0 && !!this.kiaiPose;
-      const guard = geared && !kiai && !!this.kendoPose;
+      /* 返 IN THE BOGU: the riposte stance, while the window is up and her
+         answer is going out. Richard: Ember's old kiai drawing — the shinai
+         held across and up — reads as a guard, and becomes it. */
+      const kparry = geared && !!this.kparryPose && (this.parryT > 0 || (this.parryRecT > 0 && !(this.kiaiT > 0)));
+      if (this.kparryPose) this.kparryPose.visible = kparry;
+      const kiai = geared && !kparry && this.kiaiT > 0 && !!this.kiaiPose;
+      const guard = geared && !kiai && !kparry && !!this.kendoPose;
       /* THE MATCH'S CEREMONY (kendo.js `kendoStance`) - kneeling, reaching
          for the shinai, the bow - wears its own drawing where there is one,
          and the guard faked below where there is not. */
@@ -6665,10 +6752,10 @@ export class Player {
       for (const k of ['seizaPose', 'reachPose', 'reiPose']) if (this[k]) this[k].visible = !!cer && this[k] === cer;
       if (this.kendoPose) this.kendoPose.visible = guard && !cer;
       if (this.kiaiPose) this.kiaiPose.visible = kiai;
-      const pose = kiai ? this.kiaiPose : cer ?? (guard ? this.kendoPose : null);
+      const pose = kparry ? this.kparryPose : kiai ? this.kiaiPose : cer ?? (guard ? this.kendoPose : null);
       if (pose) {
         this.sprite.mesh.visible = false;
-        pose.facing = this.facing;
+        pose.facing = kparry ? this.parryDir : this.facing;
         const moving = Math.hypot(this.velocity.x, this.velocity.z) > 0.5;
         this._kendoBob = (this._kendoBob ?? 0) + dt * (moving ? 14 : 3);
         pose.mesh.position.y = kiai ? 0 : Math.abs(Math.sin(this._kendoBob)) * (moving ? 0.12 : 0.03);

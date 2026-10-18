@@ -481,12 +481,22 @@ replaced.
 - `roshi.png` → `roshi/roshi.png`, 768. One pose, facing camera, so it does
   not mirror. His height and foot are read off the baked sheet as constants
   in `roshi.js` (ink rows 14–752 of 768).
-- `ember_kendo.png` / `frost_kendo.png` → `kittens/<sheet>/kendo.png`, and
-  `ember_kiai.png` / `frost_kiai.png` → `kiai.png`, all 768. Bogu with the men
+- `ember_kendo.png` / `frost_kendo.png` → `kittens/<sheet>/kendo.png`,
+  `ember_kiai.png` / `frost_kiai.png` → `kiai.png`, and `ember_kparry.png` /
+  `frost_kparry.png` → `kparry.png` (返 in the bogu), all 768. Bogu with the men
   hiding the face, and a shinai. **These MIRROR**, like the Riposte stance
   and for the same reason. world-check measures the shinai reaching right:
-  0.254 / 0.199 for the guards, and 0.092 / 0.116 for the kiai, whose blade
-  is overhead. Both kiai close a sealed pocket and are in the fill inventory.
+  0.254 / 0.199 for the guards, 0.092 / 0.095 for the riposte guards and
+  0.116 for Frost's kiai. **Oct 2026, Richard**: "Ember's 'kiai' art becomes
+  the riposte stance. Generate a new attack sprite for Ember based on Frost's
+  'kiai' art. Frost gets Ember's 'kiai' art for her riposte." So
+  `ember_kparry` IS the first Ember kiai master, kept; the new `ember_kiai`
+  and `frost_kparry` were each prompted with both old kiai drawings as
+  references (gpt_image_2_5, 0.25 credits each). Ember's new kiai is a
+  wind-up with the blade pointing BACK, so its reach measures -0.044 — the
+  drawing, not a mirror — and it is asked where its tail is instead (0.160 of
+  the width further left than right in the middle band). Ember's kiai and her
+  kparry close a sealed pocket; Frost's kparry does not.
 - `chick.png` `bunny.png` `goat.png` → `farm/<id>.png`, 512, side-on facing
   LEFT. Measured by where the head is rather than a reach, since an animal
   has no blade. The chick and the goat close pockets.

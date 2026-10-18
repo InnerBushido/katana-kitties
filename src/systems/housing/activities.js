@@ -358,6 +358,16 @@ export class HomeActivities {
   }
 
   /**
+   * Is she at a window, looking out? Asked by `Game._groups` for `solo`.
+   * Richard, Oct 2026: "A player looking out of a window gets her own
+   * split-screen pane if she is sharing one." The shot is first person, so in
+   * a shared pane it took her sister's camera through the glass with her.
+   */
+  lookingOut(p) {
+    return this.held.get(p?.index)?.act === 'look';
+  }
+
+  /**
    * LOOKING OUT, first person (`LOOK_SHOT`, `lookShot`). `exact`: the lens
    * is where this says, so the split screen's pull-back (`paneWiden`) must
    * not push it back through the room. `fadeHer`: she is between the lens
@@ -379,8 +389,15 @@ export class HomeActivities {
 
   _cook(p, s) {
     const G = this.game;
+    /* A PLATE GOES BACK WHERE IT CAME FROM. Richard, Oct 2026: "it is
+       possible all 4 spots get filled up, then player is stuck with a plate
+       above their head. They should be able to return it to the cooking
+       table." So INTERACT at the kitchen with one over her head puts it back
+       on the counter — the one way to put a plate down that is not the table. */
     if (this._plates.has(p.index)) {
-      G.toast('You are already carrying a plate — take it to the KOTATSU and sit down!', p.index);
+      this._dropPlate(p.index);
+      G.audio?.play?.('land');
+      G.toast(`${p.name} puts the plate back in the kitchen. (Cook another any time!)`, p.index);
       return;
     }
     if (!this._kotatsuOf(s)) {
@@ -421,7 +438,16 @@ export class HomeActivities {
       G.toast('They have already started eating — cook another plate and join the next one!', p.index);
       return;
     }
-    if (this._plates.has(p.index)) { this._setPlate(p, s); return; }
+    /* ...AND A FULL TABLE IS NOT A DEAD END FOR HER. Before, a plate over her
+       head always meant "set it", and with four set that was refused for ever,
+       so the one kitten who could not sit down to eat was the one who had
+       cooked. A full table with a plate in her paws asks about the meal like
+       an empty-handed press does; her plate is the kitchen's again when the
+       meal starts (`startMeal` drops it). */
+    if (this._plates.has(p.index) && this.platesOn(key) < TABLE_SEATS) { this._setPlate(p, s); return; }
+    if (this._plates.has(p.index)) {
+      G.toast(`The table is full — ${TABLE_SEATS} plates already. Take yours back to the KITCHEN, or eat together now!`, p.index);
+    }
     if (this.platesOn(key)) {
       if (!G.housingCards?.open?.(p.index, 'meal', { key })) G.toast('Not right now — finish what you are doing first.', p.index);
       return;
@@ -626,6 +652,7 @@ export class HomeActivities {
         G.toast(`${p.name} wakes up fully rested!`, p.index);
       }
     }
+    this._pruneTables(players);
     this._updateMeals(dt, players);
     this._updateTea(dt, players);
     // the plate rides over her head; gone if she leaves home or a battle starts
@@ -653,6 +680,54 @@ export class HomeActivities {
       P.m.scale.setScalar(1 + P.t * 3);
       P.m.material.opacity = Math.max(0, 0.8 - P.t * 1.6);
       if (P.t > 0.5) { P.m.parent?.remove(P.m); this._puffs.splice(k, 1); }
+    }
+  }
+
+  /**
+   * PLATES GO WITH THEIR TABLE. Richard, Oct 2026: "When table is sold, or
+   * maybe moved, any plates on the table need to be removed so they are not
+   * floating in the air." A table is keyed by its room and its INDEX in the
+   * room's item list, and the plates are free meshes in the scene â€” so a sold
+   * kotatsu left them hanging where its top had been, and a moved one left
+   * them behind it. Every frame each set table is looked for among its isle's
+   * live `sit` spots (rebuilt on every edit): found where it was, nothing
+   * changes; found at the same place under a NEW index (a lower item was
+   * sold and the list closed up), the table is re-keyed rather than cleared;
+   * not found, its plates go, a meal at it ends, and whoever was setting it
+   * is told. Watching the spots rather than hooking sell and move is what
+   * covers the paths nobody listed â€” a room re-typed, a room sold, a home sold.
+   */
+  _pruneTables(players) {
+    const G = this.game;
+    for (const [key, T] of [...this.tables]) {
+      const s = T.s;
+      const spots = s.isle?.spots;
+      if (!Array.isArray(spots)) continue;             // nothing to compare against â€” leave it be
+      const here = spots.find((q) => q.act === 'sit' && q.room === s.room
+        && Math.abs(q.x - s.x) < 0.05 && Math.abs(q.z - s.z) < 0.05);
+      // a home sold empties its isle (home null); a test isle has no home at all
+      const sameHome = s.isle.home === undefined || s.isle.home?.site === s.home?.site;
+      if (here && here.k === s.k && sameHome) continue;
+      if (here && sameHome) {
+        const s2 = { ...s, k: here.k };
+        const k2 = this.tableKey(s2);
+        if (!this.tables.has(k2)) {
+          this.tables.delete(key);
+          this.tables.set(k2, { ...T, s: s2 });
+          const M = this.meals.get(key);
+          if (M) { this.meals.delete(key); this.meals.set(k2, { ...M, s: s2 }); }
+          continue;
+        }
+      }
+      for (const m of T.plates) m.parent?.remove(m);
+      this.tables.delete(key);
+      const M = this.meals.get(key);
+      if (M) {
+        for (const i of M.diners) { const p = players[i]; if (p) this._release(p); this.held.delete(i); }
+        this.meals.delete(key);
+      }
+      const near = (players ?? []).filter((p) => p && Math.hypot(p.position.x - s.x, p.position.z - s.z) < TABLE_NEAR * 2);
+      for (const p of near) G.toast('The kotatsu moved â€” its plates went back to the kitchen.', p.index);
     }
   }
 

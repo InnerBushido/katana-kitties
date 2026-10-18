@@ -130,6 +130,16 @@ export function xrayVertexMat(opts = {}) {
        every existing caller gets until it says otherwise — the two-player
        answer, and every other one, is bit-identical. */
     uCutFloor: { value: new Float32Array(MAX).fill(-1e9) },
+    /* PER SUBJECT: how much bigger her hole is, and a CEILING over which she
+       cuts nothing. For a kitten downstairs in a pane that shows the floor
+       above (housing.js `aimView`). Richard, Oct 2026: "Show the upper floor
+       for the player who is upstairs. Make the lower player's x-ray 2-3x
+       bigger. Upper-floor items must not be affected by the lower player's
+       x-ray." So her hole is wider, it opens the slab over her head, and
+       stops at its top surface. 1 and +1e9 are the defaults: every other
+       caller is bit-identical. */
+    uCutScale: { value: new Float32Array(MAX).fill(1) },
+    uCutCeil: { value: new Float32Array(MAX).fill(1e9) },
   };
 
   mat.onBeforeCompile = (shader) => {
@@ -161,6 +171,8 @@ export function xrayVertexMat(opts = {}) {
         uniform float uCutSoft;
         uniform float uCutNear;
         uniform float uCutFloor[${MAX}];
+        uniform float uCutScale[${MAX}];
+        uniform float uCutCeil[${MAX}];
 
         // 4x4 Bayer, so the cut edge dissolves instead of stair-stepping.
         float xrayDither(vec2 p) {
@@ -186,6 +198,8 @@ export function xrayVertexMat(opts = {}) {
                standing on air. (No backticks in here — this is inside a JS
                template literal and one would end the shader.) */
             if (vXrayWorld.y < uCutFloor[i]) continue;
+            // ...and nothing above her ceiling: the floor upstairs keeps its things
+            if (vXrayWorld.y > uCutCeil[i]) continue;
             vec3 a = uCamPos;
             vec3 b = uCutPos[i];
             vec3 ab = b - a;
@@ -217,8 +231,8 @@ export function xrayVertexMat(opts = {}) {
                its soft edge with it, or a 0.5-unit hole would be all edge);
                weaker is the dither threshold, which at k below 1 leaves a
                thinning rather than a hole. */
-            float rad = uCutR * vXrayK * mix(uCutFlare, 1.0, t);
-            cut = max(cut, (1.0 - smoothstep(rad, rad + uCutSoft * vXrayK, d)) * vXrayK);
+            float rad = uCutR * uCutScale[i] * vXrayK * mix(uCutFlare, 1.0, t);
+            cut = max(cut, (1.0 - smoothstep(rad, rad + uCutSoft * uCutScale[i] * vXrayK, d)) * vXrayK);
           }
           if (cut > 0.001 && cut > xrayDither(gl_FragCoord.xy)) discard;
         }`);
@@ -237,8 +251,10 @@ export function xrayVertexMat(opts = {}) {
    *        subject is standing on — nothing below it is cut. Omit it and
    *        nothing is protected, which is what every caller did before the
    *        announcer's box needed its own lid back.
+   * @param {{scale?: number[], ceil?: number[]}} [more] per point, the hole's
+   *        size (1) and the height above which it cuts nothing (none).
    */
-  mat.setCuts = (camPos, points, floors = null) => {
+  mat.setCuts = (camPos, points, floors = null, more = null) => {
     u.uCamPos.value.copy(camPos);
     for (let i = 0; i < MAX; i++) {
       const p = points[i];
@@ -250,6 +266,10 @@ export function xrayVertexMat(opts = {}) {
          worst of the three possible outcomes. */
       const f = floors?.[i];
       u.uCutFloor.value[i] = Number.isFinite(f) ? f : -1e9;
+      const s = more?.scale?.[i];
+      u.uCutScale.value[i] = Number.isFinite(s) && s > 0 ? s : 1;
+      const c = more?.ceil?.[i];
+      u.uCutCeil.value[i] = Number.isFinite(c) ? c : 1e9;
     }
   };
   // read-only, for world-check: two materials' cuts compared (the teahouse's is smaller)

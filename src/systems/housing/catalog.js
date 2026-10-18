@@ -76,9 +76,34 @@ export const SITE_BY_ID = Object.fromEntries(HOME_SITES.map((s) => [s.id, s]));
  * homehouse.js) so they match the town they are a bridge away from.
  *
  * `rooms` are the spaces an owner can turn into something — a living room on
- * the tatami grid, the kendo dojo, the holodeck. The castle has one per
- * possible owner, CLAIMED on the CASTLE ROOMS card, a fair share each
- * (`Housing.claimShare`): the rooms over the owners, rounded down.
+ * the tatami grid, the kendo dojo, the holodeck. The castle's rooms are
+ * CLAIMED on the CASTLE ROOMS card, a fair share each (`Housing.claimShare`):
+ * the rooms over the owners, rounded down.
+ *
+ * ONE ROOM A FLOOR, AND FOUR ACROSS TWO BUILDINGS. Richard, Oct 2026: "lets
+ * remove the idea of having 2 rooms on a single floor, and make the 1st and
+ * 2nd floor 1 room each ... There will be 4 potential rooms in total, spread
+ * across the 2 different houses on the castle island" — the castle's two
+ * floors and the free DOJO HOUSE's two (`homeRooms` marks an annex's rooms
+ * `claim` when it is the castle's free one). The castle had east/west on the
+ * ground floor and north/south upstairs until then; `migrate.js` folds a save
+ * made with those into these two, furniture where it stood.
+ *
+ * `kendoArea` — WHERE A KENDO DOJO GOES IN THE ROOM, house-local, measured
+ * off `stairWells`: "Neither a kendo dojo nor a holodeck may interfere with or
+ * be built on any stairs, in any room." The west room's dojo was the whole
+ * room, and the ground floor's stairs run up its middle. The ground floor's is
+ * on the EAST side, away from them ("A kendo dojo on the castle's 1st floor is
+ * built on the East side"); upstairs it is BETWEEN the two staircases; the
+ * dojo house's is "the square space in the rest of the room next to the
+ * stairs". It is the whole fighting floor — `Kendo.zoneOf` is this rect and
+ * nothing smaller, and off it is JOGAI. world-check proves none touches a
+ * well.
+ *
+ * `through` — a room everybody has to cross: it has the front door or the
+ * stairs up in it. Its claim is about who furnishes it and is NEVER a wall —
+ * a sister whose room is upstairs has to walk through it to get home
+ * (`Housing._roomWall`).
  */
 export const HOUSES = [
   {
@@ -90,7 +115,9 @@ export const HOUSES = [
     id: 'dojohouse', name: 'DOJO HOUSE', short: 'DOJO HOUSE', mult: 12, floors: 2, w: 16, d: 12, owners: 1,
     blurb: 'Two floors: a big polished training hall downstairs and a tatami room upstairs.',
     rooms: [
-      { id: 'hall', name: 'TRAINING HALL', floor: 0, cx: 0, cz: 0, w: 14, d: 10, kendo: true },
+      { id: 'hall', name: 'TRAINING HALL', floor: 0, cx: 0, cz: 0, w: 14, d: 10, kendo: true, through: true,
+        // the stairs are x -6.2..-3.6; the square beside them, out to the east wall
+        kendoArea: { cx: 1.8, cz: 0, w: 10, d: 10 } },
       { id: 'upper', name: 'UPSTAIRS ROOM', floor: 1, cx: 0, cz: 0, w: 11, d: 8 },
     ],
   },
@@ -98,10 +125,14 @@ export const HOUSES = [
     id: 'castle', name: 'SKY CASTLE', short: 'SKY CASTLE', mult: 20, floors: 3, w: 22, d: 22, owners: 4,
     blurb: 'Three floors on a stone base, a room for each of up to four owners, and a lookout on top. Share it with your sisters!',
     rooms: [
-      { id: 'east', name: 'EAST ROOM', floor: 0, cx: 5, cz: 0, w: 9, d: 18, claim: true },
-      { id: 'west', name: 'WEST ROOM', floor: 0, cx: -5, cz: 0, w: 9, d: 18, claim: true, kendo: true },
-      { id: 'north', name: 'NORTH ROOM', floor: 1, cx: 0, cz: -3, w: 16, d: 7, claim: true },
-      { id: 'south', name: 'SOUTH ROOM', floor: 1, cx: 0, cz: 3.5, w: 16, d: 6, claim: true },
+      /* The old east + west (x -9.5..9.5, cells aligned with both) and north +
+         south (z -6.5..7.5; south's cells land half a cell over, migrate.js). */
+      { id: 'ground', name: 'GROUND FLOOR', floor: 0, cx: 0, cz: 0, w: 19, d: 18, claim: true, kendo: true, through: true,
+        // the stairs are x -8.6..-6.0: the dojo is east of them, with the walk to them clear
+        kendoArea: { cx: 3, cz: 0, w: 12, d: 12 } },
+      { id: 'middle', name: 'SECOND FLOOR', floor: 1, cx: 0, cz: 0.5, w: 16, d: 14, claim: true, kendo: true, through: true,
+        // between the hole the ground floor's stairs come up through (x to -6.0) and the stairs up (x from 3.6)
+        kendoArea: { cx: -1.2, cz: 0, w: 8.4, d: 12 } },
       { id: 'top', name: 'LOOKOUT', floor: 2, cx: 0, cz: 0, w: 11, d: 11 },
     ],
   },
@@ -172,8 +203,12 @@ export function homeRooms(H) {
     if (s.hk === 'main') { rooms.push(...def.rooms); continue; }
     seen[s.house] = (seen[s.house] ?? 0) + 1;
     const label = `${def.short}${seen[s.house] > 1 ? ` ${seen[s.house]}` : ''}`;
+    /* THE CASTLE'S FREE DOJO HOUSE IS TWO OF ITS FOUR ROOMS: claimable, like
+       the castle's own. Only the free one — a dojo house bought on top is an
+       ordinary extra house, everybody's. */
+    const claimable = H.house === 'castle' && FREE_ANNEX.castle === s.house && !!s.row?.free;
     for (const r of def.rooms) {
-      rooms.push({ ...r, id: `${s.hk}_${r.id}`, name: `${label}: ${r.name}`, hk: s.hk });
+      rooms.push({ ...r, id: `${s.hk}_${r.id}`, name: `${label}: ${r.name}`, hk: s.hk, ...(claimable ? { claim: true } : {}) });
     }
   }
   _roomsMemo.set(H, { sig, rooms });
@@ -181,6 +216,30 @@ export function homeRooms(H) {
 }
 
 export const roomById = (H, id) => homeRooms(H).find((r) => r.id === id) ?? null;
+
+/** Where a kendo dojo stands in `room`, house-local: its `kendoArea`, or the
+ *  room less the old 1.4 of margin all round for a room that has none. */
+export function kendoArea(room) {
+  if (room?.kendoArea) return room.kendoArea;
+  return { cx: room.cx, cz: room.cz, w: Math.max(2, room.w - 2.8), d: Math.max(2, room.d - 2.8) };
+}
+
+/** How far apart the two seiza marks are, at most, and how far in from the tape. */
+export const KENDO_MARK = { off: 2.6, edge: 1.6 };
+
+/**
+ * The two SEIZA MARKS, house-local: along the area's long axis, either side
+ * of its middle. Richard, Oct 2026: "Show players where to stand to start.
+ * They start in seiza on specific spots." Drawn by `HomeIsle._roomDressing`
+ * and knelt on by `Kendo`, from this one function, so the tape and the rule
+ * cannot disagree about where a mark is. `s` is the side, -1 or 1.
+ */
+export function kendoMarks(room) {
+  const A = kendoArea(room);
+  const alongX = A.w >= A.d;
+  const off = Math.max(1, Math.min((alongX ? A.w : A.d) / 2 - KENDO_MARK.edge, KENDO_MARK.off));
+  return [-1, 1].map((s) => ({ x: A.cx + (alongX ? s * off : 0), z: A.cz + (alongX ? 0 : s * off), s, alongX }));
+}
 
 /**
  * BRIDGES BETWEEN HOUSES. Richard: "a way for houses to be connected together

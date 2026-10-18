@@ -234,8 +234,16 @@ const WORK = [
      she shouts the kiai on (`kiai`). One per SHEET, off her own `bless.png`;
      Storm and Blossom are these recoloured, like every single pose. The men
      hides the face, so the ears, the tail and the paws are what say who she
-     is. 768, drawn at her full height. */
-  ...['ember', 'frost'].flatMap((s) => ['kendo', 'kiai'].map((p) => (
+     is. 768, drawn at her full height.
+     `kparry` is 返 in the bogu, the riposte guard. Richard, Oct 2026: "Ember's
+     'kiai' art becomes the riposte stance. Generate a new attack sprite for
+     Ember based on Frost's 'kiai' art. Frost gets Ember's 'kiai' art for her
+     riposte." So `ember_kparry` IS the first `ember_kiai` master, kept; the
+     new `ember_kiai` (shinai raised up and back, the wind-up of a vertical
+     cut) and `frost_kparry` (Ember's old guard, drawn as Frost) are
+     gpt_image_2_5 on magenta, each prompted with both old kiai drawings as
+     references - 0.25 credits each. */
+  ...['ember', 'frost'].flatMap((s) => ['kendo', 'kiai', 'kparry'].map((p) => (
     { file: `${s}_${p}.png`, out: `kittens/${s}/${p}.png`, to: [768, 768], chroma: true }))),
   /* THE PEN'S THREE ANIMALS (housing/farm.js), side-on facing LEFT like the
      critters, prompted off `critters/rabbit.png` for the style. 512: they are

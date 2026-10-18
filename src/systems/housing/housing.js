@@ -21,7 +21,8 @@ import { linkWhy, linkBlockers, linkPriceK } from './links.js';
 import { HousingCards, roomTypeRefund } from './cards.js';
 import { BuildMode } from './build.js';
 import { HomeBoons } from './boons.js';
-import { HomeActivities } from './activities.js';
+import { HomeActivities, TABLE_SEATS } from './activities.js';
+import { migrateCastleRooms } from './migrate.js';
 import { HEAD_H } from './homehouse.js';
 import { HoloDeck } from './holodeck.js';
 import { Angling } from './angling.js';
@@ -77,6 +78,49 @@ const styleByName = (n) => PLAYER_STYLE.find((s) => s.name === n) ?? null;
  *  from — a shot's yaw is wrapped to within half a turn of it so the camera
  *  swings the short way round. */
 const CAM_YAW_DEFAULT = -Math.PI * 0.25;
+
+/** The front door's shot: this far back, aimed this far under the name board,
+ *  and never steeper than `pitch`. */
+export const DOOR_SHOT = { dist: 12, below: 1.0, pitch: 0.16, widest: 1.8, clear: 0.15 };
+
+/** How much bigger the x-ray hole is for a kitten on a floor below the one her
+ *  pane shows (`aimView`). Richard asked for "2-3x"; the middle of it. */
+export const LOWER_XRAY = 2.5;
+
+/**
+ * HOW STEEP THE DOOR SHOT MAY LOOK DOWN, for house shell `S`: its 0.16, or
+ * lower, until the line from the lens to the TOP of the name board passes
+ * under the ground floor's eave. Richard, Oct 2026: "When the castle camera
+ * view zooms in on the entrance, the names of the players above the door are
+ * being obstructed by the 2nd floors roof, should fix that by either lowering
+ * the camera angle or something." Measured: the castle's eave band hangs 3.3
+ * in front of the board with its trim at 6.41, and from 0.16 the line to the
+ * board's top crossed that plane at 6.84 — the names' top half was behind
+ * the tiles. The dojo house had the same fault and nobody had said so.
+ *
+ * SOLVED AT TWO DISTANCES, 12 and 12 x `widest`, because a narrow pane pulls
+ * the lens back (`paneWiden`) along the same pitch, and the eave is BELOW the
+ * board's top: further back has to be lower, not the same height. A house
+ * with no eave band (the one-floor houses) keeps 0.16.
+ */
+export function doorPitch(S, shot = DOOR_SHOT) {
+  const E = S?.eave;
+  if (!E || !S.sign) return shot.pitch;
+  const top = S.sign.y + S.sign.h / 2 + 0.05;
+  const centreY = S.sign.y - shot.below;
+  const centreZ = S.door.z + 2.2;
+  const slope = (E.y - shot.clear - top) / (E.z - S.sign.z);
+  let p = shot.pitch;
+  for (const dist of [shot.dist, shot.dist * shot.widest]) {
+    // the steepest pitch whose lens is under the line from the board's top over the eave
+    for (let k = 0; k < 40; k++) {
+      const D = centreZ + dist * Math.cos(p) - S.sign.z;
+      if (centreY + dist * Math.sin(p) <= top + slope * D) break;
+      p -= 0.01;
+    }
+  }
+  return p;
+}
 
 export class Housing {
   constructor(game) {
@@ -149,6 +193,8 @@ export class Housing {
   _applyStore() {
     for (const [k, I] of this.isles.entries()) {
       const H = this.store.homes[I.site.id] ?? null;
+      // a castle saved with four rooms gets its two floors (migrate.js), once
+      if (H && migrateCastleRooms(H, this.store.bank, (t) => this.roomPrice(t))) this.save();
       // a home bought before houses had windows gets them, once (`defaultWindows`)
       if (H && !H.winV) { defaultWindows(H); H.winV = 1; }
       I.setHome(H, H ? this.coloursOf(H) : null);
@@ -575,7 +621,10 @@ export class Housing {
     const f = at.f;
     const L = at.hs.toLocal(p.position.x, p.position.z);
     for (const room of rooms) {
-      if (!room.claim || room.hk !== at.hs.hk || room.floor !== f) continue;
+      /* A ROOM EVERYBODY CROSSES IS NEVER A WALL (`through`): the front door
+         or the stairs up are in it, and a sister whose own room is upstairs
+         has to walk through to get home. Its claim is who furnishes it. */
+      if (!room.claim || room.through || room.hk !== at.hs.hk || room.floor !== f) continue;
       const who = H.rooms?.[room.id]?.claim;
       if (!who || who === n || H.open?.[who]) continue;
       const hx = room.w / 2;
@@ -1149,37 +1198,49 @@ export class Housing {
       if (!atDoor) continue;
       if (kits.some((q) => I.houseAt(q.position.x, q.position.y, q.position.z)?.hs === M)) return null;
       const c = M.local(0, S.door.z + 2.2);
-      (I._doorCentre ??= new THREE.Vector3()).set(c.x, M.gy + S.sign.y - 1.0, c.z);
+      (I._doorCentre ??= new THREE.Vector3()).set(c.x, M.gy + S.sign.y - DOOR_SHOT.below, c.z);
       // the house's front, wrapped to within a half-turn of the usual yaw
       let yaw = M.ry;
       while (yaw - CAM_YAW_DEFAULT > Math.PI) yaw -= Math.PI * 2;
       while (yaw - CAM_YAW_DEFAULT < -Math.PI) yaw += Math.PI * 2;
-      return { centre: I._doorCentre, aim: true, dist: 12, pitch: 0.16, yaw };
+      return { centre: I._doorCentre, aim: true, dist: DOOR_SHOT.dist, pitch: doorPitch(S), yaw };
     }
     return null;
   }
 
   /**
-   * THE CUTAWAY, per pane. Every floor above the lowest kitten in this pane
+   * THE CUTAWAY, per pane. Every floor above the HIGHEST kitten in this pane
    * who is inside, and the roof, are hidden for THIS render only; the walls
-   * of the floor she is on take an x-ray bite for her. A scene's lens shows
-   * every house whole.
+   * of the floor she is on take an x-ray bite for her, and a sister on a
+   * floor below takes a bigger one through the floor over her head
+   * (`LOWER_XRAY`). A scene's lens shows every house whole.
    */
   aimView(camera, members, scene) {
     if (!this.built) return;
     const players = this.game.players ?? [];
+    const who = members ?? players.map((_, k) => k);
     for (const I of this.isles) {
       if (!I.home) continue;
       if (scene) { I.cutaway(-1); I.halfWalls(null); for (const M of I.xrayMats) M.setCuts?.(camera.position, []); continue; }
-      // each house cut to the lowest floor anybody in this pane is on in IT
+      /* EACH HOUSE CUT TO THE HIGHEST FLOOR anybody in this pane is on in IT.
+         Richard, Oct 2026: "Show the upper floor for the player who is
+         upstairs." It was the LOWEST, so two sisters sharing a pane, one
+         upstairs, had the upstairs girl's whole floor taken away from her —
+         she walked about on nothing. The girl below is seen through it. */
       const cut = new Map();
+      const at = who.map((i) => {
+        const p = players[i];
+        const a = p ? I.houseAt(p.position.x, p.position.y, p.position.z) : null;
+        if (a) cut.set(a.hs.hk, Math.max(cut.get(a.hs.hk) ?? -1, a.f));
+        return a;
+      });
       const seen = [];
       const floors = [];
-      for (const i of members ?? players.map((_, k) => k)) {
+      const scale = [];
+      const ceil = [];
+      for (const [j, i] of who.entries()) {
         const p = players[i];
         if (!p) continue;
-        const a = I.houseAt(p.position.x, p.position.y, p.position.z);
-        if (a) cut.set(a.hs.hk, Math.min(cut.get(a.hs.hk) ?? 99, a.f));
         if (Math.hypot(p.position.x - I.x, p.position.z - I.z) < I.radius + 14 && seen.length < 4) {
           seen.push(new THREE.Vector3(p.position.x, p.position.y + 1.4, p.position.z));
           /* A KNEE'S HEIGHT ABOVE HER FEET, not just under them. Richard: the
@@ -1187,7 +1248,26 @@ export class Housing {
              house". At -0.05 the tatami (0.06 thick, ON the floor) and the
              plinth's top edge were above the line and inside the cone. */
           floors.push(p.position.y + 0.35);
+          /* BELOW THE FLOOR THAT IS SHOWN: "Make the lower player's x-ray 2-3x
+             bigger. Upper-floor items must not be affected by the lower
+             player's x-ray." Her hole is `LOWER_XRAY` times the size, and it
+             stops at the TOP of the slab over her head, so it opens the floor
+             and nothing standing on it. */
+          const a = at[j];
+          const f = a ? cut.get(a.hs.hk) : null;
+          const lower = a && f > a.f && Number.isFinite(a.hs.shell.floorY[a.f + 1]);
+          scale.push(lower ? LOWER_XRAY : 1);
+          ceil.push(lower ? a.hs.gy + a.hs.shell.floorY[a.f + 1] + 0.02 : null);
         }
+      }
+      /* ...AND THE THING SHE IS PLACING OR CUSTOMISING OUTSIDE (`Builder.xrayAt`):
+         Richard: "The house, especially a castle, can block the camera." */
+      for (const q of this.builder.xrayAt(I, who)) {
+        if (seen.length >= 4) break;
+        seen.push(q.p);
+        floors.push(q.floor);
+        scale.push(1);
+        ceil.push(null);
       }
       /* A card about a room cuts the house to THAT room's floor, whatever
          floor she is standing on — the camera has to see the tatami. It
@@ -1205,7 +1285,7 @@ export class Housing {
       I.cutaway(cut);
       // a kendo match being watched: the walls at half height (kendo.js)
       I.halfWalls(this.kendo.halfWallFor(I, members ?? players.map((_, k) => k)));
-      for (const M of I.xrayMats) M.setCuts?.(camera.position, seen, floors);
+      for (const M of I.xrayMats) M.setCuts?.(camera.position, seen, floors, { scale, ceil });
     }
   }
 
@@ -1373,11 +1453,24 @@ export class Housing {
     if (who === n) return null;
     if (who) return `That is ${who}'s room. Pick one that says UNCLAIMED.`;
     const share = this.claimShare(H);
-    const mine = this.claimsOf(H, n).length;
-    if (mine >= share) {
+    const rooms = homeRooms(H);
+    const mine = this.claimsOf(H, n).map((id) => rooms.find((r) => r.id === id)).filter(Boolean);
+    if (mine.length >= share) {
       return share === 1
         ? 'You already have your room — let it go first to pick a different one.'
         : `You already have your fair share of ${share} rooms — let one go first to pick a different one.`;
+    }
+    /* ONE IN EACH BUILDING, AND ONE GROUND FLOOR. Richard, Oct 2026: "If there
+       are 2 co-owners, each person can get 1 room in each building ... If a
+       player claims a 1st floor of the castle or the dojo house, they can not
+       claim the 1st floor of the other house." Two rules, each a sentence a
+       nine-year-old can act on: a second room in the same house is refused
+       while there is somebody to share with, and a second ground floor always. */
+    if (H.owners.length > 1 && mine.some((r) => r.hk === room.hk)) {
+      return 'You already have a room in this house — pick one in the other house, so everybody gets one in each.';
+    }
+    if (room.floor === 0 && mine.some((r) => r.floor === 0)) {
+      return 'You already have a ground floor — pick an upstairs room, so your sister gets a ground floor too.';
     }
     return null;
   }
@@ -1668,7 +1761,8 @@ export class Housing {
       door: own ? 'MY HOME' : 'KNOCK',
       frontdoor: !this.allowed(p, s.home) ? 'KNOCK' : s.door?.pinned ? 'CLOSE THE DOOR' : 'KEEP THE DOOR OPEN',
       portdoor: s.door?.pinned ? 'CLOSE THE DOOR' : 'KEEP THE DOOR OPEN',
-      window: s.home?.rooms?.[s.room]?.wall?.[s.wk]?.open ? 'CLOSE THE WINDOW' : 'OPEN THE WINDOW AND LOOK OUT',
+      // the window asks what she wants (cards.js `_v_window`)
+      window: 'THE WINDOW',
       koi: 'THE KOI POND',
       rod: 'PICK UP A FISHING ROD',
       clean: 'CLEAN UP THE MESS',
@@ -1678,7 +1772,7 @@ export class Housing {
       holodeck: p.simLook ? 'INTO THE SIMULATOR' : 'HOLODECK',
       chest: 'STORAGE CHEST',
       nap: 'NAP',
-      cook: 'COOK',
+      cook: this.activities.carrying(p.index) ? 'PUT THE PLATE BACK' : 'COOK',
       drum: 'PLAY THE DRUM',
       bell: 'RING THE BELL',
       rake: 'RAKE THE SAND',
@@ -1686,7 +1780,7 @@ export class Housing {
       soak: 'SOAK',
       volley: 'VOLLEYBALL',
       pray: 'PRAY',
-      sit: this.activities.carrying(p.index) ? 'SET THE TABLE WITH THE FOOD'
+      sit: this.activities.carrying(p.index) && this.activities.platesOn(this.activities.tableKey(s)) < TABLE_SEATS ? 'SET THE TABLE WITH THE FOOD'
         : this.activities.platesOn(this.activities.tableKey(s)) ? 'EAT TOGETHER' : 'SIT AT THE KOTATSU',
       // "When it says 'Close the gates', should say 'Close the gates for visitors'"
       gates: own ? (this.locked(s.home) ? 'OPEN THE GATES' : 'CLOSE THE GATES FOR VISITORS') : null,

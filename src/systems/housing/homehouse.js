@@ -108,6 +108,8 @@ export function buildHouseShell(houseId, openings = []) {
   const decks = [];
   const floorY = [];
   const half = [];
+  /** The front edge of the ground floor's eave band, where there is one. */
+  let eave = null;
   const base = S.base;
   const [bw, bd] = S.floors[0];
 
@@ -307,6 +309,9 @@ export function buildHouseShell(houseId, openings = []) {
       paint(skirt, 0xe6e6e6);
       tint.push(skirt);
       ridge[f % 4].push(box(hw * 2 + 0.4, 0.22, 0.12, 0xffffff, 0, top + SKIRT_EAVE - 0.18, hd * (1 + SKIRT_OVER) - 0.02));
+      // its trim hangs 0.18 + 0.11 under the band's edge: that is the lowest
+      // thing in front of the name board (`doorPitch`)
+      if (f === 0) eave = { z: hd * (1 + SKIRT_OVER), y: top + SKIRT_EAVE - 0.29 };
     }
     floors.push(g);
     y = top;
@@ -405,7 +410,7 @@ export function buildHouseShell(houseId, openings = []) {
   }
 
   return {
-    floors, roof, accent, ridge, tint, walls, decks, floorY, half, base, front: pd, wells,
+    floors, roof, accent, ridge, tint, walls, decks, floorY, half, base, front: pd, wells, eave,
     door: { x: 0, z: bd, w: DOOR_W, y: base },
     /* The name board over the door, in the wall above the opening (3.1 to
        4.25 up). Richard: "the placard above the houses door frame ... is not

@@ -61,8 +61,10 @@ pushed back by the cloudy-glass bubble (radius 57), **including on a dragon or a
 griffin** — a passenger never runs `Player.wall`, so `_mounts` pushes the animal.
 Every refusal toasts *with the owner's name and an instruction* (non-negotiable 6).
 **A castle is open if ANY owner has opened it** — one front door, four keys.
-**Castle rooms are claimed by walking in first**, and each owner opens or shuts
-her own (`_roomWall`).
+**Castle rooms are claimed on the CASTLE ROOMS card** (below), and each owner
+opens or shuts her own (`_roomWall`) — except a room everybody walks through
+(`through`: the castle's two floors with the door and the stairs, the dojo
+house's hall), which is never a wall.
 
 **The music: the newest kitten onto a bridge picks it**, and it beats everything,
 dragon music included (`_wantedTrack` asks housing first). What plays is **that
@@ -203,7 +205,7 @@ Each one degrades: delete the file and the game draws the stand-in.
 | what | the stand-in | to finish it |
 | --- | --- | --- |
 | **Each kitten's kiai** | one synthesised shout (`audio.js 'kiai'`), pitched per kitten by `KIAI_PITCH` | four recorded kiai, a voice each ([voices.md](voices.md)) |
-| **The kendo scoreboard** | ONE `#kendo-board` at the top of the whole screen, for the first match on | per pane, if two matches in two houses ever run at once |
+| **The kendo scoreboard** | ONE `#kendo-board` across the whole screen, UNDER the names (its top is the measured bottom of `#hud .scoreboard`, and it pushes `#toasts` below itself), for the first match on | per pane, if two matches in two houses ever run at once |
 | **Polyfork knobs** | ITEM CUSTOMIZATION offers size and the model's colourways only | its geometry knobs (`remixable`), with the same "never through the roof" cap |
 | **Set plates** | plates on a kotatsu are not saved: a reload clears the table | a field on the room row, if it matters to anyone |
 | **The storage chest** | a card that says so | a real inventory |
@@ -326,12 +328,24 @@ skips her while `s.homeSuit` is set.
 
 ## A kendo match
 
-Two GEARED kittens on one taped square for `BOUT.gather` (1.2s) start a match.
-Richard's spec is quoted over `BOUT` in `kendo.js`, and the beats are all
-there in seconds:
+**Where.** A kendo room's fighting floor is `kendoArea(room)` (catalog.js): the
+room's own `kendoArea` where it has one, else the room less 1.4 all round. The
+castle's ground floor fights on the EAST side, its second floor between the
+staircases, the dojo house's hall on the square beside its stairs — Richard:
+"never under them". world-check holds every one inside its room and clear of
+every stairwell. The tape, the two seiza marks (`kendoMarks`: a white cross
+and a gold square) and the rule that says she is on the square are the same
+function, so they cannot disagree. Off the area is JOGAI.
 
-- **The ceremony.** Both kneel on marks along the room's long axis, facing.
-  Then, one at a time: reach for the shinai, stand, KIAI (her own pitch,
+**Starting.** A geared kitten standing STILL on a free white cross for
+`SEIZA.t` (2s) kneels in seiza, facing the other cross, and is held there; a
+push of the stick stands her up (`padStick`, recorded before a pin freezes
+her pad). Both crosses knelt on: the match begins. It replaced "two geared
+kittens anywhere on the square for 1.2s", which started a match on two
+kittens who had only come to look at the rack. Richard's spec is quoted over
+`BOUT`, `SEIZA`, `KENDO_HIT` and `KENDO_TURN` in `kendo.js`:
+
+- **The ceremony.** Both on their marks, facing. Then, one at a time: reach for the shinai, stand, KIAI (her own pitch,
   her spirit animal's hex). Then both bow. HAJIME. Through all of it her pad
   is DEAD (`Housing.kendoHolds` in the pad gate) and `pinnedAt` holds her on
   her mark. A swing in the ceremony is answered and does nothing.
@@ -348,25 +362,85 @@ there in seconds:
 - **JUMP is a dodge** (`KENDO_DODGE` in player.js, which is why it is there
   and not here: the two files would import each other). It fires on HELD jump
   plus a direction, once per hold. A press with no direction is nothing, and
-  a thumb drifting a frame later is not a dodge either. `kendoDodgeT` is the
-  immunity, read by `sparStrike`.
+  a thumb drifting a frame later is not a dodge either. Richard: "too strong;
+  1-2 steps and briefly immune" — it is `dist` 2.2 over `t` 0.14s (the last
+  frame clipped, so 2.2 at any frame rate), then she STOPS; `kendoDodgeT` is
+  the immunity (0.36s), read by `sparStrike`.
+- **A cut is vertical** (`KENDO_HIT`): it lands on a kitten up to 3.2 ahead
+  along her facing and no more than 0.9 either side of that line. Both face
+  each other along the fighting plane (`kendoFace`) whatever the stick says.
+- **返 Riposte works in the bogu**, with the ring's own timing (`_parryLive`
+  is true in a live round): a guard up on the cut's side catches it, no
+  ippon, and she answers through `Game.strikePlayers` → `sparStrike`. The
+  pose is `kparry.png`.
+- **The plane turns.** One above the other — across the plane by more than
+  `KENDO_TURN.gap` (1.3) and more than along it — for `KENDO_TURN.t` (1s),
+  and the plane becomes the room's other axis; the lens eases a quarter round
+  to look across it (`yawAcross`, the one of the two nearest the game's -45°).
+  YAME puts it back along the marks. **The stick follows the camera like on
+  the bridge**: a push held from before the turn keeps its meaning until
+  released, and a fresh one is read on the lens it is turning TO
+  (`kendoLandYaw`). Left/right is toward or away; up/down changes layer.
 - **The camera** (`shotFor`) is per PANE, through the same `groupShot` the
   front door uses, so the shared rig and every stick in it turn together. It
-  is closer than the house's shot and square to the line between the marks.
+  is closer than the house's shot, centred on the area, and looks across the
+  plane (`B.camYaw`).
   **The walls** of that house are cut to `HALF_WALL` (2.1) for any pane
   watching (`halfWallFor` → `HomeIsle.halfWalls`, a clipping plane on the wall
   material). That is why the renderer has `localClippingEnabled`.
-- **The drawings are 25% bigger** (`KENDO_SCALE`), and `footX` keeps her feet
-  still through a mirror. The kiai drawing's feet measure 0.17 of its width
-  right of centre, so every turn, and every swing (guard to kiai and back),
-  slid her sideways. The guard's are centred (0.006).
+- **The drawings are her own size** (`KENDO_SCALE` 1 — it was 1.25, and
+  Richard asked for about 20% smaller), and `footX` keeps her feet still
+  through a mirror. The kiai drawing's feet measure 0.17 of its width right of
+  centre, so every turn, and every swing (guard to kiai and back), slid her
+  sideways. The guard's are centred (0.006).
+
+## Seeing it, Oct 2026
+
+- **Yard work sees over the houses.** Placing or customising something
+  outside takes every floor above the first off, not only the roofs
+  (`Builder.outdoorCuts`), and the thing itself takes an x-ray bite of the
+  ground floor's walls like a kitten does (`Builder.xrayAt`). Richard: "The
+  house, especially a castle, can block the camera."
+- **Two sisters in one pane on two floors**: the pane is cut to the HIGHER
+  floor (it was the lower, so the girl upstairs walked on nothing). The girl
+  below gets an x-ray `LOWER_XRAY` (2.5x) the size, which stops at the TOP of
+  the slab over her head (`uCutCeil` in `xrayVertexMat`), so it opens the
+  floor and nothing standing on it.
+- **No blink on a change.** Every change rebuilds the island, and a model
+  swapped in on a `.then` lands after the frame is drawn — one frame of every
+  stand-in on the island per slider step. A model loaded once is now placed at
+  once (`modelNow`). Richard: "All the 3D models blink as if respawning."
+- **The boombox's barrel** is FITTED to `BARREL_H` (2.2), model or stand-in,
+  and each end builds its own jukebox. The island end was a `clone` taken
+  while the barrel model loaded, so it kept a squat stand-in for good.
+- **The purchase scene's statue shot** frames every owner's statue: it backs
+  off along its own ray until the top half of each measured box is in frame
+  (1 owner at 8 — the liked shot, unchanged — 2 at 17.5, 3 at 23.5, 4 at 24).
+- **Looking out of a window** puts her in a pane of her own (`lookingOut`,
+  main.js `solo`): the shot is first person, and it took a sister sharing the
+  pane through the glass with her.
 
 ## The house, Oct 2026
 
 - **Castle rooms are claimed on the CASTLE ROOMS card**, a fair share each: the
   claimable rooms over the owners, rounded down (`claimShare`), so a room left
   over is nobody's and everybody's. LET GO frees one to pick another. Every
-  refusal says why (`claimWhy`).
+  refusal says why (`claimWhy`). **Four rooms, Oct 2026**: the castle's ground
+  and second floors (one room each — `ground` and `middle`) and the FREE dojo
+  house's two (a bought one is everybody's). Richard: "If there are 2
+  co-owners, each person can get 1 room in each building ... If a player
+  claims a 1st floor of the castle or the dojo house, they can not claim the
+  1st floor of the other house." An old save's four castle rooms (east, west,
+  north, south) are folded into the two by `migrate.js` on load: the first
+  room type kept, a second one refunded in full to whoever claimed it, the
+  furniture moved by its own cell or to the chest.
+- **Plates** go back to the kitchen on INTERACT there; a full table refuses a
+  fifth; a kotatsu sold or moved takes its plates back to the kitchen and ends
+  its meal (`_pruneTables`).
+- **Spare VR gear at home** (`rackStock`): any tube on her island has a
+  headset for every kitten; in the simulator, only her own coloured tube.
+- **The simulator's music beats the house's** while she is in a mini-game,
+  and the house's comes back when it ends.
 - **The stairs land on 2.2 of floor**, and the stair's own rail stops under the
   floor above. It used to stand 2 over it, 1.2 from the back wall: a kitten 1.2
   wide could not get off the top. The housing checks now WALK every staircase
@@ -437,7 +511,7 @@ in the code, and deleting the file brings it back.
 | **Roshi's sprite** | `sprites/roshi/roshi.png`, one 768 pose. Sized by `ROSHI_INK` (0.961) and stood on `ROSHI_FOOT` (0.0195), both measured off the baked sheet | `drawRoshi`'s canvas |
 | **Her statue** | `models/statues/{ember,frost}.glb` — Tripo image-to-3D off her champion drawing (`tools/statue-bake.mjs`), then `tools/capture/statue-shrink.mjs`: 460k → 24k triangles (meshoptimizer, UV seams held), turned by a MEASURED yaw (both takes faced +x), texture baked to warm stone, 14MB → 0.8MB. The raw takes are in `out/statues-raw/` (gitignored; they cost Tripo credits — keep them). Storm and Blossom wear Ember's and Frost's, washed 30% toward their colour, on their own plinth with a band in her colour | the drawn stone cat |
 | **Roshi's voice** | five clips in `voice/roshi/`, Arthur ([voices.md](voices.md)) | the toast alone |
-| **Kendo** | `kittens/<sheet>/kendo.png` (the guard) and `kiai.png` (the men strike, held for `KIAI_T` after every swing in the bogu), recoloured by STYLE for Storm and Blossom. `kendo.js` only sets `kendoGeared` and `kiaiT`; `Player` draws them. They MIRROR like the Riposte stance, and world-check measures the shinai reaching right | the drawn men and shinai |
+| **Kendo** | `kittens/<sheet>/kendo.png` (the guard), `kiai.png` (the strike, held for `KIAI_T` after every swing in the bogu) and `kparry.png` (返 in the bogu, the riposte guard), recoloured by STYLE for Storm and Blossom. Oct 2026: Ember's first kiai became her `kparry`, her new kiai is Frost's wind-up drawn as Ember, and Frost's `kparry` is Ember's old guard drawn as Frost (0.5 credits). `kendo.js` only sets `kendoGeared` and `kiaiT`; `Player` draws them. They MIRROR like the Riposte stance; world-check measures the shinai reaching right, or for a wind-up whose blade points back (Ember's kiai, -0.044), the tail behind her | the drawn men and shinai |
 | **The animals** | `farm/{chick,bunny,goat}.png`, side-on, head LEFT (measured), turned along the circle they walk | the primitive bodies |
 | **Kendo's ceremony** | `kittens/<sheet>/{seiza,reach,rei}.png`, off her own `kendo.png`, recoloured by style. Sized as a FRACTION of the standing guard (`KENDO_CEREMONY_H`: 0.72 / 0.8 / 0.92) — sizing by ink area made seiza a head taller than the guard, because the generator fills the frame whatever the pose | the guard squashed (seiza, reach) or tipped (rei) |
 | **The prayer, the onsen, the futon** | `kittens/<sheet>/{pray,bath,futon}.png` and `homePose` `'pray'` / `'bath'` / `'futon'` (`Player.setHomeArt`). The prayer is sized by ink area against her bless drawing; the bath is a HEAD and a towel on the water — the first take was a swimsuit and was rejected for a game for girls of nine and under; the futon is drawn whole, bedding and all. Still one still each, not the four-direction prayer sheet Richard once asked for | `Player._homeAs`: the star's reach, the eating crouch, hiding her |

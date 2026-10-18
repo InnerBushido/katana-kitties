@@ -1902,6 +1902,12 @@ class Game {
       ['frost_kendo', 'kittens/frost/kendo.png', false],
       ['ember_kiai', 'kittens/ember/kiai.png', false],
       ['frost_kiai', 'kittens/frost/kiai.png', false],
+      /* ...and 返 in the bogu: the riposte stance, shinai held up across her.
+         Richard, Oct 2026: Ember's first kiai drawing reads as a guard, so it
+         became hers, and Frost's is that pose drawn for Frost. A missing file
+         keeps the orb's riposte stance (Player, `kparryPose`). */
+      ['ember_kparry', 'kittens/ember/kparry.png', false],
+      ['frost_kparry', 'kittens/frost/kparry.png', false],
       /* ...the match's ceremony - seiza, the reach for the shinai, the rei -
          and the three home poses: the prayer, the onsen and the futon. Each
          missing file falls back to the pose it replaced (Player._homeAs, and
@@ -2074,8 +2080,8 @@ class Game {
       return Object.values(out).some(Boolean) ? out : null;
     };
     this.kendoArt = PLAYER_STYLE.map((s) => {
-      const pack = posePack(s, [['guard', 'kendo'], ['kiai', 'kiai'], ['seiza', 'seiza'], ['reach', 'reach'], ['rei', 'rei']]);
-      if (pack && s.recolour) console.log(`[art] ${s.name} kendo poses ← ${s.sheet}_kendo/kiai/seiza/reach/rei recoloured`);
+      const pack = posePack(s, [['guard', 'kendo'], ['kiai', 'kiai'], ['seiza', 'seiza'], ['reach', 'reach'], ['rei', 'rei'], ['kparry', 'kparry']]);
+      if (pack && s.recolour) console.log(`[art] ${s.name} kendo poses ← ${s.sheet}_kendo/kiai/seiza/reach/rei/kparry recoloured`);
       return pack;
     });
     /* THE HOME POSES, by style like the rest; `ref` is her own bless drawing,
@@ -9170,6 +9176,18 @@ class Game {
        would read as the game not knowing which way round it is. */
     if (this.travel) return this.travel === 'out' ? 'griffin' : 'flight';
     if (!this.players?.length) return null;
+    /* THE SIMULATOR'S GAMES WITH A SONG OF THEIR OWN OUTRANK HER HOUSE. Richard,
+       Oct 2026: "When player is in the simulator and playing Kata Trace or
+       fighting Shadow Lionheart, or just doing any mini-game in the simulator
+       that has music, then that music should override the users if they are
+       in their own house. When returning the music after mini-games finish,
+       should return to the house music or default music." They were below the
+       jukebox, so a kitten who went in through her holodeck played Kata Trace
+       to her sister's boombox, off the beat the run is judged on. Nothing is
+       remembered: the frame either game ends, these are null and the house's
+       song (or the island's) is simply the next answer down. */
+    const simSong = this._simGameTrack();
+    if (simSong) return simSong;
     /* HER BRIDGE'S JUKEBOX, over the dragons. Richard: "the most recent
        kitten onto a bridge picks the track, overriding other music including
        dragon music." Below the ending, the tour and the griffin, which are
@@ -9206,20 +9224,6 @@ class Game {
        the Turning Circle and "starts playing quietly, from a distance" means
        before she has left it. `musicLevel` is the swell, applied in
        `_updateMusic`. */
-    /* A KATA TRACE RUN PLAYS ITS OWN SONG, at its own speed — the one she
-       picked, which is the beat the run is judged on (dream/kata.js). Above
-       the Dojo's swell, at full level: it is a song she chose to hear. */
-    const kata = this.dream?.kata?.musicTrack?.();
-    if (kata) { this._vrLevel = 1; return kata; }
-    /* SHADOW LIONHEART'S FIGHT HAS HIS OWN THEME — "darker music, more
-       gothic" — while a round of it is live, and a different one per level
-       (`SHADOW_TRACK`): the procedural theme on EASY, then the three
-       recordings, Requiem, Darksynth and Nightmare. A recording plays its
-       measured loop for as long as the fight lasts. */
-    if (this.dream?.shadow?.state === 'live') {
-      this._vrLevel = 1;
-      return SHADOW_TRACK[this.dream.shadow.L?.id] ?? 'shadow';
-    }
     const swell = this.dream?.musicLevel?.(this.players) ?? 0;
     /* ...AND HIS ISLAND IS QUIET: "When entering the Shadow Lionheart island,
        the music should fade out and turn off" (DreamDojo `_shadowMood`). The
@@ -9232,6 +9236,29 @@ class Game {
     const isl = this._islandTrack(dt);
     if (isl === 'arena' && !this.inMatch) return 'saucer';
     return isl;
+  }
+
+  /**
+   * THE SIMULATOR'S OWN SONGS, or null: a Kata Trace run's, or Shadow
+   * Lionheart's while a round of his is live. Asked above the house's jukebox
+   * (`_wantedTrack`), each at full level.
+   *
+   * A KATA TRACE RUN PLAYS ITS OWN SONG, at its own speed — the one she
+   * picked, which is the beat the run is judged on (dream/kata.js). It is a
+   * song she chose to hear, so it is not under the Dojo's swell.
+   * SHADOW LIONHEART'S FIGHT HAS HIS OWN THEME — "darker music, more gothic"
+   * — and a different one per level (`SHADOW_TRACK`): the procedural theme on
+   * EASY, then the three recordings, Requiem, Darksynth and Nightmare. A
+   * recording plays its measured loop for as long as the fight lasts.
+   */
+  _simGameTrack() {
+    const kata = this.dream?.kata?.musicTrack?.();
+    if (kata) { this._vrLevel = 1; return kata; }
+    if (this.dream?.shadow?.state === 'live') {
+      this._vrLevel = 1;
+      return SHADOW_TRACK[this.dream.shadow.L?.id] ?? 'shadow';
+    }
+    return null;
   }
 
   /**
@@ -12778,7 +12805,12 @@ class Game {
           || (this.inspector?.busy(p.index) && !this.housing?.watchLane(p.index))
           /* ...and a kitten on her way into a tube, in it, or out of it: the
              phase is laid over HER pane, and must not wash over a sister's. */
-          || this.dream?.wantsSolo(p))
+          || this.dream?.wantsSolo(p)
+          /* ...and a kitten looking out of a window: the shot is first person,
+             through the glass, and it is hers (housing/activities.js
+             `lookingOut`). Richard: "A player looking out of a window gets her
+             own split-screen pane if she is sharing one." */
+          || this.housing?.activities?.lookingOut?.(p))
       ),
       prev: this._clusterOf,
       mergeIn: MERGE_IN,

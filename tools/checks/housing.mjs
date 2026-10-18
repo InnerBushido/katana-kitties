@@ -23,7 +23,7 @@ import { emptyStore, newHome, normalise, saveStore, loadStore, migrateYard, HOME
 import { careLevel, careBuff, stalksAt, BAMBOO_GROW, BAMBOO_MAX } from '../../src/systems/housing/farm.js';
 import { fits, firstFit, gridOf, autoLayout, ITEM_SELL, yardWhy, yardR, firstYardSpot, addOutdoor, wallSlots, houseWhy, defaultWindows } from '../../src/systems/housing/editor.js';
 import { buildWhy, commitBuild, removeBuilt, pickList, stepToward, BUILD_KEYS, carry, uncarry } from '../../src/systems/housing/build.js';
-import { houseRadius, houseShape, HEAD_H, SLAB_T, buildHouseShell, houseFoot, WINDOW, PORT_H } from '../../src/systems/housing/homehouse.js';
+import { houseRadius, houseShape, HEAD_H, SLAB_T, buildHouseShell, houseFoot, WINDOW, PORT_H, stairBlocks } from '../../src/systems/housing/homehouse.js';
 import { possessive, ownedCount, roomRefund, changeRoomType, roomTypeRefund } from '../../src/systems/housing/cards.js';
 import { JUKEBOX, JUKEBOX_BY_ID, PREVIEW_AT, previewOf, ACTIVITY_MUSIC } from '../../src/systems/housing/jukebox.js';
 import { MUSIC_FILES } from '../../src/core/musicfiles.js';
@@ -32,13 +32,17 @@ import { rollFish, FISH } from '../../src/systems/housing/fishing.js';
 import { PLAYER_STYLE } from '../../src/core/palette.js';
 import { worldSig } from '../../src/systems/savegame.js';
 import { ROSHI_LINES, ROSHI_VOICE } from '../../src/systems/housing/roshi.js';
-import { Kendo, KIAI_T, BOUT } from '../../src/systems/housing/kendo.js';
+import { Kendo, KIAI_T, BOUT, SEIZA, KENDO_HIT, KENDO_TURN, yawAcross } from '../../src/systems/housing/kendo.js';
+import { LOWER_XRAY } from '../../src/systems/housing/housing.js';
+import { kendoArea, kendoMarks } from '../../src/systems/housing/catalog.js';
 import { KENDO_DODGE, KENDO_SCALE, KENDO_CEREMONY_H, Player } from '../../src/entities/player.js';
 import { Billboard } from '../../src/core/gfx.js';
+import { clusterPlayers, MERGE_IN, MERGE_OUT } from '../../src/core/cluster.js';
+import { PurchaseScene } from '../../src/systems/housing/purchasescene.js';
 import { voicePath } from '../../src/core/audio.js';
 import { existsSync } from 'node:fs';
 import { mealPct, BOON } from '../../src/systems/housing/boons.js';
-import { DOOR_SWING, HomeBridge, GATE, STATUE_SLOTS, faceCamera, bannerYaw } from '../../src/systems/housing/homebridge.js';
+import { DOOR_SWING, HomeBridge, GATE, STATUE_SLOTS, faceCamera, bannerYaw, BARREL_H } from '../../src/systems/housing/homebridge.js';
 import { napFade, napFacing, HomeActivities, LOOK_SHOT, lookShot } from '../../src/systems/housing/activities.js';
 import { DOOR_PATHS, doorPathId, doorWalk, doorWalkBox, layDoorPath } from '../../src/systems/housing/editor.js';
 import { ringR, RING_R } from '../../src/systems/housing/build.js';
@@ -57,7 +61,7 @@ import { HOME_FLOAT_H } from '../../src/systems/dreamdojo.js';
 import { TUBE_FRAG } from '../../src/systems/dream/gear.js';
 import { castPoint, fishCount, fishLen, ANGLE } from '../../src/systems/housing/angling.js';
 import { petLevel, petBoost, messesAt, rhythmError, PLAY } from '../../src/systems/housing/petplay.js';
-import { fitTo, styleModel, stylesFor, drawItem, placeModel, LOOK_MUL, TINTS, STONES } from '../../src/systems/housing/models.js';
+import { fitTo, styleModel, stylesFor, drawItem, placeModel, LOOK_MUL, TINTS, STONES, primeModel } from '../../src/systems/housing/models.js';
 import { MODEL_STYLES } from '../../src/systems/housing/modelstyles.js';
 import { roomLook, CEILING_GAP, FLOOR_H, YARD_BUILT } from '../../src/systems/housing/homeisle.js';
 import { ITEMS, LINK_STYLES } from '../../src/systems/housing/catalog.js';
@@ -414,6 +418,29 @@ export async function housingChecks({ ok, world }) {
       && flags2.every((f) => Math.abs(f.rotation.y - B.statue2.children[0].rotation.y) < 1e-9)
       && Math.abs(front(B.jukebox2).x - fI.x) < 1e-9,
       `dot ${(fI.x * camF.x + fI.z * camF.z).toFixed(3)} flags ${flags2.length}`);
+    /* THE BARREL UNDER THE BOOMBOX, at both ends. Richard: "missing or too
+       low. It must look right on both the main island and her island." The
+       island end was a clone taken while the barrel model loaded, so it kept
+       a stand-in for good; and the barrel was a SCALE, right only for the
+       model it was measured on. Measured here off the stand-in, which is
+       what a clone was stuck with: its top and the boombox's foot. */
+    {
+      const lid = (jbx) => {
+        const barrel = jbx.getObjectByName('barrel');
+        const bb = jbx.getObjectByName('boombox');
+        jbx.updateMatrixWorld(true);
+        const inv = new THREE.Matrix4().copy(jbx.matrixWorld).invert();
+        const top = new THREE.Box3().setFromObject(barrel).applyMatrix4(inv).max.y;
+        const foot = new THREE.Box3().setFromObject(bb).applyMatrix4(inv).min.y;
+        return { top, foot };
+      };
+      const [l1, l2] = [B.jukebox, B.jukebox2].map(lid);
+      ok('both ends have a barrel of their own, as tall as the boombox sits, the boombox on its lid',
+        B.jukebox2 !== B.jukebox && B.jukebox2.getObjectByName('barrel') !== B.jukebox.getObjectByName('barrel')
+        && [l1, l2].every((l) => Math.abs(l.top - BARREL_H) < 0.02 && Math.abs(l.foot - l.top) < 0.02),
+        JSON.stringify([l1, l2]));
+      ok('...and neither is a clone of the other', !/=\s*jb\.clone\(/.test(bsrc) && /const jb2 = makeJukebox\(\)/.test(bsrc));
+    }
     ok('faceCamera turns a thing round only when it would show the camera its back, and bannerYaw stops a flag going edge-on',
       faceCamera(-Math.PI / 4) === -Math.PI / 4 && Math.abs(faceCamera(Math.PI * 0.75) - Math.PI * 1.75) < 1e-9
       && Math.abs(bannerYaw(-Math.PI / 4 + 1.48) - (-Math.PI / 4 + Math.acos(0.5))) < 1e-9 && bannerYaw(0.1) === 0.1);
@@ -427,6 +454,44 @@ export async function housingChecks({ ok, world }) {
       three.length === 3 && B.statue2.children.length === 3 && new Set(three.map(sideOf)).size === 2
       && B.solids.filter((o) => o.kind === 'statue').length === 6 && STATUE_SLOTS.length === 4,
       `${three.length} ${B.statue2.children.length} sides ${three.map(sideOf)}`);
+    /* THE PURCHASE SCENE'S STATUE SHOT HOLDS EVERY ONE. Richard: "The statues
+       shot in the purchase cutscene must include all co-owners' statues." It
+       framed slot 0 alone. Each statue's measured box, all eight corners,
+       through the scene's own lens at the start, middle and end of the move,
+       for one to four owners — and one owner keeps the 8-away shot. */
+    {
+      const PS = new PurchaseScene(H);
+      const frame = [];
+      for (const n of [1, 2, 3, 4]) {
+        B.setOwners([0, 1, 2, 3].slice(0, n).map((i) => ({ name: PLAYER_STYLE[i].name, colour: PLAYER_STYLE[i].colour ?? 0xffffff })));
+        B.group.updateMatrixWorld(true);
+        let worst = 0;
+        const ext = { x: 0, top: -9, bot: 9 };
+        for (const u of [0, 0.5, 1]) {
+          PS._statueCam(B, u);
+          PS.camera.updateMatrixWorld(true);
+          for (const st of B.statue.children) {
+            const bx = new THREE.Box3().setFromObject(st);
+            // the TOP HALF: the liked one-statue shot is a close-up with the plinth off the bottom
+            for (const cx of [bx.min.x, bx.max.x]) for (const cy of [(bx.min.y + bx.max.y) / 2, bx.max.y]) for (const cz of [bx.min.z, bx.max.z]) {
+              const v = new THREE.Vector3(cx, cy, cz).project(PS.camera);
+              worst = Math.max(worst, Math.abs(v.x), Math.abs(v.y), v.z > 1 ? 9 : 0);
+              ext.x = Math.max(ext.x, Math.abs(v.x)); ext.top = Math.max(ext.top, v.y); ext.bot = Math.min(ext.bot, v.y);
+            }
+          }
+        }
+        PS._statueCam(B, 0);
+        const S0 = B.statue.children.map((c) => c.getWorldPosition(new THREE.Vector3()));
+        const mx = S0.reduce((t, q) => t + q.x, 0) / n;
+        const mz = S0.reduce((t, q) => t + q.z, 0) / n;
+        frame.push({ n, worst, ext, d: Math.hypot(PS.camera.position.x - mx, PS.camera.position.z - mz) });
+      }
+      ok('the purchase scene\'s statue shot has the top half of EVERY owner\'s statue in frame, start to end of its move',
+        frame.every((f) => f.worst < 0.95), frame.map((f) => `${f.n}: ${f.worst.toFixed(2)} at ${f.d.toFixed(1)} (x ${f.ext.x.toFixed(2)} top ${f.ext.top.toFixed(2)})`).join(' · '));
+      ok('...and one owner keeps the shot that was liked, 8 away', Math.abs(frame[0].d - 8) < 1e-6);
+      ok('...and the caption counts them', /Statues of/.test(readFileSync(new URL('../../src/systems/housing/purchasescene.js', import.meta.url), 'utf8')));
+      B.setOwners([0, 1, 2].map((i) => ({ name: PLAYER_STYLE[i].name, colour: PLAYER_STYLE[i].colour ?? 0xffffff })));
+    }
     ok('...and the boombox steps back out of the third one\'s way',
       B.solids.filter((o) => o.kind === 'jukebox').every((J) => B.solids.filter((o) => o.kind === 'statue').every((S) => Math.hypot(J.x - S.x, J.z - S.z) >= J.r + S.r - 1e-6)));
     B.setOwners([{ name: 'Ember', colour: 0xff8a3d }]);
@@ -873,6 +938,18 @@ export async function housingChecks({ ok, world }) {
         hsrc3.includes("C.open(p.index, 'window', { spot: s })")
         && v.indexOf("'NO, LEAVE IT'") > 0 && v.indexOf("'NO, LEAVE IT'") < v.indexOf("'LOOK OUT OF THE WINDOW'")
         && v.includes("'SHUT THE WINDOW' : 'OPEN THE WINDOW'") && !v.includes('primary'));
+      /* HER OWN PANE. Richard, Oct 2026: "A player looking out of a window
+         gets her own split-screen pane if she is sharing one." The shot is
+         first person through the glass; a sister sharing the pane was taken
+         through it with her. A sister a step away, through the real
+         clustering, with the flag main.js hands it. */
+      const msrc = readFileSync(new URL('../../src/main.js', import.meta.url), 'utf8');
+      const near = [{ x: 0, z: 0 }, { x: 2, z: 0 }];
+      const apart = clusterPlayers({ pts: near, solo: [A.lookingOut(kit), A.lookingOut({ index: 1 })], mergeIn: MERGE_IN, mergeOut: MERGE_OUT });
+      const together = clusterPlayers({ pts: near, solo: [false, false], mergeIn: MERGE_IN, mergeOut: MERGE_OUT });
+      ok('looking out of a window, she gets a pane of her own, and her sister a step away keeps hers',
+        A.lookingOut(kit) && !A.lookingOut({ index: 1 }) && apart.groups.length === 2 && together.groups.length === 1
+        && /solo: this\.players\.map\([\s\S]{0,1600}this\.housing\?\.activities\?\.lookingOut\?\.\(p\)\)/.test(msrc));
     }
   }
 
@@ -1886,7 +1963,7 @@ export async function housingChecks({ ok, world }) {
     const ps = [0, 1, 2].map((i) => ({ ...fakePlayer(i), hp: 50, maxHp: 100, baseMaxHp: 100 }));
     game.players = ps;
     H.store.boons = {};
-    const isle = { spots: [{ act: 'sit', item: 'kotatsu' }], x: 0, z: 0 };
+    const isle = { spots: [{ act: 'sit', item: 'kotatsu', x: 0, z: 0, room: 'r', k: 0 }, { act: 'sit', item: 'kotatsu', x: 6, z: 0, room: 'r', k: 9 }], x: 0, z: 0 };
     const home = { site: 'test', owners: ps.map((p) => p.name) };
     A.start(ps[0], { act: 'nap', x: 0, z: 0, y: 0, isle, home });
     ok('a nap holds her still and puts her under the covers', A.holds(0) && ps[0].homePose === 'futon');
@@ -1944,8 +2021,12 @@ export async function housingChecks({ ok, world }) {
     const key = A.tableKey(table);
     A.start(ps[0], kitchen);
     ok('cooking says a cooking mini-game is coming', /mini-game is coming/.test(toasts.at(-1)?.[1] ?? ''));
+    /* "They should be able to return it to the cooking table" — INTERACT at
+       the kitchen with a plate up puts it back, and says so. */
     A.start(ps[0], kitchen);
-    ok('one plate each — cooking a second says why it will not', /already carrying/.test(toasts.at(-1)?.[1] ?? ''));
+    ok('one plate each — the kitchen with a plate over her head takes it BACK, and says so',
+      !A._plates.has(0) && /puts the plate back/.test(toasts.at(-1)?.[1] ?? ''));
+    A.start(ps[0], kitchen);
     const hsrc2 = readFileSync(new URL('../../src/systems/housing/housing.js', import.meta.url), 'utf8');
     ok('...(its words: SET THE TABLE WITH THE FOOD, then EAT TOGETHER)', /SET THE TABLE WITH THE FOOD/.test(hsrc2) && /EAT TOGETHER/.test(hsrc2));
     A.start(ps[2], kitchen);
@@ -1967,6 +2048,44 @@ export async function housingChecks({ ok, world }) {
     ok('YES: everybody at the table sits down, held', A.holds(0) && A.holds(2) && A.meals.size === 1 && !A.holds(1));
     for (let k = 0; k < 100; k++) A.update(0.1, ps);
     ok('...and the plates they ate from are gone', A.platesOn(key) === 0);
+    /* A FULL TABLE AND A PLATE IN HER PAWS: she is not stuck with it. Four set,
+       a fifth carried — INTERACT at the table asks about the meal like an
+       empty-handed press, and the kitchen still takes the plate back. */
+    {
+      const t2 = { ...table, k: 9, x: 6 };
+      const key2 = A.tableKey(t2);
+      for (let k = 0; k < 4; k++) { A._plates.set(2, A._plateMesh()); A._setPlate(ps[2], t2); }
+      A._plates.set(2, A._plateMesh());
+      game.housingCards.st.delete(2);
+      A.start(ps[2], t2);
+      const asked = game.housingCards.st.get(2)?.stack[0]?.v === 'meal';
+      ok('a plate brought to a FULL table: she is told, and asked to eat rather than refused for ever',
+        A.platesOn(key2) === 4 && asked && toasts.some(([, t]) => /table is full .* back to the KITCHEN/.test(t)),
+        `${A.platesOn(key2)} ${asked}`);
+      game.housingCards.st.delete(2);
+      A.start(ps[2], kitchen);
+      ok('...and the kitchen takes it back', !A._plates.has(2));
+      /* "When table is sold, or maybe moved, any plates on the table need to
+         be removed so they are not floating in the air." Its spot gone from
+         the isle (sold, or moved somewhere else): the plates leave the scene. */
+      const plates = [...A.tables.get(key2).plates];
+      const keep = isle.spots;
+      isle.spots = keep.filter((q) => q.k !== 9);
+      A.update(0.1, ps);
+      ok('a SOLD table takes its plates with it â€” none left hanging in the scene',
+        !A.tables.has(key2) && plates.every((m) => !m.parent), `${A.tables.has(key2)} ${plates.filter((m) => m.parent).length}`);
+      // ...a lower item sold closes the list up: same place, new index â€” re-keyed, not cleared
+      for (let k = 0; k < 2; k++) { A._plates.set(2, A._plateMesh()); A._setPlate(ps[2], { ...table, k: 5, x: -6 }); }
+      isle.spots = [...keep, { act: 'sit', item: 'kotatsu', x: -6, z: 0, room: 'r', k: 4 }];
+      A.update(0.1, ps);
+      ok('...but a table that only changed its INDEX keeps its plates, under the new key',
+        A.platesOn(A.tableKey({ ...table, k: 4 })) === 2 && !A.tables.has(A.tableKey({ ...table, k: 5 })));
+      const moved = [...A.tables.get(A.tableKey({ ...table, k: 4 })).plates];
+      isle.spots = [...keep, { act: 'sit', item: 'kotatsu', x: -3, z: 0, room: 'r', k: 4 }];
+      A.update(0.1, ps);
+      ok('...and a MOVED one leaves no plates where it stood', moved.every((m) => !m.parent) && !A.tables.has(A.tableKey({ ...table, k: 4 })));
+      isle.spots = keep;
+    }
     ps[1].position.set(0, 0, 0);
     ok('...pray ITADAKIMASU, eat, and each gets the two-diner green',
       !A.holds(0) && !A.holds(2) && H.store.boons[ps[0].name]?.meal === 10 && H.store.boons[ps[2].name]?.meal === 10
@@ -2723,35 +2842,116 @@ export async function housingChecks({ ok, world }) {
     ok('...with the drawn men kept for a build without the drawings', /menTexture\(\)/.test(ksrc) && /p\.kendoPose \|\| p\.kiaiPose/.test(ksrc));
   }
 
-  /* CLAIMING CASTLE ROOMS: a fair share each, rounded down; the room left
-     over is nobody's; let one go and pick another. */
+  /* NO BLINK ON A REBUILD. Richard: "All the 3D models blink as if respawning
+     while customising an object or furniture." Every change rebuilds the
+     island, and a model swapped in on a `.then` lands after the frame is
+     drawn — one frame of every stand-in, per change. A loaded model is placed
+     at once; `onReal` still comes, a beat later, for the callers that set it
+     after `placeModel` returns. */
+  {
+    const real = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    real.name = 'real-model';
+    primeModel('check/blink', new THREE.Group().add(real));
+    const standIn = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const g = placeModel('check/blink', standIn, { h: 2 });
+    let named = false;
+    g.traverse((o) => { if (o.name === 'real-model') named = true; });
+    let called = 0;
+    g.userData.onReal = () => called++;
+    ok('a model already loaded is in the group the moment it is placed, the stand-in never shown',
+      g.userData.real === true && named && !g.getObjectById(standIn.id));
+    await Promise.resolve();
+    ok("...and its onReal still fires, though it was set after placeModel returned", called === 1);
+    const g2 = placeModel('check/blink', null, { h: 2 });
+    g2.userData.disposed = true;
+    let late = 0;
+    g2.userData.onReal = () => late++;
+    await Promise.resolve();
+    ok('...but not on one thrown away first', late === 0);
+  }
+
+  /* CLAIMING CASTLE ROOMS. Richard, Oct 2026: four rooms across the castle
+     and its free dojo house — "If there are 2 co-owners, each person can get 1
+     room in each building ... If a player claims a 1st floor of the castle or
+     the dojo house, they can not claim the 1st floor of the other house." A
+     fair share each, rounded down; the room left over is nobody's. */
   {
     const [e, f, b, x] = [0, 1, 2, 3].map((i) => fakePlayer(i));
     const names = [e, f, b].map((q) => q.style.name);
+    const annex = () => [{ uid: 1, house: 'dojohouse', x: 30, z: 0, rot: 0, paid: 0, free: true }];
     const C = newHome('cloudpeak', 'castle', names.slice(0, 2));
+    C.annex = annex();
     const said = [];
     const was = game.toast;
     game.toast = (t, i) => said.push([i, t]);
+    const claimable = homeRooms(C).filter((r) => r.claim).map((r) => r.id).sort().join();
+    ok('the castle has four rooms to claim: its two floors and the free dojo house\'s two, never the lookout',
+      claimable === 'a1_hall,a1_upper,ground,middle', claimable);
+    ok('...and a dojo house BOUGHT on top is everybody\'s', (() => {
+      const C2 = newHome('cloudpeak', 'castle', names.slice(0, 2));
+      C2.annex = [{ ...annex()[0], free: false }];
+      return !homeRooms(C2).some((r) => r.claim && r.hk !== 'main');
+    })());
     ok('two owners of the castle get two rooms each', H.claimShare(C) === 2);
-    ok('she claims one, then a second', H.setClaim(e, C, 'east', true) && H.setClaim(e, C, 'north', true) && C.rooms.east.claim === names[0]);
-    ok('...but not a third, and is told why', !H.setClaim(e, C, 'south', true) && /fair share of 2/.test(said.at(-1)?.[1]));
-    ok("...nor her sister's", !H.setClaim(f, C, 'east', true) && /That is .*'s room/.test(said.at(-1)?.[1]));
-    ok('...nor can a visitor claim one at all', !H.setClaim(x, C, 'south', true) && /owners/.test(said.at(-1)?.[1]));
-    ok('letting one go makes it UNCLAIMED, and she may pick another', H.setClaim(e, C, 'north', false) && !C.rooms.north.claim && H.setClaim(e, C, 'south', true));
-    ok("...and nobody lets go of a room that is not hers", !H.setClaim(f, C, 'south', false) && C.rooms.south.claim === names[0]);
+    ok('she claims the castle\'s ground floor', H.setClaim(e, C, 'ground', true) && C.rooms.ground.claim === names[0]);
+    ok('...but not its second floor too, and is told to pick in the other house',
+      !H.setClaim(e, C, 'middle', true) && /in the other house/.test(said.at(-1)?.[1]));
+    ok('...nor the dojo house\'s ground floor, since she has a ground floor',
+      !H.setClaim(e, C, 'a1_hall', true) && /already have a ground floor/.test(said.at(-1)?.[1]));
+    ok('...so she takes the dojo house\'s upstairs, one in each building', H.setClaim(e, C, 'a1_upper', true));
+    ok("...nor her sister's", !H.setClaim(f, C, 'ground', true) && /That is .*'s room/.test(said.at(-1)?.[1]));
+    ok('her sister gets the other two, one in each house, a ground floor each',
+      H.setClaim(f, C, 'middle', true) && H.setClaim(f, C, 'a1_hall', true));
+    ok('...nor can a visitor claim one at all', !H.setClaim(x, C, 'top', true) && /everybody/.test(said.at(-1)?.[1])
+      && (delete C.rooms.middle.claim, !H.setClaim(x, C, 'middle', true)) && /owners/.test(said.at(-1)?.[1]));
+    C.rooms.middle.claim = names[1];
+    ok('letting one go makes it UNCLAIMED, and she may take it back', H.setClaim(e, C, 'a1_upper', false) && !C.rooms.a1_upper.claim && H.setClaim(e, C, 'a1_upper', true));
+    ok("...and nobody lets go of a room that is not hers", !H.setClaim(f, C, 'ground', false) && C.rooms.ground.claim === names[0]);
     const C3 = newHome('cloudpeak', 'castle', names);
-    H.setClaim(e, C3, 'east', true);
-    H.setClaim(f, C3, 'west', true);
-    H.setClaim(b, C3, 'north', true);
+    C3.annex = annex();
+    H.setClaim(e, C3, 'ground', true);
+    H.setClaim(f, C3, 'middle', true);
+    H.setClaim(b, C3, 'a1_hall', true);
     ok('three owners get one each, and the fourth room is left for everybody',
-      H.claimShare(C3) === 1 && !H.setClaim(e, C3, 'south', true) && !H.setClaim(b, C3, 'south', true) && !C3.rooms.south?.claim);
+      H.claimShare(C3) === 1 && C3.rooms.a1_hall?.claim === names[2] && !H.setClaim(e, C3, 'a1_upper', true) && !H.setClaim(b, C3, 'a1_upper', true) && !C3.rooms.a1_upper?.claim);
+    const C1 = newHome('cloudpeak', 'castle', names.slice(0, 1));
+    C1.annex = annex();
+    ok('one owner may have all four but the second ground floor',
+      H.setClaim(e, C1, 'ground', true) && H.setClaim(e, C1, 'middle', true) && H.setClaim(e, C1, 'a1_upper', true) && !H.setClaim(e, C1, 'a1_hall', true));
+    ok('a room everybody walks through is never a wall, claimed or not',
+      homeRooms(C).filter((r) => r.through).map((r) => r.id).sort().join() === 'a1_hall,ground,middle'
+      && /room\.through/.test(readFileSync(new URL('../../src/systems/housing/housing.js', import.meta.url), 'utf8').match(/_roomWall\(p, I, H\) \{[\s\S]{0,900}/)?.[0] ?? ''));
     game.toast = was;
   }
 
-  /* A KENDO MATCH, end to end on a stub square: kneel, the turns (grab,
-     stand, kiai), the bow, HAJIME, two ippons a round, best of three, and
-     everything it took given back. Richard's spec is quoted over `BOUT` in
-     kendo.js; each line here is one clause of it. */
+  /* WHERE A KENDO DOJO STANDS. Richard: "Do not build kendo where it hits the
+     stairs ... on the East side", "the square beside the stairs, never under
+     them", and "nothing may be built on stairs". Every kendo room's area sits
+     inside its room and clear of every stairwell on its floor, and the two
+     marks sit inside the area — the tape, the rule and the marks are one
+     function each (`kendoArea`, `kendoMarks`). */
+  {
+    for (const hid of ['castle', 'dojohouse', 'minka', 'tiny']) {
+      const def = HOUSE_BY_ID[hid];
+      for (const room of def.rooms.filter((r) => r.kendo)) {
+        const A = kendoArea(room);
+        const inRoom = Math.abs(A.cx - room.cx) + A.w / 2 <= room.w / 2 + 1e-6 && Math.abs(A.cz - room.cz) + A.d / 2 <= room.d / 2 + 1e-6;
+        const wells = stairBlocks(hid, room.floor);
+        const hits = wells.filter((s) => A.cx - A.w / 2 < s.x1 && A.cx + A.w / 2 > s.x0 && A.cz - A.d / 2 < s.z1 && A.cz + A.d / 2 > s.z0);
+        const M = kendoMarks(room);
+        const marksIn = M.every((m) => Math.abs(m.x - A.cx) <= A.w / 2 - 1 && Math.abs(m.z - A.cz) <= A.d / 2 - 1);
+        ok(`${hid}/${room.id}: the kendo square is inside the room, clear of the stairs, with both marks on it`,
+          inRoom && !hits.length && marksIn && M.length === 2, JSON.stringify({ A, hits, M }));
+      }
+    }
+  }
+
+  /* A KENDO MATCH, end to end on a stub square: two kittens kneel in seiza on
+     the two marks, the turns (grab, stand, kiai), the bow, HAJIME, a vertical
+     cut down a narrow lane, a riposte, the plane turning, two ippons a round,
+     best of three, and everything it took given back. Richard's spec is quoted
+     over `BOUT`, `SEIZA`, `KENDO_HIT` and `KENDO_TURN` in kendo.js; each line
+     here is one clause of it. */
   {
     const said = [];
     const sounds = [];
@@ -2763,24 +2963,51 @@ export async function housingChecks({ ok, world }) {
     };
     const zone = { isle, room, key: 'site:r1' };
     const K = new Kendo({ isles: [], game: g2 });
-    // on the tape: inside the room, less 1.4 of margin
+    // the area: the room less 1.4 of margin (`kendoArea`) — 9.2 x 5.2
     K.zoneOf = (p) => (Math.abs(p.position.x) < 4.6 && Math.abs(p.position.z) < 2.6 ? zone : null);
+    const marks = K.marksOf(zone);
+    ok('the two seiza marks are along the long side, either side of the middle',
+      marks.length === 2 && Math.abs(marks[0].x + 2.6) < 1e-6 && Math.abs(marks[1].x - 2.6) < 1e-6 && marks.every((m) => m.z === 0));
     const a = fakePlayer(0, -1, 0);
     const b = fakePlayer(1, 1, 0);
     const c = fakePlayer(2, 0, 1);
-    for (const p of [a, b, c]) { p.kendoPose = {}; p.power = { tag: 'orbs' }; p.powerOrbs = []; K.toggleGear(p); }
+    for (const p of [a, b, c]) { p.kendoPose = {}; p.power = { tag: 'orbs' }; p.powerOrbs = []; p.padStick = 0; K.toggleGear(p); }
     g2.players = [a, b];
-    const run = (sec, dt = 0.05) => { for (let t = 0; t < sec; t += dt) { K._gatherUp(dt, g2.players); for (const B of [...K.bouts.values()]) K._step(B, dt); } };
+    /* `update` less its gear sweep, which takes the bogu off anybody not
+       standing in a real house — and the stub square is in none. */
+    const run = (sec, dt = 0.05) => {
+      for (let t = 0; t < sec; t += dt) {
+        for (const [i, c] of K.cool) K.cool.set(i, c - dt);
+        K._seiza(dt, g2.players);
+        for (const B of [...K.bouts.values()]) K._step(B, dt);
+      }
+    };
+    ok('...and `update` is exactly those, then the board and the gear', /update\(dt, players\) \{\s*for \(const \[i, c\] of this\.cool\) this\.cool\.set\(i, c - dt\);\s*this\._seiza\(dt, players\);\s*for \(const B of \[\.\.\.this\.bouts\.values\(\)\]\) this\._step\(B, dt\);/.test(readFileSync(new URL('../../src/systems/housing/kendo.js', import.meta.url), 'utf8')));
     // step until something is true, at most `max` seconds: the beats are asked by state, not by summed float time
     const until = (f, max = 10, dt = 0.05) => { for (let t = 0; t < max && !f(); t += dt) run(dt, dt); return f(); };
-    run(BOUT.gather * 0.5);
-    ok('two geared kittens on one square do not start a match at once', K.bouts.size === 0);
-    until(() => K.bouts.size > 0, BOUT.gather);
+    const onMarks = () => { a.position.copy(marks[0]); b.position.copy(marks[1]); for (const p of [a, b]) { p.velocity.set(0, 0, 0); p.padStick = 0; } };
+    run(SEIZA.t + 0.5);
+    ok('two geared kittens on the square but off the marks never start a match', K.bouts.size === 0 && !K.kneel.size
+      && said.some(([i, t]) => i === 0 && /WHITE CROSS/.test(t)));
+    onMarks();
+    b.padStick = 1;
+    run(SEIZA.t * 0.5);
+    ok('on a cross for less than its time, she is still standing', K.bouts.size === 0 && a.kendoStance !== 'kneel');
+    until(() => K.kneel.get(0)?.down, SEIZA.t);
+    ok('...keep still for it and she kneels in seiza, facing the other cross, held there',
+      K.kneel.get(0)?.down && a.kendoStance === 'kneel' && !!a.pinnedAt && Math.abs(a.facing - Math.PI / 2) < 1e-6 && K.bouts.size === 0);
+    ok('...but somebody fidgeting on the other cross never kneels', !K.kneel.get(1)?.down);
+    a.padStick = 1;
+    run(0.05);
+    ok('a push of the stick stands her up again, and says so', !K.kneel.has(0) && !a.pinnedAt && a.kendoStance === null
+      && said.some(([i, t]) => i === 0 && /stands up/.test(t)));
+    onMarks();
+    until(() => K.bouts.size > 0, SEIZA.t + 0.5);
     const B = K.boutOf(0);
-    ok('...but after a moment there, they kneel for one', !!B && B === K.boutOf(1) && B.phase === 'kneel' && a.kendoStance === 'kneel');
+    ok('both kneeling on the two crosses: the match begins', !!B && B === K.boutOf(1) && B.phase === 'kneel' && a.kendoStance === 'kneel' && !K.kneel.size);
     ok('...and their orbs do nothing in it, though they still wear them', a.kendoBout && b.kendoBout && a.power.tag === undefined && Array.isArray(a.powerOrbs));
-    ok('...on two marks along the long side, facing each other, held there',
-      Math.abs(a.position.z) < 1e-6 && a.position.x < 0 && b.position.x > 0 && !!a.pinnedAt && Math.abs(a.facing - Math.PI / 2) < 1e-6);
+    ok('...on the two marks, facing each other, held there',
+      Math.abs(a.position.x - marks[0].x) < 1e-6 && Math.abs(b.position.x - marks[1].x) < 1e-6 && !!a.pinnedAt && Math.abs(a.facing - Math.PI / 2) < 1e-6);
     ok("...and the pad is the ceremony's", K.holds(0) && K.holds(1) && !K.holds(2));
     until(() => B.phase === 'rise', BOUT.kneel + 0.1);
     run(BOUT.grab * 0.5);
@@ -2798,23 +3025,63 @@ export async function housingChecks({ ok, world }) {
     until(() => B.phase === 'fight', BOUT.bow + BOUT.hajime + 0.2);
     ok('HAJIME: the pins come off and the pad is hers again', B.phase === 'fight' && !a.pinnedAt && !K.holds(0)
       && said.some(([, t]) => /HAJIME/.test(t)));
+    run(0.05);
+    ok('in a live round they face each other along the plane, and the riposte is live',
+      a.kendoLive && b.kendoLive && Math.abs(a.kendoFace - Math.PI / 2) < 1e-6 && Math.abs(Math.abs(b.kendoFace) - Math.PI / 2) < 1e-6 && b.kendoFace < 0);
     // the marks are a room apart; close in to sword's reach
     a.position.set(-1, 0, 0);
     b.position.set(1, 0, 0);
+    a.facing = Math.PI / 2;
     b.kendoDodgeT = 0.1;
     K.sparStrike(a, 'stand', { x: 1, y: 0 });
     ok('a kitten mid-dodge cannot be hit', B.pts[0] === 0);
     b.kendoDodgeT = 0;
+    // THE LANE: a cut is vertical, so a sideways step is a miss
+    b.position.set(1, 0, KENDO_HIT.lane + 0.3);
+    K.sparStrike(a, 'stand', { x: 1, y: 0 });
+    ok('a cut comes straight down: a kitten a step to the side of its line is missed', B.pts[0] === 0 && !K.cool.get(1));
+    b.position.set(KENDO_HIT.reach + 0.6, 0, 0);
+    K.sparStrike(a, 'stand', { x: 1, y: 0 });
+    ok('...and so is one past its reach', B.pts[0] === 0 && !K.cool.get(1));
+    b.position.set(1, 0, 0);
+    // 返 RIPOSTE: her guard up on this side catches it, and she answers
+    const answered = [];
+    b.parries = () => true;
+    b.riposte = (att) => answered.push(att);
+    K.sparStrike(a, 'stand', { x: 1, y: 0 });
+    ok('a riposte in the bogu catches the cut — no ippon — and answers it', B.pts[0] === 0 && answered[0] === a
+      && said.some(([i, t]) => i === 0 && /parried/.test(t)));
+    delete b.parries;
+    delete b.riposte;
     c.position.set(-1.5, 0, 0.5);
+    c.facing = Math.PI / 2;
     g2.players = [a, b, c];
     K.sparStrike(c, 'stand', { x: 1, y: 0 });
     ok('...nor can a sister from outside the match score on either fighter', B.pts[0] === 0 && B.pts[1] === 0 && !K.cool.get(0) && !K.cool.get(1));
     g2.players = [a, b];
+    // THE PLANE TURNS: across it for longer than KENDO_TURN.t, and the lens goes round a quarter
+    const yaw0 = B.wantYaw;
+    a.position.set(0, 0, -2);
+    b.position.set(0, 0, 2);
+    run(KENDO_TURN.t * 0.5);
+    ok('one above the other for a moment does not turn the camera', B.wantYaw === yaw0);
+    run(KENDO_TURN.t * 0.5 + 0.1);
+    ok('...but for longer, the plane turns a quarter and the lens with it',
+      Math.abs(Math.abs(B.wantYaw - yaw0) - Math.PI / 2) < 1e-6 && Math.abs(B.axis.z) > 0.999 && a.kendoLandYaw === B.wantYaw
+      && Math.abs(a.kendoFace) < 1e-6, `${yaw0} -> ${B.wantYaw}`);
+    ok('...eased, not cut', Math.abs(B.camYaw - yaw0) > 1e-3 && Math.abs(B.camYaw - B.wantYaw) > 1e-3);
+    // eased at 3.2/s a quarter turn is inside the 1e-3 snap after ln(1571)/3.2 = 2.3s
+    run(3);
+    ok('...and it lands where it was going', Math.abs(B.camYaw - B.wantYaw) < 1e-6 && K.shotFor([0]).yaw === B.camYaw && K.shotFor([0]).land === B.wantYaw);
+    a.position.set(-1, 0, 0);
+    b.position.set(1, 0, 0);
     K.sparStrike(a, 'stand', { x: 1, y: 0 });
     ok('a clean hit in a live round is IPPON, YAME stops it, and the shove keeps her on the floor',
       B.pts[0] === 1 && B.phase === 'yame' && K.holds(1) && b.velocity.y <= 2 + 1e-9);
-    until(() => B.phase === 'fight', BOUT.yame + BOUT.hajime + 0.2);
-    const hit = () => { for (const p of [a, b]) p.velocity.set(0, 0, 0); a.position.set(-1, 0, 0); b.position.set(1, 0, 0); K.cool.clear(); K.sparStrike(a, 'stand', { x: 1, y: 0 }); };
+    until(() => B.phase === 'hajime', BOUT.yame + 0.2);
+    ok('...and YAME puts them back on their marks, the plane back along them', Math.abs(B.axis.x) > 0.999 && B.wantYaw === yaw0);
+    until(() => B.phase === 'fight', BOUT.hajime + 0.2);
+    const hit = () => { for (const p of [a, b]) p.velocity.set(0, 0, 0); a.position.set(-1, 0, 0); b.position.set(1, 0, 0); a.facing = Math.PI / 2; K.cool.clear(); K.sparStrike(a, 'stand', { x: 1, y: 0 }); };
     hit();
     ok('two ippons take the round', B.phase === 'roundEnd' && B.wins[0] === 1 && B.pts[0] === 2);
     until(() => B.phase === 'hajime', BOUT.roundEnd + 0.2);
@@ -2831,10 +3098,11 @@ export async function housingChecks({ ok, world }) {
       && said.some(([, t]) => /WINS THE MATCH, 2-0/.test(t)));
     until(() => !K.bouts.size, BOUT.bow + 0.2);
     ok('...and when it is over, nobody is held and the orbs are hers again',
-      !K.bouts.size && !a.kendoBout && !a.pinnedAt && !K.holds(0) && a.kendoStance === null
+      !K.bouts.size && !a.kendoBout && !a.pinnedAt && !K.holds(0) && a.kendoStance === null && !a.kendoLive && a.kendoFace == null && a.kendoLandYaw == null
       && /p\.power = aggregate\(p\.powerOrbs \?\? \[\]\)/.test(readFileSync(new URL('../../src/systems/housing/kendo.js', import.meta.url), 'utf8')));
     // JOGAI
-    until(() => K.bouts.size > 0, BOUT.gather + 0.1);
+    onMarks();
+    until(() => K.bouts.size > 0, SEIZA.t + 0.5);
     const B2 = K.boutOf(0);
     until(() => B2.phase === 'fight', 20);
     b.position.set(9, 0, 0);
@@ -2842,8 +3110,8 @@ export async function housingChecks({ ok, world }) {
     ok('a step off the square in a live round is only a warning', B2?.phase === 'fight' && K.bouts.size === 1);
     run(BOUT.jogai);
     ok('...but staying off it ends the match, and says so', !K.bouts.size && said.some(([i, t]) => i === 0 && /stepped off the square/.test(t)));
-    b.position.set(1, 0, 0);
-    run(BOUT.gather + 0.1);
+    onMarks();
+    until(() => K.bouts.size > 0, SEIZA.t + 0.5);
     K._unwear(1);
     run(0.1);
     ok('hanging the gear up mid-match calls it off', !K.bouts.size && !b.kendoBout);
@@ -2853,7 +3121,8 @@ export async function housingChecks({ ok, world }) {
     // THE CAMERA and THE WALLS, for a pane that holds a fighter or a watcher
     K.toggleGear(a);
     K.toggleGear(b);
-    run(BOUT.gather + 0.1);
+    onMarks();
+    until(() => K.bouts.size > 0, SEIZA.t + 0.5);
     g2.players = [a, b, c];
     const shot = K.shotFor([0]);
     ok('a pane with a fighter in it gets the match camera, closer than the house shot, looking across the marks',
@@ -2866,13 +3135,28 @@ export async function housingChecks({ ok, world }) {
     for (const Bx of [...K.bouts.values()]) K._end(Bx, null);
     K._unwear(0);
     K._unwear(1);
+    ok('yawAcross keeps the game\'s own side of the room: along x is the default lens, along z a quarter round',
+      Math.abs(yawAcross({ x: 1, z: 0 })) < 1e-9 && Math.abs(yawAcross({ x: -1, z: 0 })) < 1e-9 && Math.abs(Math.abs(yawAcross({ x: 0, z: 1 })) - Math.PI / 2) < 1e-9);
 
     const psrc = readFileSync(new URL('../../src/entities/player.js', import.meta.url), 'utf8');
+    /* "Too strong; it should move her only 1-2 steps and make her briefly
+       immune." A kitten's step is about a metre: the dodge is `dist` over
+       `t`, the last frame clipped so it is the same at any frame rate, and
+       then she STOPS. Replayed here at three frame rates. */
+    const dodged = (dt) => { let left = KENDO_DODGE.t; let x = 0; while (left > 0) { const s = Math.min(dt, left); left -= dt; x += (KENDO_DODGE.dist / KENDO_DODGE.t) * (s / dt) * dt; } return x; };
     ok('in a match JUMP is a dodge: held, and only once she picks a direction',
-      /if \(this\.kendoBout\) \{[\s\S]{0,400}!pad\.down\('jump'\)[\s\S]{0,200}moving && !\(this\.kendoDodgeCool > 0\)/.test(psrc)
-      && KENDO_DODGE.t > 0.15 && KENDO_DODGE.t * KENDO_DODGE.speed > 4);
-    ok('...and the gear is drawn a quarter bigger than her', KENDO_SCALE === 1.25 && /height \* KENDO_SCALE/.test(psrc));
+      /if \(this\.kendoBout\) \{[\s\S]{0,400}!pad\.down\('jump'\)[\s\S]{0,200}moving && !\(this\.kendoDodgeCool > 0\)/.test(psrc));
+    ok('...one or two steps, the same at 30, 60 and 144 fps, and then she stops',
+      KENDO_DODGE.dist >= 1.5 && KENDO_DODGE.dist <= 2.5 && [1 / 30, 1 / 60, 1 / 144].every((dt) => Math.abs(dodged(dt) - KENDO_DODGE.dist) < 1e-9)
+      && /_kdStop = false;\s*this\.velocity\.x = 0;\s*this\.velocity\.z = 0;/.test(psrc), [1 / 30, 1 / 60, 1 / 144].map(dodged).join());
+    ok('...immune a little longer than the step, briefly', KENDO_DODGE.immune > KENDO_DODGE.t && KENDO_DODGE.immune < 0.5 && KENDO_DODGE.cool > KENDO_DODGE.immune);
+    ok('...and the gear is drawn at her own size', KENDO_SCALE === 1 && /height \* KENDO_SCALE/.test(psrc));
     ok('...the renderer clips, so the walls can be cut', /localClippingEnabled = true/.test(readFileSync(new URL('../../src/main.js', import.meta.url), 'utf8')));
+    ok('the riposte drawing is billboarded with the rest, and wins over the kiai while she guards',
+      /kparryPose/.test(psrc.match(/faceCamera\(camera\) \{[\s\S]{0,2000}/)?.[0] ?? '') && /kparry[\s\S]{0,200}parryT > 0 \|\| \(this\.parryRecT > 0 && !\(this\.kiaiT > 0\)\)/.test(psrc));
+    const ksrc2 = readFileSync(new URL('../../src/systems/housing/kendo.js', import.meta.url), 'utf8');
+    ok('the match scoreboard sits UNDER the names, and the toasts under it',
+      /#hud \.scoreboard/.test(ksrc2) && /names\.bottom/.test(ksrc2) && /toasts\.style\.top/.test(ksrc2));
   }
 
   /* FEET STAY PUT WHEN SHE TURNS. A drawing whose feet are off the middle of
@@ -3041,8 +3325,20 @@ export async function housingChecks({ ok, world }) {
       const roofsShown = () => I2.houses.some((hs) => hs.roofMeshes.some((m) => m.visible));
       kit.position.set(I2.x + I2.radius * 0.8, I2.groundY + 0.5, I2.z);
       C._push(0, { v: 'build', site: I2.site.id, kind: 'yard', id: 'lantern', sel: -1, x: 20, z: 20, rot: 0 });
+      H.builder.camera(kit);   // the frame's lens runs before the view is aimed, and leaves the ghost's spot
       H.aimView(cam, [0], false);
-      const yardOff = !roofsShown() && I2.houses.every((hs) => hs.floorMeshes.every((m) => m.visible));
+      /* YARD WORK: every floor above the first goes too. Richard: "The house,
+         especially a castle, can block the camera ... hide every floor above
+         the first while adjusting outdoor objects." */
+      const yardOff = !roofsShown() && I2.houses.every((hs) => hs.floorMeshes.every((m, f) => m.visible === (f === 0)));
+      /* ...and the ghost takes an x-ray bite of the ground floor's walls, as a
+         kitten does: her slot first, the ghost's next. */
+      const XU = I2.wallMat.userData.xray;
+      const ghostAt = C._top(0)._at;
+      const ghostCut = XU.uCutOn.value[1] === 1 && !!ghostAt && XU.uCutPos.value[1].distanceTo(ghostAt) < 1e-6
+        && Math.hypot(ghostAt.x - I2.local(20, 20).x, ghostAt.z - I2.local(20, 20).z) < 1e-6;
+      ok('placing a yard thing: the ground floor stands, the floors above it go, and the ghost gets an x-ray bite', yardOff && ghostCut,
+        `${yardOff} ${ghostCut}`);
       C._pop(0);
       C._push(0, { v: 'build', site: I2.site.id, kind: 'link', style: 'plank', a: { hk: 'main', floor: 1, side: 1, at: 0 }, cur: null });
       H.aimView(cam, [0], false);
@@ -3053,6 +3349,37 @@ export async function housingChecks({ ok, world }) {
       H.aimView(cam, [0], false);
       ok('building in the yard takes every roof off; a bridge cuts its house to the bridge\'s floor; done, the roofs are back',
         yardOff && linkCut && roofsShown(), `${yardOff} ${linkCut}`);
+
+      /* TWO SISTERS IN ONE PANE, ONE UPSTAIRS. Richard, Oct 2026: "Show the
+         upper floor for the player who is upstairs. Make the lower player's
+         x-ray 2-3x bigger. Upper-floor items must not be affected by the
+         lower player's x-ray." The pane is cut to the HIGHER floor; the girl
+         below gets LOWER_XRAY, stopped at the top of the slab over her. */
+      const hs = I2.houseOf('main');
+      const S = hs.shell;
+      const down = fakePlayer(0);
+      const upst = fakePlayer(1);
+      const lo = hs.local(-2, 6);
+      const hi = hs.local(-2, 3);
+      down.position.set(lo.x, hs.gy + S.floorY[0] + 0.01, lo.z);
+      upst.position.set(hi.x, hs.gy + S.floorY[1] + 0.01, hi.z);
+      const wasP = game.players;
+      game.players = [down, upst];
+      const fa = [down, upst].map((q) => I2.houseAt(q.position.x, q.position.y, q.position.z)?.f);
+      H.aimView(cam, [0, 1], false);
+      const XU2 = I2.wallMat.userData.xray;
+      const shown = hs.floorMeshes.map((m) => m.visible);
+      ok('two sisters sharing a pane on floors 1 and 2: the upstairs floor is SHOWN, and the one over it is not',
+        fa.join() === '0,1' && shown[0] && shown[1] && !shown[2], `${fa} ${shown}`);
+      ok(`...the sister downstairs gets an x-ray ${LOWER_XRAY}x the size, stopped at the top of the floor over her head`,
+        XU2.uCutScale.value[0] === LOWER_XRAY && Math.abs(XU2.uCutCeil.value[0] - (hs.gy + S.floorY[1] + 0.02)) < 1e-4
+        && LOWER_XRAY >= 2 && LOWER_XRAY <= 3);
+      ok('...and the sister upstairs the ordinary one, with no ceiling', XU2.uCutScale.value[1] === 1 && XU2.uCutCeil.value[1] === 1e9);
+      upst.position.set(lo.x + 1, hs.gy + S.floorY[0] + 0.01, lo.z);
+      H.aimView(cam, [0, 1], false);
+      ok('...and on one floor together, both are ordinary, exactly as before', XU2.uCutScale.value[0] === 1 && XU2.uCutCeil.value[0] === 1e9
+        && hs.floorMeshes.map((m) => m.visible).join() === 'true,false,false');
+      game.players = wasP;
     }
     C.st.delete(0);
     delete H.store.homes[I2.site.id];
