@@ -1,15 +1,15 @@
 import * as THREE from 'three';
-import { toonVertexMat, xrayVertexMat, paint } from '../../core/gfx.js';
+import { toonVertexMat, xrayVertexMat, paint, clipBoxes, inClip } from '../../core/gfx.js';
 import { Island, mergeParts, PALETTE } from '../../world/build.js';
 import { makeLabelTexture } from '../../core/label.js';
-import { buildHouseShell, roofY, houseHeight, houseRadius, floorOf, FLOOR_H, SLAB_T, WINDOW, PORT_H } from './homehouse.js';
-import { ITEMS, ITEM_BY_ID, LINK_BY_ID, houseSpecs, homeRooms, pathPosts, kendoArea, kendoMarks } from './catalog.js';
+import { buildHouseShell, roofY, houseHeight, houseRadius, floorOf, FLOOR_H, SLAB_T, WINDOW, PORT_H, rampOf } from './homehouse.js';
+import { ITEMS, ITEM_BY_ID, LINK_BY_ID, houseSpecs, homeRooms, pathPosts, kendoArea, kendoMarks, roomHas, mixedZone } from './catalog.js';
 import { PathFX, makeFlame, makeLamp } from './pathfx.js';
 import { TEA, teaK, teaSet } from './teahouse.js';
 import { ZenGarden, zenParts, ZEN, ZEN_ROCKS, ZEN_STONES, ZEN_STONE_R, ZEN_RAKE } from './zengarden.js';
-import { linkGeom, linkAll, linkColliders, supportGround } from './links.js';
+import { linkGeom, linkAll, linkColliders, supportGround, toHouse } from './links.js';
 import { placeModel, drawItem, clampMul, SHOJI, shojiPair, PANEL_GAP, STONES } from './models.js';
-import { wallSlots, yardR } from './editor.js';
+import { wallSlots, yardR, rampLift } from './editor.js';
 import { buildTreehouse, slidePath } from './treehouse.js';
 import { HOLO_GEAR_SCALE, HOLO_TUBE, ensureHoloKit, holoCell, holoOut } from './holodeck.js';
 import { GEAR_ITEMS, GEAR_SCALE, GEAR_LIFT, gearModel, TUBE_VERT, TUBE_FRAG } from '../dream/gear.js';
@@ -72,6 +72,11 @@ const SOLID_POSTS = { toriigarden: { r: 0.22, at: [[-0.9, -2.4], [0.9, -2.4], [-
    make them disappear when player is near it". */
 /** How many cuts the houses' x-ray takes: four kittens, and the doors the building hides (`aimView`). */
 export const XRAY_SLOTS = 8;
+/** The houses' x-ray: how far its limits fade (gfx.js `limSoft`), and how strong it is for a kitten INSIDE (a screen of stipple, not a hole). */
+export const XRAY_LIM_SOFT = 0.6;
+export const XRAY_INDOOR = 0.8;
+/** How many houses' floors can take the bridges off above them at once (`clipBridges`): a castle and three more. */
+export const BRIDGE_CLIPS = 4;
 /** How far past a yard thing's collider its INTERACT spot reaches: her radius (0.6) and a step. */
 export const SPOT_PAST = 1.6;
 /**
@@ -140,7 +145,7 @@ export class HomeIsle {
        plain toon. The cut is narrower than the town's (1.6 against 2.1) and
        only bites what is a good step NEARER the camera than she is
        (`cutNear`), so the side walls of the room she is in are left alone. */
-    const XR = { cutR: 1.6, cutSoft: 0.7, cutNear: 1.4, max: XRAY_SLOTS };
+    const XR = { cutR: 1.6, cutSoft: 0.7, cutNear: 1.4, limSoft: XRAY_LIM_SOFT, max: XRAY_SLOTS };
     /** The houses' cut radius, for a hole sized to a doorway (housing.js `aimView`). */
     this.xrayR = XR.cutR;
     this.accentMats = [0, 1, 2, 3].map(() => xrayVertexMat({ color: NEUTRAL_ACCENT, ...XR }));
@@ -159,7 +164,10 @@ export class HomeIsle {
        should work on custom built bridges in the players island if the player
        is below the bridge." They were plain toon, so a kitten walking under
        one to the front door went out of sight under a deck. */
-    this.bridgeMat = xrayVertexMat(XR);
+    this.bridgeMat = xrayVertexMat({ ...XR, clips: BRIDGE_CLIPS });
+    // the rails' glow strip, clipped the same way (`clipBridges`)
+    this.bridgeGlowMat = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false });
+    clipBoxes(this.bridgeGlowMat, BRIDGE_CLIPS);
     this.xrayMats = [this.wallMat, this.roofMat, this.soffitMat, ...this.accentMats, this.treeMat, this.plantMat, this.teaMat, this.bridgeMat];
     /** Floor groups and the roof, for the per-pane cutaway. */
     this.floorMeshes = [];
@@ -573,9 +581,11 @@ export class HomeIsle {
       if (!hs) continue;
       const R = H.rooms?.[room.id];
       // an old save's holodeck kept no rows for its kit: give it one, where it always stood
-      if (R?.type === 'holodeck') ensureHoloKit(room, R);
-      if (R?.type === 'kendo' || R?.type === 'holodeck') {
-        const dz = this._roomDressing(room, R.type, R);
+      if (roomHas(R, 'holodeck')) ensureHoloKit(room, R);
+      // a dojo and a holodeck, both, in a mixed room (catalog `mixed`)
+      for (const t of ['kendo', 'holodeck']) {
+        if (!roomHas(R, t)) continue;
+        const dz = this._roomDressing(room, t, R);
         dz.userData.floor = room.floor;
         dz.userData.hk = room.hk;
         this.itemGroup.add(dz);
@@ -701,12 +711,15 @@ export class HomeIsle {
       g.position.set(w0.x, this.groundY + G.A.y, w0.z);
       g.rotation.y = this.ry + G.a;
       if (P.solid.length) g.add(new THREE.Mesh(mergeParts(P.solid), this.bridgeMat));
-      if (P.glow.length) g.add(new THREE.Mesh(mergeParts(P.glow), new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false })));
+      if (P.glow.length) g.add(new THREE.Mesh(mergeParts(P.glow), this.bridgeGlowMat));
       for (const m of P.models) {
         const mg = placeModel(m.id, m.stand ? planterStandIn() : null, { h: m.h });
         mg.position.set(m.x, m.y, m.z);
         mg.rotation.y = m.ry;
         g.add(mg);
+        // where it stands, in the world: `clipBridges` hides it whole, since its materials are its own
+        g.updateMatrixWorld(true);
+        mg.userData.clipAt = mg.getWorldPosition(new THREE.Vector3());
       }
       g.userData.link = L.uid;
       this.itemGroup.add(g);
@@ -749,6 +762,45 @@ export class HomeIsle {
   _itemToHouse(q, fx, fz) {
     const a = q.rot ?? 0;
     return [q.x + fx * Math.cos(a) + fz * Math.sin(a), q.z - fx * Math.sin(a) + fz * Math.cos(a)];
+  }
+
+  /**
+   * A path piece that lies on a house's ramp (editor.js `onRamp`) is drawn ON
+   * it: up the slope, over the porch, flat again on the grass past the foot.
+   * Every vertex is lifted by the ramp's height under it (`rampLift`), and
+   * that height is piecewise straight — level on the porch, a slope, level on
+   * the grass — so cutting each triangle where the pieces meet (the top
+   * course's edge `z0` and the foot `z1`) makes the lift exact. Subdividing
+   * by edge length was the first idea and was dropped: two triangles sharing
+   * an edge split it differently and the bend opens a crack along it, where a
+   * cut on a line splits a shared edge at one point from both sides. The
+   * posts, torches and lamps go up whole, by the height under their own foot.
+   */
+  _rampPath(q, it, gy, P) {
+    const H = this.home;
+    if (!H) return;
+    const isle = (x, z) => this._itemToHouse(q, x, z);
+    const dy = this.groundY - gy;
+    const up = (x, z) => { const h = rampLift(H, ...isle(x, z)); return h > 0 ? h + dy : 0; };
+    const hw = it.pw / 2, hl = it.len / 2;
+    let on = false;
+    for (let i = -2; i <= 2 && !on; i++) for (let j = -6; j <= 6 && !on; j++) on = up((i / 2) * hw, (j / 6) * hl) > 0;
+    if (!on) return;
+    const planes = [];
+    for (const s of houseSpecs(H)) {
+      const R = rampOf(s.house);
+      if (!R) continue;
+      for (const c of [R.z0, R.z1]) planes.push((x, z) => toHouse(s, ...isle(x, z)).z - c);
+    }
+    const bend = (geo) => bendGeo(geo, planes, up);
+    P.solid = P.solid.map(bend);
+    P.glow = P.glow.map(bend);
+    P.lamps = P.lamps.map((geo) => {
+      geo.computeBoundingBox();
+      const c = geo.boundingBox.getCenter(new THREE.Vector3());
+      return geo.translate(0, up(c.x, c.z), 0);
+    });
+    P.torches = P.torches.map(([x, y, z]) => [x, y + up(x, z), z]);
   }
 
   /** Four walls round a rectangle in an outdoor row's own frame, world heights. */
@@ -859,6 +911,7 @@ export class HomeIsle {
         const lift = 0.004 + ((q.uid ?? 0) % 6) * 0.006;
         g.position.y += lift;
         const P = pathParts(it);
+        this._rampPath(q, it, gy, P);
         flat(P.solid);
         if (P.glow.length) add(new THREE.Mesh(mergeParts(P.glow), new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false })));
         P.torches.forEach(([x, y, z], k) => this.fxSites.push(makeFlame(g, x, y, z, (q.uid ?? 0) * 4 + k)));
@@ -1199,9 +1252,12 @@ export class HomeIsle {
          is its own group under `itemMeshes`, so build mode can hide the one
          she is carrying exactly as it hides a futon. */
       const rows = (Rrow?.items ?? []).map((q, k) => ({ q, k, it: ITEM_BY_ID[q.id] })).filter((x) => x.it?.holo);
-      const floor = new THREE.BoxGeometry(room.w - 1, 0.08, room.d - 1);
+      // the dark plate: the room, or a mixed room's strip of it
+      const Z = mixedZone(room, 'holodeck');
+      const floor = Z ? new THREE.BoxGeometry(Z.w - 0.3, 0.08, Z.d - 0.3) : new THREE.BoxGeometry(room.w - 1, 0.08, room.d - 1);
       paint(floor, 0x1a2a3a);
-      floor.translate(0, 0.1, 0);
+      if (Z) floor.translate(Z.cx - room.cx, 0.1, Z.cz - room.cz);
+      else floor.translate(0, 0.1, 0);
       g.add(new THREE.Mesh(floor, toonVertexMat()));
       const R = { room: room.id, racks: [], tubes: [] };
       const piece = (k, at) => {
@@ -1485,6 +1541,33 @@ export class HomeIsle {
    * and a house not in it stands whole — "she is inside the dojo" says
    * nothing about the tiny house across the lawn.
    */
+  /**
+   * THE BRIDGES OVER A FLOOR THAT IS SHOWN, taken off above its walls.
+   * Richard, Oct 2026: "When on a floor below where the bridges are built, the
+   * bridges are displaying into the building from above, we should mask out
+   * the parts of the bridges ... So if bridge is built on 3rd floor, then on
+   * 1st floor, it will mask out more of the bridge above than the 2nd floor
+   * ... and if on the 3rd floor, no masking is needed." A bridge leaves an
+   * upper storey, which is narrower, and crosses the lower one's room on its
+   * way out — so with the storeys above cut away it hung over her room.
+   * `boxes` is one per house cut below its top floor: that floor's footprint,
+   * open upward from the top of its walls (housing.js `aimView`). A deck AT
+   * that floor is below the line and stays; a deck from higher up is cut where
+   * it is over the room and nowhere else, which is what makes the 1st floor
+   * mask more of a 3rd-floor bridge than the 2nd floor does.
+   */
+  clipBridges(boxes = []) {
+    this.bridgeMat.setClips?.(boxes);
+    this.bridgeGlowMat.setClips?.(boxes);
+    for (const g of this.linkMeshes?.values() ?? []) {
+      for (const c of g.children) {
+        const w = c.userData.clipAt;
+        if (!w) continue;
+        c.visible = !boxes.some((b) => w.y > b.y - 0.5 && inClip(b, w.x, w.z));
+      }
+    }
+  }
+
   cutaway(floor) {
     const fOf = (hk) => (floor instanceof Map ? (floor.get(hk) ?? -1) : floor);
     for (const hs of this.houses ?? []) {
@@ -1562,6 +1645,59 @@ function planterStandIn() {
  *             walked through at grass level, so her feet sank into a boardwalk
  *             0.17 tall. Rectangles in the piece's own frame, at their tops.
  */
+/**
+ * `geo` cut along each of `planes` (functions of its own (x, z) that are
+ * straight lines there, zero on the cut) and every vertex lifted by
+ * `up(x, z)`; a new, unindexed geometry with the same attributes, each
+ * interpolated where a cut crosses an edge. `_rampPath` has the why.
+ */
+export function bendGeo(geo, planes, up) {
+  const g = geo.index ? geo.toNonIndexed() : geo;
+  const names = Object.keys(g.attributes);
+  const sz = names.map((n) => g.attributes[n].itemSize);
+  const po = sz.slice(0, names.indexOf('position')).reduce((a, b) => a + b, 0);
+  const W = sz.reduce((a, b) => a + b, 0);
+  const n = g.attributes.position.count;
+  const verts = [];
+  for (let i = 0; i < n; i++) {
+    const v = [];
+    names.forEach((nm, a) => { const A = g.attributes[nm]; for (let k = 0; k < sz[a]; k++) v.push(A.array[i * sz[a] + k]); });
+    verts.push(v);
+  }
+  let tris = [];
+  for (let i = 0; i + 2 < n; i += 3) tris.push([verts[i], verts[i + 1], verts[i + 2]]);
+  const lerp = (p, q, t) => p.map((x, k) => x + (q[k] - x) * t);
+  for (const f of planes) {
+    const next = [];
+    for (const t of tris) {
+      const d = t.map((v) => f(v[po], v[po + 2]));
+      if (d.every((x) => x >= -1e-6) || d.every((x) => x <= 1e-6)) { next.push(t); continue; }
+      for (const side of [1, -1]) {
+        const out = [];
+        for (let k = 0; k < 3; k++) {
+          const P = t[k], Q = t[(k + 1) % 3], dp = side * d[k], dq = side * d[(k + 1) % 3];
+          if (dp >= 0) out.push(P);
+          if ((dp > 0 && dq < 0) || (dp < 0 && dq > 0)) out.push(lerp(P, Q, dp / (dp - dq)));
+        }
+        for (let k = 1; k + 1 < out.length; k++) next.push([out[0], out[k], out[k + 1]]);
+      }
+    }
+    tris = next;
+  }
+  const flat = new Float32Array(tris.length * 3 * W);
+  let o = 0;
+  for (const t of tris) for (const v of t) { flat.set(v, o); flat[o + po + 1] += up(v[po], v[po + 2]); o += W; }
+  const out = new THREE.BufferGeometry();
+  let off = 0;
+  names.forEach((nm, a) => {
+    const arr = new Float32Array(tris.length * 3 * sz[a]);
+    for (let i = 0; i < tris.length * 3; i++) for (let k = 0; k < sz[a]; k++) arr[i * sz[a] + k] = flat[i * W + off + k];
+    out.setAttribute(nm, new THREE.BufferAttribute(arr, sz[a]));
+    off += sz[a];
+  });
+  return out;
+}
+
 export function pathParts(it) {
   const solid = [];
   const glow = [];

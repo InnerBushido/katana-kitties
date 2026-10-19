@@ -1,5 +1,27 @@
-import { ITEM_BY_ID, HOUSE_BY_ID } from './catalog.js';
+import { ITEM_BY_ID, HOUSE_BY_ID, homeRooms } from './catalog.js';
 import { fits, firstFit, wallSlots, wallFree } from './editor.js';
+
+/**
+ * A WHOLE-ROOM DOJO OR HOLODECK INTO A FEATURE of a mixed room (catalog
+ * `mixed`): the castle's ground floor was one or the other, and is now a
+ * tatami room that can have both. What she paid comes with it as the
+ * feature's price (`typePaid`, or today's price for a room older than that),
+ * so selling it back later pays what selling the room would have. The
+ * holodeck's kit rows stay and are re-fitted into its strip by
+ * `ensureHoloKit` when the island is drawn. True if anything changed.
+ */
+export function migrateMixedRooms(H, roomPrice) {
+  let changed = false;
+  for (const room of homeRooms(H)) {
+    const R = H.rooms?.[room.id];
+    if (!room.mixed || !R || !room.mixed[R.type]) continue;
+    R.feats = { ...(R.feats ?? {}), [R.type]: Number.isFinite(R.typePaid) ? R.typePaid : roomPrice(R.type) };
+    R.type = 'living';
+    delete R.typePaid;
+    changed = true;
+  }
+  return changed;
+}
 
 /* ---------------------------------------------------------------------------
    OLD HOMES INTO NEW ROOMS — the castle's four rooms into two.

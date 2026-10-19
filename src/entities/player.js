@@ -224,6 +224,23 @@ export const KENDO_SCALE = 1;
    wide, so this makes it about two of her long. Measured on screen. */
 /** The ceremony's drawings' heights as a fraction of the standing guard. */
 export const KENDO_CEREMONY_H = { seizaPose: 0.72, reachPose: 0.8, reiPose: 0.92 };
+/* ...AND ONE KITTEN'S OWN, WHERE HER DRAWINGS NEED IT. Richard, Oct 2026:
+   "Ember in kendo gear, in seiza and slashing: the sprite is too small. The
+   head/helmet should match the standing sprite's head size. The slash
+   sprite should be taller (player height plus the shinai above her head)."
+   Measured on her 768px drawings, the men's grill (its slats, found by
+   light neutral ink between dark rows) as a share of the ink:
+     guard  151 / 688 = 0.219 at 1
+     seiza  151 / 643 = 0.235 at 0.72 -> 0.169, 77% of the guard's  -> 0.94
+     reach  138 / 602 = 0.229 at 0.8  -> 0.183, 84%                  -> 0.96
+   and the slash, whose helmet is turned away so its grill under-reads, by
+   her BODY: feet to the top of the men is 521 of 737 there and 650 of 688
+   standing, so 1.35 makes her as tall as she stands and the shinai is the
+   extra above her head. Frost's drawings are proportioned differently
+   (kneeling, her bogu is 640px against 652 standing) and her white fur
+   defeats the grill measure, so she keeps the shared fractions until hers
+   are measured by hand. */
+export const KENDO_POSE_H = { Ember: { seizaPose: 0.94, reachPose: 0.96, kiaiPose: 1.35 } };
 export const HOME_BATH_H = 0.55;
 export const HOME_FUTON_H = 0.9;
 /** homePose -> [the drawing it needs, the old pose it wears without it]. */
@@ -1001,6 +1018,17 @@ export class Player {
     );
     this.slash.position.y = 0.9;
     this.group.add(this.slash);
+    /* ...AND THE MEN CUT'S, STOOD UP. Richard, Oct 2026: "The slash arc should
+       be vertical" — in the bogu a cut comes straight down in front of her
+       (housing/kendo.js `KENDO_HIT` is a lane, not an arc), and the flat ring
+       drew a sideways sweep the rule does not have. The same wedge in the
+       upright plane through her facing: from over her head (+Y) down past
+       level in front of her (+X), turned to face her way like the flat one. */
+    const varc = new THREE.RingGeometry(1.0, 2.0, 20, 1, -0.35, 2.0);
+    this.slashV = new THREE.Mesh(varc, this.slash.material);
+    this.slashV.position.y = 0.9;
+    this.slashV.visible = false;
+    this.group.add(this.slashV);
 
     // Player-colour ring so you can always find yourself on a busy screen.
     const mg = new THREE.RingGeometry(0.78, 0.95, 24);
@@ -1793,7 +1821,8 @@ export class Player {
          because the generator fills the frame whatever the pose - seiza came
          out a head TALLER than the guard. The fractions were set by matching
          the size of the men across the drawings on screen. */
-      const quad = this.height * KENDO_SCALE * (KENDO_CEREMONY_H[key] ?? 1) / (a.contentScale || 1);
+      const own = KENDO_POSE_H[this.style?.name] ?? {};
+      const quad = this.height * KENDO_SCALE * (own[key] ?? KENDO_CEREMONY_H[key] ?? 1) / (a.contentScale || 1);
       this[key] = new Billboard(a.texture, {
         cols: 1,
         rows: 1,
@@ -6538,7 +6567,17 @@ export class Player {
        every time the beams fired. The dragon case was there before he was, it
        was just small enough on a storm dragon to look like part of the breath. */
     const riding = this.pandaMount || this.mount || this.rideAlong;
-    if (this.attackTimer > 0 && !riding) {
+    const upright = !!this.kendoGeared && !!this.slashV;
+    if (this.slashV) this.slashV.visible = false;
+    if (this.attackTimer > 0 && !riding && upright) {
+      // in the bogu: the upright wedge, swept DOWN from overhead as it fades (see the constructor)
+      const t = 1 - this.attackTimer / 0.26;
+      this.slash.visible = false;
+      this.slashV.visible = true;
+      this.slash.material.opacity = (1 - t) * 0.9;
+      this.slashV.rotation.set(0, this.facing - Math.PI / 2, -(t * 0.6), 'YXZ');
+      this.slashV.scale.setScalar((0.7 + t * 0.5) * (this._reach() / BASE_REACH));
+    } else if (this.attackTimer > 0 && !riding) {
       const t = 1 - this.attackTimer / 0.26;
       this.slash.visible = true;
       this.slash.material.opacity = (1 - t) * 0.9;
@@ -6944,6 +6983,7 @@ export class Player {
       if (this.blessPose) this.blessPose.visible = false;
       if (this.breathPose) this.breathPose.visible = false;
       this.slash.visible = false;
+      if (this.slashV) this.slashV.visible = false;
     }
 
     // Blob shadow tracks the ground below and shrinks with altitude.

@@ -272,8 +272,18 @@ export class Minimap {
    * comment gives; this is the one deliberate exception, and it only ever
    * lasts as long as the card does.
    */
+  /* ...AND ROSHI'S ISLANDS THEMSELVES, ONCE THEY ARE IN THE SKY (`homes`,
+     set by main.js from `Housing.homesMap`, null until the ending raises
+     them). Richard, Oct 2026: "once they are spawned, they should be shown in
+     the minimap and the fully zoomed out version of the minimap should include
+     the islands as well." So at the widest zoom the box takes them in exactly
+     as the tour's does at its end, and zoomed in they are drawn where they are
+     without moving anything. The scale changes once, at the ending, which is
+     the one moment the map is allowed to: the islands have just arrived. */
   draw(...args) {
-    const T = this.tour;
+    const homes = this.homes?.length ? { k: this.zoom <= 1 ? 1 : 0, sites: this.homes, show: 1, label: true } : null;
+    this._homesT = homes;
+    const T = this.tour ?? homes;
     if (!T) { this._drawMain(...args); return; }
     const keepB = this.bounds;
     const keepZ = this.zoom;
@@ -290,7 +300,7 @@ export class Minimap {
     if (k > 0) this.zoom = 1;
     try {
       this._drawMain(...args);
-      this._drawTour(T);
+      if (T !== homes) this._drawTour(T);
     } finally {
       this.bounds = keepB;
       this.zoom = keepZ;
@@ -302,7 +312,7 @@ export class Minimap {
     const d = this.dpr ?? 1;
     const pulse = 0.5 + 0.5 * Math.sin((this._t ?? 0) * 3);
     c.save();
-    c.globalAlpha = Math.min(1, T.k * 1.5);
+    c.globalAlpha = Math.max(T.show ?? 0, Math.min(1, T.k * 1.5));
     for (const s of T.sites) {
       const x = this._px(s.x), y = this._py(s.z);
       const r = Math.max(4 * d, s.r * this.scale);
@@ -313,6 +323,18 @@ export class Minimap {
       c.lineWidth = 1.5 * d;
       c.strokeStyle = 'rgba(28,16,22,0.75)';
       c.stroke();
+      if (T.label && !s.hl) {
+        // their names, small, as the town's landmarks are: "Sunrise", not SUNRISE ISLE
+        const nm = s.name.replace(/ ISLE$/, '');
+        c.font = `800 ${9 * d}px Nunito, sans-serif`;
+        c.textAlign = 'center';
+        c.lineWidth = 3 * d;
+        c.lineJoin = 'round';
+        c.strokeStyle = 'rgba(20,12,18,0.9)';
+        c.strokeText(nm[0] + nm.slice(1).toLowerCase(), x, y - r - 4 * d);
+        c.fillStyle = '#e8f6ff';
+        c.fillText(nm[0] + nm.slice(1).toLowerCase(), x, y - r - 4 * d);
+      }
       if (!s.hl) continue;
       c.beginPath();
       c.arc(x, y, r + (4 + pulse * 4) * d, 0, Math.PI * 2);
@@ -370,6 +392,8 @@ export class Minimap {
       c.strokeStyle = 'rgba(28,16,22,0.75)';
       c.stroke();
     }
+    // Roshi's islands, UNDER the pips like every other island (`draw`)
+    if (this._homesT) this._drawTour(this._homesT);
 
     // --- the Dream Dojo ---
     this._drawDream();

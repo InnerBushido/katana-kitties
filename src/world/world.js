@@ -764,6 +764,8 @@ export class World {
    */
   setBridges(p) {
     p = Math.max(0, Math.min(1, p ?? 0));
+    // Roshi's islands come up on the same clock (housing.js `rise`)
+    this.homeGround?.rise?.(p);
     if (p <= 0 && !this.snakeWay) { this.bridgeT = 0; return; }
     const W = this.buildSnakeWay();
     this.bridgeT = p;

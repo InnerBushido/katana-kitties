@@ -127,9 +127,19 @@ export const HOUSES = [
     rooms: [
       /* The old east + west (x -9.5..9.5, cells aligned with both) and north +
          south (z -6.5..7.5; south's cells land half a cell over, migrate.js). */
+      /* A KENDO DOJO AND A HOLODECK, AND FURNITURE IN WHAT IS LEFT. Richard,
+         Oct 2026: "Allow both a kendo dojo and a holodeck. Allow furniture in
+         the area they don't use. The holodeck should be smaller, but big
+         enough for 4 tubes and 3 VR items." So this room is a tatami room
+         with the two as FEATURES (`roomHas`, `R.feats`), each on its own
+         zone of the 9 x 9 grid, in cells [gx0, gz0, gx1, gz1): the dojo is
+         8 x 10 beside the stairs (x -8.6..-6.0, cols 0-1) at the back; the
+         holodeck the east strip, 3 cells wide — four 2 x 2 tubes down cols
+         7-8 and the three racks in col 6 — and the front half, where the
+         door is, is the tatami room's. The 12 x 12 dojo it had left no
+         4-tube strip anywhere (measured: 81 cells, stairs 10, dojo 36). */
       { id: 'ground', name: 'GROUND FLOOR', floor: 0, cx: 0, cz: 0, w: 19, d: 18, claim: true, kendo: true, through: true,
-        // the stairs are x -8.6..-6.0: the dojo is east of them, with the walk to them clear
-        kendoArea: { cx: 3, cz: 0, w: 12, d: 12 } },
+        mixed: { kendo: [2, 0, 6, 5], holodeck: [6, 0, 9, 9] } },
       { id: 'middle', name: 'SECOND FLOOR', floor: 1, cx: 0, cz: 0.5, w: 16, d: 14, claim: true, kendo: true, through: true,
         // between the hole the ground floor's stairs come up through (x to -6.0) and the stairs up (x from 3.6)
         kendoArea: { cx: -1.2, cz: 0, w: 8.4, d: 12 } },
@@ -190,6 +200,18 @@ const _roomsMemo = new WeakMap();
  * `H.rooms` — which is why nothing that furnishes, claims or sells a room had
  * to learn that there can be more than one house. `hk` says whose frame.
  */
+/**
+ * The rooms as FURNISH A ROOM lists them: the one she is standing in (`first`,
+ * a room id) at the top, the rest in their order. One function, because the
+ * list and the camera that frames the row under its cursor (build.js
+ * `frameOf`) must agree on which row is which.
+ */
+export function roomsListed(H, first = null) {
+  const list = homeRooms(H);
+  if (!first || !list.some((r) => r.id === first)) return list;
+  return [...list.filter((r) => r.id === first), ...list.filter((r) => r.id !== first)];
+}
+
 export function homeRooms(H) {
   if (!H) return [];
   const specs = houseSpecs(H);
@@ -217,10 +239,30 @@ export function homeRooms(H) {
 
 export const roomById = (H, id) => homeRooms(H).find((r) => r.id === id) ?? null;
 
-/** Where a kendo dojo stands in `room`, house-local: its `kendoArea`, or the
- *  room less the old 1.4 of margin all round for a room that has none. */
+/** A mixed room's zone for `feat`, house-local, from its cells (catalog `mixed`), or null. */
+export function mixedZone(room, feat) {
+  const c = room?.mixed?.[feat];
+  if (!c) return null;
+  const x0 = room.cx - room.w / 2 + c[0] * 2, x1 = room.cx - room.w / 2 + c[2] * 2;
+  const z0 = room.cz - room.d / 2 + c[1] * 2, z1 = room.cz - room.d / 2 + c[3] * 2;
+  return { cx: (x0 + x1) / 2, cz: (z0 + z1) / 2, w: x1 - x0, d: z1 - z0, x0, x1, z0, z1, cells: c };
+}
+
+/** The kinds a room can be besides a tatami room — a whole room's TYPE, or, in a `mixed` room, a FEATURE of it. */
+export const ROOM_FEATS = ['kendo', 'holodeck'];
+
+/** Is this room (its row, `H.rooms[id]`) a `t` — its type, or one of its features? */
+export const roomHas = (R, t) => R?.type === t || R?.feats?.[t] != null;
+
+/** `room` with the features its row has bought, for `fits` (editor.js): a zone keeps furniture out only once it is bought. */
+export const roomWith = (room, R) => (room?.mixed ? { ...room, feats: { ...(R?.feats ?? {}) } } : room);
+
+/** Where a kendo dojo stands in `room`, house-local: its `kendoArea`, its
+ *  mixed room's zone, or the room less the old 1.4 of margin all round. */
 export function kendoArea(room) {
   if (room?.kendoArea) return room.kendoArea;
+  const z = mixedZone(room, 'kendo');
+  if (z) return { cx: z.cx, cz: z.cz, w: z.w, d: z.d };
   return { cx: room.cx, cz: room.cz, w: Math.max(2, room.w - 2.8), d: Math.max(2, room.d - 2.8) };
 }
 

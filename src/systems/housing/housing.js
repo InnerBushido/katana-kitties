@@ -5,7 +5,7 @@ import {
   FREE_ANNEX, LINK_BY_ID, homeRooms,
 } from './catalog.js';
 import { loadStore, saveStore, newHome, homeOf, normalise, newer, exportFile, importFile, emptyStore, homeKey } from './homestore.js';
-import { HomeIsle, XRAY_SLOTS } from './homeisle.js';
+import { HomeIsle, XRAY_SLOTS, XRAY_INDOOR, BRIDGE_CLIPS } from './homeisle.js';
 import { HomeBridge, solveHomeRoads, GATE, HOLO_DECK } from './homebridge.js';
 import { Roshi } from './roshi.js';
 import { PurchaseScene } from './purchasescene.js';
@@ -13,17 +13,19 @@ import { JUKEBOX, ACTIVITY_MUSIC, hasRecording, previewOf } from './jukebox.js';
 import { Koi } from './koi.js';
 import { Farm } from './farm.js';
 import { Kendo } from './kendo.js';
-import { autoLayout, defaultWindows, houseWhy, brokenLinks, wallSlots, ITEM_SELL, layDoorPath } from './editor.js';
+import { autoLayout, defaultWindows, houseWhy, brokenLinks, wallSlots, ITEM_SELL, layDoorPath, layRampPath, doorPathId } from './editor.js';
 
 /** How far toward its bridge a NEW house of this kind stands (see `buy`). */
 export const HOME_FORWARD = { castle: 7 };
+/** An extra house on an island she already owns costs this much of Roshi's price (`annexPrice`). */
+export const ANNEX_OFF = 0.5;
 import { linkWhy, linkBlockers, linkPriceK } from './links.js';
 import { HousingCards, roomTypeRefund } from './cards.js';
 import { BuildMode } from './build.js';
 import { HomeBoons } from './boons.js';
 import { HomeActivities, TABLE_SEATS } from './activities.js';
 import { SlideRides } from './sliderider.js';
-import { migrateCastleRooms } from './migrate.js';
+import { migrateCastleRooms, migrateMixedRooms } from './migrate.js';
 import { HEAD_H, roofY, PORT_H, floorOf } from './homehouse.js';
 
 /** "Hana", "Hana and Mei", "Hana, Mei and Rin". */
@@ -149,6 +151,21 @@ export const DOOR_SHOT = { dist: 12, below: 1.0, pitch: 0.16, widest: 1.8, clear
 /** How much bigger the x-ray hole is for a kitten on a floor below the one her
  *  pane shows (`aimView`). Richard asked for "2-3x"; the middle of it. */
 export const LOWER_XRAY = 2.5;
+/**
+ * ...and THROUGH THE FLOOR ABOVE TOO, by how much she is moving. Richard, Oct
+ * 2026: "the player on 1st floor's xray shader is not affecting the 2nd
+ * floor, it should affect all the floors, but let's make it that their xray
+ * shader becomes smaller over time on the 2nd floor when the player stops
+ * moving around and gets bigger twice as fast when they move around." `p._xrayUp`
+ * runs 0..1: down over `t` seconds while she is still, up in half that while
+ * her feet move faster than `moving`. The upstairs hole is LOWER_XRAY times it.
+ */
+/** A bridge is cut this far above the floor she is on (`clipBridges`). The storey is FLOOR_H (4.6) to the next deck; 3.9, under a bridge's beams, left a third-floor bridge
+ *  0.26 into the 2nd-floor room where it slopes down through that floor's wall (world-check measures it). Nothing on a deck at her own floor reaches 3.2. */
+export const BRIDGE_CLIP_UNDER = 3.2;
+/** The islands' rise in the ending (`rise`): over this part of the road clock (the gates are its first 0.35, snakeway.js), from this far under. */
+export const RISE = { from: 0.4, to: 0.95, depth: 70 };
+export const XRAY_UP = { t: 3, moving: 0.6 };
 
 /**
  * HOW STEEP THE DOOR SHOT MAY LOOK DOWN, for house shell `S`: its 0.16, or
@@ -257,6 +274,35 @@ export class Housing {
     this.game.housingCards = new HousingCards(this.game, this);
     this._applyStore();
     this.built = true;
+    this._showIsles();
+  }
+
+  /**
+   * HOW FAR OUT OF THE CLOUDS THE ISLANDS ARE, 0..1: the ending's road clock
+   * (`World.setBridges`), and 1 for as long as the shop is open. Richard, Oct
+   * 2026: "The player islands are appearing during the intro cutscene ...
+   * They shouldn't spawn until after the ending cutscene. Ideally they spawn
+   * during the ending cutscene, when the islands visually come up through the
+   * clouds." The hiding was in `update`, which does not run while a scene
+   * does — so from boot through the whole intro they stood in the sky as
+   * built. Now they are hidden on the frame they are built, and they come up
+   * through the road phase, after the gates, with the far islands (`RISE`).
+   */
+  rise(p) {
+    this.riseP = p;
+    if (this.built) this._showIsles();
+  }
+
+  _showIsles() {
+    const up = this.isUp();
+    const q = up ? 1 : Math.max(0, Math.min(1, ((this.riseP ?? 0) - RISE.from) / (RISE.to - RISE.from)));
+    const e = 1 - (1 - q) ** 3;
+    for (const I of this.isles) {
+      I.group.visible = q > 0;
+      I.group.position.y = -(1 - e) * RISE.depth;
+    }
+    for (const B of this.bridges) if (B && !up) B.group.visible = false;
+    return up;
   }
 
   /** Re-draw every isle from the store. */
@@ -265,8 +311,20 @@ export class Housing {
       const H = this.store.homes[I.site.id] ?? null;
       // a castle saved with four rooms gets its two floors (migrate.js), once
       if (H && migrateCastleRooms(H, this.store.bank, (t) => this.roomPrice(t))) this.save();
+      // ...and its ground floor's dojo or holodeck into a feature of it, with room for both (migrate.js)
+      if (H && migrateMixedRooms(H, (t) => this.roomPrice(t))) this.save();
       // a home bought before houses had windows gets them, once (`defaultWindows`)
       if (H && !H.winV) { defaultWindows(H); H.winV = 1; }
+      // ...and the castle's, whose rooms sit in from its walls, on the sides that only now count (editor.js `wallSlots`)
+      if (H && H.winV < 2) { defaultWindows(H, null, true); H.winV = 2; }
+      /* ...and a walk laid when it stopped at the foot of the ramp goes on up
+         it to the door (editor.js `rampWalk`), once — only if she kept the
+         walk she was given, and round anything she has put on the ramp since */
+      if (H && !H.rampV) {
+        if ((H.outdoor ?? []).some((q) => q.free && q.id === doorPathId(H))) layRampPath(H, this.envOf(I));
+        H.rampV = 1;
+        this.save();
+      }
       I.setHome(H, H ? this.coloursOf(H) : null);
       const B = this.bridges[k];
       if (B) this._dressBridge(k);
@@ -622,9 +680,24 @@ export class Housing {
       }
       // a kitten lying on a futon or sat at the table is IN the furniture's rectangle, on purpose
       const held = this.activities?.holds?.(p.index);
+      /* ON A BRIDGE, THE HOUSES' WALLS ARE BELOW HER. Richard, Oct 2026: "The
+         wall collider from the floor below is still interfering with the
+         bridge built above ... (player has to jump over it to keep crossing
+         the bridge)". The castle steps in a floor at a time, so a bridge out
+         of its third floor slopes down over the second floor's roof band, which
+         is still INSIDE the second floor's footprint: her feet dipped under
+         that floor's lid, the ceiling clamp below took her for somebody
+         indoors and pulled her head under it — into the room, where its walls
+         and a stair rail held her. Measured in world-check: stuck 4.4 of 23.3
+         down, at 9.06 with the deck at 11.33. So on a bridge's deck she is
+         under no house's ceiling, and only the bridge's own rails (`link`)
+         hold her: its doorways are cut, and any other house wall along it is
+         one she is walking over. */
+      const onLink = I.linkMeshes?.size ? I.heightAt(pos.x, pos.z, pos.y + 0.1)?.deck?.link != null : false;
       for (const w of I.walls) {
         if (pos.y + 1.5 < w.y0 || pos.y > w.y1) continue;
         if (held && w.furn) continue;
+        if (onLink && w.hk != null && w.link == null) continue;
         this._segPush(p, w, r);
       }
       // every house's front door, for somebody the lock keeps out
@@ -657,7 +730,7 @@ export class Housing {
       this._bed(p, I, hud);
       /* ...and her head against the ceiling (HomeIsle `ceilingAt`) — except
          on the seventh bounce off a bed, which goes THROUGH it */
-      const c = I.ceilingAt(pos.x, pos.y, pos.z);
+      const c = onLink ? null : I.ceilingAt(pos.x, pos.y, pos.z);
       if (p._bed?.through && p.velocity.y <= 0) p._bed.through = false;
       if (c != null && pos.y + HEAD_H > c && !p._bed?.through) {
         pos.y = c - HEAD_H;
@@ -892,9 +965,7 @@ export class Housing {
        shouldn't be spawned until after the ending cutscene plays." They are
        built at boot (the roads take seconds to solve) and simply not shown,
        stood on or walled until the shop is open. */
-    const up = this.isUp();
-    for (const I of this.isles) I.group.visible = up;
-    for (const B of this.bridges) if (B && !up) B.group.visible = false;
+    const up = this._showIsles();
     // Roshi stands in the TOWN, islands or not.
     this.roshi?.update(dt, players);
     if (!up) return;
@@ -909,6 +980,11 @@ export class Housing {
       if (B && H) B.setLocked(this.locked(H));
       B?.update?.(dt, this.time, B && H ? this._ownersNear(B, H, players) : null);
       if (B && H) B.setHolo(this._holoPoints(k, players));
+    }
+    for (const p of players) {
+      if (!p?.velocity) continue;
+      const mv = Math.hypot(p.velocity.x, p.velocity.z) > XRAY_UP.moving;
+      p._xrayUp = Math.max(0, Math.min(1, (p._xrayUp ?? 1) + (mv ? 2 : -1) * dt / XRAY_UP.t));
     }
     this._mounts(players);
     this.holo.update(dt, players);
@@ -1106,6 +1182,12 @@ export class Housing {
    * rings the one the cursor is on. Richard: "the minimap zooms out and
    * highlights the island".
    */
+  /** Roshi's islands for the minimap once they are in the sky, or null (minimap.js `homes`). */
+  homesMap() {
+    if (!this.built || !this.isUp()) return null;
+    return HOME_SITES.map((s) => ({ x: s.x, z: s.z, r: s.r, name: s.name, owned: !!this.store.homes[s.id] }));
+  }
+
   tourMap(members) {
     const b = members.map((i) => this.browsing.get(i)).find(Boolean);
     if (!b) return null;
@@ -1436,7 +1518,7 @@ export class Housing {
     const who = members ?? players.map((_, k) => k);
     for (const I of this.isles) {
       if (!I.home) continue;
-      if (scene) { I.cutaway(-1); I.halfWalls(null); for (const M of I.xrayMats) M.setCuts?.(camera.position, []); continue; }
+      if (scene) { I.cutaway(-1); I.halfWalls(null); I.clipBridges([]); for (const M of I.xrayMats) M.setCuts?.(camera.position, []); continue; }
       /* EACH HOUSE CUT TO THE HIGHEST FLOOR anybody in this pane is on in IT.
          Richard, Oct 2026: "Show the upper floor for the player who is
          upstairs." It was the LOWEST, so two sisters sharing a pane, one
@@ -1453,6 +1535,15 @@ export class Housing {
       const floors = [];
       const scale = [];
       const ceil = [];
+      /* INSIDE, A SCREEN; OUTSIDE, A HOLE. Richard, Oct 2026: "Rather than
+         cutting the geometry with the shader, maybe we can just use the
+         dithering effect ... we should be able to do this better indoors at
+         least when players are inside the building." A kitten in a house is
+         cut for at XRAY_INDOOR, so the wall between her and the camera is a
+         stipple she is seen through rather than a bite out of the room; out
+         on the lawn it is still the porthole, which reads better against a
+         building she is not in. */
+      const k = [];
       for (const [j, i] of who.entries()) {
         const p = players[i];
         if (!p) continue;
@@ -1473,7 +1564,21 @@ export class Housing {
           const lower = a && f > a.f && Number.isFinite(a.hs.shell.floorY[a.f + 1]);
           scale.push(lower ? LOWER_XRAY : 1);
           ceil.push(lower ? a.hs.gy + a.hs.shell.floorY[a.f + 1] + 0.02 : null);
+          k.push(a ? XRAY_INDOOR : 1);
         }
+      }
+      // ...and a sister downstairs, through the floor over her too (XRAY_UP): after all four kittens' own slots
+      for (const [j, i] of who.entries()) {
+        const p = players[i], a = at[j];
+        if (!p || !a || seen.length >= XRAY_SLOTS) continue;
+        const f = cut.get(a.hs.hk);
+        const e = p._xrayUp ?? 1;
+        if (!(f > a.f) || !Number.isFinite(a.hs.shell.floorY[a.f + 1]) || e < 0.02) continue;
+        seen.push(new THREE.Vector3(p.position.x, p.position.y + 1.4, p.position.z));
+        floors.push(a.hs.gy + a.hs.shell.floorY[a.f + 1] + 0.02);
+        scale.push(LOWER_XRAY * e);
+        ceil.push(null);
+        k.push(XRAY_INDOOR);
       }
       /* ...AND THE THING SHE IS PLACING OR CUSTOMISING OUTSIDE (`Builder.xrayAt`):
          Richard: "The house, especially a castle, can block the camera." */
@@ -1483,6 +1588,7 @@ export class Housing {
         floors.push(q.floor);
         scale.push(1);
         ceil.push(null);
+        k.push(1);
       }
       /* BEHIND A TALL HOUSE, ON THE GROUND: its first floor with the roofs
          off. Richard, Oct 2026: "The castle obstructs the backyard. When the
@@ -1506,6 +1612,17 @@ export class Housing {
           const a = hs.toLocal(camera.position.x, camera.position.z);
           const b = hs.toLocal(p.position.x, p.position.z);
           if (Math.abs(b.x) < hw && Math.abs(b.z) < hd) return false;
+          /* THROUGH THE WALLS, or through the eaves from OUTSIDE them. Richard,
+             Oct 2026: "When walking to the front of the castle, when under the
+             roof on the 1st floor, the 2nd/3rd floor are being removed ...
+             This shouldn't happen until the player walks into the castle and
+             past the door frame". On the ramp and the porch she is INSIDE the
+             eaves' rectangle (hw x 1.32), so a line from the camera in front of
+             her ended in it and she counted as behind the castle from 14 out
+             with the door at 11 (measured). The eaves hide her only from
+             beyond them; under them, only the walls do. */
+          if (segHitsRect(a.x, a.z, b.x, b.z, hw, hd)) return true;
+          if (Math.abs(b.x) < hw * 1.32 && Math.abs(b.z) < hd * 1.32) return false;
           return segHitsRect(a.x, a.z, b.x, b.z, hw * 1.32, hd * 1.32);
         });
         if (behind) cut.set(hs.hk, 0);
@@ -1524,7 +1641,15 @@ export class Housing {
         else if (!soft.has(c.hk)) cut.set(c.hk, Math.min(cut.get(c.hk) ?? 99, c.f));
       }
       I.cutaway(cut);
-      const k = seen.map(() => 1);
+      // ...and the bridges from the storeys that came off, above the walls of the one left (`clipBridges`)
+      const clips = [];
+      for (const hs of I.houses ?? []) {
+        const f = cut.get(hs.hk), S = hs.shell;
+        if (!(f >= 0) || f >= S.floorY.length - 1 || clips.length >= BRIDGE_CLIPS) continue;
+        const [hw, hd] = S.half[f];
+        clips.push({ x: hs.wx, z: hs.wz, cos: hs.cos, sin: hs.sin, hw, hd, y: hs.gy + S.floorY[f] + BRIDGE_CLIP_UNDER });
+      }
+      I.clipBridges(clips);
       /* THE DOORS THE HOUSE HIDES: every doorway on a floor this pane shows,
          facing away from its camera, near somebody in it (`DOOR_XRAY`). */
       const cam = camera.position;
@@ -1595,7 +1720,7 @@ export class Housing {
       if (!houseWhy({ ...H, at }, { hk: 'main', house: houseId, ...at }, this.envOf(I))) H.at = at;
     }
     defaultWindows(H);
-    H.winV = 1;
+    H.winV = 2;
     // the walk from her bridge to her door, and nothing of a preset's on it (editor.js `layDoorPath`)
     const env = this.envOf(I);
     /* No bridge wound yet (the roads solve in the background): the landing
@@ -1603,6 +1728,7 @@ export class Housing {
        island, which is its +z (the house faces home). */
     env.landing ??= { x: 0, z: I.radius - 4 };
     layDoorPath(H, env);
+    H.rampV = 1;
     if (presetId && PRESET_BY_ID[presetId]) autoLayout(H, PRESET_BY_ID[presetId], I, env);
     this.store.homes[siteId] = H;
     this.save();
@@ -1677,6 +1803,93 @@ export class Housing {
     const k = this.isles.findIndex((I) => I.site.id === H.site);
     this.bridges[k]?.setLocked(this.locked(H));
     return true;
+  }
+
+  /* ---------------------------- a share of it ---------------------------- */
+
+  /*
+   * BUYING INTO A HOME THAT IS ALREADY OWNED, AND SELLING BACK OUT. Richard,
+   * Oct 2026: "Share part of the house ... A new co-owner pays a 1/n share,
+   * split evenly among the current owners. Added owners get building colours,
+   * a statue and other benefits. A 'sell back' removes their colours, statue
+   * and access." Everything an owner gets is read off `H.owners` — the
+   * colours (`coloursOf`), the statues (`_dressBridge`), the locks and the
+   * rooms — so joining is one name pushed and selling out one name taken
+   * away, with the redraw after each. The price is the house's at Roshi's
+   * over the owners there will be, as a purchase shared four ways is; it goes
+   * to the owners, not to Roshi, and comes off what each of them has in it
+   * (`H.paid`), so a later sale pays everybody back on what they really hold.
+   * Selling out is Roshi's 75% of what she paid, as everything else is.
+   */
+  sharePrice(H) {
+    return Math.ceil(this.housePrice(H.house) / (H.owners.length + 1) / 10) * 10;
+  }
+
+  shareWhy(p, H) {
+    const def = HOUSE_BY_ID[H.house];
+    const n = p?.style?.name;
+    if (!def || !n) return 'Nobody to buy it.';
+    if (H.owners.includes(n)) return `${p.name} already owns a share of it.`;
+    if ((def.owners ?? 1) <= 1) return `A ${def.name} is for one owner — only a castle is shared.`;
+    if (H.owners.length >= def.owners) return `The ${def.name} already has ${def.owners} owners — that is as many as it holds.`;
+    if (this.homeOf(p)) return `${p.name} already has a home — one each! Sell it first.`;
+    const price = this.sharePrice(H);
+    if (p.score < price) return `${p.name} needs ${price - p.score} more.`;
+    return null;
+  }
+
+  joinHome(p, H) {
+    const why = this.shareWhy(p, H);
+    if (why) return { ok: false, why };
+    const price = this.sharePrice(H);
+    const was = [...H.owners];
+    p.score -= price;
+    this.game.onScoreChanged?.(p);
+    H.paid ??= {};
+    // evenly, and the odd points to the first owner, so not one is made or lost
+    const each = Math.floor(price / was.length);
+    was.forEach((o, i) => {
+      const got = each + (i === 0 ? price - each * was.length : 0);
+      this.pay(o, got);
+      H.paid[o] = Math.max(0, (H.paid[o] ?? 0) - got);
+    });
+    H.owners.push(p.style.name);
+    H.paid[p.style.name] = price;
+    this._reowned(H);
+    return { ok: true, price, each };
+  }
+
+  leaveWhy(p, H) {
+    const n = p?.style?.name;
+    if (!H?.owners.includes(n)) return 'Only an owner can sell her share.';
+    if (H.owners.length < 2) return 'She is the only owner — selling her share would be selling the house. Use SELL MY HOME.';
+    return null;
+  }
+
+  leaveHome(p, H) {
+    const why = this.leaveWhy(p, H);
+    if (why) return { ok: false, why };
+    const n = p.style.name;
+    const back = Math.round((H.paid?.[n] ?? 0) * HOME_SELL);
+    this.pay(n, back);
+    H.owners = H.owners.filter((o) => o !== n);
+    delete H.paid?.[n];
+    delete H.open?.[n];
+    for (const R of Object.values(H.rooms ?? {})) if (R?.claim === n) delete R.claim;
+    this._reowned(H);
+    return { ok: true, back };
+  }
+
+  /** Who owns it changed: the colours, the statues, the locks, written down. */
+  _reowned(H) {
+    this.save();
+    const k = this.isles.findIndex((I) => I.site.id === H.site);
+    this.isles[k]?.setHome(H, this.coloursOf(H));
+    this._dressBridge(k);
+    this.koi.sync();
+    this.angling.sync();
+    this.farm.sync();
+    this.pets.sync();
   }
 
   /* --------------------------- castle rooms ----------------------------- */
@@ -1777,11 +1990,14 @@ export class Housing {
    * What an extra house costs HER here: nothing for the first of the one a
    * size down that came with the island (`FREE_ANNEX` — "the first house is
    * free that comes with the island, after that they have to buy any
-   * additional houses"), else Roshi's price for it.
+   * additional houses"), else HALF Roshi's price for it — the island is
+   * already hers (Richard, Oct 2026: "When buying a house on an already owned
+   * island, let's lower the price by 50%"). Selling it back pays HOME_SELL of
+   * what was PAID, so the discount is not a profit.
    */
   annexPrice(H, houseId) {
     const free = FREE_ANNEX[H.house] === houseId && !(H.annex ?? []).some((a) => a.free);
-    return free ? 0 : this.housePrice(houseId);
+    return free ? 0 : Math.max(10, Math.round(this.housePrice(houseId) * ANNEX_OFF / 10) * 10);
   }
 
   /**

@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { HOUSE_BY_ID, ITEM_BY_ID, LINK_BY_ID, houseSpecs, homeRooms, roomById } from './catalog.js';
+import { HOUSE_BY_ID, ITEM_BY_ID, LINK_BY_ID, houseSpecs, homeRooms, roomById, roomsListed, roomWith } from './catalog.js';
 import { fits, footprint, gridOf, wallSlots, wallFree, yardWhy, yardR, addOutdoor, houseWhy } from './editor.js';
 import { drawItem, placeModel } from './models.js';
 import { WALL_Y, YARD_BUILT, roomLook } from './homeisle.js';
-import { buildHouseShell, houseFoot, houseRadius, houseHeight } from './homehouse.js';
+import { buildHouseShell, houseFoot, houseFoots, houseRadius, houseHeight } from './homehouse.js';
 import { mergeParts } from '../../world/build.js';
 import { toonVertexMat } from '../../core/gfx.js';
 import { linkWhy, linkGeom, linkAll, portSpots, endAt, defaultVia, supportGround, LINK_MAX, LINK_TURNS_MAX } from './links.js';
@@ -145,8 +145,11 @@ export function buildWhy(H, top, siteR = 50) {
     const room = roomById(H, top.room);
     const R = H.rooms?.[top.room];
     if (!room) return 'That room is gone.';
-    return fits(room, R?.items ?? [], it, top.gx, top.gz, top.rot, top.sel) ? null
-      : "It doesn't fit there — move it to a clear spot.";
+    if (fits(roomWith(room, R), R?.items ?? [], it, top.gx, top.gz, top.rot, top.sel)) return null;
+    // a mixed room's zones say which (catalog `mixed`)
+    if (room.mixed && it.holo) return 'The holodeck gear stays on the holodeck — the dark floor.';
+    if (room.mixed && fits(room, R?.items ?? [], it, top.gx, top.gz, top.rot, top.sel)) return "That is the dojo's or the holodeck's floor — put it on the tatami.";
+    return "It doesn't fit there — move it to a clear spot.";
   }
   if (top.kind === 'wall') {
     const room = roomById(H, top.room);
@@ -636,7 +639,7 @@ export class BuildMode {
     const rooms = homeRooms(H);
     const cur = this.H.game.inspector?.cards?.[index]?.i ?? 0;
     let id = null;
-    if (top.v === 'rooms') id = rooms[cur]?.id;
+    if (top.v === 'rooms') id = roomsListed(H, top.here)[cur]?.id;
     else if (top.v === 'claims') id = rooms.filter((r) => r.claim)[cur]?.id;
     else if (['room', 'roomtype', 'shop', 'sellitem'].includes(top.v) && top.kind !== 'yard') id = top.room;
     const room = id ? rooms.find((r) => r.id === id) : null;
@@ -943,14 +946,17 @@ export class BuildMode {
           const parts = [...S.floors.flat(), ...S.roof, ...S.tint];
           g.add(ghostly(new THREE.Mesh(mergeParts(parts), toonVertexMat())));
         }
-        const F = houseFoot(id);
-        const ring = new THREE.Mesh(new THREE.PlaneGeometry(F.x1 - F.x0, F.z1 - F.z0),
-          new THREE.MeshBasicMaterial({ color: this._ok, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide }));
-        ring.rotation.x = -Math.PI / 2;
-        ring.position.set(0, 0.15, (F.z0 + F.z1) / 2);
-        ring.renderOrder = 6;
-        g.add(ring);
-        return { g, ring };
+        // the plinth and the ramp, each its own patch (`houseFoots`): the ground beside the ramp is the yard's
+        const mat = new THREE.MeshBasicMaterial({ color: this._ok, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide });
+        const rings = houseFoots(id).map((F) => {
+          const m = new THREE.Mesh(new THREE.PlaneGeometry(F.x1 - F.x0, F.z1 - F.z0), mat);
+          m.rotation.x = -Math.PI / 2;
+          m.position.set((F.x0 + F.x1) / 2, 0.15, (F.z0 + F.z1) / 2);
+          m.renderOrder = 6;
+          g.add(m);
+          return m;
+        });
+        return { g, ring: rings[0] };
       };
     } else {
       const LT = linkOf(H, top);
@@ -1139,7 +1145,7 @@ export class BuildMode {
     g.translate(x, z);
     g.rotate(-(s.rot ?? 0));
     g.fillStyle = fill;
-    g.fillRect(F.x0 * scale, F.z0 * scale, (F.x1 - F.x0) * scale, (F.z1 - F.z0) * scale);
+    for (const R of houseFoots(s.house)) g.fillRect(R.x0 * scale, R.z0 * scale, (R.x1 - R.x0) * scale, (R.z1 - R.z0) * scale);
     g.fillStyle = '#b8322a';
     g.fillRect(-3, (F.z1 - (F.z1 - F.z0) * 0.15) * scale - 1, 6, 3);
     g.restore();

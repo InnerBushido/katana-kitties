@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { ATTACKS, KENDO_SCALE } from '../../entities/player.js';
 import { aggregate } from '../../entities/powerorb.js';
-import { kendoArea, kendoMarks } from './catalog.js';
+import { kendoArea, kendoMarks, roomHas } from './catalog.js';
 
 /* ---------------------------------------------------------------------------
    KENDO — the one floor outside the ring where a blow lands.
@@ -615,7 +615,7 @@ export class Kendo {
       const Hm = I.home;
       if (!Hm || !I.over(p.position.x, p.position.z)) continue;
       const room = I.roomAt(p.position.x, p.position.y, p.position.z);
-      if (!room || Hm.rooms?.[room.id]?.type !== 'kendo') continue;
+      if (!room || !roomHas(Hm.rooms?.[room.id], 'kendo')) continue;
       const A = kendoArea(room);
       const L = I.houseOf(room).toLocal(p.position.x, p.position.z);
       if (Math.abs(L.x - A.cx) > A.w / 2 || Math.abs(L.z - A.cz) > A.d / 2) continue;

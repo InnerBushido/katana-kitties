@@ -235,6 +235,7 @@ Each one degrades: delete the file and the game draws the stand-in.
 | **Taiko, the cups game, volleyball** | a line and a sound | the mini-games |
 | **The Bushido Blade forest** | shown, locked, "later" | Richard's later feature |
 | **Boosts for kotodama abilities** | not done: the animals boost JUMP HEIGHT, JUMP DISTANCE and SPRINT only | Richard also floated boosting the panda or her kotodama powers; it is a `petBoost` field plus the one line that reads it |
+| **Door mats** | none: the walk to the door is a path and stops at the door | ~20 Higgsfield mats (cats, the leaders, the kittens on holiday) at 0.25 credits each, 5 in all — priced, not yet approved |
 | **Windows open onto a gap, not glass** | the opening and two sliding panels | nothing needed unless a pane of glass is wanted |
 
 ## Boons — what home is worth in the ring
@@ -706,9 +707,9 @@ without the reason:
   visitor wait 30 s. Guests last for this game only.
 - **Sliding doors** are a wall item on the ground floor that cuts a doorway
   (`SLIDE_W`) and hangs a door in it keyed `S<room>:<side>:<k>`. The knock
-  rules cover them like any other door. **A castle's ground room stops short
-  of its outer walls and has no wall slots at all**, so a castle gets neither
-  windows nor sliding doors downstairs. That was true before this pass.
+  rules cover them like any other door. A castle's ground room stops short
+  of its outer walls, and until the next pass that meant it had no wall
+  slots at all (see "More improvements": `wallSlots` now looks past the gap).
 - **A door the house hides** gets an x-ray bite at `DOOR_XRAY.k` (0.25), sized
   to the doorway and capped at its lintel. That needed per-slot strength
   (`uCutK`) and more slots (`XRAY_SLOTS` = 8) in `xrayVertexMat`.
@@ -726,6 +727,68 @@ without the reason:
   (20–25). They are red (`LASER_COLOUR`) over a dim red core where the core
   used to be white, so where two beams cross they no longer burn to white.
   Stars cast a floor shadow and play `starfound` when she takes one.
+
+## More improvements — Oct 2026
+
+Fifteen notes. What a future session would undo without the reason:
+
+- **The islands rise after the ending, not before.** `Housing.update` hid
+  them, but it does not run during a scene, so they stood there all through
+  it. Now `World.setBridges(p)` calls `rise(p)`, which takes them up through
+  the clouds over `RISE` (0.4 to 0.95 of the bridges' build, 70 below, eased).
+  Once up they are on the minimap (`homesMap`), including fully zoomed out.
+- **The castle's ramp is a solid wedge** to the grass, with walls along its
+  sides where it is higher than a step. The slab had air under its top end,
+  and she walked into it.
+- **Indoors is dithered, not cut** by the x-ray.
+- **Room walls count from 3 m away** (`WALL_GAP`) when no other room of that
+  floor is in between. The castle's rooms sit 1.5 to 2.5 m in from their
+  walls, and the old 1.2 rule gave its ground floor 0 slots ("Hang
+  something: no outside wall"). Now it has 34, and the middle floor went
+  from 14 to 30. `winV` 2 adds the new windows to old saves, away from
+  bridge doorways.
+- **Beside a ramp is yard** (`houseFoots`, a box for the plinth and one for
+  the ramp).
+- **Paths go up the ramp** (`rampOf`, `rampWalk`, `onRamp`, `rampLift`).
+  - The walk is two legs: door to the foot of the ramp, then foot to the
+    landing. One straight line would leave the ramp at an angle into its
+    side wall whenever the landing is not straight ahead.
+  - Pieces are laid end to end exactly, from the door outward. They used to
+    be centred on equal steps, which put the first piece's end into the
+    front wall, so it was refused.
+  - She may lay one herself if every corner is within the ramp's width and
+    in front of the door.
+  - Drawn on it by `bendGeo`, which cuts each triangle at the slope's two
+    kinks and lifts every vertex by the ramp's height under it. Subdividing
+    by edge length was rejected: neighbours split a shared edge differently,
+    and the bend opens a crack. The check measures the middle of every top
+    triangle against the ramp: 0.00000 off.
+  - `rampV` gives an old save's walk the ramp leg once, and only if she kept
+    the walk she was given.
+- **A castle owned alone hides room claims.** Others join by buying a share
+  (`sharePrice`: 1/n, split among the owners). A share brings colours, a
+  statue and the key. Selling it back pays 75% and removes her. Every owner
+  must be present and say yes (consent kind `join`).
+- **A house on an island she already owns is half price.**
+- **A third-floor bridge was stopped by a wall collider.** Fixed.
+- **Bridges are masked above the floor she is looking at** (`clipBridges`,
+  `xrayVertexMat({clips})`, `clipBoxes` for the glow). The line is
+  `BRIDGE_CLIP_UNDER` 3.2 above the floor. It was 3.9, and a third-floor
+  bridge was measured 0.26 into the second-floor room.
+- **Ember's kendo poses are measured**: `KENDO_POSE_H`, so her helmet
+  matches her standing one (seiza 1.01, reach 1.00). In gear the slash arc is
+  upright (`slashV`). Frost keeps the shared fractions, because her white fur
+  makes the grill unmeasurable.
+- **FURNISH ROOM lists the room she is standing in first.**
+- **The castle's ground floor is a tatami room with a dojo zone and a
+  holodeck zone** (`mixed`, `R.feats`, `roomHas`, `roomWith`, `mixedZone`).
+  - Dojo: 8×10. Holodeck: 6×18, which holds 4 tubes and 3 racks.
+  - Buying either moves furniture off its zone. Selling the holodeck pays
+    75%.
+  - An old whole-room dojo or holodeck becomes the feature, at what she paid
+    (`migrateMixedRooms`).
+- **A sister upstairs in a shared pane**: her x-ray shrinks while she stands
+  still and grows back twice as fast when she moves.
 
 ## Known rough edges
 

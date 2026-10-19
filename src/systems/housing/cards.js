@@ -1,6 +1,7 @@
 import {
   HOME_SITES, SITE_BY_ID, HOUSES, HOUSE_BY_ID, ITEMS, ITEM_BY_ID, PRESETS, PRESET_BY_ID, ROOM_TYPES, HOME_SELL,
-  FREE_ANNEX, BUILDABLE_HOUSES, LINK_STYLES, LINK_BY_ID, homeRooms, roomById, houseSpecs,
+  FREE_ANNEX, BUILDABLE_HOUSES, roomsListed, LINK_STYLES, LINK_BY_ID, homeRooms, roomById, houseSpecs,
+  roomHas, roomWith, ROOM_FEATS,
 } from './catalog.js';
 import { houseWhy } from './editor.js';
 import { portSpots, linkBlockers, defaultVia } from './links.js';
@@ -63,7 +64,9 @@ export function roomRefund(Hs, R) {
  * did not record one.
  */
 export function roomTypeRefund(Hs, R) {
-  if (!R?.type || R.type === 'living') return 0;
+  // a mixed room's dojo and holodeck, each at what was paid for it (`setRoomFeat`)
+  const feats = Object.values(R?.feats ?? {}).reduce((a, v) => a + Math.round((v || 0) * ITEM_SELL), 0);
+  if (!R?.type || R.type === 'living') return feats;
   const paid = Number.isFinite(R.typePaid) ? R.typePaid : Hs.roomPrice(R.type);
   return Math.round(paid * ITEM_SELL);
 }
@@ -90,6 +93,65 @@ export function changeRoomType(Hs, p, H, R, type, price, room = null) {
   if (type === 'holodeck' && room) R.items = holoKit(room);
   Hs.changed(H);
   return { ok: true, refund };
+}
+
+/**
+ * A MIXED ROOM'S DOJO OR HOLODECK, ADDED OR SOLD BACK (catalog `mixed`).
+ * Adding one moves the furniture standing on its zone to the nearest free
+ * tatami, and only what will not fit anywhere is sold back (`displaced`,
+ * which the card asks with); a holodeck comes with its kit, in its strip.
+ * Selling one pays Roshi's rate on what was paid for it, and the holodeck's
+ * kit goes with it. Pure apart from `Hs` (spend, pay, changed).
+ */
+export function displaced(room, R, feat) {
+  const c = room.mixed?.[feat];
+  if (!c) return { move: [], sell: [] };
+  const into = roomWith(room, { feats: { ...(R.feats ?? {}), [feat]: 0 } });
+  const keep = [];
+  const out = [];
+  for (const q of R.items ?? []) {
+    const it = ITEM_BY_ID[q.id];
+    const [w, d] = it ? footprint(it, q.rot ?? 0) : [1, 1];
+    const hit = !it?.holo && q.gx < c[2] && q.gx + w > c[0] && q.gz < c[3] && q.gz + d > c[1];
+    (hit ? out : keep).push(q);
+  }
+  const move = [];
+  const sell = [];
+  for (const q of out) {
+    const at = firstFit(into, [...keep, ...move], ITEM_BY_ID[q.id]);
+    if (at) move.push({ ...q, ...at }); else sell.push(q);
+  }
+  return { keep, move, sell };
+}
+
+export function setRoomFeat(Hs, p, H, room, R, feat, on) {
+  const n = p.style?.name;
+  if (on) {
+    if (roomHas(R, feat)) return { ok: false, why: 'It already has one.' };
+    const price = Hs.roomPrice(feat);
+    const D = displaced(room, R, feat);
+    const back = D.sell.reduce((a, q) => a + (q.free ? 0 : Math.round(Hs.itemPrice(q.id) * ITEM_SELL)), 0);
+    if (p.score + back < price) return { ok: false, why: `${p.name} needs ${price - p.score - back} more points.` };
+    if (back) { p.score += back; if (n && H.paid) H.paid[n] = Math.max(0, (H.paid[n] ?? 0) - back); }
+    if (!Hs.spend(p, H, price)) return { ok: false, why: 'Not enough points.' };
+    R.items = [...D.keep, ...D.move];
+    R.feats = { ...(R.feats ?? {}), [feat]: price };
+    if (feat === 'holodeck') {
+      const others = R.items.filter((q) => !ITEM_BY_ID[q.id]?.holo);
+      R.items = [...others, ...holoKit(room, [], others)];
+    }
+    Hs.changed(H);
+    return { ok: true, moved: D.move.length, sold: D.sell.length, back };
+  }
+  if (R?.feats?.[feat] == null) return { ok: false, why: 'There is none to sell.' };
+  const back = Math.round((R.feats[feat] || 0) * ITEM_SELL);
+  p.score += back;
+  if (n && H.paid) H.paid[n] = Math.max(0, (H.paid[n] ?? 0) - back);
+  Hs.game?.onScoreChanged?.(p);
+  delete R.feats[feat];
+  if (feat === 'holodeck') R.items = (R.items ?? []).filter((q) => !ITEM_BY_ID[q.id]?.holo);
+  Hs.changed(H);
+  return { ok: true, back };
 }
 
 /** "You have 2" — how many of this thing are in this home already, anywhere:
@@ -341,10 +403,22 @@ export class HousingCards {
     const mine = this.H.homeOf(p);
     const body = `<div class="hs-perks">${s.perks.map((k) => `<span>${esc(k)}</span>`).join('')}</div>`;
     if (H) {
-      return {
-        head: s.name, body,
-        rows: [{ title: `${H.owners.join(' & ')} LIVES HERE`, blurb: `A ${HOUSE_BY_ID[H.house].name}. Not for sale.`, go: () => null }],
-      };
+      const def = HOUSE_BY_ID[H.house];
+      const rows = [{ title: `${H.owners.join(' & ')} ${H.owners.length > 1 ? 'LIVE' : 'LIVES'} HERE`, blurb: `A ${def.name}.${def.owners > 1 ? '' : ' Not for sale.'}`, go: () => null }];
+      // A SHARE OF A CASTLE, bought from its owners (Housing `joinHome`)
+      if (def.owners > 1 && !H.owners.includes(p.style.name)) {
+        const price = this.H.sharePrice(H);
+        const here = new Set((this.game.players ?? []).map((q) => q?.style?.name));
+        const missing = H.owners.filter((n) => !here.has(n));
+        const why = this.H.shareWhy(p, H) ?? (missing.length ? `${missing.join(' and ')} ${missing.length > 1 ? 'have' : 'has'} to be playing to say yes.` : null);
+        rows.push({
+          title: `BUY A SHARE — ${pts(price)}`, right: `${H.owners.length + 1} OWNERS`,
+          blurb: `Your colours on the castle, your own statue on the bridge, and its doors open for you. The price is split between ${H.owners.join(' & ')}.`,
+          disabled: !!why, why,
+          go: () => { this._push(index, { v: 'joinconfirm', site: s.id, price, cursor: 0 }); return null; },
+        });
+      }
+      return { head: s.name, body, rows };
     }
     const c = this.game.inspector.cards[index];
     const look = HOUSES[Math.min(c?.i ?? 0, HOUSES.length - 1)];
@@ -507,13 +581,15 @@ export class HousingCards {
     const who = this.game.players[P.driver]?.name ?? 'Your sister';
     const what = P.kind === 'buy'
       ? `share the ${HOUSE_BY_ID[P.house].name} on ${SITE_BY_ID[P.site].name}, ${pts(P.share)} each`
-      : `sell your shared home on ${SITE_BY_ID[P.site].name}`;
+      : P.kind === 'join'
+        ? `buy a share of your home on ${SITE_BY_ID[P.site].name} for ${pts(P.price)}, split between its owners`
+        : `sell your shared home on ${SITE_BY_ID[P.site].name}`;
     return {
       head: `${who.toUpperCase()} ASKS`,
       body: `<div class="hs-note">${esc(who)} wants to ${esc(what)}.</div>`,
       rows: [
-        { title: P.kind === 'buy' ? 'NO, NOT ME' : 'NO, KEEP OUR HOME', go: () => { this._answer(index, false); return 'close'; } },
-        { title: P.kind === 'buy' ? 'YES, COUNT ME IN' : 'YES, SELL IT', go: () => { this._answer(index, true); return 'close'; } },
+        { title: P.kind === 'buy' ? 'NO, NOT ME' : P.kind === 'join' ? 'NO, NOT NOW' : 'NO, KEEP OUR HOME', go: () => { this._answer(index, false); return 'close'; } },
+        { title: P.kind === 'buy' ? 'YES, COUNT ME IN' : P.kind === 'join' ? `YES, LET ${who.toUpperCase()} IN` : 'YES, SELL IT', go: () => { this._answer(index, true); return 'close'; } },
       ],
     };
   }
@@ -525,7 +601,12 @@ export class HousingCards {
     P.yes.add(index);
     if (P.seats.some((k) => !P.yes.has(k))) return;
     this.pending = null;
-    if (P.kind === 'buy') {
+    if (P.kind === 'join') {
+      const p = this.game.players[P.driver];
+      const H = this.H.store.homes[P.site];
+      const r = H && p ? this.H.joinHome(p, H) : { ok: false, why: 'That home is not there any more.' };
+      for (const k of P.seats) this.game.toast(r.ok ? `${p.name} owns a share of the ${HOUSE_BY_ID[H.house].name} now — welcome home!` : r.why, k);
+    } else if (P.kind === 'buy') {
       const r = this.H.buy(P.site, P.house, P.seats.map((k) => ({ p: this.game.players[k], share: P.share })), P.preset);
       if (!r.ok) { for (const k of P.seats) this.game.toast(r.why, k); }
     } else {
@@ -567,7 +648,7 @@ export class HousingCards {
         blurb: open ? 'Anyone can visit. Lock it to keep everyone but the owners out.' : 'Only the owners can come in. Unlock it to invite your sisters.',
         go: () => { this.H.setOpen(p, H, !open); this.game.toast(open ? 'Locked! Only the owners can come in now.' : 'Unlocked! Visitors are welcome.', index); return null; },
       },
-      { title: 'FURNISH A ROOM', blurb: 'Furniture on the tatami grid, and kendo or holodeck rooms.', go: () => { this._push(index, { v: 'rooms', site: top.site }); return null; } },
+      { title: 'FURNISH A ROOM', blurb: 'Furniture on the tatami grid, and kendo or holodeck rooms.', go: () => { this._push(index, { v: 'rooms', site: top.site, here: this.H.isleOf(top.site)?.roomAt?.(p.position.x, p.position.y, p.position.z)?.id ?? null }); return null; } },
       { title: 'THE YARD', blurb: 'Build anywhere on your island — ponds, a farm, a pen, the treehouse, paths and decorations.', go: () => { this._push(index, { v: 'yard', site: top.site }); return null; } },
       { title: 'HOUSES ON MY ISLAND', right: `${houseSpecs(H).length}`, blurb: 'Build more houses, and move any of them — everything inside comes too.', go: () => { this._push(index, { v: 'houses', site: top.site }); return null; } },
       {
@@ -580,25 +661,39 @@ export class HousingCards {
          .json save/load "shouldn't be in the menu. Let's have that as a Debug
          action for now" — main.js `_debugHousingExport`/`_debugHousingImport`. */
     ];
-    if (homeRooms(H).some((r) => r.claim)) {
+    /* CLAIMS ONLY WHEN THERE IS SOMEBODY TO SHARE WITH. Richard, Oct 2026:
+       "If the player owns the castle solo, there is no point in claiming
+       rooms. Let's remove this from the menu." */
+    if (H.owners.length > 1 && homeRooms(H).some((r) => r.claim)) {
       rows.push({ title: 'CASTLE ROOMS', blurb: 'Claim your fair share of the rooms, or let one go to pick another.', go: () => { this._push(index, { v: 'claims', site: top.site }); return null; } });
     }
     rows.push(
       { title: 'STORAGE CHEST', blurb: 'Things you have put away.', go: () => { this._push(index, { v: 'chest', site: top.site }); return null; } },
       { title: 'SELL MY HOME', blurb: `Roshi pays back ${Math.round(HOME_SELL * 100)}%.`, go: () => { this._push(index, { v: 'sell', site: top.site, cursor: 0 }); return null; } },
     );
+    // a shared castle: one owner can leave it to the others (Housing `leaveHome`)
+    if (H.owners.length > 1 && H.owners.includes(n)) {
+      rows.push({ title: 'SELL MY SHARE', blurb: `Leave it to ${H.owners.filter((o) => o !== n).join(' & ')}. Roshi pays back ${Math.round(HOME_SELL * 100)}% of what you put in.`, go: () => { this._push(index, { v: 'sellshare', site: top.site, cursor: 0 }); return null; } });
+    }
     return { head: `${SITE_BY_ID[top.site].name}`, rows, backWord: 'CLOSE' };
   }
 
   _v_rooms(index, p, top) {
     const H = this._home(top);
-    const rows = homeRooms(H).map((room) => {
+    /* THE ROOM SHE IS STANDING IN COMES FIRST. Richard, Oct 2026: "the first
+       room shown to furnish should be the room the player is in already".
+       First in the list rather than the cursor moved onto it, so the row
+       under the cursor when the card opens IS her room, and it says so. */
+    const here = top.here ?? null;
+    const rows = roomsListed(H, here).map((room) => {
       const R = H.rooms?.[room.id];
       const claim = R?.claim;
       const notMine = claim && claim !== p.style.name;
       return {
-        title: room.name,
-        right: ROOM_TYPES.find((t) => t.id === (R?.type ?? 'living'))?.name ?? '',
+        title: room.id === here ? `${room.name} — YOU ARE HERE` : room.name,
+        right: room.mixed && Object.keys(R?.feats ?? {}).length
+          ? ['TATAMI', ...ROOM_TYPES.filter((t) => R.feats[t.id] != null).map((t) => t.name)].join(' + ')
+          : ROOM_TYPES.find((t) => t.id === (R?.type ?? 'living'))?.name ?? '',
         blurb: `${(R?.items ?? []).length} things${claim ? ` · ${claim}'s room` : ''}`,
         disabled: !!notMine, why: `That is ${claim}'s room — only she can change it.`,
         go: () => { this._push(index, { v: 'room', site: top.site, room: room.id }); return null; },
@@ -616,7 +711,23 @@ export class HousingCards {
     const R = (H.rooms[room.id] ??= { type: 'living', items: [] });
     R.items ??= [];
     const rows = [];
-    for (const T of ROOM_TYPES) {
+    /* A MIXED ROOM HAS FEATURES, NOT A TYPE (catalog `mixed`): a dojo and a
+       holodeck can both be added to it, each on its own floor, and the rest
+       stays a tatami room. */
+    for (const T of room.mixed ? ROOM_TYPES.filter((t) => room.mixed[t.id]) : []) {
+      const has = roomHas(R, T.id);
+      const price = this.H.roomPrice(T.id);
+      rows.push(has ? {
+        title: `SELL THE ${T.name}`, right: pts(Math.round((R.feats[T.id] || 0) * ITEM_SELL)),
+        blurb: `Roshi buys it back${T.id === 'holodeck' ? ', tubes and racks and all' : ''}. Its floor is tatami again.`,
+        go: () => { this._push(index, { v: 'roomfeat', site: top.site, room: room.id, feat: T.id, on: false, cursor: 0 }); return null; },
+      } : {
+        title: `ADD A ${T.name}`, right: pts(price), blurb: `${T.blurb} On its own part of the floor — the rest stays yours to furnish.`,
+        disabled: p.score < price, why: `${p.name} needs ${pts(price - p.score)} more.`,
+        go: () => { this._push(index, { v: 'roomfeat', site: top.site, room: room.id, feat: T.id, on: true, cursor: 0 }); return null; },
+      });
+    }
+    for (const T of room.mixed ? [] : ROOM_TYPES) {
       if (T.id === R.type) continue;
       const price = this.H.roomPrice(T.id);
       const ok = !T.need || room[T.need];
@@ -644,13 +755,13 @@ export class HousingCards {
         go: () => { this._push(index, { v: 'pick', site: top.site, room: room.id, kind: 'room', at: 0, mode: 'custom' }); return null; },
       });
     }
-    if (R.type === 'holodeck') {
+    if (roomHas(R, 'holodeck')) {
       /* THE KIT, ARRANGED. Richard: "players should be able to place the VR
          Tubes and VR equipment where it fits best in the room ... the 3 pieces
          of VR equipment and 1 tube should be mandatory, but player can place
          up to 4. Placing Tubes and equipment should be free." */
       const tubes = holoTubes(R);
-      const spot = tubes < HOLO_MAX_TUBES ? firstFit(room, R.items, ITEM_BY_ID[HOLO_TUBE_ID]) : null;
+      const spot = tubes < HOLO_MAX_TUBES ? firstFit(roomWith(room, R), R.items, ITEM_BY_ID[HOLO_TUBE_ID]) : null;
       rows.push({
         title: 'MOVE THE TUBES AND THE GEAR', blurb: 'Point at a tube or a rack, pick it up, and put it where it fits best. Free.',
         go: () => { this._push(index, { v: 'pick', site: top.site, room: room.id, kind: 'room', at: 0 }); return null; },
@@ -673,6 +784,56 @@ export class HousingCards {
       rows.push({ title: 'MOVE OR SELL WALL THINGS', go: () => { this._push(index, { v: 'pick', site: top.site, room: room.id, kind: 'wall', at: 0 }); return null; } });
     }
     return { head: room.name, rows };
+  }
+
+  /** ADD OR SELL A MIXED ROOM'S DOJO OR HOLODECK? No is first; what moves and what is sold is in the question. */
+  _v_roomfeat(index, p, top) {
+    const H = this._home(top);
+    const room = this._roomDef(H, top.room);
+    const R = H.rooms[room.id];
+    const T = ROOM_TYPES.find((t) => t.id === top.feat);
+    if (!top.on) {
+      const back = Math.round((R.feats?.[T.id] || 0) * ITEM_SELL);
+      return {
+        head: `SELL THE ${T.name}?`,
+        body: `<div class="hs-note">${esc(`Roshi pays back ${pts(back)}${T.id === 'holodeck' ? ' — the tubes and the racks go too' : ''}. Its floor becomes tatami you can furnish.`)}</div>`,
+        rows: [
+          { title: `NO, KEEP THE ${T.name}`, go: () => { this._pop(index); return null; } },
+          {
+            title: `YES, SELL IT — ${pts(back)}`,
+            go: () => {
+              const r = setRoomFeat(this.H, p, H, room, R, T.id, false);
+              this.game.toast(r.ok ? `The ${T.name} is sold — Roshi paid ${pts(r.back)}.` : r.why, index);
+              this._pop(index);
+              return null;
+            },
+          },
+        ],
+      };
+    }
+    const price = this.H.roomPrice(T.id);
+    const D = displaced(room, R, T.id);
+    const what = [
+      D.move.length ? `${D.move.length} thing${D.move.length > 1 ? 's' : ''} standing there will move over onto the tatami` : '',
+      D.sell.length ? `${D.sell.length} that will not fit anywhere Roshi buys back` : '',
+    ].filter(Boolean).join(', and ');
+    return {
+      head: `ADD A ${T.name}?`,
+      body: `<div class="hs-note">${esc(`It costs ${pts(price)}.${what ? ` ${what[0].toUpperCase()}${what.slice(1)}.` : ''}`)}</div>`,
+      rows: [
+        { title: 'NO, KEEP THE ROOM AS IT IS', go: () => { this._pop(index); return null; } },
+        {
+          title: `YES, ADD THE ${T.name}`,
+          go: () => {
+            const r = setRoomFeat(this.H, p, H, room, R, T.id, true);
+            if (!r.ok) { this.game.toast(r.why, index); return null; }
+            this.game.toast(`The ${room.name} has a ${T.name} now!${T.id === 'holodeck' ? ' Move the tubes and the racks along its dark floor — FREE.' : ''}`, index);
+            this._pop(index);
+            return null;
+          },
+        },
+      ],
+    };
   }
 
   /** CHANGE THE ROOM? No is first; the furniture's refund is in the question. */
@@ -731,7 +892,7 @@ export class HousingCards {
     const rows = list.map((it) => {
       const price = this.H.itemPrice(it.id);
       let spot = null;
-      if (top.kind === 'room') spot = firstFit(room, R.items, it);
+      if (top.kind === 'room') spot = firstFit(roomWith(room, R), R.items, it);
       else if (top.kind === 'wall') {
         const S = wallSlots(room.house, room).find((s) => wallFree(R, s.side, s.k) && !buildWhy(H, { kind: 'wall', room: room.id, id: it.id, side: s.side, k: s.k, sel: -1 }));
         spot = S && { side: S.side, k: S.k };
@@ -1162,7 +1323,7 @@ export class HousingCards {
       const spot = this._houseSpot(H, id, env);
       return {
         title: def.name, right: price ? pts(price) : 'FREE',
-        blurb: `${def.floors} floor${def.floors > 1 ? 's' : ''} · ${def.rooms.length} room${def.rooms.length > 1 ? 's' : ''}${price ? '' : ' · it came with your island'}`,
+        blurb: `${def.floors} floor${def.floors > 1 ? 's' : ''} · ${def.rooms.length} room${def.rooms.length > 1 ? 's' : ''}${price ? ` · half price, it's your island (${pts(this.H.housePrice(id))} at Roshi's)` : ' · it came with your island'}`,
         disabled: !spot || p.score < price,
         why: !spot ? 'There is no room left on the island for that one.' : `${p.name} needs ${pts(price - p.score)} more.`,
         go: () => { this._push(index, { v: 'build', site: top.site, kind: 'house', sel: -1, id, ...spot }); return null; },
@@ -1394,6 +1555,53 @@ export class HousingCards {
         go: () => { this.placeHere(index, top); return null; },
       }],
       foot: ' ',
+    };
+  }
+
+  /** "Are you sure?" before asking the owners for a share — NO first, and no `.primary` (non-negotiable 7). */
+  _v_joinconfirm(index, p, top) {
+    const H = this._home(top);
+    if (!H) return { head: 'BUY A SHARE', rows: [{ title: 'THIS HOME WAS SOLD', go: () => 'close' }] };
+    const each = Math.floor(top.price / H.owners.length);
+    return {
+      head: 'BUY A SHARE?',
+      body: `<div class="hs-note">${esc(`${pts(top.price)} for a share of the ${HOUSE_BY_ID[H.house].name} — ${H.owners.length > 1 ? `${pts(each)} each to ${H.owners.join(' & ')}` : `all of it to ${H.owners[0]}`}. They have to say yes. Selling it back later pays ${Math.round(HOME_SELL * 100)}%.`)}</div>`,
+      rows: [
+        { title: 'NO, NOT NOW', go: () => { this._pop(index); return null; } },
+        {
+          title: `YES, ASK ${H.owners.length > 1 ? 'THEM' : 'HER'}`,
+          go: () => {
+            const why = this.H.shareWhy(p, H);
+            if (why) { this.game.toast(why, index); return null; }
+            const seats = H.owners.map((n) => this.game.players.find((q) => q?.style?.name === n)?.index);
+            if (seats.some((k) => k == null)) { this.game.toast('Every owner has to be playing to say yes.', index); return null; }
+            return this._askOthers(index, { kind: 'join', site: top.site, price: top.price, with: seats });
+          },
+        },
+      ],
+    };
+  }
+
+  /** Selling her share back — NO first. */
+  _v_sellshare(index, p, top) {
+    const H = this._home(top);
+    if (!H) return { head: 'SELL MY SHARE', rows: [{ title: 'THIS HOME WAS SOLD', go: () => 'close' }] };
+    const back = Math.round((H.paid?.[p.style.name] ?? 0) * HOME_SELL);
+    const rest = H.owners.filter((n) => n !== p.style.name);
+    return {
+      head: 'SELL MY SHARE?',
+      body: `<div class="hs-note">${esc(`Roshi pays back ${pts(back)}. The castle stays ${rest.join(' & ')}'s — your colours and your statue come off it, its doors stop opening for you, and any room you claimed is free again.`)}</div>`,
+      rows: [
+        { title: 'NO, KEEP MY SHARE', go: () => { this._pop(index); return null; } },
+        {
+          title: `YES, SELL IT — ${pts(back)}`,
+          go: () => {
+            const r = this.H.leaveHome(p, H);
+            this.game.toast(r.ok ? `${p.name} sold her share back for ${pts(r.back)}.` : r.why, index);
+            return r.ok ? 'close' : null;
+          },
+        },
+      ],
     };
   }
 

@@ -15,13 +15,13 @@
 import * as THREE from 'three';
 import { readFileSync } from 'node:fs';
 import { mergeParts } from '../../src/world/build.js';
-import { Housing, TOUR, HOME_FORWARD } from '../../src/systems/housing/housing.js';
+import { Housing, TOUR, HOME_FORWARD, ANNEX_OFF } from '../../src/systems/housing/housing.js';
 import { HOME_SITES, HOUSES, HOUSE_BY_ID, PRESETS, ITEM_BY_ID, priceOf, HOME_SELL, SPEED_STRIP, FREE_ANNEX, homeRooms } from '../../src/systems/housing/catalog.js';
 import { linkWhy, linkBlockers, portSpots, linkModels, linkGeom, linkParts, linkAll, linkColliders, linkPriceK, defaultVia, endAt, overStrip, turnArc, TURN_PRICE } from '../../src/systems/housing/links.js';
 const ITEMS_PATHS = () => ITEMS.filter((it) => it.path);
 import { emptyStore, newHome, normalise, saveStore, loadStore, migrateYard, HOME_KEY, homeKey, pruneRows, HOME_ROWS_KEPT } from '../../src/systems/housing/homestore.js';
 import { careLevel, careBuff, stalksAt, BAMBOO_GROW, BAMBOO_MAX } from '../../src/systems/housing/farm.js';
-import { fits, firstFit, gridOf, autoLayout, ITEM_SELL, yardWhy, yardR, firstYardSpot, addOutdoor, wallSlots, houseWhy, defaultWindows } from '../../src/systems/housing/editor.js';
+import { fits, firstFit, footprint, gridOf, autoLayout, ITEM_SELL, yardWhy, yardR, firstYardSpot, addOutdoor, wallSlots, houseWhy, defaultWindows } from '../../src/systems/housing/editor.js';
 import { buildWhy, commitBuild, removeBuilt, pickList, stepToward, BUILD_KEYS, carry, uncarry } from '../../src/systems/housing/build.js';
 import { houseRadius, houseShape, HEAD_H, SLAB_T, buildHouseShell, houseFoot, WINDOW, PORT_H, stairBlocks } from '../../src/systems/housing/homehouse.js';
 import { possessive, ownedCount, roomRefund, changeRoomType, roomTypeRefund } from '../../src/systems/housing/cards.js';
@@ -34,12 +34,15 @@ import { worldSig } from '../../src/systems/savegame.js';
 import { ROSHI_LINES, ROSHI_VOICE } from '../../src/systems/housing/roshi.js';
 import { Kendo, KIAI_T, BOUT, SEIZA, KENDO_HIT, KENDO_TURN, yawAcross } from '../../src/systems/housing/kendo.js';
 import { LOWER_XRAY, BEHIND_HOP, KNOCK, DOOR_XRAY, TEA_SHOT, doorSeg } from '../../src/systems/housing/housing.js';
-import { roofY } from '../../src/systems/housing/homehouse.js';
+import { roofY, floorOf, CASTLE_COURSE } from '../../src/systems/housing/homehouse.js';
 import { XRAY_SLOTS, SLIDE_W } from '../../src/systems/housing/homeisle.js';
 import { HoloStar, LASER_ORDER, LASER_COLOUR } from '../../src/systems/dream/targets.js';
-import { kendoArea, kendoMarks } from '../../src/systems/housing/catalog.js';
-import { KENDO_DODGE, KENDO_SCALE, KENDO_CEREMONY_H, Player } from '../../src/entities/player.js';
-import { Billboard } from '../../src/core/gfx.js';
+import { kendoArea, kendoMarks, mixedZone, roomHas, roomWith } from '../../src/systems/housing/catalog.js';
+import { setRoomFeat } from '../../src/systems/housing/cards.js';
+import { migrateMixedRooms } from '../../src/systems/housing/migrate.js';
+import { KENDO_DODGE, KENDO_SCALE, KENDO_CEREMONY_H, KENDO_POSE_H, Player } from '../../src/entities/player.js';
+import { readPNG } from '../png.mjs';
+import { Billboard, inClip } from '../../src/core/gfx.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from '../../src/core/cluster.js';
 import { PurchaseScene } from '../../src/systems/housing/purchasescene.js';
 import { voicePath } from '../../src/core/audio.js';
@@ -47,7 +50,12 @@ import { existsSync } from 'node:fs';
 import { mealPct, BOON } from '../../src/systems/housing/boons.js';
 import { DOOR_SWING, HomeBridge, GATE, STATUE_SLOTS, faceCamera, bannerYaw, BARREL_H } from '../../src/systems/housing/homebridge.js';
 import { napFade, napFacing, HomeActivities, LOOK_SHOT, lookShot } from '../../src/systems/housing/activities.js';
-import { DOOR_PATHS, doorPathId, doorWalk, doorWalkBox, layDoorPath } from '../../src/systems/housing/editor.js';
+import { DOOR_PATHS, doorPathId, doorWalk, doorWalkBox, layDoorPath, layRampPath, rampWalk, rampLift, onRamp, thingShape } from '../../src/systems/housing/editor.js';
+import { rampOf } from '../../src/systems/housing/homehouse.js';
+import { toIsle } from '../../src/systems/housing/links.js';
+import { houseSpecs } from '../../src/systems/housing/catalog.js';
+import { bendGeo } from '../../src/systems/housing/homeisle.js';
+import { toHouse } from '../../src/systems/housing/links.js';
 import { ringR, RING_R } from '../../src/systems/housing/build.js';
 import { LOOK_FADE, PLAYER_RADIUS } from '../../src/entities/player.js';
 import { xrayModel, PANEL_GAP, WINDOW_IN, furnScale, FURN_REACH, FURN_INSET, pathParts, steppingStones } from '../../src/systems/housing/homeisle.js';
@@ -106,7 +114,24 @@ export async function housingChecks({ ok, world }) {
      one that had seen it found them still there. */
   {
     const wasOpen = world.snakeOpen;
+    /* ...AND NOT IN THE INTRO EITHER, which is BEFORE any `update`: Richard,
+       Oct 2026, "The player islands are appearing during the intro cutscene".
+       The hiding was only ever done in `update`, which a scene does not run,
+       and this check used to call `update` first — so it passed. */
+    ok('the islands are hidden on the frame they are built, before anything has updated them (the intro runs no update)',
+      wasOpen || H.isles.every((I) => !I.group.visible), `snakeOpen at build ${wasOpen}`);
     world.snakeOpen = false;
+    /* AND THEY COME UP IN THE ENDING, on its road clock (`World.setBridges`
+       hands it to `rise`): none during the gates, part way and still under
+       the clouds in the middle of the roads, all the way up and at their own
+       height at the end. */
+    const ys = [0.2, 0.6, 0.95].map((p) => { H.rise(p); return { v: H.isles.every((I) => I.group.visible), y: H.isles[0].group.position.y }; });
+    H.rise(0);
+    const map0 = H.homesMap();
+    ok("...and the ending raises them out of the clouds on the roads' clock: not during the gates, rising half way through, home at the end",
+      !ys[0].v && ys[1].v && ys[1].y < -5 && ys[2].v && Math.abs(ys[2].y) < 1e-9 && H.isles.every((I) => !I.group.visible) && map0 === null,
+      ys.map((q, i) => `${[0.2, 0.6, 0.95][i]}: ${q.v ? `up, y ${q.y.toFixed(1)}` : 'hidden'}`).join('; '));
+    ok("...and World.setBridges is what hands the ending's clock to them", /setBridges\(p\) \{[^}]*this\.homeGround\?\.rise\?\.\(p\)/.test(readFileSync(new URL('../../src/world/world.js', import.meta.url), 'utf8')));
     H.update(1 / 30);
     const I0 = H.isles[0];
     ok('before the ending the islands are not in the sky: unseen, and nothing to stand on',
@@ -114,7 +139,163 @@ export async function housingChecks({ ok, world }) {
     H.debugOpen = true;
     H.update(1 / 30);
     ok('...and once the shop opens they are', H.isles.every((I) => I.group.visible) && H.heightAt(I0.x, I0.z) != null);
+    /* ...AND ON THE MAP: "once they are spawned, they should be shown in the
+       minimap and the fully zoomed out version of the minimap should include
+       the islands as well". */
+    const map1 = H.homesMap();
+    const msrc = readFileSync(new URL('../../src/systems/minimap.js', import.meta.url), 'utf8');
+    ok('...and on the minimap once they are up, every site, and the widest zoom takes them in',
+      map1?.length === HOME_SITES.length && /this\.maps\[i\]\.homes = this\.housing\?\.homesMap/.test(readFileSync(new URL('../../src/main.js', import.meta.url), 'utf8'))
+      && /k: this\.zoom <= 1 \? 1 : 0, sites: this\.homes/.test(msrc) && /if \(this\._homesT\) this\._drawTour\(this\._homesT\)/.test(msrc), `${map1?.length} sites`);
     world.snakeOpen = wasOpen;
+  }
+
+  /* THE CASTLE'S OUTSIDE WALLS. Richard, Oct 2026: "There are no windows on
+     the castle's 1st floor ... 'This room has no outside wall to hang things
+     on', but it does have an outside wall and a front door". Its rooms sit 1
+     to 2.5 in from its stone walls, and `wallSlots` only counted a wall
+     within 1.2. Every other house's rooms must come out exactly as before. */
+  {
+    const per = [...HOUSES, TINY_HOUSE].flatMap((h) => h.rooms.map((r) => ({ h: h.id, r, a: wallSlots(h.id, r, { strict: true }), b: wallSlots(h.id, r) })));
+    const castle = per.filter((q) => q.h === 'castle');
+    const sides = (L) => new Set(L.map((s) => s.side)).size;
+    ok("every castle room has all four outside walls to hang things on, the ground floor's front door kept clear, and no other house's walls moved",
+      castle.every((q) => sides(q.b) === 4) && castle.find((q) => q.r.floor === 0).b.every((s) => !(s.side === 0 && Math.abs(s.x) < 2.4))
+      && per.filter((q) => q.h !== 'castle').every((q) => q.a.length === q.b.length),
+      castle.map((q) => `${q.r.id} ${q.a.length} -> ${q.b.length} slots, ${sides(q.b)} walls`).join('; '));
+    /* ...and a castle already lived in gets windows on the walls that only now
+       count, and NOT on the ones she might have sold hers off, and not in a
+       bridge's doorway. */
+    const Hc = newHome('sunrise', 'castle', ['Ember']);
+    for (const r of homeRooms(Hc)) Hc.rooms[r.id] = { type: 'living', items: [], wall: [] };
+    const top = homeRooms(Hc).find((r) => r.id === 'top');
+    const mid = homeRooms(Hc).find((r) => r.id === 'middle');
+    const midDoor = wallSlots('castle', mid).filter((s) => s.side === 0);
+    Hc.links = [{ uid: 9, style: 'plank', a: { hk: 'main', floor: 1, side: 0, at: midDoor[Math.floor(midDoor.length / 2)].x }, b: { hk: 'a1', floor: 0, side: 2, at: 0 } }];
+    defaultWindows(Hc, null, true);
+    const w = (id) => Hc.rooms[id].wall;
+    const inDoor = w('middle').some((q) => q.side === 0 && Math.abs(midDoor.find((s) => s.k === q.k).x - Hc.links[0].a.at) < 1.5 + 1.1);
+    ok("...and a castle saved before gets a window on each wall that only now counts, none on the lookout's (which always did), none in a bridge doorway",
+      sides(w('ground').map((q) => ({ side: q.side }))) === 4 && w('top').length === 0 && w('middle').length >= 2 && !inDoor,
+      `ground ${w('ground').length}, second ${w('middle').length} (${w('middle').map((q) => q.side).join(',')}), lookout ${w('top').length}`);
+    // ...and the card's HANG SOMETHING row is open on the ground floor
+    ok("...and so the ground floor's HANG SOMETHING row is open", /disabled: !slots, why: 'This room has no outside wall/.test(readFileSync(new URL('../../src/systems/housing/cards.js', import.meta.url), 'utf8'))
+      && wallSlots('castle', homeRooms(Hc).find((r) => r.id === 'ground')).length > 0);
+  }
+
+  /* A SHARE OF A CASTLE. Richard, Oct 2026: "If the player owns the castle
+     solo, there is no point in claiming rooms ... A new co-owner pays a 1/n
+     share, split evenly among the current owners. Added owners get building
+     colours, a statue and other benefits. A 'sell back' removes their
+     colours, statue and access." Through the real cards: Roshi's island card,
+     the are-you-sure, the owner's yes, and the home card's rows after. */
+  {
+    const C = game.housingCards;
+    const site = 'moonwater';
+    const I = H.isles.find((q) => q.site.id === site);
+    const pl0 = game.players, ic0 = { ...game.inspector.cards };
+    const a = fakePlayer(0), b = fakePlayer(1);
+    a.score = 0; b.score = 1e6;
+    game.players = [a, b];
+    const Hc = newHome(site, 'castle', [a.name]);
+    Hc.paid = { [a.name]: H.housePrice('castle') };
+    H.store.homes[site] = Hc;
+    I.setHome(Hc, H.coloursOf(Hc));
+    const titles = (k) => C._view(k).rows.map((r) => r.title);
+    C.st.set(0, { kind: 'home', stack: [{ v: 'home', site }] });
+    game.inspector.cards[0] = { i: 0 };
+    const solo = titles(0);
+    C.st.set(1, { kind: 'realtor', stack: [{ v: 'site', site }] });
+    game.inspector.cards[1] = { i: 0 };
+    const row = C._view(1).rows.find((r) => /^BUY A SHARE/.test(r.title));
+    const price = H.sharePrice(Hc);
+    row?.go();
+    const conf = C._view(1);
+    conf.rows.find((r) => /^YES/.test(r.title))?.go();
+    const asked = C.pending?.kind === 'join';
+    C._answer(0, true);
+    const joined = Hc.owners.join(',') === `${a.name},${b.name}` && a.score === price && b.score === 1e6 - price
+      && Hc.paid[b.name] === price && Hc.paid[a.name] === H.housePrice('castle') - price && H.coloursOf(Hc).length === 2;
+    ok("a castle owned alone has no CASTLE ROOMS row; a sister buys a share at Roshi's — NO first, the owner says yes — for half its price, all of it to the owner",
+      !solo.includes('CASTLE ROOMS') && !!row && !row.disabled && /^NO/.test(conf.rows[0].title) && asked && joined && price === Math.ceil(H.housePrice('castle') / 2 / 10) * 10,
+      `share ${price} of ${H.housePrice('castle')}; ${a.name} has ${a.score}, ${b.name} ${b.score}; owners ${Hc.owners.join(' & ')}`);
+    C.st.set(0, { kind: 'home', stack: [{ v: 'home', site }] });
+    const two = titles(0);
+    // a claim of hers, to see it go with her
+    const claimRoom = homeRooms(Hc).find((r) => r.claim);
+    Hc.rooms ??= {};
+    (Hc.rooms[claimRoom.id] ??= { type: 'living', items: [] }).claim = b.name;
+    C.st.set(1, { kind: 'home', stack: [{ v: 'home', site }] });
+    titles(1).includes('SELL MY SHARE') && C._view(1).rows.find((r) => r.title === 'SELL MY SHARE').go();
+    const sv = C._view(1);
+    const b0 = b.score;
+    sv.rows.find((r) => /^YES/.test(r.title))?.go();
+    ok('...and with two owners the rooms can be claimed and either can SELL MY SHARE — NO first, 75% back, and her name, colour and claim come off it',
+      two.includes('CASTLE ROOMS') && two.includes('SELL MY SHARE') && /^NO/.test(sv.rows[0].title)
+      && Hc.owners.join(',') === a.name && b.score - b0 === Math.round(price * HOME_SELL) && H.coloursOf(Hc).length === 1
+      && Hc.rooms[claimRoom.id].claim == null && H.leaveWhy(a, Hc) != null,
+      `${b.name} got ${b.score - b0} back, owners ${Hc.owners.join(' & ')}`);
+    delete H.store.homes[site];
+    I.setHome(null);
+    C.pending = null;
+    C.st.delete(0); C.st.delete(1);
+    game.players = pl0;
+    Object.assign(game.inspector.cards, ic0);
+  }
+
+  /* THE CASTLE'S GROUND FLOOR, A DOJO AND A HOLODECK AND A TATAMI ROOM. Richard,
+     Oct 2026: "Allow both a kendo dojo and a holodeck. Allow furniture in the
+     area they don't use. The holodeck should be smaller, but big enough for 4
+     tubes and 3 VR items." */
+  {
+    const room = HOUSE_BY_ID.castle.rooms.find((r) => r.id === 'ground');
+    const kz = mixedZone(room, 'kendo'), hz = mixedZone(room, 'holodeck');
+    const stairs = stairBlocks('castle', 0);
+    const apart = (a, b) => a.x1 <= b.x0 || b.x1 <= a.x0 || a.z1 <= b.z0 || b.z1 <= a.z0;
+    const box = (z) => ({ x0: z.x0, x1: z.x1, z0: z.z0, z1: z.z1 });
+    const A = kendoArea(room);
+    ok("the castle's ground floor has a dojo zone and a holodeck zone that overlap neither each other, the stairs, nor the walk in from the front door",
+      apart(box(kz), box(hz)) && stairs.every((W) => apart(box(kz), W) && apart(box(hz), W)) && A.w === kz.w && A.d === kz.d
+      && [kz, hz].every((z) => apart(box(z), { x0: -1.4, x1: 1.4, z0: room.cz + room.d / 2 - 4, z1: room.cz + room.d / 2 })),
+      `dojo ${kz.w} x ${kz.d} at (${kz.cx}, ${kz.cz}); holodeck ${hz.w} x ${hz.d} at (${hz.cx}, ${hz.cz})`);
+    // both bought, through the real functions; a futon put down first where the dojo will go
+    const p = fakePlayer(0);
+    p.score = 1e6;
+    const Hk = newHome('sunrise', 'castle', [p.name]);
+    const R = (Hk.rooms ??= {}).ground = { type: 'living', items: [] };
+    const furn = ITEMS.find((it) => it.where.includes('room') && !it.holo && !it.later);
+    const fp = footprint(furn, 0);
+    R.items.push({ id: furn.id, gx: kz.cells[0], gz: kz.cells[1], rot: 0 });
+    const Hs = { roomPrice: (t) => H.roomPrice(t), itemPrice: (id) => H.itemPrice(id), spend: (q, Hm, a) => H.spend(q, Hm, a), changed: () => {}, game };
+    const a1 = setRoomFeat(Hs, p, Hk, room, R, 'kendo', true);
+    const moved = R.items.find((q) => q.id === furn.id);
+    const a2 = setRoomFeat(Hs, p, Hk, room, R, 'holodeck', true);
+    const rw = roomWith(room, R);
+    const tubes = [];
+    for (let k = 0; k < 3; k++) {
+      const at = firstFit(rw, R.items, ITEM_BY_ID[HOLO_TUBE_ID]);
+      if (at) { R.items.push({ id: HOLO_TUBE_ID, ...at }); tubes.push(at); }
+    }
+    const kit = R.items.filter((q) => ITEM_BY_ID[q.id]?.holo);
+    const inStrip = kit.every((q) => { const [w, d] = footprint(ITEM_BY_ID[q.id], q.rot ?? 0); return q.gx >= hz.cells[0] && q.gz >= hz.cells[1] && q.gx + w <= hz.cells[2] && q.gz + d <= hz.cells[3]; });
+    const spare = firstFit(rw, R.items, furn);
+    const inZone = (q, c) => q.gx < c[2] && q.gx + fp[0] > c[0] && q.gz < c[3] && q.gz + fp[1] > c[1];
+    ok('...and both are bought: the futon on the dojo floor moves to the tatami, the holodeck holds 4 tubes and 3 racks on its strip, and furniture still fits in what is left and nowhere on theirs',
+      a1.ok && a2.ok && roomHas(R, 'kendo') && roomHas(R, 'holodeck') && R.type === 'living' && a1.moved === 1 && !inZone(moved, kz.cells)
+      && kit.filter((q) => q.id === HOLO_TUBE_ID).length === 4 && kit.length === 7 && inStrip && !!spare && !inZone(spare, kz.cells) && !inZone(spare, hz.cells)
+      && !fits(rw, R.items, furn, kz.cells[0], kz.cells[1], 0) && !fits(rw, R.items, ITEM_BY_ID[HOLO_TUBE_ID], 0, 6, 0),
+      `${kit.length} pieces of holodeck (${kit.filter((q) => q.id === HOLO_TUBE_ID).length} tubes); futon to (${moved?.gx}, ${moved?.gz}); a second futon fits at (${spare?.gx}, ${spare?.gz})`);
+    const s0 = p.score;
+    const b = setRoomFeat(Hs, p, Hk, room, R, 'holodeck', false);
+    ok('...and the holodeck sells back at 75%, its kit with it, and leaves the dojo',
+      b.ok && p.score - s0 === Math.round(H.roomPrice('holodeck') * ITEM_SELL) && !R.items.some((q) => ITEM_BY_ID[q.id]?.holo) && roomHas(R, 'kendo') && !roomHas(R, 'holodeck'),
+      `back ${b.back}`);
+    // an old save's whole-room holodeck becomes the feature, paid for as it was
+    const Ho = newHome('sunrise', 'castle', [p.name]);
+    Ho.rooms = { ground: { type: 'holodeck', typePaid: 777, items: [] } };
+    const mig = migrateMixedRooms(Ho, (t) => H.roomPrice(t));
+    ok("...and a castle saved with a whole-room holodeck downstairs keeps it as the feature, at what she paid, and the rest of the floor is tatami",
+      mig && Ho.rooms.ground.type === 'living' && Ho.rooms.ground.feats.holodeck === 777 && Ho.rooms.ground.typePaid == null && !migrateMixedRooms(Ho, () => 0));
   }
 
   /* THE ROADS. Solved in one canonical order so no purchase order can make
@@ -644,6 +825,65 @@ export async function housingChecks({ ok, world }) {
     }).flat();
     ok('...and nothing a preset brings stands on that walk', onWalk.length === 0, onWalk.join(', '));
     ok('...and doorWalkBox is the walk, padded', !!doorWalkBox(newHome(Ip.site.id, 'minka', ['Ember']), envP()));
+
+    /* UP THE RAMP TO THE DOOR. Richard, Oct 2026: "Auto walking paths should
+       go up the castle and Dojo House ramps to the front door, truncated to
+       fit. Allow players to place paths on ramps." */
+    for (const house of ['dojohouse', 'castle']) {
+      const R = rampOf(house);
+      const deck = buildHouseShell(house).decks.find((d) => d.yAt);
+      const zs = [R.z0 + 0.01, (R.z0 + R.z1) / 2, R.z1 - 0.01];
+      ok(`the ${house}'s ramp as a path sees it (rampOf) is the ramp she walks on`,
+        !!deck && Math.abs(deck.z0 - R.z0) < 1e-6 && Math.abs(deck.z1 - R.z1) < 1e-6 && Math.abs(deck.x1 - R.hw) < 1e-6
+        && zs.every((z) => Math.abs(deck.yAt(0, z) - R.yAt(z)) < 1e-6),
+        `${R.door} door, slope ${R.z0.toFixed(2)} to ${R.z1.toFixed(2)}`);
+      const Hp = newHome(Ip.site.id, house, ['Ember']);
+      layDoorPath(Hp, envP());
+      const s = houseSpecs(Hp)[0];
+      const it = ITEM_BY_ID[doorPathId(Hp)];
+      // on it, and over some of it: the walk's pieces out on the grass in front are onRamp too
+      const mine = Hp.outdoor.filter((q) => onRamp(s, thingShape(it, q.x, q.z, q.rot).box) && toHouse(s, q.x, q.z).z - it.len / 2 < R.z1);
+      // along the middle of the ramp, from the door to the grass, every 0.25 is under a piece
+      const spans = mine.map((q) => { const l = toHouse(s, q.x, q.z); return [l.z - it.len / 2, l.z + it.len / 2, l.x]; });
+      const gaps = [];
+      for (let z = R.door + 0.05; z <= R.z1; z += 0.25) if (!spans.some(([a, b]) => z >= a && z <= b)) gaps.push(z.toFixed(2));
+      const first = Math.min(...spans.map(([a]) => a));
+      ok(`...and a new ${house}'s walk runs up it to the front door and stops there`,
+        mine.length >= 1 && gaps.length === 0 && Math.abs(first - R.door) < 0.02 && spans.every(([, , x]) => Math.abs(x) < 0.01),
+        `${mine.length} pieces on the ramp, from ${first.toFixed(2)} (door ${R.door}); uncovered at ${gaps.join(', ') || 'none'}`);
+      // she may put one there herself, but not half off its side, nor into the house
+      const mid = toIsle(s, 0, R.door + 0.1 + it.len / 2), side = toIsle(s, R.hw, (R.door + R.z1) / 2), deep = toIsle(s, 0, R.door - 1 + it.len / 2);
+      const E = { ...envP(), rot: s.rot };
+      const Hq = newHome(Ip.site.id, house, ['Ember']);
+      ok(`...and she may lay a path on the ${house}'s ramp herself, but not half off its side, nor through the front wall`,
+        yardWhy(Hq, it, mid.x, mid.z, -1, E) == null && yardWhy(Hq, it, side.x, side.z, -1, E) != null && yardWhy(Hq, it, deep.x, deep.z, -1, E) != null);
+      // a walk laid before the ramp had one gets it, round what she has put there since
+      const Ho = newHome(Ip.site.id, house, ['Ember']);
+      const n = layRampPath(Ho, envP());
+      ok(`...and an old ${house}'s walk gets the ramp leg once (housing.js rampV)`, n === mine.length, `${n}`);
+      // drawn ON it: the top of a bent piece is the ramp's height plus its own, everywhere
+      const q = mine[0];
+      const c = Math.cos(q.rot), sn = Math.sin(q.rot);
+      const isle = (x, z) => [q.x + x * c + z * sn, q.z - x * sn + z * c];
+      const up = (x, z) => rampLift(Hp, ...isle(x, z));
+      const planes = [R.z0, R.z1].map((cz) => (x, z) => toHouse(s, ...isle(x, z)).z - cz);
+      const box = new THREE.BoxGeometry(it.pw, 0.1, it.len).translate(0, 0.05, 0);
+      const bent = bendGeo(box, planes, up);
+      const P = bent.attributes.position.array;
+      let worst = 0, tops = 0;
+      for (let i = 0; i < P.length; i += 9) {
+        const ys = [P[i + 1], P[i + 4], P[i + 7]];
+        const flatTop = ys.every((y, k) => Math.abs(y - up(P[i + 3 * k], P[i + 3 * k + 2]) - 0.1) < 1e-4);
+        if (!flatTop) continue;
+        tops++;
+        // the middle of the triangle, where nothing was measured
+        const cx = (P[i] + P[i + 3] + P[i + 6]) / 3, cz = (P[i + 2] + P[i + 5] + P[i + 8]) / 3, cy = (ys[0] + ys[1] + ys[2]) / 3;
+        worst = Math.max(worst, Math.abs(cy - 0.1 - up(cx, cz)));
+      }
+      ok(`...and a path on the ${house}'s ramp is drawn on it: cut where the slope starts and ends, so its top follows the porch, the slope and the grass with nothing buried and nothing floating`,
+        tops >= 4 && worst < 1e-3 && box.attributes.position.count < bent.attributes.position.count,
+        `${tops} top triangles, worst ${worst.toFixed(5)} off`);
+    }
   }
 
   /* "The yellow selection circle below big items like the table is not
@@ -843,6 +1083,99 @@ export async function housingChecks({ ok, world }) {
     ok('...and takes a clear spot', yardWhy(Hm, it, 25, -20) === null);
     const spot = firstYardSpot(Hm, ITEM_BY_ID.treehouse, 50);
     ok('...and finds room for the treehouse on an island with a pond on it', !!spot && yardWhy(Hm, ITEM_BY_ID.treehouse, spot.x, spot.z) === null);
+  }
+
+  /* THE CASTLE'S STONE BASE AND ITS RAMP. Richard, Oct 2026: "the castles
+     frame around it had the steps removed and now is just a solid block that
+     the player can still walk through ... revert the steps back ... allowing
+     players to walk up it and fixing any strange 'walking through it' bugs
+     when going under the bridge"; and "At the sides of the ramp ... there is
+     empty space to build on ... currently this area is locked by the house".
+     The courses were stacked widest at the TOP. Walked in through the real
+     island from twelve bearings, and across the ramp from both sides. */
+  {
+    const I = H.isles[0];
+    const Hc = newHome(I.site.id, 'castle', ['Ember']);
+    H.store.homes[I.site.id] = Hc;
+    I.setHome(Hc, null);
+    const hs = I.houseOf('main');
+    const courses = hs.decks.filter((d) => d.course != null).sort((a, b) => a.course - b.course);
+    ok("the castle's base is four courses, each one CASTLE_COURSE narrower than the one under it",
+      courses.length === 4 && courses.every((d, k) => k === 0 || (Math.abs((courses[k - 1].x1 - d.x1) - CASTLE_COURSE) < 1e-9 && d.y > courses[k - 1].y)),
+      courses.map((d) => `${d.x1.toFixed(2)}@${d.y.toFixed(2)}`).join(' '));
+    const kid = fakePlayer(0);
+    const stepTo = (lx, lz, n = 400) => {
+      const t = hs.local(lx, lz);
+      const ys = [];
+      for (let k = 0; k < n; k++) {
+        const dx = t.x - kid.position.x, dz = t.z - kid.position.z, d = Math.hypot(dx, dz);
+        if (d < 0.05) break;
+        const wx = kid.position.x, wz = kid.position.z;
+        kid.position.x += (dx / d) * Math.min(0.08, d);
+        kid.position.z += (dz / d) * Math.min(0.08, d);
+        const h = I.heightAt(kid.position.x, kid.position.z, kid.position.y);
+        if (h) kid.position.y = h.y;
+        H.wall(kid, wx, wz, null);
+        ys.push(kid.position.y - hs.gy);
+      }
+      return ys;
+    };
+    // from the grass on every side but the ramp's, in to the castle's wall: up four steps, and never INSIDE a course
+    let worstStep = 0, inside = 0, topped = 0, n = 0;
+    for (let k = 0; k < 12; k++) {
+      const a = (k / 12) * Math.PI * 2 + 0.13;
+      const sx = Math.sin(a), sz = Math.cos(a);
+      if (sz > 0.5 && Math.abs(sx) < 0.5) continue;      // the front: the ramp's
+      const far = courses[0].x1 + 3;
+      const s = far / Math.max(Math.abs(sx), Math.abs(sz));
+      const o = hs.local(sx * s, sz * s);
+      kid.position.set(o.x, I.island.heightAt(o.x, o.z) ?? hs.gy, o.z);
+      const wallR = HOUSE_BY_ID.castle && 11.6;
+      const r = wallR / Math.max(Math.abs(sx), Math.abs(sz));
+      const ys = stepTo(sx * r, sz * r);
+      n++;
+      for (let j = 1; j < ys.length; j++) worstStep = Math.max(worstStep, ys[j] - ys[j - 1]);
+      // standing anywhere, the highest course over her feet is the one she is on
+      const L = hs.toLocal(kid.position.x, kid.position.z);
+      const over = courses.filter((d) => Math.abs(L.x) <= d.x1 && Math.abs(L.z) <= d.z1).map((d) => d.y);
+      if (over.length && Math.max(...over) > ys.at(-1) + 1e-6) inside++;
+      if (Math.abs(ys.at(-1) - courses[3].y) < 1e-6) topped++;
+    }
+    ok('...and she climbs it from any side, a course at a time, and is never inside the stone',
+      n >= 8 && topped === n && inside === 0 && worstStep <= 0.75 + 1e-6, `${topped}/${n} reached the top, ${inside} inside, biggest step ${worstStep.toFixed(2)}`);
+    // across the ramp from the side where it is high: stopped at its side; where it is low: steps on
+    const R = hs.decks.find((d) => d.yAt && d.x1 === -d.x0 && d.z1 > courses[0].z1);
+    const zHi = R.z0 + 1.2, zLo = R.z1 - 0.4;
+    const side = (z) => {
+      const o = hs.local(R.x1 + 3, z);
+      // on the GRASS: the highest thing at this spot is the eave over the porch
+      kid.position.set(o.x, I.island.heightAt(o.x, o.z) ?? hs.gy, o.z);
+      const ys = stepTo(0, z);
+      return { x: hs.toLocal(kid.position.x, kid.position.z).x, y: kid.position.y - hs.gy, tr: ys.filter((_, j) => j % 6 === 0).map((v) => v.toFixed(2)).join(' ') };
+    };
+    const hi = side(zHi), lo = side(zLo);
+    ok('...the ramp is solid to its sides where it is high, and stepped onto where it is low',
+      hi.x >= R.x1 && hi.y < 0.5 && lo.x < 0.1 && lo.y > 0,
+      `high end stopped at x ${hi.x.toFixed(2)} (side ${R.x1}) at y ${hi.y.toFixed(2)}; low end reached x ${lo.x.toFixed(2)} at y ${lo.y.toFixed(2)}`);
+    // walked UP the ramp from its foot to the door: onto the top course with no drop on the way
+    {
+      const o = hs.local(0, R.z1 + 2);
+      kid.position.set(o.x, I.island.heightAt(o.x, o.z) ?? hs.gy, o.z);
+      const ys = stepTo(0, courses[3].z1 - 0.5);
+      let drop = 0;
+      for (let j = 1; j < ys.length; j++) drop = Math.max(drop, ys[j - 1] - ys[j]);
+      ok('...and walked up from its foot it lands her on the top course with no drop on the way',
+        Math.abs(ys.at(-1) - courses[3].y) < 1e-6 && drop < 1e-6, `ended at ${ys.at(-1)?.toFixed(2)}, worst drop ${drop.toFixed(3)}`);
+    }
+    // the yard: beside the ramp is the yard's, on it is not
+    const lan = ITEM_BY_ID.lantern;
+    const env = H.envOf(I);
+    const bx = R.x1 + yardR(lan) + 0.6, bz = (R.z0 + R.z1) / 2;
+    ok("...and the ground either side of the ramp is the yard's, and the ramp itself is not",
+      yardWhy(Hc, lan, bx, bz, -1, env) === null && yardWhy(Hc, lan, -bx, bz, -1, env) === null && /CASTLE/.test(yardWhy(Hc, lan, 0, bz, -1, env) ?? ''),
+      `${yardWhy(Hc, lan, bx, bz, -1, env)} / ${yardWhy(Hc, lan, 0, bz, -1, env)}`);
+    delete H.store.homes[I.site.id];
+    I.setHome(null, null);
   }
 
   /* MORE HOUSES, BRIDGES, PATHS, WINDOWS. Richard: "Each island will come with
@@ -3555,6 +3888,29 @@ export async function housingChecks({ ok, world }) {
     const fr = H.builder.frameOf(0);
     ok('the room list frames the room under the cursor', fr?.room?.id === castle[k].id && !!H.builder.camera(kit));
     ok('...cut down to ITS floor, not the one she is standing on', H.builder.cutFloor(I2, [0])?.f === 2 && H.builder.cutFloor(I2, [0])?.hk === 'main');
+    /* "When at a house and selecting 'Furnish Room', the first room shown to
+       furnish should be the room the player is in already". Stood in a
+       castle room upstairs, through the home card's own FURNISH A ROOM row. */
+    {
+      const want = castle.find((r) => r.floor === 1 && r.id !== castle[0].id);
+      const hs = I2.houses.find((h) => h.hk === (want.hk ?? 'main'));
+      const w = hs.local(want.cx, want.cz);
+      kit.position.set(w.x, hs.gy + floorOf(hs.house, want.floor).y + 0.1, w.z);
+      const inRoom = I2.roomAt(kit.position.x, kit.position.y, kit.position.z)?.id;
+      C.st.set(0, { kind: 'home', stack: [{ v: 'home', site: I2.site.id }] });
+      const furnish = C._v_home(0, kit, { v: 'home', site: I2.site.id }).rows.find((r) => /FURNISH A ROOM/.test(r.title));
+      furnish.go();
+      const v = C._top(0);
+      const first = C._v_rooms(0, kit, v).rows[0];
+      game.inspector.cards[0].i = 0;
+      ok('FURNISH A ROOM opens on the room she is standing in, and the camera frames that row',
+        inRoom === want.id && v.here === want.id && first.title.startsWith(want.name) && /YOU ARE HERE/.test(first.title) && H.builder.frameOf(0)?.room?.id === want.id,
+        `in ${inRoom}, wanted ${want.id}, first row ${first.title}, framed ${H.builder.frameOf(0)?.room?.id}`);
+      C._pop(0);
+      C._push(0, { v: 'rooms', site: I2.site.id });
+      game.inspector.cards[0].i = k;
+      kit.position.set(I2.x, I2.groundY + 0.5, I2.z);
+    }
     const hsrc = readFileSync(new URL('../../src/systems/housing/housing.js', import.meta.url), 'utf8');
     ok('...and the cutaway takes the framed floor over hers', /if \(bf\) cut\.set\(bf\.hk, bf\.f\);/.test(hsrc));
     I2.cutaway(0);
@@ -3644,6 +4000,40 @@ export async function housingChecks({ ok, world }) {
         XU2.uCutScale.value[0] === LOWER_XRAY && Math.abs(XU2.uCutCeil.value[0] - (hs.gy + S.floorY[1] + 0.02)) < 1e-4
         && LOWER_XRAY >= 2 && LOWER_XRAY <= 3);
       ok('...and the sister upstairs the ordinary one, with no ceiling', XU2.uCutScale.value[1] === 1 && XU2.uCutCeil.value[1] === 1e9);
+      /* "the player on 1st floor's xray shader is not affecting the 2nd floor,
+         it should affect all the floors, but ... smaller over time on the 2nd
+         floor when the player stops moving around and gets bigger twice as fast
+         when they move around." A third slot: from the top of her ceiling up,
+         LOWER_XRAY x her `_xrayUp`, which the real update runs. */
+      {
+        const upSlot = () => [...Array(XRAY_SLOTS).keys()].find((s) => s >= 2 && XU2.uCutOn.value[s] === 1
+          && Math.abs(XU2.uCutFloor.value[s] - (hs.gy + S.floorY[1] + 0.02)) < 1e-4 && XU2.uCutCeil.value[s] === 1e9);
+        down._xrayUp = 1;
+        H.aimView(cam, [0, 1], false);
+        const s0 = upSlot();
+        const full = s0 != null ? XU2.uCutScale.value[s0] : null;
+        // she stands still for a second and a half: half way down; then moves for three quarters of one: back up
+        const wasDbg = H.debugOpen; H.debugOpen = true;
+        down.velocity.set(0, 0, 0); upst.velocity.set(0, 0, 0);
+        for (let t = 0; t < 1.5; t += 0.05) H.update(0.05);
+        const still = down._xrayUp;
+        H.aimView(cam, [0, 1], false);
+        const half = upSlot() != null ? XU2.uCutScale.value[upSlot()] : null;
+        down.velocity.set(3, 0, 0);
+        for (let t = 0; t < 0.75; t += 0.05) H.update(0.05);
+        const moved = down._xrayUp;
+        for (let t = 0; t < 3; t += 0.05) H.update(0.05);
+        down.velocity.set(0, 0, 0);
+        for (let t = 0; t < 3.2; t += 0.05) H.update(0.05);
+        H.aimView(cam, [0, 1], false);
+        const gone = upSlot();
+        H.debugOpen = wasDbg;
+        ok('...and through the floor above her too: LOWER_XRAY, shrinking to nothing over XRAY_UP.t standing still, and back twice as fast moving',
+          full === LOWER_XRAY && Math.abs(still - 0.5) < 0.02 && Math.abs(half - LOWER_XRAY * still) < 1e-4 && Math.abs(moved - 1) < 0.02 && gone == null,
+          `full ${full}, after 1.5s still ${still.toFixed(2)} (scale ${half?.toFixed(2)}), after 0.75s moving ${moved.toFixed(2)}, still for 3.2s: slot ${gone}`);
+        down.velocity.set(0, 0, 0);
+        delete down._xrayUp;
+      }
       upst.position.set(lo.x + 1, hs.gy + S.floorY[0] + 0.01, lo.z);
       H.aimView(cam, [0, 1], false);
       ok('...and on one floor together, both are ordinary, exactly as before', XU2.uCutScale.value[0] === 1 && XU2.uCutCeil.value[0] === 1e9
@@ -3689,6 +4079,10 @@ export async function housingChecks({ ok, world }) {
         C._push(0, tH); C._view(0); H.builder._bigGhost(0, tH, 0, I, Hm); H.builder._drop(0); C._pop(0);
         ok('the free house is FREE, and building it costs nothing', H.annexPrice(Hm, 'tiny') === 0 && H.placeHouse(kid, Hm, { hk: null, house: 'tiny', ...spot }) && kid.score === 1e9);
         ok('...and the next one of it is not free', H.annexPrice(Hm, 'tiny') > 0);
+        /* "When buying a house on an already owned island, let's lower the price by 50%" */
+        ok('...and costs HALF what Roshi sells it for, on an island she already owns',
+          ANNEX_OFF === 0.5 && Math.abs(H.annexPrice(Hm, 'tiny') - H.housePrice('tiny') / 2) <= 10 && H.annexPrice(Hm, 'castle') < H.housePrice('castle'),
+          `${H.annexPrice(Hm, 'tiny')} of ${H.housePrice('tiny')}`);
         ok('...and it stands on the island, its own house with its own doors', I.houses.length === 2 && I.houses.flatMap((h) => h.doors).some((d) => d.key === `a${Hm.annex[0].uid}:front`));
         const ports = portSpots(Hm, 2.6, env.gyAt).filter((q) => q.floor === 0);
         let built = null;
@@ -3839,6 +4233,134 @@ export async function housingChecks({ ok, world }) {
     };
     walk(LU, 'sharp-cornered');
     walk(smoothU, 'smooth');
+    /* DOWN FROM THE CASTLE'S TOP FLOOR, OVER THE FLOORS BELOW. Richard, Oct
+       2026: "The wall collider from the floor below is still interfering with
+       the bridge built above ... the 2nd floor wall is interfering with the
+       bridge while the bridge slopes downward" — she had to JUMP. The castle
+       steps in a floor at a time, so a bridge out of the third floor crosses
+       the second's (and the first's) outer wall a little under that wall's
+       top. Walked from door to door through the real walls. */
+    {
+      const Hc = newHome(I.site.id, 'castle', ['Ember']);
+      H.store.homes[I.site.id] = Hc;
+      const env2 = () => H.envOf(I);
+      let found = null;
+      for (const ax of [-34, -36, -32, 34, 36]) {
+        Hc.annex = [{ uid: 1, house: 'minka', x: ax, z: 0, rot: 0, paid: 0, free: true }];
+        I.setHome(Hc, null);
+        const env = env2();
+        if (houseWhy({ ...Hc, annex: [] }, { hk: null, house: 'minka', x: ax, z: 0, rot: 0 }, env)) continue;
+        const ports = portSpots(Hc, 2.6, env.gyAt);
+        for (const A of ports.filter((q) => q.hk === 'main' && q.floor === 2 && q.side === (ax < 0 ? 3 : 1))) {
+          for (const B of ports.filter((q) => q.hk === 'a1' && q.floor === 0 && q.side === (ax < 0 ? 1 : 3))) {
+            const L = { a: A, b: B, style: 'plank' };
+            if (!linkWhy(Hc, L, env) && !linkBlockers(Hc, L, env).length) { found = L; break; }
+          }
+          if (found) break;
+        }
+        if (found) break;
+      }
+      let res = 'no buildable bridge found';
+      let okWalk = false;
+      if (found) {
+        Hc.links = [{ uid: 60, ...found, paid: 1 }];
+        I.setHome(Hc, null);
+        const env = env2();
+        const g = linkGeom(Hc, found, env.gyAt);
+        const W = (x, z) => I.local(x, z);
+        const a = W(g.A.x + g.A.nx * 0.9, g.A.z + g.A.nz * 0.9);
+        kid.position.set(a.x, I.groundY + g.A.y, a.z);
+        const goal = [g.B.x + g.B.nx * 0.9, g.B.z + g.B.nz * 0.9];
+        const t = W(...goal);
+        let n = 0, stuck = 0, offDeck = 0, worstY = 0;
+        for (; n < 1500; n++) {
+          const dx = t.x - kid.position.x, dz = t.z - kid.position.z, d = Math.hypot(dx, dz);
+          if (d < 0.15) break;
+          const wx = kid.position.x, wz = kid.position.z;
+          kid.position.x += (dx / d) * Math.min(0.1, d);
+          kid.position.z += (dz / d) * Math.min(0.1, d);
+          const h = I.heightAt(kid.position.x, kid.position.z, kid.position.y + 0.3);
+          if (h) kid.position.y = h.y;
+          H.wall(kid, wx, wz, null);
+          if (Math.hypot(kid.position.x - wx, kid.position.z - wz) < 0.02) stuck++;
+          // ON the deck, not dropped into the floor below or walking a roof beside it
+          if (h?.deck?.link == null && Math.hypot(t.x - kid.position.x, t.z - kid.position.z) > 1.2) offDeck++;
+          else if (h?.deck?.link != null) {
+            const q = I.toLocal(kid.position.x, kid.position.z);
+            const s = Math.hypot(q.x - g.A.x, q.z - g.A.z);
+            worstY = Math.max(worstY, Math.abs(kid.position.y - I.groundY - (g.A.y + (g.B.y - g.A.y) * s / g.len)));
+          }
+        }
+        const end = I.toLocal(kid.position.x, kid.position.z);
+        const off = Math.hypot(end.x - goal[0], end.z - goal[1]);
+        okWalk = off < 0.2 && stuck < 5 && offDeck === 0 && worstY < 0.05;
+        res = `drop ${(g.A.y - g.B.y).toFixed(2)} over ${g.len.toFixed(1)}, ended ${off.toFixed(2)} from the far door, stuck ${stuck} steps, off the deck ${offDeck}, at most ${worstY.toFixed(3)} off its slope`;
+        // ...and the rail still holds her, half way down
+        const mid = W(g.A.x + (g.B.x - g.A.x) / 2, g.A.z + (g.B.z - g.A.z) / 2);
+        kid.position.set(mid.x, I.groundY + (g.A.y + g.B.y) / 2, mid.z);
+        const ux = (g.B.x - g.A.x) / g.len, uz = (g.B.z - g.A.z) / g.len;
+        for (let k = 0; k < 80; k++) {
+          const wx = kid.position.x, wz = kid.position.z;
+          const s = W(I.toLocal(wx, wz).x + uz * 0.1, I.toLocal(wx, wz).z - ux * 0.1);
+          kid.position.x = s.x; kid.position.z = s.z;
+          const h = I.heightAt(kid.position.x, kid.position.z, kid.position.y + 0.3);
+          if (h) kid.position.y = h.y;
+          H.wall(kid, wx, wz, null);
+        }
+        const L2 = I.toLocal(kid.position.x, kid.position.z);
+        const side = Math.abs((L2.x - g.A.x) * uz - (L2.z - g.A.z) * ux);
+        okWalk &&= side < g.w / 2;
+        res += `, rail held her ${side.toFixed(2)} out of ${(g.w / 2).toFixed(2)}`;
+      }
+      ok("a bridge down from the castle's third floor is walked door to door without a jump, and its rail still holds her", !!found && okWalk, res);
+      /* ...AND FROM INSIDE, IT IS TAKEN OFF OVER HER ROOM. Richard, Oct 2026:
+         "if bridge is built on 3rd floor, then on 1st floor, it will mask out
+         more of the bridge above than the 2nd floor ... and if on the 3rd
+         floor, no masking is needed." Her on each floor of the castle, through
+         the real `aimView`, and the bridge's own vertices counted against the
+         box it hands the shader: cut (over the room, above the line) and LEFT
+         (over the room, under it — which would be the bridge in her room). */
+      if (found) {
+        const hs = I.houses.find((h) => h.hk === 'main');
+        const cam = new THREE.PerspectiveCamera();
+        const pl0 = game.players;
+        game.players = [kid];
+        const mesh = I.linkMeshes.get(60)?.children.find((c) => c.material === I.bridgeMat);
+        mesh.updateMatrixWorld(true);
+        const pos = mesh.geometry.attributes.position, v = new THREE.Vector3();
+        const per = [];
+        for (let f = 0; f < 3; f++) {
+          const w = hs.local(1, 1);
+          kid.position.set(w.x, hs.gy + hs.shell.floorY[f] + 0.01, w.z);
+          cam.position.set(w.x, kid.position.y + 9, w.z + 12);
+          H.aimView(cam, [0], false);
+          const u = I.bridgeMat.userData.xray;
+          const on = u.uClipOn.value[0] > 0.5;
+          const B = u.uClipB.value[0], A = u.uClipA.value[0];
+          const box = { x: A.x, z: A.y, cos: A.z, sin: A.w, hw: B.x, hd: B.y, y: B.z };
+          /* "Left" is inside the wall's own thickness and more: where it
+             crosses that floor's outer wall a little under the top (the walk
+             above) it is IN the wall, which is drawn, and not in the room. */
+          const room = { ...box, hw: box.hw - 0.3, hd: box.hd - 0.3 };
+          let cut = 0, left = 0, lowest = Infinity;
+          for (let i = 0; on && i < pos.count; i++) {
+            v.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
+            if (!inClip(box, v.x, v.z)) continue;
+            if (v.y > box.y) cut++;
+            else if (inClip(room, v.x, v.z)) { left++; lowest = Math.min(lowest, v.y - box.y); }
+          }
+          per.push({ on, cut, left, lowest, glow: I.bridgeGlowMat.setClips != null });
+        }
+        game.players = pl0;
+        H.aimView(new THREE.PerspectiveCamera(), [], true);
+        ok('a third-floor bridge is taken off over the room below it: more from the 1st floor than the 2nd, none at all from the 3rd, and nothing of it left in the room',
+          per[0].on && per[1].on && !per[2].on && per[0].cut > per[1].cut && per[1].cut > 0 && per[0].left === 0 && per[1].left === 0 && per[0].glow,
+          per.map((q, f) => `floor ${f + 1}: ${q.on ? `${q.cut} vertices cut, ${q.left} left in the room${q.left ? ` (to ${q.lowest.toFixed(2)} under the line)` : ''}` : 'no mask'}`).join('; '));
+      }
+      Hc.links = []; Hc.annex = [];
+      H.store.homes[I.site.id] = Hm;
+      I.setHome(Hm, null);
+    }
     // THE CARD: the doors, RIGHT twice for two turns, each turn placed, "are you sure?", the price with them
     {
       const Cd = game.housingCards;
@@ -3941,6 +4463,44 @@ export async function housingChecks({ ok, world }) {
     const C = KENDO_CEREMONY_H;
     ok('kneeling is shorter than reaching, reaching than bowing, bowing than standing',
       C.seizaPose < C.reachPose && C.reachPose < C.reiPose && C.reiPose < 1, JSON.stringify(C));
+    /* ...BUT EMBER'S ARE SIZED ON HER HELMET. Richard, Oct 2026: "the head/
+       helmet should match the standing sprite's head size. The slash sprite
+       should be taller (player height plus the shinai above her head)." Her
+       drawings measured here, as player.js `KENDO_POSE_H` was: the men's
+       grill (its slats) over the drawing's ink, times the pose's fraction,
+       against the guard's — within 8% — and the slash TALLER than her. */
+    {
+      const ink = (f) => {
+        const { w, h, d } = readPNG(new URL(`../../public/sprites/kittens/ember/${f}.png`, import.meta.url));
+        let y0 = h, y1 = 0;
+        const rows = new Array(h).fill(0);
+        const dark = (x, y) => { const i = (y * w + x) * 4; return d[i] < 60 || (d[i + 3] > 200 && d[i + 2] > d[i] + 25 && d[i] < 90); };
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+          const i = (y * w + x) * 4;
+          if (d[i + 3] > 40) { y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+          const r = d[i], g = d[i + 1], b = d[i + 2];
+          if (d[i + 3] < 200 || !(r > 160 && Math.abs(r - b) < 22 && Math.abs(r - g) < 22)) continue;
+          let up = false, dn = false;
+          for (let s = 2; s <= 9; s++) { if (y - s >= 0 && dark(x, y - s)) up = true; if (y + s < h && dark(x, y + s)) dn = true; }
+          if (up && dn) rows[y]++;
+        }
+        const bands = [];
+        let cur = null;
+        rows.forEach((c, y) => { if (c >= 12) { if (cur && y - cur.y1 <= 14) { cur.y1 = y; cur.n += c; } else { cur = { y0: y, y1: y, n: c }; bands.push(cur); } } });
+        const g = bands.sort((a, b) => b.n - a.n)[0];
+        return { grill: g.y1 - g.y0, ink: y1 - y0 };
+      };
+      const E = KENDO_POSE_H.Ember;
+      const guard = ink('kendo');
+      const head = (f, k) => { const m = ink(f); return (m.grill / m.ink) * k / (guard.grill / guard.ink); };
+      const rs = { seiza: head('seiza', E.seizaPose), reach: head('reach', E.reachPose) };
+      ok("Ember's helmet in seiza and reaching is her standing helmet's size, and her slash stands taller than she does",
+        Math.abs(rs.seiza - 1) < 0.08 && Math.abs(rs.reach - 1) < 0.08 && E.kiaiPose > 1.2 && E.kiaiPose < 1.5,
+        `seiza ${rs.seiza.toFixed(2)}, reach ${rs.reach.toFixed(2)} of the guard's; slash at ${E.kiaiPose} of her height`);
+      // ...and the cut in the bogu draws upright (player.js `slashV`)
+      const psrc = readFileSync(new URL('../../src/entities/player.js', import.meta.url), 'utf8');
+      ok('...and a swing in the bogu draws its arc upright, over her head and down', /const upright = !!this\.kendoGeared && !!this\.slashV;/.test(psrc) && /new THREE\.RingGeometry\(1\.0, 2\.0, 20, 1, -0\.35, 2\.0\)/.test(psrc));
+    }
   }
 
   /* "SOME FIXES", Oct 2026 — the beds, the roofs, the knock, the sliding

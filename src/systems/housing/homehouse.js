@@ -51,6 +51,8 @@ const WALL_T = 0.3;
 const DOOR_W = 2.8;
 /** How far in each course of the castle's stone base steps from the one below. */
 export const CASTLE_COURSE = 0.45;
+/** The ramp's two sides are walls in pieces this long, each as high as the ramp at its low end. */
+export const RAMP_WALL = 0.5;
 /** A storey's wall collider stops this far under the floor above (its slab). */
 export const WALL_UNDER = SLAB_T;
 
@@ -144,9 +146,15 @@ export function buildHouseShell(houseId, openings = []) {
        and each is a deck (`course`), so she walks up any side of it; the top
        course is the porch the castle stands on. All inside the footprint the
        old base had (`houseFoot` does not move), and each course's foot is a
-       hair lower than the last so no two undersides share a plane. */
+       hair lower than the last so no two undersides share a plane.
+       THE BOTTOM COURSE IS THE WIDEST. Richard, Oct 2026: "the steps removed
+       and now is just a solid block that the player can still walk through".
+       The inset was `(3 - k)`, which made the TOP course the widest — an
+       upside-down pyramid that read as one block with an overhang, and she
+       walked in under the overhang at ground height to 1.5 inside its edge
+       before the deck popped her 2.6 up (measured in the browser). */
     for (let k = 0; k < 4; k++) {
-      const i = (3 - k) * CASTLE_COURSE;
+      const i = k * CASTLE_COURSE;
       const top = (k + 1) * (base / 4), foot = -PLINTH_SINK - k * 0.01;
       plinth.push(box((pw - i) * 2, top - foot, (pd - i) * 2, k % 2 ? PALETTE.stone : 0x8f8a83, 0, (top + foot) / 2, 0));
     }
@@ -160,7 +168,7 @@ export function buildHouseShell(houseId, openings = []) {
   if (S.stone) {
     // the courses, each a step of a quarter of the base; the lowest takes her from anything down to PLINTH_SINK
     for (let k = 0; k < 4; k++) {
-      const i = (3 - k) * CASTLE_COURSE;
+      const i = k * CASTLE_COURSE;
       decks.push({ x0: -pw + i, x1: pw - i, z0: -pd + i, z1: pd - i, y: (k + 1) * (base / 4), step: k ? 0.75 : base / 4 + PLINTH_SINK, plinth: k === 3, course: k });
     }
   } else {
@@ -172,17 +180,43 @@ export function buildHouseShell(houseId, openings = []) {
      base is a storey of stone and needs a real slope. */
   if (base > 0.8) {
     const len = base / 0.32;
-    const z0 = pd;
-    const z1 = pd + len;
+    // up to the top course's edge, which is CASTLE_COURSE x 3 in from the bottom's
+    const z0 = pd - (S.stone ? 3 * CASTLE_COURSE : 0);
+    const z1 = z0 + len;
+    const rampY = (z) => base * (1 - (z - z0) / len);
     decks.push({
       x0: -STAIR_W, x1: STAIR_W, z0, z1, y: base, step: 0.6,
-      yAt: (x, z) => base * (1 - (z - z0) / len),
+      yAt: (x, z) => rampY(z),
     });
-    const ramp = new THREE.BoxGeometry(STAIR_W * 2, 0.4, Math.hypot(len, base));
-    paint(ramp, S.stone ? 0x8a8580 : PALETTE.wood);
-    ramp.rotateX(Math.atan2(base, len));
-    ramp.translate(0, base / 2 - 0.2, z0 + len / 2);
-    plinth.push(ramp);
+    /* A SOLID WEDGE, down into the ground, not a slab on a slope. Richard,
+       Oct 2026: "fixing any strange 'walking through it' bugs when going
+       under the bridge, or simply don't allow players to go under the
+       bridge". The slab was 0.4 thick with air under its top end, which she
+       walked into. Now there is no under: the wedge is stone to the grass
+       (and PLINTH_SINK below it, for a slope), and its two sides are walls
+       wherever it stands higher than a step — `y1` a hair under the ramp's
+       own height there, so on the ramp she is above them and they are not
+       a rail. Its back face is tucked 0.02 into the stone so it shares no
+       plane with the top course's front. */
+    const sh = new THREE.Shape();
+    sh.moveTo(-0.02, -PLINTH_SINK);
+    sh.lineTo(-0.02, base);
+    sh.lineTo(len, 0);
+    sh.lineTo(len, -PLINTH_SINK);
+    sh.closePath();
+    const ramp = new THREE.ExtrudeGeometry(sh, { depth: STAIR_W * 2, bevelEnabled: false });
+    ramp.rotateY(-Math.PI / 2);
+    ramp.translate(STAIR_W, 0, z0);
+    const flat = ramp.toNonIndexed();
+    flat.deleteAttribute('uv');
+    paint(flat, S.stone ? 0x8a8580 : PALETTE.wood);
+    plinth.push(flat);
+    for (let z = z0; z < z1 - 1e-6; z += RAMP_WALL) {
+      const zb = Math.min(z1, z + RAMP_WALL);
+      const y1 = rampY(zb) - 0.1;
+      if (y1 <= 0.5) break;
+      for (const sx of [-1, 1]) walls.push({ ax: sx * STAIR_W, az: z, bx: sx * STAIR_W, bz: zb, y0: -PLINTH_SINK, y1, ramp: true });
+    }
   }
 
   /* The stairwells, worked out before any floor is drawn: floor f + 1 has
@@ -773,6 +807,45 @@ export function houseFoot(houseId) {
   const [w, d] = S.floors[0];
   const pw = w + S.porch, pd = d + S.porch;
   return { x0: -pw, x1: pw, z0: -pd, z1: pd + (S.base > 0.8 ? S.base / 0.32 : 0) };
+}
+
+/**
+ * The house's ground as the yard sees it: the plinth's rectangle, and the
+ * ramp's own strip in front of it — NOT one box round both. Richard, Oct
+ * 2026: "At the sides of the ramp leading to the front of the castle and in
+ * the front of the Dojo House, there is empty space to build on around the
+ * ramp, currently this area is locked by the house". `houseFoot` is the
+ * bounds of both, for what wants the bounds (the camera, a bridge's reach).
+ */
+export function houseFoots(houseId) {
+  const S = SHAPES[houseId] ?? SHAPES.minka;
+  const [w, d] = S.floors[0];
+  const pw = w + S.porch, pd = d + S.porch;
+  const out = [{ x0: -pw, x1: pw, z0: -pd, z1: pd }];
+  if (S.base > 0.8) out.push({ x0: -STAIR_W, x1: STAIR_W, z0: pd, z1: pd + S.base / 0.32, ramp: true });
+  return out;
+}
+
+/**
+ * The ramp out of the front door as a path sees it, house-local, or null for
+ * a house that has a step instead: its half-width, the front wall the door is
+ * in, where the slope starts (`z0`, the top course's edge on the castle) and
+ * ends (`z1`, on the grass), and `yAt(z)` — the deck's height along it, the
+ * porch's `base` between the door and z0. It is the same arithmetic as the
+ * ramp deck in `houseShape`, and world-check holds the two together. Richard,
+ * Oct 2026: "Auto walking paths should go up the ramps ... allow players to
+ * place paths on ramps" (editor.js `onRamp`, homeisle.js bends them onto it).
+ */
+export function rampOf(houseId) {
+  const S = SHAPES[houseId] ?? SHAPES.minka;
+  if (!(S.base > 0.8)) return null;
+  const d = S.floors[0][1], pd = d + S.porch;
+  const len = S.base / 0.32;
+  const z0 = pd - (S.stone ? 3 * CASTLE_COURSE : 0);
+  return {
+    hw: STAIR_W, door: d, z0, z1: z0 + len, base: S.base,
+    yAt: (z) => (z <= z0 ? S.base : S.base * Math.max(0, 1 - (z - z0) / len)),
+  };
 }
 
 /** Floor k's outer half-sizes and its floor height, without building it. */

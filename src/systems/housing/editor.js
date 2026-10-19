@@ -1,6 +1,6 @@
-import { HOUSE_BY_ID, ITEM_BY_ID, houseSpecs, homeRooms, pathPosts } from './catalog.js';
-import { houseFoot, houseShape, stairBlocks } from './homehouse.js';
-import { linkWhy, toIsle, underBridgeWhy } from './links.js';
+import { HOUSE_BY_ID, ITEM_BY_ID, LINK_BY_ID, houseSpecs, homeRooms, pathPosts, roomWith } from './catalog.js';
+import { houseFoot, houseFoots, houseShape, stairBlocks, rampOf } from './homehouse.js';
+import { linkWhy, toIsle, toHouse, underBridgeWhy } from './links.js';
 
 /* ---------------------------------------------------------------------------
    FURNISHING — the tatami grid, the walls and the yard, as data.
@@ -37,6 +37,16 @@ export function fits(room, items, it, gx, gz, rot = 0, skip = -1) {
   const x0 = room.cx - room.w / 2 + gx * 2, z0 = room.cz - room.d / 2 + gz * 2;
   for (const W of stairBlocks(room.house, room.floor)) {
     if (x0 < W.x1 && x0 + w * 2 > W.x0 && z0 < W.z1 && z0 + d * 2 > W.z0) return false;
+  }
+  /* A MIXED ROOM'S ZONES (catalog `mixed`): the holodeck's kit stands in its
+     strip and nowhere else, and furniture stays out of a zone once it is
+     bought (`roomWith` hands `feats` in; without them a zone is open floor). */
+  const M = room.mixed;
+  if (M) {
+    const inZ = (c) => gx >= c[0] && gz >= c[1] && gx + w <= c[2] && gz + d <= c[3];
+    const hits = (c) => gx < c[2] && gx + w > c[0] && gz < c[3] && gz + d > c[1];
+    if (it.holo) { if (!M.holodeck || !inZ(M.holodeck)) return false; }
+    else for (const f of Object.keys(M)) if (room.feats?.[f] != null && hits(M[f])) return false;
   }
   for (const [k, q] of (items ?? []).entries()) {
     if (k === skip) continue;
@@ -101,11 +111,18 @@ export function circleHit(o, x, z, r) {
   const qx = Math.max(-o.hx, Math.min(o.hx, lx)), qz = Math.max(-o.hz, Math.min(o.hz, lz));
   return Math.hypot(lx - qx, lz - qz) < r;
 }
-/** A house's ground as a box, grown by pad. */
+/** A house's ground as a box, grown by pad: the bounds of plinth and ramp together. */
 export function houseBox(s, pad = 0) {
   const R = houseFoot(s.house);
   const c = toIsle(s, (R.x0 + R.x1) / 2, (R.z0 + R.z1) / 2);
   return obb(c.x, c.z, (R.x1 - R.x0) / 2 + pad, (R.z1 - R.z0) / 2 + pad, s.rot);
+}
+/** ...and as what is really there: the plinth's box and the ramp's (`houseFoots`), each grown by pad. */
+export function houseBoxes(s, pad = 0) {
+  return houseFoots(s.house).map((R) => {
+    const c = toIsle(s, (R.x0 + R.x1) / 2, (R.z0 + R.z1) / 2);
+    return Object.assign(obb(c.x, c.z, (R.x1 - R.x0) / 2 + pad, (R.z1 - R.z0) / 2 + pad, s.rot), { ramp: !!R.ramp });
+  });
 }
 /** A yard thing's shape where it stands: a box for a path, else a circle. */
 export function thingShape(it, x, z, rot = 0) {
@@ -133,6 +150,34 @@ const shapesHit = (a, b, pad = 0) => {
 const corners = (o) => [[1, 1], [1, -1], [-1, 1], [-1, -1]].map(([i, j]) => ({
   x: o.x + i * o.hx * o.c + j * o.hz * o.s, z: o.z - i * o.hx * o.s + j * o.hz * o.c,
 }));
+
+/**
+ * Does a path's box lie on house `s`'s ramp — every corner within its width,
+ * none further in than the front wall? Then the house does not refuse it: it
+ * runs up the slope and over the porch to the door, and homeisle.js bends it
+ * onto them (`rampLift`). Richard, Oct 2026: "Allow players to place paths on
+ * ramps". A path that only touches the ramp's side still meets the strip's
+ * box, as before — half on the slope and half in the wall is not a path.
+ */
+export function onRamp(s, box) {
+  const R = rampOf(s.house);
+  if (!R || !box) return false;
+  return corners(box).every((p) => {
+    const l = toHouse(s, p.x, p.z);
+    return Math.abs(l.x) <= R.hw + 0.05 && l.z >= R.door - 0.05;
+  });
+}
+
+/** How far above the grass a ramp or its porch is at island (x, z), or 0. */
+export function rampLift(H, x, z) {
+  for (const s of houseSpecs(H)) {
+    const R = rampOf(s.house);
+    if (!R) continue;
+    const l = toHouse(s, x, z);
+    if (Math.abs(l.x) <= R.hw + 0.05 && l.z >= R.door - 0.05 && l.z <= R.z1) return R.yAt(l.z);
+  }
+  return 0;
+}
 
 /** `env` was the island's radius; it is `{ r, rot, landing, gyAt, groundAt }` now. Both work. */
 const envOf = (env) => (typeof env === 'number' ? { r: env } : (env ?? {}));
@@ -168,8 +213,10 @@ export function yardWhy(H, it, x, z, skip = -1, env = 50) {
   const out = me.box ? corners(me.box).some((p) => Math.hypot(p.x, p.z) > R - 1.5) : Math.hypot(x, z) + me.r > R - RIM;
   if (out) return 'Too close to the edge of the island.';
   for (const s of houseSpecs(H)) {
-    const B = houseBox(s, it.path ? -0.6 : HOUSE_GAP);
-    if (me.box ? obbHit(B, me.box) : circleHit(B, x, z, me.r)) return `That is on top of the ${HOUSE_BY_ID[s.house].short}.`;
+    if (it.path && onRamp(s, me.box)) continue;
+    for (const B of houseBoxes(s, it.path ? -0.6 : HOUSE_GAP)) {
+      if (me.box ? obbHit(B, me.box) : circleHit(B, x, z, me.r)) return `That is on top of the ${HOUSE_BY_ID[s.house].short}.`;
+    }
   }
   if (E.landing && !it.path && (me.box ? circleHit(me.box, E.landing.x, E.landing.z, LANDING_R) : Math.hypot(x - E.landing.x, z - E.landing.z) < me.r + LANDING_R)) {
     return 'Keep the landing at the end of your bridge clear.';
@@ -202,17 +249,17 @@ export const yardFits = (H, it, x, z, skip = -1, env = 50) => yardWhy(H, it, x, 
 export function houseWhy(H, spec, env = 50) {
   const E = envOf(env);
   const R = E.r ?? 50;
-  const B = houseBox(spec);
-  if (corners(B).some((p) => Math.hypot(p.x, p.z) > R - RIM)) return 'Too close to the edge of the island.';
+  const Bs = houseBoxes(spec);
+  if (Bs.some((B) => corners(B).some((p) => Math.hypot(p.x, p.z) > R - RIM))) return 'Too close to the edge of the island.';
   for (const s of houseSpecs(H)) {
     if (s.hk === spec.hk) continue;
-    if (obbHit(houseBox(s, 0.8), B)) return `It would bump into the ${HOUSE_BY_ID[s.house].short}.`;
+    if (houseBoxes(s, 0.8).some((A) => Bs.some((B) => obbHit(A, B)))) return `It would bump into the ${HOUSE_BY_ID[s.house].short}.`;
   }
-  if (E.landing && circleHit(B, E.landing.x, E.landing.z, LANDING_R + 1)) return 'Keep the landing at the end of your bridge clear.';
+  if (E.landing && Bs.some((B) => circleHit(B, E.landing.x, E.landing.z, LANDING_R + 1))) return 'Keep the landing at the end of your bridge clear.';
   for (const q of H.outdoor ?? []) {
     const qi = ITEM_BY_ID[q.id];
     if (!qi) continue;
-    if (shapesHit({ box: B }, thingShape(qi, q.x, q.z, q.rot ?? 0), -0.1)) return `The ${qi.name} is in the way — move it first.`;
+    if (Bs.some((B) => shapesHit({ box: B }, thingShape(qi, q.x, q.z, q.rot ?? 0), -0.1))) return `The ${qi.name} is in the way — move it first.`;
   }
   const T = withHouse(H, spec);
   for (const L of H.links ?? []) {
@@ -271,7 +318,9 @@ export function doorPathId(H) {
  * From the foot of the main house's front steps to the landing, in the
  * island's frame: `{ a, b, len, rot }`, or null when there is no landing to
  * walk to. The front is the house's +z, and `houseFoot` already reaches the
- * bottom of a raised house's ramp (homehouse.js).
+ * bottom of a raised house's ramp (homehouse.js) — the ramp itself is its own
+ * leg (`rampWalk`), because the landing is seldom straight ahead and a walk
+ * that left the ramp at an angle would be half in its wall.
  */
 export function doorWalk(H, env = 50) {
   const E = envOf(env);
@@ -282,6 +331,20 @@ export function doorWalk(H, env = 50) {
   const len = Math.hypot(b.x - a.x, b.z - a.z);
   if (len < 1) return null;
   return { a, b, len, rot: Math.atan2(b.x - a.x, b.z - a.z) };
+}
+
+/**
+ * ...and the leg before it: from the main house's front door straight down
+ * its ramp to the grass, or null for a house with a step. Richard, Oct 2026:
+ * "Auto walking paths should go up the castle and Dojo House ramps to the
+ * front door, truncated to fit". The walk used to stop at the ramp's foot.
+ */
+export function rampWalk(H) {
+  const s = houseSpecs(H)[0];
+  const R = s && rampOf(s.house);
+  if (!R) return null;
+  const a = toIsle(s, 0, R.door), b = toIsle(s, 0, R.z1);
+  return { a, b, len: R.z1 - R.door, rot: Math.atan2(b.x - a.x, b.z - a.z) };
 }
 
 /** The walk as a box, `pad` wider each side than the path (DOOR_WALK_PAD). */
@@ -305,11 +368,28 @@ export function layDoorPath(H, env = 50) {
   const id = doorPathId(H);
   const it = ITEM_BY_ID[id];
   if (!W || !it) return 0;
-  const n = Math.max(1, Math.ceil(W.len / (it.len - 0.6)));
-  const step = W.len / n;
+  return layWalk(H, rampWalk(H), id, env) + layWalk(H, W, id, env);
+}
+
+/** Only the ramp's leg — for a home whose walk was laid before it had one (housing.js `_applyStore`). */
+export const layRampPath = (H, env = 50) => layWalk(H, rampWalk(H), doorPathId(H), env);
+
+/** One leg of the walk (`doorWalk`, `rampWalk`), laid in pieces of `id`. */
+function layWalk(H, W, id, env) {
+  const it = ITEM_BY_ID[id];
+  if (!W || !it) return 0;
+  /* END TO END, EXACTLY: the first piece's end on the leg's start (the door,
+     or the foot of the steps), the last's on its end, the rest shared out
+     between. They used to be centred on n equal steps, which put the first
+     piece's end (len - step) / 2 behind the start — harmless at the foot of a
+     step, but at the top of a ramp that is the wall, and the piece was
+     refused. A leg shorter than one piece (the Dojo House's ramp, 4.4) starts
+     at its start and runs on past its end, onto the grass. */
+  const n = Math.max(1, Math.ceil((W.len - 0.6) / (it.len - 0.6)));
+  const step = n > 1 ? (W.len - it.len) / (n - 1) : 0;
   let laid = 0;
   for (let k = 0; k < n; k++) {
-    const t = (k + 0.5) * step;
+    const t = it.len / 2 + k * step;
     const x = +(W.a.x + Math.sin(W.rot) * t).toFixed(2);
     const z = +(W.a.z + Math.cos(W.rot) * t).toFixed(2);
     const rot = +W.rot.toFixed(4);
@@ -362,15 +442,27 @@ export function addOutdoor(H, id, x, z, rot = 0) {
  * floor keeps its door clear. Each slot carries where it is (house-local, on
  * the wall's INSIDE face) and the way it faces (into the room).
  */
-export function wallSlots(houseId, room) {
+export function wallSlots(houseId, room, { strict = false } = {}) {
   const S = houseShape(houseId);
   const [hw, hd] = S.floors[room.floor] ?? S.floors[0];
   const out = [];
+  /* ON AN OUTSIDE WALL: within 1.2 of it, or — Richard, Oct 2026: "There are
+     no windows on the castle's 1st floor ... 'This room has no outside wall
+     to hang things on', but it does have an outside wall and a front door" —
+     further in with NO OTHER ROOM of its floor between it and the wall. The
+     castle's rooms are cell-aligned inside stone walls: the ground floor's
+     19 x 18 sits 1.5 and 2 in from walls at 11, the second floor's 1 and 2.5
+     in from 9, so only two of its sides and none of the ground floor's ever
+     counted. `strict` is the old rule, for the one-time window fill. */
+  const others = strict ? [] : (HOUSE_BY_ID[houseId]?.rooms ?? []).filter((r) => r.floor === room.floor && r.id !== room.id);
+  const clear = (x0, x1, z0, z1) => !others.some((r) => r.cx + r.w / 2 > x0 && r.cx - r.w / 2 < x1 && r.cz + r.d / 2 > z0 && r.cz - r.d / 2 < z1);
+  const rx0 = room.cx - room.w / 2, rx1 = room.cx + room.w / 2, rz0 = room.cz - room.d / 2, rz1 = room.cz + room.d / 2;
+  const near = (gap, strip) => gap < 1.2 || (!strict && gap < WALL_GAP && strip());
   const sides = [
-    { side: 0, on: Math.abs(room.cz + room.d / 2 - hd) < 1.2, along: 'x', fixed: hd - 0.22, ry: Math.PI },
-    { side: 1, on: Math.abs(room.cx + room.w / 2 - hw) < 1.2, along: 'z', fixed: hw - 0.22, ry: -Math.PI / 2 },
-    { side: 2, on: Math.abs(room.cz - room.d / 2 + hd) < 1.2, along: 'x', fixed: -hd + 0.22, ry: 0 },
-    { side: 3, on: Math.abs(room.cx - room.w / 2 + hw) < 1.2, along: 'z', fixed: -hw + 0.22, ry: Math.PI / 2 },
+    { side: 0, on: near(Math.abs(rz1 - hd), () => clear(rx0, rx1, rz1, hd)), along: 'x', fixed: hd - 0.22, ry: Math.PI },
+    { side: 1, on: near(Math.abs(rx1 - hw), () => clear(rx1, hw, rz0, rz1)), along: 'z', fixed: hw - 0.22, ry: -Math.PI / 2 },
+    { side: 2, on: near(Math.abs(rz0 + hd), () => clear(rx0, rx1, -hd, rz0)), along: 'x', fixed: -hd + 0.22, ry: 0 },
+    { side: 3, on: near(Math.abs(rx0 + hw), () => clear(-hw, rx0, rz0, rz1)), along: 'z', fixed: -hw + 0.22, ry: Math.PI / 2 },
   ];
   for (const s of sides) {
     if (!s.on) continue;
@@ -393,6 +485,9 @@ export function wallSlots(houseId, room) {
   return out;
 }
 
+/** How far in from its outer wall a room may sit and still own it, with no other room between (`wallSlots`): the castle's second floor is 2.5 in. */
+export const WALL_GAP = 3;
+
 /** Is slot (side, k) of this room free? `skip` is the wall row being moved. */
 export function wallFree(R, side, k, skip = -1) {
   return !(R?.wall ?? []).some((q, i) => i !== skip && q.side === side && q.k === k);
@@ -412,7 +507,7 @@ export function autoLayout(H, preset, isle, env = null) {
     for (const room of rooms) {
       const R = (H.rooms[room.id] ??= { type: 'living', items: [] });
       R.items ??= [];
-      const at = firstFit(room, R.items, it);
+      const at = firstFit(roomWith(room, R), R.items, it);
       if (at) { R.items.push({ id, ...at }); break; }
     }
   }
@@ -433,14 +528,19 @@ export function autoLayout(H, preset, isle, env = null) {
  * outside wall of each room, as ordinary wall things she can move or sell —
  * marked `free`, because they came with the house and sell for nothing.
  */
-export function defaultWindows(H, hk = 'main') {
+export function defaultWindows(H, hk = 'main', onlyNew = false) {
   H.rooms ??= {};
   for (const room of homeRooms(H)) {
-    if (room.hk !== hk) continue;
+    if (hk != null && room.hk !== hk) continue;
     const R = (H.rooms[room.id] ??= { type: 'living', items: [] });
     R.wall ??= [];
     const bySide = {};
-    for (const S of wallSlots(room.house, room)) (bySide[S.side] ??= []).push(S);
+    // `onlyNew`: just the walls `wallSlots`' looser rule opened, so a window she sold is not put back
+    const had = onlyNew ? new Set(wallSlots(room.house, room, { strict: true }).map((S) => S.side)) : new Set();
+    // not in a bridge's doorway, which a castle already lived in has on these walls (build.js `buildWhy`'s rule)
+    const door = (S) => (H.links ?? []).some((L) => [L.a, L.b].some((e) => e.hk === room.hk && e.floor === room.floor && e.side === S.side
+      && Math.abs(e.at - (S.side % 2 ? S.z : S.x)) < (LINK_BY_ID[L.style] ?? LINK_BY_ID.plank).w / 2 + 1.1));
+    for (const S of wallSlots(room.house, room)) if (!had.has(S.side) && !door(S)) (bySide[S.side] ??= []).push(S);
     for (const list of Object.values(bySide)) {
       const S = list[Math.floor(list.length / 2)];
       if (wallFree(R, S.side, S.k)) R.wall.push({ id: 'window', side: S.side, k: S.k, free: true });

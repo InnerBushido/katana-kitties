@@ -11980,6 +11980,7 @@ class Game {
       this.maps[i].focusOn = members;
       // Roshi's tour zooms this map out over the sky islands (Housing.tourMap)
       this.maps[i].tour = this.housing?.tourMap?.(members) ?? null;
+      this.maps[i].homes = this.housing?.homesMap?.() ?? null;
       this.maps[i].draw(this.players, this.dragons, this.kotodama, this.satan,
         this.ryu, this._seekMarkFor(members), this._payneGoalFor(members), this.payne);
     }

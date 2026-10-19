@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GEAR_ITEMS } from '../dream/gear.js';
-import { ITEM_BY_ID } from './catalog.js';
+import { ITEM_BY_ID, mixedZone, roomHas } from './catalog.js';
 import { fits, gridOf, footprint } from './editor.js';
 
 /* ---------------------------------------------------------------------------
@@ -77,6 +77,19 @@ export function rackStock(players, I) {
  * tube is the length of the room. `out` is the way she walks out of the tube.
  */
 export function holoLayout(room) {
+  /* A MIXED ROOM'S STRIP (catalog `mixed`): the racks down its inner column
+     at one end, the tube at the OTHER end — beside them, a rack's grab
+     reached the tube (world-check wants HOLO_GRAB + 2.2 between). */
+  const Z = mixedZone(room, 'holodeck');
+  if (Z) {
+    const c = Z.cells;
+    const at = (gx, gz) => ({ x: -room.w / 2 + gx * 2, z: -room.d / 2 + gz * 2 });
+    return {
+      tube: at(c[2] - 1, c[3] - 1),
+      racks: GEAR_ITEMS.map((it, k) => ({ id: it.id, ...at(c[0] + 0.5, c[1] + 0.5 + k) })),
+      out: { x: -1, z: 0 },
+    };
+  }
   const alongX = room.w >= room.d;
   const L = alongX ? room.w : room.d;
   const S = alongX ? room.d : room.w;
@@ -124,7 +137,7 @@ function nearestFit(room, items, id, x, z) {
  * A new holodeck is `holoKit(room)`; an old save's, which kept no rows for its
  * kit, is completed by the same call when the island is drawn.
  */
-export function holoKit(room, have = []) {
+export function holoKit(room, have = [], others = []) {
   const L = holoLayout(room);
   /* A ROW THAT NO LONGER FITS WHERE IT IS GOES TO THE NEAREST CELL THAT DOES.
      Richard, Oct 2026: "The VR equipment spawns inside the staircase ... no
@@ -135,16 +148,19 @@ export function holoKit(room, have = []) {
      kept row is asked `fits` again, in order, and one that fails is moved to
      the free cell nearest where it was rather than dropped (the tube count
      is hers). */
+  /* `others`: the furniture of a mixed room, which the kit is fitted round
+     and never returned with — a holodeck that is a whole room has none. */
   const items = [];
+  const all = () => [...others, ...items];
   for (const q of have.filter((x) => ITEM_BY_ID[x.id]?.holo)) {
-    if (fits(room, items, ITEM_BY_ID[q.id], q.gx, q.gz, q.rot ?? 0)) { items.push(q); continue; }
+    if (fits(room, all(), ITEM_BY_ID[q.id], q.gx, q.gz, q.rot ?? 0)) { items.push(q); continue; }
     const c = holoCell(room, q);
-    const s = nearestFit(room, items, q.id, c.x, c.z);
+    const s = nearestFit(room, all(), q.id, c.x, c.z);
     if (s) items.push(s);
   }
   const add = (id, at) => {
     if (items.some((q) => q.id === id)) return;
-    const s = nearestFit(room, items, id, at.x, at.z);
+    const s = nearestFit(room, all(), id, at.x, at.z);
     if (s) items.push(s);
   };
   add(HOLO_TUBE_ID, L.tube);
@@ -154,9 +170,11 @@ export function holoKit(room, have = []) {
 
 /** Make a holodeck room's rows its kit (and only its kit). True if it changed. */
 export function ensureHoloKit(room, R) {
-  if (R?.type !== 'holodeck') return false;
+  if (!roomHas(R, 'holodeck')) return false;
   const before = JSON.stringify(R.items ?? []);
-  R.items = holoKit(room, R.items ?? []);
+  // a mixed room's furniture stays, and the kit is fitted round it
+  const others = (R.items ?? []).filter((q) => !ITEM_BY_ID[q.id]?.holo);
+  R.items = [...others, ...holoKit(room, R.items ?? [], others)];
   return JSON.stringify(R.items) !== before;
 }
 

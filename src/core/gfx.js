@@ -92,7 +92,19 @@ export function xrayVertexMat(opts = {}) {
      between the player and the camera". A side wall she is standing beside
      is the same distance from the camera as she is, and inside the cone; a
      wall that is actually in the way is a room's width nearer. 0 = off. */
-  const { cutR = 2.1, cutSoft = 1.0, cutNear = 0, max: _max, ...rest } = opts;
+  /* `limSoft`: the hole's three LIMITS — nothing under her knee, nothing not
+     `cutNear` nearer than her, nothing farther than she is — fade over this
+     much instead of stopping dead. Richard, Oct 2026, on the houses: "There
+     is a slash in the walls or geometry in front of players with the xray
+     shader ... maybe we can just use the dithering effect". The rim of the
+     hole was dithered and those three were not, so wherever one crossed a
+     wall it drew a crisp diagonal line through the stipple. 0 = hard, which
+     every other caller keeps, bit-identical. */
+  /* `clips`: how many CLIP BOXES this material takes — turned boxes in the
+     world, open upward from a height, inside which it is not drawn at all.
+     Only the houses' bridges ask (housing/homeisle.js `clipBridges`); 0 adds
+     nothing to the shader, so every other caller compiles what it always did. */
+  const { cutR = 2.1, cutSoft = 1.0, cutNear = 0, limSoft = 0, clips = 0, max: _max, ...rest } = opts;
   const mat = new THREE.MeshToonMaterial({
     gradientMap: RAMP,
     vertexColors: true,
@@ -116,6 +128,7 @@ export function xrayVertexMat(opts = {}) {
     uCutFlare: { value: 0.5 },
     uCutSoft: { value: cutSoft },
     uCutNear: { value: cutNear },
+    uCutLimSoft: { value: limSoft },
     /* THE FLOOR EACH SUBJECT IS STANDING ON, and nothing below it is ever cut.
        Reported from play: "fix the x-ray issue where we can see through the
        ground (ceiling of the platform) that Mr. Satan is standing on in the
@@ -148,6 +161,11 @@ export function xrayVertexMat(opts = {}) {
        strength and no bigger than the door path". */
     uCutK: { value: new Float32Array(MAX).fill(1) },
   };
+  if (clips > 0) {
+    u.uClipOn = { value: new Float32Array(clips) };
+    u.uClipA = { value: Array.from({ length: clips }, () => new THREE.Vector4()) };
+    u.uClipB = { value: Array.from({ length: clips }, () => new THREE.Vector4()) };
+  }
 
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, u);
@@ -177,10 +195,14 @@ export function xrayVertexMat(opts = {}) {
         uniform float uCutFlare;
         uniform float uCutSoft;
         uniform float uCutNear;
+        uniform float uCutLimSoft;
         uniform float uCutFloor[${MAX}];
         uniform float uCutScale[${MAX}];
         uniform float uCutCeil[${MAX}];
         uniform float uCutK[${MAX}];
+        ${clips > 0 ? `uniform float uClipOn[${clips}];
+        uniform vec4 uClipA[${clips}];
+        uniform vec4 uClipB[${clips}];` : ''}
 
         // 4x4 Bayer, so the cut edge dissolves instead of stair-stepping.
         float xrayDither(vec2 p) {
@@ -196,6 +218,12 @@ export function xrayVertexMat(opts = {}) {
           return 0.5;
         }`)
       .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+        ${clips > 0 ? `for (int i = 0; i < ${clips}; i++) {
+          if (uClipOn[i] < 0.5) continue;
+          vec2 dq = vXrayWorld.xz - uClipA[i].xy;
+          vec2 lq = vec2(dq.x * uClipA[i].z - dq.y * uClipA[i].w, dq.x * uClipA[i].w + dq.y * uClipA[i].z);
+          if (abs(lq.x) < uClipB[i].x && abs(lq.y) < uClipB[i].y && vXrayWorld.y > uClipB[i].z) discard;
+        }` : ''}
         if (vXrayK > 0.004) {
           float cut = 0.0;
           for (int i = 0; i < ${MAX}; i++) {
@@ -228,7 +256,13 @@ export function xrayVertexMat(opts = {}) {
                beyond her can occlude her — and it is the same two vectors. */
             vec3 av = vXrayWorld - a;
             if (dot(av, av) >= len2) continue;
-            if (uCutNear > 0.0 && length(av) > sqrt(len2) - uCutNear) continue;
+            // the limits, faded over uCutLimSoft where the material asks (1 = no fade)
+            float lim = 1.0;
+            if (uCutLimSoft > 0.0) {
+              float la = length(av);
+              float far = sqrt(len2) - max(uCutNear, 0.0);
+              lim = (1.0 - smoothstep(far - uCutLimSoft, far, la)) * smoothstep(uCutFloor[i], uCutFloor[i] + uCutLimSoft, vXrayWorld.y);
+            } else if (uCutNear > 0.0 && length(av) > sqrt(len2) - uCutNear) continue;
             float d = length(vXrayWorld - (a + ab * clamp(t, 0.0, 1.0)));
             /* Widen toward the camera so the hole is a steady size on screen,
                and SCALE THE WHOLE THING BY WHAT THIS VERTEX AGREED TO. "It is
@@ -240,7 +274,7 @@ export function xrayVertexMat(opts = {}) {
                weaker is the dither threshold, which at k below 1 leaves a
                thinning rather than a hole. */
             float rad = uCutR * uCutScale[i] * vXrayK * mix(uCutFlare, 1.0, t);
-            cut = max(cut, (1.0 - smoothstep(rad, rad + uCutSoft * uCutScale[i] * vXrayK, d)) * vXrayK * uCutK[i]);
+            cut = max(cut, (1.0 - smoothstep(rad, rad + uCutSoft * uCutScale[i] * vXrayK, d)) * vXrayK * uCutK[i] * lim);
           }
           if (cut > 0.001 && cut > xrayDither(gl_FragCoord.xy)) discard;
         }`);
@@ -248,7 +282,7 @@ export function xrayVertexMat(opts = {}) {
   };
   // three keys its program cache on this; without it every material sharing
   // the same source would collide with the plain toon one.
-  mat.customProgramCacheKey = () => (MAX === 4 ? 'xray-toon' : `xray-toon-${MAX}`);
+  mat.customProgramCacheKey = () => (MAX === 4 && !clips ? 'xray-toon' : `xray-toon-${MAX}${clips ? `-clip${clips}` : ''}`);
 
   /**
    * Point the cut at whoever is on screen. Call once per view, before drawing.
@@ -283,6 +317,20 @@ export function xrayVertexMat(opts = {}) {
       u.uCutK.value[i] = Number.isFinite(k) && k >= 0 ? k : 1;
     }
   };
+  /**
+   * The clip boxes, for a material made with `clips` (none otherwise):
+   * `[{ x, z, cos, sin, hw, hd, y }]` — a box centred at (x, z) turned like a
+   * house's `toLocal`, half-sizes hw and hd, open upward from y. Not drawn in it.
+   */
+  mat.setClips = (boxes = []) => {
+    for (let i = 0; i < clips; i++) {
+      const b = boxes[i];
+      u.uClipOn.value[i] = b ? 1 : 0;
+      if (!b) continue;
+      u.uClipA.value[i].set(b.x, b.z, b.cos, b.sin);
+      u.uClipB.value[i].set(b.hw, b.hd, b.y, 0);
+    }
+  };
   // read-only, for world-check: two materials' cuts compared (the teahouse's is smaller)
   mat.userData.xray = u;
   return mat;
@@ -299,6 +347,55 @@ const OUTLINE_MAT = new THREE.MeshBasicMaterial({
  * Inverted-hull outline. Cheap, and the thickness is in *world* units so it
  * stays consistent as the camera pulls back during dragon flight.
  */
+/** Is (x, z) inside a clip box (`mat.setClips`)? The same test the shader makes, for things hidden whole. */
+export function inClip(b, x, z) {
+  const dx = x - b.x, dz = z - b.z;
+  return Math.abs(dx * b.cos - dz * b.sin) < b.hw && Math.abs(dx * b.sin + dz * b.cos) < b.hd;
+}
+
+/**
+ * The clip boxes of `xrayVertexMat({ clips })`, for any other material — the
+ * bridges' unlit glow strip, which has to go where its deck goes or a lit rail
+ * is left floating over the room. Gives it the same `setClips`.
+ */
+export function clipBoxes(mat, clips) {
+  const u = {
+    uClipOn: { value: new Float32Array(clips) },
+    uClipA: { value: Array.from({ length: clips }, () => new THREE.Vector4()) },
+    uClipB: { value: Array.from({ length: clips }, () => new THREE.Vector4()) },
+  };
+  mat.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, u);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>
+        varying vec3 vClipWorld;`)
+      .replace('#include <project_vertex>', `#include <project_vertex>
+        vClipWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>
+        varying vec3 vClipWorld;
+        uniform float uClipOn[${clips}];
+        uniform vec4 uClipA[${clips}];
+        uniform vec4 uClipB[${clips}];`)
+      .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+        for (int i = 0; i < ${clips}; i++) {
+          if (uClipOn[i] < 0.5) continue;
+          vec2 dq = vClipWorld.xz - uClipA[i].xy;
+          vec2 lq = vec2(dq.x * uClipA[i].z - dq.y * uClipA[i].w, dq.x * uClipA[i].w + dq.y * uClipA[i].z);
+          if (abs(lq.x) < uClipB[i].x && abs(lq.y) < uClipB[i].y && vClipWorld.y > uClipB[i].z) discard;
+        }`);
+  };
+  mat.customProgramCacheKey = () => `clipbox-${clips}`;
+  mat.setClips = (boxes = []) => {
+    for (let i = 0; i < clips; i++) {
+      const b = boxes[i];
+      u.uClipOn.value[i] = b ? 1 : 0;
+      if (b) { u.uClipA.value[i].set(b.x, b.z, b.cos, b.sin); u.uClipB.value[i].set(b.hw, b.hd, b.y, 0); }
+    }
+  };
+  return mat;
+}
+
 export function addOutline(mesh, thickness = 0.045) {
   const shell = new THREE.Mesh(mesh.geometry, OUTLINE_MAT);
   shell.userData.isOutline = true;
