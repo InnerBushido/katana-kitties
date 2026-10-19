@@ -210,6 +210,17 @@ export const COMBAT = tune('COMBAT', {
 export const PLAYER_RADIUS = 0.75;
 export const KENDO_DODGE = { dist: 2.2, t: 0.14, immune: 0.36, cool: 0.75 };
 /**
+ * A 返 THAT CAUGHT NOTHING, IN THE BOGU. Richard, Oct 2026: "once the riposte
+ * period is over, then we should give back player control and maybe put the
+ * stars above their head to indicate they can't block or attack during that
+ * time as they recover from a failed riposte." Outside the dojo a whiff
+ * plants her for `PARRY.recover` in the guard drawing, which in a match read
+ * as the game having taken her stick. Here the window closes, she walks, and
+ * the stars (`kendoLockT`) are the cost instead — longer than the plant, 0.6
+ * against 0.35, because stars have to be on long enough to be seen.
+ */
+export const KENDO_WHIFF = 0.6;
+/**
  * The kendo drawings' size against her own. Richard, Oct 2026: "The kendo
  * gear sprites are too big. Make them about 20% smaller and compare with the
  * normal sprites: they can be a little bigger because of the armour, but
@@ -1421,7 +1432,8 @@ export class Player {
   /** Spin the stars, and switch them on and off with the daze. */
   _updateDaze(dt) {
     if (!this.dazeStars) return;
-    const on = this.stunT > 0;
+    // ...and over a kendo fighter who cannot swing for a moment (housing/kendo.js `kendoLockT`)
+    const on = this.stunT > 0 || (this.kendoBout && this.kendoLockT > 0);
     this.dazeStars.visible = on;
     if (!on) return;
     this._dazeSpin = (this._dazeSpin ?? 0) + dt * 7.5;
@@ -1808,7 +1820,8 @@ export class Player {
    */
   setKendoArt(art) {
     for (const [key, a] of [['kendoPose', art?.guard], ['kiaiPose', art?.kiai],
-      ['seizaPose', art?.seiza], ['reachPose', art?.reach], ['reiPose', art?.rei], ['kparryPose', art?.kparry]]) {
+      ['seizaPose', art?.seiza], ['reachPose', art?.reach], ['reiPose', art?.rei], ['kparryPose', art?.kparry],
+      ['kbrokePose', art?.kbroke], ['kclinchRPose', art?.kclinchR], ['kclinchLPose', art?.kclinchL]]) {
       if (this[key]) { this.group.remove(this[key]); this[key] = null; }
       if (!a?.texture) continue;
       /* KENDO_SCALE BIGGER than her: Richard, "The Kendo gear that player
@@ -1827,7 +1840,8 @@ export class Player {
         cols: 1,
         rows: 1,
         mirror: true,
-        artFacesRight: true,
+        // the one drawing that is drawn facing LEFT: the clinch's other side (sprite-bake)
+        artFacesRight: key !== 'kclinchLPose',
         width: quad,
         height: quad,
         footOffset: (a.pad ?? 0) * quad,
@@ -2290,9 +2304,13 @@ export class Player {
        face it was a card seen at a slant — and, since `faceCamera` is also
        what picks the mirror side from `facing`, a kneeling kitten could face
        away from the opponent she was set facing. */
-    for (const k of ['seizaPose', 'reachPose', 'reiPose', 'kparryPose', 'prayPose', 'bathPose', 'futonPose', 'teaPose']) {
+    for (const k of ['seizaPose', 'reachPose', 'reiPose', 'kparryPose', 'kbrokePose', 'kclinchLPose', 'prayPose', 'bathPose', 'futonPose', 'teaPose']) {
       if (this[k]?.visible) this[k].faceCamera(camera);
     }
+    /* The clinch's R drawing is turned EVERY frame of a clinch, shown or not:
+       its `_pointsRight` is what picks R or L below, and a hidden billboard
+       would keep the answer from the frame it was last seen. */
+    if (this.kclinchRPose && (this.kclinchRPose.visible || this.kendoClinch)) this.kclinchRPose.faceCamera(camera);
 
     /* THE HEALTH BAR IS A FLAT QUAD AND HAS TO BE TURNED, like the leaders'
        speech bubbles are. It is parented to `group`, which never rotates, so
@@ -2363,6 +2381,9 @@ export class Player {
        direction stands her up" (housing/kendo.js `_seiza`) — the one thing
        that asks the stick of a kitten whose stick is not hers to move with. */
     this.padStick = Math.hypot(pad?.mx ?? 0, pad?.my ?? 0);
+    /* ...and the Ward's button, HELD: in a kendo match it is the block
+       (housing/kendo.js `KENDO_BLOCK`), which kendo.js reads from here. */
+    this.padBlock = !!pad?.down?.('mount');
     /* A kitten holding a star over her head is not also sprinting off with it.
        Feeding the ground controller a dead stick freezes her without any of
        the three movement modes needing to know this pose exists.
@@ -3463,8 +3484,14 @@ export class Player {
        buys an orb. Step off the animal and the technique is hers again. */
     const deferred = !!this.power.tri && !this.pandaMount
       && !hud?.critterHold?.(this);
+    /* NO SWING IN THE BOGU WHILE SHE CANNOT (housing/kendo.js
+       `kendoNoSwing`): blocking, the wait after letting go, the clinch, and
+       the stars. The refusal is a `deny` and the stars or the bubble she is
+       already wearing — the thing that says why is on her. */
+    const kendoHeld = !!this.kendoLive && !!this.kendoNoSwing;
+    if (kendoHeld && pad.pressed('attack')) hud?.sfx?.('deny');
     if (pad.pressed('attack') && this.attackCooldown <= 0 && !this.busy
-        && !this.arenaBreathAt && !this.parryAt) {
+        && !this.arenaBreathAt && !this.parryAt && !kendoHeld) {
       if (this.pandaMount) {
         this.attackTimer = 0.26;
         this.attackCooldown = 0.45;
@@ -3769,7 +3796,8 @@ export class Player {
        bubble or climbed onto a dragon would be one button doing two things
        in the same half second. The lock's tail is included for the same
        reason the stick is: the move is not over until she can walk. */
-    if (pad.pressed('mount') && !this.dodgePlanted && !this.parryAt) {
+    // in a live kendo round the button is the block's, and kendo.js has it (`padBlock`)
+    if (pad.pressed('mount') && !this.dodgePlanted && !this.parryAt && !this.kendoLive) {
       if (this.pandaMount) {
         const p = this.pandaMount;
         this.pandaMount = null;
@@ -4887,6 +4915,8 @@ export class Player {
    *  moves that already pin her. */
   _parryFree() {
     if (this.mount || this.rideAlong || this.pandaMount || this.heldBy) return false;
+    // stars, a clinch or a block in the bogu (housing/kendo.js `kendoNoParry`)
+    if (this.kendoLive && this.kendoNoParry) return false;
     if (this.ko || this.angel || this.busy || this.eatT > 0) return false;
     if (this.dodgePlanted || this.arenaBreathAt || this.diving || this.sweepT > 0) return false;
     return !this.parryAt;
@@ -5056,8 +5086,14 @@ export class Player {
     if (this.parryT > 0) {
       this.parryT = Math.max(0, this.parryT - dt);
       /* A WHIFF: the window ran out with nothing in it. Blade down, and she
-         stands there for `recover` — the cost of the wrong guess. */
-      if (this.parryT === 0) this.parryRecT = PARRY.recover;
+         stands there for `recover` — the cost of the wrong guess. In a kendo
+         match she walks, starred, instead (`KENDO_WHIFF`). */
+      if (this.parryT === 0 && this.kendoLive) {
+        this.parryCool = PARRY.cool;
+        this.kendoLockT = Math.max(this.kendoLockT ?? 0, KENDO_WHIFF);
+        this.kendoNoSwing = true;
+        this.kendoNoParry = true;
+      } else if (this.parryT === 0) this.parryRecT = PARRY.recover;
     } else if (this.parryRecT > 0) {
       this.parryRecT = Math.max(0, this.parryRecT - dt);
       if (this.parryRecT === 0) this.parryCool = PARRY.cool;
@@ -6839,8 +6875,23 @@ export class Player {
          held across and up — reads as a guard, and becomes it. */
       const kparry = geared && !!this.kparryPose && (this.parryT > 0 || (this.parryRecT > 0 && !(this.kiaiT > 0)));
       if (this.kparryPose) this.kparryPose.visible = kparry;
-      const kiai = geared && !kparry && this.kiaiT > 0 && !!this.kiaiPose;
-      const guard = geared && !kiai && !kparry && !!this.kendoPose;
+      /* THE GUARD KNOCKED ASIDE (housing/kendo.js `kendoBrokeT`): Richard,
+         "as if their shinai got batted to the side and they are only holding
+         onto it with one hand while they recover." Under the stars. */
+      const kbroke = geared && !kparry && this.kendoBrokeT > 0 && !!this.kbrokePose;
+      if (this.kbrokePose) this.kbrokePose.visible = kbroke;
+      /* THE CLINCH, shinai crossed: one drawing for each side of the cross, so
+         the kitten on the screen's left is drawn facing right and the other
+         facing left, and the two blades meet rather than both being in front.
+         Picked by which way she points ON SCREEN (`_pointsRight`), not by
+         world facing, which turns with the camera. */
+      const kclinch = geared && !kparry && !kbroke && !!this.kendoClinch && !!this.kclinchRPose;
+      const clR = kclinch && (this.kclinchRPose._pointsRight !== false || !this.kclinchLPose);
+      const kclinchPose = kclinch ? (clR ? this.kclinchRPose : this.kclinchLPose) : null;
+      if (this.kclinchRPose) this.kclinchRPose.visible = kclinch && clR;
+      if (this.kclinchLPose) this.kclinchLPose.visible = kclinch && !clR;
+      const kiai = geared && !kparry && !kbroke && !kclinch && this.kiaiT > 0 && !!this.kiaiPose;
+      const guard = geared && !kiai && !kparry && !kbroke && !kclinch && !!this.kendoPose;
       /* THE MATCH'S CEREMONY (kendo.js `kendoStance`) - kneeling, reaching
          for the shinai, the bow - wears its own drawing where there is one,
          and the guard faked below where there is not. */
@@ -6849,7 +6900,7 @@ export class Player {
       for (const k of ['seizaPose', 'reachPose', 'reiPose']) if (this[k]) this[k].visible = !!cer && this[k] === cer;
       if (this.kendoPose) this.kendoPose.visible = guard && !cer;
       if (this.kiaiPose) this.kiaiPose.visible = kiai;
-      const pose = kparry ? this.kparryPose : kiai ? this.kiaiPose : cer ?? (guard ? this.kendoPose : null);
+      const pose = kparry ? this.kparryPose : kbroke ? this.kbrokePose : kclinchPose ?? (kiai ? this.kiaiPose : cer ?? (guard ? this.kendoPose : null));
       if (pose) {
         this.sprite.mesh.visible = false;
         pose.facing = kparry ? this.parryDir : this.facing;

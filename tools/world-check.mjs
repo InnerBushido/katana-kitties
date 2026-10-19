@@ -3526,8 +3526,23 @@ console.log('\n--- the panda in the ring ---');
       ok('剣 both kendo guards, both riposte guards and both kiai face RIGHT — by the shinai, or by the tail behind a wind-up — which is what the Billboard is told',
         guard.every((r) => r.reach > 0.1) && kparry.every((r) => r.reach > 0.05) && kiai.every((r) => r.reach > 0.05 || r.tail > 0.1)
         // 2000, not 900: the ceremony's sizing comment now sits above the Billboard
-        && /setKendoArt\(art\) \{[\s\S]{0,2000}mirror: true,\s*artFacesRight: true,/.test(psrc),
+        && /setKendoArt\(art\) \{[\s\S]{0,2000}mirror: true,[^\n]*\n[^\n]*\n\s*artFacesRight: key !== 'kclinchLPose',/.test(psrc),
         [...guard, ...kparry, ...kiai].map((r) => `${r.f} ${r.reach.toFixed(3)}/${r.tail.toFixed(3)}`).join(' '));
+      /* THE GUARD KNOCKED ASIDE AND THE CLINCH, Oct 2026. The clinch is two
+         drawings a kitten, one for each side of the crossed shinai, and two of
+         the four came back from the generator facing the other way from the
+         prompt — so the files are named by the tip, and this is the tip.
+         Measured: kclinchR +0.285 / +0.271, kclinchL -0.194 / -0.203. The
+         broken guard's shinai trails DOWN-LEFT behind her, out of the top
+         band, so the top band's reach is the open paw flung forward: +0.052
+         Ember, +0.087 Frost. Bar 0.03, and the tail is behind on the left. */
+      const kbroke = ['ember', 'frost'].map((s) => ink(`kittens/${s}/kbroke`));
+      const kclR = ['ember', 'frost'].map((s) => ink(`kittens/${s}/kclinchR`));
+      const kclL = ['ember', 'frost'].map((s) => ink(`kittens/${s}/kclinchL`));
+      ok("...and the broken guard and the clinch's R face RIGHT, the clinch's L faces LEFT, and only L is told so",
+        kbroke.every((r) => r.reach > 0.03) && kclR.every((r) => r.reach > 0.15) && kclL.every((r) => r.reach < -0.15)
+        && /\['kbroke', 'kbroke'\], \['kclinchR', 'kclinchR'\], \['kclinchL', 'kclinchL'\]/.test(readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')),
+        [...kbroke, ...kclR, ...kclL].map((r) => `${r.f} ${r.reach.toFixed(3)}`).join(' '));
       ok('...and the riposte drawings are loaded for both sheets and recoloured for the other two',
         existsSync(new URL('../public/sprites/kittens/ember/kparry.png', import.meta.url)) && existsSync(new URL('../public/sprites/kittens/frost/kparry.png', import.meta.url))
         && /\['kparry', 'kparry'\]/.test(readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')));
@@ -6352,6 +6367,8 @@ console.log('\n--- background removal keeps the drawn whites ---');
     'kittens/ember/kparry.png', 'kittens/frost/kparry.png',
     // ...and the tea ceremony's 32 frames, cut out of a video (tools/capture/tea-sheet.mjs).
     'kittens/ember/tea.png', 'kittens/frost/tea.png',
+    // ...and kendo's broken guard and the clinch's two sides.
+    ...['ember', 'frost'].flatMap((s) => ['kbroke', 'kclinchR', 'kclinchL'].map((p) => `kittens/${s}/${p}.png`)),
   ];
   {
     const dir = new URL('../public/sprites/', import.meta.url);
@@ -6534,8 +6551,10 @@ console.log('\n--- background removal keeps the drawn whites ---');
     /* THIRTY-EIGHT SINCE THE TEA CEREMONY: Ember's `tea` sheet starts on her
        prayer drawing, paws to her chest, and brings that pocket with it;
        Frost's closes none. Not filled: CRITTER_ART with `uniform`, no ask. */
-    ok('turning the fill on for every sheet would repaint thirty-eight of them',
-      touched.length === 38 && touched.includes('kittens/ember/tea.png') && !touched.includes('kittens/frost/tea.png') && touched.includes('kittens/ember/kparry.png') && !touched.includes('kittens/frost/kparry.png') && touched.includes('farm/chick_fly.png') && touched.includes('kittens/ember/pray.png') && touched.includes('roshi/roshi.png')
+    /* THIRTY-NINE SINCE THE CLINCH: Ember's `kclinchR` closes a pocket
+       between her arms and the shinai; the other five close none. Measured. */
+    ok('turning the fill on for every sheet would repaint thirty-nine of them',
+      touched.length === 39 && touched.includes('kittens/ember/kclinchR.png') && touched.includes('kittens/ember/tea.png') && !touched.includes('kittens/frost/tea.png') && touched.includes('kittens/ember/kparry.png') && !touched.includes('kittens/frost/kparry.png') && touched.includes('farm/chick_fly.png') && touched.includes('kittens/ember/pray.png') && touched.includes('roshi/roshi.png')
       && touched.includes('kittens/ember/kiai.png') && touched.includes('kittens/frost/kiai.png')
       && touched.includes('lionheart/defeated.png') && touched.includes('beasts/dragon_sheet.png')
       && touched.filter((f) => /\/vr_/.test(f)).length === 8 && touched.includes('kittens/frost/vr_riposte.png')
@@ -6819,10 +6838,11 @@ console.log('\n--- the art that ships is smaller than the art that made it ---')
        TWENTY-THREE SINCE THE HOME POSES: kendo's `seiza`, `reach` and `rei`,
        and `pray`, `bath` and `futon` (Player.setHomeArt).
        TWENTY-FOUR SINCE THE RIPOSTE IN THE BOGU: `kparry.png`.
-       TWENTY-FIVE SINCE THE TEA CEREMONY: `tea.png`, 32 frames in one sheet. */
-    ok('...with the same twenty-five poses drawn for each of them',
+       TWENTY-FIVE SINCE THE TEA CEREMONY: `tea.png`, 32 frames in one sheet.
+       TWENTY-EIGHT SINCE THE CLINCH: `kbroke`, `kclinchR`, `kclinchL`. */
+    ok('...with the same twenty-eight poses drawn for each of them',
       posesOf('ember') === posesOf('frost')
-      && posesOf('ember').split(' ').length === 25, posesOf('ember'));
+      && posesOf('ember').split(' ').length === 28, posesOf('ember'));
   }
 
   /* --- and nothing else in public/ is quietly enormous ----------------------
@@ -30794,7 +30814,7 @@ console.log('\n=== NINE NOTES FROM A PHONE ===');
       /front\.style\.top = getComputedStyle\(under\)\.top;/.test(M));
   }
   ok('a repeat of the same news folds into the line already on screen',
-    /toast\(text, playerIndex = 0, combo = null, holdMs = 0\)/.test(M)
+    /toast\(text, playerIndex = 0, combo = null, holdMs = 0, look = null\)/.test(M)
     && /this\._combos \|\|= new Map\(\);/.test(M));
   ok('...and it counts, rather than being replaced by the newest one alone',
     /live\.n \+= 1;\s*live\.total \+= combo\.add \?\? 1;/.test(M));

@@ -243,8 +243,15 @@ const WORK = [
      new `ember_kiai` (shinai raised up and back, the wind-up of a vertical
      cut) and `frost_kparry` (Ember's old guard, drawn as Frost) are
      gpt_image_2_5 on magenta, each prompted with both old kiai drawings as
-     references - 0.25 credits each. */
-  ...['ember', 'frost'].flatMap((s) => ['kendo', 'kiai', 'kparry'].map((p) => (
+     references - 0.25 credits each.
+     `kbroke` is the guard knocked aside — shinai trailing in one paw, the
+     other flung out — and `kclinchR`/`kclinchL` are the clinch (tsubazeriai),
+     shinai crossed high. Richard, Oct 2026: "generate a clench sprite ...
+     two per character, one from each side of the crisscross." R FACES RIGHT
+     and L faces LEFT, MEASURED BY THE SHINAI'S TIP and not by the prompt:
+     two of the four came back the other way round from what they were asked
+     for, so the files were renamed by what they show. 6 x 0.25 credits. */
+  ...['ember', 'frost'].flatMap((s) => ['kendo', 'kiai', 'kparry', 'kbroke', 'kclinchR', 'kclinchL'].map((p) => (
     { file: `${s}_${p}.png`, out: `kittens/${s}/${p}.png`, to: [768, 768], chroma: true }))),
   /* THE PEN'S THREE ANIMALS (housing/farm.js), side-on facing LEFT like the
      critters, prompted off `critters/rabbit.png` for the style. 512: they are

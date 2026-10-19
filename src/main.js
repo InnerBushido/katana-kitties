@@ -1909,6 +1909,15 @@ class Game {
          keeps the orb's riposte stance (Player, `kparryPose`). */
       ['ember_kparry', 'kittens/ember/kparry.png', false],
       ['frost_kparry', 'kittens/frost/kparry.png', false],
+      /* ...the guard knocked aside (stars, can't swing) and the clinch, one
+         drawing for each side of the crossed shinai (housing/kendo.js
+         `KENDO_CLINCH`). A missing file keeps the guard. */
+      ['ember_kbroke', 'kittens/ember/kbroke.png', false],
+      ['frost_kbroke', 'kittens/frost/kbroke.png', false],
+      ['ember_kclinchR', 'kittens/ember/kclinchR.png', false],
+      ['frost_kclinchR', 'kittens/frost/kclinchR.png', false],
+      ['ember_kclinchL', 'kittens/ember/kclinchL.png', false],
+      ['frost_kclinchL', 'kittens/frost/kclinchL.png', false],
       /* ...the match's ceremony - seiza, the reach for the shinai, the rei -
          and the three home poses: the prayer, the onsen and the futon. Each
          missing file falls back to the pose it replaced (Player._homeAs, and
@@ -2088,7 +2097,7 @@ class Game {
       return Object.values(out).some(Boolean) ? out : null;
     };
     this.kendoArt = PLAYER_STYLE.map((s) => {
-      const pack = posePack(s, [['guard', 'kendo'], ['kiai', 'kiai'], ['seiza', 'seiza'], ['reach', 'reach'], ['rei', 'rei'], ['kparry', 'kparry']]);
+      const pack = posePack(s, [['guard', 'kendo'], ['kiai', 'kiai'], ['seiza', 'seiza'], ['reach', 'reach'], ['rei', 'rei'], ['kparry', 'kparry'], ['kbroke', 'kbroke'], ['kclinchR', 'kclinchR'], ['kclinchL', 'kclinchL']]);
       if (pack && s.recolour) console.log(`[art] ${s.name} kendo poses ← ${s.sheet}_kendo/kiai/seiza/reach/rei/kparry recoloured`);
       return pack;
     });
@@ -9415,8 +9424,13 @@ class Game {
    *   this is the toast it always was.
    */
   /** `holdMs`, when given, replaces the length rule (and its TOAST_MAX cap) for
-   *  the one announcement that is worth more than seven seconds. */
-  toast(text, playerIndex = 0, combo = null, holdMs = 0) {
+   *  the one announcement that is worth more than seven seconds.
+   *  `look.colours`: ONE line for two kittens, edged in both their colours
+   *  (CSS strings), instead of the same line twice. Richard, Oct 2026, of the
+   *  kendo referee: "combine the text if it is the same ... put both their
+   *  colors in the text box". The strip is one strip for the whole screen, so
+   *  a line sent to each kitten was always printed once per kitten. */
+  toast(text, playerIndex = 0, combo = null, holdMs = 0, look = null) {
     /* IN FRONT OF HER CARD WHILE SHE HAS ONE UP. A refusal from Lionheart's
        or Payne's card is a toast to the kitten reading that card, and the card
        is drawn over the HUD the toasts live in - so the one sentence that said
@@ -9457,6 +9471,12 @@ class Game {
       el = document.createElement('div');
       el.className = `toast p${playerIndex}`;
       el.textContent = text;
+      const cs = look?.colours?.filter(Boolean) ?? [];
+      if (cs.length) {
+        el.classList.add('shared');
+        el.style.borderLeftColor = cs[0];
+        el.style.borderRightColor = cs[cs.length - 1];
+      }
       wrap.appendChild(el);
       if (key) {
         live = { el, n: 1, total: combo.add ?? 1, fadeAt: 0, gone: 0 };

@@ -790,6 +790,56 @@ Fifteen notes. What a future session would undo without the reason:
 - **A sister upstairs in a shared pane**: her x-ray shrinks while she stands
   still and grows back twice as fast when she moves.
 
+## Kendo: the block, the clinch, the shinai, the floor — Oct 2026
+
+Richard's six notes, each quoted over its constant in `kendo.js`.
+
+- **The floor says whether a cut will land.** Each fighter has a shadow on
+  the dojo mat, and her cut is drawn in front of her as a strip in her colour.
+  The strip LIGHTS and pulses when the opponent's body is in it. A fainter
+  strip beyond it lights when the opponent's SHINAI is in reach.
+  - Both come from `Kendo.reads`. world-check sweeps 459 spots and holds the
+    floor to exactly what `sparStrike` does.
+  - A fighter who cannot swing shows no strips.
+  - The first build drew them at floor + 0.03, which is UNDER the mat (top
+    0.14) and its tape (top 0.22), so nothing was ever seen. They now sit at
+    `KENDO_DECAL_Y` 0.25, pinned against homeisle.js's boxes.
+- **The block** (`KENDO_BLOCK`) is the Ward button, HELD. Player hands the
+  button to kendo.js as `padBlock`, and the Ward itself is off in a live round.
+  - A bubble shows round her.
+  - She cannot swing or riposte under it, and a refused swing `deny`s.
+  - Letting go costs 0.25s of neither block nor swing. A swing costs 0.25s
+    of no block.
+  - A cut into it holds 75% (`kendo.rng`). The other 25% is
+    `BLOCK BROKEN! IPPON`.
+  - A kitten within 1.7 of a block is slid 1.4 off it, and a blocker cannot
+    be clinched.
+- **The clinch** (`KENDO_CLINCH`) starts when two fighters close inside 1.35
+  at more than 1 m/s, neither blocking, starred or parrying.
+  - They are held 1.2 apart. Each one's momentum is her velocity INTO the
+    other, eased, and the pair moves by the difference.
+  - Driven back 2.6 and she LOSES: she is slid 2.4 sideways (`_slide` tries
+    each side, then straight back) and starred for 1s in `kbroke`.
+  - Level for 3s and they come APART: both step back 2.2 and cannot cut for
+    the step plus 0.5s.
+  - Any forced step that would leave the square tries sideways instead, and
+    stays put if nothing fits, rather than handing her a JOGAI she did not
+    earn.
+  - Steps are MOVED over `KENDO_SLIDE`, not pushed, because her own ground
+    controller undoes a velocity on the next frame.
+  - Drawn as `kclinchR` / `kclinchL`, picked by which way she points on
+    screen, so the two shinai cross.
+- **The shinai** (`KENDO_SHINAI`): a cut that falls short of her body but on
+  her shinai knocks it aside. She gets 0.5s of no swing and no riposte, the
+  `kbroke` drawing and stars, but never while she blocks or dodges.
+- **One toast for both**: `_say` makes ONE toast in both colours (`look.colours`
+  → `.toast.shared`, left border hers and right border her opponent's), where
+  there used to be one per kitten in the same global strip.
+- **A riposte that catches nothing in the bogu** (`KENDO_WHIFF`, player.js)
+  no longer plants her for `PARRY.recover`. She walks at once with 0.6s of
+  stars, `kendoLockT`, in which she cannot swing or riposte.
+- **Stars** are `dazeStars`, on `stunT > 0` or a fighter's `kendoLockT > 0`.
+
 ## Known rough edges
 
 - The tour camera frames each island partly behind the card — try `dist ~130`.

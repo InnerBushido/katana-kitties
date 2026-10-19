@@ -1671,6 +1671,10 @@ body.touch-ui #toasts-front { gap: 3px; }
 }
 .toast.p0 { border-left-color: var(--ember); }
 .toast.p1 { border-left-color: var(--frost); }
+/* ONE LINE FOR TWO KITTENS (`Game.toast`'s `look.colours`): her colour on the
+   left, the other's on the right, set inline because they are whoever is
+   fighting, not seats. */
+.toast.shared { border-right-width: 10px; }
 .toast.fade { animation: toastOut 0.45s ease forwards; }
 /* A COMBO COUNTING UP IN PLACE NEEDS TO BE SEEN TO CHANGE. The line does not
    move (see `Game.toast`), so without this the only thing that happens when

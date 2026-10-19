@@ -32,7 +32,7 @@ import { rollFish, FISH } from '../../src/systems/housing/fishing.js';
 import { PLAYER_STYLE } from '../../src/core/palette.js';
 import { worldSig } from '../../src/systems/savegame.js';
 import { ROSHI_LINES, ROSHI_VOICE } from '../../src/systems/housing/roshi.js';
-import { Kendo, KIAI_T, BOUT, SEIZA, KENDO_HIT, KENDO_TURN, yawAcross } from '../../src/systems/housing/kendo.js';
+import { Kendo, KIAI_T, BOUT, SEIZA, KENDO_HIT, KENDO_TURN, KENDO_DECAL_Y, KENDO_BLOCK, KENDO_CLINCH, KENDO_SHINAI, KENDO_SLIDE, yawAcross } from '../../src/systems/housing/kendo.js';
 import { LOWER_XRAY, BEHIND_HOP, KNOCK, DOOR_XRAY, TEA_SHOT, doorSeg } from '../../src/systems/housing/housing.js';
 import { roofY, floorOf, CASTLE_COURSE } from '../../src/systems/housing/homehouse.js';
 import { XRAY_SLOTS, SLIDE_W } from '../../src/systems/housing/homeisle.js';
@@ -40,7 +40,7 @@ import { HoloStar, LASER_ORDER, LASER_COLOUR } from '../../src/systems/dream/tar
 import { kendoArea, kendoMarks, mixedZone, roomHas, roomWith } from '../../src/systems/housing/catalog.js';
 import { setRoomFeat } from '../../src/systems/housing/cards.js';
 import { migrateMixedRooms } from '../../src/systems/housing/migrate.js';
-import { KENDO_DODGE, KENDO_SCALE, KENDO_CEREMONY_H, KENDO_POSE_H, Player } from '../../src/entities/player.js';
+import { KENDO_DODGE, KENDO_SCALE, KENDO_CEREMONY_H, KENDO_POSE_H, KENDO_WHIFF, Player } from '../../src/entities/player.js';
 import { readPNG } from '../png.mjs';
 import { Billboard, inClip } from '../../src/core/gfx.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from '../../src/core/cluster.js';
@@ -3559,7 +3559,7 @@ export async function housingChecks({ ok, world }) {
         for (const B of [...K.bouts.values()]) K._step(B, dt);
       }
     };
-    ok('...and `update` is exactly those, then the board and the gear', /update\(dt, players\) \{\s*for \(const \[i, c\] of this\.cool\) this\.cool\.set\(i, c - dt\);\s*this\._seiza\(dt, players\);\s*for \(const B of \[\.\.\.this\.bouts\.values\(\)\]\) this\._step\(B, dt\);/.test(readFileSync(new URL('../../src/systems/housing/kendo.js', import.meta.url), 'utf8')));
+    ok('...and `update` is exactly those, then the board and the gear', /update\(dt, players\) \{\s*this\._clock \+= dt;\s*for \(const \[i, c\] of this\.cool\) this\.cool\.set\(i, c - dt\);\s*this\._seiza\(dt, players\);\s*for \(const B of \[\.\.\.this\.bouts\.values\(\)\]\) this\._step\(B, dt\);/.test(readFileSync(new URL('../../src/systems/housing/kendo.js', import.meta.url), 'utf8')));
     // step until something is true, at most `max` seconds: the beats are asked by state, not by summed float time
     const until = (f, max = 10, dt = 0.05) => { for (let t = 0; t < max && !f(); t += dt) run(dt, dt); return f(); };
     const onMarks = () => { a.position.copy(marks[0]); b.position.copy(marks[1]); for (const p of [a, b]) { p.velocity.set(0, 0, 0); p.padStick = 0; } };
@@ -3694,6 +3694,186 @@ export async function housingChecks({ ok, world }) {
     ok('hanging the gear up mid-match calls it off', !K.bouts.size && !b.kendoBout);
     K._unwear(0);
     K._unwear(2);
+
+    /* THE BLOCK, THE CLINCH, THE SHINAI KNOCKED ASIDE, ONE TOAST. Richard's
+       Oct 2026 spec is quoted over `KENDO_BLOCK`, `KENDO_CLINCH` and
+       `KENDO_SHINAI` in kendo.js; each line here is one clause of it. */
+    {
+      K.toggleGear(a);
+      K.toggleGear(b);
+      const nSaid = said.length;
+      onMarks();
+      until(() => K.bouts.size > 0, SEIZA.t + 0.5);
+      const B3 = K.boutOf(0);
+      until(() => B3.phase === 'fight', 20);
+      ok('a line that is news to both fighters is ONE toast, in both their colours, not one each',
+        said.slice(nSaid).filter(([, t]) => /HAJIME/.test(t)).length === 1
+        && /colours: \[cssColour\(B\.a\), cssColour\(B\.b\)\]/.test(readFileSync(new URL('../../src/systems/housing/kendo.js', import.meta.url), 'utf8'))
+        && /el\.classList\.add\('shared'\)/.test(readFileSync(new URL('../../src/main.js', import.meta.url), 'utf8')),
+        said.slice(nSaid).map((t) => t[1]).join(' | '));
+      const stand = (ax, bx, z = 0) => {
+        for (const p of [a, b]) { p.velocity.set(0, 0, 0); p.padBlock = false; }
+        a.position.set(ax, 0, z); b.position.set(bx, 0, z);
+        a.facing = Math.PI / 2; b.facing = -Math.PI / 2;
+        K.cool.clear();
+      };
+      const settle = () => { stand(-1, 1); run(1.2); };
+      settle();
+      // the floor: sweep b over a grid in front of a, and the lane must say what the cut does
+      let disagree = 0, lit = 0, tipLit = 0, n = 0;
+      for (let x = -0.5; x <= 6; x += 0.25) {
+        for (let z = -2; z <= 2; z += 0.25) {
+          n++;
+          b.position.set(-1 + x, 0, z);
+          const R = K.reads(a, b);
+          const p0 = B3.pts[0];
+          const ph = B3.phase;
+          a.kendoNoSwing = false;
+          K.cool.clear();
+          b.kendoLockT = 0;
+          b.kendoBrokeT = 0;
+          K.sparStrike(a, 'stand', { x: 1, y: 0 });
+          const hitBody = B3.pts[0] > p0, hitTip = b.kendoLockT > 0 && !hitBody;
+          if (hitBody !== R.body || hitTip !== R.tip) disagree++;
+          if (R.body) lit++;
+          if (R.tip) tipLit++;
+          // put the round back as it was: undo the point, back to fight
+          if (hitBody) { B3.pts[0] = p0; B3.phase = ph; B3.t = 0; for (const p of [a, b]) p.pinnedAt = null; }
+          b.kendoLockT = 0;
+          b.kendoBrokeT = 0;
+          a.kiaiT = 0;
+          a.kendoSwingWait = 0;
+        }
+      }
+      ok("the floor's lane lights for exactly the cuts that land, and the shinai strip for exactly the knocks",
+        disagree === 0 && lit > 10 && tipLit > 3, `${disagree} disagree of ${n}; body ${lit}, shinai ${tipLit}`);
+      settle();
+      // 75 / 25, by the dice kendo.js rolls (`rng`)
+      a.padBlock = true;
+      run(0.05);
+      ok('holding the Ward button in a live round is a BLOCK, and she cannot swing or riposte under it',
+        a.kendoBlocking && a.kendoNoSwing && a.kendoNoParry && sounds.includes('wardup'));
+      K.rng = () => KENDO_BLOCK.holds - 0.01;
+      b.position.set(0.5, 0, 0);
+      const p1 = B3.pts[1];
+      const n1 = said.length;
+      K.sparStrike(b, 'stand', { x: -1, y: 0 });
+      ok('...a cut into it holds three times in four: no ippon, and it says so',
+        B3.pts[1] === p1 && a.kendoBlocking && said.slice(n1).some(([, t]) => /BLOCKS/.test(t)) && sounds.includes('wardabsorb'));
+      ok('...and a swing costs her the block for a moment after it', Math.abs(b.kendoSwingWait - KENDO_BLOCK.afterSwing) < 1e-9);
+      b.position.set(1, 0, 0);
+      b.padBlock = true;
+      run(0.05);
+      ok('...so a block pressed straight after a swing waits', !b.kendoBlocking);
+      run(KENDO_BLOCK.afterSwing);
+      ok('...and comes up when the wait is over, the button still held', b.kendoBlocking);
+      b.padBlock = false;
+      run(0.05);
+      ok('letting go of the block is `release` of neither block nor swing', !b.kendoBlocking && b.kendoBlockWait > 0 && b.kendoNoSwing);
+      b.padBlock = true;
+      run(KENDO_BLOCK.release * 0.5);
+      ok('...not even a block', !b.kendoBlocking);
+      b.padBlock = false;
+      run(KENDO_BLOCK.release);
+      ok('...and after it, she may swing again', !b.kendoNoSwing);
+      K.rng = () => KENDO_BLOCK.holds + 0.01;
+      b.position.set(0.5, 0, 0);
+      b.facing = -Math.PI / 2;
+      K.cool.clear();
+      const n2 = said.length;
+      K.sparStrike(b, 'stand', { x: -1, y: 0 });
+      ok('...and the fourth time in four the block BREAKS and the cut is an ippon',
+        B3.pts[1] === p1 + 1 && !a.kendoBlocking && said.slice(n2).some(([, t]) => /BLOCK BROKEN! IPPON/.test(t)) && sounds.includes('wardbreak'));
+      K.rng = Math.random;
+      until(() => B3.phase === 'fight', BOUT.yame + BOUT.hajime + 0.3);
+      settle();
+      // the block pushes a kitten off it, and cannot be clinched
+      a.padBlock = true;
+      run(0.05);
+      b.position.set(-1 + 1.0, 0, 0);
+      b.velocity.set(-4, 0, 0);
+      run(KENDO_SLIDE + 0.1);
+      ok('a block shoves away a kitten who comes too close, and cannot be run into for a clinch',
+        !B3.clinch && b.position.x - a.position.x >= KENDO_BLOCK.near, `${(b.position.x - a.position.x).toFixed(2)} apart`);
+      settle();
+      // THE CLINCH, won by momentum
+      stand(-0.6, 0.6, 0.5);
+      a.velocity.set(4, 0, 0);
+      const n3 = said.length;
+      run(0.05);
+      ok('running into her is a CLINCH: shinai locked, neither can cut, and it says what to do',
+        !!B3.clinch && a.kendoClinch && b.kendoClinch && a.kendoNoSwing && b.kendoNoParry
+        && said.slice(n3).some(([, t]) => /CLINCH!.*RUN, SPRINT or DODGE/.test(t)));
+      until(() => { a.velocity.set(4, 0, 0); b.velocity.set(0, 0, 0); return !B3.clinch; }, KENDO_CLINCH.maxT - 0.1);
+      const bz = b.position.z;
+      run(KENDO_SLIDE + 0.05);
+      ok('...the one with more momentum drives the other back, and she loses it shoved ASIDE, starred',
+        !B3.clinch && b.kendoLockT > 0 && b.kendoBrokeT > 0 && b.kendoNoSwing && b.kendoNoParry && !a.kendoLockT
+        && Math.abs(b.position.z - bz) > KENDO_CLINCH.aside * 0.9 && said.slice(n3).some(([, t]) => /wins the clinch/.test(t)),
+        `b z ${bz.toFixed(2)} -> ${b.position.z.toFixed(2)}`);
+      ok('...for the second Richard asked for', Math.abs(KENDO_CLINCH.lockLost - 1) < 1e-9);
+      run(KENDO_CLINCH.lockLost);
+      ok('...and then she may swing again', !b.kendoNoSwing && !b.kendoLockT);
+      // dead level for three seconds: both step back, and the back step that would leave the square goes sideways
+      stand(-3.4, -2.2, 0.5);
+      a.velocity.set(3, 0, 0);
+      b.velocity.set(-3, 0, 0);
+      const n4 = said.length;
+      run(0.05);
+      const began = !!B3.clinch;
+      let held = 0;
+      until(() => { a.velocity.set(3, 0, 0); b.velocity.set(-3, 0, 0); if (B3.clinch) held = B3.clinch.t; return !B3.clinch; }, KENDO_CLINCH.maxT + 0.3);
+      ok('a level clinch lasts its three seconds and no more, and nobody wins it',
+        began && !B3.clinch && held > KENDO_CLINCH.maxT - 0.1 && !said.slice(n4).some(([, t]) => /wins the clinch and shoves/.test(t)), `began ${began}, held ${held.toFixed(2)}s, ${said.slice(n4).map((t) => t[1]).join(' | ')}`);
+      const ax = a.position.x, az = a.position.z;
+      run(KENDO_SLIDE * 0.5);
+      ok('...then both step back, and cannot cut while they do',
+        a.kendoBusyT > 0 && a.kendoNoSwing && b.kendoNoSwing && said.slice(n4).some(([, t]) => /both step back/.test(t)));
+      run(KENDO_SLIDE);
+      ok('...and one whose step back would leave the square steps SIDEWAYS instead, and stays on it',
+        Math.abs(a.position.x - ax) < 1e-6 && Math.abs(a.position.z - az) > KENDO_CLINCH.back * 0.9 && K._onSquare(B3, a.position.x, a.position.z) && b.position.x > -2.2,
+        `a (${ax.toFixed(2)}, ${az.toFixed(2)}) -> (${a.position.x.toFixed(2)}, ${a.position.z.toFixed(2)})`);
+      settle();
+      // THE SHINAI: struck from beyond her body, it is knocked aside
+      stand(-1, -1 + KENDO_HIT.reach + 0.6);
+      run(0.05);
+      const p2 = B3.pts[0];
+      K.sparStrike(a, 'stand', { x: 1, y: 0 });
+      ok('a cut that falls short of her body but on her shinai knocks it aside: no point, half a second of no swing, no riposte, stars',
+        B3.pts[0] === p2 && Math.abs(b.kendoLockT - KENDO_SHINAI.lock) < 1e-9 && b.kendoBrokeT > 0 && b.kendoNoSwing && b.kendoNoParry && sounds.includes('parry'));
+      settle();
+      stand(-1, -1 + KENDO_HIT.reach + 0.6);
+      b.padBlock = true;
+      run(0.05);
+      a.kendoSwingWait = 0;
+      K.sparStrike(a, 'stand', { x: 1, y: 0 });
+      ok('...but not while she blocks', b.kendoBlocking && !(b.kendoLockT > 0));
+      b.padBlock = false;
+      for (const Bx of [...K.bouts.values()]) K._end(Bx, null);
+      ok('...and the end of a match clears every one of it', [a, b].every((p) => !p.kendoBlocking && !p.kendoLockT && !p.kendoClinch && !p.kendoNoSwing));
+      K._unwear(0);
+      K._unwear(1);
+      const ps = readFileSync(new URL('../../src/entities/player.js', import.meta.url), 'utf8');
+      ok('a riposte that catches nothing in the bogu hands her back the stick, starred, rather than planting her',
+        /if \(this\.parryT === 0 && this\.kendoLive\) \{\s*this\.parryCool = PARRY\.cool;\s*this\.kendoLockT = Math\.max\(this\.kendoLockT \?\? 0, KENDO_WHIFF\);/.test(ps)
+        && KENDO_WHIFF > 0.35 && /const on = this\.stunT > 0 \|\| \(this\.kendoBout && this\.kendoLockT > 0\);/.test(ps));
+      ok('...and the stick is gated in Player too: the swing, the riposte, and the Ward button given to the block',
+        /pad\.pressed\('attack'\)[^\n]*\n[^\n]*!this\.parryAt && !kendoHeld\)/.test(ps)
+        && /if \(this\.kendoLive && this\.kendoNoParry\) return false;/.test(ps)
+        && /pad\.pressed\('mount'\) && !this\.dodgePlanted && !this\.parryAt && !this\.kendoLive\)/.test(ps)
+        && /this\.padBlock = !!pad\?\.down\?\.\('mount'\);/.test(ps));
+      /* THE FLOOR READOUT IS ON THE FLOOR. It went in under the mat first and
+         was never seen; the mat and tape are boxes in homeisle.js. */
+      const isrc = readFileSync(new URL('../../src/systems/housing/homeisle.js', import.meta.url), 'utf8');
+      const mat = /const floor = new THREE\.BoxGeometry\(A\.w, ([\d.]+), A\.d\);[\s\S]{0,80}floor\.translate\(ax, ([\d.]+), az\)/.exec(isrc);
+      const tapeY = [...isrc.matchAll(/BoxGeometry\(w, ([\d.]+), d\);[\s\S]{0,60}?translate\([^)]*, ([\d.]+), [^)]*\)/g)].map((m) => +m[2] + +m[1] / 2);
+      const matTop = mat ? +mat[2] + +mat[1] / 2 : NaN;
+      ok("the shadows and the reach lanes are drawn above the dojo's mat and its tape, not under them",
+        matTop > 0 && tapeY.length >= 3 && KENDO_DECAL_Y > matTop && tapeY.every((t) => KENDO_DECAL_Y > t) && KENDO_DECAL_Y < matTop + 0.2,
+        `mat top ${matTop}, tape tops ${[...new Set(tapeY)].join(',')}, decals ${KENDO_DECAL_Y}`);
+      ok('...and the broken guard and the clinch wear their own drawings, over the kiai and the guard',
+        /const pose = kparry \? this\.kparryPose : kbroke \? this\.kbrokePose : kclinchPose \?\?/.test(ps));
+    }
 
     // THE CAMERA and THE WALLS, for a pane that holds a fighter or a watcher
     K.toggleGear(a);

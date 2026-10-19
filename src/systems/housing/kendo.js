@@ -108,6 +108,72 @@ export const KENDO_HIT = { reach: 3.2, lane: 0.9 };
  */
 export const KENDO_TURN = { gap: 1.3, t: 1.0, ease: 3.2 };
 
+/**
+ * THE BLOCK. Richard, Oct 2026: "it will be the same button as the Ward
+ * block. While blocking, the shinai cannot get knocked back. If a player is
+ * blocking, then they cannot get run into for a clench and their block will
+ * push the opponent back if they get too close. Player cannot attack while
+ * blocking. While releasing the block, player needs to wait 0.25s before they
+ * can either block or swing again. After a swing, player needs to wait 0.25s
+ * before they can block ... If a player is hit while blocking, there is a 75%
+ * chance they block the strike and take no damage, but there is a 25% chance
+ * their block gets broken and they get hit."
+ *   `release`    after letting go: no block and no swing for this long
+ *   `afterSwing` after a swing: no block for this long
+ *   `holds`      the chance a cut on a block is stopped
+ *   `near`       an opponent closer than this to a block is pushed off it
+ *   `shove`      ...this far, over `KENDO_SLIDE` seconds
+ */
+export const KENDO_BLOCK = { release: 0.25, afterSwing: 0.25, holds: 0.75, near: 1.7, shove: 1.4 };
+
+/**
+ * THE CLINCH, tsubazeriai. Richard, Oct 2026: "players should be able to
+ * clench by running into each other ... the players are attached together and
+ * battling for momentum and the player that has more momentum will push the
+ * other back, but the other player can fight back by increasing their
+ * momentum by running, sprinting, or dodging, once a player has been pushed
+ * back several feet from when the clench happened, then that player loses the
+ * clench, if a clench happens for more than 3 seconds, then both players
+ * disengage by automatically stepping back a few feet during which they cant
+ * attack ... Whoever runs the fastest with the most momentum should win the
+ * clench, pushing the other out of the way to the side, and that player can't
+ * attack or block for 1s."
+ *   `r`, `closing` closer than r, coming together faster than `closing`: it starts
+ *   `gap`          how far apart the two are held while it lasts
+ *   `ease`         how quickly her momentum follows her running (1/s)
+ *   `k`            the pair's speed per unit of the difference in momentum
+ *   `lose`         pushed back this far from where it started, and she has lost
+ *   `maxT`         ...or it lasts this long and both step back `back`
+ *   `aside`        the loser is shoved this far to the side
+ *   `lockLost`     and is starred this long; `lockApart` both after stepping back
+ * MOMENTUM IS HER OWN VELOCITY TOWARD HER OPPONENT, eased — so walking in
+ * pushes, sprinting pushes harder, and a dodge into her (2.2 in 0.14s, the
+ * fastest thing a fighter can do) is the hardest shove there is. Nothing new
+ * to learn: the buttons she already runs and dodges with are the clinch.
+ */
+export const KENDO_CLINCH = { r: 1.35, closing: 1.0, gap: 1.2, ease: 6, k: 0.5, lose: 2.6, maxT: 3, back: 2.2, aside: 2.4, lockLost: 1.0, lockApart: 0.5 };
+
+/**
+ * HER SHINAI IS A TARGET. Richard, Oct 2026: "players can hit the other
+ * players shinai by swinging at it from a distance, if the shinai gets hit,
+ * then the player can't swing, riposte, or block for 0.5s." The shinai's tip
+ * is `len` out in front of her along her facing; a cut whose lane takes the
+ * tip and not her body knocks it aside.
+ */
+export const KENDO_SHINAI = { len: 1.6, lock: 0.5 };
+
+/** How long a forced step takes — the clinch's step back, the shove aside, the push off a block. */
+export const KENDO_SLIDE = 0.3;
+/**
+ * WHERE THE FLOOR DECALS GO, above the room's floor: over the dojo's mat (a
+ * box 0.08 thick centred 0.1 up, so its top is 0.14) AND over its tape (0.1
+ * thick at 0.17, top 0.22), so a shadow on a seiza cross is still a shadow.
+ * They went in at +0.03 first, which is UNDER the mat, and the whole floor
+ * readout was drawn and never seen. homeisle.js builds the mat; world-check
+ * pins this to its numbers.
+ */
+export const KENDO_DECAL_Y = 0.25;
+
 /** The shortest signed turn from angle a to angle b. */
 function turnTo(a, b) {
   let d = (b - a) % (Math.PI * 2);
@@ -131,6 +197,11 @@ export function yawAcross(axis) {
 /** How high the walls of a house stand while a match is watched in it. */
 const HALF_WALL = 2.1;
 const CAM_YAW = -Math.PI * 0.25;
+
+/** A kitten's colour as CSS, for a toast that is hers. */
+export function cssColour(p) {
+  return `#${((p?.style?.colour ?? 0xffffff) >>> 0).toString(16).padStart(6, '0')}`;
+}
 
 function hexTexture(sp) {
   const c = document.createElement('canvas');
@@ -190,6 +261,9 @@ export class Kendo {
     /** seat → { key, mark, t, down } — on a seiza mark, kneeling or about to (`_seiza`). */
     this.kneel = new Map();
     this._boardEl = null;
+    /** The block's 75/25 (`KENDO_BLOCK.holds`). A field so world-check can load the dice. */
+    this.rng = Math.random;
+    this._clock = 0;
   }
 
   /** The match she is FIGHTING in, or null. */
@@ -367,6 +441,7 @@ export class Kendo {
       p.power = aggregate([]);
       p.kendoDodgeT = 0;
       p.kendoDodgeCool = 0;
+      this._fresh(p);
     }
     this._place(B);
     this._stance(B, 'kneel');
@@ -376,6 +451,10 @@ export class Kendo {
 
   /** Both on their marks, facing each other, held there — and the plane back to the marks'. */
   _place(B) {
+    // every YAME is a clean start: no clinch, no stars, nobody mid-shove
+    B.clinch = null;
+    B.slides = [];
+    for (const p of [B.a, B.b]) this._fresh(p);
     if (B.axis0) {
       B.axis.copy(B.axis0);
       B.turnT = 0;
@@ -393,14 +472,16 @@ export class Kendo {
 
   _stance(B, s) { B.a.kendoStance = s; B.b.kendoStance = s; }
 
-  /** To both fighters, and to anybody else standing in the room. */
+  /**
+   * To both fighters, ONCE, in both their colours. Richard, Oct 2026: "it is
+   * showing the text twice for both players, can we combine the text if it is
+   * the same ... Can just like, put both their colors in the text box if it is
+   * for both of them." It was one toast per kitten in the room — and the
+   * toasts are one strip at the top of the whole screen, not one per pane, so
+   * every line of the referee's came up two (or three, or four) times over.
+   */
   _say(B, text) {
-    const G = this.H.game;
-    const told = new Set([B.a.index, B.b.index]);
-    for (const q of G.players ?? []) {
-      if (q && !told.has(q.index) && B.zone.isle.roomAt?.(q.position.x, q.position.y, q.position.z)?.id === B.zone.room.id) told.add(q.index);
-    }
-    for (const i of told) G.toast(text, i);
+    this.H.game.toast(text, B.a.index, null, 0, { colours: [cssColour(B.a), cssColour(B.b)] });
   }
 
   _kiai(p) {
@@ -463,6 +544,7 @@ export class Kendo {
         break;
       case 'fight': {
         B.clock = Math.max(0, B.clock - dt);
+        this._fighters(B, dt);
         this._plane(B, dt);
         // JOGAI: off the square for a moment is a warning; for long, the end
         for (const [k, p] of [B.a, B.b].entries()) {
@@ -534,24 +616,307 @@ export class Kendo {
       p.kendoDodgeT = 0;
       p.pinnedAt = null;
       p.power = aggregate(p.powerOrbs ?? []);
+      this._fresh(p);
     }
+    for (const F of B.fx ?? []) for (const m of Object.values(F)) m?.parent?.remove?.(m);
+    B.fx = null;
     this.bouts.delete(B.key);
     if (why) this._say(B, why);
   }
 
+  /* ----------------------------- the fighters ----------------------------
+
+     EVERYTHING BELOW IS A CLOCK OR A FLAG ON THE PLAYER, written here and
+     read by player.js, which keeps the two files from importing each other
+     (`KENDO_DODGE`'s reason). Player reads:
+       kendoNoSwing   ATTACK does nothing (and says `deny`)
+       kendoNoParry   the 返 gesture is not armed
+       kendoLockT     the stars over her head — `_updateDaze` shows them
+       kendoBrokeT    the guard-broken drawing (`kbrokePose`)
+       kendoClinch    the clinch drawing (`kclinchPose`, a side each)
+       kendoBlocking  the block
+     ...and writes `padBlock` (the Ward's button, held) and, on a 返 whiff,
+     `kendoLockT`. */
+
+  /** Every kendo field a fighter carries, back to nothing. */
+  _fresh(p) {
+    p.kendoLockT = 0;
+    p.kendoBrokeT = 0;
+    p.kendoBusyT = 0;
+    p.kendoBlocking = false;
+    p.kendoBlockWait = 0;
+    p.kendoSwingWait = 0;
+    p.kendoNoSwing = false;
+    p.kendoNoParry = false;
+    p.kendoClinch = false;
+  }
+
+  /** Is (x, z) on this match's square, with half a body to spare? */
+  _onSquare(B, x, z) {
+    const { isle: I, room } = B.zone;
+    const A = kendoArea(room);
+    const L = I.houseOf?.(room)?.toLocal?.(x, z);
+    if (!L) return true;
+    return Math.abs(L.x - A.cx) <= A.w / 2 - 0.4 && Math.abs(L.z - A.cz) <= A.d / 2 - 0.4;
+  }
+
+  /**
+   * A FORCED STEP: the first of `cands` (offsets) that ends on the square,
+   * taken over `KENDO_SLIDE`. Richard: "if a player would go out of bounds
+   * from disengaging, then they will instead move in a lateral direction so
+   * as not to go out of bounds". The step is MOVED, not pushed: a velocity
+   * would be undone by her own ground controller on the next frame. Returns
+   * the offset taken, or null when none fits — and then she stays put, which
+   * is better than a shove that puts her in JOGAI for something she did not do.
+   */
+  _slide(B, p, cands) {
+    for (const [x, z] of cands) {
+      if (!this._onSquare(B, p.position.x + x, p.position.z + z)) continue;
+      B.slides = (B.slides ?? []).filter((S) => S.p !== p);
+      B.slides.push({ p, x0: p.position.x, z0: p.position.z, x: p.position.x + x, z: p.position.z + z, t: 0 });
+      return [x, z];
+    }
+    return null;
+  }
+
+  /** One live frame of the two fighters: forced steps, clocks, the block, the clinch. */
+  _fighters(B, dt) {
+    const G = this.H.game;
+    const { a, b } = B;
+    B.slides = (B.slides ?? []).filter((S) => {
+      S.t += dt;
+      const u = Math.min(1, S.t / KENDO_SLIDE);
+      const e = 1 - (1 - u) * (1 - u);
+      S.p.position.x = S.x0 + (S.x - S.x0) * e;
+      S.p.position.z = S.z0 + (S.z - S.z0) * e;
+      S.p.velocity.x = 0;
+      S.p.velocity.z = 0;
+      return u < 1;
+    });
+    for (const p of [a, b]) {
+      for (const k of ['kendoLockT', 'kendoBrokeT', 'kendoBusyT', 'kendoBlockWait', 'kendoSwingWait']) p[k] = Math.max(0, (p[k] ?? 0) - dt);
+    }
+    if (B.clinch) this._clinchStep(B, dt);
+    for (const [k, p] of [a, b].entries()) {
+      const o = k ? a : b;
+      const held = p.kendoLockT > 0 || p.kendoBusyT > 0 || !!B.clinch;
+      /* THE BLOCK IS HELD, like the Ward it shares a button with. Letting go
+         costs `release` of neither block nor swing; a swing costs
+         `afterSwing` of no block (stamped in `sparStrike`). A button held
+         through a wait blocks the moment the wait is over. */
+      if (p.kendoBlocking && (!p.padBlock || held)) {
+        p.kendoBlocking = false;
+        p.kendoBlockWait = KENDO_BLOCK.release;
+        G.audio?.play?.('warddown');
+      } else if (!p.kendoBlocking && p.padBlock && !held && !(p.kendoBlockWait > 0) && !(p.kendoSwingWait > 0) && !p.parryAt) {
+        p.kendoBlocking = true;
+        G.audio?.play?.('wardup');
+      }
+      // too close to a block and she is pushed off it, along the line between them
+      if (p.kendoBlocking && !B.slides.some((S) => S.p === o)) {
+        const dx = o.position.x - p.position.x;
+        const dz = o.position.z - p.position.z;
+        const d = Math.hypot(dx, dz);
+        if (d < KENDO_BLOCK.near) {
+          const ux = d > 1e-3 ? dx / d : B.axis.x * (k ? -1 : 1);
+          const uz = d > 1e-3 ? dz / d : B.axis.z * (k ? -1 : 1);
+          const s = KENDO_BLOCK.shove;
+          if (this._slide(B, o, [[ux * s, uz * s], [-uz * s, ux * s], [uz * s, -ux * s]])) G.audio?.play?.('wardabsorb');
+        }
+      }
+      p.kendoNoSwing = held || p.kendoBlocking || p.kendoBlockWait > 0;
+      p.kendoNoParry = held || p.kendoBlocking;
+      p.kendoClinch = !!B.clinch;
+    }
+    if (!B.clinch) this._clinchStart(B);
+  }
+
+  /** Run into each other — neither blocking, neither starred — and the shinai lock. */
+  _clinchStart(B) {
+    const { a, b } = B;
+    const K = KENDO_CLINCH;
+    if ([a, b].some((p) => p.kendoBlocking || p.kendoLockT > 0 || p.kendoBusyT > 0 || p.parryAt)) return false;
+    if (B.slides?.length) return false;
+    const dx = b.position.x - a.position.x;
+    const dz = b.position.z - a.position.z;
+    const d = Math.hypot(dx, dz);
+    if (d > K.r || d < 1e-3) return false;
+    const ux = dx / d, uz = dz / d;
+    const closing = (a.velocity.x - b.velocity.x) * ux + (a.velocity.z - b.velocity.z) * uz;
+    if (closing < K.closing) return false;
+    const x = (a.position.x + b.position.x) / 2;
+    const z = (a.position.z + b.position.z) / 2;
+    B.clinch = { t: 0, ux, uz, x0: x, z0: z, x, z, m: [0, 0] };
+    for (const p of [a, b]) { p.kendoClinch = true; p.kendoNoSwing = true; p.kendoNoParry = true; }
+    this.H.game.audio?.play?.('hit');
+    this._say(B, `CLINCH! ${a.name} and ${b.name} lock shinai — RUN, SPRINT or DODGE into her to push her back!`);
+    return true;
+  }
+
+  /** The two held `gap` apart, and moved by the difference in their momentum. */
+  _clinchStep(B, dt) {
+    const C = B.clinch;
+    const K = KENDO_CLINCH;
+    const { a, b } = B;
+    C.t += dt;
+    const push = [
+      Math.max(0, a.velocity.x * C.ux + a.velocity.z * C.uz),
+      Math.max(0, -(b.velocity.x * C.ux + b.velocity.z * C.uz)),
+    ];
+    const e = 1 - Math.exp(-dt * K.ease);
+    for (const k of [0, 1]) C.m[k] += (push[k] - C.m[k]) * e;
+    const v = (C.m[0] - C.m[1]) * K.k;
+    C.x += C.ux * v * dt;
+    C.z += C.uz * v * dt;
+    const h = K.gap / 2;
+    a.position.x = C.x - C.ux * h;
+    a.position.z = C.z - C.uz * h;
+    b.position.x = C.x + C.ux * h;
+    b.position.z = C.z + C.uz * h;
+    // + is b driven back, - is a
+    const shift = (C.x - C.x0) * C.ux + (C.z - C.z0) * C.uz;
+    if (Math.abs(shift) >= K.lose) return this._clinchLost(B, shift > 0 ? b : a);
+    if (C.t >= K.maxT) this._clinchApart(B);
+    return null;
+  }
+
+  /** Driven back `lose`: she is shoved aside and starred. */
+  _clinchLost(B, L) {
+    const C = B.clinch;
+    const K = KENDO_CLINCH;
+    const W = L === B.a ? B.b : B.a;
+    B.clinch = null;
+    const back = L === B.b ? 1 : -1;
+    const lx = -C.uz * K.aside, lz = C.ux * K.aside;
+    this._slide(B, L, [[lx, lz], [-lx, -lz], [C.ux * back * K.aside, C.uz * back * K.aside]]);
+    L.kendoLockT = Math.max(L.kendoLockT ?? 0, K.lockLost);
+    L.kendoBrokeT = Math.max(L.kendoBrokeT ?? 0, K.lockLost);
+    for (const p of [B.a, B.b]) p.kendoClinch = false;
+    this.H.game.audio?.play?.('boing');
+    this._say(B, `${W.name} wins the clinch and shoves ${L.name} aside! ${L.name} is dizzy for a second.`);
+    return L;
+  }
+
+  /** Three seconds and nobody has won: both step back, and neither may cut until they have. */
+  _clinchApart(B) {
+    const C = B.clinch;
+    const K = KENDO_CLINCH;
+    B.clinch = null;
+    for (const [p, s] of [[B.a, -1], [B.b, 1]]) {
+      const bx = C.ux * s * K.back, bz = C.uz * s * K.back;
+      this._slide(B, p, [[bx, bz], [-bz, bx], [bz, -bx]]);
+      p.kendoBusyT = Math.max(p.kendoBusyT ?? 0, KENDO_SLIDE + K.lockApart);
+      p.kendoClinch = false;
+    }
+    this.H.game.audio?.play?.('dodgeout');
+    this._say(B, 'Nobody wins the clinch — both step back!');
+  }
+
+  /**
+   * What a cut from `p` along her facing would take of `o` right now: her
+   * BODY (an ippon, but for a riposte or a block) or her SHINAI (knocked
+   * aside). The floor's lane lights from this, and `sparStrike` makes the
+   * same two tests — world-check sweeps a grid to hold them to each other.
+   */
+  reads(p, o) {
+    const f = p.kendoFace ?? p.facing ?? 0;
+    const fx = Math.sin(f), fz = Math.cos(f);
+    const ax = o.position.x - p.position.x, az = o.position.z - p.position.z;
+    const along = ax * fx + az * fz, lane = Math.abs(ax * fz - az * fx);
+    const body = along >= -0.3 && along <= KENDO_HIT.reach && lane <= KENDO_HIT.lane;
+    return { body, tip: !body && this._shinaiHit(p, o, fx, fz) };
+  }
+
+  /** Does a cut along (fx, fz) from `a` take `t`'s shinai (and not `t`)? Never a block's, never a dodge's. */
+  _shinaiHit(a, t, fx, fz) {
+    if (t.kendoBlocking || t.kendoDodgeT > 0) return false;
+    const f = t.kendoFace ?? t.facing ?? 0;
+    const tx = t.position.x + Math.sin(f) * KENDO_SHINAI.len - a.position.x;
+    const tz = t.position.z + Math.cos(f) * KENDO_SHINAI.len - a.position.z;
+    const along = tx * fx + tz * fz;
+    return along >= 0 && along <= KENDO_HIT.reach && Math.abs(tx * fz - tz * fx) <= KENDO_HIT.lane;
+  }
+
+  /**
+   * WHAT THE FLOOR SAYS. Richard, Oct 2026: "there should be a shadow under
+   * the players feet so they can see where they are compared to each others
+   * shadow/placement, they should be able to know whether a hit will land
+   * based on this shadow/placement indicator." Her own blob shadow is drawn on
+   * the island's ground, which in a house is under the floor; this one is ON
+   * the dojo floor. In front of each fighter is her cut (`KENDO_HIT`) as a
+   * strip in her colour, and it LIGHTS when her opponent stands in it — the
+   * same test `sparStrike` makes, so the floor cannot promise a hit the cut
+   * does not land. Beyond it, fainter, the reach at which she would take the
+   * other's shinai instead (`KENDO_SHINAI`), lit the same way. A fighter who
+   * cannot swing shows neither. The block is a bubble round her.
+   */
+  _fx(B) {
+    const G = this.H.game;
+    if (typeof document === 'undefined' || !G?.scene) return;
+    if (!B.fx) {
+      const mk = (geo, colour, opacity) => {
+        const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+          color: colour, transparent: true, opacity, depthWrite: false, side: THREE.DoubleSide,
+          polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+        }));
+        m.renderOrder = 3;
+        G.scene.add(m);
+        return m;
+      };
+      B.fx = [B.a, B.b].map((p) => {
+        const col = p.style?.colour ?? 0xffffff;
+        const sh = new THREE.CircleGeometry(0.8, 24);
+        sh.rotateX(-Math.PI / 2);
+        sh.scale(1, 1, 0.75);
+        const near = 0.6;
+        const lane = new THREE.PlaneGeometry(KENDO_HIT.lane * 2, KENDO_HIT.reach - near);
+        lane.rotateX(-Math.PI / 2);
+        lane.translate(0, 0, near + (KENDO_HIT.reach - near) / 2);
+        const tip = new THREE.PlaneGeometry(KENDO_HIT.lane * 2, KENDO_SHINAI.len);
+        tip.rotateX(-Math.PI / 2);
+        tip.translate(0, 0, KENDO_HIT.reach + KENDO_SHINAI.len / 2);
+        const bubble = mk(new THREE.SphereGeometry(1.25, 20, 14), 0x9fe8ff, 0.25);
+        bubble.renderOrder = 18;
+        return { shadow: mk(sh, 0x140c18, 0.55), lane: mk(lane, col, 0.16), tip: mk(tip, col, 0.06), bubble };
+      });
+    }
+    const y = B.zone.isle.floorY(B.zone.room) + KENDO_DECAL_Y;
+    const live = B.phase === 'fight';
+    const pulse = 0.5 + 0.5 * Math.sin(this._clock * 12);
+    [B.a, B.b].forEach((p, k) => {
+      const F = B.fx[k];
+      const o = k ? B.a : B.b;
+      F.shadow.position.set(p.position.x, y, p.position.z);
+      const f = p.kendoFace ?? p.facing ?? 0;
+      const { body, tip } = this.reads(p, o);
+      const show = live && !p.kendoNoSwing;
+      for (const m of [F.lane, F.tip]) {
+        m.position.set(p.position.x, y + 0.005, p.position.z);
+        m.rotation.y = f;
+        m.visible = show;
+      }
+      F.lane.material.opacity = body ? 0.38 + 0.2 * pulse : 0.14;
+      F.tip.material.opacity = tip ? 0.24 + 0.14 * pulse : 0.05;
+      F.bubble.visible = !!p.kendoBlocking;
+      F.bubble.position.set(p.position.x, p.position.y + 1.1, p.position.z);
+      F.flash = Math.max(0, (F.flash ?? 0) - 1 / 30);
+      F.bubble.material.opacity = 0.22 + F.flash * 0.5;
+    });
+  }
+
   /** A clean hit in a live round: a point, and the referee stops it. */
-  _boutIppon(B, a, t) {
+  _boutIppon(B, a, t, pre = '') {
     const k = B.a === a ? 0 : 1;
     B.pts[k]++;
     const G = this.H.game;
     G.audio?.play?.('perfect');
     const sp = SPIRITS[a.style?.name] ?? SPIRITS.Ember;
     this._showKiai(a, sp);
-    if (B.pts[k] >= BOUT.toWin) { this._roundOver(B, `IPPON! ${a.name}'s ${sp.animal}!`); return; }
+    if (B.pts[k] >= BOUT.toWin) { this._roundOver(B, `${pre}IPPON! ${a.name}'s ${sp.animal}!`); return; }
     B.phase = 'yame';
     B.t = 0;
     for (const p of [B.a, B.b]) p.pinnedAt = (p.pinnedAt ?? new THREE.Vector3()).copy(p.position);
-    this._say(B, `IPPON! ${a.name}'s ${sp.animal}! YAME! (${B.a.name} ${B.pts[0]} · ${B.b.name} ${B.pts[1]})`);
+    this._say(B, `${pre}IPPON! ${a.name}'s ${sp.animal}! YAME! (${B.a.name} ${B.pts[0]} · ${B.b.name} ${B.pts[1]})`);
   }
 
   /**
@@ -677,8 +1042,11 @@ export class Kendo {
        the ceremony, the YAME and the bows are not openings. */
     const B = this.boutOf(attacker.index);
     if (B && B.phase !== 'fight') return true;
+    // a swing Player should not have thrown (`kendoNoSwing`) is not a swing — the gate is there too
+    if (B && attacker.kendoNoSwing) return true;
     // The kiai is drawn on every swing in the bogu, a hit or not.
     attacker.kiaiT = KIAI_T;
+    if (B) attacker.kendoSwingWait = KENDO_BLOCK.afterSwing;
     const zone = this.zoneOf(attacker);
     if (!zone) return false;
     /* THE CUT IS VERTICAL: a lane straight out along her facing
@@ -689,6 +1057,8 @@ export class Kendo {
     const fz = Math.cos(attacker.facing ?? Math.atan2(dir?.x ?? 0, dir?.y ?? 1));
     let landed = false;
     const answers = [];
+    const blocked = [];
+    const knocked = [];
     for (const t of this.H.game.players ?? []) {
       if (t === attacker || !this.geared(t)) continue;
       if (B && t !== B.a && t !== B.b) continue;
@@ -703,13 +1073,28 @@ export class Kendo {
       const d = Math.hypot(dx, dz);
       const along = dx * fx + dz * fz;
       const lane = Math.abs(dx * fz - dz * fx);
-      if (along < -0.3 || along > KENDO_HIT.reach || lane > KENDO_HIT.lane || Math.abs(t.position.y - attacker.position.y) > 2.2) continue;
+      if (Math.abs(t.position.y - attacker.position.y) > 2.2) continue;
+      if (along < -0.3 || along > KENDO_HIT.reach || lane > KENDO_HIT.lane) {
+        // short of her, but on her shinai: knocked aside (`KENDO_SHINAI`)
+        if (B && this._shinaiHit(attacker, t, fx, fz)) knocked.push(t);
+        continue;
+      }
       /* 返 RIPOSTE IN THE BOGU. Richard: "Riposte works on the opponent's
          attacks, with the same timing as the default riposte." Her guard up
          on this side catches the cut — no ippon — and she answers it, AFTER
          this loop, as `Game.strikePlayers` answers in the ring. */
       if (t.parries?.(attacker.position)) { answers.push(t); continue; }
       if ((this.cool.get(t.index) ?? 0) > 0) continue;
+      /* THE BLOCK HOLDS THREE TIMES IN FOUR (`KENDO_BLOCK.holds`); the
+         fourth breaks it and the cut goes through as an ippon. */
+      let pre = '';
+      if (B && t.kendoBlocking) {
+        if (this.rng() < KENDO_BLOCK.holds) { blocked.push(t); continue; }
+        t.kendoBlocking = false;
+        t.kendoBlockWait = KENDO_BLOCK.release;
+        this.H.game.audio?.play?.('wardbreak');
+        pre = 'BLOCK BROKEN! ';
+      }
       this.cool.set(t.index, IPPON_COOL);
       // a shove, never damage
       const k = 9 / Math.max(0.5, d);
@@ -718,7 +1103,7 @@ export class Kendo {
       if (B) {
         // a shove along the floor, never up — nobody leaves the square for it
         t.velocity.y = Math.max(t.velocity.y, 2);
-        this._boutIppon(B, attacker, t);
+        this._boutIppon(B, attacker, t, pre);
         landed = true;
         break;
       }
@@ -727,6 +1112,22 @@ export class Kendo {
       landed = true;
     }
     const G = this.H.game;
+    for (const t of blocked) {
+      G.audio?.play?.('wardabsorb');
+      const F = B?.fx?.[t === B.a ? 0 : 1];
+      if (F) F.flash = 1;
+      this._say(B, `${t.name} BLOCKS ${attacker.name}'s cut!`);
+    }
+    if (!landed && B) {
+      for (const t of knocked) {
+        t.kendoLockT = Math.max(t.kendoLockT ?? 0, KENDO_SHINAI.lock);
+        t.kendoBrokeT = Math.max(t.kendoBrokeT ?? 0, KENDO_SHINAI.lock);
+        t.kendoNoSwing = true;
+        t.kendoNoParry = true;
+        G.audio?.play?.('parry');
+        this._say(B, `${attacker.name} knocks ${t.name}'s shinai aside!`);
+      }
+    }
     for (const t of answers) {
       G.toast?.(`${t.name} parried you — get round her guard!`, attacker.index);
       t.riposte?.(attacker, G);
@@ -772,7 +1173,7 @@ export class Kendo {
     this.board.set(zone.key, b);
     G.audio?.play?.('perfect');
     const sp = SPIRITS[a.style.name] ?? SPIRITS.Ember;
-    for (const q of [a, t]) G.toast(`IPPON! ${a.name}'s ${sp.animal} KIAI! (${a.name} ${b[a.style.name]} · ${t.name} ${b[t.style.name] ?? 0})`, q.index);
+    G.toast(`IPPON! ${a.name}'s ${sp.animal} KIAI! (${a.name} ${b[a.style.name]} · ${t.name} ${b[t.style.name] ?? 0})`, a.index, null, 0, { colours: [cssColour(a), cssColour(t)] });
     this._showKiai(a, sp);
   }
 
@@ -787,9 +1188,11 @@ export class Kendo {
   }
 
   update(dt, players) {
+    this._clock += dt;
     for (const [i, c] of this.cool) this.cool.set(i, c - dt);
     this._seiza(dt, players);
     for (const B of [...this.bouts.values()]) this._step(B, dt);
+    for (const B of this.bouts.values()) this._fx(B);
     this._board();
     for (const [i, g] of this.gear) {
       const p = players[i];

@@ -497,6 +497,18 @@ replaced.
   drawing, not a mirror — and it is asked where its tail is instead (0.160 of
   the width further left than right in the middle band). Ember's kiai and her
   kparry close a sealed pocket; Frost's kparry does not.
+- `<sheet>_kbroke.png` → `kbroke.png`, the guard knocked aside (shinai
+  trailing in one paw, the other flung out), and `<sheet>_kclinchR.png` /
+  `<sheet>_kclinchL.png` → the clinch, shinai crossed high, ONE DRAWING FOR
+  EACH SIDE OF THE CROSS. Richard, Oct 2026: "generate a clench sprite ...
+  two per character, one from each side of the crisscross." gpt_image_2_5 on
+  magenta off each sheet's `kendo` master, 6 × 0.25 = 1.5 credits. **Named
+  by what they show, not what was asked**: two of the four clinches came back
+  facing the other way from their prompt. R faces right, L faces LEFT and is
+  the only kendo drawing built `artFacesRight: false`. Measured reach: R
+  +0.285 / +0.271, L −0.194 / −0.203; kbroke's top band reaches +0.052 /
+  +0.087 (the flung paw — the shinai is below the band). Ember's kclinchR
+  closes a pocket.
 - `chick.png` `bunny.png` `goat.png` → `farm/<id>.png`, 512, side-on facing
   LEFT. Measured by where the head is rather than a reach, since an animal
   has no blade. The chick and the goat close pockets.
