@@ -31648,6 +31648,107 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
   ok('...and not one of them has a fault',
     R.every((r) => !r.faults.length),
     R.filter((r) => r.faults.length).map((r) => `${r.name}:${r.faults.join('|')}`).join(' ') || 'none');
+  /* THE LOOK ACROSS, AT THE REAL WORLD'S MOUTHS (systems/worldpeek.js).
+     Richard, Oct 2026: "we make a similar implementation to the bridges in
+     the main world as well". The trigger and the lens are the layer's own;
+     what is asked here is that every mouth is found, faces into its road and
+     looks at the island on the OTHER end, that walking up a road starts it
+     and walking past a mouth does not, and that a dragon in the way leaves
+     the shot. */
+  {
+    const WPm = await import('../src/systems/worldpeek.js');
+    const PKm = await import('../src/systems/dream/peek.js');
+    const wasOpen = W.snakeOpen;
+    W.snakeOpen = true;
+    const dragons = [];
+    const g = { world: W, housing: null, players: [], dragons, tournament: null };
+    const WP = new WPm.WorldPeek(g);
+    const ends = WP._endsNow();
+    const bad = ends.filter((E) => {
+      const r = E.road;
+      const atStart = E.mouth === r.pts[0];
+      const n = atStart ? r.pts[1] : r.pts[r.pts.length - 2];
+      const l = Math.hypot(n.x - E.mouth.x, n.z - E.mouth.z) || 1;
+      const into = ((n.x - E.mouth.x) * E.toward.x + (n.z - E.mouth.z) * E.toward.z) / l;
+      const isl = atStart ? r.to : r.from;
+      return into < 0.999 || Math.hypot(E.far.x - isl.x, E.far.z - isl.z) > 1e-6 || !Number.isFinite(E.far.y);
+    });
+    ok('every open road has a look across at BOTH mouths, into the road, at the island on the far end',
+      ends.length === R.length * 2 && bad.length === 0,
+      `${ends.length} ends for ${R.length} roads; wrong: ${bad.map((E) => E.road.name).join(' ') || 'none'}`);
+    W.snakeOpen = false;
+    WP._sig = 'x';
+    ok('...and none before the roads are open', WP._endsNow().length === 0);
+    W.snakeOpen = true;
+    WP._sig = 'x';
+    WP._endsNow();
+    /* Walk a kitten 14 out from each home mouth, at a run (10.5, measured in
+       the browser), along the road's own heading; and one along the rim,
+       square to it, passing right by the mouth. */
+    const walk = (E, vx, vz, from, n = 120) => {
+      const her = { index: 0, position: new THREE.Vector3(), velocity: new THREE.Vector3(vx, 0, vz), onGround: true };
+      her.position.set(E.mouth.x + from.x, E.mouth.y, E.mouth.z + from.z);
+      WP.trig = [];
+      for (let i = 0; i < n; i++) {
+        const r = WP.for(her, 1 / 60);
+        if (r) return { on: Math.hypot(her.position.x - E.mouth.x, her.position.z - E.mouth.z), r };
+        her.position.x += vx / 60;
+        her.position.z += vz / 60;
+        if (her.position.distanceTo(new THREE.Vector3(E.mouth.x, E.mouth.y, E.mouth.z)) < 0.3) break;
+      }
+      return null;
+    };
+    // WP.ends, not `ends`: the closed/open round trip above rebuilt them
+    const home = WP.ends.filter((E) => E.mouth === E.road.pts[0]);
+    const up = home.map((E) => walk(E, E.toward.x * 10.5, E.toward.z * 10.5, { x: -E.toward.x * 14, z: -E.toward.z * 14 }));
+    ok('walking up any road at a run turns the look across on before the mouth, and on to the far island',
+      up.every((u, i) => u && u.on > 0.3 && u.r.far === home[i].far),
+      up.map((u, i) => `${home[i].road.name}:${u ? u.on.toFixed(1) : 'never'}`).join(' '));
+    const past = home.map((E) => walk(E, -E.toward.z * 10.5, E.toward.x * 10.5, { x: E.toward.z * 10, z: -E.toward.x * 10 }));
+    ok('...and running along the rim right past a mouth never does', past.every((u) => !u),
+      past.map((u, i) => (u ? home[i].road.name : '')).filter(Boolean).join(' ') || 'none');
+    const still = (() => {
+      const E = home[0];
+      const her = { index: 0, position: new THREE.Vector3(E.mouth.x - E.toward.x * 3, E.mouth.y, E.mouth.z - E.toward.z * 3), velocity: new THREE.Vector3(), onGround: true };
+      WP.trig = [];
+      let any = false;
+      for (let i = 0; i < 120; i++) any = any || !!WP.for(her, 1 / 60);
+      return any;
+    })();
+    ok('...nor does standing still three from a mouth', !still);
+    /* A DRAGON IN THE WAY. The bamboo mouth had one perched 8.4 from it and
+       5.1 off the line to the island: a quarter of the frame was wing. */
+    const E = home[0];
+    const S = { x: E.mouth.x - E.toward.x * 3, y: E.mouth.y, z: E.mouth.z - E.toward.z * 3, far: E.far };
+    const P = PKm.peekPose(S);
+    const left = { x: P.x, y: P.y, z: P.z, r: 1.5 };
+    const c0 = WPm.clearPose(S, []);
+    const c1 = WPm.clearPose(S, [left]);
+    ok("a clear mouth keeps the layer's own lens; a thing on the lens's shoulder moves it to the other one",
+      c0.side === 1 && c0.up === PKm.PEEK.up && c0.cost === 0 && c1.side === -1 && c1.cost === 0,
+      `clear ${c0.side}/${c0.up}, blocked ${c1.side}/${c1.up} cost ${c1.cost.toFixed(2)}`);
+    const mat = { opacity: 1, alphaTest: 0.35 };
+    const mid = { x: (P.x + E.far.x) / 2, z: (P.z + E.far.z) / 2 };
+    const t = 18 / Math.hypot(E.far.x - P.x, E.far.z - P.z);
+    const dpos = { x: P.x + (E.far.x - P.x) * t, y: P.y - 6, z: P.z + (E.far.z - P.z) * t };
+    dragons.push({ position: dpos, quad: 26, sprite: { mat } }, { position: { x: mid.x + 400, y: 0, z: mid.z }, quad: 26, sprite: { mat: { opacity: 1, alphaTest: 0.35 } } });
+    g.players = [{ index: 0 }];
+    WP.fade = [1];
+    WP.far = [E.far];
+    const lens = { position: new THREE.Vector3(P.x, P.y, P.z) };
+    WP.fadeFor(lens, [0]);
+    const faded = [mat.opacity, mat.alphaTest, dragons[1].sprite.mat.opacity];
+    WP.fadeFor(lens, [1]);
+    ok('a dragon between the lens and the island fades out of THAT pane, its cut-out scaled with it, and is back in the next',
+      Math.abs(faded[0] - (1 - WPm.PEEK_FADE)) < 1e-9 && Math.abs(faded[1] - 0.35 * faded[0]) < 1e-9 && faded[2] === 1
+      && mat.opacity === 1 && mat.alphaTest === 0.35,
+      `in pane ${faded.map((x) => x.toFixed(3)).join('/')}, next pane ${mat.opacity}/${mat.alphaTest}`);
+    const ms = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    ok('...wired: after the Dream Dojo writes `peekAt`, and per pane after the billboards turn',
+      /this\.dream\?\.update\(dt\);\s*this\.housing\?\.update\(dt\);[\s\S]{0,140}this\.worldPeek\?\.update\(dt\);/.test(ms)
+      && /this\._faceAll\(camera, members\);[\s\S]{0,140}this\.worldPeek\?\.fadeFor\(camera, scene \? null : members\);/.test(ms));
+    W.snakeOpen = wasOpen;
+  }
   {
     let worst = 0;
     let where = '';

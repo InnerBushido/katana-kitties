@@ -176,8 +176,11 @@ const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 
 /**
  * The look across, as a lens and an aim. Pure.
- * @param S { x, y, z, far: {x, y, z}, spread? } — where she is, and the far
- *   island's centre (its floor height in `y`).
+ * @param S { x, y, z, far: {x, y, z}, spread?, side?, up? } — where she is,
+ *   and the far island's centre (its floor height in `y`). `side` -1 puts the
+ *   lens over her RIGHT shoulder and `up` raises it: the real world has
+ *   things standing at a mouth that the layer does not (worldpeek.js
+ *   `clearPose`), and the layer never passes either.
  */
 export function peekPose(S) {
   let ux = S.far.x - S.x;
@@ -189,10 +192,11 @@ export function peekPose(S) {
   const rx = -uz;
   const rz = ux;
   const back = PEEK.back + (S.spread ?? 0) * 0.7;
+  const sh = PEEK.shoulder * (S.side ?? 1);
   return {
-    x: S.x - ux * back - rx * PEEK.shoulder,
-    y: S.y + PEEK.up,
-    z: S.z - uz * back - rz * PEEK.shoulder,
+    x: S.x - ux * back - rx * sh,
+    y: S.y + (S.up ?? PEEK.up),
+    z: S.z - uz * back - rz * sh,
     lx: S.far.x,
     ly: S.far.y + PEEK.aimUp,
     lz: S.far.z,

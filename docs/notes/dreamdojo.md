@@ -1822,6 +1822,27 @@ quoted in the code, beside the change it caused.
   Way's rule: a push held through the swing keeps its heading until she lets
   go.
 
+**The look across, in the real world** (`systems/worldpeek.js`, Oct 2026):
+- His note: "we make a similar implementation to the bridges in the main
+  world as well, so that when a player approaches near the bridge, it zooms
+  in on the next island to go to".
+- Nothing new is drawn. The trigger, the lens and the hand-over to the ride
+  are this one's. `WorldPeek` only lists the mouths: both ends of every open
+  Snake Way road (14 for 7 with the arena) and every solid home bridge. A
+  locked home bridge is left out for a kitten it would drop through.
+- **What was in the way.** At the bamboo road a perched dragon stands 8.4
+  from the mouth and 5.1 off the line to the island. It filled two-thirds of
+  the frame with wing.
+  - A choice of shoulder and height (`clearPose`) fixes a thing near the
+    lens. It could not fix this dragon: all six tries measured the same,
+    because it stands between HER and the island.
+  - So a dragon between the lens and the island fades to 15% in that pane
+    only (`fadeFor`, per pane in `_renderView`). `alphaTest` is scaled with
+    the opacity, or the cut-out would hold every texel until 0.35 and then
+    drop the whole dragon.
+- Walking up at a run, it turns on 4.7-4.9 from each of the seven home
+  mouths. That is the layer's own trigger (start 8.4, dwell 0.35s).
+
 **The sim's Turning Circle as a video game** (`holodojo.js`, `main.js`
 `simDojoC`, `DreamDojo.simDojoAt`):
 - His note: "Camera should zoom out ... the hologram orb rotating in place

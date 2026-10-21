@@ -92,6 +92,7 @@ import { Payne, PAYNE_CLIPS, PAYNE_TOWN } from './systems/payne.js';
 import { Housing } from './systems/housing/housing.js';
 import { TEA_SHEET } from './systems/housing/teahouse.js';
 import { DreamDojo } from './systems/dreamdojo.js';
+import { WorldPeek } from './systems/worldpeek.js';
 import { SIM } from './world/simworld.js';
 
 /* ---------------------------------------------------------------------------
@@ -1598,6 +1599,8 @@ class Game {
        bridges out to them. After the Dream Dojo, because the home roads wind
        round every other road in the sky. See systems/housing/housing.js. */
     this.housing = new Housing(this);
+    /** The look across at the real world's bridges (systems/worldpeek.js). */
+    this.worldPeek = new WorldPeek(this);
     this.housing.build();
 
     setLoad('Writing the story…');
@@ -10625,6 +10628,8 @@ class Game {
        the thing that pins a kitten in her tube for the NEXT frame. */
     this.dream?.update(dt);
     this.housing?.update(dt);
+    // after the Dream Dojo, which writes `peekAt` for every kitten (worldpeek.js)
+    this.worldPeek?.update(dt);
     for (const pk of this.pickups) {
       if (pk.taken) continue;
       pk.update(dt);
@@ -12903,15 +12908,18 @@ class Game {
   _peekGroup(members) {
     let far = null;
     let w = 1;
+    let lead = null;
     for (const i of members) {
       const at = this.players[i]?.peekAt;
       if (!at || (far && at.far !== far)) return null;
       far = at.far;
       w = Math.min(w, at.w);
+      lead ??= at;
     }
     if (!far) return null;
     const mid = this._centroid(members);
-    return { x: mid.x, y: mid.y, z: mid.z, far, w, spread: this._spread(members) };
+    // the shoulder and height the real world's mouths choose (worldpeek.js)
+    return { x: mid.x, y: mid.y, z: mid.z, far, w, spread: this._spread(members), side: lead.side, up: lead.up };
   }
 
   /**
@@ -14146,6 +14154,8 @@ class Game {
     // Roshi's tour poses the pane's camera itself (housing.js `tourLens`).
     if (!scene) this.housing?.tourLens(camera, members);
     this._faceAll(camera, members);
+    // a dragon in front of a look across fades out of THIS pane (worldpeek.js)
+    this.worldPeek?.fadeFor(camera, scene ? null : members);
     this._aimXray(camera, members, scene);
     this.housing?.aimView(camera, members, scene);
     // Can this lens see the big screen? Its fireworks only go off if one can.
