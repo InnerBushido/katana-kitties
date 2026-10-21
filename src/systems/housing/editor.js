@@ -1,4 +1,4 @@
-import { HOUSE_BY_ID, ITEM_BY_ID, LINK_BY_ID, houseSpecs, homeRooms, pathPosts, roomWith } from './catalog.js';
+import { HOUSE_BY_ID, ITEM_BY_ID, LINK_BY_ID, houseSpecs, homeRooms, pathPosts, roomWith, DOOR_MATS } from './catalog.js';
 import { houseFoot, houseFoots, houseShape, stairBlocks, rampOf } from './homehouse.js';
 import { linkWhy, toIsle, toHouse, underBridgeWhy } from './links.js';
 
@@ -118,8 +118,9 @@ export function houseBox(s, pad = 0) {
   return obb(c.x, c.z, (R.x1 - R.x0) / 2 + pad, (R.z1 - R.z0) / 2 + pad, s.rot);
 }
 /** ...and as what is really there: the plinth's box and the ramp's (`houseFoots`), each grown by pad. */
-export function houseBoxes(s, pad = 0) {
-  return houseFoots(s.house).map((R) => {
+export function houseBoxes(s, pad = 0, foot = 0) {
+  return houseFoots(s.house).map((F) => {
+    const R = F.ramp && foot ? { ...F, z1: Math.max(F.z0 + 0.1, F.z1 - foot) } : F;
     const c = toIsle(s, (R.x0 + R.x1) / 2, (R.z0 + R.z1) / 2);
     return Object.assign(obb(c.x, c.z, (R.x1 - R.x0) / 2 + pad, (R.z1 - R.z0) / 2 + pad, s.rot), { ramp: !!R.ramp });
   });
@@ -214,7 +215,11 @@ export function yardWhy(H, it, x, z, skip = -1, env = 50) {
   if (out) return 'Too close to the edge of the island.';
   for (const s of houseSpecs(H)) {
     if (it.path && onRamp(s, me.box)) continue;
-    for (const B of houseBoxes(s, it.path ? -0.6 : HOUSE_GAP)) {
+    /* A path may lap over the last PATH_RAMP_FOOT of a ramp: the slope there
+       is a hand's height, and a walk turning off the foot for the bridge
+       (`layDoorPath`) has its inside edge across it — refused, it slid two
+       units clear and left lawn at the corner. */
+    for (const B of houseBoxes(s, it.path ? -0.6 : HOUSE_GAP, it.path ? PATH_RAMP_FOOT : 0)) {
       if (me.box ? obbHit(B, me.box) : circleHit(B, x, z, me.r)) return `That is on top of the ${HOUSE_BY_ID[s.house].short}.`;
     }
   }
@@ -303,6 +308,8 @@ export const DOOR_PATHS = {
   dojohouse: ['path_flag', 'path_gravel'],
   minka: ['path_stone', 'path_wood'],
 };
+/** How far up from its foot a path may lap over a ramp's side (`yardWhy`). */
+export const PATH_RAMP_FOOT = 1.6;
 /** How much wider than the path the strip kept clear of a preset's yard is, each side. */
 export const DOOR_WALK_PAD = 1.2;
 
@@ -326,7 +333,12 @@ export function doorWalk(H, env = 50) {
   const E = envOf(env);
   const s = houseSpecs(H)[0];
   if (!s || !E.landing) return null;
-  const a = toIsle(s, 0, houseFoot(s.house).z1 + 0.4);
+  /* From the ramp's own foot where there is one: `houseFoot` measures the
+     ramp as base / 0.32, which on the castle is 1.75 past where its slope
+     meets the grass (`rampOf`), and the walk started there — a strip of lawn
+     between the carpet on the ramp and the carpet to the bridge. */
+  const R = rampOf(s.house);
+  const a = toIsle(s, 0, R ? R.z1 : houseFoot(s.house).z1 + 0.4);
   const b = { x: E.landing.x, z: E.landing.z };
   const len = Math.hypot(b.x - a.x, b.z - a.z);
   if (len < 1) return null;
@@ -368,14 +380,64 @@ export function layDoorPath(H, env = 50) {
   const id = doorPathId(H);
   const it = ITEM_BY_ID[id];
   if (!W || !it) return 0;
-  return layWalk(H, rampWalk(H), id, env) + layWalk(H, W, id, env);
+  layDoorMat(H, env);
+  const F = frontWalk(H, W, it);
+  // the KNEE: one piece on the corner itself, turned halfway between the two legs
+  const knee = { a: W.a, len: it.len, rot: F.rot + Math.atan2(Math.sin(W.rot - F.rot), Math.cos(W.rot - F.rot)) / 2 };
+  return layWalk(H, F, id, env) + layWalk(H, { ...knee, a: { x: W.a.x - Math.sin(knee.rot) * it.len / 2, z: W.a.z - Math.cos(knee.rot) * it.len / 2 } }, id, env, true) + layWalk(H, W, id, env);
+}
+
+/**
+ * NO GRASS AT THE ELBOW. Richard, Oct 2026: "Paths in front of a bought
+ * building must connect or overlap, with no gaps." The walk leaves the door
+ * STRAIGHT — up the ramp where there is one, a stub off the step where there
+ * is not — and runs on past where the walk to the bridge turns away by the
+ * path's width, so the outside of that corner is under this leg's last piece
+ * rather than between the two (measured over four landings: a castle's walk
+ * was lawn at up to 335 of 2320 points, a Dojo House's 192, a minka's 5 at
+ * its step; all 0 now, `world-check`).
+ */
+function frontWalk(H, W, it) {
+  const R = rampWalk(H);
+  if (R) return { ...R, len: R.len + it.pw };
+  const s = houseSpecs(H)[0];
+  const o = toIsle(s, 0, 0), f = toIsle(s, 0, 1);
+  // from the step itself, not the walk's start 0.4 out: a walk leaving at a slant opens a corner behind that
+  const z = houseFoot(s.house).z1;
+  return { a: toIsle(s, 0, z), len: it.pw + 0.4, rot: Math.atan2(f.x - o.x, f.z - o.z) };
+}
+
+/**
+ * A DOOR MAT at the main house's door: on the porch at the top of a ramp, on
+ * the lawn at the foot of a step. Free, like the walk, and one of DOOR_MATS
+ * by the island (the same hash as `doorPathId`), so a home always gets the
+ * same one until she picks another. Returns how many were laid (0 or 1).
+ */
+export function layDoorMat(H, env = 50) {
+  const s = houseSpecs(H)[0];
+  const it = ITEM_BY_ID.path_mat;
+  if (!s || !it) return 0;
+  const R = rampOf(s.house);
+  const z = (R ? R.door : houseFoot(s.house).z1) + 0.1;
+  const a = toIsle(s, 0, z), f = toIsle(s, 0, z + 1);
+  const n = layWalk(H, { a, len: it.len, rot: Math.atan2(f.x - a.x, f.z - a.z) }, 'path_mat', env);
+  let h = 7;
+  for (const c of String(H.site ?? '')) h = (h * 33 + c.charCodeAt(0)) >>> 0;
+  const m = DOOR_MATS[h % DOOR_MATS.length];
+  if (n && m !== DOOR_MATS[0]) H.outdoor[H.outdoor.length - 1].look = { style: m.id };
+  return n;
 }
 
 /** Only the ramp's leg — for a home whose walk was laid before it had one (housing.js `_applyStore`). */
-export const layRampPath = (H, env = 50) => layWalk(H, rampWalk(H), doorPathId(H), env);
+export function layRampPath(H, env = 50) {
+  const R = rampWalk(H), id = doorPathId(H);
+  // run on past the foot like a new home's (`frontWalk`), so it meets the walk it was added to
+  return layWalk(H, R && { ...R, len: R.len + (ITEM_BY_ID[id]?.pw ?? 0) }, id, env);
+}
 
-/** One leg of the walk (`doorWalk`, `rampWalk`), laid in pieces of `id`. */
-function layWalk(H, W, id, env) {
+/** One leg of the walk (`doorWalk`, `rampWalk`), laid in pieces of `id`.
+ *  `fwd`: a refused piece only ever slides on, never back (the knee). */
+function layWalk(H, W, id, env, fwd = false) {
   const it = ITEM_BY_ID[id];
   if (!W || !it) return 0;
   /* END TO END, EXACTLY: the first piece's end on the leg's start (the door,
@@ -388,14 +450,28 @@ function layWalk(H, W, id, env) {
   const n = Math.max(1, Math.ceil((W.len - 0.6) / (it.len - 0.6)));
   const step = n > 1 ? (W.len - it.len) / (n - 1) : 0;
   let laid = 0;
+  const rot = +W.rot.toFixed(4);
+  /* A REFUSED PIECE SLIDES, IT IS NOT DROPPED. The first piece of a walk
+     that leaves the house at an angle has its back corner in the house's
+     plinth and the yard refuses it; it used to be left out, which was a
+     whole piece of lawn between the door and the rest (the Dojo House's
+     at 192 of 1895 points). It slides on along the leg, a quarter unit at a
+     time, never back past the leg's start; a later piece tries both ways. */
+  const slides = (k) => {
+    const out = [0];
+    for (let d = 0.25; d <= it.len / 2 + 1e-9; d += 0.25) { out.push(d); if (k > 0 && !fwd) out.push(-d); }
+    return out;
+  };
   for (let k = 0; k < n; k++) {
-    const t = it.len / 2 + k * step;
-    const x = +(W.a.x + Math.sin(W.rot) * t).toFixed(2);
-    const z = +(W.a.z + Math.cos(W.rot) * t).toFixed(2);
-    const rot = +W.rot.toFixed(4);
-    if (yardWhy(H, it, x, z, -1, { ...envOf(env), rot })) continue;
-    addOutdoor(H, id, x, z, rot).free = true;
-    laid++;
+    for (const d of slides(k)) {
+      const t = it.len / 2 + k * step + d;
+      const x = +(W.a.x + Math.sin(W.rot) * t).toFixed(2);
+      const z = +(W.a.z + Math.cos(W.rot) * t).toFixed(2);
+      if (yardWhy(H, it, x, z, -1, { ...envOf(env), rot })) continue;
+      addOutdoor(H, id, x, z, rot).free = true;
+      laid++;
+      break;
+    }
   }
   return laid;
 }
@@ -479,10 +555,42 @@ export function wallSlots(houseId, room, { strict = false } = {}) {
         x: s.along === 'x' ? a : s.fixed,
         z: s.along === 'z' ? a : s.fixed,
         ry: s.ry,
+        // where the front door's leaf slides to when it opens (`FRONT_DOOR_CLEAR`)
+        byDoor: s.side === 0 && room.floor === 0 && Math.abs(a) < FRONT_DOOR_CLEAR,
       });
     }
   }
   return out;
+}
+
+/**
+ * NO WINDOW WHERE A DOOR SLIDES. Richard, Oct 2026: "We shouldn't place a
+ * window too close to the door, like in the castle, because then the sliding
+ * door interferes with the window and even when window is opened, it is being
+ * obstructed by the open sliding door." The front door is 2.8 wide and its
+ * two leaves part to `w/4 + (w/2 + 0.05)` from the middle, each w/2 wide
+ * (the door step in homeisle.js, `d.panels.forEach`), so an open leaf's outer edge is at 2.85; a
+ * window (1.6, WINDOW in homehouse.js) must start beyond it. The castle's
+ * front wall had windows at +-2.5, spanning 1.7..3.3: half of each behind an
+ * open door. A sliding door's leaves (SLIDE_W 1.8) reach 1.85 from its own
+ * middle, so it and a window can never be on neighbouring slots (2 apart).
+ */
+export const FRONT_DOOR_CLEAR = 2.8 + 0.05 + 1.6 / 2;
+export const SLIDE_CLEAR = 1.8 + 0.05 + 1.6 / 2;
+
+/** May a window or a sliding door go on slot S of this room's wall, given what hangs there? Null, or why not. */
+export function openingWhy(room, R, S, id, skip = -1) {
+  if (id !== 'window' && id !== 'slidedoor') return null;
+  if (S.byDoor) return 'Too close to the front door — it slides open over there.';
+  const at = S.side % 2 ? S.z : S.x;
+  const slots = wallSlots(room.house, room);
+  for (const [i, q] of (R?.wall ?? []).entries()) {
+    if (i === skip || q.side !== S.side || q.k === S.k) continue;
+    if (!((q.id === 'slidedoor' && (id === 'window' || id === 'slidedoor')) || (q.id === 'window' && id === 'slidedoor'))) continue;
+    const T = slots.find((x) => x.side === q.side && x.k === q.k);
+    if (T && Math.abs((T.side % 2 ? T.z : T.x) - at) < SLIDE_CLEAR) return 'Too close to the sliding door — it slides open over there.';
+  }
+  return null;
 }
 
 /** How far in from its outer wall a room may sit and still own it, with no other room between (`wallSlots`): the castle's second floor is 2.5 in. */
@@ -540,7 +648,7 @@ export function defaultWindows(H, hk = 'main', onlyNew = false) {
     // not in a bridge's doorway, which a castle already lived in has on these walls (build.js `buildWhy`'s rule)
     const door = (S) => (H.links ?? []).some((L) => [L.a, L.b].some((e) => e.hk === room.hk && e.floor === room.floor && e.side === S.side
       && Math.abs(e.at - (S.side % 2 ? S.z : S.x)) < (LINK_BY_ID[L.style] ?? LINK_BY_ID.plank).w / 2 + 1.1));
-    for (const S of wallSlots(room.house, room)) if (!had.has(S.side) && !door(S)) (bySide[S.side] ??= []).push(S);
+    for (const S of wallSlots(room.house, room)) if (!had.has(S.side) && !door(S) && !openingWhy(room, R, S, 'window')) (bySide[S.side] ??= []).push(S);
     for (const list of Object.values(bySide)) {
       const S = list[Math.floor(list.length / 2)];
       if (wallFree(R, S.side, S.k)) R.wall.push({ id: 'window', side: S.side, k: S.k, free: true });

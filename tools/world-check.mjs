@@ -3569,7 +3569,7 @@ console.log('\n--- the panda in the ring ---');
       };
       const kf = ['ember', 'frost'].flatMap((s) => ['kiai', 'kparry'].map((p) => feet(`kittens/${s}/${p}`)));
       ok('...the kiai and riposte drawings stand off the middle of their cells, and the Billboard is told where their feet are',
-        kf.every((v) => v > 0.08) && /footX: \(a\.feetX \?\? feetX\(a\)\) \* quad/.test(psrc), kf.map((v) => v.toFixed(3)).join(' '));
+        kf.every((v) => v > 0.08) && /footX: \(a\.feetX \?\? \(key === 'reachPose' \? torsoX\(a\) : feetX\(a\)\)\) \* quad/.test(psrc), kf.map((v) => v.toFixed(3)).join(' '));
       const fsrc = readFileSync(new URL('../src/systems/housing/farm.js', import.meta.url), 'utf8');
       const pen = ['chick', 'bunny', 'goat'].map((a) => ink(`farm/${a}`));
       ok('...and every animal in the pen has its head on the LEFT, which is what the pen tells its Billboards',
@@ -6369,6 +6369,8 @@ console.log('\n--- background removal keeps the drawn whites ---');
     'kittens/ember/tea.png', 'kittens/frost/tea.png',
     // ...and kendo's broken guard and the clinch's two sides.
     ...['ember', 'frost'].flatMap((s) => ['kbroke', 'kclinchR', 'kclinchL'].map((p) => `kittens/${s}/${p}.png`)),
+    // ...and the door mats, nineteen on one sheet (catalog.js DOOR_MATS).
+    'housing/doormats.png',
   ];
   {
     const dir = new URL('../public/sprites/', import.meta.url);
@@ -7152,6 +7154,30 @@ console.log('\n--- the Powerup Kotodama ---');
       ok('...but a fresh block starts from the orb again',
         q._popWard(null) === true && q.wardMax === WARD.max && q.wardHits === 0,
         `max ${q.wardMax} hits ${q.wardHits}`);
+    }
+
+    /* 5b. SHADOW LIONHEART'S BLADE BREAKS IT IN ONE, and a held button puts it
+       back up the moment the wait is paid (Richard, Oct 2026). */
+    {
+      const { q, hud, said } = rig();
+      const how = q._wardTakeHit(hud, { smash: true });
+      ok("Shadow Lionheart's blow breaks a FRESH bubble outright, as if hit enough to break it",
+        how === 'smashed' && q.wardOn === false && said.includes('wardbreak'), `${how} ${said.join(',')}`);
+      ok('...and dreamdojo.simHit asks for that only of his blade',
+        /_wardTakeHit\?\.\(this\.simHud, \{ smash: src === 'shadow' \}\)/.test(readFileSync('src/systems/dream/../dreamdojo.js', 'utf8')));
+      // the thumb never came up: wait out the cooldown and the bubble must come back by itself
+      const held = { down: (a) => a === 'mount', pressed: () => false, doubled: () => false, held: {} };
+      q.wardWant = true;
+      let back = false;
+      for (let i = 0; i < 400 && !back; i++) { q._stepSpecials(1 / 60, held, world, hud); back = q.wardOn; }
+      ok('holding the Ward button through the wait puts the bubble back up when it is ready',
+        back && q.wardCool === 0, `on=${q.wardOn} cool=${q.wardCool}`);
+      q._dropWard(hud, 'release'); q.wardCool = 0;
+      const up = { down: () => false, pressed: () => false, doubled: () => false, held: {} };
+      q._stepSpecials(1 / 60, up, world, hud);
+      q._stepSpecials(1 / 60, held, world, hud);
+      ok('...but a button let go and pressed again is a press, not a want left over',
+        q.wardWant === false && q.wardOn === false, `want=${q.wardWant} on=${q.wardOn}`);
     }
 
     /* 6. THE BLOW STILL DEALS NOTHING, which was already true and is the whole
@@ -37083,6 +37109,44 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
           // ...and asked of a root that really IS offset, or it proves nothing.
           d.lasers.length === 2 && worst < 1e-3 && d.root.getWorldPosition(new THREE.Vector3()).length() > 100,
           `ends off by ${worst.toFixed(4)}, root at ${d.root.getWorldPosition(new THREE.Vector3()).x.toFixed(0)}`);
+        /* 剛 PROGRESSIVE (Richard, Oct 2026): "start slow with 2 beams and end
+           with 4-6 beams at once (jumping and staying under) ... 3 stars even
+           with a few hits ... 30-75s". Run on the real drill: the beams it
+           has at each stage, the high one's height against her real body and
+           her real jump, and the bar three hits leave. */
+        {
+          const B = GAL.ADAMANT_BEAMS;
+          const T = GAL.ADAMANT_T;
+          const P0 = her.position.clone();
+          const steps = (s) => { for (let i = 0; i < s * 60 && d.state === 'live'; i++) { her.position.copy(P0); d.update(1 / 60); } };
+          D.refillSim?.(her);
+          const startN = d.lasers.length;
+          D.simHit = () => ({});   // nothing is decided by the hits here, only by the beams
+          steps(T - 2);
+          const endN = d.lasers.length;
+          const highs = d.lasers.filter((L, i) => B[i]?.high);
+          ok('剛 Adamant starts with two beams and ends with 4-6, some to jump and some to stay under, over 30-75s',
+            startN === 2 && endN >= 4 && endN <= 6 && endN === B.length && highs.length >= 1 && B.some((b) => !b.high) && T >= 30 && T <= 75 && d.spec.time === T,
+            `${startN} -> ${endN} beams (${highs.length} high) over ${T}s`);
+          ok('...and they speed up as it goes', GAL.ADAMANT_RAMP > 0 && Math.abs(GAL.adamantTurn(1, T) - T * (1 + GAL.ADAMANT_RAMP / 2)) < 1e-9);
+          const H = highs[0];
+          const pad = H.thick + TG.LASER_PAD;
+          const herAt = (lift) => { const q = { position: her.position.clone(), height: her.height }; q.position.y = at.y + lift; return q; };
+          // put the beam across her, wherever it has turned to
+          const cx = H.a.x, cz = H.a.z;
+          H.b.set(cx + (her.position.x - SW.SIM.dx - cx) * 3, H.a.y, cz + (her.position.z - SW.SIM.dz - cz) * 3);
+          const apex = (11.2 * 11.2) / (2 * 26);
+          ok('...a pink beam misses her standing and catches her jumping: STAY UNDER is a rule, not a colour',
+            H.distTo(herAt(0)) > pad && H.distTo(herAt(0.4)) < pad && H.distTo(herAt(apex)) < pad,
+            `standing ${H.distTo(herAt(0)).toFixed(2)} vs ${pad.toFixed(2)}; at 0.4 ${H.distTo(herAt(0.4)).toFixed(2)}`);
+          const L = d.lasers.find((x, i) => !B[i]?.high);
+          L.b.set(L.a.x + (her.position.x - SW.SIM.dx - L.a.x) * 3, L.a.y, L.a.z + (her.position.z - SW.SIM.dz - L.a.z) * 3);
+          ok('...and a red one catches her standing and misses her at the top of a jump',
+            L.distTo(herAt(0)) < pad && L.distTo(herAt(apex * 0.8)) > pad);
+          ok('...and three hits still leave three stars on a bare bar', 1 - 3 * GAL.ADAMANT_DMG / 100 >= GAL.ADAMANT_BANDS[2] && 1 - 6 * GAL.ADAMANT_DMG / 100 < GAL.ADAMANT_BANDS[2],
+            `${1 - 3 * GAL.ADAMANT_DMG / 100} vs ${GAL.ADAMANT_BANDS[2]}`);
+          delete D.simHit;
+        }
         d.dispose(); D.drills[0] = null;
       }
 
@@ -37436,13 +37500,19 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       D.hint = realHint;
 
       /* The Matrix rain on Shadow Lionheart's island: "visible in the background
-         from the default camera view ... smaller ... in the distance". */
+         from the default camera view ... smaller ... in the distance" - and
+         then (Oct 2026) "3D rain spawned around the camera ... the rain stays
+         in place when the camera moves". A column wraps into a box centred on
+         the lens: moving the lens a little must move no column at all. */
       {
         const ws = readFileSync(new URL('../src/world/simworld.js', import.meta.url), 'utf8');
-        const rows = [...ws.matchAll(/codeRain\(s(?: \+ vec2\([^)]*\))?, ([\d.]+),/g)].map((m) => +m[1]);
-        ok('影 the code rain is on the screen, not round the horizon: laid out in the pane, fine, and dim',
-          /vec2 s = vView\.xy \/ -vView\.z \* vP11;/.test(ws) && /vP11 = projectionMatrix\[1\]\[1\];/.test(ws)
-          && !/smoothstep\(-0\.3, 0\.05, y\)/.test(ws) && rows.length === 2 && Math.min(...rows) >= 50, rows.join());
+        const { CODE_RAIN: CR } = await import('../src/world/simworld.js');
+        const place = (seed, cam) => [0, 2].map((k) => cam[k] + (((seed[k] - cam[k] + 0.5 * CR.box) % CR.box) + CR.box) % CR.box - 0.5 * CR.box);
+        const seed = [37, 0, 211];
+        const a0 = place(seed, [0, 0, 0]), a1 = place(seed, [6, 0, -4]);
+        ok('影 the code rain stands in the WORLD round the camera: a step of the lens moves no column',
+          Math.hypot(a0[0] - a1[0], a0[1] - a1[1]) < 1e-9 && /c\.xz = uCam\.xz \+ mod\(aSeed\.xz - uCam\.xz \+ 0\.5 \* uBox, uBox\) - 0\.5 \* uBox;/.test(ws)
+          && !/vec2 s = vView\.xy/.test(ws) && CR.far1 < CR.box / 2 && CR.near0 > 10, `${a0} vs ${a1}`);
       }
 
       /* 守 three turrets, a warning, a beam she sees coming, three levels. */
@@ -42635,7 +42705,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
           && /_simGameTrack\(\) \{[\s\S]{0,200}this\.dream\?\.shadow\?\.state === 'live'/.test(msrc)
           && msrc.indexOf('const simSong = this._simGameTrack();') < msrc.indexOf('this._vrLevel = swell'));
         ok('...and the dark sky carries the code rain, scaled by the same gloom — set for each pane before its sky is placed',
-          /uniform float uGloom;[\s\S]*if \(uGloom > 0\.001\) \{[\s\S]*col \+= rain \* uGloom/.test(wsrc)
+          /uniform float uGloom;[\s\S]*if \(uGloom > 0\.001\) col \*= 1\.0 - 0\.88 \* uGloom;/.test(wsrc) && /this\.rain\.visible = k > 0\.001/.test(wsrc)
           && /this\.sim\.setGloom\(this\.paneGloom\(members\)\);[\s\S]{0,200}?this\.sim\.faceCamera\(camera\);/.test(readFileSync(new URL('../src/systems/dreamdojo.js', import.meta.url), 'utf8')));
         /* HER FOUND ORBS STAY OUTSIDE. "it is bringing the worlds regular,
            large kotodama orbs into the simulator with the player. It should

@@ -78,12 +78,15 @@ export class PathFX {
     this.step = new Map();
   }
 
+  /** The strip's top at world (x, z): up a ramp or on a porch where it is bent over one (`yAt`). */
+  static topAt(S, x, z) { return S.yAt?.(x, z) ?? S.y; }
+
   /** Is world (x, z) on the strip `S`? Its own frame, the group's turn. */
   static onStrip(S, x, z, y) {
     const dx = x - S.x, dz = z - S.z;
     const c = Math.cos(S.a), s = Math.sin(S.a);
     const lx = dx * c - dz * s, lz = dx * s + dz * c;
-    return Math.abs(lx) <= S.hw && Math.abs(lz) <= S.hl && Math.abs(y - S.y) < 0.6;
+    return Math.abs(lx) <= S.hw && Math.abs(lz) <= S.hl && Math.abs(y - PathFX.topAt(S, x, z)) < 0.6;
   }
 
   _emit(o) {
@@ -156,14 +159,15 @@ export class PathFX {
   /** "petal particles disturbed by her feet": a handful kicked up per stride. */
   _petals(p, S, sp, dt) {
     const n = Math.min(4, sp * dt * 5 + Math.random());
+    const y0 = PathFX.topAt(S, p.position.x, p.position.z);
     for (let k = 0; k < Math.floor(n); k++) {
       const a = Math.random() * Math.PI * 2;
       this._emit({
         kind: 'petal', life: 0, max: 1.4 + Math.random() * 0.8,
-        p: new THREE.Vector3(p.position.x + Math.cos(a) * 0.35, S.y + 0.08, p.position.z + Math.sin(a) * 0.35),
+        p: new THREE.Vector3(p.position.x + Math.cos(a) * 0.35, y0 + 0.08, p.position.z + Math.sin(a) * 0.35),
         v: new THREE.Vector3(Math.cos(a) * (0.6 + Math.random()) + (p.velocity?.x ?? 0) * 0.25, 1.4 + Math.random() * 1.4, Math.sin(a) * (0.6 + Math.random()) + (p.velocity?.z ?? 0) * 0.25),
         rx: Math.random() * 6, ry: Math.random() * 6, spin: (Math.random() - 0.5) * 9,
-        w: 0.17, h: 0.11, floor: S.y + 0.075, col: Math.random() < 0.6 ? 0xffb7cf : 0xffe0ea,
+        w: 0.17, h: 0.11, floor: y0 + 0.075, col: Math.random() < 0.6 ? 0xffb7cf : 0xffe0ea,
       });
     }
   }
@@ -177,9 +181,11 @@ export class PathFX {
       st.foot = -st.foot;
       const vx = (p.velocity?.x ?? 0) / sp, vz = (p.velocity?.z ?? 0) / sp;
       const x = p.position.x - vz * 0.22 * st.foot, z = p.position.z + vx * 0.22 * st.foot;
-      this._emit({ kind: 'print', life: 0, max: 1.6, p: new THREE.Vector3(x, S.y + 0.012, z), v: new THREE.Vector3(), rx: -Math.PI / 2, ry: Math.atan2(vx, vz), spin: 0, w: 0.24, h: 0.36, floor: -Infinity, col: 0xffd34a });
+      // on a slope a flat print is half under it: lift it clear by its own half-length's rise
+      const y0 = PathFX.topAt(S, x, z) + (S.yAt && PathFX.topAt(S, x, z) !== S.y ? 0.07 : 0);
+      this._emit({ kind: 'print', life: 0, max: 1.6, p: new THREE.Vector3(x, y0 + 0.012, z), v: new THREE.Vector3(), rx: -Math.PI / 2, ry: Math.atan2(vx, vz), spin: 0, w: 0.24, h: 0.36, floor: -Infinity, col: 0xffd34a });
       for (let k = 0; k < 3; k++) {
-        this._emit({ kind: 'spark', life: 0, max: 0.7 + Math.random() * 0.4, p: new THREE.Vector3(x + (Math.random() - 0.5) * 0.3, S.y + 0.1, z + (Math.random() - 0.5) * 0.3), v: new THREE.Vector3((Math.random() - 0.5) * 0.6, 1.2 + Math.random(), (Math.random() - 0.5) * 0.6), rx: 0, ry: Math.random() * 6, spin: 6, w: 0.1, h: 0.1, floor: -Infinity, col: k ? 0xffe680 : 0xffffff });
+        this._emit({ kind: 'spark', life: 0, max: 0.7 + Math.random() * 0.4, p: new THREE.Vector3(x + (Math.random() - 0.5) * 0.3, y0 + 0.1, z + (Math.random() - 0.5) * 0.3), v: new THREE.Vector3((Math.random() - 0.5) * 0.6, 1.2 + Math.random(), (Math.random() - 0.5) * 0.6), rx: 0, ry: Math.random() * 6, spin: 6, w: 0.1, h: 0.1, floor: -Infinity, col: k ? 0xffe680 : 0xffffff });
       }
     }
     this.step.set(p.index, st);

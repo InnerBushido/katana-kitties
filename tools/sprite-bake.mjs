@@ -101,6 +101,12 @@ const PROOF = 'out/bake';
    it keeps a master free to be named after the drawing while the shipped copy
    is named after where it is used. */
 const WORK = [
+  /* DOOR MATS, ONE SHEET OF TWENTY (Richard, Oct 2026: "put them on 1
+     sprite sheet to save on usage credits and texture memory" — 0.25
+     credits, not 5). 4x5 on magenta; each mat's rectangle is MEASURED off
+     the baked sheet into `DOOR_MATS` (homeisle.js), never assumed from the
+     grid. 640 wide: a mat is drawn at most ~2.4 units on the lawn. */
+  { file: 'doormats.png', out: 'housing/doormats.png', to: [640, 800], chroma: true },
   { file: 'dragon_sheet.png', out: 'beasts/dragon_sheet.png', to: [1376, 768], key: true, deep: true },
   { file: 'dragon_fly.png', out: 'beasts/dragon_fly.png', to: [1376, 768], key: true, deep: true },
   { file: 'title_art.png', webp: 92 },

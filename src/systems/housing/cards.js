@@ -1,7 +1,7 @@
 import {
   HOME_SITES, SITE_BY_ID, HOUSES, HOUSE_BY_ID, ITEMS, ITEM_BY_ID, PRESETS, PRESET_BY_ID, ROOM_TYPES, HOME_SELL,
   FREE_ANNEX, BUILDABLE_HOUSES, roomsListed, LINK_STYLES, LINK_BY_ID, homeRooms, roomById, houseSpecs,
-  roomHas, roomWith, ROOM_FEATS,
+  roomHas, roomWith, ROOM_FEATS, DOOR_MATS,
 } from './catalog.js';
 import { houseWhy } from './editor.js';
 import { portSpots, linkBlockers, defaultVia } from './links.js';
@@ -1059,7 +1059,8 @@ export class HousingCards {
     const s = row.look?.s ?? 1;
     const max = Math.min(LOOK_MUL.max, mesh?.userData.maxMul ?? LOOK_MUL.max);
     const shown = Math.min(s, max);
-    const styles = stylesFor(it.model);
+    // a door mat's looks are its designs on the one sheet (catalog.js DOOR_MATS)
+    const styles = it.mat ? DOOR_MATS.map((m) => ({ id: m.id, name: m.name })) : stylesFor(it.model);
     const cur = Math.max(0, styles.findIndex((x) => x.id === row.look?.style));
     const set = (look) => {
       const L = { ...(row.look ?? {}), ...look };

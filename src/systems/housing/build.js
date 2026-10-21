@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { HOUSE_BY_ID, ITEM_BY_ID, LINK_BY_ID, houseSpecs, homeRooms, roomById, roomsListed, roomWith } from './catalog.js';
-import { fits, footprint, gridOf, wallSlots, wallFree, yardWhy, yardR, addOutdoor, houseWhy } from './editor.js';
+import { fits, footprint, gridOf, wallSlots, wallFree, yardWhy, yardR, addOutdoor, houseWhy, openingWhy } from './editor.js';
 import { drawItem, placeModel } from './models.js';
 import { WALL_Y, YARD_BUILT, roomLook } from './homeisle.js';
 import { buildHouseShell, houseFoot, houseFoots, houseRadius, houseHeight } from './homehouse.js';
@@ -164,7 +164,8 @@ export function buildWhy(H, top, siteR = 50) {
         if (e.hk === room.hk && e.floor === room.floor && e.side === S.side && Math.abs(e.at - at) < w / 2 + 1.1) return 'A bridge door is there.';
       }
     }
-    return wallFree(H.rooms?.[top.room], top.side, top.k, top.sel) ? null : 'Something already hangs there.';
+    if (!wallFree(H.rooms?.[top.room], top.side, top.k, top.sel)) return 'Something already hangs there.';
+    return openingWhy(room, H.rooms?.[top.room], S, it.id, top.sel);
   }
   return yardWhy(H, it, top.x, top.z, top.sel, { ...env, rot: top.rot ?? 0 });
 }

@@ -294,7 +294,7 @@ export class HomeBridge {
     this.aprons = [];
     const ap0 = town ? buildLandingApron(this.road, 0, town, (x, z) => this.world._standAt?.(x, z, town) ?? town.heightAt(x, z)) : null;
     const ap1 = this.isle.island ? buildLandingApron(this.road, 1, this.isle.island) : null;
-    if (ap0) { this.group.add(new THREE.Mesh(mergeParts(ap0.parts), toonVertexMat())); this.aprons.push(ap0.platform); }
+    if (ap0) { this.apron0 = new THREE.Mesh(mergeParts(ap0.parts), toonVertexMat()); this.group.add(this.apron0); this.aprons.push(ap0.platform); }
     this._apron1 = ap1;
 
     // the torii at the home end, through which the road leaves
@@ -633,7 +633,8 @@ export class HomeBridge {
       G.openK += Math.sign(G.want - G.openK) * Math.min(Math.abs(G.want - G.openK), dt / DOOR_SWING);
       const e = G.openK * G.openK * (3 - 2 * G.openK);
       for (const h of G.leaves) h.rotation.y = h.userData.ry + h.userData.sg * (Math.PI / 2 - 0.15) * e;
-      const f = this.lockedNow ? 1 : 0;
+      // the purchase scene holds the town end's hologram up while it shows it (`setEntrance`)
+      const f = i === 0 && this.sceneField != null ? this.sceneField : this.lockedNow ? 1 : 0;
       G.fieldK += Math.sign(f - G.fieldK) * Math.min(Math.abs(f - G.fieldK), dt / GATE.fade);
       const show = G.fieldK > 0.01;
       G.field.visible = show;
@@ -716,6 +717,28 @@ export class HomeBridge {
   }
 
   /** How much of the road is drawn: the deck grows from the town out. */
+  /**
+   * THE TOWN END COMING UP, for the purchase scene: 0 none of it, 1 all of
+   * it. Richard, Oct 2026: "the torii gate, hologram gate, door and the
+   * main-island ramp/bridge start [should] appear together. Wait 1-2s, then
+   * the bridge grows to the island." The torii dissolves in on its own
+   * material (`gateMat.reveal`, the scene's); this is everything else at
+   * that end — the doors rise out of the ground on their hinges, the ramp
+   * and the first of the deck (`ENTRANCE_GROW` of it) are there, and the
+   * hologram is up across the doorway (`sceneField`, which `update` obeys
+   * over the lock until the scene lets go of it).
+   */
+  setEntrance(k) {
+    const e = Math.max(0, Math.min(1, k));
+    this.entranceK = e;
+    for (const h of this.gates?.[0]?.leaves ?? []) { h.scale.y = Math.max(1e-3, e); h.visible = e > 0; }
+    if (this.apron0) this.apron0.visible = e > 0;
+    if (this.grow < 1) this.setGrow(Math.max(this.grow, this.entranceGrow() * e));
+  }
+
+  /** How much of the road is the ramp's start: about eight units of it. */
+  entranceGrow() { return Math.min(0.15, 8 / Math.max(1, this.road?.length ?? 60)); }
+
   setGrow(k) {
     this.grow = k;
     if (this.endGroup) this.endGroup.visible = k >= 1;

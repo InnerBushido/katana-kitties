@@ -384,7 +384,29 @@ export class HoloDeck {
       g.toast?.(`${p.name} — put on all three pieces of VR gear first (${n} of 3): they are on the racks across the room.`, p.index);
       return;
     }
+    /* ONE KITTEN PER TUBE. Richard, Oct 2026: "While a player is entering
+       the tube for the holodeck, another player shouldn't be able to enter
+       the tube at the same time. Also, only 1 player per tube". A tube is
+       taken from the moment a sister's rise in it starts until she has walked
+       back out of it — the whole time the Dream Dojo holds her `home` on it. */
+    const who = this.tubeTaken(s, p);
+    if (who) {
+      g.sfx?.('deny');
+      g.toast?.(`${p.name} — ${who.name} is using this tube. Wait for her to come out, or use another one.`, p.index);
+      return;
+    }
     const ok = D.enterFrom(p, { x: s.x, y: s.y, z: s.z, out: s.out });
     if (!ok) g.toast?.(`${p.name} — the holodeck will not start right now.`, p.index);
+  }
+
+  /** The kitten in tube `s` (rising, inside, or on her way out), or null. */
+  tubeTaken(s, p = null) {
+    const D = this.game.dream;
+    for (const q of this.game.players ?? []) {
+      if (!q || q === p) continue;
+      const h = D?.st?.[q.index]?.home;
+      if (h && Math.hypot(h.x - s.x, h.z - s.z) < 0.5 && Math.abs(h.y - s.y) < 2) return q;
+    }
+    return null;
   }
 }

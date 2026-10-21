@@ -604,6 +604,43 @@ export function feetX(atlas, cols = 1) {
   }
 }
 
+/**
+ * WHERE HER BODY IS ACROSS a one-cell drawing, in the same units as `feetX`:
+ * the ink's centre over the band a quarter to six-tenths of the way down it,
+ * which is the torso. For a drawing whose lowest ink is not her feet — the
+ * kendo reach, where it is the shinai lying on the floor in front of her, and
+ * `feetX` read +0.35 of the cell against a body at -0.10, so she leapt back
+ * half a quad every time she reached (Richard, Oct 2026: "Ember's reach
+ * sprite is stepping backwards, should be centered on top of shadow"). 0
+ * when it cannot measure.
+ */
+export function torsoX(atlas, cols = 1) {
+  const img = atlas?.texture?.image;
+  if (!img?.width || typeof document === 'undefined') return 0;
+  try {
+    const w = Math.round(img.width / cols), h = img.height;
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(img, 0, 0, w, h, 0, 0, w, h);
+    const d = g.getImageData(0, 0, w, h).data;
+    const inkAt = (x, y) => d[(y * w + x) * 4 + 3] > 128;
+    let top = -1, bottom = -1;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) if (inkAt(x, y)) { if (top < 0) top = y; bottom = y; break; }
+    }
+    if (top < 0) return 0;
+    let sx = 0, n = 0;
+    for (let y = Math.round(top + (bottom - top) * 0.25); y < top + (bottom - top) * 0.6; y++) {
+      for (let x = 0; x < w; x++) if (inkAt(x, y)) { sx += x; n++; }
+    }
+    return n ? (sx / n + 0.5) / w - 0.5 : 0;
+  } catch {
+    return 0;
+  }
+}
+
 export function packMetrics({
   tallest, widest, inked = 0, cols = 1, rows = 1,
   cell = 512, pad = 0.06, maxAtlas = 2048,

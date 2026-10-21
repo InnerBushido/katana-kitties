@@ -142,6 +142,34 @@ export const GALE_FACE = (q, c) => Math.atan2(q.x - c.x, q.z - c.z);
 export const ADAMANT_RING = 5.6;
 export const ADAMANT_GRACE = 2;
 export const ADAMANT_CAM = { dist: 16, pitch: 0.5 };
+/** 剛, PROGRESSIVE (Richard, Oct 2026: "start slow with 2 beams and end with
+ *  4-6 beams at once (jumping and staying under) ... hard enough that she
+ *  gets hit a few times, but near-perfect timing avoids every hit ... allow
+ *  3 stars even with a few hits ... lasts 30-75s"). How long it runs; when
+ *  each beam joins (`at`, seconds into the live clock), its turn in rad/s
+ *  (the sign is its way round) and whether it is a LOW one she jumps or a
+ *  HIGH one, magenta, she must stay under — so jumping is not always the
+ *  answer. Every beam speeds up by ADAMANT_RAMP over the run. */
+export const ADAMANT_T = 45;
+export const ADAMANT_BEAMS = [
+  { at: 0, w: 0.8, high: false },
+  { at: 0, w: -0.62, high: false },
+  { at: 9, w: 0.5, high: true },
+  { at: 17, w: -0.95, high: false },
+  { at: 26, w: -0.7, high: true },
+  { at: 34, w: 1.15, high: false },
+];
+export const ADAMANT_RAMP = 0.4;
+/** A hit's cost: three of them is 76% of a bare bar, still three stars. */
+export const ADAMANT_DMG = 8;
+export const ADAMANT_BANDS = [0.01, 0.45, 0.74];
+/** The angle a beam has turned through by live time t: its speed ramps
+ *  linearly from w to w(1 + ADAMANT_RAMP) over ADAMANT_T, integrated. */
+export const adamantTurn = (w, t) => w * (t + ADAMANT_RAMP * t * t / (2 * ADAMANT_T));
+/** How high a HIGH beam runs over the floor for a kitten this tall: its
+ *  underside (radius 0.22 and the 0.3 pad) clear of her standing body
+ *  (`Laser.distTo`, feet+0.2 to 0.85 of her height) by 0.15. */
+export const adamantHighY = (h) => h * 0.85 + 0.22 + 0.3 + 0.15;
 /** 跳: the tower. A step of LEAP_STEP is one jump; LEAP_DECK is three. Flat
  *  rows with `sway` drift in and out from the middle over LEAP_SWAY_T. */
 export const LEAP_STEP = 1.6;
@@ -520,10 +548,10 @@ export const DRILLS = {
      she is in it. NOT A JUMP ROPE — he asked — they are two clock hands at
      shin height going opposite ways; she hops each one as it reaches her. */
   vigor: (g, p) => ({
-    title: 'ADAMANT DRILL', goal: 1, time: 12, timeWins: true, showCount: false,
-    goalText: 'Stay in the circle — jump the beams', score: (d) => d.dream.simFrac(d.p),
+    title: 'ADAMANT DRILL', goal: 1, time: ADAMANT_T, timeWins: true, showCount: false,
+    goalText: 'Stay in the circle — JUMP the red beams, stay UNDER the pink', score: (d) => d.dream.simFrac(d.p),
     arriveText: 'Walk into the gold circle to start', grace: ADAMANT_GRACE,
-    lowerIsBetter: false, bands: [0.01, 0.45, 0.75],
+    lowerIsBetter: false, bands: ADAMANT_BANDS,
     doneText: (d) => `${Math.round(d.dream.simFrac(d.p) * 100)}% of your bar left`,
     startZone: (d) => ({ ...d.spot(0, 0), r: ADAMANT_RING - 1 }),
     camera: (d) => (d.state === 'arrive' ? null : adamantCam(d)),
@@ -538,16 +566,8 @@ export const DRILLS = {
       d.dream.refillSim(d.p);
     },
     arrived(d) {
-      const c = d.spot(0, 0);
-      for (const [w, ph] of [[1.25, 0], [-0.9, Math.PI]]) {
-        d.laser({
-          a: { x: c.x, y: c.y + 0.55, z: c.z }, b: { x: c.x, y: c.y + 0.55, z: c.z }, dmg: 15, thick: 0.22, warm: 0.6,
-          move: (t, L) => {
-            const a = ph + w * t;
-            L.b.set(c.x + Math.cos(a) * 7.5, c.y + 0.55, c.z + Math.sin(a) * 7.5);
-          },
-        });
-      }
+      d.adamantNext = 0;
+      adamantJoin(d);
       d.dream.refillSim(d.p);
     },
     tick(d) {
@@ -555,6 +575,7 @@ export const DRILLS = {
       const z = d.p.position.z - SIM.dz;
       const c = d.spot(0, 0);
       if (Math.hypot(x - c.x, z - c.z) > ADAMANT_RING + 0.6) d.fail('Out of the circle!');
+      adamantJoin(d);
     },
   }),
 
@@ -942,6 +963,38 @@ function startPad(d, a, b, look = null) {
 }
 
 /* ------------------------------ 剛 adamant ------------------------------- */
+
+/**
+ * 剛: every beam whose `at` has come, joining. Each comes in ACROSS THE
+ * CIRCLE from her (her angle + PI), so nothing spawns on top of her, warms
+ * for 0.6s and then sweeps. A low one is red at shin height; a high one is
+ * magenta at `adamantHighY` — a jump takes her into it. Each turns by its
+ * speed times the ramp, a frame at a time, so the count-in (at the first
+ * second's speed) hands over to the live clock without a jump; summed over
+ * the run it is `adamantTurn`.
+ */
+function adamantJoin(d) {
+  const c = d.spot(0, 0);
+  const live = d.state === 'live' ? d.t : 0;
+  while (d.adamantNext < ADAMANT_BEAMS.length && ADAMANT_BEAMS[d.adamantNext].at <= live) {
+    const B = ADAMANT_BEAMS[d.adamantNext++];
+    const her = Math.atan2(d.p.position.z - SIM.dz - c.z, d.p.position.x - SIM.dx - c.x);
+    // the first pair go opposite ways from opposite sides, as the drill always began
+    const ph = (d.adamantNext === 2 ? her : her + Math.PI);
+    const y = c.y + (B.high ? adamantHighY(d.p.height ?? 2.6) : 0.55);
+    d.laser({
+      a: { x: c.x, y, z: c.z }, b: { x: c.x, y, z: c.z }, dmg: ADAMANT_DMG, thick: 0.22, warm: 0.6,
+      ...(B.high ? { colour: HOLO.magenta } : {}),
+      move: (t, L) => {
+        const dt = t - (L.lastT ?? t);
+        L.lastT = t;
+        const now = d.state === 'live' ? d.t : 0;
+        L.ang = (L.ang ?? ph) + B.w * (1 + ADAMANT_RAMP * Math.min(1, now / ADAMANT_T)) * dt;
+        L.b.set(c.x + Math.cos(L.ang) * 7.5, y, c.z + Math.sin(L.ang) * 7.5);
+      },
+    });
+  }
+}
 
 function adamantCam(d) {
   const c = d.spot(0, 0);

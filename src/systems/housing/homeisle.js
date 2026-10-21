@@ -3,7 +3,7 @@ import { toonVertexMat, xrayVertexMat, paint, clipBoxes, inClip } from '../../co
 import { Island, mergeParts, PALETTE } from '../../world/build.js';
 import { makeLabelTexture } from '../../core/label.js';
 import { buildHouseShell, roofY, houseHeight, houseRadius, floorOf, FLOOR_H, SLAB_T, WINDOW, PORT_H, rampOf } from './homehouse.js';
-import { ITEMS, ITEM_BY_ID, LINK_BY_ID, houseSpecs, homeRooms, pathPosts, kendoArea, kendoMarks, roomHas, mixedZone } from './catalog.js';
+import { ITEMS, ITEM_BY_ID, LINK_BY_ID, houseSpecs, homeRooms, pathPosts, kendoArea, kendoMarks, roomHas, mixedZone, DOOR_MATS, DOOR_MAT_SHEET } from './catalog.js';
 import { PathFX, makeFlame, makeLamp } from './pathfx.js';
 import { TEA, teaK, teaSet } from './teahouse.js';
 import { ZenGarden, zenParts, ZEN, ZEN_ROCKS, ZEN_STONES, ZEN_STONE_R, ZEN_RAKE } from './zengarden.js';
@@ -572,6 +572,8 @@ export class HomeIsle {
       const it = ITEM_BY_ID[q.id];
       if (!it || it.later) continue;
       const g = this._yardItem(it, q);
+      // the walk the house came with (editor.js `layDoorPath`) is laid as it rises (`rise`)
+      if (it.path && q.free) g.userData.walk = true;
       this.itemGroup.add(g);
       this.itemMeshes.set('o' + q.uid, g);
     }
@@ -795,12 +797,31 @@ export class HomeIsle {
     const bend = (geo) => bendGeo(geo, planes, up);
     P.solid = P.solid.map(bend);
     P.glow = P.glow.map(bend);
+    if (P.tex) P.tex = P.tex.map(bend);
     P.lamps = P.lamps.map((geo) => {
       geo.computeBoundingBox();
       const c = geo.boundingBox.getCenter(new THREE.Vector3());
       return geo.translate(0, up(c.x, c.z), 0);
     });
     P.torches = P.torches.map(([x, y, z]) => [x, y + up(x, z), z]);
+  }
+
+  /**
+   * A MAT LIES ON WHATEVER IT IS ON. Every path's top is a few hundredths over
+   * the lawn and a boardwalk's is 0.17, so a mat at a path's own lift would be
+   * inside the walk it was put down on. It goes on the highest path piece
+   * under its middle, a hair up; on bare lawn, at a path's height.
+   */
+  _matLift(q) {
+    let y = 0.006;
+    for (const r of this.home?.outdoor ?? []) {
+      const it = ITEM_BY_ID[r.id];
+      if (!it?.path || it.mat || r === q) continue;
+      const dx = q.x - r.x, dz = q.z - r.z, a = r.rot ?? 0;
+      if (Math.abs(dx * Math.sin(a) + dz * Math.cos(a)) > it.len / 2 || Math.abs(dx * Math.cos(a) - dz * Math.sin(a)) > it.pw / 2) continue;
+      y = Math.max(y, pathLift(r) + pathTop(it) + 0.006);
+    }
+    return y;
   }
 
   /** Four walls round a rectangle in an outdoor row's own frame, world heights. */
@@ -908,11 +929,13 @@ export class HomeIsle {
         /* Two paths may cross, and two of one kind have their tops at one
            height: each piece sits its own few thousandths up (by uid), so
            where they cross one is simply on top. */
-        const lift = 0.004 + ((q.uid ?? 0) % 6) * 0.006;
+        const lift = it.mat ? this._matLift(q) : pathLift(q);
         g.position.y += lift;
         const P = pathParts(it);
+        if (it.mat) P.tex = [matGeo(it, q.look?.style)];
         this._rampPath(q, it, gy, P);
         flat(P.solid);
+        if (P.tex) add(new THREE.Mesh(P.tex[0], matMaterial()));
         if (P.glow.length) add(new THREE.Mesh(mergeParts(P.glow), new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false })));
         P.torches.forEach(([x, y, z], k) => this.fxSites.push(makeFlame(g, x, y, z, (q.uid ?? 0) * 4 + k)));
         for (const geo of P.lamps) this.fxSites.push(makeLamp(g, geo));
@@ -925,7 +948,20 @@ export class HomeIsle {
         }
         // the two that answer her feet (pathfx.js): where the strip is, in the world
         if (it.id === 'path_petal' || it.id === 'path_carpet') {
-          this.fxSites.push({ kind: it.id === 'path_petal' ? 'petal' : 'carpet', x: w.x, z: w.z, a: this.ry + (q.rot ?? 0), hw: it.pw / 2, hl: it.len / 2, y: gy + lift + P.decks[0].y });
+          const y = gy + lift + P.decks[0].y;
+          /* UP THE RAMP TOO. Richard, Oct 2026: "ramp paths should play their
+             emitters when walking up the ramp or in front of the door". The
+             site's height was the lawn's, and `onStrip` wants her within 0.6
+             of it — so the piece the house came with, bent up its ramp by
+             `_rampPath`, was silent from its second step. `yAt` is the strip's
+             top where she is: the ramp's or the porch's, else the lawn's. */
+          const H = this.home;
+          const yAt = (x, z) => {
+            const o = this.toLocal(x, z);
+            const h = rampLift(H, o.x, o.z);
+            return h > 0 ? this.groundY + h + lift + P.decks[0].y : y;
+          };
+          this.fxSites.push({ kind: it.id === 'path_petal' ? 'petal' : 'carpet', x: w.x, z: w.z, a: this.ry + (q.rot ?? 0), hw: it.pw / 2, hl: it.len / 2, y, yAt });
         }
         break;
       }
@@ -1521,6 +1557,33 @@ export class HomeIsle {
       g.scale.y = r.s * k;
       if (e >= 1) delete g.userData.rise;
     }
+    if (hs.hk === 'main') this._layWalk(hs, e);
+  }
+
+  /**
+   * THE WALK IS LAID AFTER THE HOUSE IS UP. Richard, Oct 2026: "the castle/
+   * dojo grow animation should include the paths (or lay them after the
+   * building is placed)". The pieces stood full-size on the lawn while the
+   * house grew out of it beside them. Now each comes down in turn from the
+   * door outward over the last WALK_LAY of the rise — nearest the house
+   * first, so it reads as the builders working away from the door — and at
+   * `e` 1 every one is back exactly as it was, so a skipped scene leaves no
+   * half-laid carpet.
+   */
+  _layWalk(hs, e) {
+    const pieces = this.itemGroup.children.filter((g) => g.userData.walk);
+    const c = hs.group.position;
+    pieces.sort((a, b) => Math.hypot(a.position.x - c.x, a.position.z - c.z) - Math.hypot(b.position.x - c.x, b.position.z - c.z));
+    const n = pieces.length, t0 = 1 - WALK_LAY;
+    pieces.forEach((g, i) => {
+      const r = (g.userData.lay ??= { s: g.scale.clone() });
+      const a = t0 + (WALK_LAY * i) / n, b = t0 + (WALK_LAY * (i + 1.6)) / n;
+      const u = e >= 1 ? 1 : Math.max(0, Math.min(1, (e - a) / (b - a)));
+      const k = u * u * (3 - 2 * u);
+      g.visible = k > 0.001;
+      g.scale.set(r.s.x * Math.max(0.001, k), r.s.y * Math.max(0.001, k), r.s.z * Math.max(0.001, k));
+      if (e >= 1) delete g.userData.lay;
+    });
   }
 
   /** Raise house `hk` over `dur` seconds from now (`update` drives it). */
@@ -1611,6 +1674,8 @@ export const FURN_MIN_HALF = 0.12;
 /** ...so the rectangle is drawn in from the edge by her push distance (radius + `_segPush`'s 0.18) less that. */
 export const FURN_INSET = 0.75 + 0.18 - FURN_REACH;
 
+/** How much of a house's rise the walk to its door is laid over, at its end (`_layWalk`). */
+export const WALK_LAY = 0.45;
 /** How long a newly built house takes to rise out of the lawn. */
 export const RAISE_T = 2.4;
 
@@ -1767,11 +1832,69 @@ export function pathParts(it) {
       decks.push({ x0: -hw + 0.5, x1: hw - 0.5, z0: -hl, z1: hl, y: 0.06 });
       break;
     }
+    case 'path_mat':
+      // the coir under the picture, a hair proud of it all round (`matGeo` is the picture)
+      B(it.pw, 0.03, it.len, 0x5a3e26, 0, 0.015, 0);
+      flat(0.036);
+      break;
     default:
       B(it.pw, 0.06, it.len, 0xc9a77a, 0, 0.03, 0);
       flat(0.06);
   }
   return { solid, glow, torches, lamps, decks };
+}
+
+/** Two paths of one kind have their tops at one height: each piece sits its own few thousandths up, by uid. */
+export const pathLift = (q) => 0.004 + ((q.uid ?? 0) % 6) * 0.006;
+
+const PATH_TOP = new Map();
+/** The top of a path piece over its own floor: its highest deck. */
+export function pathTop(it) {
+  if (!PATH_TOP.has(it.id)) PATH_TOP.set(it.id, Math.max(0, ...pathParts(it).decks.map((d) => d.y)));
+  return PATH_TOP.get(it.id);
+}
+
+/** Which door mat a row is: its LOOK, or the first. */
+export const matOf = (style) => DOOR_MATS.find((m) => m.id === style) ?? DOOR_MATS[0];
+
+/**
+ * The mat's picture: one quad over the coir, its UVs on its own measured
+ * rectangle of the sheet, 1.5 px in so a neighbour's edge never bleeds in
+ * under mipmapping. The top of the drawing is at -z, the house's end of the
+ * piece, so it reads the right way up to a kitten walking in to the door.
+ */
+export function matGeo(it, style) {
+  const [x, y, w, h] = matOf(style).rect;
+  const S = DOOR_MAT_SHEET, e = 1.5;
+  const u0 = (x + e) / S.w, u1 = (x + w - e) / S.w;
+  const v0 = 1 - (y + h - e) / S.h, v1 = 1 - (y + e) / S.h;
+  const geo = new THREE.PlaneGeometry(it.pw - 0.06, it.len - 0.06);
+  geo.rotateX(-Math.PI / 2);
+  const uv = geo.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) ? u1 : u0, uv.getY(i) ? v1 : v0);
+  geo.translate(0, 0.036, 0);
+  return geo;
+}
+
+/**
+ * ONE material for every mat on every island, so the sheet is one texture
+ * however many mats there are. It is a plain brown mat until the sheet loads
+ * and stays one if it never does — every file degrades (non-negotiable 9).
+ */
+let MAT_MATERIAL = null;
+export function matMaterial() {
+  if (MAT_MATERIAL) return MAT_MATERIAL;
+  MAT_MATERIAL = new THREE.MeshLambertMaterial({ color: 0x9a6a42 });
+  if (globalThis.location) {
+    new THREE.TextureLoader().load(DOOR_MAT_SHEET.url, (t) => {
+      t.colorSpace = THREE.SRGBColorSpace;
+      t.anisotropy = 4;
+      MAT_MATERIAL.map = t;
+      MAT_MATERIAL.color.set(0xffffff);
+      MAT_MATERIAL.needsUpdate = true;
+    }, undefined, () => {});
+  }
+  return MAT_MATERIAL;
 }
 
 /** A bamboo tiki torch's pole and cup at (x, z); returns where its flame sits. */

@@ -25,6 +25,38 @@ import { kendoArea, kendoMarks, roomHas } from './catalog.js';
 --------------------------------------------------------------------------- */
 
 export const IPPON_COOL = 0.9;
+/** How long the red spark on a struck men lasts (`_spark`). */
+export const SPARK_T = 0.35;
+
+/** A red starburst, drawn once: eight rays round a hot white-yellow core. */
+function sparkTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  g.translate(64, 64);
+  for (let i = 0; i < 8; i++) {
+    const L = i % 2 ? 40 : 60;
+    g.rotate(Math.PI / 4);
+    g.beginPath();
+    g.moveTo(-7, 0);
+    g.lineTo(0, -L);
+    g.lineTo(7, 0);
+    g.closePath();
+    g.fillStyle = '#ff2a1f';
+    g.fill();
+  }
+  const r = g.createRadialGradient(0, 0, 0, 0, 0, 26);
+  r.addColorStop(0, '#fffbe0');
+  r.addColorStop(0.45, '#ffd23a');
+  r.addColorStop(1, 'rgba(255,42,31,0)');
+  g.fillStyle = r;
+  g.beginPath();
+  g.arc(0, 0, 26, 0, Math.PI * 2);
+  g.fill();
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
 
 /**
  * A MATCH, Oct 2026. Richard: "There should likely be rounds and timer and
@@ -54,8 +86,12 @@ export const BOUT = {
   hajime: 1.0,
   yame: 1.4,
   roundEnd: 2.6,
-  /** Out of the square in a live round this long, and the match is off. */
+  /** Out of the square in a live round this long, and the ROUND is her opponent's. */
   jogai: 1.5,
+  /** ...twice running and the MATCH is: this long dazed where she stands... */
+  shameDaze: 1.5,
+  /** ...then this long knelt in seiza with her back to it all. */
+  shameSit: 3,
 };
 
 /** Each kitten's kiai, as a pitch on the shout (audio.js 'kiai'). PLACEHOLDER
@@ -279,8 +315,8 @@ export class Kendo {
   }
 
   /**
-   * THE MATCH'S CAMERA, for a pane: anybody in it fighting, or standing in a
-   * room where a match is on. Closer than the house's own, and square to the
+   * THE MATCH'S CAMERA, for a pane: anybody in it fighting. (A sister just
+   * standing in the room has a pane of her own now — `watchLane`.) Closer than the house's own, and square to the
    * line between the two marks, so the fighters are left and right of the
    * screen. Richard: "maybe the camera should change or zoom in closer to the
    * players." Asked per pane, like the door shot, so the shared rig and every
@@ -289,13 +325,10 @@ export class Kendo {
   shotFor(members) {
     const players = this.H.game.players ?? [];
     for (const B of this.bouts.values()) {
-      const near = members.some((i) => {
-        const q = players[i];
-        if (!q) return false;
-        if (q === B.a || q === B.b) return true;
-        const z = this.zoneOf(q);
-        return z?.key === B.key || B.zone.isle.roomAt?.(q.position.x, q.position.y, q.position.z)?.id === B.zone.room.id;
-      });
+      /* The FIGHTERS' pane only: a sister in the room has a pane of her own
+         now (housing.js `watchLane`), and the match's lens in hers too would be
+         the same picture twice. */
+      const near = members.some((i) => players[i] === B.a || players[i] === B.b);
       if (!near) continue;
       const { isle: I, room } = B.zone;
       const A = kendoArea(room);
@@ -508,6 +541,14 @@ export class Kendo {
     }
     // the riposte and the facing are a live round's; every other beat, neither
     if (B.phase !== 'fight') for (const p of [B.a, B.b]) { p.kendoLive = false; p.kendoFace = null; }
+    /* THE CEREMONY FACES THE OPPONENT, every frame of it. Richard, Oct 2026:
+       the rei "looks rotated or skewed ... should face the opponent". Facing
+       was set once by `_place`, and a stick nudged in the kneel or the kiai
+       turned her, so she bowed off to one side of the girl she was bowing to.
+       Not in the shame, which faces AWAY on purpose (`_jogai`). */
+    if (B.phase === 'kneel' || B.phase === 'rise' || B.phase === 'bow' || B.phase === 'final' || B.phase === 'hajime' || B.phase === 'yame') {
+      for (const [p, o] of [[B.a, B.b], [B.b, B.a]]) p.facing = Math.atan2(o.position.x - p.position.x, o.position.z - p.position.z);
+    }
     switch (B.phase) {
       case 'kneel':
         if (B.t >= BOUT.kneel) { next('rise'); B.turn = 0; B.step = 'grab'; }
@@ -550,7 +591,7 @@ export class Kendo {
         for (const [k, p] of [B.a, B.b].entries()) {
           const z = this.zoneOf(p);
           B.out[k] = z?.key === B.key ? 0 : B.out[k] + dt;
-          if (B.out[k] >= BOUT.jogai) { this._end(B, `${p.name} stepped off the square — the match is over.`); return; }
+          if (B.out[k] >= BOUT.jogai) { this._jogai(B, k); return; }
         }
         if (B.clock <= 0) this._roundOver(B, 'TIME!');
         break;
@@ -589,11 +630,66 @@ export class Kendo {
       case 'final':
         if (B.t >= BOUT.bow) this._end(B, null);
         break;
+      case 'shame': {
+        /* RAN AWAY: dazed where she stopped, then down in seiza with her back
+           to her opponent, for everyone to see. `kendoLockT` is the stars. */
+        const r = B.runner;
+        r.kendoLockT = Math.max(0, (r.kendoLockT ?? 0) - dt);
+        if (B.t >= BOUT.shameDaze && r.kendoStance !== 'kneel') {
+          const o = r === B.a ? B.b : B.a;
+          r.kendoStance = 'kneel';
+          r.facing = Math.atan2(r.position.x - o.position.x, r.position.z - o.position.z);
+          this.H.game.audio?.play?.('land');
+        }
+        if (B.t >= BOUT.shameDaze + BOUT.shameSit) this._end(B, null);
+        break;
+      }
     }
+  }
+
+  /**
+   * JOGAI, OFF THE SQUARE FOR TOO LONG. Richard, Oct 2026: "When the player
+   * goes out of bounds for too long, they should lose the round and the round
+   * restarts. If it happens twice in a row, they lose the match dishonorably
+   * because they ran away, comedic, the player loses control for 1-2s, and
+   * then sits in seiza position facing away from the opponent or centre,
+   * showing shame." It used to call the whole match off, which punished
+   * nobody and lost the score. TWICE IN A ROW is two rounds running that
+   * ended with her off the tape (`B.jogaiRow`, cleared by any round that ends
+   * another way).
+   */
+  _jogai(B, k) {
+    const G = this.H.game;
+    const p = k ? B.b : B.a;
+    const o = k ? B.a : B.b;
+    B.jogaiRow = B.jogaiRow ?? [0, 0];
+    B.jogaiRow[k]++;
+    B.jogaiRow[1 - k] = 0;
+    B.out = [0, 0];
+    if (B.jogaiRow[k] >= 2) {
+      B.phase = 'shame';
+      B.t = 0;
+      B.runner = p;
+      B.clinch = null;
+      for (const q of [B.a, B.b]) { q.kendoLive = false; q.kendoFace = null; q.velocity?.set?.(0, 0, 0); }
+      p.pinnedAt = (p.pinnedAt ?? new THREE.Vector3()).copy(p.position);
+      o.pinnedAt = (o.pinnedAt ?? new THREE.Vector3()).copy(o.position);
+      p.kendoLockT = BOUT.shameDaze;
+      this._say(B, `${p.name} RAN AWAY — TWICE! ${o.name} wins the match, and ${p.name} sits in SHAME. 🙈`);
+      G.audio?.play?.('endgong');
+      return;
+    }
+    B.wins[1 - k]++;
+    B.phase = 'roundEnd';
+    B.t = 0;
+    this._place(B);
+    this._say(B, `JOGAI! ${p.name} stayed off the square — ${o.name} takes round ${B.round}! (Rounds: ${B.a.name} ${B.wins[0]} · ${B.b.name} ${B.wins[1]})`);
+    G.audio?.play?.('endgong');
   }
 
   /** A round is decided: two ippons, or the clock. */
   _roundOver(B, why) {
+    B.jogaiRow = [0, 0];
     const [p0, p1] = B.pts;
     if (p0 !== p1) B.wins[p0 > p1 ? 0 : 1]++;
     B.phase = 'roundEnd';
@@ -912,6 +1008,7 @@ export class Kendo {
     G.audio?.play?.('perfect');
     const sp = SPIRITS[a.style?.name] ?? SPIRITS.Ember;
     this._showKiai(a, sp);
+    this._spark(t);
     if (B.pts[k] >= BOUT.toWin) { this._roundOver(B, `${pre}IPPON! ${a.name}'s ${sp.animal}!`); return; }
     B.phase = 'yame';
     B.t = 0;
@@ -1023,6 +1120,7 @@ export class Kendo {
     const g = this.gear.get(i);
     if (!g) return;
     g.p.kendoGeared = false;
+    g.p.kendoLift = 0;
     g.men?.parent?.remove(g.men);
     g.shinai?.parent?.remove(g.shinai);
     this.gear.delete(i);
@@ -1175,6 +1273,23 @@ export class Kendo {
     const sp = SPIRITS[a.style.name] ?? SPIRITS.Ember;
     G.toast(`IPPON! ${a.name}'s ${sp.animal} KIAI! (${a.name} ${b[a.style.name]} · ${t.name} ${b[t.style.name] ?? 0})`, a.index, null, 0, { colours: [cssColour(a), cssColour(t)] });
     this._showKiai(a, sp);
+    this._spark(t);
+  }
+
+  /**
+   * A RED SPARK ON HER MEN where the cut landed. Richard, Oct 2026: "Add red
+   * hit spark on head of player when hit lands." A burst that pops and fades
+   * in a third of a second, over the drawing (`depthTest` off, like the
+   * kiai badge) so the helmet it is on never hides it.
+   */
+  _spark(t) {
+    if (typeof document === 'undefined' || !this.H.game?.scene) return;
+    this._sparkTex ??= sparkTexture();
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: this._sparkTex, transparent: true, depthTest: false, color: 0xffffff }));
+    s.renderOrder = 21;
+    s.material.rotation = Math.random() * Math.PI;
+    this.H.game.scene.add(s);
+    (this.sparks ??= []).push({ s, p: t, t: 0 });
   }
 
   _showKiai(p, sp) {
@@ -1201,12 +1316,29 @@ export class Kendo {
         this._unwear(i);
         continue;
       }
+      /* ON THE MAT, NOT IN IT. Richard, Oct 2026: "their feet are going
+         through the kendo floor". She stands on the room's floor and the
+         dojo's mat and tape are built on top of it (their tops at 0.14 and
+         0.22, `KENDO_DECAL_Y`'s comment), so the bottom of every drawing was
+         buried. Her drawings are lifted onto the decals while she is on the
+         square (`Player`'s kendo poses add `kendoLift`). */
+      p.kendoLift = this.zoneOf(p) ? KENDO_DECAL_Y : 0;
       if (!g.men) continue;
       g.men.position.set(p.position.x, p.position.y + 2.2, p.position.z);
       const f = p.facing ?? 0;
       g.shinai.position.set(p.position.x + Math.sin(f) * 0.9, p.position.y + 1.3, p.position.z + Math.cos(f) * 0.9);
       g.shinai.rotation.y = f;
     }
+    this.sparks = (this.sparks ?? []).filter((k) => {
+      k.t += dt;
+      const u = k.t / SPARK_T;
+      const s = (0.6 + 1.2 * Math.min(1, u * 4)) * (k.p.height ?? 2.9) / 2.9;
+      k.s.scale.set(s, s, 1);
+      k.s.position.set(k.p.position.x, k.p.position.y + (k.p.height ?? 2.9) * 0.78, k.p.position.z);
+      k.s.material.opacity = Math.max(0, 1 - Math.max(0, u - 0.35) / 0.65);
+      if (u >= 1) { k.s.parent?.remove(k.s); k.s.material.dispose(); return false; }
+      return true;
+    });
     this.kiai = this.kiai.filter((k) => {
       k.t += dt;
       const s = Math.min(1, k.t * 6) * 1.6;

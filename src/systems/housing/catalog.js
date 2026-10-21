@@ -475,6 +475,12 @@ export const ITEMS = [
     blurb: 'For VIP kittens only. Gold trim and all.' },
   { id: 'path_tiki', name: 'TIKI TORCH PATH', where: ['yard'], path: true, deco: true, len: 6, pw: 3.6, r: 3.2, mult: 0.1, model: null,
     blurb: 'Bamboo torches burning on both sides.' },
+  /* A DOOR MAT is a path one mat long: it lies flat, crosses a path, goes up
+     onto a porch and bends over a ramp by every rule a path already has.
+     `mat` draws it from the one sheet of designs (DOOR_MATS); CUSTOMIZE ▸
+     LOOK picks which. */
+  { id: 'path_mat', name: 'DOOR MAT', where: ['yard'], path: true, mat: true, deco: true, len: 1.65, pw: 2.3, r: 1.4, mult: 0.02, model: null,
+    blurb: 'Nineteen designs. CUSTOMIZE picks which one.' },
   /* "tiki torches and path lanterns become standalone yard decorations" —
      the very torch and lamp the two paths are lined with (homeisle.js
      `torchParts` / `lampParts`), one at a time, wherever she likes. */
@@ -501,6 +507,39 @@ export const ITEMS = [
  * drawing (homeisle.js `pathParts`), the colliders and the placement rule
  * (editor.js `yardWhy`), so the post she bumps is the post that is drawn.
  */
+/**
+ * THE DOOR MATS, one sheet of them (`public/sprites/housing/doormats.png`,
+ * 640x800, baked from `docs/art-masters/doormats.png` by sprite-bake).
+ * Richard, Oct 2026: "put them on 1 sprite sheet to save on usage credits
+ * and texture memory". Each `rect` is [x, y, w, h] in sheet pixels, MEASURED
+ * off the baked sheet by its ink (non-negotiable 8) — the grid is 4x5 but no
+ * two rows are the same height (99 to 106). The twentieth drawing on the
+ * sheet, a rising sun, is left out on purpose: it is a flag with a history,
+ * in a game made for children. The first is the default look.
+ */
+export const DOOR_MAT_SHEET = { url: '/sprites/housing/doormats.png', w: 640, h: 800 };
+export const DOOR_MATS = [
+  { id: 'calico', name: 'CALICO CAT', rect: [17, 57, 138, 99] },
+  { id: 'paws', name: 'PAW PRINTS', rect: [175, 57, 136, 99] },
+  { id: 'sakura', name: 'SAKURA', rect: [332, 57, 136, 99] },
+  { id: 'koi', name: 'KOI', rect: [487, 57, 137, 99] },
+  { id: 'waves', name: 'SEIGAIHA WAVES', rect: [17, 199, 138, 101] },
+  { id: 'torii', name: 'TORII', rect: [175, 199, 136, 101] },
+  { id: 'maneki', name: 'MANEKI-NEKO', rect: [332, 199, 136, 101] },
+  { id: 'napping', name: 'NAPPING CAT', rect: [487, 199, 138, 101] },
+  { id: 'fishbone', name: 'FISH BONES', rect: [17, 345, 138, 105] },
+  { id: 'daruma', name: 'DARUMA', rect: [175, 345, 136, 105] },
+  { id: 'bamboo', name: 'BAMBOO', rect: [332, 345, 136, 105] },
+  { id: 'moon', name: 'MOON CAT', rect: [487, 344, 138, 106] },
+  { id: 'katanas', name: 'CROSSED KATANAS', rect: [17, 492, 138, 101] },
+  { id: 'onigiri', name: 'ONIGIRI', rect: [332, 493, 136, 100] },
+  { id: 'yarn', name: 'YARN BALL', rect: [487, 493, 137, 100] },
+  { id: 'tatami', name: 'TATAMI CAT', rect: [17, 638, 137, 101] },
+  { id: 'lantern', name: 'LANTERN', rect: [175, 638, 135, 101] },
+  { id: 'fuji', name: 'MOUNT FUJI', rect: [332, 639, 136, 101] },
+  { id: 'ichimatsu', name: 'ICHIMATSU CHECK', rect: [487, 639, 138, 100] },
+];
+
 export function pathPosts(it) {
   if (it?.id !== 'path_tiki' && it?.id !== 'path_lantern') return null;
   const ex = it.id === 'path_tiki' ? 0.25 : 0.3;

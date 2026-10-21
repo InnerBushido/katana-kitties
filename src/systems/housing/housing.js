@@ -13,7 +13,8 @@ import { JUKEBOX, ACTIVITY_MUSIC, hasRecording, previewOf } from './jukebox.js';
 import { Koi } from './koi.js';
 import { Farm } from './farm.js';
 import { Kendo } from './kendo.js';
-import { autoLayout, defaultWindows, houseWhy, brokenLinks, wallSlots, ITEM_SELL, layDoorPath, layRampPath, doorPathId } from './editor.js';
+import { orbPrice } from '../../entities/powerorb.js';
+import { autoLayout, defaultWindows, houseWhy, brokenLinks, wallSlots, ITEM_SELL, layDoorPath, layRampPath, layDoorMat, doorPathId } from './editor.js';
 
 /** How far toward its bridge a NEW house of this kind stands (see `buy`). */
 export const HOME_FORWARD = { castle: 7 };
@@ -25,7 +26,7 @@ import { BuildMode } from './build.js';
 import { HomeBoons } from './boons.js';
 import { HomeActivities, TABLE_SEATS } from './activities.js';
 import { SlideRides } from './sliderider.js';
-import { migrateCastleRooms, migrateMixedRooms } from './migrate.js';
+import { migrateCastleRooms, migrateMixedRooms, migrateDoorWindows } from './migrate.js';
 import { HEAD_H, roofY, PORT_H, floorOf } from './homehouse.js';
 
 /** "Hana", "Hana and Mei", "Hana, Mei and Rin". */
@@ -317,12 +318,20 @@ export class Housing {
       if (H && !H.winV) { defaultWindows(H); H.winV = 1; }
       // ...and the castle's, whose rooms sit in from its walls, on the sides that only now count (editor.js `wallSlots`)
       if (H && H.winV < 2) { defaultWindows(H, null, true); H.winV = 2; }
+      // ...and none left where the front door slides open (editor.js `FRONT_DOOR_CLEAR`), once
+      if (H && H.winV < 3) { migrateDoorWindows(H); H.winV = 3; this.save(); }
       /* ...and a walk laid when it stopped at the foot of the ramp goes on up
          it to the door (editor.js `rampWalk`), once — only if she kept the
          walk she was given, and round anything she has put on the ramp since */
       if (H && !H.rampV) {
         if ((H.outdoor ?? []).some((q) => q.free && q.id === doorPathId(H))) layRampPath(H, this.envOf(I));
         H.rampV = 1;
+        this.save();
+      }
+      // ...and a door mat, once, for a home bought before there were any (editor.js `layDoorMat`)
+      if (H && !H.matV) {
+        if (!(H.outdoor ?? []).some((q) => q.id === 'path_mat')) layDoorMat(H, this.envOf(I));
+        H.matV = 1;
         this.save();
       }
       I.setHome(H, H ? this.coloursOf(H) : null);
@@ -435,9 +444,17 @@ export class Housing {
     }
   }
 
-  /** The price of `mult` orbs, today. */
+  /** The price of `mult` orbs — ONE PLAYER'S orb, whatever the party.
+   *
+   *  IT USED TO BE THE SHOP'S PRICE (`kotodama.price`), which divides the pot
+   *  by the party: 1300 alone, 650 at two, 433 at three — so a castle Roshi
+   *  sold for 26,000 to one kitten cost 8,660 with three playing. Richard, Oct
+   *  2026: "it shouldn't scale based on the number of players ... I meant the
+   *  normal price a kotodama is for 1 player without scaling". The world's
+   *  pot is the one input left, and it does not move during a game. */
   price(mult) {
-    return priceOf(mult, this.game.kotodama?.price || 650);
+    const pot = this.game.world?.pointsTotal;
+    return priceOf(mult, pot > 0 ? orbPrice(pot, 1) : 1300);
   }
 
   /** This game's row in the browser (homestore.js `homeKey`). */
@@ -1371,6 +1388,13 @@ export class Housing {
   watchLane(i) {
     if (this.watchers.has(i)) return `tour:${this.watchers.get(i)}`;
     for (const o of this.watchers.values()) if (o === i) return `tour:${i}`;
+    /* A KENDO MATCH IS ITS OWN STAGE. Richard, Oct 2026: "When a player isn't
+       in the kendo match, they should have their own split screen until the
+       match is over and then they can merge if they are nearby." The two
+       fighters share the match's lane and nobody else can join it; when the
+       bout ends the lane goes, and the ordinary distances merge them again. */
+    const B = this.kendo?.boutOf(i);
+    if (B) return `kendo:${B.key}`;
     return null;
   }
 
@@ -1720,7 +1744,7 @@ export class Housing {
       if (!houseWhy({ ...H, at }, { hk: 'main', house: houseId, ...at }, this.envOf(I))) H.at = at;
     }
     defaultWindows(H);
-    H.winV = 2;
+    H.winV = 3;
     // the walk from her bridge to her door, and nothing of a preset's on it (editor.js `layDoorPath`)
     const env = this.envOf(I);
     /* No bridge wound yet (the roads solve in the background): the landing
@@ -1729,6 +1753,7 @@ export class Housing {
     env.landing ??= { x: 0, z: I.radius - 4 };
     layDoorPath(H, env);
     H.rampV = 1;
+    H.matV = 1;
     if (presetId && PRESET_BY_ID[presetId]) autoLayout(H, PRESET_BY_ID[presetId], I, env);
     this.store.homes[siteId] = H;
     this.save();

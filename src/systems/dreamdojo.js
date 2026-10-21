@@ -2877,7 +2877,8 @@ export class DreamDojo {
     if (p.warded) {
       // A held beam is blocked by the bubble being UP; it does not break it.
       if (hold) p.wardFlash = 0.25;
-      else p._wardTakeHit?.(this.simHud);
+      // Shadow Lionheart's blade breaks it outright (see `Player._wardTakeHit`).
+      else p._wardTakeHit?.(this.simHud, { smash: src === 'shadow' });
       return 'blocked';
     }
     if ((s.iframes ?? 0) > 0) return 'immune';

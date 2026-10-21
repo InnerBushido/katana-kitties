@@ -1,6 +1,6 @@
 ﻿import * as THREE from 'three';
 import { Billboard } from '../core/gfx.js';
-import { feetX } from '../core/spritesheet.js';
+import { feetX, torsoX } from '../core/spritesheet.js';
 import { PANDA_SPEED, PANDA_JUMP, CLAW } from './panda.js';
 import { aggregate, WARD, AEGIS, DIVE, CROSS, CHARGE, DODGE, PARRY } from './powerorb.js';
 import { STEAL, DBREATH, BreathTally, arenaPowerFor } from './clanpower.js';
@@ -251,7 +251,18 @@ export const KENDO_CEREMONY_H = { seizaPose: 0.72, reachPose: 0.8, reiPose: 0.92
    (kneeling, her bogu is 640px against 652 standing) and her white fur
    defeats the grill measure, so she keeps the shared fractions until hers
    are measured by hand. */
-export const KENDO_POSE_H = { Ember: { seizaPose: 0.94, reachPose: 0.96, kiaiPose: 1.35 } };
+/* SECOND PASS, Richard, Oct 2026: "the seiza for both sprites is too small",
+   "When clinching ... their sprites are too small, should be bigger so their
+   helmets are similar size as when they are standing", "Ember striking
+   sprite is also too small, should measure the helmets". Measured this time
+   ON SCREEN, every drawing on its own quad side by side (the grill's height
+   and the men's width against the guard's), not off the files - the file
+   reading had put the clinch at 1.01 when it drew at 0.80 of the guard:
+     seiza 0.86 -> 1.08, rei 0.86 -> 1.1, kiai 0.85 -> 1.55, clinch 0.80 -> 1.2,
+   reach 1.0 stays. */
+export const KENDO_POSE_H = {
+  Ember: { seizaPose: 1.08, reachPose: 0.96, reiPose: 1.1, kiaiPose: 1.55, kclinchRPose: 1.2, kclinchLPose: 1.2 },
+};
 export const HOME_BATH_H = 0.55;
 export const HOME_FUTON_H = 0.9;
 /** homePose -> [the drawing it needs, the old pose it wears without it]. */
@@ -1433,7 +1444,10 @@ export class Player {
   _updateDaze(dt) {
     if (!this.dazeStars) return;
     // ...and over a kendo fighter who cannot swing for a moment (housing/kendo.js `kendoLockT`)
-    const on = this.stunT > 0 || (this.kendoBout && this.kendoLockT > 0);
+    /* BOOLEAN, not a truthy value: `false || undefined` is undefined, and three
+       treats only `visible === false` as hidden — so the stars stood at her
+       feet (the group's origin, with no orbit applied) from the first frame. */
+    const on = this.stunT > 0 || (!!this.kendoBout && this.kendoLockT > 0);
     this.dazeStars.visible = on;
     if (!on) return;
     this._dazeSpin = (this._dazeSpin ?? 0) + dt * 7.5;
@@ -1845,8 +1859,9 @@ export class Player {
         width: quad,
         height: quad,
         footOffset: (a.pad ?? 0) * quad,
-        // her feet held still through a mirror — measured, see `feetX`
-        footX: (a.feetX ?? feetX(a)) * quad,
+        // her feet held still through a mirror — measured, see `feetX`; the
+        // reach's lowest ink is the shinai on the floor, so it is pinned by her body
+        footX: (a.feetX ?? (key === 'reachPose' ? torsoX(a) : feetX(a))) * quad,
       });
       this[key].visible = false;
       this.group.add(this[key]);
@@ -2256,6 +2271,31 @@ export class Player {
     const land = this.kendoBout && Number.isFinite(this.kendoLandYaw) ? this.kendoLandYaw : null;
     const wasPushed = !!this._pushedLast;
     this._pushedLast = pushed;
+    /* ...AND OFF THE END OF A ROAD. Richard, Oct 2026: "After stepping off of
+       a bridge, the player input forward direction should stay the same until
+       the player stops moving the movement direction, which is when it should
+       reset to the current, default camera view direction". On the road the
+       stick means ONWARD (`_snakeWish`), and the ride camera then eases back
+       round to the default one — so a held stick read through `camYaw` the
+       frame she stepped off turned her, and kept turning her as the lens
+       swung. The frame the ride ends, the basis is chosen so that the stick
+       she is holding still means the way she is going, and held (the same
+       `_peekHold` the swing rule below keeps) until she lets go. */
+    const onRoad = !!this.snakeRide;
+    if (this._roadLast && !onRoad && pushed && !borrowed) {
+      const sp = Math.hypot(this.velocity.x, this.velocity.z);
+      const goA = sp > 0.5 ? Math.atan2(this.velocity.x, this.velocity.z) : Math.atan2(Math.sin(this.facing), Math.cos(this.facing));
+      const B = this._basis();
+      const wx = B.right.x * pad.mx - B.fwd.x * pad.my;
+      const wz = B.right.z * pad.mx - B.fwd.z * pad.my;
+      // A basis turned by Y turns every wish by the same angle (fwd's heading is yaw + PI).
+      this._peekHold = { yaw: this.camYaw + (goA - Math.atan2(wx, wz)), offRoad: true };
+    }
+    this._roadLast = onRoad;
+    if (this._peekHold?.offRoad) {
+      if (pushed) return this._basis(this._peekHold.yaw);
+      this._peekHold = null;
+    }
     if (land != null && !this.bridgePeek?.live && !borrowed && !(this.camSwing && pushed) && !(H && pushed)) {
       this._peekHold = null;
       return this._basis(land);
@@ -3888,6 +3928,8 @@ export class Player {
              a double tap is two ordinary taps, which is what the game did
              before this existed. */
           if (!(pad.doubled?.('mount') && this._latchWard(hud))) this._popWard(hud);
+          // ...and a thumb that stays down keeps asking (see `wardWant`, in the update)
+          this.wardWant = !!this.power.ward;
         }
       }
     }
@@ -4039,6 +4081,17 @@ export class Player {
        and it happens: her sister can trade the Ward orb away from her while
        the bubble is up. */
     this.wardRegrab = Math.max(0, this.wardRegrab - dt);
+    /* STILL HOLDING IT MEANS STILL ASKING. Richard, Oct 2026: "If player is
+       holding the block button ... and the ability is depleted, then if the
+       ward ability becomes usable again, then it should automatically become
+       engaged again". `wardWant` is set by the press that reached the Ward
+       (not one a dragon or a panda took) and lives exactly as long as the
+       button stays down; the wait running out under it is a press. */
+    if (!pad.down?.('mount')) this.wardWant = false;
+    if (this.wardWant && !this.wardOn && !this.warded && this.wardCool === 0 && this.power.ward
+      && !this.mount && !this.pandaMount && !this.rideAlong && !this.busy && !this.kendoLive) {
+      this._popWard(hud);
+    }
     if (this.wardOn) {
       this.wardUsed += dt;
       const spent = this.wardUsed >= this._wardCeiling();
@@ -4235,9 +4288,14 @@ export class Player {
    * is nothing to halve once `wardOn` is false, so it goes straight to the
    * smash: the tail is already the end of the bubble.
    *
+   * `smash` IS A BLOW NO WARD SURVIVES — Shadow Lionheart's (dream/shadow.js
+   * via `simHit`). Richard, Oct 2026: "if player gets hit, their Ward should
+   * get disabled as if they were hit for the amount needed to break their
+   * shield ability." The blow is still caught; the bubble is not left up.
+   *
    * @returns {'absorbed'|'expired'|'smashed'} what the blow did
    */
-  _wardTakeHit(hud) {
+  _wardTakeHit(hud, { smash: always = false } = {}) {
     this.wardFlash = 0.25;
     this.wardHits += 1;
 
@@ -4254,7 +4312,7 @@ export class Player {
       return why;
     };
 
-    if (this.wardHits >= (WARD.hits ?? 2) || !this.wardOn) return smash('smashed');
+    if (always || this.wardHits >= (WARD.hits ?? 2) || !this.wardOn) return smash('smashed');
 
     this.wardMax = this._wardCeiling() * (WARD.hitCut ?? 0.5);
     /* THE HALVING CAN LAND BEHIND THE CLOCK, and that is the player's fourth
@@ -6906,14 +6964,14 @@ export class Player {
         pose.facing = kparry ? this.parryDir : this.facing;
         const moving = Math.hypot(this.velocity.x, this.velocity.z) > 0.5;
         this._kendoBob = (this._kendoBob ?? 0) + dt * (moving ? 14 : 3);
-        pose.mesh.position.y = kiai ? 0 : Math.abs(Math.sin(this._kendoBob)) * (moving ? 0.12 : 0.03);
+        pose.mesh.position.y = (kiai ? 0 : Math.abs(Math.sin(this._kendoBob)) * (moving ? 0.12 : 0.03)) + (this.kendoLift ?? 0);
         pose.mesh.rotation.z = 0;
         pose.mesh.scale.y = 1;
         /* THE FALLBACK for a ceremony with no drawing: the guard sunk and
            squashed for seiza, and tipped toward her opponent for the rei.
            The tip is in the billboard's plane, toward whichever side the
            drawing points, which `_pointsRight` already knows. */
-        if (cer) pose.mesh.position.y = 0;
+        if (cer) pose.mesh.position.y = this.kendoLift ?? 0;
         else if (st === 'kneel' || st === 'grab') {
           pose.mesh.scale.y = st === 'grab' ? 0.8 : 0.66;
         } else if (st === 'bow') {

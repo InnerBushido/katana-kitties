@@ -1,5 +1,32 @@
 import { ITEM_BY_ID, HOUSE_BY_ID, homeRooms } from './catalog.js';
-import { fits, firstFit, wallSlots, wallFree } from './editor.js';
+import { fits, firstFit, wallSlots, wallFree, openingWhy } from './editor.js';
+
+/**
+ * WINDOWS OUT FROM BEHIND THE FRONT DOOR (editor.js `FRONT_DOOR_CLEAR`):
+ * every window or sliding door on a slot it may no longer use goes to the
+ * nearest one on the same wall it may, then any wall of the room. A free
+ * window with nowhere to go is dropped (it was a gift); a bought one stays
+ * where it is rather than be lost. True if anything moved.
+ */
+export function migrateDoorWindows(H) {
+  let changed = false;
+  for (const room of homeRooms(H)) {
+    const R = H.rooms?.[room.id];
+    if (!R?.wall?.length) continue;
+    const slots = wallSlots(room.house, room);
+    for (let i = R.wall.length - 1; i >= 0; i--) {
+      const q = R.wall[i];
+      const S = slots.find((x) => x.side === q.side && x.k === q.k);
+      if (!S || !openingWhy(room, R, S, q.id, i)) continue;
+      const at = (T) => (T.side % 2 ? T.z : T.x);
+      const ok = slots.filter((T) => wallFree(R, T.side, T.k, i) && !openingWhy(room, R, T, q.id, i))
+        .sort((a, b) => (a.side !== q.side) - (b.side !== q.side) || Math.abs(at(a) - at(S)) - Math.abs(at(b) - at(S)));
+      if (ok.length) { q.side = ok[0].side; q.k = ok[0].k; changed = true; }
+      else if (q.free) { R.wall.splice(i, 1); changed = true; }
+    }
+  }
+  return changed;
+}
 
 /**
  * A WHOLE-ROOM DOJO OR HOLODECK INTO A FEATURE of a mixed room (catalog

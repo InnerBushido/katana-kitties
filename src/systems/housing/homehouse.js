@@ -806,7 +806,7 @@ export function houseFoot(houseId) {
   const S = SHAPES[houseId] ?? SHAPES.minka;
   const [w, d] = S.floors[0];
   const pw = w + S.porch, pd = d + S.porch;
-  return { x0: -pw, x1: pw, z0: -pd, z1: pd + (S.base > 0.8 ? S.base / 0.32 : 0) };
+  return { x0: -pw, x1: pw, z0: -pd, z1: Math.max(pd, rampOf(houseId)?.z1 ?? 0) };
 }
 
 /**
@@ -822,7 +822,13 @@ export function houseFoots(houseId) {
   const [w, d] = S.floors[0];
   const pw = w + S.porch, pd = d + S.porch;
   const out = [{ x0: -pw, x1: pw, z0: -pd, z1: pd }];
-  if (S.base > 0.8) out.push({ x0: -STAIR_W, x1: STAIR_W, z0: pd, z1: pd + S.base / 0.32, ramp: true });
+  /* To where the slope MEETS THE GRASS (`rampOf`). It was pd + base / 0.32,
+     which forgot that the castle's ramp starts three courses back into its
+     plinth: 1.35 of lawn past its foot was house, and the carpet turning off
+     the foot for the bridge was refused there (Richard, Oct 2026: "paths in
+     front of a bought building must connect"). */
+  const R = rampOf(houseId);
+  if (R) out.push({ x0: -STAIR_W, x1: STAIR_W, z0: pd, z1: R.z1, ramp: true });
   return out;
 }
 

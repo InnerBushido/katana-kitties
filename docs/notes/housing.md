@@ -235,7 +235,7 @@ Each one degrades: delete the file and the game draws the stand-in.
 | **Taiko, the cups game, volleyball** | a line and a sound | the mini-games |
 | **The Bushido Blade forest** | shown, locked, "later" | Richard's later feature |
 | **Boosts for kotodama abilities** | not done: the animals boost JUMP HEIGHT, JUMP DISTANCE and SPRINT only | Richard also floated boosting the panda or her kotodama powers; it is a `petBoost` field plus the one line that reads it |
-| **Door mats** | none: the walk to the door is a path and stops at the door | ~20 Higgsfield mats (cats, the leaders, the kittens on holiday) at 0.25 credits each, 5 in all — priced, not yet approved |
+| **Door mats** | DONE (Oct 2026): nineteen designs on ONE generated sheet (0.25 credits for the lot), a free `path_mat` at every front door, CUSTOMIZE ▸ LOOK picks the design | the leaders or the kittens on a mat would be a second sheet — not the kids' own drawings, so ask first |
 | **Windows open onto a gap, not glass** | the opening and two sliding panels | nothing needed unless a pane of glass is wanted |
 
 ## Boons — what home is worth in the ring
@@ -839,6 +839,54 @@ Richard's six notes, each quoted over its constant in `kendo.js`.
   no longer plants her for `PARRY.recover`. She walks at once with 0.6s of
   stars, `kendoLockT`, in which she cannot swing or riposte.
 - **Stars** are `dazeStars`, on `stunT > 0` or a fighter's `kendoLockT > 0`.
+
+## Door mats, the walk, the purchase scene, kendo again — Oct 2026
+
+- **Door mats, one sheet.** "put them on 1 sprite sheet to save on usage
+  credits and texture memory". `docs/art-masters/doormats.png` is a single
+  `gpt_image_2_5` take on magenta: 20 mats, 0.25 credits, where twenty
+  separate generations would have cost 5. sprite-bake keys it to
+  `public/sprites/housing/doormats.png` at 640x800, and every mat on every
+  island shares that ONE texture and material (`matMaterial`).
+  - Each design's rectangle in `DOOR_MATS` (catalog.js) was measured off the
+    baked sheet by its ink. The rows run 99 to 106 tall, so a grid would have
+    been wrong. world-check re-measures every one.
+  - The rising-sun mat on the sheet is deliberately left out: that flag has a
+    history, and this is a game for children.
+  - A mat is a PATH one mat long (`path_mat`). It crosses paths, goes on a
+    porch and bends over a ramp by rules that already exist. It lies on the
+    highest path under it (`_matLift`), because a boardwalk's top is 0.17.
+  - Every new home gets one free at its front door (`layDoorMat`), picked by
+    the island. An old home gets one once (`matV`). CUSTOMIZE ▸ LOOK cycles
+    the designs.
+- **No lawn in the walk.** "Paths in front of a bought building must connect
+  or overlap, with no gaps." Measured over four landings per house, the bare
+  points along the walk were:
+
+  | house | before |
+  | --- | --- |
+  | castle | 335 of 2320 |
+  | Dojo House | 192 |
+  | minka | 5 |
+
+  It is 0 for all three now. There were three causes:
+  - The castle's ramp footprint ran 1.35 past where its slope meets the grass
+    (`houseFoots` forgot the ramp starts three courses into the plinth). It
+    now ends at `rampOf(...).z1`.
+  - A refused piece was DROPPED; now it slides along its leg.
+  - The corner where the walk turns for the bridge was open. The walk now
+    leaves the door straight (`frontWalk`), runs a path's width past the
+    turn, gets a KNEE piece on the corner, and may lap the last
+    `PATH_RAMP_FOOT` of a ramp's side.
+- **The walk is laid after the house rises** (`_layWalk`). It goes piece by
+  piece from the door outward over the last `WALK_LAY` (45%) of the rise.
+  Before, it stood full-size on the lawn while the castle grew beside it.
+- **Petals and gold steps play on the ramp** and on the porch. A path site
+  has a `yAt` that follows the ramp under her. Before, it was silent from the
+  first step up, because `onStrip` wanted her within 0.6 of the lawn.
+- **The purchase scene's entrance appears together.** The torii, the doors,
+  the hologram and the ramp's start reveal over `GATE_REVEAL` (2.2s), then
+  hold for `GATE_HOLD` (1.5s), and only then does the bridge grow.
 
 ## Known rough edges
 

@@ -12,8 +12,12 @@ import * as THREE from 'three';
      1 REFORM   her island, the house rising out of it and the colours
                 fading from neutral into hers
      2 GATE     the camera on the main island at the bridge's entrance; a
-                cloud rolls in and the torii appears through it
-     3 BRIDGE   the snake bridge grows out from the gate in her colours
+                cloud rolls in and the torii appears through it — and WITH
+                it the doors, the hologram across them and the ramp's start,
+                together; then the shot HOLDS on them (GATE_HOLD) — Richard,
+                Oct 2026: "appear together. Wait 1-2s, then the bridge grows"
+     3 BRIDGE   the snake bridge grows out from the gate in her colours,
+                from the ramp's start on
      4 STATUE   her statue rises at the entrance, the name over the gate
      5 WIDE     the whole road out to her island
 
@@ -24,9 +28,12 @@ import * as THREE from 'three';
    warns) — the island is still hers and she can fly there.
 --------------------------------------------------------------------------- */
 
+/** The gate shot: the entrance comes up over GATE_REVEAL, then is held for GATE_HOLD. */
+export const GATE_REVEAL = 2.2;
+export const GATE_HOLD = 1.5;
 const SHOTS = [
   { id: 'reform', dur: 3.2, cap: (n) => `${n}'s island is taking shape…` },
-  { id: 'gate', dur: 2.6, cap: () => 'A gate appears through the clouds…' },
+  { id: 'gate', dur: GATE_REVEAL + GATE_HOLD, cap: () => 'A gate appears through the clouds…' },
   { id: 'bridge', dur: 4.4, cap: (n) => `…and a bridge grows in ${n}'s colours!` },
   { id: 'statue', dur: 2.8, cap: (n, many) => (many ? `Statues of ${n} guard the way.` : `A statue of ${n} guards the way.`) },
   { id: 'wide', dur: 2.6, cap: (n) => `Welcome home, ${n}!` },
@@ -76,6 +83,8 @@ export class PurchaseScene {
       B.group.visible = true;
       B.solid = false;
       B.setGrow(0);
+      B.setEntrance?.(0);
+      B.sceneField = 0;
       B.gateMat.reveal = 0;
       B.cloudMat.opacity = 0;
       B.statue.visible = false;
@@ -118,17 +127,27 @@ export class PurchaseScene {
         this.camera.lookAt(I.x, I.groundY + I.height * 0.45, I.z);
         break;
       }
-      case 'gate':
-        B.cloudMat.opacity = Math.min(0.9, u * 2) * (1 - ease((u - 0.6) / 0.4) * 0.6);
-        B.gateMat.reveal = ease((u - 0.25) / 0.75);
-        this._gateCam(B, u);
+      case 'gate': {
+        // the reveal over its own seconds, the same curve for every piece of the entrance
+        const r = Math.min(1, this.t / GATE_REVEAL);
+        B.cloudMat.opacity = Math.min(0.9, r * 2) * (1 - ease((r - 0.6) / 0.4) * 0.6);
+        const k = ease((r - 0.25) / 0.75);
+        B.gateMat.reveal = k;
+        B.setEntrance?.(k);
+        B.sceneField = k;
+        this._gateCam(B, r);
         break;
-      case 'bridge':
+      }
+      case 'bridge': {
         B.cloudMat.opacity = Math.max(0, 0.35 - u);
         B.gateMat.reveal = 1;
-        B.setGrow(ease(u));
+        // the hologram stood for the reveal; from here it is the lock's again
+        B.sceneField = null;
+        const k0 = B.entranceGrow?.() ?? 0;
+        B.setGrow(k0 + (1 - k0) * ease(u));
         this._bridgeCam(B, ease(u));
         break;
+      }
       case 'statue': {
         B.statue.visible = true;
         const e = ease(u * 1.3);
@@ -240,6 +259,8 @@ export class PurchaseScene {
     if (B) {
       B._sceneReady = false;
       if (B._statueY0 != null) B.statue.position.y = B._statueY0;
+      B.setEntrance?.(1);
+      B.sceneField = null;
       if (B.statue) B.statue.visible = true;
       if (B.cloudMat) B.cloudMat.opacity = 0;
     }

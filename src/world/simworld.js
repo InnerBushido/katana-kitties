@@ -68,18 +68,11 @@ export const HOLO = {
 
 /* ------------------------------- shaders --------------------------------- */
 
-/* `vView` and `vP11` are for the code rain (below): where this fragment is ON
-   THE SCREEN, worked out per fragment from its view-space position and the
-   lens's own focal length, so a split pane's rain is that pane's height. */
 const VOID_VERT = /* glsl */`
   varying vec3 vDir;
-  varying vec3 vView;
-  varying float vP11;
   void main() {
     vDir = normalize(position);
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
-    vView = mv.xyz;
-    vP11 = projectionMatrix[1][1];
     gl_Position = projectionMatrix * mv;
   }
 `;
@@ -91,36 +84,7 @@ const VOID_FRAG = /* glsl */`
   uniform float uTime;
   uniform float uGloom;
   varying vec3 vDir;
-  varying vec3 vView;
-  varying float vP11;
   float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-  /* One sheet of code rain on the screen: ROWS cells up the pane, columns
-     0.62 of a cell wide. Each column has its own speed, trail length and
-     phase; the head is the bright cell, the trail fades above it, and every
-     cell is a 3x5 block of bits that re-rolls now and then — a glyph without
-     a font. x is the trail, y the head. (No backticks in
-     here: this is a JS template literal.) */
-  vec2 codeRain(vec2 s, float rows, float seed, float density, float speed) {
-    float cell = 2.0 / rows;
-    vec2 g = vec2(s.x / (cell * 0.62), s.y / cell);
-    float cid = floor(g.x);
-    vec2 f = fract(g);
-    float rid = floor(g.y);
-    float live = step(1.0 - density, hash(vec2(cid, seed)));
-    float sp = speed * (0.6 + 0.8 * hash(vec2(cid, seed + 1.0)));
-    float len = rows * (0.25 + 0.45 * hash(vec2(cid, seed + 4.0)));
-    float span = rows * 1.3 + len;
-    float headRow = rows * 0.6 - fract(uTime * sp / span + hash(vec2(cid, seed + 2.0))) * span;
-    float dh = rid - floor(headRow);
-    float trail = (dh >= 0.0 && dh < len) ? 1.0 - dh / len : 0.0;
-    float head = (dh >= 0.0 && dh < 1.0) ? 1.0 : 0.0;
-    vec2 sub = floor(vec2(f.x * 3.0, f.y * 5.0));
-    float roll = floor(uTime * (0.7 + 4.0 * hash(vec2(rid, cid + seed))));
-    float bit = step(0.45, hash(vec2(cid * 7.0 + sub.x + roll * 3.1, rid * 13.0 + sub.y + seed)));
-    float on = step(0.12, f.x) * step(f.x, 0.88) * step(0.08, f.y) * step(f.y, 0.92);
-    float glyph = live * bit * on;
-    return vec2(trail * glyph, head * glyph);
-  }
   float noise(vec2 p) {
     vec2 i = floor(p), f = fract(p);
     vec2 u = f * f * (3.0 - 2.0 * f);
@@ -161,17 +125,104 @@ const VOID_FRAG = /* glsl */`
        is looking at, behind everything because it IS the sky: two sheets, a
        far fine one (84 rows a pane) and a sparser nearer one (52), both dim
        and fogged toward the void so they sit in the distance. */
-    if (uGloom > 0.001) {
-      col *= 1.0 - 0.88 * uGloom;
-      if (vView.z < 0.0) {
-        vec2 s = vView.xy / -vView.z * vP11;
-        vec2 far = codeRain(s, 84.0, 3.0, 0.55, 9.0);
-        vec2 near = codeRain(s + vec2(0.013, 0.0), 52.0, 11.0, 0.22, 13.0);
-        vec3 rain = vec3(0.10, 0.75, 0.32) * pow(far.x, 1.6) * 0.32 + vec3(0.55, 1.0, 0.7) * far.y * 0.4
-          + vec3(0.14, 0.95, 0.42) * pow(near.x, 1.4) * 0.5 + vec3(0.75, 1.0, 0.85) * near.y * 0.65;
-        col += rain * uGloom;
-      }
-    }
+    /* ...AND NOW IN THE WORLD, NOT ON THE SCREEN. Richard, Oct 2026: "can
+       we move it from 2D screen space into 3D rain spawned around the
+       camera? Keep the look; the rain stays in place when the camera moves."
+       A rain painted on the pane slid with every turn of the lens, which is
+       what gave it away as a sticker. The rain is CODE_RAIN below: columns
+       standing in the world round the camera. The sky only goes dark. */
+    if (uGloom > 0.001) col *= 1.0 - 0.88 * uGloom;
+    gl_FragColor = vec4(col, 1.0);
+  }
+`;
+
+/* THE CODE RAIN, IN THE WORLD. Columns of glyph cells standing round the
+   lens: each is one vertical quad, turned about Y to face it, and placed by
+   wrapping its seed point into a box CODE_RAIN.box wide CENTRED ON THE CAMERA
+   - so a column is fixed in the world while the lens is anywhere near it, and
+   the one that falls off the back of the box comes round in front, never
+   seen to move because the far edge is faded out. The cells are the
+   column's own, so they fall past the islands rather than with the lens (a
+   first cut indexed them by WORLD height, rows 120-290, while the falling
+   head runs over -rows/2..rows/2 as it did on the pane: 0.2% of the screen
+   lit). The glyph
+   is the sky's old one (a 3x5 block of bits that re-rolls), at the sizes it
+   had: a far fine sheet and a nearer sparse one, by column. */
+export const CODE_RAIN = {
+  /** How many columns, and the box round the camera they wrap in (x, z, y).
+   *  DENSE AND CLOSE: the default lens is ~25 from her and sees out to ~60,
+   *  so 1600 columns in a 280 box (fading out at 95-138) put a column every
+   *  hundred square metres where nothing could see most of them. */
+  n: 3200, box: 130, boxY: 110,
+  /** A cell's height in world units, and a column's length in cells. 0.45 is
+   *  the old sheets' 84-rows-a-pane glyph at the default lens's 30 or so. */
+  cell: 0.45, rows: 110,
+  /** Faded in over [near0, near1] (no glyph in her face) and out over [far0, far1] (no edge). */
+  near0: 10.5, near1: 18, far0: 48, far1: 64,
+};
+const RAIN_VERT = /* glsl */`
+  attribute vec3 aSeed;
+  attribute vec2 aCorner;
+  attribute float aId;
+  uniform vec3 uCam;
+  uniform float uBox;
+  uniform float uBoxY;
+  uniform float uW;
+  uniform float uH;
+  varying vec2 vCell;
+  varying float vId;
+  varying float vFade;
+  void main() {
+    vec3 c;
+    c.xz = uCam.xz + mod(aSeed.xz - uCam.xz + 0.5 * uBox, uBox) - 0.5 * uBox;
+    c.y = uCam.y + mod(aSeed.y - uCam.y + 0.5 * uBoxY, uBoxY) - 0.5 * uBoxY;
+    vec2 to = uCam.xz - c.xz;
+    float L = length(to);
+    vec2 r = L > 1e-4 ? vec2(to.y, -to.x) / L : vec2(1.0, 0.0);
+    vec3 p = c + vec3(r.x, 0.0, r.y) * aCorner.x * uW + vec3(0.0, aCorner.y * uH, 0.0);
+    // up the column in cells, centred like the old pane sheet's (-rows/2..rows/2)
+    vCell = vec2(aCorner.x + 0.5, aCorner.y);
+    vId = aId;
+    float d = length(uCam - c);
+    vFade = smoothstep(${CODE_RAIN.near0.toFixed(1)}, ${CODE_RAIN.near1.toFixed(1)}, d)
+      * (1.0 - smoothstep(${CODE_RAIN.far0.toFixed(1)}, ${CODE_RAIN.far1.toFixed(1)}, d));
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+  }
+`;
+const RAIN_FRAG = /* glsl */`
+  uniform float uTime;
+  uniform float uGloom;
+  uniform float uRows;
+  varying vec2 vCell;
+  varying float vId;
+  varying float vFade;
+  float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  void main() {
+    float cid = vId;
+    bool nearSheet = hash(vec2(cid, 7.0)) < 0.3;
+    float seed = nearSheet ? 11.0 : 3.0;
+    float rows = uRows;
+    float g = vCell.y * rows;
+    float rid = floor(g);
+    vec2 f = vec2(vCell.x, fract(g));
+    float sp = (nearSheet ? 13.0 : 9.0) * (0.6 + 0.8 * hash(vec2(cid, seed + 1.0)));
+    float len = rows * (0.25 + 0.45 * hash(vec2(cid, seed + 4.0)));
+    float span = rows * 1.3 + len;
+    float headRow = rows * 0.6 - fract(uTime * sp / span + hash(vec2(cid, seed + 2.0))) * span;
+    float dh = rid - floor(headRow);
+    float trail = (dh >= 0.0 && dh < len) ? 1.0 - dh / len : 0.0;
+    float head = (dh >= 0.0 && dh < 1.0) ? 1.0 : 0.0;
+    vec2 sub = floor(vec2(f.x * 3.0, f.y * 5.0));
+    float roll = floor(uTime * (0.7 + 4.0 * hash(vec2(rid, cid + seed))));
+    float bit = step(0.45, hash(vec2(cid * 7.0 + sub.x + roll * 3.1, rid * 13.0 + sub.y + seed)));
+    float on = step(0.12, f.x) * step(f.x, 0.88) * step(0.08, f.y) * step(f.y, 0.92);
+    float glyph = bit * on;
+    vec3 col = nearSheet
+      ? vec3(0.14, 0.95, 0.42) * pow(trail, 1.4) * 0.5 + vec3(0.75, 1.0, 0.85) * head * 0.65
+      : vec3(0.10, 0.75, 0.32) * pow(trail, 1.6) * 0.32 + vec3(0.55, 1.0, 0.7) * head * 0.4;
+    // the column's two ends fade out HERE: per vertex, every corner IS an end, and it was all dark
+    col *= glyph * vFade * uGloom * 1.6 * (1.0 - smoothstep(0.38, 0.5, abs(vCell.y)));
+    if (max(col.r, max(col.g, col.b)) < 0.004) discard;
     gl_FragColor = vec4(col, 1.0);
   }
 `;
@@ -790,6 +841,7 @@ export class SimWorld {
        sky with an edge somewhere, and a kitten who runs far enough finds it. */
     this.sky = sky;
     this.root.add(sky);
+    this._buildRain(uTime);
 
     // The Tron floor, far below, fading out before its edge can be seen.
     const floorU = { uTime, uRadius: { value: 1400 } };
@@ -1233,6 +1285,52 @@ export class SimWorld {
     this.addBridge(from, to, { wobble: 2.5, waves: 1, name: 'port bridge' });
   }
 
+  /** The code rain (`CODE_RAIN`): one mesh, every column a quad, placed on the GPU. */
+  _buildRain(uTime) {
+    const R = CODE_RAIN;
+    const seed = new Float32Array(R.n * 4 * 3);
+    const corner = new Float32Array(R.n * 4 * 2);
+    const id = new Float32Array(R.n * 4);
+    const index = [];
+    // seeded, so the rain is the same rain every time (and in every pane)
+    let s = 0x5eed;
+    const rnd = () => ((s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+    for (let i = 0; i < R.n; i++) {
+      const x = rnd() * R.box, y = rnd() * R.boxY, z = rnd() * R.box;
+      [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]].forEach(([cx, cy], k) => {
+        const v = i * 4 + k;
+        seed.set([x, y, z], v * 3);
+        corner.set([cx, cy], v * 2);
+        id[v] = i;
+      });
+      const b = i * 4;
+      index.push(b, b + 1, b + 2, b, b + 2, b + 3);
+    }
+    const geo = new THREE.BufferGeometry();
+    // `position` is unused by the shader but three needs one to count vertices
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(R.n * 4 * 3), 3));
+    geo.setAttribute('aSeed', new THREE.BufferAttribute(seed, 3));
+    geo.setAttribute('aCorner', new THREE.BufferAttribute(corner, 2));
+    geo.setAttribute('aId', new THREE.BufferAttribute(id, 1));
+    geo.setIndex(index);
+    this._rainU = {
+      uTime, uGloom: this._uGloom,
+      uCam: { value: new THREE.Vector3() },
+      uBox: { value: R.box }, uBoxY: { value: R.boxY },
+      uW: { value: R.cell * 0.62 }, uH: { value: R.cell * R.rows },
+      uRows: { value: R.rows },
+    };
+    const rain = new THREE.Mesh(geo, new THREE.ShaderMaterial({
+      vertexShader: RAIN_VERT, fragmentShader: RAIN_FRAG, uniforms: this._rainU,
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, side: THREE.DoubleSide,
+    }));
+    rain.frustumCulled = false;
+    rain.renderOrder = -50;
+    rain.visible = false;
+    this.rain = rain;
+    this.root.add(rain);
+  }
+
   /* ------------------------------ per frame ------------------------------- */
 
   update(dt) {
@@ -1258,6 +1356,7 @@ export class SimWorld {
   setGloom(g) {
     const k = Math.max(0, Math.min(1, Number.isFinite(g) ? g : 0));
     this._uGloom.value = k;
+    if (this.rain) this.rain.visible = k > 0.001;
     this.fog.color.setHex(SIM_FOG).lerp(_gloomFog, k);
   }
 
@@ -1282,6 +1381,8 @@ export class SimWorld {
   /** Before a sim pane draws: put the sky on this lens. */
   faceCamera(camera) {
     this.sky.position.set(camera.position.x - SIM.dx, camera.position.y, camera.position.z - SIM.dz);
+    // the rain's box is centred on this lens; its columns stay where they are in the world
+    this._rainU?.uCam.value.set(camera.position.x - SIM.dx, camera.position.y, camera.position.z - SIM.dz);
     // Signs turn about Y only — one that tips back is a sign on a hinge.
     _se.setFromQuaternion(camera.quaternion, 'YXZ');
     for (const s of this.signs ?? []) s.rotation.set(0, _se.y, 0);

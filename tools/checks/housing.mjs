@@ -23,7 +23,7 @@ import { emptyStore, newHome, normalise, saveStore, loadStore, migrateYard, HOME
 import { careLevel, careBuff, stalksAt, BAMBOO_GROW, BAMBOO_MAX } from '../../src/systems/housing/farm.js';
 import { fits, firstFit, footprint, gridOf, autoLayout, ITEM_SELL, yardWhy, yardR, firstYardSpot, addOutdoor, wallSlots, houseWhy, defaultWindows } from '../../src/systems/housing/editor.js';
 import { buildWhy, commitBuild, removeBuilt, pickList, stepToward, BUILD_KEYS, carry, uncarry } from '../../src/systems/housing/build.js';
-import { houseRadius, houseShape, HEAD_H, SLAB_T, buildHouseShell, houseFoot, WINDOW, PORT_H, stairBlocks } from '../../src/systems/housing/homehouse.js';
+import { houseRadius, houseShape, HEAD_H, SLAB_T, buildHouseShell, houseFoot, houseFoots, WINDOW, PORT_H, stairBlocks } from '../../src/systems/housing/homehouse.js';
 import { possessive, ownedCount, roomRefund, changeRoomType, roomTypeRefund } from '../../src/systems/housing/cards.js';
 import { JUKEBOX, JUKEBOX_BY_ID, PREVIEW_AT, previewOf, ACTIVITY_MUSIC } from '../../src/systems/housing/jukebox.js';
 import { MUSIC_FILES } from '../../src/core/musicfiles.js';
@@ -35,16 +35,17 @@ import { ROSHI_LINES, ROSHI_VOICE } from '../../src/systems/housing/roshi.js';
 import { Kendo, KIAI_T, BOUT, SEIZA, KENDO_HIT, KENDO_TURN, KENDO_DECAL_Y, KENDO_BLOCK, KENDO_CLINCH, KENDO_SHINAI, KENDO_SLIDE, yawAcross } from '../../src/systems/housing/kendo.js';
 import { LOWER_XRAY, BEHIND_HOP, KNOCK, DOOR_XRAY, TEA_SHOT, doorSeg } from '../../src/systems/housing/housing.js';
 import { roofY, floorOf, CASTLE_COURSE } from '../../src/systems/housing/homehouse.js';
-import { XRAY_SLOTS, SLIDE_W } from '../../src/systems/housing/homeisle.js';
+import { XRAY_SLOTS, SLIDE_W, WALK_LAY } from '../../src/systems/housing/homeisle.js';
 import { HoloStar, LASER_ORDER, LASER_COLOUR } from '../../src/systems/dream/targets.js';
 import { kendoArea, kendoMarks, mixedZone, roomHas, roomWith } from '../../src/systems/housing/catalog.js';
 import { setRoomFeat } from '../../src/systems/housing/cards.js';
 import { migrateMixedRooms } from '../../src/systems/housing/migrate.js';
 import { KENDO_DODGE, KENDO_SCALE, KENDO_CEREMONY_H, KENDO_POSE_H, KENDO_WHIFF, Player } from '../../src/entities/player.js';
 import { readPNG } from '../png.mjs';
+import { orbPrice } from '../../src/entities/powerorb.js';
 import { Billboard, inClip } from '../../src/core/gfx.js';
 import { clusterPlayers, MERGE_IN, MERGE_OUT } from '../../src/core/cluster.js';
-import { PurchaseScene } from '../../src/systems/housing/purchasescene.js';
+import { PurchaseScene, GATE_REVEAL, GATE_HOLD } from '../../src/systems/housing/purchasescene.js';
 import { voicePath } from '../../src/core/audio.js';
 import { existsSync } from 'node:fs';
 import { mealPct, BOON } from '../../src/systems/housing/boons.js';
@@ -58,7 +59,10 @@ import { bendGeo } from '../../src/systems/housing/homeisle.js';
 import { toHouse } from '../../src/systems/housing/links.js';
 import { ringR, RING_R } from '../../src/systems/housing/build.js';
 import { LOOK_FADE, PLAYER_RADIUS } from '../../src/entities/player.js';
-import { xrayModel, PANEL_GAP, WINDOW_IN, furnScale, FURN_REACH, FURN_INSET, pathParts, steppingStones } from '../../src/systems/housing/homeisle.js';
+import { xrayModel, PANEL_GAP, WINDOW_IN, furnScale, FURN_REACH, FURN_INSET, pathParts, steppingStones, pathLift, pathTop, matGeo } from '../../src/systems/housing/homeisle.js';
+import { DOOR_MATS, DOOR_MAT_SHEET } from '../../src/systems/housing/catalog.js';
+import { FRONT_DOOR_CLEAR, openingWhy } from '../../src/systems/housing/editor.js';
+import { migrateDoorWindows } from '../../src/systems/housing/migrate.js';
 import { PathFX, FLARE_T, FLARE_COLOURS, LAMP_TINT } from '../../src/systems/housing/pathfx.js';
 import { ZEN, ZEN_STONES, ZEN_RAKE, RAKE_T } from '../../src/systems/housing/zengarden.js';
 import { TEA, TEA_T, TEA_LEN, TEA_ANIM, TEA_SHEET, teaFrameAt, teaSips } from '../../src/systems/housing/teahouse.js';
@@ -334,14 +338,23 @@ export async function housingChecks({ ok, world }) {
   const p1 = fakePlayer(1, 6, 4);
   const p2 = fakePlayer(2, 8, 4);
   game.players = [p0, p1];
-  const minka = priceOf(HOUSE_BY_ID.minka.mult, 650);
+  const minka = H.housePrice('minka');
   p0.score = minka + 5;
   const r1 = H.buy('sunrise', 'minka', [{ p: p0, share: minka }], null);
   H.purchase.finish();
   ok('buying a small house takes exactly its price', r1.ok && p0.score === 5, `${r1.why ?? ''} purse ${p0.score}`);
   ok('...and is written down that frame, not when the scene ends — in THIS game\'s row',
     !!JSON.parse(localStorage.getItem(homeKey('check-A'))).homes.sunrise && !localStorage.getItem(HOME_KEY));
-  ok('...priced at 8 orbs, rounded to a ten', minka === 5200, minka);
+  ok('...priced at 8 orbs, rounded to a ten', minka === priceOf(8, orbPrice(world.pointsTotal, 1)), minka);
+  /* ONE PLAYER'S ORB, NOT THE SHOP'S. The shop divides the pot by the party,
+     and the castle had fallen to 8,660 with three playing (Richard, Oct 2026). */
+  {
+    const was = game.kotodama.price;
+    const at = [1, 2, 3, 4].map((n) => { game.kotodama.price = orbPrice(world.pointsTotal, n); return H.housePrice('castle'); });
+    game.kotodama.price = was;
+    ok("a home's price does not move with the party: the castle is 20 one-player orbs at 1, 2, 3 and 4",
+      at.every((v) => v === priceOf(20, orbPrice(world.pointsTotal, 1))) && at[0] >= 20000, at.join(' / '));
+  }
   ok('one home each: a second purchase is refused, with a reason',
     !H.buy('cloudpeak', 'minka', [{ p: p0, share: 0 }]).ok);
   ok('the world\'s signature does not move because somebody bought a house', worldSig(world) === sigBefore);
@@ -684,6 +697,35 @@ export async function housingChecks({ ok, world }) {
       ok('...and the caption counts them', /Statues of/.test(readFileSync(new URL('../../src/systems/housing/purchasescene.js', import.meta.url), 'utf8')));
       B.setOwners([0, 1, 2].map((i) => ({ name: PLAYER_STYLE[i].name, colour: PLAYER_STYLE[i].colour ?? 0xffffff })));
     }
+    /* THE ENTRANCE COMES UP TOGETHER, THEN WAITS, THEN THE BRIDGE GROWS
+       (Richard, Oct 2026). Driven through the real scene's gate shot: the
+       doors, the ramp, the deck's start, the hologram and the torii are all
+       nothing at its start, all partway together in the middle, all there by
+       the end of the reveal — and the road does not grow past its start
+       until the hold is over. */
+    {
+      const PS = new PurchaseScene(H);
+      const k = H.bridges.indexOf(B);
+      const was = { grow: B.grow };
+      PS.start(k, ['Ember']);
+      PS.shot = 1; PS.t = 0; B._sceneReady = false;
+      const seen = (t) => {
+        PS.t = t - 1 / 60; PS.update(1 / 60); B.update(1 / 60, 0);
+        const L = B.gates[0].leaves;
+        return { leaf: L[0].visible ? L[0].scale.y : 0, apron: !!B.apron0?.visible, grow: B.grow, torii: B.gateMat.reveal, field: B.sceneField };
+      };
+      const a = seen(0.01), m = seen(GATE_REVEAL * 0.6), z = seen(GATE_REVEAL), h = seen(GATE_REVEAL + GATE_HOLD - 0.05);
+      const kStart = B.entranceGrow();
+      const together = (s) => [s.leaf, s.grow / kStart, s.torii, s.field].every((v) => Math.abs(v - s.torii) < 1e-6);
+      ok('the purchase scene raises the torii, the doors, the hologram and the ramp\'s start TOGETHER',
+        a.torii === 0 && a.leaf === 0 && !a.apron && a.grow === 0 && m.torii > 0.2 && m.torii < 0.95 && m.apron && together(m) && together(z) && z.torii === 1,
+        `start ${JSON.stringify(a)} mid ${JSON.stringify(m)} end ${JSON.stringify(z)}`);
+      ok('...then HOLDS on them for one to two seconds before the bridge grows past its start',
+        GATE_HOLD >= 1 && GATE_HOLD <= 2 && Math.abs(h.grow - kStart) < 1e-9 && kStart > 0 && kStart < 0.2, `hold ${GATE_HOLD}s, grow ${h.grow} of ${kStart}`);
+      PS.finish();
+      ok('...and skipping leaves the town end whole and the hologram the lock\'s again',
+        B.gates[0].leaves.every((l) => l.visible && l.scale.y === 1) && B.apron0?.visible !== false && B.sceneField == null && B.grow === 1, `grow ${B.grow} was ${was.grow}`);
+    }
     ok('...and the boombox steps back out of the third one\'s way',
       B.solids.filter((o) => o.kind === 'jukebox').every((J) => B.solids.filter((o) => o.kind === 'statue').every((S) => Math.hypot(J.x - S.x, J.z - S.z) >= J.r + S.r - 1e-6)));
     B.setOwners([{ name: 'Ember', colour: 0xff8a3d }]);
@@ -802,7 +844,7 @@ export async function housingChecks({ ok, world }) {
       const Hp = newHome(Ip.site.id, house, ['Ember']);
       const env = envP();
       const n = layDoorPath(Hp, env);
-      const ids = new Set((Hp.outdoor ?? []).map((q) => q.id));
+      const ids = new Set((Hp.outdoor ?? []).filter((q) => q.id !== 'path_mat').map((q) => q.id));
       const W = doorWalk(Hp, env);
       ok(`a new ${house} comes with a path from its door to the bridge, in its own style (${doorPathId(Hp)})`,
         n >= 2 && ids.size === 1 && DOOR_PATHS[house].includes([...ids][0]) && Hp.outdoor.every((q) => q.free)
@@ -825,6 +867,125 @@ export async function housingChecks({ ok, world }) {
     }).flat();
     ok('...and nothing a preset brings stands on that walk', onWalk.length === 0, onWalk.join(', '));
     ok('...and doorWalkBox is the walk, padded', !!doorWalkBox(newHome(Ip.site.id, 'minka', ['Ember']), envP()));
+    /* NO WINDOW WHERE THE FRONT DOOR SLIDES. "We shouldn't place a window too
+       close to the door, like in the castle, because then the sliding door
+       interferes with the window and even when window is opened, it is being
+       obstructed by the open sliding door." Every house's default windows,
+       the rule a hand-placed one meets, and an old castle's being moved. */
+    {
+      const near = [];
+      for (const house of ['minka', 'dojohouse', 'castle']) {
+        const Hw = defaultWindows(newHome(Ip.site.id, house, ['Ember']));
+        for (const room of homeRooms(Hw)) {
+          const slots = wallSlots(room.house, room);
+          for (const q of Hw.rooms?.[room.id]?.wall ?? []) {
+            const S = slots.find((x) => x.side === q.side && x.k === q.k);
+            if (S?.side === 0 && room.floor === 0 && Math.abs(S.x) < FRONT_DOOR_CLEAR) near.push(`${house}:${room.id}@${S.x}`);
+          }
+        }
+      }
+      // the castle's front wall had a window at +-2.5: half of it behind an open leaf (2.85)
+      ok('no house comes with a window where its front door slides open, and the clearance is the open leaf (2.85) plus half a window',
+        near.length === 0 && FRONT_DOOR_CLEAR >= 2.85 + 1.6 / 2 - 1e-9,
+        near.join(', '));
+      const Hc = newHome(Ip.site.id, 'castle', ['Ember']);
+      const room = homeRooms(Hc).find((r) => r.floor === 0 && (r.hk ?? 'main') === 'main' && wallSlots(r.house, r).some((S) => S.byDoor));
+      const S = room && wallSlots(room.house, room).find((T) => T.byDoor);
+      ok('...a window put there by hand is refused, and says why', !!S && /front door/.test(openingWhy(room, Hc.rooms?.[room.id], S, 'window') ?? ''));
+      Hc.rooms = { [room.id]: { type: 'living', items: [], wall: [{ id: 'window', side: S.side, k: S.k }] } };
+      const moved = migrateDoorWindows(Hc);
+      const q = Hc.rooms[room.id].wall[0];
+      const T = wallSlots(room.house, room).find((x) => x.side === q.side && x.k === q.k);
+      ok('...and an old one there is moved off it, not lost', moved && !!T && !T.byDoor && Hc.rooms[room.id].wall.length === 1);
+    }
+    /* A DOOR MAT AT EVERY DOOR, off ONE SHEET. "For doormats, let's get them
+       made, but maybe we can put them on 1 sprite sheet to save on usage
+       credits and texture memory." Each design's rectangle is measured: its
+       edge rows and columns are ink, and a pixel beyond each is not. */
+    {
+      const sheet = readPNG(new URL('../../public/sprites/housing/doormats.png', import.meta.url));
+      const A = (x, y) => sheet.d[(y * sheet.w + x) * 4 + 3];
+      const inkRow = (y, x0, x1) => { let n = 0; for (let x = x0; x <= x1; x++) if (A(x, y) > 128) n++; return n / (x1 - x0 + 1); };
+      const inkCol = (x, y0, y1) => { let n = 0; for (let y = y0; y <= y1; y++) if (A(x, y) > 128) n++; return n / (y1 - y0 + 1); };
+      const bad = DOOR_MATS.filter(({ rect: [x, y, w, h] }) => {
+        const X1 = x + w - 1, Y1 = y + h - 1;
+        const edges = [inkRow(y + 1, x + 4, X1 - 4), inkRow(Y1 - 1, x + 4, X1 - 4), inkCol(x + 1, y + 4, Y1 - 4), inkCol(X1 - 1, y + 4, Y1 - 4)];
+        const out = [inkRow(y - 2, x, X1), inkRow(Y1 + 2, x, X1), inkCol(x - 2, y, Y1), inkCol(X1 + 2, y, Y1)];
+        return edges.some((v) => v < 0.95) || out.some((v) => v > 0.05);
+      }).map((m) => m.id);
+      ok('the door mats are one 640x800 sheet, and every design\'s rectangle is its measured ink',
+        sheet.w === DOOR_MAT_SHEET.w && sheet.h === DOOR_MAT_SHEET.h && DOOR_MATS.length >= 16 && new Set(DOOR_MATS.map((m) => m.id)).size === DOOR_MATS.length && bad.length === 0,
+        bad.join(', '));
+      const at = [];
+      for (const house of ['minka', 'dojohouse', 'castle']) {
+        const Hp = newHome(Ip.site.id, house, ['Ember']);
+        layDoorPath(Hp, envP());
+        const mats = Hp.outdoor.filter((q) => q.id === 'path_mat');
+        const s = houseSpecs(Hp)[0];
+        const l = mats[0] && toHouse(s, mats[0].x, mats[0].z);
+        const R = rampOf(house);
+        const door = R ? R.door : houseFoot(house).z1;
+        at.push({ house, n: mats.length, free: mats[0]?.free, x: l?.x, dz: l && l.z - door, look: mats[0]?.look?.style });
+      }
+      ok('...and a new home has one at its front door — on the porch up a ramp, on the lawn at a step — free',
+        at.every((a) => a.n === 1 && a.free && Math.abs(a.x) < 0.01 && a.dz > 0 && a.dz < ITEM_BY_ID.path_mat.len),
+        JSON.stringify(at));
+      // a mat put down on a walk lies ON it, whatever the walk's height
+      const Hw = newHome(Ip.site.id, 'minka', ['Ember']);
+      const walk = addOutdoor(Hw, 'path_wood', 0, 20, 0);
+      const mat = addOutdoor(Hw, 'path_mat', 0, 20, 0);
+      const Iw = H.isles[3];
+      const was = Iw.home;
+      Iw.home = Hw;
+      const y = Iw._matLift(mat), top = pathLift(walk) + pathTop(ITEM_BY_ID.path_wood);
+      Iw.home = was;
+      ok('...and a mat on a boardwalk lies on its boards, not inside them', y > top && y < top + 0.02, `${y.toFixed(3)} over ${top.toFixed(3)}`);
+      const g = matGeo(ITEM_BY_ID.path_mat, 'koi');
+      const uv = g.attributes.uv;
+      const [x, yy, w, h] = DOOR_MATS.find((m) => m.id === 'koi').rect;
+      const us = [...Array(uv.count)].map((_, i) => uv.getX(i) * 640), vs = [...Array(uv.count)].map((_, i) => (1 - uv.getY(i)) * 800);
+      ok('...and a mat draws its own design off the sheet and nothing of its neighbours\'',
+        Math.min(...us) > x && Math.max(...us) < x + w && Math.min(...vs) > yy && Math.max(...vs) < yy + h);
+    }
+    /* NO LAWN BETWEEN THE PIECES. Richard, Oct 2026: "Paths in front of a
+       bought building must connect or overlap, with no gaps." Walk the line
+       the path is laid on — up the ramp, then off for the bridge — for four
+       landings round the island, five points across 80% of the path's width
+       every 0.1, and every one must be under a piece. Before: a castle's walk
+       was lawn at 335 of 2320 points, a Dojo House's at 192, a minka's at 5. */
+    {
+      const bare = [];
+      for (const house of ['minka', 'dojohouse', 'castle']) for (const ang of [0, 0.5, 1, -0.9]) {
+        const Hp = newHome(Ip.site.id, house, ['Ember']);
+        const r = Ip.radius - 4;
+        const env = { r: Ip.radius, landing: { x: Math.sin(ang) * r, z: Math.cos(ang) * r } };
+        layDoorPath(Hp, env);
+        const pw = ITEM_BY_ID[doorPathId(Hp)].pw;
+        const under = (x, z) => Hp.outdoor.some((q) => {
+          const it = ITEM_BY_ID[q.id];
+          const dx = x - q.x, dz = z - q.z, a = q.rot ?? 0;
+          return it?.path && Math.abs(dx * Math.sin(a) + dz * Math.cos(a)) <= it.len / 2 && Math.abs(dx * Math.cos(a) - dz * Math.sin(a)) <= it.pw / 2;
+        });
+        const W = doorWalk(Hp, env), RW = rampWalk(Hp);
+        const pts = [...(RW ? [RW.a] : []), W.a, W.b];
+        let miss = 0, n = 0;
+        for (let i = 0; i + 1 < pts.length; i++) {
+          const A = pts[i], B = pts[i + 1], L = Math.hypot(B.x - A.x, B.z - A.z), ux = (B.x - A.x) / L, uz = (B.z - A.z) / L;
+          // to within a unit of the landing, where the bridge's own apron is the floor
+          const end = i + 2 === pts.length ? L - 1 : L;
+          for (let s = 0; s <= end; s += 0.1) for (const f of [-0.8, -0.4, 0, 0.4, 0.8]) {
+            const x = A.x + ux * s + uz * f * pw / 2, z = A.z + uz * s - ux * f * pw / 2;
+            // a point on the house's porch or step is house, not lawn
+            const l = toHouse(houseSpecs(Hp)[0], x, z);
+            if (houseFoots(house).some((F) => l.x > F.x0 && l.x < F.x1 && l.z > F.z0 && l.z < F.z1)) continue;
+            n++;
+            if (!under(x, z)) miss++;
+          }
+        }
+        if (miss) bare.push(`${house}@${ang}: ${miss}/${n}`);
+      }
+      ok('...and the walk from the door to the bridge has no lawn showing between its pieces, whichever way the bridge lies', bare.length === 0, bare.join(', '));
+    }
 
     /* UP THE RAMP TO THE DOOR. Richard, Oct 2026: "Auto walking paths should
        go up the castle and Dojo House ramps to the front door, truncated to
@@ -842,7 +1003,7 @@ export async function housingChecks({ ok, world }) {
       const s = houseSpecs(Hp)[0];
       const it = ITEM_BY_ID[doorPathId(Hp)];
       // on it, and over some of it: the walk's pieces out on the grass in front are onRamp too
-      const mine = Hp.outdoor.filter((q) => onRamp(s, thingShape(it, q.x, q.z, q.rot).box) && toHouse(s, q.x, q.z).z - it.len / 2 < R.z1);
+      const mine = Hp.outdoor.filter((q) => q.id !== 'path_mat' && onRamp(s, thingShape(it, q.x, q.z, q.rot).box) && toHouse(s, q.x, q.z).z - it.len / 2 < R.z1);
       // along the middle of the ramp, from the door to the grass, every 0.25 is under a piece
       const spans = mine.map((q) => { const l = toHouse(s, q.x, q.z); return [l.z - it.len / 2, l.z + it.len / 2, l.x]; });
       const gaps = [];
@@ -860,7 +1021,12 @@ export async function housingChecks({ ok, world }) {
       // a walk laid before the ramp had one gets it, round what she has put there since
       const Ho = newHome(Ip.site.id, house, ['Ember']);
       const n = layRampPath(Ho, envP());
-      ok(`...and an old ${house}'s walk gets the ramp leg once (housing.js rampV)`, n === mine.length, `${n}`);
+      // ...door to foot with no gap, and on past the foot like a new one's (editor.js `frontWalk`)
+      const oz = Ho.outdoor.map((q) => { const l = toHouse(s, q.x, q.z); return [l.z - it.len / 2, l.z + it.len / 2]; });
+      const oGaps = [];
+      for (let z = R.door + 0.05; z <= R.z1 + it.pw * 0.9; z += 0.25) if (!oz.some(([a, b]) => z >= a && z <= b)) oGaps.push(z.toFixed(2));
+      ok(`...and an old ${house}'s walk gets the ramp leg once (housing.js rampV)`, n >= 1 && n === Ho.outdoor.length && oGaps.length === 0,
+        `${n} pieces; uncovered at ${oGaps.join(', ') || 'none'}`);
       // drawn ON it: the top of a bent piece is the ramp's height plus its own, everywhere
       const q = mine[0];
       const c = Math.cos(q.rot), sn = Math.sin(q.rot);
@@ -899,7 +1065,7 @@ export async function housingChecks({ ok, world }) {
   }
 
   /* THE CASTLE: pooled, and every owner refunded. */
-  const castle = priceOf(HOUSE_BY_ID.castle.mult, 650);
+  const castle = H.housePrice('castle');
   const share = Math.ceil(castle / 2 / 10) * 10;
   p1.score = share; p2.score = share;
   game.players = [p0, p1, p2];
@@ -1434,6 +1600,51 @@ export async function housingChecks({ ok, world }) {
     uncarry(G);
     const home = mine.every((g, k) => Math.abs(g.position.x - before[k].x) < 1e-9 && Math.abs(g.position.z - before[k].z) < 1e-9);
     ok('moving a house carries everything in it, in the house\'s own frame, and lets go exactly', same && home);
+    /* THE WALK IS LAID AFTER THE HOUSE. "the castle/dojo grow animation should
+       include the paths (or lay them after the building is placed)". Each
+       piece of the walk the house came with comes down in turn, door first,
+       over the last WALK_LAY of the rise, and is exactly itself at the end. */
+    {
+      const Hc = newHome(I.site.id, 'castle', ['Ember']);
+      layDoorPath(Hc, H.envOf(I));
+      I.setHome(Hc, null);
+      const hsC = I.houseOf('main');
+      const c = hsC.group.position;
+      const walk = I.itemGroup.children.filter((g) => g.userData.walk)
+        .sort((a, b) => Math.hypot(a.position.x - c.x, a.position.z - c.z) - Math.hypot(b.position.x - c.x, b.position.z - c.z));
+      const s0 = walk.map((g) => g.scale.x);
+      I.rise('main', 1 - WALK_LAY - 0.01);
+      const none = walk.every((g) => !g.visible);
+      I.rise('main', 1 - WALK_LAY * 0.5);
+      const firstOn = walk[0].visible && walk[0].scale.x > 0.5, lastOff = !walk[walk.length - 1].visible;
+      I.rise('main', 1);
+      const all = walk.every((g, k) => g.visible && g.scale.x === s0[k] && !g.userData.lay);
+      ok('a new house\'s walk is laid after it rises, from the door out, and is all there at the end',
+        walk.length >= 4 && none && firstOn && lastOff && all && WALK_LAY > 0.2 && WALK_LAY < 0.7, `${walk.length} pieces; none ${none}, door first ${firstOn}, far last ${lastOff}, all ${all}`);
+      /* AND ITS EFFECTS PLAY ON THE RAMP. "ramp paths should play their
+         emitters when walking up the ramp or in front of the door". Halfway
+         up the ramp and on the porch at the door, on the real island. */
+      const fx = I.pathFx ?? new PathFX(I);
+      const RW = rampWalk(Hc);
+      const kit = fakePlayer(0);
+      const at = (t) => {
+        const w = I.local(RW.a.x + (RW.b.x - RW.a.x) * t, RW.a.z + (RW.b.z - RW.a.z) * t);
+        const S = I.fxSites.find((s) => (s.kind === 'petal' || s.kind === 'carpet') && PathFX.onStrip(s, w.x, w.z, PathFX.topAt(s, w.x, w.z)));
+        if (!S) return { on: false };
+        const y = PathFX.topAt(S, w.x, w.z);
+        fx.parts.length = 0;
+        kit.position.set(w.x, y, w.z);
+        kit.velocity.set(Math.sin(S.a) * 6, 0, Math.cos(S.a) * 6);
+        for (let k = 0; k < 30; k++) fx.update(0.016, k, [kit]);
+        kit.velocity.set(0, 0, 0);
+        return { on: true, up: y - S.y, n: fx.parts.length, low: Math.min(...fx.parts.map((o) => o.p.y)) - y };
+      };
+      const mid = at(0.5), door = at(0.02);
+      ok('...and walking its carpet or petals UP THE RAMP and at the door plays them, at her feet rather than the lawn\'s',
+        mid.on && door.on && mid.up > 0.6 && door.up > 0.6 && mid.n > 0 && door.n > 0 && mid.low > -0.05 && door.low > -0.05,
+        JSON.stringify({ mid, door }));
+      I.setHome(Hm, null);
+    }
     const bsrc2 = readFileSync(new URL('../../src/systems/housing/build.js', import.meta.url), 'utf8');
     /* "Sometimes after moving or rotating a house, the player can just walk
        through the base ... should be pushed up on top of it." Every island,
@@ -1644,9 +1855,9 @@ export async function housingChecks({ ok, world }) {
       const w = I.local(...I._itemToHouse({ x: S.x, z: S.z, rot: 0.4 }, fx, fz));
       const c = I.local(S.x, S.z);
       const gy = I.island.heightAt(c.x, c.z) ?? I.groundY;
-      const lift = 0.004 + (S.uid % 6) * 0.006;
+      const lift = S.it.mat ? I._matLift(Hm.outdoor.find((q) => q.uid === S.uid)) : pathLift({ uid: S.uid });
       const h = I.heightAt(w.x, w.z, gy + 0.05)?.y - gy;
-      if (!(Math.abs(h - (lift + d.y)) < 1e-6 && d.y >= 0.05)) bad.push(`${S.it.id} ${h?.toFixed(3)} vs ${(lift + d.y).toFixed(3)}`);
+      if (!(Math.abs(h - (lift + d.y)) < 1e-6 && d.y >= (S.it.mat ? 0.036 : 0.05))) bad.push(`${S.it.id} ${h?.toFixed(3)} vs ${(lift + d.y).toFixed(3)}`);
     }
     ok('she stands ON every kind of path, at the top of what is drawn (a boardwalk is 0.17)', bad.length === 0, bad.join('; ') || `${spots.length} kinds`);
     const tk = spots.find((S) => S.it.id === 'path_tiki');
@@ -3686,7 +3897,21 @@ export async function housingChecks({ ok, world }) {
     run(BOUT.jogai * 0.5);
     ok('a step off the square in a live round is only a warning', B2?.phase === 'fight' && K.bouts.size === 1);
     run(BOUT.jogai);
-    ok('...but staying off it ends the match, and says so', !K.bouts.size && said.some(([i, t]) => i === 0 && /stepped off the square/.test(t)));
+    /* JOGAI (Richard, Oct 2026): too long off the tape loses the ROUND, and
+       twice running loses the match in shame - dazed, then seiza facing away. */
+    ok('...but staying off it loses her the round, and says so', K.bouts.size === 1 && B2.phase === 'roundEnd' && B2.wins[0] === 1 && B2.wins[1] === 0
+      && said.some(([, t]) => /JOGAI! .* takes round 1/.test(t)));
+    until(() => B2.phase === 'fight', BOUT.roundEnd + BOUT.hajime + 0.4);
+    ok('...and the next round starts with her back on her mark', B2.phase === 'fight' && B2.round === 2 && Math.hypot(b.position.x - marks[1].x, b.position.z - marks[1].z) < 0.3);
+    b.position.set(9, 0, 0);
+    run(BOUT.jogai + 0.1);
+    ok('off it twice running: the match is lost in SHAME, and she cannot move', B2.phase === 'shame' && B2.runner === b && b.kendoLockT > 0 && !!b.pinnedAt
+      && said.some(([, t]) => /RAN AWAY/.test(t)));
+    run(BOUT.shameDaze + 0.1);
+    const away = Math.atan2(b.position.x - a.position.x, b.position.z - a.position.z);
+    ok('...then she kneels in seiza with her back to her opponent', b.kendoStance === 'kneel' && Math.abs(Math.atan2(Math.sin(b.facing - away), Math.cos(b.facing - away))) < 1e-6 && a.kendoStance !== 'kneel');
+    run(BOUT.shameSit + 0.1);
+    ok('...and then it is over, and she is let go', !K.bouts.size && !b.pinnedAt && b.kendoStance === null && !b.kendoBout);
     onMarks();
     until(() => K.bouts.size > 0, SEIZA.t + 0.5);
     K._unwear(1);
@@ -3856,7 +4081,45 @@ export async function housingChecks({ ok, world }) {
       const ps = readFileSync(new URL('../../src/entities/player.js', import.meta.url), 'utf8');
       ok('a riposte that catches nothing in the bogu hands her back the stick, starred, rather than planting her',
         /if \(this\.parryT === 0 && this\.kendoLive\) \{\s*this\.parryCool = PARRY\.cool;\s*this\.kendoLockT = Math\.max\(this\.kendoLockT \?\? 0, KENDO_WHIFF\);/.test(ps)
-        && KENDO_WHIFF > 0.35 && /const on = this\.stunT > 0 \|\| \(this\.kendoBout && this\.kendoLockT > 0\);/.test(ps));
+        && KENDO_WHIFF > 0.35 && /const on = this\.stunT > 0 \|\| \(!!this\.kendoBout && this\.kendoLockT > 0\);/.test(ps));
+      /* THE STAR AT HER FEET. `false || undefined` left `visible` undefined,
+         which three draws: three stars at the group's origin from the first
+         frame of every game (Richard, Oct 2026). */
+      const qd = new Player({ texture: new THREE.Texture(), index: 0, spawn: new THREE.Vector3(0, 0, 0), cols: 8, rows: 4, mirror: false });
+      qd._updateDaze(1 / 60);
+      ok('a kitten out of the bogu and not dazed has NO stars - `visible` is false, not merely falsy',
+        qd.dazeStars.visible === false, String(qd.dazeStars.visible));
+      /* OFF THE END OF A BRIDGE the stick keeps meaning the way she was going
+         until she lets go (Richard, Oct 2026). */
+      {
+        qd.camYaw = 0.3; qd.velocity.set(5, 0, 0);
+        const wishOf = (B, pd) => { const x = B.right.x * pd.mx - B.fwd.x * pd.my; const z = B.right.z * pd.mx - B.fwd.z * pd.my; const l = Math.hypot(x, z); return [x / l, z / l]; };
+        const pd = { mx: 0.35, my: -1 };
+        qd.snakeRide = { road: {} };
+        qd._moveBasis(pd);
+        qd.snakeRide = null;
+        const w1 = wishOf(qd._moveBasis(pd), pd);
+        qd.camYaw = 1.1;   // the ride camera easing back round
+        const w2 = wishOf(qd._moveBasis(pd), pd);
+        qd._moveBasis({ mx: 0, my: 0 });
+        const w3 = wishOf(qd._moveBasis(pd), pd);
+        const w0 = wishOf(qd._basis(1.1), pd);
+        ok('stepping off a road with the stick held, it still walks her the way she was going, however the lens turns',
+          Math.hypot(w1[0] - 1, w1[1]) < 1e-6 && Math.hypot(w2[0] - 1, w2[1]) < 1e-6, `${w1} ${w2}`);
+        ok('...and once she lets go, the next push is read through the camera she sees',
+          Math.hypot(w3[0] - w0[0], w3[1] - w0[1]) < 1e-6, `${w3} vs ${w0}`);
+      }
+      /* ONE KITTEN PER HOLODECK TUBE, from the moment her rise starts. */
+      {
+        const wasD = game.dream; const wasP = game.players;
+        const t1 = fakePlayer(0, 0, 0); const t2 = fakePlayer(1, 0, 0);
+        game.players = [t1, t2];
+        game.dream = { st: [null, { phase: 'rise', home: { x: 1, y: 2, z: 3 } }] };
+        ok('a holodeck tube a sister is rising in (or is inside) is taken; another tube, or her own, is not',
+          H.holo.tubeTaken({ x: 1, y: 2, z: 3 }, t1) === t2 && H.holo.tubeTaken({ x: 4, y: 2, z: 3 }, t1) === null
+          && H.holo.tubeTaken({ x: 1, y: 2, z: 3 }, t2) === null);
+        game.dream = wasD; game.players = wasP;
+      }
       ok('...and the stick is gated in Player too: the swing, the riposte, and the Ward button given to the block',
         /pad\.pressed\('attack'\)[^\n]*\n[^\n]*!this\.parryAt && !kendoHeld\)/.test(ps)
         && /if \(this\.kendoLive && this\.kendoNoParry\) return false;/.test(ps)
@@ -3887,6 +4150,16 @@ export async function housingChecks({ ok, world }) {
     c.position.set(400, 0, 400);
     isle.roomAt = (x) => (x < 100 ? room : null);
     ok('...a pane with nobody near it does not', K.shotFor([2]) === null && K.halfWallFor(isle, [2]) === null);
+    /* A SISTER WHO IS NOT FIGHTING has her own pane until it is over (Richard,
+       Oct 2026), even standing beside the tape: the fighters' lane is theirs. */
+    {
+      const c0 = c.position.clone();
+      c.position.set(a.position.x + 1, 0, a.position.z);
+      const lane = (i) => H.watchLane.call({ watchers: new Map(), kendo: K }, i);
+      ok('...and a sister beside the tape is NOT in the match camera: she is on a lane of her own',
+        K.shotFor([2]) === null && lane(0) != null && lane(0) === lane(1) && lane(2) == null);
+      c.position.copy(c0);
+    }
     ok('...and its walls are cut to half height for one that does', Math.abs(K.halfWallFor(isle, [0]) - 2.1) < 1e-6);
     ok("...nobody else's house", K.halfWallFor({}, [0]) === null);
     for (const Bx of [...K.bouts.values()]) K._end(Bx, null);
@@ -4674,9 +4947,18 @@ export async function housingChecks({ ok, world }) {
       const guard = ink('kendo');
       const head = (f, k) => { const m = ink(f); return (m.grill / m.ink) * k / (guard.grill / guard.ink); };
       const rs = { seiza: head('seiza', E.seizaPose), reach: head('reach', E.reachPose) };
-      ok("Ember's helmet in seiza and reaching is her standing helmet's size, and her slash stands taller than she does",
-        Math.abs(rs.seiza - 1) < 0.08 && Math.abs(rs.reach - 1) < 0.08 && E.kiaiPose > 1.2 && E.kiaiPose < 1.5,
-        `seiza ${rs.seiza.toFixed(2)}, reach ${rs.reach.toFixed(2)} of the guard's; slash at ${E.kiaiPose} of her height`);
+      /* SECOND PASS (Richard, Oct 2026: seiza, clinch and strike all still
+         "too small"). This grill reading had called seiza 1.00 at 0.94, and
+         Richard was looking at it and saying otherwise: on screen, every
+         drawing on its own quad side by side, the men drew at 0.86 of the
+         guard's. The side-on grill of a kneeling cat is foreshortened and
+         this measure cannot see that. So the reach (front-on, where it agrees)
+         is still held to it, and the rest to the on-screen numbers in
+         player.js `KENDO_POSE_H`: none of them back under the guard's helmet. */
+      ok("Ember's helmet in every kendo pose is at least her standing helmet's size, and her slash stands taller than she does",
+        Math.abs(rs.reach - 1) < 0.08 && rs.seiza >= 1.05 && E.seizaPose >= 1.05 && E.reiPose >= 1.05
+        && E.kclinchRPose >= 1.15 && E.kclinchLPose >= 1.15 && E.kiaiPose >= 1.5 && E.kiaiPose < 1.7,
+        `seiza ${rs.seiza.toFixed(2)}, reach ${rs.reach.toFixed(2)} of the guard's by the grill; ${JSON.stringify(E)}`);
       // ...and the cut in the bogu draws upright (player.js `slashV`)
       const psrc = readFileSync(new URL('../../src/entities/player.js', import.meta.url), 'utf8');
       ok('...and a swing in the bogu draws its arc upright, over her head and down', /const upright = !!this\.kendoGeared && !!this\.slashV;/.test(psrc) && /new THREE\.RingGeometry\(1\.0, 2\.0, 20, 1, -0\.35, 2\.0\)/.test(psrc));
