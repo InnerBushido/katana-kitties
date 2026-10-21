@@ -916,6 +916,8 @@ export async function housingChecks({ ok, world }) {
       ok('the door mats are one 640x800 sheet, and every design\'s rectangle is its measured ink',
         sheet.w === DOOR_MAT_SHEET.w && sheet.h === DOOR_MAT_SHEET.h && DOOR_MATS.length >= 16 && new Set(DOOR_MATS.map((m) => m.id)).size === DOOR_MATS.length && bad.length === 0,
         bad.join(', '));
+      // "We can include it in the game." The twentieth drawing, last so the others keep their places.
+      ok('...all twenty of them, the rising sun last', DOOR_MATS.length === 20 && DOOR_MATS[19].id === 'risingsun');
       const at = [];
       for (const house of ['minka', 'dojohouse', 'castle']) {
         const Hp = newHome(Ip.site.id, house, ['Ember']);

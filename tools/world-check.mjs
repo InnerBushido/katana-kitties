@@ -6369,7 +6369,7 @@ console.log('\n--- background removal keeps the drawn whites ---');
     'kittens/ember/tea.png', 'kittens/frost/tea.png',
     // ...and kendo's broken guard and the clinch's two sides.
     ...['ember', 'frost'].flatMap((s) => ['kbroke', 'kclinchR', 'kclinchL'].map((p) => `kittens/${s}/${p}.png`)),
-    // ...and the door mats, nineteen on one sheet (catalog.js DOOR_MATS).
+    // ...and the door mats, twenty on one sheet (catalog.js DOOR_MATS).
     'housing/doormats.png',
   ];
   {

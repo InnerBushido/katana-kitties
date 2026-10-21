@@ -851,8 +851,8 @@ Richard's six notes, each quoted over its constant in `kendo.js`.
   - Each design's rectangle in `DOOR_MATS` (catalog.js) was measured off the
     baked sheet by its ink. The rows run 99 to 106 tall, so a grid would have
     been wrong. world-check re-measures every one.
-  - The rising-sun mat on the sheet is deliberately left out: that flag has a
-    history, and this is a game for children.
+  - The rising sun was left out at first, as a flag with a history. Richard
+    put it back: "We can include it in the game." It sits last in the list.
   - A mat is a PATH one mat long (`path_mat`). It crosses paths, goes on a
     porch and bends over a ramp by rules that already exist. It lies on the
     highest path under it (`_matLift`), because a boardwalk's top is 0.17.

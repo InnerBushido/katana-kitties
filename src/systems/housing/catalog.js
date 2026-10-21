@@ -513,9 +513,10 @@ export const ITEMS = [
  * Richard, Oct 2026: "put them on 1 sprite sheet to save on usage credits
  * and texture memory". Each `rect` is [x, y, w, h] in sheet pixels, MEASURED
  * off the baked sheet by its ink (non-negotiable 8) — the grid is 4x5 but no
- * two rows are the same height (99 to 106). The twentieth drawing on the
- * sheet, a rising sun, is left out on purpose: it is a flag with a history,
- * in a game made for children. The first is the default look.
+ * two rows are the same height (99 to 106). The first is the default look.
+ * The rising sun was left out at first as a flag with a history; Richard put
+ * it back, Oct 2026: "We can include it in the game." It goes LAST so the
+ * other nineteen keep their places in the list.
  */
 export const DOOR_MAT_SHEET = { url: '/sprites/housing/doormats.png', w: 640, h: 800 };
 export const DOOR_MATS = [
@@ -538,6 +539,7 @@ export const DOOR_MATS = [
   { id: 'lantern', name: 'LANTERN', rect: [175, 638, 135, 101] },
   { id: 'fuji', name: 'MOUNT FUJI', rect: [332, 639, 136, 101] },
   { id: 'ichimatsu', name: 'ICHIMATSU CHECK', rect: [487, 639, 138, 100] },
+  { id: 'risingsun', name: 'RISING SUN', rect: [174, 492, 138, 102] },
 ];
 
 export function pathPosts(it) {
