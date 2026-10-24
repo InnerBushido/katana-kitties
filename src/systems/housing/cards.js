@@ -9,6 +9,7 @@ import { JUKEBOX, hasRecording } from './jukebox.js';
 import { footprint, firstFit, firstYardSpot, wallSlots, wallFree, ITEM_SELL } from './editor.js';
 import { buildWhy, commitBuild, removeBuilt, pickList, yardBody, stepToward, BUILD_KEYS, PICK_KEYS, CUSTOM_PICK_KEYS, freeTurn, rotStepOf, linkOf } from './build.js';
 import { stylesFor, LOOK_MUL } from './models.js';
+import { enabledOf } from '../../core/spritefix.js';
 import { YARD_BUILT, RAISE_T } from './homeisle.js';
 import { Preview } from './preview.js';
 import { holoKit, holoWhyRemove, holoTubes, HOLO_TUBE_ID, HOLO_MAX_TUBES } from './holodeck.js';
@@ -1070,13 +1071,15 @@ export class HousingCards {
     const s = row.look?.s ?? 1;
     const max = Math.min(LOOK_MUL.max, mesh?.userData.maxMul ?? LOOK_MUL.max);
     const shown = Math.min(s, max);
-    // a door mat's looks are its designs on the one sheet (catalog.js DOOR_MATS)
-    const styles = it.mat ? DOOR_MATS.map((m) => ({ id: m.id, name: m.name })) : stylesFor(it.model);
+    /* a door mat's looks are its designs on the one sheet (catalog.js DOOR_MATS), less any the sprite
+       editor switched off (/sprites.html, `off["housing/doormats"]`) */
+    const styles = it.mat ? enabledOf('housing/doormats', DOOR_MATS).map((m) => ({ id: m.id, name: m.name })) : stylesFor(it.model);
     const cur = Math.max(0, styles.findIndex((x) => x.id === row.look?.style));
     const set = (look) => {
       const L = { ...(row.look ?? {}), ...look };
       if (L.s != null && Math.abs(L.s - 1) < 1e-6) delete L.s;
-      if (L.style === styles[0]?.id || !L.style) delete L.style;
+      // the mat's default is the SHEET's first, not the list's: a switched-off first design must not move it
+      if (L.style === (it.mat ? DOOR_MATS[0].id : styles[0]?.id) || !L.style) delete L.style;
       if (Object.keys(L).length) row.look = L; else delete row.look;
       top.rev = (top.rev ?? 0) + 1;
       this.H.changed(H);

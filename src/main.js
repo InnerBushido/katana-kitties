@@ -6,7 +6,6 @@ import {
 } from './core/input.js';
 import { Audio, trackForIsland, voicePath } from './core/audio.js';
 import { loadSpriteAtlas, recolourAtlas } from './core/spritesheet.js';
-import { sheetFix, applySheetFix } from './core/spritefix.js';
 import { placeholderCatAtlas, placeholderDragonTexture, placeholderPandaTexture } from './core/gfx.js';
 import {
   detect as detectDevice, readOverride, writeOverride, QUALITY, effectivePixelRatio,
@@ -92,6 +91,7 @@ import { Inspector } from './systems/inspector.js';
 import { Payne, PAYNE_CLIPS, PAYNE_TOWN } from './systems/payne.js';
 import { Housing } from './systems/housing/housing.js';
 import { TEA_SHEET } from './systems/housing/teahouse.js';
+import { sheetFix, applySheetFix, sheetIdOf } from './core/spritefix.js';
 import { DreamDojo } from './systems/dreamdojo.js';
 import { WorldPeek } from './systems/worldpeek.js';
 import { SIM } from './world/simworld.js';
@@ -1594,12 +1594,9 @@ class Game {
 
     setLoad('Sharpening claws…');
     await frame();
-    /* THE SPRITE EDITOR'S COLUMN FIXES (/sprites.html, core/spritefix.js): Richard, Oct 2026, "in
-       grid_v2.png ... the 5th and 7th sprites of each row are actually facing in the wrong direction, so
-       it would be good if I can change the ordering". Re-dealt before anybody is built from them; with no
-       fix saved each comes back as it was loaded. */
-    const fixed = (a, id) => applySheetFix(a, sheetFix(id, a.cols), THREE);
-    this._spawnPlayers(fixed(ember, 'ember/grid_v2'), fixed(frost, 'frost/grid'));
+    /* (The sprite editor's column fixes are already in `ember` and `frost`: `loadSpriteAtlas` re-deals
+       every sheet it loads by what /sprites.html saved for it - core/spritefix.js.) */
+    this._spawnPlayers(ember, frost);
     this._spawnDragons(dragonTex, dragonFlyTex);
     /* KEPT FOR THE ENDING, and for nothing else. `FinaleShow` draws two little
        dragons carrying two little kittens between the islands on the Dojo
@@ -2211,8 +2208,11 @@ class Game {
          reduced `maxAtlas` cannot reach a floor-pinned sheet, which is what
          makes it the safe knob. See core/device.js; the checks are in
          world-check under "THE DEVICE ATLAS BUDGET". */
+      /* `sheetFix: false`, then the fix by hand: the counts below are asked of the sheet AS DRAWN, and a
+         saved order that drops two of ten columns must not read as "only found 8/10 views" and swap her
+         for the placeholder. */
       const a = await loadSpriteAtlas(url, {
-        views, rows, cell: 384, maxAtlas: this.device.atlasMax,
+        views, rows, cell: 384, maxAtlas: this.device.atlasMax, sheetFix: false,
       });
       if (a.cols < 1) throw new Error('no views found');
       if (rows > 1 && a.rows !== rows) {
@@ -2222,7 +2222,7 @@ class Game {
         throw new Error(`only found ${a.cols}/${views} views`);
       }
       console.log(`[art] ${url} → ${a.cols} directions x ${a.rows} poses`);
-      return a;
+      return applySheetFix(a, sheetFix(sheetIdOf(url), a.cols), THREE);
     } catch (err) {
       console.warn(`[art] ${url} → falling back to drawn placeholder:`, err.message);
       const f = fallback();

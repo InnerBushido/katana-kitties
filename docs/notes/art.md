@@ -667,9 +667,10 @@ input; the save is `/__spritefix`, a `configureServer` hook). It saves
   the pose FORWARD, the way the drawing points, so it follows the mirror. `y`
   moves it up. Both are in her heights. These are overrides only; the code's
   numbers stay the defaults.
-- `sheets["ember/grid_v2"] = { order, flip }` re-deals a turnaround's columns.
-  The values are 0-based in the file and 1-based on the page. Every row is
-  treated the same. `main.js` applies it before `_spawnPlayers`.
+- `sheets["kittens/ember/grid_v2"] = { order, flip }` re-deals a turnaround's
+  columns (keyed by the file's path since the second pass, below). The values
+  are 0-based in the file and 1-based on the page. Every row is treated the
+  same.
 
 **Keyed by sheet, not kitten.** Storm and Blossom are recolours, so they wear
 Ember's and Frost's fixes. Building the editor exposed the same bug in
@@ -706,3 +707,54 @@ went to Ember's foot, 0.778 against 0.638. Snaps now measure on the spot.
 sheet's RIGHT profile, measured in gfx.js `faceCamera`'s tie-breaking comment;
 dropping it leaves the most-used facing on a three-quarter view. The Sheets tab
 previews it on the turntable, so that is his call to make, looking at it.
+**He made it.** His saved `spritefix.json` carries exactly that order,
+`[0,1,3,6,5,4,7,8]`, so the right profile is gone from the in-game turnaround and
+a kitten walking right shows the nearest three-quarter view. It is his file and
+stays as he saved it; the Sheets tab puts it back with *as drawn*.
+
+### The second pass
+
+Richard: "let's add more Sheets to it ... and any future sprite sheets that get
+added to the game", plus undo, a history, unsaved marks, Lionheart, and every
+kitten pose grouped by activity with a "Stand vs ..." each.
+
+- **Sheets are keyed by path** under `public/sprites` (`kittens/ember/grid_v2`,
+  `hospital/cat`), and a clip by `ninja/<id>:<clip>`. The dev server lists every
+  png by reading its IHDR (`listSprites` in vite.config.js), so a new sheet is on
+  the page the day it lands. `LEGACY_SHEET` still reads the two old keys
+  (`ember/grid_v2`, `frost/grid`) and the page renames them on load; world-check
+  fails if the shipped file still uses one.
+- **The fix is applied where sheets load, not per caller.** `loadSpriteAtlas`
+  applies `sheetFix(sheetIdOf(url))` itself, so a future sheet honours its saved
+  order with no wiring. `main.js`'s `_loadSprite` opts out and applies it after
+  its column-count checks, because those count the columns AS DRAWN.
+- **Clips.** `ClipSprite` reads `ninja/<id>:<clip>`: `order` re-deals the
+  frames, `flip` mirrors a step, and a one-shot ends after the frames it PLAYS.
+- **Single-file poses** (eat, bless, warp, breath, scared, sweep, riposte) go
+  through `Player._poseBoard`, which reads `poses[...]` like the kendo ones, and
+  the simulator's `vr_*` poses take `s` and `y`.
+- **`off`** switches cells off in the game. Today only the door mats read it
+  (`enabledOf('housing/doormats', DOOR_MATS)`), and it can never empty a set: the
+  last one on stays on. A mat already laid in a switched-off design draws the
+  default instead; nothing is deleted from a save.
+- **Flip takes IMAGE numbers.** Order lists images; flip used to list SLOTS, so
+  "1,2,4,7" with flip "3" mirrored image 4. The page now takes the image number
+  and stores the slot, with a tooltip on both fields.
+- **"B in front" did nothing** because `renderOrder` was set on the Billboard's
+  Object3D, which three.js does not sort by; it has to be on `bb.mesh`. It is now
+  an "A on top / B on top" toggle, and world-check pins the mesh line.
+- **The turntable button did work**, but only to stop the preview following the
+  slot she was clicking, which is invisible. It is now one of five preview
+  modes: turntable, loop, ping-pong, once, and hold N seconds on each.
+- **Undo/redo** keeps the whole draft per step (Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z),
+  coalescing drags within 700 ms. The last changes are listed and clickable,
+  each tab carries a count of what is unsaved, *revert* buttons are disabled
+  when there is nothing to revert, Save says how many changes on which tab it
+  writes, and switching tabs with changes on the one being left says that Save
+  writes both.
+- **Lionheart** is drawn off his own sheet at `EDITOR_LION_H`, and the page
+  zooms out for him; world-check pins the editor's sizes to the game's.
+
+**Trap: the hidden pane.** A hidden browser pane renders no rAF frames, so the
+readout stayed `undefined` and an `img.decode()` never resolved. The page has
+`spriteEditor.frame()` for a synchronous frame when it is being driven.

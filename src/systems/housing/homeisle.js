@@ -4,6 +4,7 @@ import { Island, mergeParts, PALETTE } from '../../world/build.js';
 import { makeLabelTexture } from '../../core/label.js';
 import { buildHouseShell, roofY, houseHeight, houseRadius, floorOf, FLOOR_H, SLAB_T, WINDOW, PORT_H, rampOf } from './homehouse.js';
 import { ITEMS, ITEM_BY_ID, LINK_BY_ID, houseSpecs, homeRooms, pathPosts, kendoArea, kendoMarks, roomHas, mixedZone, DOOR_MATS, DOOR_MAT_SHEET } from './catalog.js';
+import { enabledOf } from '../../core/spritefix.js';
 import { PathFX, makeFlame, makeLamp } from './pathfx.js';
 import { TEA, teaK, teaSet } from './teahouse.js';
 import { ZenGarden, zenParts, ZEN, ZEN_ROCKS, ZEN_STONES, ZEN_STONE_R, ZEN_RAKE } from './zengarden.js';
@@ -1863,8 +1864,12 @@ export function pathTop(it) {
   return PATH_TOP.get(it.id);
 }
 
-/** Which door mat a row is: its LOOK, or the first. */
-export const matOf = (style) => DOOR_MATS.find((m) => m.id === style) ?? DOOR_MATS[0];
+/** Which door mat a row is: its LOOK, or the first. A design the sprite editor switched off draws as
+ *  the first that is on - and the row KEEPS its look, so switching it back on puts it back. */
+export const matOf = (style) => {
+  const on = enabledOf('housing/doormats', DOOR_MATS);
+  return on.find((m) => m.id === style) ?? on.find((m) => m === DOOR_MATS[0]) ?? on[0];
+};
 
 /**
  * The mat's picture: one quad over the coir, its UVs on its own measured

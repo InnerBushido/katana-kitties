@@ -116,7 +116,7 @@ import {
 } from '../src/systems/arenaquest.js';
 import { MenuNav } from '../src/systems/menunav.js';
 import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss, cssFor } from '../src/core/palette.js';
-import { poseFix, sheetFix, setSpriteFix, SPRITE_FIX } from '../src/core/spritefix.js';
+import { poseFix, sheetFix, setSpriteFix, SPRITE_FIX, sheetIdOf, isOff, enabledOf, LEGACY_SHEET } from '../src/core/spritefix.js';
 import {
   splitLayout, mapWidth, mapSpot, assignMaps, nearestMap, keyMaps, fitDistance, stablePanes,
   cardRect,
@@ -3504,7 +3504,7 @@ console.log('\n--- the panda in the ring ---');
       const psrc = readFileSync(new URL('../src/entities/player.js', import.meta.url), 'utf8');
       ok('返 both stance drawings hold the blade out to the RIGHT, which is what the Billboard is told',
         reach.every((r) => r.right - r.left > 0.1)
-        && /setRiposteArt\(art\) \{[\s\S]{0,400}mirror: true,\s*artFacesRight: true,/.test(psrc),
+        && /setRiposteArt\(art\) \{[\s\S]{0,400}this\._poseBoard\('ripostePose', art, 1, \{ mirror: true, artFacesRight: true \}\);/.test(psrc),
         reach.map((r) => `${r.s} ${r.left.toFixed(2)}/${r.right.toFixed(2)}`).join(' '));
       const m = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
       const files = ['ember', 'frost'].map((s) => `kittens/${s}/riposte.png`);
@@ -6164,14 +6164,29 @@ console.log('\n--- the sprite editor: what it saves, and what the game does with
   const { cleanSpriteFix } = await import('../vite.config.js');
   const shipped = JSON.parse(readFileSync(new URL('../src/spritefix.json', import.meta.url), 'utf8'));
   ok('src/spritefix.json is exactly what the save would write',
-    JSON.stringify(cleanSpriteFix(shipped)) === JSON.stringify({ poses: shipped.poses ?? {}, sheets: shipped.sheets ?? {} }));
+    JSON.stringify(cleanSpriteFix(shipped)) === JSON.stringify({ poses: shipped.poses ?? {}, sheets: shipped.sheets ?? {}, off: shipped.off ?? {} }));
+  ok('...and no sheet in it is under a key the game no longer reads by (the first editor\u2019s `ember/grid_v2`)',
+    Object.keys(shipped.sheets ?? {}).every((k) => !Object.values(LEGACY_SHEET).includes(k)), Object.keys(shipped.sheets ?? {}).join());
   ok('...and every scale in it is one the game will use', Object.values(shipped.poses ?? {}).every((f) => f.s === undefined || (f.s > 0.05 && f.s < 20)));
   const dirty = cleanSpriteFix({
     poses: { '../x': { s: 1 }, 'ember/kiai': { s: 'a', x: 0.123456789 } },
     sheets: { 'ember/grid_v2': { order: [1, '2', -1, 3.5], flip: 'x' }, 'Bad Key': { order: [1] } },
   });
   ok('the save keeps numbers on sheet/file keys and drops everything else',
-    JSON.stringify(dirty) === '{"poses":{"ember/kiai":{"x":0.1235}},"sheets":{"ember/grid_v2":{"order":[1],"flip":[]}}}', JSON.stringify(dirty));
+    JSON.stringify(dirty) === '{"poses":{"ember/kiai":{"x":0.1235}},"sheets":{"ember/grid_v2":{"order":[1],"flip":[]}},"off":{}}', JSON.stringify(dirty));
+  /* THE SECOND PASS'S KEYS: a sheet by its path under public/sprites, a ninja clip by path and clip, and
+     the `off` lists - names or indices, each once, nothing that could not be either. */
+  const keys = cleanSpriteFix({
+    sheets: { 'kittens/ember/grid_v2': { order: [0, 2] }, 'ninja/ember:sneak': { order: [3, 2, 1, 0], flip: [1] }, 'ninja/ember:Sneak Bad': { order: [0] } },
+    off: { 'housing/doormats': ['koi', 'koi', 3, 'x y', -1, 2.5, 'risingsun'], '../etc': ['a'], 'housing/empty': [] },
+  });
+  ok('...and keeps the second editor\u2019s: sheet paths, clip keys, and the switched-off lists',
+    JSON.stringify(keys) === '{"poses":{},"sheets":{"kittens/ember/grid_v2":{"order":[0,2],"flip":[]},"ninja/ember:sneak":{"order":[3,2,1,0],"flip":[1]}},"off":{"housing/doormats":["koi",3,"risingsun"]}}', JSON.stringify(keys));
+  const { listSprites } = await import('../vite.config.js');
+  const listed = listSprites();
+  ok('the editor\u2019s sheet list is every png under public/sprites, with its size',
+    listed.length >= 100 && listed.some((s) => s.id === 'housing/doormats' && s.w === 640 && s.h === 800)
+    && listed.some((s) => s.id === 'kittens/ember/grid_v2') && listed.every((s) => s.w > 0 && s.h > 0 && !/\.png$/.test(s.id)), `${listed.length} sheets`);
 
   /* DEV ONLY, like the balance page: not a build input, the endpoint a
      configureServer hook, and its debug-panel row inside the same DEV guard. */
@@ -6184,8 +6199,129 @@ console.log('\n--- the sprite editor: what it saves, and what the game does with
   const row = rowFrom < 0 ? '' : main.slice(rowFrom, main.indexOf('\n\n', rowFrom));
   ok('...and the debug panel reaches the sprite editor only in a dev build',
     row.includes('import.meta.env?.DEV') && row.includes('data-open="/sprites.html"') && /\n\s*:\s*'';$/.test(row));
-  ok('the game re-deals the turnaround sheets BEFORE anybody is built from them',
-    /const fixed = \(a, id\) => applySheetFix\(a, sheetFix\(id, a\.cols\), THREE\);\n\s*this\._spawnPlayers\(fixed\(ember, 'ember\/grid_v2'\), fixed\(frost, 'frost\/grid'\)\);/.test(main));
+  /* EVERY SHEET THE GAME LOADS honours a saved order (Richard: "and any future sprite sheets that get
+     added to the game"): `loadSpriteAtlas` re-deals by the file's own path, so no call site has to
+     remember. `_loadSprite` asks its counts of the sheet AS DRAWN and deals it after - a saved order
+     that drops two of ten columns must not read as a broken sheet and swap her for the placeholder. */
+  ok('a sheet\u2019s key is its path under public/sprites',
+    sheetIdOf('/sprites/kittens/ember/grid_v2.png') === 'kittens/ember/grid_v2' && sheetIdOf('/sprites/hospital/cat.png?v=2') === 'hospital/cat'
+    && sheetIdOf('/elsewhere/x.png') === null && sheetIdOf(undefined) === null);
+  ok('...and the first editor\u2019s two keys are still read, so a file it saved keeps working',
+    sheetFix('kittens/ember/grid_v2', 10, { sheets: { 'ember/grid_v2': { order: [1, 0] } } })?.order.join() === '1,0'
+    && sheetFix('kittens/ember/grid_v2', 10, { sheets: { 'kittens/ember/grid_v2': { order: [2] }, 'ember/grid_v2': { order: [1, 0] } } })?.order.join() === '2');
+  const sheetSrc = readFileSync(new URL('../src/core/spritesheet.js', import.meta.url), 'utf8').replace(/\r/g, '');
+  ok('every sheet loaded through loadSpriteAtlas is re-dealt by its saved fix',
+    /export async function loadSpriteAtlas\(url, opts = \{\}\) \{\n\s*const atlas = await packAtlas\(url, opts\);\n\s*if \(opts\.sheetFix === false \|\| !atlas\) return atlas;\n\s*return applySheetFix\(atlas, sheetFix\(sheetIdOf\(url\), atlas\.cols\), THREE\);/.test(sheetSrc));
+  ok('...and the kittens\u2019 loader counts the sheet as drawn, then deals it',
+    /cell: 384, maxAtlas: this\.device\.atlasMax, sheetFix: false,[\s\S]{0,700}return applySheetFix\(a, sheetFix\(sheetIdOf\(url\), a\.cols\), THREE\);/.test(main)
+    && /this\._spawnPlayers\(ember, frost\);/.test(main) && !/fixed\(ember/.test(main));
+
+  /* A BAMBOO INFILTRATION CLIP plays the saved FRAME order (`ninja/ember:sneak`) - asked of a real
+     ClipSprite: which cell `_setCell` lands on at each step, mirrored or not, and when a one-shot ends. */
+  const { ClipSprite } = await import('../src/systems/dream/ninjasprite.js');
+  const { NINJA_ATLAS } = await import('../src/systems/dream/ninjaclips.js');
+  const ctex = new THREE.Texture();
+  ctex.image = { width: 2040, height: 1632 };
+  const clipCells = (fix, name) => {
+    setSpriteFix(fix);
+    const c = new ClipSprite(ctex, NINJA_ATLAS.ember, 2.9);
+    c.setClip(name);
+    const out = [];
+    for (let k = 0; k < c.clipFrames; k++) {
+      c.clipT = (k + 0.5) / c.clip.fps;
+      c.faceCamera({ position: new THREE.Vector3(0, 0, 40) });
+      const rx = c.tex.repeat.x;
+      const u0 = rx < 0 ? c.tex.offset.x + rx : c.tex.offset.x;
+      out.push(`${Math.floor((u0 + Math.abs(rx) / 2) * c.cols) - c.clip.col}${rx < 0 ? 'F' : ''}`);
+    }
+    const len = c.clipFrames / c.clip.fps;
+    c.clipT = len - 0.01;
+    const before = c.clipDone;
+    c.clipT = len + 0.01;
+    const after = c.clipDone; // asked while the fix is in force: ClipSprite reads it on every call
+    setSpriteFix(SPRITE_FIX);
+    return { cells: out.join(), done: !before && after };
+  };
+  ok('a ninja clip with no saved order plays its frames as drawn',
+    clipCells({}, 'sneak').cells === '0,1,2,3', clipCells({}, 'sneak').cells);
+  const rev = clipCells({ sheets: { 'ninja/ember:sneak': { order: [3, 2, 1, 0], flip: [2] } } }, 'sneak');
+  ok('...and with one, plays it - mirrors where the order says',
+    rev.cells === '3,2,1F,0', rev.cells);
+  const cut = clipCells({ sheets: { 'ninja/ember:mount': { order: [0, 2, 4] } } }, 'mount');
+  ok('...and a one-shot ends after the frames it PLAYS, not the frames drawn',
+    cut.cells === '0,2,4' && cut.done, JSON.stringify(cut));
+  ok('...and an order naming a frame the clip has not got is no order',
+    clipCells({ sheets: { 'ninja/ember:sneak': { order: [0, 9] } } }, 'sneak').cells === '0,1,2,3');
+
+  /* THE SINGLE POSES TAKE A FIX TOO (player.js `_poseBoard`): the eat crouch, the bless, the warp and
+     the rest, as the kendo set does - and in the headset, size and height only. */
+  const simArt = { texture: tex, contentScale: 0.8, pad: 0.05 };
+  const poser = (fix) => {
+    setSpriteFix(fix);
+    const p = new Player({ texture: new THREE.Texture(), index: 0, cols: 8, rows: 4, mirror: false, style: PLAYER_STYLE[0], height: 2.9 });
+    p.setEatArt(art);
+    p.setRiposteArt(art);
+    p.setSimPoseArt({ eat: simArt });
+    setSpriteFix(SPRITE_FIX);
+    return p;
+  };
+  const s0 = poser({});
+  const s1 = poser({ poses: { 'ember/eat': { s: 0.5, y: 0.2 }, 'ember/riposte': { x: 0.1 }, 'ember/vr_eat': { s: 2, y: 0.1 } } });
+  ok('a saved fix on a single pose draws it that size and lifts it, as on the kendo set',
+    Math.abs(s1.eatPose.width / s0.eatPose.width - 0.5) < 1e-9
+    && Math.abs((box(s1.eatPose).min.y - (-art.pad * s1.eatPose.width)) - 0.2 * 2.9) < 1e-6);
+  ok('...and moves the Riposte stance forward, the way its blade points',
+    Math.abs(mid(s1.ripostePose) - mid(s0.ripostePose) - 0.29) < 1e-6, (mid(s1.ripostePose) - mid(s0.ripostePose)).toFixed(3));
+  ok('...and nothing saved is the quad it always was (no footX pair on a pose with no fix)',
+    !s0.eatPose._footGeo && !s0.ripostePose._footGeo);
+  setSpriteFix({ poses: { 'ember/vr_eat': { s: 2, y: 0.1 } } });
+  s1.setSimLook(true);
+  const v1 = s1.eatPose.width;
+  const vy = (() => { const g = s1.eatPose.mesh.geometry; g.computeBoundingBox(); return g.boundingBox.min.y; })();
+  setSpriteFix(SPRITE_FIX);
+  s0.setSimLook(true);
+  ok('...and in the headset its vr_ fix: size and height',
+    Math.abs(v1 / s0.eatPose.width - 2) < 1e-9 && Math.abs(vy - (-simArt.pad * v1 + 0.1 * 2.9)) < 1e-6, `${v1.toFixed(3)} ${vy.toFixed(3)}`);
+
+  /* THE DOOR MATS' SWITCHES: a design switched off is not offered and not dealt, a home that already
+     chose it draws the first that is on and KEEPS its choice, and a list can never switch off them all. */
+  const { DOOR_MATS } = await import('../src/systems/housing/catalog.js');
+  const offKoi = { off: { 'housing/doormats': ['koi'] } };
+  ok('a switched-off door mat is not offered',
+    isOff('housing/doormats', 'koi', offKoi) && !isOff('housing/doormats', 'sakura', offKoi)
+    && enabledOf('housing/doormats', DOOR_MATS, undefined, offKoi).length === DOOR_MATS.length - 1
+    && !enabledOf('housing/doormats', DOOR_MATS, undefined, offKoi).some((m) => m.id === 'koi'));
+  ok('...and switching off every one switches off none (a list degrades, never empties)',
+    enabledOf('housing/doormats', DOOR_MATS, undefined, { off: { 'housing/doormats': DOOR_MATS.map((m) => m.id) } }).length === DOOR_MATS.length);
+  const { matOf } = await import('../src/systems/housing/homeisle.js');
+  setSpriteFix({ off: { 'housing/doormats': ['koi', DOOR_MATS[0].id] } });
+  const drawnOff = matOf('koi');
+  const drawnOn = matOf('sakura');
+  setSpriteFix(SPRITE_FIX);
+  ok('...and a home that chose it draws the first design that is on, and the others theirs',
+    drawnOff === DOOR_MATS[1] && drawnOn.id === 'sakura' && matOf('koi').id === 'koi', `${drawnOff.id} ${drawnOn.id}`);
+  const cards = readFileSync(new URL('../src/systems/housing/cards.js', import.meta.url), 'utf8').replace(/\r/g, '');
+  const hedit = readFileSync(new URL('../src/systems/housing/editor.js', import.meta.url), 'utf8').replace(/\r/g, '');
+  ok('...and the styles list and the first mat a home is dealt both ask which are on',
+    /it\.mat \? enabledOf\('housing\/doormats', DOOR_MATS\)/.test(cards)
+    && /L\.style === \(it\.mat \? DOOR_MATS\[0\]\.id : styles\[0\]\?\.id\)/.test(cards)
+    && /const on = enabledOf\('housing\/doormats', DOOR_MATS\);\n\s*const m = on\[h % on\.length\];/.test(hedit));
+
+  /* THE EDITOR'S OWN NUMBERS are copies (importing their owners would boot half the game): pinned here
+     against the owners, and its B-on-top switch set where three sorts - on the mesh. */
+  const ed = readFileSync(new URL('../src/sprite-editor.js', import.meta.url), 'utf8').replace(/\r/g, '');
+  const DDm = await import('../src/systems/dreamdojo.js');
+  const SHm = await import('../src/systems/dream/shadow.js');
+  const shSrc = readFileSync(new URL('../src/systems/dream/shadow.js', import.meta.url), 'utf8');
+  ok('the sprite editor draws the kittens and Lionheart at the game\u2019s sizes',
+    /const EDITOR_HEIGHT = \{ ember: 2\.9, frost: 2\.85 \};/.test(ed)
+    && /ember: \{ art: ember, height: 2\.9, dirSense: 1 \},\n\s*frost: \{ art: frost, height: 2\.85, dirSense: 1 \},/.test(main)
+    && new RegExp(`const EDITOR_LION_H = ${DDm.LION_HEIGHT};`).test(ed) && DDm.LION_HEIGHT === SHm.SHADOW_H
+    && /const SHADOW_TINT = 0xc8a8ff;/.test(ed) && /this\.posed \? 0xc8a8ff/.test(shSrc));
+  ok('...and its "B on top" sets the order on the MESH, where three sorts (on the Billboard it did nothing)',
+    /this\.bb\.mesh\.renderOrder = top \? 20 : 5;/.test(ed) && !/this\.bb\.renderOrder =/.test(ed));
+  ok('...and every pose group has its "Stand vs" sequence',
+    /SEQS\[`Stand vs \$\{name\}`\] = \{ text: list\.filter\(\(p\) => p\.id !== 'stand'\)/.test(ed));
 }
 
 console.log('\n--- a full-screen scene has no split to furnish ---');

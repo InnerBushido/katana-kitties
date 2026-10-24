@@ -1,5 +1,5 @@
 import { defineConfig } from 'vite';
-import { writeFileSync, readFileSync } from 'node:fs';
+import { writeFileSync, readFileSync, readdirSync, openSync, readSync, closeSync } from 'node:fs';
 
 /* ---------------------------------------------------------------------------
    Vite config — one job: let the dev server be told which port to use.
@@ -103,15 +103,23 @@ const tuningServer = {
    parsed and cleaned here so a bad POST leaves the old file standing. Its
    own cleaner because its file has lists in it: a sheet's `order` and `flip`
    are whole numbers, a pose's `s`, `x` and `y` finite ones, and the keys are
-   `sheet/file` — anything else is dropped rather than written.
+   `sheet/file` (a pose), a path under public/sprites (a sheet, `kittens/ember/
+   grid_v2`), or a path and a clip (`ninja/ember:sneak`) — anything else is
+   dropped rather than written. `off` is a sheet's list of switched-off cells,
+   by name or by index.
+
+   AND ONE LISTING: GET /__spritefix/list is every png under public/sprites
+   with its size, so the editor's Sheets tab offers a sheet the day it is
+   added, with nobody remembering to tell it.
 --------------------------------------------------------------------------- */
 const SPRITE_FILE = new URL('./src/spritefix.json', import.meta.url);
-const KEY = /^[a-z]+\/[A-Za-z0-9_]+$/;
+const KEY = /^[a-z0-9_]+(\/[A-Za-z0-9_]+)+(:[a-z0-9_]+)?$/;
 const ints = (a) => (Array.isArray(a) ? a.filter((v) => Number.isInteger(v) && v >= 0 && v < 256) : []);
 
 export function cleanSpriteFix(o) {
   const poses = {};
   const sheets = {};
+  const off = {};
   for (const k of Object.keys(o?.poses ?? {}).filter((q) => KEY.test(q)).sort()) {
     const f = o.poses[k];
     const out = {};
@@ -122,13 +130,41 @@ export function cleanSpriteFix(o) {
     const order = ints(o.sheets[k]?.order);
     if (order.length) sheets[k] = { order, flip: ints(o.sheets[k]?.flip) };
   }
-  return { poses, sheets };
+  for (const k of Object.keys(o?.off ?? {}).filter((q) => KEY.test(q)).sort()) {
+    const list = Array.isArray(o.off[k]) ? o.off[k] : [];
+    const ids = [...new Set(list.filter((v) => (typeof v === 'string' && /^[A-Za-z0-9_]{1,40}$/.test(v)) || (Number.isInteger(v) && v >= 0 && v < 4096)))];
+    if (ids.length) off[k] = ids;
+  }
+  return { poses, sheets, off };
+}
+
+/* Every png under public/sprites, `{ id, w, h }`, its size read off the IHDR (bytes 16-23), which is
+   all a picker needs and spares decoding forty sheets to fill a <select>. */
+const SPRITES_DIR = new URL('./public/sprites/', import.meta.url);
+export function listSprites(dir = SPRITES_DIR, pre = '') {
+  const out = [];
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    if (e.isDirectory()) out.push(...listSprites(new URL(`${e.name}/`, dir), `${pre}${e.name}/`));
+    else if (/\.png$/i.test(e.name)) {
+      const b = Buffer.alloc(24);
+      const fd = openSync(new URL(e.name, dir), 'r');
+      try { readSync(fd, b, 0, 24, 0); } finally { closeSync(fd); }
+      out.push({ id: pre + e.name.replace(/\.png$/i, ''), w: b.readUInt32BE(16), h: b.readUInt32BE(20) });
+    }
+  }
+  return out.sort((a, b) => a.id.localeCompare(b.id));
 }
 
 const spriteServer = {
   name: 'katana-spritefix',
   configureServer(server) {
     server.middlewares.use('/__spritefix', (req, res) => {
+      // connect strips the mount path: /__spritefix/list arrives as /list
+      if (req.method === 'GET' && req.url?.startsWith('/list')) {
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify(listSprites()));
+        return;
+      }
       if (req.method === 'GET') {
         res.setHeader('content-type', 'application/json');
         res.end(readFileSync(SPRITE_FILE, 'utf8'));
@@ -149,7 +185,7 @@ const spriteServer = {
         const one = (v) => JSON.stringify(v).replace(/([:,])/g, '$1 ').replace(/^\{/, '{ ').replace(/\}$/, ' }');
         const block = (o) => Object.entries(o).map(([k, v]) => `    ${JSON.stringify(k)}: ${one(v)}`).join(',\n');
         const nl = (s) => (s ? `\n${s}\n  ` : '');
-        writeFileSync(SPRITE_FILE, `{\n  "poses": {${nl(block(kept.poses))}},\n  "sheets": {${nl(block(kept.sheets))}}\n}\n`);
+        writeFileSync(SPRITE_FILE, `{\n  "poses": {${nl(block(kept.poses))}},\n  "sheets": {${nl(block(kept.sheets))}},\n  "off": {${nl(block(kept.off))}}\n}\n`);
         res.setHeader('content-type', 'application/json');
         res.end(JSON.stringify({ ok: true, saved: kept }));
       });

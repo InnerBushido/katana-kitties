@@ -1,7 +1,7 @@
 ﻿import * as THREE from 'three';
 import { Billboard } from '../core/gfx.js';
 import { feetX, torsoX } from '../core/spritesheet.js';
-import { poseFix, KENDO_FILE, HOME_FILE } from '../core/spritefix.js';
+import { poseFix, KENDO_FILE, HOME_FILE, SINGLE_FILE } from '../core/spritefix.js';
 import { PANDA_SPEED, PANDA_JUMP, CLAW } from './panda.js';
 import { aggregate, WARD, AEGIS, DIVE, CROSS, CHARGE, DODGE, PARRY } from './powerorb.js';
 import { STEAL, DBREATH, BreathTally, arenaPowerFor } from './clanpower.js';
@@ -1537,9 +1537,12 @@ export class Player {
       const a = on ? this._simPoseArt?.[file] : null;
       if (a?.texture) {
         if (!pose.userData.sim) {
-          const q = this.height * k / (a.contentScale || 1);
+          /* The sprite editor's `vr_` fix: size and height only. A look carries one quad, and the
+             forward shift is the pair of quads a mirror swaps (`footX`), which only the home look has. */
+          const fx = poseFix(this.style?.sheet ?? 'ember', `vr_${file}`);
+          const q = this.height * k / (a.contentScale || 1) * fx.s;
           pose.userData.sim = pose.makeLook(a.texture, {
-            cols: 1, rows: 1, width: q, height: q, footOffset: (a.pad ?? 0) * q,
+            cols: 1, rows: 1, width: q, height: q, footOffset: (a.pad ?? 0) * q - fx.y * this.height,
           });
         }
         pose.setLook(pose.userData.sim);
@@ -1575,28 +1578,42 @@ export class Player {
     this.group.add(this.clipPose);
   }
 
+  /**
+   * ONE SINGLE-CELL POSE, built the way all seven setters below build theirs: `k` of her height over
+   * the sheet's packing, feet on the drawn feet - and then the sprite editor's fix by sheet (core/
+   * spritefix.js `SINGLE_FILE`), as `setKendoArt` takes it: `s` on the size, `x` forward, `y` up.
+   * A front-facing pose has no forward, so there `x` is toward screen-right.
+   */
+  _poseBoard(key, art, k, { mirror = false, artFacesRight } = {}) {
+    if (this[key]) this.group.remove(this[key]);
+    const fx = poseFix(this.style?.sheet ?? 'ember', SINGLE_FILE[key]);
+    const quad = this.height * k / (art.contentScale || 1) * fx.s;
+    const fwd = artFacesRight === false ? -1 : 1;
+    this[key] = new Billboard(art.texture, {
+      cols: 1,
+      rows: 1,
+      mirror,
+      artFacesRight,
+      width: quad,
+      height: quad,
+      footOffset: (art.pad ?? 0) * quad - fx.y * this.height,
+      footX: -fx.x * fwd * this.height,
+    });
+    this[key].visible = false;
+    this.group.add(this[key]);
+  }
+
   setEatArt(art) {
     if (!art?.texture) return;
     // Replacing one rather than stacking a second in the group. Nothing calls
     // this twice today; a pose drawn on top of a pose is a silent bug if
     // anything ever does.
-    if (this.eatPose) this.group.remove(this.eatPose);
     /* SHORTER THAN SHE IS, because she is crouching. `contentScale` makes the
        drawn figure exactly `height` tall whatever the sheet's packing, which
        is right for every standing pose and wrong for this one: a squatting cat
        drawn to a standing cat's height is a cat that got bigger in order to
        crouch. */
-    const quad = this.height * EAT_CROUCH / (art.contentScale || 1);
-    this.eatPose = new Billboard(art.texture, {
-      cols: 1,
-      rows: 1,
-      mirror: false,
-      width: quad,
-      height: quad,
-      footOffset: (art.pad ?? 0) * quad,
-    });
-    this.eatPose.visible = false;
-    this.group.add(this.eatPose);
+    this._poseBoard('eatPose', art, EAT_CROUCH);
   }
 
   /**
@@ -1625,18 +1642,7 @@ export class Player {
    */
   setBlessArt(art) {
     if (!art?.texture) return;
-    if (this.blessPose) this.group.remove(this.blessPose);
-    const quad = this.height * BLESS_STRETCH / (art.contentScale || 1);
-    this.blessPose = new Billboard(art.texture, {
-      cols: 1,
-      rows: 1,
-      mirror: false,
-      width: quad,
-      height: quad,
-      footOffset: (art.pad ?? 0) * quad,
-    });
-    this.blessPose.visible = false;
-    this.group.add(this.blessPose);
+    this._poseBoard('blessPose', art, BLESS_STRETCH);
   }
 
   /**
@@ -1663,18 +1669,7 @@ export class Player {
    */
   setWarpArt(art) {
     if (!art?.texture) return;
-    if (this.warpPose) this.group.remove(this.warpPose);
-    const quad = this.height / (art.contentScale || 1);
-    this.warpPose = new Billboard(art.texture, {
-      cols: 1,
-      rows: 1,
-      mirror: false,
-      width: quad,
-      height: quad,
-      footOffset: (art.pad ?? 0) * quad,
-    });
-    this.warpPose.visible = false;
-    this.group.add(this.warpPose);
+    this._poseBoard('warpPose', art, 1);
   }
 
   /**
@@ -1706,18 +1701,7 @@ export class Player {
    */
   setBreathArt(art) {
     if (!art?.texture) return;
-    if (this.breathPose) this.group.remove(this.breathPose);
-    const quad = this.height / (art.contentScale || 1);
-    this.breathPose = new Billboard(art.texture, {
-      cols: 1,
-      rows: 1,
-      mirror: false,
-      width: quad,
-      height: quad,
-      footOffset: (art.pad ?? 0) * quad,
-    });
-    this.breathPose.visible = false;
-    this.group.add(this.breathPose);
+    this._poseBoard('breathPose', art, 1);
   }
 
   /**
@@ -1753,18 +1737,7 @@ export class Player {
    */
   setScaredArt(art) {
     if (!art?.texture) return;
-    if (this.scaredPose) this.group.remove(this.scaredPose);
-    const quad = this.height / (art.contentScale || 1);
-    this.scaredPose = new Billboard(art.texture, {
-      cols: 1,
-      rows: 1,
-      mirror: false,
-      width: quad,
-      height: quad,
-      footOffset: (art.pad ?? 0) * quad,
-    });
-    this.scaredPose.visible = false;
-    this.group.add(this.scaredPose);
+    this._poseBoard('scaredPose', art, 1);
   }
 
   /**
@@ -1788,18 +1761,7 @@ export class Player {
    */
   setSweepArt(art) {
     if (!art?.texture) return;
-    if (this.sweepPose) this.group.remove(this.sweepPose);
-    const quad = this.height / (art.contentScale || 1);
-    this.sweepPose = new Billboard(art.texture, {
-      cols: 1,
-      rows: 1,
-      mirror: false,
-      width: quad,
-      height: quad,
-      footOffset: (art.pad ?? 0) * quad,
-    });
-    this.sweepPose.visible = false;
-    this.group.add(this.sweepPose);
+    this._poseBoard('sweepPose', art, 1);
   }
 
   /**
@@ -1830,19 +1792,7 @@ export class Player {
    */
   setRiposteArt(art) {
     if (!art?.texture) return;
-    if (this.ripostePose) this.group.remove(this.ripostePose);
-    const quad = this.height / (art.contentScale || 1);
-    this.ripostePose = new Billboard(art.texture, {
-      cols: 1,
-      rows: 1,
-      mirror: true,
-      artFacesRight: true,
-      width: quad,
-      height: quad,
-      footOffset: (art.pad ?? 0) * quad,
-    });
-    this.ripostePose.visible = false;
-    this.group.add(this.ripostePose);
+    this._poseBoard('ripostePose', art, 1, { mirror: true, artFacesRight: true });
     // Handed over after she is already in the headset: put it on now.
     if (this.simLook) this.setSimLook(true);
   }

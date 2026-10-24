@@ -791,17 +791,26 @@ git push origin alpha</code></pre>
 
   <h3>Fix a sprite's size and place: <code>/sprites.html</code></h3>
   <p>The same arrangement for the drawings. <code>npm run dev</code>, then <code>/sprites.html</code>
-    (or the debug panel's <b>SPRITE EDITOR</b> row). It shows any kendo or home pose of any kitten:</p>
+    (or the debug panel's <b>SPRITE EDITOR</b> row).</p>
   <ul>
-    <li>overlaid on another pose with transparency, or slid beside it;</li>
-    <li>with her front foot, body centre and ink top measured, and snappable.</li>
+    <li><b>Poses</b>: every kitten pose in groups (Everyday, Arena, Kendo, Home, Simulator, Bamboo
+      Infiltration) plus Lionheart. Lay one over another with transparency or slide it beside it;
+      her front foot, body centre and ink top are measured and snappable. Each group has a
+      <b>Stand vs …</b> sequence, and sequences play at 0.05×–4×.</li>
+    <li><b>Sheets</b>: every png under <code>public/sprites</code>, listed by the dev server so a new
+      sheet appears the day it lands, with the ninja atlases broken into their clips. Order and
+      mirror a turnaround's columns, a sheet's cells or a clip's frames, and switch door-mat designs
+      off in the game. Preview as a turntable, loop, ping-pong, once, or hold N seconds on each.</li>
+    <li><b>Undo/redo</b> (Ctrl+Z / Ctrl+Y) with the last changes listed, a badge per tab for what
+      is unsaved, and a Save that says how many changes it writes. It writes both tabs at once.</li>
   </ul>
-  <p>Sequences play at 0.05×–4× from the keyboard. A <b>Sheets</b> tab reorders, drops and mirrors
-    a turnaround sheet's columns, with a turntable preview.</p>
   <p>Save writes <code>src/spritefix.json</code>. Like <code>tuning.json</code>, it holds overrides
-    only. It is keyed by SHEET (<code>ember/kiai</code>), so Storm and Blossom wear Ember's and
-    Frost's fixes. The poses on the page are real <code>Player</code> billboards, so what lines up
-    there lines up in the game. Dev only, twice over, like the balance page.</p>
+    only: <code>poses</code> keyed by sheet (<code>ember/kiai</code>, so Storm and Blossom wear
+    Ember's and Frost's fixes), <code>sheets</code> by the file's path
+    (<code>kittens/ember/grid_v2</code>, <code>ninja/ember:sneak</code>), and <code>off</code> for
+    switched-off cells. <b>Every sheet loaded through <code>loadSpriteAtlas</code> honours its saved
+    order</b>, so a sheet added later needs no wiring. The page draws with the game's own code, so
+    what lines up there lines up in the game. Dev only, twice over, like the balance page.</p>
 
   <h3>The numbers, at a glance</h3>
   <p style="font-size:14px;color:var(--text-dim)"><b>This table is generated out of

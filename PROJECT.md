@@ -347,15 +347,29 @@ save endpoint exists in a build** — the endpoint is a `configureServer` hook i
 ### Fix a sprite's size and place — `/sprites.html`
 
 The same arrangement for the drawings. `npm run dev`, then **`/sprites.html`**
-(or the debug panel's *SPRITE EDITOR* row): any kendo or home pose of any
-kitten, laid over another with transparency or slid beside it, with her front
-foot, body centre and ink top measured and snappable; sequences played at
-0.05×–4× from the keyboard; and a **Sheets** tab that reorders, drops and
-mirrors a turnaround sheet's columns with a turntable preview. Save writes
-**`src/spritefix.json`** — overrides only, keyed by SHEET (`ember/kiai`), so
-Storm and Blossom wear Ember's and Frost's fixes. The poses on the page are
-real `Player` billboards, so what lines up there lines up in the game. Dev
-only, twice over, like the balance page. → [art.md](docs/notes/art.md)
+(or the debug panel's *SPRITE EDITOR* row).
+
+- **Poses**: every kitten pose in groups — Everyday, Arena, Kendo, Home,
+  Simulator, Bamboo Infiltration — plus Lionheart, laid over another with
+  transparency or slid beside it, with her front foot, body centre and ink top
+  measured and snappable. Each group has a **Stand vs …** sequence; sequences
+  play at 0.05×–4×.
+- **Sheets**: every png under `public/sprites` (asked of the dev server, so a
+  new sheet is listed the day it lands), the ninja atlases broken into their
+  clips. Order and mirror a turnaround's columns, a sheet's cells or a clip's
+  frames; switch door-mat designs off in the game. Play it as a turntable,
+  loop, ping-pong, once, or hold N seconds on each.
+- **Undo/redo** (Ctrl+Z / Ctrl+Y) with the last changes listed, a badge per tab
+  for what is unsaved, and a Save that says how many changes it writes — it
+  writes both tabs at once.
+
+Save writes **`src/spritefix.json`** — overrides only: `poses` keyed by sheet
+(`ember/kiai`, so Storm and Blossom wear Ember's and Frost's fixes), `sheets`
+by the file's path (`kittens/ember/grid_v2`, `ninja/ember:sneak`), and `off`
+for switched-off cells. **Every sheet loaded through `loadSpriteAtlas` honours
+its saved order**, so a sheet added later needs no wiring. The page draws with
+the game's own code, so what lines up there lines up in the game. Dev only,
+twice over, like the balance page. → [art.md](docs/notes/art.md)
 
 ### The numbers, at a glance
 

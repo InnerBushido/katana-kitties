@@ -15,11 +15,18 @@
  *           `y` up, both in units of her height. The code's own numbers
  *           (`KENDO_POSE_H`, `feetX`) stay the defaults; this is OVERRIDES
  *           ONLY, like tuning.json, and `{}` is the game as it was.
- *   sheets  "ember/grid_v2": { order, flip } — a turnaround sheet's columns
+ *   sheets  "kittens/ember/grid_v2": { order, flip } — a sheet's columns
  *           re-dealt: `order` lists, 0-based, which source column each new
  *           column is (so it reorders AND drops: "[1, 2, 4, 7, 6, 5, 8, 9]"
  *           is order [0, 1, 3, 6, 5, 4, 7, 8]), `flip` the NEW columns drawn
- *           mirrored. Every row the same, as asked ("of each row").
+ *           mirrored. Every row the same, as asked ("of each row"). The key is
+ *           the file's path under public/sprites without `.png` (`sheetIdOf`),
+ *           and EVERY sheet loaded through `loadSpriteAtlas` honours it, so a
+ *           sheet added next year needs no wiring. A Bamboo Infiltration clip
+ *           is `ninja/ember:sneak`, and its `order` is FRAMES (ClipSprite).
+ *   off     "housing/doormats": ["risingsun"] — cells a sheet's own consumer
+ *           must not offer (`isOff`). Only sheets whose code asks honour it;
+ *           the editor shows the switch only on those.
  *
  * EVERY FIELD DEGRADES. A pose fix that is not a finite number is the code's
  * number; a sheet fix whose order names a column the sheet does not have is
@@ -37,6 +44,24 @@ export function setSpriteFix(fix) { LIVE = fix ?? {}; }
 
 const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 
+/** `/sprites/kittens/ember/grid_v2.png` -> `kittens/ember/grid_v2`: the key a sheet's fix is saved under. */
+export function sheetIdOf(url) {
+  const m = /\/sprites\/(.+?)\.(?:png|webp)$/i.exec(String(url ?? '').split('?')[0]);
+  return m ? m[1] : null;
+}
+
+/** Is cell `id` of sheet `sheet` switched off in the game? */
+export function isOff(sheet, id, fix = LIVE) {
+  const list = fix?.off?.[sheet];
+  return Array.isArray(list) && list.includes(id);
+}
+
+/** `all` without the ones switched off - or `all`, if that would leave none (a list must degrade, never empty). */
+export function enabledOf(sheet, all, key = (c) => c.id, fix = LIVE) {
+  const on = all.filter((c) => !isOff(sheet, key(c), fix));
+  return on.length ? on : all;
+}
+
 /** The kendo drawings' files, by the Player key that wears them (player.js `setKendoArt`). */
 export const KENDO_FILE = {
   kendoPose: 'kendo', kiaiPose: 'kiai', seizaPose: 'seiza', reachPose: 'reach', reiPose: 'rei',
@@ -44,6 +69,12 @@ export const KENDO_FILE = {
 };
 /** ...and the home poses' (`setHomeArt`). */
 export const HOME_FILE = { prayPose: 'pray', bathPose: 'bath', futonPose: 'futon', teaPose: 'tea' };
+/** ...and the single drawings of the everyday and the arena (`Player._poseBoard`). The headset's
+ *  are the same names with `vr_` in front (`setSimLook`), and take `s` and `y` only. */
+export const SINGLE_FILE = {
+  eatPose: 'eat', blessPose: 'bless', warpPose: 'warp', breathPose: 'inhale',
+  scaredPose: 'scared', sweepPose: 'sweep', ripostePose: 'riposte',
+};
 
 /** The fix for one pose drawing: `{ s, x, y }`, 1/0/0 where nothing is set. `fix` is for the checks. */
 export function poseFix(sheet, file, fix = LIVE) {
@@ -52,13 +83,17 @@ export function poseFix(sheet, file, fix = LIVE) {
   return { s: s > 0.05 && s < 20 ? s : 1, x: num(f?.x, 0), y: num(f?.y, 0) };
 }
 
+/* The first editor saved the two kitten grids as `ember/grid_v2` and `frost/grid`, before every sheet
+   had a key: still read, so a file saved by it keeps working. The editor renames them on its next save. */
+export const LEGACY_SHEET = { 'kittens/ember/grid_v2': 'ember/grid_v2', 'kittens/frost/grid': 'frost/grid' };
+
 /**
  * The fix for a turnaround sheet with `cols` columns, or null. Null too when
  * `order` is not a list of whole columns the sheet has — the sheet is then
  * drawn as it came.
  */
 export function sheetFix(id, cols, fix = LIVE) {
-  const f = fix?.sheets?.[id];
+  const f = fix?.sheets?.[id] ?? fix?.sheets?.[LEGACY_SHEET[id]];
   const order = f?.order;
   if (!Array.isArray(order) || !order.length) return null;
   if (!order.every((c) => Number.isInteger(c) && c >= 0 && c < cols)) return null;

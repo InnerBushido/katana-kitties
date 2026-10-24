@@ -1,4 +1,5 @@
 import { HOUSE_BY_ID, ITEM_BY_ID, LINK_BY_ID, houseSpecs, homeRooms, pathPosts, roomWith, DOOR_MATS } from './catalog.js';
+import { enabledOf } from '../../core/spritefix.js';
 import { houseFoot, houseFoots, houseShape, stairBlocks, rampOf } from './homehouse.js';
 import { linkWhy, toIsle, toHouse, underBridgeWhy } from './links.js';
 
@@ -423,7 +424,9 @@ export function layDoorMat(H, env = 50) {
   const n = layWalk(H, { a, len: it.len, rot: Math.atan2(f.x - a.x, f.z - a.z) }, 'path_mat', env);
   let h = 7;
   for (const c of String(H.site ?? '')) h = (h * 33 + c.charCodeAt(0)) >>> 0;
-  const m = DOOR_MATS[h % DOOR_MATS.length];
+  // dealt from the designs the sprite editor leaves on - all twenty, and the same deal, until one is off
+  const on = enabledOf('housing/doormats', DOOR_MATS);
+  const m = on[h % on.length];
   if (n && m !== DOOR_MATS[0]) H.outdoor[H.outdoor.length - 1].look = { style: m.id };
   return n;
 }
