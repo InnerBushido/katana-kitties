@@ -60,6 +60,15 @@ export const PLAY = {
   chickH: [1.4, 3.2, 4.6, 5.6], // how high the chick flutters, above the ground
   chickJumps: [1, 2, 3, 4],     // ...and the jumps that height takes
   hopBeats: 4,
+  /* THE BUNNY'S HOP AND HERS. Its hop is `hopH` high over `hopT` seconds;
+     on her copy turn her jump is capped to `hopUp` times that height under
+     `hopGrav` times her gravity (Player `hopJump`). Richard, Oct 2026: "the
+     player jumps 1.25x's higher than the bunny and gravity is 1.25x's
+     stronger so that the player falls faster". */
+  hopH: 0.9,
+  hopT: 0.3,
+  hopUp: 1.25,
+  hopGrav: 1.25,
   hopTol: 0.16,                 // mean timing error (s) that still counts
   joyPerLevel: 2,
   boostPerLevel: { chick: 0.02, bunny: 0.04, goat: 0.04 },
@@ -271,6 +280,9 @@ export class PetPlay {
     const S = this.s.get(i);
     if (!S) return;
     S.stick?.removeFromParent();
+    // Her own jump back, whatever turn the bunny game was on.
+    const P = this.game.players?.[i];
+    if (P) P.hopJump = null;
     // Never leave her mid-flap: the pen drawing back, the flutter frame away.
     const u = this._animal(S)?.userData;
     if (u?.fly) { u.fly.visible = false; if (u.bb) u.bb.visible = true; }
@@ -531,12 +543,14 @@ export class PetPlay {
     this._run(S, bx, bz, 5, dt, ground);
     const gy = ground(S.pos.x, S.pos.z);
     if (S.phase === 'show') {
-      const k = S.beats.findIndex((b) => S.t >= b && S.t < b + 0.3);
-      S.pos.y = gy + (k >= 0 ? Math.sin(((S.t - S.beats[k]) / 0.3) * Math.PI) * 0.9 : 0);
+      p.hopJump = null;
+      const k = S.beats.findIndex((b) => S.t >= b && S.t < b + PLAY.hopT);
+      S.pos.y = gy + (k >= 0 ? Math.sin(((S.t - S.beats[k]) / PLAY.hopT) * Math.PI) * PLAY.hopH : 0);
       if (S.shown < S.beats.length && S.t >= S.beats[S.shown]) { S.shown += 1; G.audio?.play?.('beat'); }
       if (S.t > S.beats[S.beats.length - 1] + 0.9) { S.phase = 'copy'; S.t = 0; S.got = []; }
     } else if (S.phase === 'copy') {
       S.pos.y = gy;
+      p.hopJump = { h: PLAY.hopH * PLAY.hopUp, g: PLAY.hopGrav };
       if (S.got.length >= S.beats.length || S.t > S.beats[S.beats.length - 1] + 3) {
         const err = rhythmError(S.beats, S.got);
         if (err <= PLAY.hopTol) {

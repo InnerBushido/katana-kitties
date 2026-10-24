@@ -7,7 +7,7 @@ import { houseWhy } from './editor.js';
 import { portSpots, linkBlockers, defaultVia } from './links.js';
 import { JUKEBOX, hasRecording } from './jukebox.js';
 import { footprint, firstFit, firstYardSpot, wallSlots, wallFree, ITEM_SELL } from './editor.js';
-import { buildWhy, commitBuild, removeBuilt, pickList, stepToward, BUILD_KEYS, PICK_KEYS, CUSTOM_PICK_KEYS, freeTurn, rotStepOf, linkOf } from './build.js';
+import { buildWhy, commitBuild, removeBuilt, pickList, yardBody, stepToward, BUILD_KEYS, PICK_KEYS, CUSTOM_PICK_KEYS, freeTurn, rotStepOf, linkOf } from './build.js';
 import { stylesFor, LOOK_MUL } from './models.js';
 import { YARD_BUILT, RAISE_T } from './homeisle.js';
 import { Preview } from './preview.js';
@@ -171,7 +171,12 @@ export class HousingCards {
     this.game = game;
     this.H = housing;
     this.st = new Map();
-    this.preview = new Preview();
+    // the yard's built things are built for real for the card, on the island the shop is for
+    this.preview = new Preview((id) => {
+      const it = ITEM_BY_ID[id];
+      if (!it || it.path || !YARD_BUILT.has(id)) return null;
+      return yardBody(this.H.isleOf(this._previewSite) ?? this.H.isles?.[0], it);
+    });
     /** A deal waiting on other owners: { kind, site, house, preset, seats, yes, driver }. */
     this.pending = null;
   }
@@ -926,6 +931,7 @@ export class HousingCards {
       };
     });
     const c = this.game.inspector.cards[index];
+    this._previewSite = top.site;
     this.preview.show(index, rows[Math.min(c?.i ?? 0, rows.length - 1)]?.item);
     const head = top.kind === 'wall' ? 'FOR THE WALLS' : top.kind === 'yard' ? (top.path ? 'WALKING PATHS' : top.deco ? 'DECORATIONS' : 'FOR THE YARD') : 'ADD FURNITURE';
     return { head, body: '<canvas class="hs-prev" width="200" height="140"></canvas>', rows };
@@ -1011,7 +1017,12 @@ export class HousingCards {
   _noCustom(kind, id) {
     if (kind === 'wall') return 'Wall things fit their space on the wall — they cannot be resized.';
     if (ITEM_BY_ID[id]?.holo) return 'The holodeck\'s kit is the arcade\'s own — it can be moved, not customized.';
-    if (kind === 'yard' && YARD_BUILT.has(id)) return 'This one is built into the island — it cannot be customized.';
+    /* EXCEPT THE DOOR MAT. It is a path piece, so it is in YARD_BUILT, but
+       its look is only which design off the sheet it wears — nothing it
+       touches is measured to it. Richard, Oct 2026: "Door mats ... should be
+       customizable ... at least to change the pattern on it." Its card has
+       the LOOK rows and not the SIZE ones (`_v_custom`). */
+    if (kind === 'yard' && YARD_BUILT.has(id) && !ITEM_BY_ID[id]?.mat) return 'This one is built into the island — it cannot be customized.';
     return null;
   }
 
@@ -1078,9 +1089,12 @@ export class HousingCards {
     const style = styles[cur];
     return {
       head: `CUSTOMIZE: ${it.name}`,
-      body: `<div class="hs-note">SIZE ${Math.round(shown * 100)}% · LOOK: ${esc(style?.name ?? 'AS IT CAME')}${it.model ? ' · a Polyfork model' : ''}</div>`,
+      body: it.mat
+        ? `<div class="hs-note">PATTERN: ${esc(style?.name ?? 'AS IT CAME')} · ${cur + 1} of ${styles.length}</div>`
+        : `<div class="hs-note">SIZE ${Math.round(shown * 100)}% · LOOK: ${esc(style?.name ?? 'AS IT CAME')}${it.model ? ' · a Polyfork model' : ''}</div>`,
       rows: [
-        {
+        // a door mat lies where the path put it, so it keeps its size: only its pattern changes
+        ...(it.mat ? [] : [{
           title: 'BIGGER', right: `${Math.round(shown * 100)}%`,
           disabled: shown + step > max + 1e-6, why: shown + step > LOOK_MUL.max + 1e-6 ? 'That is as big as it goes.' : ceilingWhy,
           go: () => set({ s: r1(Math.min(max, shown + step)) }),
@@ -1089,7 +1103,7 @@ export class HousingCards {
           title: 'SMALLER', right: `${Math.round(shown * 100)}%`,
           disabled: shown - step < LOOK_MUL.min - 1e-6, why: 'That is as small as it goes.',
           go: () => set({ s: r1(Math.max(LOOK_MUL.min, shown - step)) }),
-        },
+        }]),
         {
           title: `NEXT LOOK: ${styles[(cur + 1) % styles.length]?.name ?? ''}`, right: `${cur + 1} of ${styles.length}`,
           disabled: styles.length < 2, why: 'This one only comes one way.',

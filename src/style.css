@@ -5710,10 +5710,10 @@ body.touch-ui .panel:not(.kd-panel) {
    survives, wearing a fast-forward. */
 #touch-pad.scene .tp-zone,
 #touch-pad.scene .tp-cluster { display: none; }
-/* A PHONE ON A GAMEPAD keeps only the skip — see `TouchPad.setCornerOnly`. */
+/* A PHONE ON A GAMEPAD keeps only the corner button — the skip in a scene and
+   the menu out of one. See `TouchPad.setCornerOnly`. */
 #touch-pad.corner-only .tp-zone,
-#touch-pad.corner-only .tp-cluster,
-#touch-pad.corner-only:not(.scene) .tp-pause { display: none; }
+#touch-pad.corner-only .tp-cluster { display: none; }
 body.touch-ui #cs-skip { display: none; }
 
 /* THE SKIP BUTTON HAS TO OUTRANK THE CUTSCENE, and only while one is playing.

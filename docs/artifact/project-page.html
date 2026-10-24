@@ -606,8 +606,8 @@ npm run artifact              <span class="c"># is this published page still cur
 
   <div class="note pink">
     <span class="hd">One caveat</span>
-    <p><code>--host</code> also exposes <code>/tuning.html</code>, whose save endpoint POSTs a file
-      into the source tree with no authentication. Fine on a home network with two children on it.
+    <p><code>--host</code> also exposes <code>/tuning.html</code> and <code>/sprites.html</code>,
+      whose save endpoints POST files into the source tree with no authentication. Fine on a home network with two children on it.
       Not fine in a café. Stop the server when the test is done.</p>
   </div>
 
@@ -788,6 +788,20 @@ git push origin alpha</code></pre>
     exists in a build</b> — the endpoint is a <code>configureServer</code> hook, which the production
     build never calls. A page that writes into the source tree is a fine thing on a laptop and an
     appalling one on the open internet.</p>
+
+  <h3>Fix a sprite's size and place: <code>/sprites.html</code></h3>
+  <p>The same arrangement for the drawings. <code>npm run dev</code>, then <code>/sprites.html</code>
+    (or the debug panel's <b>SPRITE EDITOR</b> row). It shows any kendo or home pose of any kitten:</p>
+  <ul>
+    <li>overlaid on another pose with transparency, or slid beside it;</li>
+    <li>with her front foot, body centre and ink top measured, and snappable.</li>
+  </ul>
+  <p>Sequences play at 0.05×–4× from the keyboard. A <b>Sheets</b> tab reorders, drops and mirrors
+    a turnaround sheet's columns, with a turntable preview.</p>
+  <p>Save writes <code>src/spritefix.json</code>. Like <code>tuning.json</code>, it holds overrides
+    only. It is keyed by SHEET (<code>ember/kiai</code>), so Storm and Blossom wear Ember's and
+    Frost's fixes. The poses on the page are real <code>Player</code> billboards, so what lines up
+    there lines up in the game. Dev only, twice over, like the balance page.</p>
 
   <h3>The numbers, at a glance</h3>
   <p style="font-size:14px;color:var(--text-dim)"><b>This table is generated out of

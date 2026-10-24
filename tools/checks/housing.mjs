@@ -33,14 +33,14 @@ import { PLAYER_STYLE } from '../../src/core/palette.js';
 import { worldSig } from '../../src/systems/savegame.js';
 import { ROSHI_LINES, ROSHI_VOICE } from '../../src/systems/housing/roshi.js';
 import { Kendo, KIAI_T, BOUT, SEIZA, KENDO_HIT, KENDO_TURN, KENDO_DECAL_Y, KENDO_BLOCK, KENDO_CLINCH, KENDO_SHINAI, KENDO_SLIDE, yawAcross } from '../../src/systems/housing/kendo.js';
-import { LOWER_XRAY, BEHIND_HOP, KNOCK, DOOR_XRAY, TEA_SHOT, doorSeg } from '../../src/systems/housing/housing.js';
+import { LOWER_XRAY, BRIDGE_CLIP_FADE, XRAY_UP, FLOORING_TOP, xrayUpScale, BEHIND_HOP, KNOCK, DOOR_XRAY, TEA_SHOT, doorSeg } from '../../src/systems/housing/housing.js';
 import { roofY, floorOf, CASTLE_COURSE } from '../../src/systems/housing/homehouse.js';
 import { XRAY_SLOTS, SLIDE_W, WALK_LAY } from '../../src/systems/housing/homeisle.js';
 import { HoloStar, LASER_ORDER, LASER_COLOUR } from '../../src/systems/dream/targets.js';
 import { kendoArea, kendoMarks, mixedZone, roomHas, roomWith } from '../../src/systems/housing/catalog.js';
 import { setRoomFeat } from '../../src/systems/housing/cards.js';
 import { migrateMixedRooms } from '../../src/systems/housing/migrate.js';
-import { KENDO_DODGE, KENDO_SCALE, KENDO_CEREMONY_H, KENDO_POSE_H, KENDO_WHIFF, Player } from '../../src/entities/player.js';
+import { KENDO_DODGE, KENDO_MOVE, KENDO_SCALE, KENDO_CEREMONY_H, KENDO_POSE_H, KENDO_WHIFF, Player } from '../../src/entities/player.js';
 import { readPNG } from '../png.mjs';
 import { orbPrice } from '../../src/entities/powerorb.js';
 import { Billboard, inClip } from '../../src/core/gfx.js';
@@ -2798,6 +2798,43 @@ export async function housingChecks({ ok, world }) {
         `pillow at ${pz}`);
       for (let k = 0; k < 60; k++) A.update(0.1, [...ps, sleeper]);
       ok('...and she gets up where she lay down from', sleeper.position.x === 5 && sleeper.position.z === 7);
+      /* "temporarily remove the blue cube above the futon while the player is sleeping on it, so it looks
+         like the player is under the covers": the blanket is its own mesh, off while anybody sleeps on it. */
+      {
+        const bed = drawItem('futon');
+        const bl = bed.getObjectByName('blanket');
+        const S1 = { act: 'nap', x: 1, z: 2, y: 0, ry, isle, home, body: bed };
+        const a1 = { ...fakePlayer(2), hp: 50, maxHp: 100 }, a2 = { ...fakePlayer(3), hp: 50, maxHp: 100 };
+        const shown0 = bl?.visible === true;
+        A.start(a1, S1);
+        const off1 = bl?.visible === false;
+        A.start(a2, S1);
+        A._release(a1); A.held.delete(a1.index);
+        const stillOff = bl?.visible === false;
+        for (let k = 0; k < 60; k++) A.update(0.1, [a2]);
+        ok('a napping kitten takes the futon’s blanket off, and it is back when the last one is up',
+          shown0 && off1 && stillOff && bl.visible === true && !A.held.has(a2.index), `${shown0} ${off1} ${stillOff} ${bl?.visible}`);
+      }
+      /* "No need for camera billboarding ... rotate along the y-axis about 45 degrees": the drawing's width
+         runs along the bed, its head at the pillow, from a camera on either side. */
+      {
+        const bb = new Billboard(new THREE.Texture(), { width: 2, height: 2, cols: 1, rows: 1, mirror: true, artFacesRight: false });
+        const cam2 = new THREE.PerspectiveCamera();
+        const res = [];
+        for (const yaw of [0, 0.9, Math.PI / 2, 2.5]) for (const side of [1, -1]) {
+          bb.alongYaw = napFacing(yaw);
+          cam2.position.set(Math.cos(yaw) * 10 * side, 8, -Math.sin(yaw) * 10 * side);
+          bb.faceCamera(cam2);
+          const th = bb.mesh.rotation.y;
+          const right = { x: Math.cos(th), z: -Math.sin(th) };
+          const headTo = { x: Math.sin(bb.alongYaw), z: Math.cos(bb.alongYaw) };
+          const along = Math.abs(right.x * headTo.x + right.z * headTo.z);
+          const normalToCam = Math.sin(th) * cam2.position.x + Math.cos(th) * cam2.position.z > 0;
+          res.push(along > 0.999 && normalToCam);
+        }
+        ok('...and her drawing lies ALONG the futon, its face to the camera, whichever way the bed is turned',
+          res.every(Boolean), res.join());
+      }
       const psrc2 = readFileSync(new URL('../../src/entities/player.js', import.meta.url), 'utf8');
       ok('...and the futon drawing is a mirroring billboard turned with her', /mirror: key !== 'bathPose'/.test(psrc2) && /else \{\s*pose\.facing = this\.facing;/.test(psrc2));
     }
@@ -4076,6 +4113,19 @@ export async function housingChecks({ ok, world }) {
       K.sparStrike(a, 'stand', { x: 1, y: 0 });
       ok('...but not while she blocks', b.kendoBlocking && !(b.kendoLockT > 0));
       b.padBlock = false;
+      /* "if player is riposte and their shinai gets hit, then instead of them getting stunned, the other
+         player should get stunned for twice as long as normal." */
+      settle();
+      stand(-1, -1 + KENDO_HIT.reach + 0.6);
+      run(0.05);
+      a.kendoSwingWait = 0;
+      b.parryAt = true;
+      const n5 = said.length;
+      K.sparStrike(a, 'stand', { x: 1, y: 0 });
+      ok('...and her shinai struck while she is in RIPOSTE dizzies the ATTACKER, for twice as long, and not her',
+        !(b.kendoLockT > 0) && Math.abs(a.kendoLockT - 2 * KENDO_SHINAI.lock) < 1e-9 && a.kendoBrokeT > 0 && a.kendoNoSwing && KENDO_SHINAI.riposteK === 2
+        && said.slice(n5).some(([, t]) => /riposte turns/.test(t)), `a ${a.kendoLockT} b ${b.kendoLockT}`);
+      delete b.parryAt;
       for (const Bx of [...K.bouts.values()]) K._end(Bx, null);
       ok('...and the end of a match clears every one of it', [a, b].every((p) => !p.kendoBlocking && !p.kendoLockT && !p.kendoClinch && !p.kendoNoSwing));
       K._unwear(0);
@@ -4176,11 +4226,33 @@ export async function housingChecks({ ok, world }) {
        `t`, the last frame clipped so it is the same at any frame rate, and
        then she STOPS. Replayed here at three frame rates. */
     const dodged = (dt) => { let left = KENDO_DODGE.t; let x = 0; while (left > 0) { const s = Math.min(dt, left); left -= dt; x += (KENDO_DODGE.dist / KENDO_DODGE.t) * (s / dt) * dt; } return x; };
-    ok('in a match JUMP is a dodge: held, and only once she picks a direction',
-      /if \(this\.kendoBout\) \{[\s\S]{0,400}!pad\.down\('jump'\)[\s\S]{0,200}moving && !\(this\.kendoDodgeCool > 0\)/.test(psrc));
+    ok('in a match JUMP is a dodge: held, once she picks a direction, and AGAIN every cooldown while it is held',
+      /if \(this\.kendoBout\) \{[\s\S]{0,800}if \(pad\.down\('jump'\) && moving && !\(this\.kendoDodgeCool > 0\) && this\.onGround\)/.test(psrc)
+      && !/_kdHeld/.test(psrc) && /kendoDodgeSeq = \(this\.kendoDodgeSeq \?\? 0\) \+ 1/.test(psrc));
     ok('...one or two steps, the same at 30, 60 and 144 fps, and then she stops',
-      KENDO_DODGE.dist >= 1.5 && KENDO_DODGE.dist <= 2.5 && [1 / 30, 1 / 60, 1 / 144].every((dt) => Math.abs(dodged(dt) - KENDO_DODGE.dist) < 1e-9)
+      Math.abs(KENDO_DODGE.dist - 2.2 / 2) < 1e-9 && [1 / 30, 1 / 60, 1 / 144].every((dt) => Math.abs(dodged(dt) - KENDO_DODGE.dist) < 1e-9)
       && /_kdStop = false;\s*this\.velocity\.x = 0;\s*this\.velocity\.z = 0;/.test(psrc), [1 / 30, 1 / 60, 1 / 144].map(dodged).join());
+    /* "the players need to move at 1/4th the speed": in the same product as clan, orbs, pets and gait. */
+    ok('...and a live match is walked at a quarter of her speed, nowhere else',
+      KENDO_MOVE === 0.25 && /\* \(this\.kendoBout \? KENDO_MOVE : 1\);/.test(psrc));
+    /* "using dodge ability (with jump button) should help push the opponent at least by adding that much
+       velocity or momentum to the push". Two fakes held in a clinch, standing still: nothing moves; a dodge
+       of hers toward the other drives the pair her way by most of a step; a dodge AWAY adds nothing. */
+    {
+      const mk = (x) => ({ position: new THREE.Vector3(x, 0, 0), velocity: new THREE.Vector3(), kendoDodgeSeq: 0 });
+      const shift = (dir) => {
+        const a = mk(-0.6), b = mk(0.6);
+        const B = { a, b, clinch: { t: 0, ux: 1, uz: 0, x0: 0, z0: 0, x: 0, z: 0, m: [0, 0], seq: [0, 0] } };
+        for (let k = 0; k < 6; k++) K._clinchStep(B, 1 / 60);
+        if (dir) { a.kendoDodgeSeq = 1; a._kdDir = new THREE.Vector3(dir, 0, 0); }
+        for (let k = 0; k < 30 && B.clinch; k++) K._clinchStep(B, 1 / 60);
+        return B.clinch.x;
+      };
+      const still = shift(0), toward = shift(1), away = shift(-1);
+      ok('a dodge in a clinch is a SHOVE: toward her it drives the pair, away from her it adds nothing, and the clinch is now half as long',
+        Math.abs(still) < 1e-9 && toward > 0.4 && toward < KENDO_CLINCH.lose && Math.abs(away) < 1e-9 && Math.abs(KENDO_CLINCH.lose - 1.3) < 1e-9,
+        `still ${still.toFixed(3)}, toward ${toward.toFixed(3)}, away ${away.toFixed(3)}`);
+    }
     ok('...immune a little longer than the step, briefly', KENDO_DODGE.immune > KENDO_DODGE.t && KENDO_DODGE.immune < 0.5 && KENDO_DODGE.cool > KENDO_DODGE.immune);
     ok('...and the gear is drawn at her own size', KENDO_SCALE === 1 && /height \* KENDO_SCALE/.test(psrc));
     ok('...the renderer clips, so the walls can be cut', /localClippingEnabled = true/.test(readFileSync(new URL('../../src/main.js', import.meta.url), 'utf8')));
@@ -4325,7 +4397,8 @@ export async function housingChecks({ ok, world }) {
     ok('a drawn thing takes a lacquer', Hm.rooms.main.items[1].look?.style === TINTS[1].id);
     C._pop(0);
     ok('a wall thing and a yard-built thing refuse customisation, saying why',
-      !!C._noCustom('wall', 'scroll') && [...YARD_BUILT].every((id) => !!C._noCustom('yard', id)) && !C._noCustom('yard', 'lantern'));
+      !!C._noCustom('wall', 'scroll') && [...YARD_BUILT].every((id) => !!C._noCustom('yard', id) === !ITEM_BY_ID[id]?.mat) && !C._noCustom('yard', 'lantern')
+      && [...YARD_BUILT].some((id) => ITEM_BY_ID[id]?.mat));
 
     /* THE ROOM UNDER THE CURSOR IS FRAMED, ON ITS OWN FLOOR. "When choosing a
        room to furnish ... the camera should zoom and focus on the room ...
@@ -4451,43 +4524,61 @@ export async function housingChecks({ ok, world }) {
       const shown = hs.floorMeshes.map((m) => m.visible);
       ok('two sisters sharing a pane on floors 1 and 2: the upstairs floor is SHOWN, and the one over it is not',
         fa.join() === '0,1' && shown[0] && shown[1] && !shown[2], `${fa} ${shown}`);
-      ok(`...the sister downstairs gets an x-ray ${LOWER_XRAY}x the size, stopped at the top of the floor over her head`,
-        XU2.uCutScale.value[0] === LOWER_XRAY && Math.abs(XU2.uCutCeil.value[0] - (hs.gy + S.floorY[1] + 0.02)) < 1e-4
-        && LOWER_XRAY >= 2 && LOWER_XRAY <= 3);
+      /* ...and the ceiling clears the TATAMI, not just the slab. It was the slab top + 0.02 and the mats are
+         laid on the slab 0.06 thick, so the flooring she stood under stayed — Richard's screenshot, Oct 2026. */
+      ok(`...the sister downstairs gets an x-ray ${LOWER_XRAY}x the size, stopped just over the flooring of the floor above her`,
+        XU2.uCutScale.value[0] === LOWER_XRAY && Math.abs(XU2.uCutCeil.value[0] - (hs.gy + S.floorY[1] + FLOORING_TOP)) < 1e-4
+        && FLOORING_TOP > 0.06 && FLOORING_TOP < 0.2 && LOWER_XRAY >= 2 && LOWER_XRAY <= 3);
       ok('...and the sister upstairs the ordinary one, with no ceiling', XU2.uCutScale.value[1] === 1 && XU2.uCutCeil.value[1] === 1e9);
-      /* "the player on 1st floor's xray shader is not affecting the 2nd floor,
-         it should affect all the floors, but ... smaller over time on the 2nd
-         floor when the player stops moving around and gets bigger twice as fast
-         when they move around." A third slot: from the top of her ceiling up,
-         LOWER_XRAY x her `_xrayUp`, which the real update runs. */
+      /* "the player on 1st floor's xray shader is not affecting the 2nd floor, it should affect all the
+         floors" — a third slot, from the top of her ceiling up, xrayUpScale(her `_xrayUp`), which the real
+         update runs. REVISED: "expand right away if player moves or jumps and then when they stop moving or
+         jumping, it should wait 1.5s before shrinking again. It should shrink to a minimum size to the size
+         of the player." */
       {
         const upSlot = () => [...Array(XRAY_SLOTS).keys()].find((s) => s >= 2 && XU2.uCutOn.value[s] === 1
           && Math.abs(XU2.uCutFloor.value[s] - (hs.gy + S.floorY[1] + 0.02)) < 1e-4 && XU2.uCutCeil.value[s] === 1e9);
-        down._xrayUp = 1;
+        const upScale = () => (upSlot() != null ? XU2.uCutScale.value[upSlot()] : null);
+        const run = (sec) => { for (let t = 0; t < sec - 1e-6; t += 0.05) H.update(0.05); };
+        down._xrayUp = 1; down._xrayHold = XRAY_UP.hold;   // she has just stopped
         H.aimView(cam, [0, 1], false);
-        const s0 = upSlot();
-        const full = s0 != null ? XU2.uCutScale.value[s0] : null;
-        // she stands still for a second and a half: half way down; then moves for three quarters of one: back up
+        const full = upScale();
         const wasDbg = H.debugOpen; H.debugOpen = true;
         down.velocity.set(0, 0, 0); upst.velocity.set(0, 0, 0);
-        for (let t = 0; t < 1.5; t += 0.05) H.update(0.05);
-        const still = down._xrayUp;
+        down.onGround = true; upst.onGround = true;
+        run(1.4);
+        const held = down._xrayUp;
+        run(0.1 + XRAY_UP.t / 2);
+        const half = down._xrayUp;
         H.aimView(cam, [0, 1], false);
-        const half = upSlot() != null ? XU2.uCutScale.value[upSlot()] : null;
+        const halfScale = upScale();
+        down.onGround = false;   // a jump, standing on the spot
+        run(0.05);
+        const jumped = down._xrayUp;
+        down.onGround = true;
         down.velocity.set(3, 0, 0);
-        for (let t = 0; t < 0.75; t += 0.05) H.update(0.05);
-        const moved = down._xrayUp;
-        for (let t = 0; t < 3; t += 0.05) H.update(0.05);
+        run(0.05);
+        const stepped = down._xrayUp;
         down.velocity.set(0, 0, 0);
-        for (let t = 0; t < 3.2; t += 0.05) H.update(0.05);
+        run(XRAY_UP.hold + XRAY_UP.t + 0.5);
         H.aimView(cam, [0, 1], false);
-        const gone = upSlot();
+        const least = upScale();
         H.debugOpen = wasDbg;
-        ok('...and through the floor above her too: LOWER_XRAY, shrinking to nothing over XRAY_UP.t standing still, and back twice as fast moving',
-          full === LOWER_XRAY && Math.abs(still - 0.5) < 0.02 && Math.abs(half - LOWER_XRAY * still) < 1e-4 && Math.abs(moved - 1) < 0.02 && gone == null,
-          `full ${full}, after 1.5s still ${still.toFixed(2)} (scale ${half?.toFixed(2)}), after 0.75s moving ${moved.toFixed(2)}, still for 3.2s: slot ${gone}`);
+        ok('...and through the floor above her too: full at once on a step or a jump, held 1.5s, then down to a hole the size of HER, never nothing',
+          full === LOWER_XRAY && held === 1 && Math.abs(half - 0.5) < 0.03 && Math.abs(halfScale - xrayUpScale(half)) < 1e-4
+          && jumped === 1 && stepped === 1 && Math.abs(least - XRAY_UP.min) < 1e-4 && XRAY_UP.hold === 1.5
+          && XRAY_UP.min * 2.1 > 1.2 && XRAY_UP.min * 2.1 < 1.8,
+          `full ${full}, 1.4s still ${held}, then ${half?.toFixed(2)} (scale ${halfScale?.toFixed(2)}), jump ${jumped}, step ${stepped}, long still: scale ${least}`);
+        /* SPLIT SCREEN: the upstairs girl's OWN pane, with her sister in another. That pane never had the girl
+           below in it, so nothing cut the floor over her there at all. */
+        H.aimView(cam, [1], false);
+        const other = [...Array(XRAY_SLOTS).keys()].filter((s) => XU2.uCutOn.value[s] === 1);
+        const flo = other.find((s) => Math.abs(XU2.uCutCeil.value[s] - (hs.gy + S.floorY[1] + FLOORING_TOP)) < 1e-4 && XU2.uCutFloor.value[s] < hs.gy + S.floorY[1]);
+        const abv = other.find((s) => Math.abs(XU2.uCutFloor.value[s] - (hs.gy + S.floorY[1] + 0.02)) < 1e-4);
+        ok("...and in the upstairs girl's own pane too, the girl below takes her hole through the flooring and the floor",
+          flo != null && abv != null, `slots ${other}`);
         down.velocity.set(0, 0, 0);
-        delete down._xrayUp;
+        delete down._xrayUp; delete down._xrayHold; delete down.onGround; delete upst.onGround;
       }
       upst.position.set(lo.x + 1, hs.gy + S.floorY[0] + 0.01, lo.z);
       H.aimView(cam, [0, 1], false);
@@ -4804,8 +4895,28 @@ export async function housingChecks({ ok, world }) {
             if (v.y > box.y) cut++;
             else if (inClip(room, v.x, v.z)) { left++; lowest = Math.min(lowest, v.y - box.y); }
           }
-          per.push({ on, cut, left, lowest, glow: I.bridgeGlowMat.setClips != null });
+          per.push({ on, cut, left, lowest, glow: I.bridgeGlowMat.setClips != null, fade: B.w });
         }
+        /* ...FADED, not knifed ("more of a fade away"), and WHOLE for a girl standing on it ("the entire
+           bridge should be shown ... so player can see where to go"): her sister on the first floor keeps
+           the house cut, and the bridge the other one is on is drawn on the unclipped material. */
+        const sis = { ...kid, position: kid.position.clone() };
+        const w0 = hs.local(1, 1);
+        sis.position.set(w0.x, hs.gy + hs.shell.floorY[0] + 0.01, w0.z);
+        const G60 = I.linkMeshes.get(60);
+        const mid = mesh.geometry.boundingBox ?? (mesh.geometry.computeBoundingBox(), mesh.geometry.boundingBox);
+        const c = mid.getCenter(new THREE.Vector3()).applyMatrix4(mesh.matrixWorld);
+        const top = I.heightAt(c.x, c.z, c.y + 3);
+        kid.position.set(c.x, top?.y ?? c.y, c.z);
+        game.players = [sis, kid];
+        cam.position.set(w0.x, sis.position.y + 9, w0.z + 12);
+        H.aimView(cam, [0, 1], false);
+        const onIt = top?.deck?.link === 60 && G60.children.every((q) => !q.userData.clipMats || q.material === q.userData.clipMats[1]);
+        H.aimView(cam, [0], false);
+        const offIt = G60.children.every((q) => !q.userData.clipMats || q.material === q.userData.clipMats[0]);
+        ok('...and it fades out over BRIDGE_CLIP_FADE rather than stopping dead, and a girl standing on it sees all of it',
+          per[0].fade === BRIDGE_CLIP_FADE && BRIDGE_CLIP_FADE > 0.5 && onIt && offIt && I.xrayMats.includes(I.bridgeWholeMat),
+          `fade ${per[0].fade}, on it ${onIt} (${top?.deck?.link}), off it ${offIt}`);
         game.players = pl0;
         H.aimView(new THREE.PerspectiveCamera(), [], true);
         ok('a third-floor bridge is taken off over the room below it: more from the 1st floor than the 2nd, none at all from the 3rd, and nothing of it left in the room',

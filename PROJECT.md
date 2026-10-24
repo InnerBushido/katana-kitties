@@ -149,7 +149,7 @@ anywhere): **no `--host`** (Vite binds `127.0.0.1` only), **Windows Firewall
 blocking inbound Node** (verified allowed on this machine, on the Public
 profile, which is what the house Wi-Fi is classified as), and **router client
 isolation** (usually only on a guest network). Note that `--host` also exposes
-`/tuning.html`, whose save endpoint writes a file into the source tree with no
+`/tuning.html` and `/sprites.html`, whose save endpoints write files into the source tree with no
 authentication — fine at home, not fine in a café. Stop the server after.
 
 On the phone: **landscape** (portrait is gated with a message), the on-screen
@@ -343,6 +343,19 @@ finite number on a key the defaults already have. **Neither the page nor the
 save endpoint exists in a build** — the endpoint is a `configureServer` hook in
 `vite.config.js`, which the production build never calls.
 → [endgame.md](docs/notes/endgame.md)
+
+### Fix a sprite's size and place — `/sprites.html`
+
+The same arrangement for the drawings. `npm run dev`, then **`/sprites.html`**
+(or the debug panel's *SPRITE EDITOR* row): any kendo or home pose of any
+kitten, laid over another with transparency or slid beside it, with her front
+foot, body centre and ink top measured and snappable; sequences played at
+0.05×–4× from the keyboard; and a **Sheets** tab that reorders, drops and
+mirrors a turnaround sheet's columns with a turntable preview. Save writes
+**`src/spritefix.json`** — overrides only, keyed by SHEET (`ember/kiai`), so
+Storm and Blossom wear Ember's and Frost's fixes. The poses on the page are
+real `Player` billboards, so what lines up there lines up in the game. Dev
+only, twice over, like the balance page. → [art.md](docs/notes/art.md)
 
 ### The numbers, at a glance
 

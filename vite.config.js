@@ -95,8 +95,70 @@ const tuningServer = {
   },
 };
 
+/* ---------------------------------------------------------------------------
+   The sprite editor's save button — `sprites.html`, `src/core/spritefix.js`.
+
+   THE SAME SHAPE AS THE TUNING SAVE, and for the same reasons: dev only
+   (`configureServer`), the whole file rewritten from what the page sends,
+   parsed and cleaned here so a bad POST leaves the old file standing. Its
+   own cleaner because its file has lists in it: a sheet's `order` and `flip`
+   are whole numbers, a pose's `s`, `x` and `y` finite ones, and the keys are
+   `sheet/file` — anything else is dropped rather than written.
+--------------------------------------------------------------------------- */
+const SPRITE_FILE = new URL('./src/spritefix.json', import.meta.url);
+const KEY = /^[a-z]+\/[A-Za-z0-9_]+$/;
+const ints = (a) => (Array.isArray(a) ? a.filter((v) => Number.isInteger(v) && v >= 0 && v < 256) : []);
+
+export function cleanSpriteFix(o) {
+  const poses = {};
+  const sheets = {};
+  for (const k of Object.keys(o?.poses ?? {}).filter((q) => KEY.test(q)).sort()) {
+    const f = o.poses[k];
+    const out = {};
+    for (const n of ['s', 'x', 'y']) if (typeof f?.[n] === 'number' && Number.isFinite(f[n])) out[n] = Math.round(f[n] * 10000) / 10000;
+    if (Object.keys(out).length) poses[k] = out;
+  }
+  for (const k of Object.keys(o?.sheets ?? {}).filter((q) => KEY.test(q)).sort()) {
+    const order = ints(o.sheets[k]?.order);
+    if (order.length) sheets[k] = { order, flip: ints(o.sheets[k]?.flip) };
+  }
+  return { poses, sheets };
+}
+
+const spriteServer = {
+  name: 'katana-spritefix',
+  configureServer(server) {
+    server.middlewares.use('/__spritefix', (req, res) => {
+      if (req.method === 'GET') {
+        res.setHeader('content-type', 'application/json');
+        res.end(readFileSync(SPRITE_FILE, 'utf8'));
+        return;
+      }
+      if (req.method !== 'POST') { res.statusCode = 405; res.end('POST or GET'); return; }
+      let body = '';
+      req.on('data', (c) => { body += c; });
+      req.on('end', () => {
+        let parsed;
+        try { parsed = JSON.parse(body); } catch {
+          res.statusCode = 400;
+          res.end('not JSON — nothing written');
+          return;
+        }
+        const kept = cleanSpriteFix(parsed);
+        // one pose per line, so a diff of a nudge is one line
+        const one = (v) => JSON.stringify(v).replace(/([:,])/g, '$1 ').replace(/^\{/, '{ ').replace(/\}$/, ' }');
+        const block = (o) => Object.entries(o).map(([k, v]) => `    ${JSON.stringify(k)}: ${one(v)}`).join(',\n');
+        const nl = (s) => (s ? `\n${s}\n  ` : '');
+        writeFileSync(SPRITE_FILE, `{\n  "poses": {${nl(block(kept.poses))}},\n  "sheets": {${nl(block(kept.sheets))}}\n}\n`);
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({ ok: true, saved: kept }));
+      });
+    });
+  },
+};
+
 export default defineConfig({
-  plugins: [tuningServer],
+  plugins: [tuningServer, spriteServer],
   server: {
     port,
     // Only insist on the port when somebody actually asked for one — an

@@ -168,7 +168,12 @@ export class HomeIsle {
     // the rails' glow strip, clipped the same way (`clipBridges`)
     this.bridgeGlowMat = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false });
     clipBoxes(this.bridgeGlowMat, BRIDGE_CLIPS);
-    this.xrayMats = [this.wallMat, this.roofMat, this.soffitMat, ...this.accentMats, this.treeMat, this.plantMat, this.teaMat, this.bridgeMat];
+    /* ...AND THE SAME TWO WITH NO CLIPS, for a bridge somebody in the pane is standing on (`clipBridges`).
+       Richard, Oct 2026: "If a player is on a bridge, then the entire bridge should be shown, regardless of
+       whether it is above 1st, 2nd, or 3rd floor ... so player can see where to go." */
+    this.bridgeWholeMat = xrayVertexMat(XR);
+    this.bridgeGlowWholeMat = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false });
+    this.xrayMats = [this.wallMat, this.roofMat, this.soffitMat, ...this.accentMats, this.treeMat, this.plantMat, this.teaMat, this.bridgeMat, this.bridgeWholeMat];
     /** Floor groups and the roof, for the per-pane cutaway. */
     this.floorMeshes = [];
     this.roofMeshes = [];
@@ -609,7 +614,7 @@ export class HomeIsle {
         g.userData.hk = room.hk;
         this.itemGroup.add(g);
         this.itemMeshes.set(`r:${room.id}:${k}`, g);
-        if (it.act) this.spots.push({ x: w.x, z: w.z, y, r: 2.6, act: it.act, item: it.id, room: room.id, k, ry: g.rotation.y });
+        if (it.act) this.spots.push({ x: w.x, z: w.z, y, r: 2.6, act: it.act, item: it.id, room: room.id, k, ry: g.rotation.y, body: g });
       }
       const slots = (R?.wall?.length) ? wallSlots(room.house, room) : [];
       for (const [k, q] of (R?.wall ?? []).entries()) {
@@ -712,8 +717,8 @@ export class HomeIsle {
       const w0 = this.local(G.A.x, G.A.z);
       g.position.set(w0.x, this.groundY + G.A.y, w0.z);
       g.rotation.y = this.ry + G.a;
-      if (P.solid.length) g.add(new THREE.Mesh(mergeParts(P.solid), this.bridgeMat));
-      if (P.glow.length) g.add(new THREE.Mesh(mergeParts(P.glow), this.bridgeGlowMat));
+      if (P.solid.length) g.add(Object.assign(new THREE.Mesh(mergeParts(P.solid), this.bridgeMat), { userData: { clipMats: [this.bridgeMat, this.bridgeWholeMat] } }));
+      if (P.glow.length) g.add(Object.assign(new THREE.Mesh(mergeParts(P.glow), this.bridgeGlowMat), { userData: { clipMats: [this.bridgeGlowMat, this.bridgeGlowWholeMat] } }));
       for (const m of P.models) {
         const mg = placeModel(m.id, m.stand ? planterStandIn() : null, { h: m.h });
         mg.position.set(m.x, m.y, m.z);
@@ -1619,14 +1624,18 @@ export class HomeIsle {
    * it is over the room and nowhere else, which is what makes the 1st floor
    * mask more of a 3rd-floor bridge than the 2nd floor does.
    */
-  clipBridges(boxes = []) {
+  clipBridges(boxes = [], whole = null) {
     this.bridgeMat.setClips?.(boxes);
     this.bridgeGlowMat.setClips?.(boxes);
-    for (const g of this.linkMeshes?.values() ?? []) {
+    // `whole`: the links somebody in this pane is standing on, drawn whole on the unclipped pair
+    for (const [uid, g] of this.linkMeshes?.entries() ?? []) {
+      const all = !!whole?.has(uid);
       for (const c of g.children) {
+        const m = c.userData.clipMats;
+        if (m) { c.material = m[all ? 1 : 0]; continue; }
         const w = c.userData.clipAt;
         if (!w) continue;
-        c.visible = !boxes.some((b) => w.y > b.y - 0.5 && inClip(b, w.x, w.z));
+        c.visible = all || !boxes.some((b) => w.y > b.y - 0.5 && inClip(b, w.x, w.z));
       }
     }
   }

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { ATTACKS, KENDO_SCALE } from '../../entities/player.js';
+import { ATTACKS, KENDO_SCALE, KENDO_DODGE } from '../../entities/player.js';
 import { aggregate } from '../../entities/powerorb.js';
 import { kendoArea, kendoMarks, roomHas } from './catalog.js';
 
@@ -187,7 +187,15 @@ export const KENDO_BLOCK = { release: 0.25, afterSwing: 0.25, holds: 0.75, near:
  * fastest thing a fighter can do) is the hardest shove there is. Nothing new
  * to learn: the buttons she already runs and dodges with are the clinch.
  */
-export const KENDO_CLINCH = { r: 1.35, closing: 1.0, gap: 1.2, ease: 6, k: 0.5, lose: 2.6, maxT: 3, back: 2.2, aside: 2.4, lockLost: 1.0, lockApart: 0.5 };
+/* ...REVISED with the quarter-speed match (player.js `KENDO_MOVE`), Oct 2026: "decrease the distance needed
+   to resolve a clinch by 1/4th or more since we are lowering the movement amounts" — `lose` 2.6 -> 1.3, half,
+   since walking in now pushes at a quarter of what it did. And "using dodge ability (with jump button) should
+   help push the opponent at least by adding that much velocity or momentum to the push, so, ideal way to
+   resolve a clinch is to hold jump button and tap the direction button, and also sprinting": every dodge
+   toward her ADDS its whole speed (KENDO_DODGE dist / t) times `dodge` to her momentum at once, which then
+   eases back to her running like any other — so a held JUMP, which dodges again every cooldown, is a shove
+   every 0.75s on top of a sprint. */
+export const KENDO_CLINCH = { r: 1.35, closing: 1.0, gap: 1.2, ease: 6, k: 0.5, lose: 1.3, maxT: 3, back: 2.2, aside: 2.4, lockLost: 1.0, lockApart: 0.5, dodge: 1 };
 
 /**
  * HER SHINAI IS A TARGET. Richard, Oct 2026: "players can hit the other
@@ -196,7 +204,8 @@ export const KENDO_CLINCH = { r: 1.35, closing: 1.0, gap: 1.2, ease: 6, k: 0.5, 
  * is `len` out in front of her along her facing; a cut whose lane takes the
  * tip and not her body knocks it aside.
  */
-export const KENDO_SHINAI = { len: 1.6, lock: 0.5 };
+/* `riposteK`: the shinai of a kitten in 返 RIPOSTE struck — the ATTACKER is locked, this many times `lock` (sparStrike). */
+export const KENDO_SHINAI = { len: 1.6, lock: 0.5, riposteK: 2 };
 
 /** How long a forced step takes — the clinch's step back, the shove aside, the push off a block. */
 export const KENDO_SLIDE = 0.3;
@@ -842,7 +851,7 @@ export class Kendo {
     if (closing < K.closing) return false;
     const x = (a.position.x + b.position.x) / 2;
     const z = (a.position.z + b.position.z) / 2;
-    B.clinch = { t: 0, ux, uz, x0: x, z0: z, x, z, m: [0, 0] };
+    B.clinch = { t: 0, ux, uz, x0: x, z0: z, x, z, m: [0, 0], seq: [a.kendoDodgeSeq ?? 0, b.kendoDodgeSeq ?? 0] };
     for (const p of [a, b]) { p.kendoClinch = true; p.kendoNoSwing = true; p.kendoNoParry = true; }
     this.H.game.audio?.play?.('hit');
     this._say(B, `CLINCH! ${a.name} and ${b.name} lock shinai — RUN, SPRINT or DODGE into her to push her back!`);
@@ -861,6 +870,15 @@ export class Kendo {
     ];
     const e = 1 - Math.exp(-dt * K.ease);
     for (const k of [0, 1]) C.m[k] += (push[k] - C.m[k]) * e;
+    // a dodge since the last frame, toward her: its whole speed, at once (`dodge`)
+    for (const [k, p] of [a, b].entries()) {
+      const s = p.kendoDodgeSeq ?? 0;
+      if (s === C.seq[k]) continue;
+      C.seq[k] = s;
+      const d = p._kdDir;
+      const toward = d ? (d.x * C.ux + d.z * C.uz) * (k ? -1 : 1) : 0;
+      if (toward > 0) C.m[k] += toward * (KENDO_DODGE.dist / KENDO_DODGE.t) * K.dodge;
+    }
     const v = (C.m[0] - C.m[1]) * K.k;
     C.x += C.ux * v * dt;
     C.z += C.uz * v * dt;
@@ -1218,6 +1236,19 @@ export class Kendo {
     }
     if (!landed && B) {
       for (const t of knocked) {
+        /* HER SHINAI STRUCK WHILE SHE IS IN 返 RIPOSTE turns it round. Richard, Oct 2026: "if player is
+           riposte and their shinai gets hit, then instead of them getting stunned, the other player should
+           get stunned for twice as long as normal." The guard was up and the cut ran into it. */
+        if (t.parryAt) {
+          const lock = KENDO_SHINAI.lock * KENDO_SHINAI.riposteK;
+          attacker.kendoLockT = Math.max(attacker.kendoLockT ?? 0, lock);
+          attacker.kendoBrokeT = Math.max(attacker.kendoBrokeT ?? 0, lock);
+          attacker.kendoNoSwing = true;
+          attacker.kendoNoParry = true;
+          G.audio?.play?.('parry');
+          this._say(B, `${t.name}'s riposte turns ${attacker.name}'s cut — ${attacker.name} is dizzy!`);
+          continue;
+        }
         t.kendoLockT = Math.max(t.kendoLockT ?? 0, KENDO_SHINAI.lock);
         t.kendoBrokeT = Math.max(t.kendoBrokeT ?? 0, KENDO_SHINAI.lock);
         t.kendoNoSwing = true;

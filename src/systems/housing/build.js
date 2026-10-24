@@ -229,6 +229,30 @@ export function ringR(it, look = null) {
   return r;
 }
 
+/**
+ * A YARD-BUILT THING, built for real in a sandbox: the island's own
+ * `_yardItem`, with every list it would register into (colliders, decks,
+ * walls, seats, effects) swapped out for the call and put back after, so the
+ * mesh comes out and the island does not change. Build mode's ghost and the
+ * shop's turntable (preview.js) both use it — so the koi pond on the card is
+ * the koi pond in the yard, not a box. Null if the island cannot build it.
+ */
+export function yardBody(I, it) {
+  if (!I?._yardItem || !it) return null;
+  const keep = [I.places, I.spots, I.obstacles, I.decks, I.walls, I.fxSites];
+  I.places = new Map(); I.spots = []; I.obstacles = []; I.decks = []; I.walls = []; I.fxSites = [];
+  let body = null;
+  try {
+    body = I._yardItem(it, { uid: -1, id: it.id, x: 0, z: 0, rot: 0 });
+    body.position.set(0, 0, 0);
+    body.rotation.set(0, 0, 0);
+  } catch (e) {
+    body = null;
+  }
+  [I.places, I.spots, I.obstacles, I.decks, I.walls, I.fxSites] = keep;
+  return body;
+}
+
 export function pickList(H, kind, roomId) {
   if (kind === 'yard') return (H.outdoor ?? []).map((q, k) => ({ k, id: q.id, x: q.x, z: q.z }));
   if (kind === 'house') return houseSpecs(H).map((s, k) => ({ k, hk: s.hk, id: s.house, x: s.x, z: s.z, rot: s.rot }));
@@ -790,18 +814,7 @@ export class BuildMode {
     const row = top.sel >= 0
       ? (top.kind === 'yard' ? H.outdoor?.[top.sel] : top.kind === 'room' ? H.rooms?.[top.room]?.items?.[top.sel] : null)
       : null;
-    if (top.kind === 'yard' && YARD_BUILT.has(it.id) && I._yardItem) {
-      const keep = [I.places, I.spots, I.obstacles, I.decks, I.walls, I.fxSites];
-      I.places = new Map(); I.spots = []; I.obstacles = []; I.decks = []; I.walls = []; I.fxSites = [];
-      try {
-        body = I._yardItem(it, { uid: -1, id: it.id, x: 0, z: 0, rot: 0 });
-        body.position.set(0, 0, 0);
-        body.rotation.set(0, 0, 0);
-      } catch (e) {
-        body = null;
-      }
-      [I.places, I.spots, I.obstacles, I.decks, I.walls, I.fxSites] = keep;
-    }
+    if (top.kind === 'yard' && YARD_BUILT.has(it.id)) body = yardBody(I, it);
     if (!body) {
       const look = top.kind === 'room' ? roomLook(it, row) : row?.look ? { s: row.look.s, style: row.look.style } : null;
       body = placeModel(it.model, drawItem(it.id, 2, { cups: 3 }), it.size ?? (it.id === 'treehouse' ? { h: 16 } : null), look);

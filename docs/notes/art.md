@@ -649,3 +649,60 @@ sense for the player, and 4 directions for longer animations. It became:
 - **Size.** The four atlases total about 10MB (the archer alone is 3.9MB).
   They are lazy-loaded, so `world-check`'s 1.5MB grid limit exempts them.
   Quantizing them or moving to WebP is the follow-up.
+
+## The sprite editor — `/sprites.html`, Oct 2026
+
+Richard: "Since we have so much trouble with getting the correct scale of the
+sprites, let's build a sprite adjustment editor so I can manually align the
+sprites placement and scale and we can save that ... we will re-use this sprite
+scale alignment tool later." Three passes of measured fractions in
+`KENDO_POSE_H` had each been right by its own measure and wrong on screen.
+
+**What it is.** `sprites.html` + `src/sprite-editor.js`, dev only (not a build
+input; the save is `/__spritefix`, a `configureServer` hook). It saves
+`src/spritefix.json`, read by `src/core/spritefix.js`:
+
+- `poses["ember/kiai"] = { s, x, y }`. `s` multiplies the size the code already
+  gives the pose (`KENDO_POSE_H`, `KENDO_CEREMONY_H`, the home sizes). `x` moves
+  the pose FORWARD, the way the drawing points, so it follows the mirror. `y`
+  moves it up. Both are in her heights. These are overrides only; the code's
+  numbers stay the defaults.
+- `sheets["ember/grid_v2"] = { order, flip }` re-deals a turnaround's columns.
+  The values are 0-based in the file and 1-based on the page. Every row is
+  treated the same. `main.js` applies it before `_spawnPlayers`.
+
+**Keyed by sheet, not kitten.** Storm and Blossom are recolours, so they wear
+Ember's and Frost's fixes. Building the editor exposed the same bug in
+`KENDO_POSE_H`, which was keyed by name: Storm had been drawing every kendo pose
+at the shared fractions, with a kiai two-thirds the size of Ember's. It now
+looks the table up by the sheet's kitten.
+
+**It draws with the game's code.** Every pose on the stage is the billboard a
+real `Player` builds in `setKendoArt` / `setHomeArt` with the draft in force
+(`setSpriteFix`). The turntable is a real Player wearing `applySheetFix`'s
+output. The guides (front foot, body centre, ink top) are read off the
+drawing's pixels, mapped through the quad the billboard is wearing that frame.
+The snaps solve numerically (nudge, re-measure, step) instead of inverting
+`footX`'s sign conventions, which differ for the clinch's left-facing drawing
+and the home poses.
+
+**The first values, set with it.** Each was snapped, then checked by eye:
+
+- Ember seiza: body over the cross, `x -0.0055`.
+- Ember riposte (`kparry`): front foot on the guard's front foot, `x 0.1756`.
+- Frost riposte: front foot on the guard's, `x 0.1371`.
+- Frost strike (`kiai`): front foot on the guard's, `x 0.1184`. That also put
+  her torso over the shadow.
+
+The scales are Richard's percentages from the same message.
+
+**A trap it already sprang.** The snap first read B's position off the last
+*rendered* frame. A hidden browser pane renders nothing, so a snap made right
+after changing B's kitten aimed at the previous kitten's foot: Frost's riposte
+went to Ember's foot, 0.778 against 0.638. Snaps now measure on the spot.
+
+**Not applied: the grid_v2 column order in the request.** Richard's example was
+`[1,2,4,7,6,5,8,9]`, dropping columns 3 and 10. Column 3 (0-based 2) is the
+sheet's RIGHT profile, measured in gfx.js `faceCamera`'s tie-breaking comment;
+dropping it leaves the most-used facing on a three-quarter view. The Sheets tab
+previews it on the turntable, so that is his call to make, looking at it.

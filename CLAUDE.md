@@ -148,8 +148,13 @@ src/
                only SUBTRACTS drags from a `click` one, which is what a panel
                made of real <button>s needs so a keyboard Enter still lands)
              tuning (folds tuning.json over the shipped balance; degrades hard)
+             spritefix (folds spritefix.json over the poses' sizes and places,
+               and re-deals a turnaround's columns; keyed by SHEET, degrades)
   tuning.json      the overrides, and nothing else. `{}` is the shipped balance.
   tuning-page.js   /tuning.html's brain — dev only, never built
+  spritefix.json   the sprite editor's overrides: pose { s, x, y }, sheet { order, flip }
+  sprite-editor.js /sprites.html's brain — dev only, never built; draws with real
+                   Players, so it cannot disagree with the game. docs/notes/art.md
   world/     build (all the geometry)  world (assembly, height queries)
   systems/   tournament  menagerie  arenaquest  leaderboard
              announce (ONE #announce card, one queue, and a speaker per line.
