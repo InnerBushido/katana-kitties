@@ -3,6 +3,9 @@ import { SIM, HOLO } from '../../world/simworld.js';
 import { HoloPanel } from './holo.js';
 import { Kiosk, idleIn, isleSpot, stars3 } from './kiosk.js';
 import { SINE_BOARD, sineBoardLines, sineFilterRows } from './sineboard.js';
+import { GhostRecorder, GhostFigure, GMODE, ghostFor, offerGhost } from './ghost.js';
+import { loadNinjaArt } from './ninjasprite.js';
+import { PLAYER_STYLE } from '../../core/palette.js';
 import {
   LEVELS, LANES, HALVES, WALLS, START, START_LINE, SECTIONS, SECTION, FINISH_B, END_B, COURSE_A,
   ARMS, MATH_ARM, LEDGES, beams, stones, groundAt, hitAt, pathS, CP_S, FINISH_S, advance, laneOf,
@@ -951,8 +954,31 @@ export class SineGauntlet {
     const isle = this.isle;
     const spec = COURSE(this, S.level);
     this.dream.startDrill(p, spec, { x: isle.x, y: isle.y, z: isle.z, r: isle.r, fwd: isle.fwd });
-    this.run = { i: p.index, drill: this.dream.drills[p.index], sMax: 0, cp: 0, zaps: 0, zapT: 0 };
+    this.run = { i: p.index, drill: this.dream.drills[p.index], sMax: 0, cp: 0, zaps: 0, zapT: 0, rec: new GhostRecorder() };
+    this._ghostFor(spec.id, p);
     this.dream.game.toast?.(`${p.name} — on your mark! ${this.course.name} · ${levelName(S.level)}`, p.index);
+  }
+
+  /**
+   * 幽 THE GHOST: the fastest finish there has been at this level, run beside
+   * her (dream/ghost.js — Bamboo Infiltration's, shared: "Ghost run → Yes,
+   * also on Sine Gauntlet"). Its figure is the ninja atlas, fetched here if
+   * nothing has fetched it yet; no file, no ghost, and nothing else changes.
+   */
+  _ghostFor(id, p) {
+    this.ghost?.dispose();
+    this.ghost = null;
+    const g = ghostFor(id);
+    if (!g) return;
+    const run = this.run;
+    loadNinjaArt().then((art) => {
+      if (this.run !== run) return;
+      const fwd = this.isle.fwd;
+      // An island bearing as a Billboard's facing: the island's frame, turned into the layer's.
+      const facing = (th) => Math.atan2(fwd.x * Math.cos(th) - fwd.z * Math.sin(th), fwd.z * Math.cos(th) + fwd.x * Math.sin(th));
+      this.ghost = new GhostFigure(this.root, g, art.kittens[g.style] ?? art.kittens[0], p.height ?? 2.6, (a, b, y) => this._w(a, b, y), facing);
+      this.ghost.update(0);
+    }).catch(() => {});
   }
 
   /** A zap or a fall: back to the checkpoint she has earned — and nothing
@@ -1051,7 +1077,17 @@ export class SineGauntlet {
     const hit = hitAt(L, q.a, q.b, Math.max(0, feet), d.t, { height: p.height ?? 2.6 });
     if (hit) { this.zap(p, hit); return; }
     const last = LANES.length - 1;
-    if (r.sMax >= FINISH_S - 0.3 && Math.abs(q.a - LANES[last]) < HALVES[last]) d.progress();
+    // Her run, for the ghost: where, how high, which way, and in the air or not.
+    const f = this.isle.fwd; const sx = Math.sin(p.facing ?? 0); const sz = Math.cos(p.facing ?? 0);
+    r.rec.tick(dt, () => [q.a, q.b, Math.max(0, feet), Math.atan2(-sx * f.z + sz * f.x, sx * f.x + sz * f.z), p.onGround ? GMODE.stand : GMODE.air]);
+    if (r.sMax >= FINISH_S - 0.3 && Math.abs(q.a - LANES[last]) < HALVES[last]) {
+      d.progress();
+      if (d.state === 'won') {
+        offerGhost(d.spec.id, {
+          name: p.name, style: Math.max(0, PLAYER_STYLE.findIndex((s) => s.name === p.style?.name)), time: d.t, samples: r.rec.samples,
+        });
+      }
+    }
     if (d.state === 'live' && d.t >= COURSE_TIME) d.fail(`Time! You reached ${SECTIONS[r.cp].name}`);
   }
 
@@ -1086,6 +1122,11 @@ export class SineGauntlet {
   update(dt) {
     const inside = idleIn(this.dream);
     for (const k of this.kiosks) k.update(dt, inside);
+    // The ghost runs on her clock from GO, and goes with her run.
+    if (this.ghost) {
+      const d = this.run && this.dream.drills[this.run.i] === this.run.drill ? this.run.drill : null;
+      if (!d) { this.ghost.dispose(); this.ghost = null; } else this.ghost.update(d.state === 'live' ? d.t : 0);
+    }
     // The picker closed, however it closed: nobody is choosing.
     if (this.picking != null && this.dream.choices?.[this.picking] !== this._pickChoice) {
       this.picking = null;
@@ -1467,6 +1508,7 @@ export class SineGauntlet {
     for (const k of this.kiosks) k.faceCamera(camera);
     this.board.faceCamera(camera);
     this.standSign.faceCamera(camera);
+    this.ghost?.faceCamera(camera);
   }
 }
 

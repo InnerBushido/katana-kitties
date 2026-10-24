@@ -5096,7 +5096,7 @@ console.log('\n--- the simulator\'s drawings ---');
     ok('...the walk to a tube starts the load, crossing in puts it on, and every way out takes it off',
       /_begin\(p, phase\) \{ this\.game\.loadSimArt\?\.\(\);/.test(dd)
       && /if \(toSimNow\) p\.setSimLook\?\.\(true\);/.test(dd)
-      && /_leaveSim\(p, keepSuit = false\) \{ const s = this\.st\[p\.index\]; this\.sine\?\.forget\(p\); this\._hushHolo\(p\); if \(!keepSuit\) p\.setSimLook\?\.\(false\);/.test(dd)
+      && /_leaveSim\(p, keepSuit = false\) \{ const s = this\.st\[p\.index\]; this\.sine\?\.forget\(p\); this\.bamboo\?\.forget\(p\); this\._hushHolo\(p\); if \(!keepSuit\) p\.setSimLook\?\.\(false\);/.test(dd)
       && /if \(!toSimNow\) this\._leaveSim\(p, keepSuit\);/.test(dd));
     /* THE SUIT: "When exiting the VR, they should automatically walk out of
        the tube, and poof with special effects to put their regular clothes
@@ -6371,6 +6371,8 @@ console.log('\n--- background removal keeps the drawn whites ---');
     ...['ember', 'frost'].flatMap((s) => ['kbroke', 'kclinchR', 'kclinchL'].map((p) => `kittens/${s}/${p}.png`)),
     // ...and the door mats, twenty on one sheet (catalog.js DOOR_MATS).
     'housing/doormats.png',
+    // ...and Bamboo Infiltration's four packed atlases (tools/ninja-atlas.mjs keys them as it packs).
+    'ninja/archer.png', 'ninja/ember.png', 'ninja/frost.png', 'ninja/samurai.png',
   ];
   {
     const dir = new URL('../public/sprites/', import.meta.url);
@@ -6857,7 +6859,11 @@ console.log('\n--- the art that ships is smaller than the art that made it ---')
      at 2048 wide. They are not part of a first load: `Game.loadSimArt` fetches
      them on the first walk to a tube. */
   const GRIDS = ['kittens/frost/grid.png', 'kittens/ember/grid_v2.png',
-    'kittens/frost/vr.png', 'kittens/ember/vr.png'];
+    'kittens/frost/vr.png', 'kittens/ember/vr.png',
+    /* ...AND BAMBOO INFILTRATION'S FOUR ATLASES, every action of a character
+       packed into one 2040 square (tools/ninja-atlas.mjs). Never at boot:
+       `loadNinjaArt` fetches them the first time a kitten nears the island. */
+    'ninja/archer.png', 'ninja/ember.png', 'ninja/frost.png', 'ninja/samurai.png'];
   const shipped = spriteFiles();
   const over = shipped
     .filter((f) => statSync(new URL(`../public/sprites/${f}`, import.meta.url)).size > HEAVY)
@@ -39991,8 +39997,8 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       && /if \(rig\.courseT > 0 && rig\.courseShot\) \{/.test(MS2));
     ok('...and the Dream Dojo racks the kit in _applyKit, forgets her on the way out before the kit comes apart, and drops the session on exitAll',
       /const ids = s\?\.benched \? \[\] :/.test(DS2)
-      && /_leaveSim\(p, keepSuit = false\) \{[\s\S]{0,300}this\.sine\?\.forget\(p\);\s*this\._hushHolo\(p\);/.test(DS2)
-      && /exitAll\(\) \{\s*this\.sine\?\.reset\(\);/.test(DS2)
+      && /_leaveSim\(p, keepSuit = false\) \{[\s\S]{0,300}this\.sine\?\.forget\(p\);\s*this\.bamboo\?\.forget\(p\);\s*this\._hushHolo\(p\);/.test(DS2)
+      && /exitAll\(\) \{\s*this\.sine\?\.reset\(\);\s*this\.bamboo\?\.reset\(\);/.test(DS2)
       && /this\.sine\?\.cheerPad\?\./.test(DS2));
     /* --- CHOOSING A COURSE: the picker, the swipe, the bird's eye, the
        secret level. Richard: "These levels/courses can be cycled/appear on top
@@ -40261,146 +40267,194 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       close > 3 && far < I.r - 2 && onPad > 3, `${close.toFixed(1)} ${far.toFixed(1)}/${I.r} ${onPad.toFixed(1)}`);
   }
 
-  /* --- 忍 bamboo: the forest leaves the route, and the route can be crossed --- */
+  /* --- 忍 Bamboo Infiltration: every course can be crossed, and the rules are the game ---
+     The v1 island (one route, watchers on a sine) became a mini-game of five
+     courses (dream/bamboo.js, bamboolevel.js, bambooguards.js). What is pinned
+     here is what would still look fine on screen while being broken: a course
+     nobody can cross, a lantern a guard can see (she would be caught again the
+     moment she is put back), three stars nobody can earn, a crawl that is not
+     silent, a capture that hurts. */
   {
     const I = D.isles.bamboo;
-    const Ly = D.bamboo.layout;
-    const route = [[-(I.r + 2), 0], ...BM.ROUTE];
-    const segD = (a, b) => {
-      let best = Infinity;
-      for (let i = 0; i < route.length - 1; i++) {
-        const [ax, az] = route[i]; const [bx, bz] = route[i + 1];
-        const ex = bx - ax; const ez = bz - az;
-        const t = Math.max(0, Math.min(1, ((a - ax) * ex + (b - az) * ez) / (ex * ex + ez * ez)));
-        best = Math.min(best, Math.hypot(a - ax - ex * t, b - az - ez * t));
-      }
-      return best;
-    };
-    const tight = Math.min(...Ly.clumps.map((c) => segD(c.a, c.b) - BM.CLUMP_R));
-    ok('忍 no bamboo stands on the route — a kitten fits down it everywhere', tight > 0.75 + 0.2, tight.toFixed(2));
-    ok('...and the forest is a forest', Ly.clumps.length > 80, String(Ly.clumps.length));
-    ok('...and every stretch has its hide', Ly.clumps.filter((c) => c.hide).length === Ly.watchers.length);
-    // Sight: blocked by a clump, bounded by the cone and the range.
-    const w = { a: 0, b: 0, base: 0, S: 0, w: 1, ph: 0 };
-    ok('忍 a watcher sees down his cone, not past it, not beyond his range, not through bamboo',
-      BM.seenBy(w, 0, 6, 0, []) && !BM.seenBy(w, 0, 6, 0, [{ a: 3, b: 0 }])
-      && !BM.seenBy(w, 0, 6, 4, []) && !BM.seenBy(w, 0, BM.WATCH.range + 0.5, 0, []) && !BM.seenBy(w, 0, -6, 0, []));
-    // The cone drawn is the cone asked.
-    let coneOff = 0;
-    for (const t of [0, 1.3, 2.9, 7.1]) {
-      D.bamboo.update(0, t);
-      for (const W of D.bamboo.watchers) {
-        W.grp.updateMatrixWorld(true);
-        const dir = new THREE.Vector3(1, 0, 0).transformDirection(W.grp.matrixWorld);
-        const f = I.fwd;
-        const ang = Math.atan2(-dir.x * f.z + dir.z * f.x, dir.x * f.x + dir.z * f.z);
-        const want = BM.lookAngle(W, t);
-        coneOff = Math.max(coneOff, Math.abs(Math.atan2(Math.sin(ang - want), Math.cos(ang - want))));
-      }
+    const B = D.bamboo;
+    const BL = await import('../src/systems/dream/bamboolevel.js');
+    const GH = await import('../src/systems/dream/ghost.js');
+    const BB = await import('../src/systems/dream/bambooboard.js');
+    const NS = await import('../src/systems/dream/ninjasprite.js');
+    // CROSSABLE: the solver crawls every course at every difficulty, and the stars are set off it.
+    const rows = [];
+    let unsolved = 0; let tight = 0;
+    for (const C of BL.COURSES) for (let n = 0; n < 3; n++) {
+      const t = BL.solve(C, n);
+      rows.push(`${C.id}/${n}:${t == null ? 'X' : t.toFixed(0)}`);
+      if (t == null) unsolved++;
+      else if (C.bands[n][2] < t * 1.5) tight++;
     }
-    ok('忍 the cone on the floor points where `seenBy` is looking, every frame', coneOff < 1e-6, coneOff.toExponential(1));
-    // ...and each of its rays stops where `seenBy` stops seeing: just short of
-    // the drawn end is seen, just past it is not (the shadow is honest).
-    let liar = 0; let rays = 0; let shadows = 0;
-    for (const t of [0, 1.3, 2.9, 7.1, 11.4]) {
-      D.bamboo.update(0, t);
-      sim.root.updateMatrixWorld(true);
-      for (const W of D.bamboo.watchers) {
-        const pos = W.cone.geometry.attributes.position;
-        const f = I.fwd;
-        for (let j = 1; j < BM.CONE_RAYS; j++) {
-          // The ray's end as DRAWN, through the mesh's own transform, in island terms.
-          const e = sim.root.worldToLocal(W.cone.localToWorld(new THREE.Vector3(pos.getX(j + 1), pos.getY(j + 1), pos.getZ(j + 1))));
-          const ex = e.x - I.x; const ez = e.z - I.z;
-          const ea = ex * f.x + ez * f.z - W.a; const eb = -ex * f.z + ez * f.x - W.b;
-          const r = Math.hypot(ea, eb);
-          const pt = (s) => [W.a + (ea / r) * s, W.b + (eb / r) * s];
-          rays++;
-          if (!BM.seenBy(W, t, ...pt(r - 0.05), Ly.clumps)) liar++;
-          if (r < BM.WATCH.range - 0.05) {
-            shadows++;
-            if (BM.seenBy(W, t, ...pt(r + 0.05), Ly.clumps)) liar++;
-          }
+    ok('忍 every course, at every difficulty, can be crawled to the scroll unseen', unsolved === 0, rows.join(' '));
+    ok('...and three stars sits at least 1.5x above that crawl, so it can be earned', tight === 0, rows.join(' '));
+    // SAFE WHERE SHE IS PUT BACK: no guard on his rounds ever sees a lantern or a start slot,
+    // standing — she is put back on her feet.
+    let seenSafe = 0; const where = new Set();
+    for (const C of BL.COURSES) {
+      const Lv = BL.levelOf(C);
+      for (let n = 0; n < 3; n++) {
+        const Dn = BL.DIFFS[n];
+        const spots = [...BL.lanternsOn(C, n), ...BM.SLOTS];
+        for (const g of BL.guardsOn(C, n)) for (let t = 0; t < 60; t += 0.25) {
+          const at = BL.guardAt(g, Dn, t);
+          for (const s of spots) if (BL.canSee(Lv, g, at, Dn, { a: s.a, b: s.b, y: BL.EYE.stand })) { seenSafe++; where.add(`${C.id}/${n}@${s.a},${s.b}`); }
         }
       }
     }
-    ok('...and every ray of it ends where his sight does, so the shadow behind the bamboo is drawn true',
-      liar === 0 && shadows > 0, `${liar} wrong of ${rays} rays, ${shadows} cut short by bamboo`);
-    // Safe spots are safe.
-    const safe = [Ly.start, ...Ly.lanterns, { a: BM.KIOSK_AT[0], b: BM.KIOSK_AT[1] }];
-    let seenSafe = 0;
-    for (let t = 0; t < 40; t += 0.02) for (const s of safe) for (const W of Ly.watchers) if (BM.seenBy(W, t, s.a, s.b, Ly.clumps)) seenSafe++;
-    ok('忍 the start, the kiosk and every lantern are never seen — she is never caught where she is sent back to',
-      seenSafe === 0, String(seenSafe));
-    // The search: (place on the route, time), stepping on, waiting or stepping back,
-    // never seen. The first layout had no way through at ANY start time.
-    const v = 7; const dt = 1 / 20; const ds = v * dt;
-    const pts = [];
-    for (let i = 0; i < BM.ROUTE.length - 1; i++) {
-      const [a0, b0] = BM.ROUTE[i]; const [a1, b1] = BM.ROUTE[i + 1];
-      const n = Math.ceil(Math.hypot(a1 - a0, b1 - b0) / ds);
-      for (let k = 0; k < n; k++) pts.push([a0 + (a1 - a0) * k / n, b0 + (b1 - b0) * k / n]);
-    }
-    pts.push(BM.ROUTE[BM.ROUTE.length - 1]);
-    const N = pts.length;
-    const solve = (t0) => {
-      let reach = new Uint8Array(N); reach[0] = 1;
-      for (let k = 1; k <= 120 / dt; k++) {
-        const t = t0 + k * dt; const nx = new Uint8Array(N);
-        for (let i = 0; i < N; i++) if (reach[i]) for (const j of [i - 1, i, i + 1]) if (j >= 0 && j < N) nx[j] = 1;
-        for (let i = 0; i < N; i++) if (nx[i] && Ly.watchers.some((W) => BM.seenBy(W, t, pts[i][0], pts[i][1], Ly.clumps))) nx[i] = 0;
-        reach = nx;
-        if (reach[N - 1]) return k * dt;
+    /* MEASURED, and why the rule below exists: this many lanterns and start
+       slots ARE in some guard's view on his rounds (21 of them when the rule
+       was made). Moving them into hiding would make every checkpoint a place
+       nobody walks; instead a lantern's ring and the start's are sanctuary. */
+    line('忍 lanterns and start slots a guard sees on his rounds (sanctuary covers them)', `${where.size}`);
+    ok("忍 every start slot is inside the start’s sanctuary ring, and every lantern is its own",
+      BM.SLOTS.every((s) => Math.hypot(s.a - BM.SAFE.start.a, s.b - BM.SAFE.start.b) < BM.SAFE.start.r - 0.3) && BM.SAFE.lantern >= 1);
+    ok('...and an easier course has at least as many lanterns as a harder one',
+      BL.COURSES.every((C) => BL.lanternsOn(C, 0).length >= BL.lanternsOn(C, 1).length && BL.lanternsOn(C, 1).length >= BL.lanternsOn(C, 2).length));
+    // THE DRAWN SIDE: the row the sprite picks, by the function the sprite uses.
+    ok('忍 a ninja sheet\'s row: facing the lens is 0, the right profile next, eight sides for the crawl',
+      NS.dirIndex(0, 4) === 0 && NS.dirIndex(Math.PI / 2, 4) === 1 && NS.dirIndex(Math.PI, 4) === 2 && NS.dirIndex(-Math.PI / 2, 4) === 3
+      && NS.dirIndex(Math.PI / 4, 8) === 1 && NS.dirIndex(-Math.PI / 4, 8) === 7 && NS.dirIndex(Math.PI + 0.1, 8) === 4);
+    // THE SONGS: every course's `music` is a recording that is there and loops inside its own file.
+    {
+      const { MUSIC_FILES: MF } = await import('../src/core/musicfiles.js');
+      const { mp3Duration: mp3B } = await import('./mp3.mjs');
+      const bad = [];
+      for (const C of BL.COURSES) {
+        const id = `bamboo${C.music[0].toUpperCase()}${C.music.slice(1)}`;
+        const F = MF[id];
+        const url = F && new URL(`../public/${F.file}`, import.meta.url);
+        if (!F || !existsSync(url)) { bad.push(`${C.id}: ${id} missing`); continue; }
+        const secs = mp3B(url).secs;
+        if (!(F.loop[1] <= secs + 0.06 && F.loop[1] - F.loop[0] > 60 && F.mix > 0.2 && F.mix < 1.5)) bad.push(`${id} ${F.loop} of ${secs.toFixed(2)}s mix ${F.mix}`);
       }
-      return null;
+      ok('忍 every course has its sneaking song, and each loops inside its own file at a sane level', bad.length === 0, bad.join('; '));
+    }
+    // THE GHOST survives being written down.
+    {
+      const s = [[1.25, -3.5, 0.4, 1.2, 1], [-17.04, 22.5, 3.2, -3.1, 2], [0, 0, 0, 0, 4]];
+      const u = GH.unpackGhost(GH.packGhost(s));
+      const err = Math.max(...s.flatMap((r, i) => r.map((v, k) => Math.abs(v - u[i][k]))));
+      ok('忍 a ghost run packs and unpacks to within a centimetre and a milliradian', u.length === 3 && err < 0.006, err.toFixed(4));
+      const sineSrc = readFileSync(new URL('../src/systems/dream/sine.js', import.meta.url), 'utf8');
+      ok('幽 the Sine Gauntlet records every run, offers a finish, and plays the best one back beside her',
+        /rec: new GhostRecorder\(\)/.test(sineSrc) && /offerGhost\(d\.spec\.id/.test(sineSrc) && /ghostFor\(id\)/.test(sineSrc)
+        && /this\.ghost\?\.faceCamera\(camera\)/.test(sineSrc));
+    }
+    // A SESSION: the picker is one kitten's, and GO takes everybody idle on the island.
+    D.drills[0] = null; D.drills[1] = null;
+    D.choices[0] = null; D.choices[1] = null;
+    const sp = (q) => { const w = isleSpot(I, q.a, q.b); return { x: w.x, z: w.z, y: I.y }; };
+    put(her, sp(BL.PLAZA.kiosk));
+    put(sis, sp(BL.PLAZA.out[1]));
+    B.diff = 0;
+    B.kiosk.station.interact(her);
+    ok('忍 the 忍 kiosk opens HER course picker', !!D.choices[0] && B.picking === 0);
+    fakeGame.sounds.length = 0;
+    ok('...and her sister pressing it is told who is choosing, not ignored',
+      B.kiosk.station.interact(sis) === false && fakeGame.sounds.includes('deny') && /CHOOSING/.test(B.kiosk.station.prompt(sis, 'E')));
+    B.begin(her);
+    const S = B.session;
+    ok('忍 GO takes everybody idle on the island, each on her own clock, kit on the rack',
+      S?.runs.size === 2 && !!D.drills[0] && !!D.drills[1] && D.drills[0] !== D.drills[1] && !!D.st[0].benched && !!D.st[1].benched,
+      `${S?.runs.size}`);
+    const d = D.drills[0]; const d2 = D.drills[1];
+    const step = (dt) => { d.update(dt); d2.update(dt); B.update(dt); };
+    for (let k = 0; k < 300 && d.state !== 'live'; k++) step(1 / 60);
+    ok('...and the guards\' clock starts at GO', d.state === 'live' && S.live);
+    const run = S.runs.get(0);
+    const pad = {
+      mx: 0, my: 0, rx: 0, ry: 0, hold: new Set(), edge: new Set(), dbl: new Set(),
+      down(a) { return this.hold.has(a); }, pressed(a) { return this.edge.has(a); }, doubled(a) { return this.dbl.has(a); }, nudge() { return 1; },
     };
-    const times = [0, 2.3, 5, 7.7, 12, 19, 33].map(solve);
-    const worstT = Math.max(...times.map((x) => x ?? Infinity));
-    ok('忍 the scroll can be reached unseen at a walk, whenever she starts', times.every((x) => x != null),
-      times.map((x) => x?.toFixed(1)).join(' '));
-    ok('...and three stars sits 1.2-1.6x above the best sneak from the worst start',
-      BM.BAMBOO_BANDS[2] >= worstT * 1.2 && BM.BAMBOO_BANDS[2] <= worstT * 1.6, `${BM.BAMBOO_BANDS[2]} vs ${worstT.toFixed(1)}`);
-    // Spotted: back to her lantern, on the deck, and told.
-    put(her, D.bamboo.kiosk);
-    D.bamboo.kiosk.station.interact(her);
-    const d = D.drills[0];
-    d.update(1.3);
-    const L1 = Ly.lanterns[0];
-    const lq = isleSpot(I, L1.a, L1.b);
-    put(her, { x: lq.x, z: lq.z, y: I.y });
-    d.update(1 / 60);
-    ok('忍 walking onto a lantern lights it', d.lit === 0, String(d.lit));
-    // Find a moment and a place in the open that watcher 1 sees.
-    let caughtAt = null;
-    for (let t = 0; t < 20 && !caughtAt; t += 0.05) {
-      for (let u = 0.1; u < 0.95 && !caughtAt; u += 0.05) {
-        const [a0, b0] = BM.ROUTE[1]; const [a1, b1] = BM.ROUTE[2];
-        const a = a0 + (a1 - a0) * u; const b = b0 + (b1 - b0) * u;
-        let ok2 = true;
-        for (let h = 0; h <= 0.5; h += 0.05) if (!BM.seenBy(Ly.watchers[1], t + h, a, b, Ly.clumps)) ok2 = false;
-        if (ok2) caughtAt = { t, a, b };
-      }
+    // THE CRAWL: the Ward button, held or latched with a double tap; never the Ward itself.
+    pad.edge = new Set(['mount']); pad.dbl = new Set(['mount']);
+    let st = d.spec.steer(d, pad);
+    pad.edge = new Set(); pad.dbl = new Set();
+    st = d.spec.steer(d, pad);
+    ok('忍 a double tap of the Ward button latches the crawl, at crawling speed, and the Ward never sees it',
+      run.latch && run.sneak && her.gaitK === BL.SNEAK.gait && !st.down('mount') && !st.pressed('mount'));
+    pad.edge = new Set(['mount']);
+    d.spec.steer(d, pad);
+    pad.edge = new Set();
+    d.spec.steer(d, pad);
+    ok('...and one more press lets it go', !run.latch && !run.sneak && her.gaitK === 1);
+    // THE THROW: held ATTACK plants her and winds up; letting go lobs a pebble; the katana never sees it.
+    pad.hold = new Set(['attack']);
+    B._dt = 1 / 60;
+    for (let k = 0; k < 70; k++) st = d.spec.steer(d, pad);
+    const charged = run.charge;
+    ok('忍 holding ATTACK winds up a throw and plants her, and the katana never swings',
+      charged >= 0.99 && her.gaitK === 0 && !st.down('attack') && !st.pressed('attack'), String(charged));
+    pad.hold = new Set();
+    d.spec.steer(d, pad);
+    ok('...and letting go throws a pebble, since she has no shuriken', B.pebbles.length === 1 && run.charge == null);
+    // A NOISE is heard inside its ring and not outside it.
+    const sam = B.view.guards.find((g) => g.active && g.kind === 'samurai');
+    sam.reset(B.clock);
+    B._noise(sam.at.a + B.D.noise.walk + 1, sam.at.b, B.D.noise.walk);
+    const deaf = sam.mode;
+    B._noise(sam.at.a + 1, sam.at.b, B.D.noise.walk);
+    ok('忍 a guard hears a step inside its ring and not one outside it', deaf !== 'heard' && sam.mode === 'heard', `${deaf} ${sam.mode}`);
+    sam.reset(B.clock);
+    // CAUGHT: hands up, no legs, the pane fades, and she is put back on her feet at her start. Never hurt.
+    const hp0 = her.hp;
+    B.caught(0, null);
+    pad.mx = 1;
+    st = d.spec.steer(d, pad);
+    const frozen = st.mx === 0 && run.capture;
+    pad.mx = 0;
+    let fadeMax = 0;
+    for (let k = 0; k < 150; k++) { step(1 / 60); fadeMax = Math.max(fadeMax, B.fadeOf(0)); }
+    const q = B.coords(her);
+    ok('忍 caught: no legs, the pane fades to black, she is back at her start, and the run goes on',
+      frozen && fadeMax > 0.95 && !run.capture && run.caught === 1 && Math.hypot(q.a - run.slot.a, q.b - run.slot.b) < 0.01 && d.state === 'live' && B.fadeOf(0) === 0,
+      `${fadeMax.toFixed(2)} ${q.a.toFixed(2)},${q.b.toFixed(2)} ${d.state}`);
+    ok('...and a capture is never a hit (non-negotiable 3)', her.hp === hp0
+      && !/\.hurt\(/.test(readFileSync(new URL('../src/systems/dream/bamboo.js', import.meta.url), 'utf8'))
+      && !/\.hurt\(/.test(readFileSync(new URL('../src/systems/dream/bambooguards.js', import.meta.url), 'utf8')));
+    // SANCTUARY, in play: a lantern a samurai looks straight at, stood on in the open for 20s — never caught.
+    {
+      const C0 = B.course;
+      const hot = BL.lanternsOn(C0, 0).find((l) => where.has(`${C0.id}/0@${l.a},${l.b}`));
+      put(her, sp(hot));
+      const c0 = run.caught;
+      for (let k = 0; k < 20 * 30; k++) step(1 / 30);
+      ok("忍 standing in a lantern’s ring that a guard looks straight at, nobody catches her",
+        !!hot && run.caught === c0 && !run.capture && d.state === 'live', `${hot?.a},${hot?.b} caught ${run.caught - c0}`);
     }
-    D.t += 10;
-    fakeGame.toasts.length = 0;
-    const cq = isleSpot(I, caughtAt.a, caughtAt.b);
-    put(her, { x: cq.x, z: cq.z, y: I.y });
-    for (let k = 0; k < 30 && d.spotted === 0; k++) {
-      D.bamboo.update(1 / 60, caughtAt.t + k / 60);
-      d.update(1 / 60);
-    }
-    const back = Math.hypot(her.position.x - SW.SIM.dx - lq.x, her.position.z - SW.SIM.dz - lq.z);
-    ok('忍 seen in the open: caught within half a second, sent back to her lantern, on the floor, and told',
-      d.spotted === 1 && back < 0.01 && !!floorAt(lq.x, lq.z, I.y) && fakeGame.toasts.some((t) => /SPOTTED/.test(t)),
-      `${d.spotted} ${back.toFixed(2)} ${fakeGame.toasts.join(' | ')}`);
-    ok('...and it costs time, not the run', d.state === 'live');
-    const sq = isleSpot(I, Ly.scroll.a, Ly.scroll.b);
-    put(her, { x: sq.x, z: sq.z, y: I.y });
-    const tNow = d.t;
+    // THE SCROLL: the score is the clock plus CAUGHT_COST a capture.
+    const C0 = B.course;
+    put(her, sp(C0.scroll));
     d.update(1 / 60);
-    ok('忍 reaching the scroll wins, and the score is the clock plus ten a sighting',
-      d.state === 'won' && Math.abs(d.spec.score(d) - (tNow + 1 / 60 + BM.SPOT_COST)) < 1e-6, `${d.state} ${d.spec.score(d)}`);
-    d.dispose(); D.drills[0] = null;
+    ok('忍 reaching the scroll wins, and the score is the clock plus the captures',
+      d.state === 'won' && Math.abs(d.spec.score(d) - (d.t + BL.CAUGHT_COST)) < 1e-6, `${d.state} ${d.spec.score(d)}`);
+    const rowsB = BB.bambooRows(D.progress, { course: C0.id, diff: 0, who: 'all' });
+    ok('...and it is on the board for that course and difficulty', rowsB.length === 1 && Math.abs(rowsB[0].time - d.spec.score(d)) < 0.01,
+      JSON.stringify(rowsB));
+    // OUT: her sister leaves on INTERACT's question; both drills go; both are let out with their kits back.
+    ok('忍 INTERACT with nothing to hide in asks before it leaves, "no" first',
+      /'no, keep sneaking'[\s\S]{0,120}'yes, leave the course'/.test(readFileSync(new URL('../src/systems/dream/bamboo.js', import.meta.url), 'utf8')));
+    B.leaveCourse(sis);
+    d.dispose(); D.drills[0] = null; d2.dispose(); D.drills[1] = null;
+    B.update(1 / 60);
+    ok('忍 when the last run ends the session closes, both are on the plaza with their kits back, and the next course is up',
+      !B.session && !D.st[0].benched && !D.st[1].benched && B.coords(her).a < BL.GATE.a && B.coords(sis).a < BL.GATE.a
+      && B.last?.results.length === 2 && B.courseId === BL.COURSES[1].id && !her.rig && !her.clipAs && her.gaitK === 1,
+      `${B.courseId} ${B.coords(her).a.toFixed(1)}`);
+    // NOBODY ON THE COURSE BUT ITS RUNNERS.
+    put(sis, sp({ a: BL.GATE.a + 0.3, b: 0 }));
+    B.update(1 / 60);
+    const atGate = B.coords(sis).a;
+    put(sis, sp(BL.START));
+    for (let k = 0; k < 4; k++) B.update(0.5);
+    ok('忍 the barrier holds a kitten out, and one who got in anyway is walked out',
+      atGate < BL.GATE.a && B.coords(sis).a < BL.GATE.a, `${atGate.toFixed(2)} ${B.coords(sis).a.toFixed(2)}`);
+    for (let k = 0; k < 120; k++) B.update(1 / 60);
   }
   scene.remove(sim.root);
 }

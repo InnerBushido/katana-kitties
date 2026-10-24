@@ -616,3 +616,36 @@ performance.
   shipped (1536×768, ~1MB each): at 256 they were 1.6MB, over world-check's
   1.5MB first-load line, for a kitten ~150px tall on screen. Storm and
   Blossom are recoloured.
+
+## Bamboo Infiltration's ninjas — every action, one atlas, Oct 2026
+
+Richard asked for sprite sheets and atlasing "to the fullest". The scheme is
+4 directions with more frames for the NPCs, 8 directions where it makes
+sense for the player, and 4 directions for longer animations. It became:
+
+- **Guards** (samurai, archer): 4 directions × 6 frames per action.
+- **Kittens**: the crawl in 8 directions × 4 frames. The rope, ladder,
+  throw and hands-up are 4 directions × 6 frames. Ember's and Frost's sheets
+  only; Storm and Blossom are the usual recolour (`PLAYER_STYLE`).
+- **One `gpt_image_2_5` sheet per action**, on magenta, at 2k medium. That
+  cost **1 credit a sheet**, not the 0.25 that was quoted, for about 25
+  sheets. One action per page is what the model holds to a grid; a page of
+  six actions was not.
+- **`tools/ninja-atlas.mjs` measures and packs.** It keys the magenta,
+  takes the `rows × cols` largest blobs as the figures, and refuses a sheet
+  that does not come out as the grid it asked for. It hands stray ink
+  (shuriken, sweat drops) to the nearest figure and scales by **ink area**,
+  not height, so a crawl is not drawn half again as long as a stand. It
+  writes one 2040-square atlas per character, plus `ninjaclips.js`. Check the
+  proof in `out/bake/ninja_*.png` by eye: the row order is front, right,
+  back, left, and for 8 directions clockwise from the front.
+- **Nothing is mirrored at draw time.** A mirror swaps Ember's tail and the
+  archer's bow hand. The single exception is baked into the atlas: the model
+  drew the archer's left shooting row standing still twice, so that row is
+  his right row mirrored, and the tool's header says so.
+- **Facing is measured, not reasoned** (non-negotiable 8). `dirIndex` in
+  `ninjasprite.js` is the function the sprite uses, and `world-check` asks it
+  directly.
+- **Size.** The four atlases total about 10MB (the archer alone is 3.9MB).
+  They are lazy-loaded, so `world-check`'s 1.5MB grid limit exempts them.
+  Quantizing them or moving to WebP is the follow-up.

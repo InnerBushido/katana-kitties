@@ -677,7 +677,15 @@ function cutDeckMat(mat, U) {
     Object.assign(sh.uniforms, U);
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vCutW;')
-      .replace('#include <project_vertex>', '#include <project_vertex>\nvCutW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      /* ...THROUGH ITS INSTANCE TOO, for an InstancedMesh (Bamboo
+         Infiltration's forest): without it every cane was measured at the
+         mesh's origin and the whole forest cut, or none of it. */
+      .replace('#include <project_vertex>', `#include <project_vertex>
+        vec4 cutP = vec4(transformed, 1.0);
+        #ifdef USE_INSTANCING
+          cutP = instanceMatrix * cutP;
+        #endif
+        vCutW = (modelMatrix * cutP).xyz;`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
         varying vec3 vCutW;
@@ -1091,6 +1099,17 @@ export class SimWorld {
     deck.x = x; deck.y = y; deck.z = z;
     deck._grp?.position.set(x - deck.home.x, y - deck.home.y, z - deck.home.z);
     for (const p of riders) { p.position.x += dx; p.position.y += dy; p.position.z += dz; }
+  }
+
+  /**
+   * THE SAME X-RAY ON SOMEBODY ELSE'S MATERIAL — Bamboo Infiltration's
+   * hologram houses and roofs (dream/bamboo.js). "x-ray on buildings": a
+   * kitten indoors must be seen through the wall between her and the lens,
+   * and that is exactly the hole the floating steps already cut. Returns
+   * `mat`, compiled to share this layer's cut uniforms.
+   */
+  xray(mat) {
+    return cutDeckMat(mat, this._cutU);
   }
 
   removeTempDisc(deck) {

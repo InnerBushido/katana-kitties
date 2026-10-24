@@ -2146,6 +2146,7 @@ export class DreamDojo {
   /** Pull everybody out at once — a scene, the tournament, the ending. */
   exitAll() {
     this.sine?.reset();
+    this.bamboo?.reset();
     for (const p of this.game.players ?? []) {
       if (!p) continue;
       const s = this.st[p.index];
@@ -2658,6 +2659,7 @@ export class DreamDojo {
     /* FIRST: off the course and the rack, so the holo clan the rack was
        holding is back on her for the lines below to undo with the rest. */
     this.sine?.forget(p);
+    this.bamboo?.forget(p);
     this._hushHolo(p);
     if (!keepSuit) p.setSimLook?.(false);
     this.highway?.stop(p);
@@ -2793,7 +2795,7 @@ export class DreamDojo {
       /* Waiting her turn in the Sine Gauntlet's stands is not being lost —
          a four-kitten queue is minutes, and she cannot leave it to follow
          his suggestion without giving up her place. */
-      || this.sine?.inSession?.(p);
+      || this.sine?.inSession?.(p) || this.bamboo?.inSession?.(p);
     if (busy) { s.lostT = 0; return; }
     s.lostT = (s.lostT ?? 0) + dt;
     if (s.lostT < LOST_AFTER || (s.lostN ?? 0) >= LOST_MAX) return;
@@ -3864,6 +3866,7 @@ export class DreamDojo {
 
   /** Lay the phase over a pane that has just been drawn. */
   drawPaneFx(renderer, members, w, h) {
+    this._drawFade(renderer, members);
     const f = this.fxFor(members);
     if (f <= 0.001) return;
     if (!this._fx) {
@@ -3886,6 +3889,30 @@ export class DreamDojo {
     renderer.autoClear = ac;
   }
 }
+
+/**
+ * BLACK OVER A PANE, as far as its darkest kitten's capture has faded it
+ * (dream/bamboo.js `fadeOf`): "the enemy walks over while the camera fades".
+ * Its own quad, not the rain's — the rain is a phase, this is a curtain.
+ */
+DreamDojo.prototype._drawFade = function _drawFade(renderer, members) {
+  let f = 0;
+  for (const i of members ?? []) f = Math.max(f, this.bamboo?.fadeOf?.(i) ?? 0);
+  if (f <= 0.001) return;
+  if (!this._fade) {
+    this._fadeM = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, depthTest: false, depthWrite: false });
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this._fadeM);
+    quad.frustumCulled = false;
+    this._fade = new THREE.Scene();
+    this._fade.add(quad);
+    this._fadeCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  }
+  this._fadeM.opacity = Math.min(1, f);
+  const ac = renderer.autoClear;
+  renderer.autoClear = false;
+  renderer.render(this._fade, this._fadeCam);
+  renderer.autoClear = ac;
+};
 
 const _right = new THREE.Vector3();
 const _v = new THREE.Vector3();

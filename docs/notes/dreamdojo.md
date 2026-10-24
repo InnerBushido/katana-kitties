@@ -667,35 +667,71 @@ shield until the last sentry is down, then fires fans of three. Stars at 80s /
 
 ### 忍 Bamboo Infiltration (`dream/bamboo.js`)
 
-Through a seeded holo-bamboo forest to the scroll 巻, past four watchers whose
-sight sweeps **θ(t) = θ₀ + S·sin(ωt + φ)** (a sine again, on purpose). Seen for
-0.35s and she is caught. That sends her back to her last lit lantern for +10s,
-and it says so. A catch costs time, never the run. The score is the clock
-plus 10 for each sighting, with stars at 90s / 55s / 36s. There is no time
-limit: leaving the island is the way out.
+**Now a mini-game of five courses** (Oct 2026). Richard: "Let's implement this
+all as a fully functional mini-game, so no need for stand-ins, free, or
+placeholders ... We can replace cones with actual opponents the player must
+avoid." The v1 island (one route, four watchers sweeping on a sine) is
+described at the bottom of this section for its lessons.
 
-- **The forest is generated from a seed and a route**, never by hand. Clumps
-  fill the island except a corridor round the route. `world-check` measures
-  1.2 units of clearance either side of a kitten.
-- **The first layout could not be crossed, and a search proved it.** The path
-  runs *along* each watcher's sweep. His cone is therefore always somewhere
-  between her and the far side, and passing through it takes about 2.2s
-  against a 0.35s catch. A greedy bot got stuck; a time-expanded search over
-  (place, time) found no way through at **any** start time. **The fix is one
-  hide per stretch**, a clump between each watcher and the middle of his path.
-  Its shadow is the stepping stone: in while he looks away, wait, then out
-  while he looks the other way. The search now finds the scroll unseen in
-  16–25s at a walk from every start time, and 3★ (36s) is 1.4× the worst.
-- **The lanterns were inside the cones** about 20% of the time in the first
-  layout. The checkpoint she was sent back to could catch her again. Each
-  sweep now stops `WATCH.margin` short of its stretch's corners. `world-check`
-  asserts the start, the kiosk and every lantern are **never** seen.
-- **The cone on the floor is clipped by the bamboo.** Each of its 28 rays is
-  `sightReach` long: the first clump `seenBy` would call in the way. So the
-  shadow behind a clump is drawn exactly where she is safe. `world-check`
-  reads every ray's end back through the mesh's transform: just inside is
-  seen, just past is not. That is 0 wrong of 540 rays, 274 of them cut short
-  by bamboo.
+- **Five courses, three difficulties**, in `dream/bamboocourses.js`: the
+  Bamboo Path, the Village, the Shrine Circle, the Castle, and the Shadow Maze
+  (the last is meant to be near impossible). They are picked at the 忍 kiosk
+  with the Sine Gauntlet's picker and swipe. EASY has more lanterns
+  (checkpoints) than NORMAL, and NORMAL more than HARD; `world-check` pins
+  that.
+- **Guards, not cones.** Samurai walk their rounds and archers stand on
+  towers (`dream/bambooguards.js`). A guard who hears a noise ring goes to
+  look. Walking and sprinting make noise rings; the crawl (Ward button, held
+  or double-tapped to latch, at 0.4 of a walk) is silent. Holding ATTACK winds
+  up a throw cast like the fishing line. It lobs a pebble that draws a guard
+  away, or a shuriken she has found, which knocks a guard out. Smoke bombs are
+  pickups, and the HUD says what they do and draws their radius. A barrel
+  hides her (INTERACT).
+- **SPOTTED IS CAUGHT, AND CAUGHT IS NEVER HURT** (non-negotiable 3). She
+  puts her hands up, the guard walks over, the pane fades, and she is back at
+  her last lantern on her feet. A capture adds `CAUGHT_COST` (15s) to her
+  time; the score is the time. `world-check` greps both files for `.hurt(`.
+- **THE SANCTUARY RULE.** Measured: guards on their rounds could see 21
+  lantern and start-slot spots across the courses, and a crawl does not help
+  at a spot she is put back on standing. So inside a lantern's ring (r 1.15)
+  or the start ring, guards neither see her nor touch her. The card says
+  "SAFE in the ring". The alternative was to move every lantern, and that
+  would have changed the courses Richard designed. `world-check` reports the
+  21 as information and checks that she is untouched in the rings for 20s of
+  live play.
+- **Every course is crossable, and three stars can be earned.**
+  `bamboolevel.js solve` crawls every course at every difficulty, and
+  `world-check` requires the 3★ time to be at least 1.5× that crawl.
+  `tools/bamboo-map.mjs` draws what the solver found.
+- **A session is everybody on the island.** GO takes every kitten idle on the
+  island, each on her own clock with her kit on the rack. Anyone outside the
+  session is held behind a red barrier, and a kitten who got in anyway is
+  walked out. When the last run ends, the session closes and the next course
+  is up.
+- **Ghost runs.** Her best run is recorded (`dream/ghost.js`, packed to about
+  1cm), and the Sine Gauntlet records them too. The leaderboard row is per
+  course and difficulty (`bambooboard.js`).
+- **Art.** Every action is one sheet, and `tools/ninja-atlas.mjs` packs them
+  into one atlas per character (see [art.md](art.md) and PROJECT.md). The
+  atlases are fetched when a kitten nears the island. They total about 10MB
+  (the archer alone is 3.9MB); quantizing them or moving to WebP is the open
+  follow-up.
+- **Music.** There are four ElevenLabs takes, one per kind of course (forest,
+  village, castle, shadow; 900 credits each). They are processed by
+  `tools/capture/bamboo-music.mjs` into `dream/bamboomusic.js`. Three end in
+  their own silence and loop whole. The castle take was still playing at 90s,
+  so it is arranged as intro, its loop three times, a fade and a breath.
+  Scribe heard no words in any of them. A missing file leaves the course on
+  the simulator's music.
+
+**v1, for its lessons.** It was a seeded forest with one route, and four
+watchers whose sight swept θ(t) = θ₀ + S·sin(ωt + φ). The first layout could
+not be crossed. A time-expanded search over (place, time) proved it, and one
+hide per stretch fixed it. The first lanterns were inside the cones about 20%
+of the time, which is the same failure the sanctuary rule now answers for
+guards who walk. The cone was clipped by the bamboo ray by ray, 0 wrong of 540
+rays. Each of those was a search or a measurement, not a reason, and v2 keeps
+both habits: `solve` and the sightings count.
 
 ### Stage 4 verified in the browser
 

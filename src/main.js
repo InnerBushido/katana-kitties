@@ -2851,6 +2851,25 @@ class Game {
             });
           }
         }
+        if (a === 'leave-bamboo') {
+          // The same WHOSE as the Gauntlet's, above.
+          const B = this.dream?.bamboo;
+          const inIt = this.players.filter((p) => B?.inSession(p));
+          const own = this.players[this.menuOwner];
+          const who = own && inIt.includes(own) ? [own] : inIt;
+          if (who.length) {
+            this.confirm.ask({
+              title: who.length === 1 ? `TAKE ${who[0].name.toUpperCase()} OFF THE COURSE?` : 'LEAVE BAMBOO INFILTRATION?',
+              body: 'A run going now stops with no time. Stars already won are kept.',
+              no: 'NO, KEEP SNEAKING',
+              yes: 'YES, LEAVE THE COURSE',
+              onYes: () => {
+                for (const p of who) B.leaveCourse(p);
+                this.setPaused(false);
+              },
+            });
+          }
+        }
         if (a === 'quit') {
           /* THE QUESTION SAYS WHICH OF THE TWO SAVES SHE IS ABOUT TO GET. A
              game past the five minutes is kept for good and one short of it is
@@ -3604,6 +3623,8 @@ class Game {
        saying "not in here". Rebuilt on the way in, like the rows above. */
     document.getElementById('btn-leave-gauntlet')
       ?.classList.toggle('hidden', !(on && this.players.some((p) => this.dream?.sine?.inSession(p))));
+    document.getElementById('btn-leave-bamboo')
+      ?.classList.toggle('hidden', !(on && this.players.some((p) => this.dream?.bamboo?.inSession(p))));
     document.getElementById('btn-holo-profile')
       ?.classList.toggle('hidden', !(on && this.dream?.built && this.players.some((p) => this.dream.st[p.index]?.holoWorn)));
     document.getElementById('panel-pause').classList.toggle('hidden', !on);
@@ -9278,6 +9299,9 @@ class Game {
       this._vrLevel = 1;
       return SHADOW_TRACK[this.dream.shadow.L?.id] ?? 'shadow';
     }
+    // A Bamboo Infiltration course's song, while anybody is on it (null if the file is not there).
+    const bamboo = this.dream?.bamboo?.musicTrack?.();
+    if (bamboo) { this._vrLevel = 1; return bamboo; }
     return null;
   }
 
@@ -10865,6 +10889,9 @@ class Game {
         /* ...and the Sine Gauntlet's: runner and stands alike watch the
            runner, side-on (dream/sine.js). Also sim-only. */
         : this.dream?.shadow?.cameraFocus?.(p) ?? this.dream?.sine?.cameraFocus?.(p)
+          /* ...and Bamboo Infiltration's bird's eye while she picks a course
+             (a run's own camera is its drill's, below). */
+          ?? this.dream?.bamboo?.cameraFocus?.(p)
           /* ...and a Kata Trace run's: her floor and Lionheart across the top
              of it, so every mark and all five of his spots are in the pane. */
           ?? this.dream?.kata?.cameraFocus?.(p)

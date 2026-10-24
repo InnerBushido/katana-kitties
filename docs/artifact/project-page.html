@@ -485,7 +485,7 @@ footer b { color: var(--text); }
 <div class="wrap">
 
 <header class="mast">
-  <div class="stamp">Last updated <span>·</span> 21 Oct 2026</div>
+  <div class="stamp">Last updated <span>·</span> 24 Oct 2026</div>
   <h1>Katana Kitties<em>The whole project on one page</em></h1>
   <p class="lede">A <b>split-screen co-op browser game for up to four players</b>: samurai kittens
     knocking over a chain of floating Japanese islands, riding storm dragons between them, and
@@ -1114,6 +1114,15 @@ git push origin alpha</code></pre>
         <td><code>capture/jukebox-music.mjs</code></td>
       </tr>
       <tr>
+        <td><b>Bamboo Infiltration's sneaking songs</b></td>
+        <td>Four ElevenLabs Music takes, one per kind of course (forest, village, castle, shadow:
+          90s each, <b>900 credits each</b>, Oct 2026). Generated with Instrumental off, so each was
+          checked with Scribe for vocals; it heard none. Three end in their own silence and loop whole;
+          the castle, still playing at 90s, gets a measured loop played three times and a fade, using the
+          shared <code>capture/music-loop.mjs</code>. A missing file leaves the course on the simulator's music.</td>
+        <td><code>capture/bamboo-music.mjs</code></td>
+      </tr>
+      <tr>
         <td><b>Her statue at the bridge</b></td>
         <td>Tripo image-to-3D off her champion drawing, magenta keyed out first, scaled by its own
           bounding box and tinted to her colour — two runs, four statues. Run Oct 2026; the raw
@@ -1180,6 +1189,24 @@ git push origin alpha</code></pre>
           a master generated on flat magenta is keyed per pixel, with no flood, no depth bound and
           no judgement call, and the tool hard-fails if the key clears under 5% of the sheet.</td>
         <td><code>sprite-bake.mjs</code></td>
+      </tr>
+      <tr>
+        <td><b>Every action of a character, one atlas</b></td>
+        <td>Bamboo Infiltration's ninjas: each action generated as its own <code>gpt_image_2_5</code>
+          sheet on magenta (rows are directions, columns frames; <b>1 credit a sheet</b> at 2k,
+          about 25 sheets, Oct 2026), then keyed, <b>measured</b> and packed into one 2040-square
+          texture per character, with a generated manifest of where each clip sits. Guards: 4
+          directions × 6 frames per action; kittens: the crawl in 8 × 4, longer actions in 4 × 6.
+          Scaled by ink area, not height. Fetched when a kitten nears the island, never at boot.</td>
+        <td><code>ninja-atlas.mjs --proof</code></td>
+      </tr>
+      <tr>
+        <td><b>Designing an infiltration course</b></td>
+        <td>Every Bamboo Infiltration course drawn flat at each difficulty — forest, walls, cover,
+          lanterns, patrols, the ground each cone covers over a minute, and the crawl the solver found
+          to the scroll. world-check asks the same solver that every course is crossable and sets the
+          3-star bar at least 1.5x above it.</td>
+        <td><code>bamboo-map.mjs</code></td>
       </tr>
       <tr>
         <td><b>Many small pictures, one sheet</b></td>
@@ -1425,7 +1452,7 @@ git push origin alpha</code></pre>
     <div><code>audio.md</code><span>The synthesised sound set, and a piece of music per island</span></div>
     <div><code>voices.md</code><span>The voice registry — which preset is which character, with ids</span></div>
     <div><code>payne.md</code><span>Payne, the quest-giver: her quest chain, opt-in hints, the Goblin Sweep, her script — a real person's likeness; her lines and voice approved</span></div>
-    <div><code>dreamdojo.md</code><span>The Dream Dojo, Lionheart's VR arcade: the simulator as a second reality in the same place, the tubes, the training gate that lets a blade in there find holograms only, the Gallery and Trial Hall, the holo kit (she goes in with a copy of her ring and no clan, earns orbs in there, and her real kit is never touched) and its (HOLO) PLAYER PROFILE, Lionheart as the simulator's quest-giver (WHERE NEXT, five map kiosks, the sim on the minimap, and waypoints marked on his map and followed by markers in her colour), its progress carried in the save row (<code>snapshot.dream</code>), the unit-circle overlays in its Dojo (the right triangle and its three angles, the lit quadrant — no vector text), the Tameshigiri Range and Kata Trace (Lionheart attacks from the top of her floor with Shadow's cut, cross and sweep, on the beat of any song in the game, at three levels and four speeds; its beat maps are human-readable JSON, <code>kata-beatmap/1</code>, with an in-game beat-map editor and custom charts kept in <code>localStorage</code>; optional slashes she may land on him for combo, a finishing attack that knocks him flat, and Shadow Lionheart's own song with its 凶 triple crosses and a finale in the air; and the Kata Board, a ring on its island's north-east corner ranking every finished song by score, filtered by level, speed and kitten, with her last score kept on her floor's plate until she leaves), the far islands (light-cycle highways, Kudamono Storm, the Sine Gauntlet (four courses — the Ripple, the Gauntlet, the Riptide, whose stones slide across the lane and carry her, and the Dragon Gate, the skill one, with ledges at four heights over floors that zap and lasers that never move — chosen at its kiosk under a bird's-eye lens, the old course swiped away round the hub as the new one turns in, each run one kitten at a time against the clock — five snaking lanes, no grace after a zap and no line that can be skipped, an over-the-shoulder lens through the Sliding Gaps and the sliding stones — with a secret 秘 EXTRA HARD on each, opened by three stars on its HARD or the debug panel, where a zap is back to the start; the queue in cheering stands, one shared pane, a way out that asks first, and the Sine Board, the plaza board ranking every kitten's best time by course and level whenever nobody is running), Holo-Sentries and Bamboo Infiltration, every star band measured by a search), the Arena School (a practice round per tournament mode, under the tournament's own rules), KENSHI ranks, the foil Fighter Card, the daily and weekly training, and Shadow Lionheart on three levels, quicker and harder with more kittens on the island, the co-op boss whose MEDIUM or HARD win is the tenth quest and the only one that counts after the Awakening, and a HARD win her 凶 — plus a secret EXTRA HARD opened at KENSHI 1st Class, whose win is the veiled eleventh; and what is still to build. Lionheart is Richard, likeness approved</span></div>
+    <div><code>dreamdojo.md</code><span>The Dream Dojo, Lionheart's VR arcade: the simulator as a second reality in the same place, the tubes, the training gate that lets a blade in there find holograms only, the Gallery and Trial Hall, the holo kit (she goes in with a copy of her ring and no clan, earns orbs in there, and her real kit is never touched) and its (HOLO) PLAYER PROFILE, Lionheart as the simulator's quest-giver (WHERE NEXT, five map kiosks, the sim on the minimap, and waypoints marked on his map and followed by markers in her colour), its progress carried in the save row (<code>snapshot.dream</code>), the unit-circle overlays in its Dojo (the right triangle and its three angles, the lit quadrant — no vector text), the Tameshigiri Range and Kata Trace (Lionheart attacks from the top of her floor with Shadow's cut, cross and sweep, on the beat of any song in the game, at three levels and four speeds; its beat maps are human-readable JSON, <code>kata-beatmap/1</code>, with an in-game beat-map editor and custom charts kept in <code>localStorage</code>; optional slashes she may land on him for combo, a finishing attack that knocks him flat, and Shadow Lionheart's own song with its 凶 triple crosses and a finale in the air; and the Kata Board, a ring on its island's north-east corner ranking every finished song by score, filtered by level, speed and kitten, with her last score kept on her floor's plate until she leaves), the far islands (light-cycle highways, Kudamono Storm, the Sine Gauntlet (four courses — the Ripple, the Gauntlet, the Riptide, whose stones slide across the lane and carry her, and the Dragon Gate, the skill one, with ledges at four heights over floors that zap and lasers that never move — chosen at its kiosk under a bird's-eye lens, the old course swiped away round the hub as the new one turns in, each run one kitten at a time against the clock — five snaking lanes, no grace after a zap and no line that can be skipped, an over-the-shoulder lens through the Sliding Gaps and the sliding stones — with a secret 秘 EXTRA HARD on each, opened by three stars on its HARD or the debug panel, where a zap is back to the start; the queue in cheering stands, one shared pane, a way out that asks first, and the Sine Board, the plaza board ranking every kitten's best time by course and level whenever nobody is running), Holo-Sentries and Bamboo Infiltration (five courses, three difficulties, everybody on the island at once behind a red barrier: crawl on the Ward button and nobody hears you, a pebble to pull a samurai off his round, a found shuriken to put one to sleep and a smoke bomb nobody sees through, barrels to hide in, ropes and ladders, archers on towers; spotted is caught — hands up, the screen fades, back to her lantern, +15s, never hurt; a lantern's ring is sanctuary; a ghost of the best run; the Bamboo Board), every star band measured by a search), the Arena School (a practice round per tournament mode, under the tournament's own rules), KENSHI ranks, the foil Fighter Card, the daily and weekly training, and Shadow Lionheart on three levels, quicker and harder with more kittens on the island, the co-op boss whose MEDIUM or HARD win is the tenth quest and the only one that counts after the Awakening, and a HARD win her 凶 — plus a secret EXTRA HARD opened at KENSHI 1st Class, whose win is the veiled eleventh; and what is still to build. Lionheart is Richard, likeness approved</span></div>
     <div><code>housing.md</code><span>Custom Housing — Roshi's islands: the four sky sites and how they were measured, the bridges and the 2× strip, prices as multiples of an orb, locks and the bubble, the castle's co-owners, the jukebox and its recordings, interiors and the tatami grid, the farm, the koi, fishing, the holodeck, the one place the no-combat rule is relaxed (kendo), and the placeholders still to finish</span></div>
     <div><code>consent.md</code><span>Why nothing irreversible happens on one press</span></div>
     <div><code>rules.md</code><span>The gameplay invariants in full, with the measurements behind them</span></div>

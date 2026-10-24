@@ -1550,6 +1550,21 @@ export class Player {
     if (this.simLook) this.setSimLook(true);
   }
 
+  /**
+   * Her ninja atlas (dream/ninjasprite.js): `{ texture, man }`, or null to
+   * take it away. Built once per atlas; `clipAs` chooses what plays. Sized off
+   * her own height, so the crawl is her size and not the sheet's.
+   */
+  setClipArt(art, Cls) {
+    if (this.clipPose?.userData.tex === art?.texture) return;
+    if (this.clipPose) { this.group.remove(this.clipPose); this.clipPose = null; }
+    if (!art?.texture || !Cls) return;
+    this.clipPose = new Cls(art.texture, art.man, this.height);
+    this.clipPose.userData.tex = art.texture;
+    this.clipPose.visible = false;
+    this.group.add(this.clipPose);
+  }
+
   setEatArt(art) {
     if (!art?.texture) return;
     // Replacing one rather than stacking a second in the group. Nothing calls
@@ -2328,6 +2343,7 @@ export class Player {
        `faceCamera` only ever squares the quad up — it can never pick a
        different cell and it can never flip. */
     if (this.eatPose?.visible) this.eatPose.faceCamera(camera);
+    if (this.clipPose?.visible) this.clipPose.faceCamera(camera);
     if (this.blessPose?.visible) this.blessPose.faceCamera(camera);
     if (this.warpPose?.visible) this.warpPose.faceCamera(camera);
     if (this.breathPose?.visible) this.breathPose.faceCamera(camera);
@@ -2483,6 +2499,11 @@ export class Player {
     if (this.angel) this._updateAngel(dt, pad, world);
     else if (this.rideAlong) this._updatePassenger(dt, pad, world, hud);
     else if (this.mount) this._updateFlight(dt, pad, world, hud);
+    /* A RIG OWNS HER: hanging from a rope, on a ladder, hands up for an
+       arrest (dream/bamboo.js). It moves her itself and the ground controller
+       does not run — not `pinnedAt`, which is the arcade's tube and says
+       "stand still", where a rope says "go along me". */
+    else if (this.rig) this.rig.step(dt, pad, world);
     else this._updateGround(dt, pad, world, dragons, hud);
 
     /* PINNED: put her back where the arcade says, after the physics and
@@ -3309,7 +3330,11 @@ export class Player {
       * (this.arenaBreathAt ? DBREATH.moveK : 1)
       /* HER ANIMALS (housing/petplay.js): a happy goat is SPRINT, a happy
          bunny is distance in the AIR. 1 with no pen. */
-      * (sprinting ? this.petBoost?.speed ?? 1 : 1) * (this.onGround ? 1 : this.petBoost?.air ?? 1);
+      * (sprinting ? this.petBoost?.speed ?? 1 : 1) * (this.onGround ? 1 : this.petBoost?.air ?? 1)
+      /* HER GAIT, set from outside: a crawl in Bamboo Infiltration (dream/
+         bamboo.js `SNEAK`), planted while she winds up a throw. 1 anywhere
+         else, so nothing outside the island has moved. */
+      * (this.gaitK ?? 1);
     /* A grown panda is a mount, not a buff — riding one multiplies whatever
        you already had, so a Thunderpaw kitten on a panda is the fastest thing
        in the game. It is ground movement throughout: same gravity, same
@@ -7042,6 +7067,24 @@ export class Player {
        with either today — `_startDodge` refuses mid-meal, and nothing hands out
        a star during one — but this is the branch that wins if it ever does,
        because being invisible is not a pose you can lose an argument about. */
+    /* --- a CLIP takes the drawing over (dream/ninjasprite.js) ---
+       Bamboo Infiltration's crawl, rope, ladder, throw and hands-up are one
+       packed atlas of many clips, and the island says which one is playing
+       by writing `clipAs = { name, t }`; nulling it gives her back. Here,
+       with the other poses, so "which drawing is on screen" stays one place,
+       and before the Flash Step's vanish, which still wins. */
+    if (this.clipPose) {
+      const on = !!this.clipAs && !this.ko && !this.mount && !this.rideAlong
+        && this.clipPose.setClip(this.clipAs.name, this.clipAs.t ?? 0);
+      this.clipPose.visible = on;
+      if (on) {
+        this.sprite.mesh.visible = false;
+        this.clipPose.facing = this.facing;
+        this.clipPose.mat.color.copy(mat.color);
+        this.clipPose.mat.opacity = mat.opacity;
+      }
+    }
+
     const gone = this.dodgeT > 0 && this.dodgePlaced;
     if (this.warpPose) {
       const winding = this.dodgeT > 0 && !this.dodgePlaced;
@@ -7087,6 +7130,7 @@ export class Player {
     }
     if (gone) {
       this.sprite.mesh.visible = false;
+      if (this.clipPose) this.clipPose.visible = false;
       if (this.warpPose) this.warpPose.visible = false;
       if (this.eatPose) this.eatPose.visible = false;
       if (this.blessPose) this.blessPose.visible = false;
