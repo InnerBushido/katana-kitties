@@ -113,7 +113,8 @@ const tuningServer = {
    added, with nobody remembering to tell it.
 --------------------------------------------------------------------------- */
 const SPRITE_FILE = new URL('./src/spritefix.json', import.meta.url);
-const KEY = /^[a-z0-9_]+(\/[A-Za-z0-9_]+)+(:[a-z0-9_]+)?$/;
+// `sheet/file`, a clip `ninja/ember:mount`, and one facing of a clip `ninja/ember:mount@2` (spritefix.js clipKey)
+const KEY = /^[a-z0-9_]+(\/[A-Za-z0-9_]+)+(:[a-z0-9_]+(@[0-9])?)?$/;
 const ints = (a) => (Array.isArray(a) ? a.filter((v) => Number.isInteger(v) && v >= 0 && v < 256) : []);
 
 export function cleanSpriteFix(o) {

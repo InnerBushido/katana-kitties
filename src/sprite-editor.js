@@ -31,7 +31,7 @@ import { Billboard } from './core/gfx.js';
 import { PLAYER_STYLE } from './core/palette.js';
 import { loadSpriteAtlas, recolourAtlas } from './core/spritesheet.js';
 import {
-  setSpriteFix, poseFix, sheetFix, applySheetFix, SPRITE_FIX, KENDO_FILE, HOME_FILE, SINGLE_FILE, LEGACY_SHEET,
+  setSpriteFix, poseFix, sheetFix, applySheetFix, SPRITE_FIX, KENDO_FILE, HOME_FILE, SINGLE_FILE, LEGACY_SHEET, clipKey,
 } from './core/spritefix.js';
 import { TEA_SHEET } from './systems/housing/teahouse.js';
 import { DOOR_MATS, DOOR_MAT_SHEET } from './systems/housing/catalog.js';
@@ -221,14 +221,17 @@ const groupOf = (id) => GROUPS.find(([g]) => g === POSES[id]?.group);
 function fixFields(P) {
   if (!P) return '';
   if (['single', 'kendo', 'home'].includes(P.kind)) return 'sxy';
-  if (P.kind === 'vrsingle') return 'sy';
+  /* A clip has a size and a height, never a "forward": it is drawn from four or eight sides. Richard,
+     Oct 2026, of the mount drawn above the rope and the hang below it: "there is no way for me to edit
+     the height of the two clips ... there should be way for me to edit these in the sprite editor". */
+  if (P.kind === 'vrsingle' || P.kind === 'clip') return 'sy';
   return '';
 }
 const FIX_WHY = {
   grid: 'The turnaround is sized by its own sheet. Which drawing shows at which angle is in Sheets ▸ kittens.',
   vrgrid: 'The headset turnaround is sized as her home one (setSimLook). Its columns are in Sheets ▸ kittens/…/vr.',
   vrsingle: 'In the headset only size and height move: a look carries one quad, and "forward" is a pair of them.',
-  clip: 'Ninja clips are sized off her standing height (ClipSprite). Their frame order is in Sheets ▸ ninja clips.',
+  clip: 'A clip takes size and height only (one fix for every facing; the game scales it about the rope for a hanging clip). Its frame order is in Sheets ▸ ninja clips, one per facing.',
   lion: 'Lionheart is here to measure against: LION_HEIGHT 6.2 (dreamdojo.js). His cells\' order is in Sheets ▸ lionheart.',
 };
 
@@ -358,6 +361,8 @@ class Layer {
   get fixKey() {
     const P = this.P;
     if (!fixFields(P)) return null;
+    // a clip's is keyed as its frame order is: `ninja/ember:mount` (ClipSprite `clipId`)
+    if (P.kind === 'clip') return `ninja/${this.sheet}:${P.clip}`;
     return `${this.sheet}/${P.kind === 'vrsingle' ? `vr_${P.file}` : P.file}`;
   }
   get height() { return this.P.kind === 'lion' ? EDITOR_LION_H : EDITOR_HEIGHT[this.sheet] ?? 2.9; }
@@ -486,12 +491,13 @@ class Layer {
     const y0 = Math.floor(v0 * H), y1 = Math.ceil(v1 * H);
     const cw = x1 - x0, ch = y1 - y0;
     const lift = bb.mesh.position.y; // the rope clip hangs its quad from her paws
+    const kx = bb.mesh.scale.x, ky = bb.mesh.scale.y; // a clip's fix scales the mesh, not the quad
     const wx = (px) => {
       let u = (px + 0.5 - x0) / cw;
       if (flip) u = 1 - u;
-      return box.min.x + u * (box.max.x - box.min.x) + this.root.position.x;
+      return (box.min.x + u * (box.max.x - box.min.x)) * kx + this.root.position.x;
     };
-    const wy = (py) => lift + this.root.position.y + box.max.y - ((py + 0.5 - y0) / ch) * (box.max.y - box.min.y);
+    const wy = (py) => lift + this.root.position.y + (box.max.y - ((py + 0.5 - y0) / ch) * (box.max.y - box.min.y)) * ky;
     let top = Infinity, bot = -Infinity;
     for (let y = y0; y < y1; y++) {
       for (let x = x0; x < x1; x++) {
@@ -644,6 +650,25 @@ function showStep(i) {
 
 let zoom = Number(ui.zoom ?? 5);
 let pitch = Number(ui.pitch ?? 22);
+/* PAN, in world units, as a slide of the FRUSTUM - not of the lens, for the reason below. Richard, Oct
+   2026: "it seems I can only zoom now with mouse ... is there a way to tilt and pan the camera with
+   mouse or some keyboard commands?" There is no orbit, and that is on purpose: every billboard turns
+   to the lens's bearing and picks its drawing by it, so an orbit would change WHICH drawing is on
+   show. Turning her is the facing button, and the Sheets tab's turntable. */
+let panX = Number(ui.panX ?? 0);
+let panY = Number(ui.panY ?? 0);
+const PITCH = [0, 80];
+function setView(v, why) {
+  if (v.zoom != null) zoom = Math.min(14, Math.max(2, v.zoom));
+  if (v.pitch != null) pitch = Math.min(PITCH[1], Math.max(PITCH[0], v.pitch));
+  if (v.panX != null) panX = Math.min(20, Math.max(-20, v.panX));
+  if (v.panY != null) panY = Math.min(20, Math.max(-20, v.panY));
+  $('zoom').value = zoom;
+  $('pitch').value = pitch;
+  Object.assign(ui, { zoom, pitch, panX, panY });
+  keepUi();
+  if (why) status(why);
+}
 function placeCamera() {
   const r = canvas.clientWidth / Math.max(1, canvas.clientHeight);
   cam.left = -zoom * r * 0.5;
@@ -654,9 +679,11 @@ function placeCamera() {
   /* The lens stays on x = 0 and the FRUSTUM slides to take B in: a camera moved
      sideways would turn every billboard a little toward it (faceCamera), and
      on a turnaround sheet that is a different cell. */
-  const mid = sheetMode ? 0 : B.dx / 2;
+  const mid = (sheetMode ? 0 : B.dx / 2) + panX;
   cam.left += mid;
   cam.right += mid;
+  cam.top += panY;
+  cam.bottom += panY;
   const look = new THREE.Vector3(0, zoom * 0.28, 0);
   cam.position.set(0, look.y + Math.sin(ph) * 40, Math.cos(ph) * 40);
   cam.lookAt(look);
@@ -781,7 +808,7 @@ function syncInputs() {
   $('guide-v').textContent = Number($('guide').value).toFixed(2);
   $('play').textContent = playing ? '❚❚ pause' : '▶ play';
   revertButtons();
-  Object.assign(ui, { aKit: A.kit, bKit: B.kit, aPose: A.pose, bPose: B.pose, bOp: B.opacity, bDx: B.dx, faceRight, zoom, pitch, bOnTop });
+  Object.assign(ui, { aKit: A.kit, bKit: B.kit, aPose: A.pose, bPose: B.pose, bOp: B.opacity, bDx: B.dx, faceRight, zoom, pitch, panX, panY, bOnTop });
   keepUi();
 }
 
@@ -792,10 +819,12 @@ function revertButtons() {
   $('fx-clear').disabled = !k || canon.poses(draft.poses[k]) === null;
   const id = curSheet?.fixId;
   if (id) {
-    $('sh-reset').disabled = canon.sheets(draft.sheets[id]) === null;
+    // "as drawn" is live while what is DRAWN is not - for a facing, that can be the whole clip's order
+    $('sh-reset').disabled = !curSheet.fix || isAsDrawn(curSheet.fix);
     $('sh-revert').disabled = canon.sheets(draft.sheets[id]) === canon.sheets(saved.sheets[id]);
   }
 }
+const isAsDrawn = (f) => !f.flip.length && f.order.every((c, k) => c === k) && f.order.length === curSheet?.drawn;
 
 function wire() {
   fillSelect($('a-kit'), kits, String(A.kit));
@@ -852,6 +881,7 @@ function wire() {
   $('face').onclick = () => { faceRight = !faceRight; syncInputs(); };
   $('pitch').oninput = (e) => { pitch = Number(e.target.value); syncInputs(); };
   $('zoom').oninput = (e) => { zoom = Number(e.target.value); syncInputs(); };
+  $('view-reset').onclick = () => setView({ zoom: 5, pitch: 22, panX: 0, panY: 0 }, 'View back to the start: zoom 5, tilt 22°, centred.');
   $('guide').oninput = syncInputs;
   $('guide-snap').onclick = () => { tick(0); const m = B.measure(); if (m) { $('guide').value = m.top; syncInputs(); } };
   $('seq-pick').onchange = (e) => pickSeq(e.target.value);
@@ -938,6 +968,12 @@ function onKey(e) {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const fine = e.shiftKey ? 0.2 : 1;
   const k = e.key;
+  // THE VIEW, on both tabs: I J K L pan, T G tilt, R back to the start
+  const pan = zoom * 0.05 * fine;
+  if (low === 'j' || low === 'l') { setView({ panX: panX + (low === 'l' ? pan : -pan) }); return; }
+  if (low === 'i' || low === 'k') { setView({ panY: panY + (low === 'i' ? pan : -pan) }); return; }
+  if (low === 't' || low === 'g') { setView({ pitch: pitch + (low === 't' ? 2 : -2) * fine }); return; }
+  if (low === 'r') { $('view-reset').click(); return; }
   if (sheetMode) {
     if (k === ' ') { e.preventDefault(); $('sh-play').click(); }
     if (k === ',' || k === '.') stepSheet(k === ',' ? -1 : 1);
@@ -991,15 +1027,32 @@ function xSign() {
   return v;
 }
 
-/* Drag A on the canvas: across is forward/back, up and down is her y. One drag is one undo step. */
+/* Drag A on the canvas: across is forward/back, up and down is her y. One drag is one undo step.
+   The RIGHT or MIDDLE button drags the VIEW instead - pan, or with Shift held, tilt - and so does the
+   left one wherever there is nothing of hers to drag (the Sheets tab, a pose with no fix). */
 function wireDrag() {
   let drag = null;
+  let view = null;
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   canvas.addEventListener('pointerdown', (e) => {
-    if (sheetMode || !fixFields(A.P)) return;
+    if (e.button === 1 || e.button === 2 || sheetMode || !fixFields(A.P)) {
+      e.preventDefault();
+      view = { x: e.clientX, y: e.clientY, panX, panY, pitch };
+      canvas.setPointerCapture(e.pointerId);
+      return;
+    }
+    if (e.button !== 0) return;
     drag = { x: e.clientX, y: e.clientY, f: curFix(), sign: xSign(), right: mA?.right !== false, id: performance.now() };
     canvas.setPointerCapture(e.pointerId);
   });
   canvas.addEventListener('pointermove', (e) => {
+    if (view) {
+      const perPx = zoom / canvas.clientHeight;
+      if (e.shiftKey) setView({ pitch: view.pitch + (e.clientY - view.y) * 0.3 });
+      // the picture follows the pointer: drag right and the world moves right, so the frustum moves left
+      else setView({ panX: view.panX - (e.clientX - view.x) * perPx, panY: view.panY + (e.clientY - view.y) * perPx });
+      return;
+    }
     if (!drag) return;
     const perPx = zoom / canvas.clientHeight;
     const H = A.height;
@@ -1007,13 +1060,14 @@ function wireDrag() {
     const dy = (-(e.clientY - drag.y) * perPx / Math.cos(THREE.MathUtils.degToRad(pitch))) / H;
     setFix({ x: drag.f.x + dx * (drag.right ? 1 : -1) * drag.sign, y: drag.f.y + (e.shiftKey ? 0 : dy) }, `dragged ${drag.id}`);
   });
-  const end = () => { drag = null; };
+  const end = () => { drag = null; view = null; };
   canvas.addEventListener('pointerup', end);
   canvas.addEventListener('pointercancel', end);
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
-    zoom = Math.min(14, Math.max(2, zoom * (e.deltaY > 0 ? 1.08 : 1 / 1.08)));
-    $('zoom').value = zoom;
+    // Shift-wheel tilts; the wheel alone zooms, about the frame's centre
+    if (e.shiftKey) setView({ pitch: pitch + (e.deltaY > 0 ? -2 : 2) });
+    else setView({ zoom: zoom * (e.deltaY > 0 ? 1.08 : 1 / 1.08) });
     syncInputs();
   }, { passive: false });
 }
@@ -1026,7 +1080,9 @@ function wireDrag() {
  *   cells   several drawings the game picks between by name or angle (Lionheart's poses, the hospital
  *           cat): order and flip, honoured by `loadSpriteAtlas`, shown one cell at a time.
  *   clip    one Bamboo Infiltration animation out of a packed ninja atlas: its FRAME order, honoured
- *           by `ClipSprite` (`ninja/ember:sneak`). Rows are directions.
+ *           by `ClipSprite`. Rows are directions, and each has its OWN order (`ninja/ember:sneak@2`,
+ *           spritefix.js `clipKey`) - the facing picked is the one edited. A facing with none of its
+ *           own plays the whole clip's (`ninja/ember:sneak`), which "every facing" writes.
  *   frames  the tea pour: an animation played straight through - shown, not re-dealt.
  *   set     the door mats: twenty designs on one sheet, each switchable off in the game.
  *   single  one drawing: nothing to order. Its size and place are fixed in Poses, where it has one.
@@ -1034,7 +1090,7 @@ function wireDrag() {
 const KIND_NOTE = {
   turn: 'A turnaround: each column is one angle. The turntable is the game\'s own pick of column for every angle.',
   cells: 'Separate drawings the game picks between. A new order is honoured wherever the game loads this sheet.',
-  clip: 'One Bamboo Infiltration clip: its frames, in the order they play. Each row is one direction she can face.',
+  clip: 'One Bamboo Infiltration clip: its frames, in the order they play. Each facing has its own order: the one picked below is the one you edit.',
   frames: 'An animation the game plays straight through. Shown here; nothing to re-deal.',
   set: 'A set of designs on one sheet. Each one can be switched off so the game stops offering it.',
   single: 'One drawing. Nothing to reorder here; if it is a kitten pose, its size and place are in Poses.',
@@ -1111,8 +1167,18 @@ function wireSheets() {
   $('sh-reset').onclick = () => {
     const id = curSheet?.fixId;
     if (!id) return;
-    delete draft.sheets[id];
+    asDrawn(curSheet);
     commit(`sheet:${id}:reset`, `${id}: as drawn`);
+  };
+  /* ONE FACING'S ORDER FOR THE WHOLE CLIP: written to the bare key, and every facing's own key goes,
+     so they all play it. The undo is one step. */
+  $('sh-every').onclick = () => {
+    const S = curSheet;
+    if (S?.kind !== 'clip') return;
+    if (S.fix && !isAsDrawn(S.fix)) draft.sheets[S.baseId] = clone(S.fix); else delete draft.sheets[S.baseId];
+    for (let r = 0; r < S.clip.dirs; r++) delete draft.sheets[clipKey(S.baseId, r)];
+    commit(`sheet:${S.baseId}:every`, `${S.baseId}: ${S.rows[S.row]}'s order for every facing`);
+    status(`Every facing of ${S.clipName} now plays the ${S.rows[S.row]} order.`);
   };
   $('sh-revert').onclick = () => {
     const id = curSheet?.fixId;
@@ -1171,6 +1237,13 @@ function stepSheet(d) {
 
 const parseNums = (t) => t.split(/[\s,]+/).filter(Boolean).map((v) => Number(v) - 1).filter((v) => Number.isInteger(v) && v >= 0);
 
+/* "As drawn" for a facing that would otherwise fall back to the whole clip's order has to SAY as drawn
+   (an order 1..n): deleting its key would show the clip's order again, which is what was asked away. */
+function asDrawn(S) {
+  if (S.kind === 'clip' && sheetFix(S.baseId, S.drawn, draft)) draft.sheets[S.fixId] = { order: [...Array(S.drawn).keys()], flip: [] };
+  else delete draft.sheets[S.fixId];
+}
+
 /** The order box is IMAGE numbers; so is the flip box - turned into slots here, which is what the file holds. */
 function applyOrderText() {
   const S = curSheet;
@@ -1178,7 +1251,7 @@ function applyOrderText() {
   const order = parseNums($('sh-order').value);
   const flipImgs = parseNums($('sh-flip').value);
   if (!order.length) {
-    delete draft.sheets[S.fixId];
+    asDrawn(S);
     commit(`sheet:${S.fixId}:order`, `${S.fixId}: as drawn`);
     status('No order - the sheet is drawn as it was loaded.');
     return;
@@ -1243,7 +1316,10 @@ async function buildSheet() {
     fillSelect($('sh-row'), S.rows.map((r, i) => [String(i), r]), String(Math.max(0, keep)));
   }
   S.row = S.rows ? Number($('sh-row').value) : 0;
-  const fix = S.fixId ? sheetFix(S.fixId, S.drawn, draft) : null;
+  // a clip is edited one FACING at a time: its key is the facing's, and it falls back to the clip's
+  if (kind === 'clip') { S.baseId = id; S.fixId = clipKey(id, S.row); }
+  $('sh-every').hidden = kind !== 'clip';
+  const fix = kind === 'clip' ? sheetFix(S.baseId, S.drawn, draft, S.row) : S.fixId ? sheetFix(S.fixId, S.drawn, draft) : null;
   S.fix = fix;
   S.order = fix?.order ?? [...Array(S.drawn).keys()];
   S.n = kind === 'set' ? DOOR_MATS.length : kind === 'frames' && a ? a.cols * a.rows : S.order.length;
@@ -1438,6 +1514,7 @@ function showSheetStep() {
     spinAngle = (k / S.n) * Math.PI * 2;
   }
   if (S.kind === 'clip' && S.bb && $('sh-mode').value !== 'spin') {
+    // the facing being edited, square to the lens (which sits on x = 0, bearing 0)
     S.bb.facing = (S.row / S.clip.dirs) * Math.PI * 2;
     S.bb.clipT = (k + 0.5) / S.clip.fps;
   }

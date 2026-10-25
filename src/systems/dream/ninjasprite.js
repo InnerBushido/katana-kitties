@@ -3,7 +3,7 @@ import { Billboard } from '../../core/gfx.js';
 import { recolourAtlas } from '../../core/spritesheet.js';
 import { PLAYER_STYLE } from '../../core/palette.js';
 import { NINJA_ATLAS } from './ninjaclips.js';
-import { sheetFix } from '../../core/spritefix.js';
+import { sheetFix, clipPoseFix } from '../../core/spritefix.js';
 
 /* ---------------------------------------------------------------------------
    ONE ATLAS PER CHARACTER, MANY CLIPS IN IT — Bamboo Infiltration's drawings.
@@ -54,6 +54,9 @@ export class ClipSprite extends Billboard {
     super(texture, { cols: man.cols, rows: man.rows, width: S, height: S, mirror: false, footOffset: man.pad * S });
     this.man = man;
     this.S = S;
+    this.H = height;
+    /** The facing row drawn last (`faceCamera`): whose frame order counts the steps between draws. */
+    this.dirRow = 0;
     this.clip = null;
     this.clipT = 0;
     this.setClip(Object.keys(man.clips)[0]);
@@ -66,20 +69,35 @@ export class ClipSprite extends Billboard {
     if (c !== this.clip) {
       this.clip = c;
       this.clipName = name;
-      /* THE ROPE HANGS FROM HER PAWS. Its frames were stood on their highest
-         paw `pad` from the cell's top; this drops the quad so that line is the
-         origin — the rope — instead of her feet. */
-      this.mesh.position.y = c.align === 'top' ? -this.S * (1 - 2 * this.man.pad) : 0;
     }
+    this._hang();
     this.clipT = t;
     return true;
   }
 
-  /* THE SPRITE EDITOR'S FRAME ORDER (spritefix.js, key `ninja/ember:sneak`): which drawn frame each
-     step of the clip is, and which steps are mirrored. Asked on every read rather than cached, because
-     the editor changes the draft under a live sprite and the game's file never changes in a build. */
+  /** `ninja/ember:mount` — the key this clip's fixes are saved under. */
+  get clipId() { return `${NINJA_ID.get(this.man) ?? '?'}:${this.clipName}`; }
+
+  /* THE ROPE HANGS FROM HER PAWS. Its frames were stood on their highest
+     paw `pad` from the cell's top; this drops the quad so that line is the
+     origin — the rope — instead of her feet. Then the sprite editor's size
+     and height for the clip (`clipPoseFix`): scaled about that same origin,
+     so a bigger rope clip still hangs from the rope, and lifted in her
+     heights. Every draw, not once per clip — the editor moves the draft under
+     a live sprite, and this is two multiplies. */
+  _hang() {
+    const c = this.clip;
+    const f = clipPoseFix(this.clipId);
+    this.mesh.scale.set(f.s, f.s, 1);
+    this.mesh.position.y = (c.align === 'top' ? -this.S * (1 - 2 * this.man.pad) * f.s : 0) + f.y * this.H;
+  }
+
+  /* THE SPRITE EDITOR'S FRAME ORDER (spritefix.js, key `ninja/ember:sneak`, or `...:sneak@2` for one
+     facing): which drawn frame each step of the clip is, and which steps are mirrored. Asked on every
+     read rather than cached, because the editor changes the draft under a live sprite and the game's
+     file never changes in a build. */
   get clipFix() {
-    return sheetFix(`${NINJA_ID.get(this.man) ?? '?'}:${this.clipName}`, this.clip.frames);
+    return sheetFix(this.clipId, this.clip.frames, undefined, this.dirRow);
   }
 
   /** How many steps the clip plays: its drawn frames, or the saved order's length. */
@@ -102,10 +120,13 @@ export class ClipSprite extends Billboard {
     this.getWorldPosition(_wp);
     const camAngle = Math.atan2(camera.position.x - _wp.x, camera.position.z - _wp.z);
     this.mesh.rotation.y = camAngle;
+    // the facing first: each has its own frame order, and so its own count of steps
+    this.dirRow = dirIndex(this.facing - camAngle, this.clip.dirs);
+    this._hang();
     const step = this.clipFrame;
     const fix = this.clipFix;
     const drawn = fix ? fix.order[step] : step;
-    this._setCell(this.clip.col + drawn, this.clip.row + dirIndex(this.facing - camAngle, this.clip.dirs), !!fix?.flip.includes(step));
+    this._setCell(this.clip.col + drawn, this.clip.row + this.dirRow, !!fix?.flip.includes(step));
   }
 }
 

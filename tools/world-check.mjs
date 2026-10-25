@@ -6222,10 +6222,12 @@ console.log('\n--- the sprite editor: what it saves, and what the game does with
   const { NINJA_ATLAS } = await import('../src/systems/dream/ninjaclips.js');
   const ctex = new THREE.Texture();
   ctex.image = { width: 2040, height: 1632 };
-  const clipCells = (fix, name) => {
+  const clipCells = (fix, name, facing = 0) => {
     setSpriteFix(fix);
     const c = new ClipSprite(ctex, NINJA_ATLAS.ember, 2.9);
     c.setClip(name);
+    c.facing = facing;
+    c.faceCamera({ position: new THREE.Vector3(0, 0, 40) }); // the facing first: it decides whose order counts
     const out = [];
     for (let k = 0; k < c.clipFrames; k++) {
       c.clipT = (k + 0.5) / c.clip.fps;
@@ -6252,6 +6254,56 @@ console.log('\n--- the sprite editor: what it saves, and what the game does with
     cut.cells === '0,2,4' && cut.done, JSON.stringify(cut));
   ok('...and an order naming a frame the clip has not got is no order',
     clipCells({ sheets: { 'ninja/ember:sneak': { order: [0, 9] } } }, 'sneak').cells === '0,1,2,3');
+
+  /* ONE FACING AT A TIME (Richard, Oct 2026: "changing the order and flip values seems to be applying it
+     to all 'facing' animations in the clip, it should only apply it to each individual facing"). A
+     facing's own key wins for that facing and touches no other; one with none plays the clip's. */
+  const dirs = NINJA_ATLAS.ember.clips.mount.dirs;
+  const right = (1 / dirs) * Math.PI * 2; // facing row 1, square to a lens on +z
+  const perFacing = { sheets: { 'ninja/ember:mount': { order: [4, 3, 2, 1, 0] }, 'ninja/ember:mount@1': { order: [0, 1, 2], flip: [1] } } };
+  ok('a facing’s own frame order plays on that facing',
+    clipCells(perFacing, 'mount', right).cells === '0,1F,2', clipCells(perFacing, 'mount', right).cells);
+  ok('...and not on any other: they play the whole clip’s',
+    clipCells(perFacing, 'mount', 0).cells === '4,3,2,1,0', clipCells(perFacing, 'mount', 0).cells);
+  ok('...and a facing’s order alone leaves the others as drawn',
+    clipCells({ sheets: { 'ninja/ember:mount@1': { order: [1, 0] } } }, 'mount', 0).cells === '0,1,2,3,4');
+
+  /* A CLIP'S HEIGHT AND SIZE ("there is no way for me to edit the height of the two clips, mount and
+     rope"): `poses["ninja/ember:mount"]` = { s, y }, on the mesh. A hanging clip scales about the
+     rope, so a bigger rope clip still hangs from the rope - its paw line stays on the origin. */
+  const hung = (fix, name) => {
+    setSpriteFix(fix);
+    const c = new ClipSprite(ctex, NINJA_ATLAS.ember, 2.9);
+    c.setClip(name);
+    c.faceCamera({ position: new THREE.Vector3(0, 0, 40) });
+    setSpriteFix(SPRITE_FIX);
+    const g = c.mesh.geometry;
+    g.computeBoundingBox();
+    // where the paw line (`pad` below the quad's top) lands, and the quad's height, as drawn
+    const top = c.mesh.position.y + g.boundingBox.max.y * c.mesh.scale.y;
+    return { y: c.mesh.position.y, h: (g.boundingBox.max.y - g.boundingBox.min.y) * c.mesh.scale.y, paw: top - c.man.pad * c.S * c.mesh.scale.y };
+  };
+  const m0 = hung({}, 'mount');
+  const m1 = hung({ poses: { 'ninja/ember:mount': { s: 1.5, y: 0.25, x: 9 } } }, 'mount');
+  ok('a clip’s saved height lifts it that many of her heights, and its scale sizes it',
+    Math.abs(m1.y - m0.y - 0.25 * 2.9) < 1e-9 && Math.abs(m1.h / m0.h - 1.5) < 1e-9, `${m0.y} -> ${m1.y}, ${m0.h.toFixed(3)} -> ${m1.h.toFixed(3)}`);
+  const r0 = hung({}, 'rope');
+  const r1 = hung({ poses: { 'ninja/ember:rope': { s: 1.4 } } }, 'rope');
+  ok('...and a hanging clip scaled still hangs from the rope (its paws on the origin)',
+    Math.abs(r0.paw) < 1e-6 && Math.abs(r1.paw) < 1e-6 && Math.abs(r1.h / r0.h - 1.4) < 1e-9, `${r0.paw} ${r1.paw}`);
+  const cleaned = cleanSpriteFix({ sheets: { 'ninja/ember:mount@2': { order: [1, 0] }, 'ninja/ember:mount@x': { order: [0] } }, poses: { 'ninja/ember:rope': { s: 1.2, y: 0.1 } } });
+  ok('...and the save keeps a facing’s key and a clip’s pose fix',
+    JSON.stringify(cleaned) === '{"poses":{"ninja/ember:rope":{"s":1.2,"y":0.1}},"sheets":{"ninja/ember:mount@2":{"order":[1,0],"flip":[]}},"off":{}}', JSON.stringify(cleaned));
+  const edSrc = readFileSync(new URL('../src/sprite-editor.js', import.meta.url), 'utf8').replace(/\r/g, '');
+  ok('...and the editor edits a clip one facing at a time, and gives a clip size and height',
+    /if \(kind === 'clip'\) \{ S\.baseId = id; S\.fixId = clipKey\(id, S\.row\); \}/.test(edSrc)
+    && /P\.kind === 'vrsingle' \|\| P\.kind === 'clip'\) return 'sy'/.test(edSrc)
+    && /if \(P\.kind === 'clip'\) return `ninja\/\$\{this\.sheet\}:\$\{P\.clip\}`/.test(edSrc));
+  /* "is there a way to tilt and pan the camera with mouse or some keyboard commands?" - and no orbit:
+     a lens moved off its bearing would change which drawing every billboard picks. */
+  ok('...and its view pans and tilts by mouse and key, by sliding the frustum and never the lens’s bearing',
+    /e\.button === 1 \|\| e\.button === 2/.test(edSrc) && /low === 'j' \|\| low === 'l'/.test(edSrc) && /low === 't' \|\| low === 'g'/.test(edSrc)
+    && /const mid = \(sheetMode \? 0 : B\.dx \/ 2\) \+ panX;/.test(edSrc) && /cam\.position\.set\(0, /.test(edSrc));
 
   /* THE SINGLE POSES TAKE A FIX TOO (player.js `_poseBoard`): the eat crouch, the bless, the warp and
      the rest, as the kendo set does - and in the headset, size and height only. */

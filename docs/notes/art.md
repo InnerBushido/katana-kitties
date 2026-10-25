@@ -755,6 +755,37 @@ kitten pose grouped by activity with a "Stand vs ..." each.
 - **Lionheart** is drawn off his own sheet at `EDITOR_LION_H`, and the page
   zooms out for him; world-check pins the editor's sizes to the game's.
 
+### Third pass: one facing at a time, a clip's height, and a camera that moves
+
+Richard, Oct 2026: "changing the order and flip values seems to be applying it
+to all 'facing' animations in the clip, it should only apply it to each
+individual facing animations"; "there is no way for me to edit the height of
+the two clips, mount and rope"; "is there a way to tilt and pan the camera with
+mouse or some keyboard commands?"
+
+- **A clip's order is per FACING.** The Sheets tab now writes
+  `ninja/ember:mount@2` (`clipKey`) for the facing picked. `sheetFix(id, n,
+  fix, row)` tries that key first, then the bare `ninja/ember:mount`, so the
+  file saved before keeps meaning what it meant for every facing that has none
+  of its own. *As drawn* on a facing that would fall back writes an explicit
+  1..n; deleting the key would bring the clip's order straight back. *This order
+  for every facing* writes the bare key and removes the per-facing ones.
+  `ClipSprite.faceCamera` picks the facing row FIRST, because the facing decides
+  whose order counts the steps. The vite cleaner's `KEY` takes the `@n`, or the
+  save would have silently dropped every one.
+- **A clip takes `{ s, y }`** under `poses["ninja/ember:mount"]` (`clipPoseFix`),
+  on the Poses tab like any pose: scale and height, never forward (it is drawn
+  from four or eight sides). It is applied to the MESH in `ClipSprite._hang`,
+  every draw: `y` in her heights, `s` about the origin. The origin is her feet
+  for a standing clip and the rope for a hanging one, so a bigger rope clip still
+  hangs from the rope. world-check measures the paw line staying on 0.
+- **The view pans and tilts.** Right- or middle-drag pans (so does a left drag
+  wherever there is nothing of hers to drag), Shift+right-drag or Shift+wheel
+  tilts, `I J K L` pan, `T G` tilt, `R` resets. Pan slides the FRUSTUM. **There
+  is no orbit, on purpose:** every billboard picks its drawing from the lens's
+  bearing, so a lens moved round her would change which drawing is on show.
+  Turning her is the facing button and the Sheets tab's turntable.
+
 **Trap: the hidden pane.** A hidden browser pane renders no rAF frames, so the
 readout stayed `undefined` and an `img.decode()` never resolved. The page has
 `spriteEditor.frame()` for a synchronous frame when it is being driven.

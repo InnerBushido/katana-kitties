@@ -24,6 +24,17 @@
  *           and EVERY sheet loaded through `loadSpriteAtlas` honours it, so a
  *           sheet added next year needs no wiring. A Bamboo Infiltration clip
  *           is `ninja/ember:sneak`, and its `order` is FRAMES (ClipSprite).
+ *           A clip's rows are FACINGS, and each has its own: `ninja/ember:
+ *           mount@2` is the right profile's order alone (`clipKey`). Richard,
+ *           Oct 2026: "changing the order and flip values seems to be applying
+ *           it to all 'facing' animations in the clip, it should only apply it
+ *           to each individual facing". The bare key is still read, for every
+ *           facing that has none of its own — the file he saved before keeps
+ *           working, and keeps meaning what it meant.
+ *           A clip can carry a POSE fix too, `poses["ninja/ember:mount"]`:
+ *           `{ s, y }` only (`clipPoseFix`), so the mount and the rope can be
+ *           stood at the same height ("there should be way for me to edit
+ *           these in the sprite editor").
  *   off     "housing/doormats": ["risingsun"] — cells a sheet's own consumer
  *           must not offer (`isOff`). Only sheets whose code asks honour it;
  *           the editor shows the switch only on those.
@@ -92,13 +103,25 @@ export const LEGACY_SHEET = { 'kittens/ember/grid_v2': 'ember/grid_v2', 'kittens
  * `order` is not a list of whole columns the sheet has — the sheet is then
  * drawn as it came.
  */
-export function sheetFix(id, cols, fix = LIVE) {
-  const f = fix?.sheets?.[id] ?? fix?.sheets?.[LEGACY_SHEET[id]];
+export function sheetFix(id, cols, fix = LIVE, row = null) {
+  const own = row == null ? null : fix?.sheets?.[clipKey(id, row)];
+  const f = own ?? fix?.sheets?.[id] ?? fix?.sheets?.[LEGACY_SHEET[id]];
   const order = f?.order;
   if (!Array.isArray(order) || !order.length) return null;
   if (!order.every((c) => Number.isInteger(c) && c >= 0 && c < cols)) return null;
   const flip = (Array.isArray(f.flip) ? f.flip : []).filter((c) => Number.isInteger(c) && c >= 0 && c < order.length);
   return { order: [...order], flip };
+}
+
+/** `ninja/ember:mount` + facing 2 -> `ninja/ember:mount@2`: one facing's own frame order. */
+export const clipKey = (id, row) => `${id}@${row}`;
+
+/** A clip's size and height: `{ s, y }` (her heights), 1/0 where nothing is set. Its `x` is never read —
+ *  a clip is drawn from four or eight sides, and "forward" is a different way on every one of them. */
+export function clipPoseFix(id, fix = LIVE) {
+  const i = id.indexOf('/');
+  const { s, y } = poseFix(id.slice(0, i), id.slice(i + 1), fix);
+  return { s, y };
 }
 
 /**
