@@ -1,6 +1,7 @@
 ﻿import * as THREE from 'three';
 import { Billboard } from '../core/gfx.js';
 import { feetX, torsoX } from '../core/spritesheet.js';
+import { poseFix, KENDO_FILE, HOME_FILE, SINGLE_FILE } from '../core/spritefix.js';
 import { PANDA_SPEED, PANDA_JUMP, CLAW } from './panda.js';
 import { aggregate, WARD, AEGIS, DIVE, CROSS, CHARGE, DODGE, PARRY } from './powerorb.js';
 import { STEAL, DBREATH, BreathTally, arenaPowerFor } from './clanpower.js';
@@ -208,7 +209,16 @@ export const COMBAT = tune('COMBAT', {
  */
 /** Her body, for every wall: Housing `_segPush` adds a 0.18 skin, so a gap has to be 1.86 wide. */
 export const PLAYER_RADIUS = 0.75;
-export const KENDO_DODGE = { dist: 2.2, t: 0.14, immune: 0.36, cool: 0.75 };
+/* ...AND HALF THAT, Oct 2026: "The dodge movement should be half the distance." 2.2 -> 1.1, in the same
+   0.14s, so it is a half-speed step and the immunity is unchanged. */
+export const KENDO_DODGE = { dist: 1.1, t: 0.14, immune: 0.36, cool: 0.75 };
+/**
+ * A KENDO MATCH IS WALKED AT A QUARTER OF HER SPEED. Richard, Oct 2026: "When
+ * doing kendo battle, the players need to move at 1/4th the speed." On top of
+ * everything else she runs at (clan, orbs, pets), in a live bout only
+ * (`kendoBout`) — a geared kitten walking about the house is not slowed.
+ */
+export const KENDO_MOVE = 0.25;
 /**
  * A 返 THAT CAUGHT NOTHING, IN THE BOGU. Richard, Oct 2026: "once the riposte
  * period is over, then we should give back player control and maybe put the
@@ -1527,9 +1537,12 @@ export class Player {
       const a = on ? this._simPoseArt?.[file] : null;
       if (a?.texture) {
         if (!pose.userData.sim) {
-          const q = this.height * k / (a.contentScale || 1);
+          /* The sprite editor's `vr_` fix: size and height only. A look carries one quad, and the
+             forward shift is the pair of quads a mirror swaps (`footX`), which only the home look has. */
+          const fx = poseFix(this.style?.sheet ?? 'ember', `vr_${file}`);
+          const q = this.height * k / (a.contentScale || 1) * fx.s;
           pose.userData.sim = pose.makeLook(a.texture, {
-            cols: 1, rows: 1, width: q, height: q, footOffset: (a.pad ?? 0) * q,
+            cols: 1, rows: 1, width: q, height: q, footOffset: (a.pad ?? 0) * q - fx.y * this.height,
           });
         }
         pose.setLook(pose.userData.sim);
@@ -1565,28 +1578,42 @@ export class Player {
     this.group.add(this.clipPose);
   }
 
+  /**
+   * ONE SINGLE-CELL POSE, built the way all seven setters below build theirs: `k` of her height over
+   * the sheet's packing, feet on the drawn feet - and then the sprite editor's fix by sheet (core/
+   * spritefix.js `SINGLE_FILE`), as `setKendoArt` takes it: `s` on the size, `x` forward, `y` up.
+   * A front-facing pose has no forward, so there `x` is toward screen-right.
+   */
+  _poseBoard(key, art, k, { mirror = false, artFacesRight } = {}) {
+    if (this[key]) this.group.remove(this[key]);
+    const fx = poseFix(this.style?.sheet ?? 'ember', SINGLE_FILE[key]);
+    const quad = this.height * k / (art.contentScale || 1) * fx.s;
+    const fwd = artFacesRight === false ? -1 : 1;
+    this[key] = new Billboard(art.texture, {
+      cols: 1,
+      rows: 1,
+      mirror,
+      artFacesRight,
+      width: quad,
+      height: quad,
+      footOffset: (art.pad ?? 0) * quad - fx.y * this.height,
+      footX: -fx.x * fwd * this.height,
+    });
+    this[key].visible = false;
+    this.group.add(this[key]);
+  }
+
   setEatArt(art) {
     if (!art?.texture) return;
     // Replacing one rather than stacking a second in the group. Nothing calls
     // this twice today; a pose drawn on top of a pose is a silent bug if
     // anything ever does.
-    if (this.eatPose) this.group.remove(this.eatPose);
     /* SHORTER THAN SHE IS, because she is crouching. `contentScale` makes the
        drawn figure exactly `height` tall whatever the sheet's packing, which
        is right for every standing pose and wrong for this one: a squatting cat
        drawn to a standing cat's height is a cat that got bigger in order to
        crouch. */
-    const quad = this.height * EAT_CROUCH / (art.contentScale || 1);
-    this.eatPose = new Billboard(art.texture, {
-      cols: 1,
-      rows: 1,
-      mirror: false,
-      width: quad,
-      height: quad,
-      footOffset: (art.pad ?? 0) * quad,
-    });
-    this.eatPose.visible = false;
-    this.group.add(this.eatPose);
+    this._poseBoard('eatPose', art, EAT_CROUCH);
   }
 
   /**
@@ -1615,18 +1642,7 @@ export class Player {
    */
   setBlessArt(art) {
     if (!art?.texture) return;
-    if (this.blessPose) this.group.remove(this.blessPose);
-    const quad = this.height * BLESS_STRETCH / (art.contentScale || 1);
-    this.blessPose = new Billboard(art.texture, {
-      cols: 1,
-      rows: 1,
-      mirror: false,
-      width: quad,
-      height: quad,
-      footOffset: (art.pad ?? 0) * quad,
-    });
-    this.blessPose.visible = false;
-    this.group.add(this.blessPose);
+    this._poseBoard('blessPose', art, BLESS_STRETCH);
   }
 
   /**
@@ -1653,18 +1669,7 @@ export class Player {
    */
   setWarpArt(art) {
     if (!art?.texture) return;
-    if (this.warpPose) this.group.remove(this.warpPose);
-    const quad = this.height / (art.contentScale || 1);
-    this.warpPose = new Billboard(art.texture, {
-      cols: 1,
-      rows: 1,
-      mirror: false,
-      width: quad,
-      height: quad,
-      footOffset: (art.pad ?? 0) * quad,
-    });
-    this.warpPose.visible = false;
-    this.group.add(this.warpPose);
+    this._poseBoard('warpPose', art, 1);
   }
 
   /**
@@ -1696,18 +1701,7 @@ export class Player {
    */
   setBreathArt(art) {
     if (!art?.texture) return;
-    if (this.breathPose) this.group.remove(this.breathPose);
-    const quad = this.height / (art.contentScale || 1);
-    this.breathPose = new Billboard(art.texture, {
-      cols: 1,
-      rows: 1,
-      mirror: false,
-      width: quad,
-      height: quad,
-      footOffset: (art.pad ?? 0) * quad,
-    });
-    this.breathPose.visible = false;
-    this.group.add(this.breathPose);
+    this._poseBoard('breathPose', art, 1);
   }
 
   /**
@@ -1743,18 +1737,7 @@ export class Player {
    */
   setScaredArt(art) {
     if (!art?.texture) return;
-    if (this.scaredPose) this.group.remove(this.scaredPose);
-    const quad = this.height / (art.contentScale || 1);
-    this.scaredPose = new Billboard(art.texture, {
-      cols: 1,
-      rows: 1,
-      mirror: false,
-      width: quad,
-      height: quad,
-      footOffset: (art.pad ?? 0) * quad,
-    });
-    this.scaredPose.visible = false;
-    this.group.add(this.scaredPose);
+    this._poseBoard('scaredPose', art, 1);
   }
 
   /**
@@ -1778,18 +1761,7 @@ export class Player {
    */
   setSweepArt(art) {
     if (!art?.texture) return;
-    if (this.sweepPose) this.group.remove(this.sweepPose);
-    const quad = this.height / (art.contentScale || 1);
-    this.sweepPose = new Billboard(art.texture, {
-      cols: 1,
-      rows: 1,
-      mirror: false,
-      width: quad,
-      height: quad,
-      footOffset: (art.pad ?? 0) * quad,
-    });
-    this.sweepPose.visible = false;
-    this.group.add(this.sweepPose);
+    this._poseBoard('sweepPose', art, 1);
   }
 
   /**
@@ -1820,19 +1792,7 @@ export class Player {
    */
   setRiposteArt(art) {
     if (!art?.texture) return;
-    if (this.ripostePose) this.group.remove(this.ripostePose);
-    const quad = this.height / (art.contentScale || 1);
-    this.ripostePose = new Billboard(art.texture, {
-      cols: 1,
-      rows: 1,
-      mirror: true,
-      artFacesRight: true,
-      width: quad,
-      height: quad,
-      footOffset: (art.pad ?? 0) * quad,
-    });
-    this.ripostePose.visible = false;
-    this.group.add(this.ripostePose);
+    this._poseBoard('ripostePose', art, 1, { mirror: true, artFacesRight: true });
     // Handed over after she is already in the headset: put it on now.
     if (this.simLook) this.setSimLook(true);
   }
@@ -1863,8 +1823,18 @@ export class Player {
          because the generator fills the frame whatever the pose - seiza came
          out a head TALLER than the guard. The fractions were set by matching
          the size of the men across the drawings on screen. */
-      const own = KENDO_POSE_H[this.style?.name] ?? {};
-      const quad = this.height * KENDO_SCALE * (own[key] ?? KENDO_CEREMONY_H[key] ?? 1) / (a.contentScale || 1);
+      /* BY THE SHEET SHE IS DRAWN FROM, not by her name: Storm IS Ember's drawings recoloured, and keyed
+         by name she drew every pose at the shared fractions - a kiai two-thirds of Ember's. The table keeps
+         its kitten-named keys; the sheet names the kitten who was drawn. (world-check, the sprite editor) */
+      const drawn = this.style?.sheet ? this.style.sheet[0].toUpperCase() + this.style.sheet.slice(1) : this.style?.name;
+      const own = KENDO_POSE_H[drawn] ?? {};
+      /* ...TIMES WHAT THE SPRITE EDITOR SAVED (/sprites.html, core/spritefix.js), by sheet: `s` on the
+         size, `x` forward and `y` up in her heights. Richard, Oct 2026, after three passes of measured
+         fractions: "let's build a sprite adjustment editor so I can manually align the sprites placement
+         and scale and we can save that". The fractions above stay the defaults. */
+      const fx = poseFix(this.style?.sheet ?? 'ember', KENDO_FILE[key]);
+      const quad = this.height * KENDO_SCALE * (own[key] ?? KENDO_CEREMONY_H[key] ?? 1) / (a.contentScale || 1) * fx.s;
+      const fwd = key === 'kclinchLPose' ? -1 : 1;
       this[key] = new Billboard(a.texture, {
         cols: 1,
         rows: 1,
@@ -1873,10 +1843,11 @@ export class Player {
         artFacesRight: key !== 'kclinchLPose',
         width: quad,
         height: quad,
-        footOffset: (a.pad ?? 0) * quad,
+        footOffset: (a.pad ?? 0) * quad - fx.y * this.height,
         // her feet held still through a mirror — measured, see `feetX`; the
         // reach's lowest ink is the shinai on the floor, so it is pinned by her body
-        footX: (a.feetX ?? (key === 'reachPose' ? torsoX(a) : feetX(a))) * quad,
+        // (and `fx.x` FORWARD: the quad is shifted the other way from its anchor, so the drawing moves on)
+        footX: (a.feetX ?? (key === 'reachPose' ? torsoX(a) : feetX(a))) * quad - fx.x * fwd * this.height,
       });
       this[key].visible = false;
       this.group.add(this[key]);
@@ -1922,6 +1893,10 @@ export class Player {
         quad = this.height * HOME_FUTON_H / (a.contentScale || 1);
       }
       const anim = key === 'teaPose';
+      // ...and the sprite editor's fix (core/spritefix.js), as for the kendo set
+      const fx = poseFix(this.style?.sheet ?? 'ember', HOME_FILE[key]);
+      quad *= fx.s;
+      const fwd = key === 'prayPose' || anim ? 1 : -1;
       this[key] = new Billboard(a.texture, {
         cols: anim ? a.cols : 1,
         rows: anim ? a.rows : 1,
@@ -1934,7 +1909,8 @@ export class Player {
         artFacesRight: key === 'prayPose' || anim,
         width: quad,
         height: quad,
-        footOffset: (a.pad ?? 0) * quad,
+        footOffset: (a.pad ?? 0) * quad - fx.y * this.height,
+        footX: -fx.x * fwd * this.height,
       });
       this[key].visible = false;
       this.group.add(this[key]);
@@ -3334,7 +3310,8 @@ export class Player {
       /* HER GAIT, set from outside: a crawl in Bamboo Infiltration (dream/
          bamboo.js `SNEAK`), planted while she winds up a throw. 1 anywhere
          else, so nothing outside the island has moved. */
-      * (this.gaitK ?? 1);
+      * (this.gaitK ?? 1)
+      * (this.kendoBout ? KENDO_MOVE : 1);
     /* A grown panda is a mount, not a buff — riding one multiplies whatever
        you already had, so a Thunderpaw kitten on a panda is the fastest thing
        in the game. It is ground movement throughout: same gravity, same
@@ -3408,7 +3385,7 @@ export class Player {
        terminal for the height of a double jump and reads as an ordinary drop
        with a sound effect on it; pinning the speed is what makes it a move. */
     if (this.diving) this.velocity.y = -DIVE.speed;
-    else this.velocity.y -= GRAVITY * this._gravityK() * dt;
+    else this.velocity.y -= GRAVITY * this._gravityK() * (this.hopJump?.g ?? 1) * dt;
 
     // --- jump / double jump ---
     if (this.onGround) this.coyote = COYOTE;
@@ -3419,6 +3396,14 @@ export class Player {
     const jumpK = (buff?.jump ?? 1) * (this.pandaMount ? PANDA_JUMP : 1)
       // ...and a happy chick is JUMP HEIGHT (housing/petplay.js).
       * (this.petBoost?.jump ?? 1);
+    /* THE BUNNY'S TURN CAPS HER JUMP (housing/petplay.js `hopJump`): an apex of
+       `h` under gravity times `g`, whatever her clan, orbs and pets would
+       otherwise give her. Richard, Oct 2026: "it is hard to jump like the
+       bunny ... the player jumps higher than the bunny, but still hits the
+       ground at about the same time". Derived here, from her own GRAVITY, so
+       the apex is the number asked for and not a velocity that happens to
+       reach it. */
+    const jumpV = this.hopJump ? Math.sqrt(2 * GRAVITY * this.hopJump.g * this.hopJump.h) : JUMP_V * jumpK;
     /* Leap orbs ADD to whatever the clan gave her, so a Shadowtail kitten
        wearing three of them has six. The count is read wherever jumps are
        refilled, so landing restores all of them however many that is. */
@@ -3432,12 +3417,16 @@ export class Player {
        that fires it — once per hold — not the press: a press with no
        direction is spent on nothing and must not be a dodge a frame later
        when a thumb drifts. The immunity is `kendoDodgeT`, read by
-       `Kendo.sparStrike`; nothing here touches `invulnT`. */
+       `Kendo.sparStrike`; nothing here touches `invulnT`.
+       ...AND HELD IS ENOUGH, Oct 2026: "if jump button is held, then the
+       dodge will happen, player shouldn't need to release and press jump
+       button again to dodge." It was once per hold; now a held button dodges
+       again every `cool` while the stick is over, which is also how a clinch
+       is won (kendo.js `_clinchStep`: each dodge is a shove). */
     if (this.kendoBout) {
       if (this.kendoDodgeCool > 0) this.kendoDodgeCool -= dt;
-      if (!pad.down('jump')) this._kdHeld = false;
-      else if (!this._kdHeld && moving && !(this.kendoDodgeCool > 0) && this.onGround) {
-        this._kdHeld = true;
+      if (pad.down('jump') && moving && !(this.kendoDodgeCool > 0) && this.onGround) {
+        this.kendoDodgeSeq = (this.kendoDodgeSeq ?? 0) + 1;
         this.kendoDodgeT = KENDO_DODGE.immune;
         this._kdMoveT = KENDO_DODGE.t;
         this.kendoDodgeCool = KENDO_DODGE.cool;
@@ -3462,7 +3451,7 @@ export class Player {
       }
     } else if (pad.pressed('jump') && !this.busy && !this.dodgePlanted && !this.arenaBreathAt && !this.parryAt) {
       if (this.coyote > 0 || this.jumpsLeft > 1) {
-        this.velocity.y = JUMP_V * jumpK;
+        this.velocity.y = jumpV;
         this.jumpsLeft = Math.max(1, this.jumpsLeft - 1);
         this.coyote = 0;
         this.squash = 1;
@@ -3470,7 +3459,7 @@ export class Player {
       } else if (this.jumpsLeft > 0) {
         hud?.sfx('doubleJump');
         // Later jumps are a little weaker but add a forward pop.
-        this.velocity.y = JUMP_V * 0.86 * jumpK;
+        this.velocity.y = jumpV * 0.86;
         if (moving) {
           this.velocity.x += Math.sin(this.facing) * 4;
           this.velocity.z += Math.cos(this.facing) * 4;
@@ -6853,6 +6842,8 @@ export class Player {
         pose.mesh.position.y = (this.homeLift ?? 0) + Math.sin(ph * 2.2) * 0.04;
       } else {
         pose.facing = this.facing;
+        // along the bed, not to the lens (gfx.js `alongYaw`)
+        pose.alongYaw = this.facing;
         const b = Math.sin(ph * 1.3) * 0.025;
         pose.mesh.scale.set(1 + b * 0.3, 1 + b, 1);
       }

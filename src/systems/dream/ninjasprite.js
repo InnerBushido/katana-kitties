@@ -3,6 +3,7 @@ import { Billboard } from '../../core/gfx.js';
 import { recolourAtlas } from '../../core/spritesheet.js';
 import { PLAYER_STYLE } from '../../core/palette.js';
 import { NINJA_ATLAS } from './ninjaclips.js';
+import { sheetFix, clipPoseFix } from '../../core/spritefix.js';
 
 /* ---------------------------------------------------------------------------
    ONE ATLAS PER CHARACTER, MANY CLIPS IN IT — Bamboo Infiltration's drawings.
@@ -53,6 +54,9 @@ export class ClipSprite extends Billboard {
     super(texture, { cols: man.cols, rows: man.rows, width: S, height: S, mirror: false, footOffset: man.pad * S });
     this.man = man;
     this.S = S;
+    this.H = height;
+    /** The facing row drawn last (`faceCamera`): whose frame order counts the steps between draws. */
+    this.dirRow = 0;
     this.clip = null;
     this.clipT = 0;
     this.setClip(Object.keys(man.clips)[0]);
@@ -65,35 +69,70 @@ export class ClipSprite extends Billboard {
     if (c !== this.clip) {
       this.clip = c;
       this.clipName = name;
-      /* THE ROPE HANGS FROM HER PAWS. Its frames were stood on their highest
-         paw `pad` from the cell's top; this drops the quad so that line is the
-         origin — the rope — instead of her feet. */
-      this.mesh.position.y = c.align === 'top' ? -this.S * (1 - 2 * this.man.pad) : 0;
     }
+    this._hang();
     this.clipT = t;
     return true;
   }
 
-  /** The frame `clipT` lands on: looped, or held on the last. */
+  /** `ninja/ember:mount` — the key this clip's fixes are saved under. */
+  get clipId() { return `${NINJA_ID.get(this.man) ?? '?'}:${this.clipName}`; }
+
+  /* THE ROPE HANGS FROM HER PAWS. Its frames were stood on their highest
+     paw `pad` from the cell's top; this drops the quad so that line is the
+     origin — the rope — instead of her feet. Then the sprite editor's size
+     and height for the clip (`clipPoseFix`): scaled about that same origin,
+     so a bigger rope clip still hangs from the rope, and lifted in her
+     heights. Every draw, not once per clip — the editor moves the draft under
+     a live sprite, and this is two multiplies. */
+  _hang() {
+    const c = this.clip;
+    const f = clipPoseFix(this.clipId);
+    this.mesh.scale.set(f.s, f.s, 1);
+    this.mesh.position.y = (c.align === 'top' ? -this.S * (1 - 2 * this.man.pad) * f.s : 0) + f.y * this.H;
+  }
+
+  /* THE SPRITE EDITOR'S FRAME ORDER (spritefix.js, key `ninja/ember:sneak`, or `...:sneak@2` for one
+     facing): which drawn frame each step of the clip is, and which steps are mirrored. Asked on every
+     read rather than cached, because the editor changes the draft under a live sprite and the game's
+     file never changes in a build. */
+  get clipFix() {
+    return sheetFix(this.clipId, this.clip.frames, undefined, this.dirRow);
+  }
+
+  /** How many steps the clip plays: its drawn frames, or the saved order's length. */
+  get clipFrames() { return this.clipFix?.order.length ?? this.clip.frames; }
+
+  /** The step `clipT` lands on: looped, or held on the last. */
   get clipFrame() {
     const c = this.clip;
+    const n = this.clipFrames;
     const f = Math.floor(this.clipT * c.fps);
-    return c.loop ? ((f % c.frames) + c.frames) % c.frames : Math.min(c.frames - 1, Math.max(0, f));
+    return c.loop ? ((f % n) + n) % n : Math.min(n - 1, Math.max(0, f));
   }
 
   /** Is a one-shot clip over? */
   get clipDone() {
-    const c = this.clip;
-    return !c.loop && this.clipT * c.fps >= c.frames;
+    return !this.clip.loop && this.clipT * this.clip.fps >= this.clipFrames;
   }
 
   faceCamera(camera) {
     this.getWorldPosition(_wp);
     const camAngle = Math.atan2(camera.position.x - _wp.x, camera.position.z - _wp.z);
     this.mesh.rotation.y = camAngle;
-    this._setCell(this.clip.col + this.clipFrame, this.clip.row + dirIndex(this.facing - camAngle, this.clip.dirs), false);
+    // the facing first: each has its own frame order, and so its own count of steps
+    this.dirRow = dirIndex(this.facing - camAngle, this.clip.dirs);
+    this._hang();
+    const step = this.clipFrame;
+    const fix = this.clipFix;
+    const drawn = fix ? fix.order[step] : step;
+    this._setCell(this.clip.col + drawn, this.clip.row + this.dirRow, !!fix?.flip.includes(step));
   }
 }
+
+/* A manifest entry -> its sheet's id. By ENTRY, not by texture: Storm wears a recoloured copy of
+   Ember's atlas and the same manifest, so she wears Ember's frame orders, like every other fix. */
+const NINJA_ID = new Map(Object.entries(NINJA_ATLAS).map(([id, man]) => [man, `ninja/${id}`]));
 
 /**
  * Which drawn side of `dirs` best matches `rel` (facing minus the lens's

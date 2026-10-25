@@ -149,7 +149,7 @@ anywhere): **no `--host`** (Vite binds `127.0.0.1` only), **Windows Firewall
 blocking inbound Node** (verified allowed on this machine, on the Public
 profile, which is what the house Wi-Fi is classified as), and **router client
 isolation** (usually only on a guest network). Note that `--host` also exposes
-`/tuning.html`, whose save endpoint writes a file into the source tree with no
+`/tuning.html` and `/sprites.html`, whose save endpoints write files into the source tree with no
 authentication — fine at home, not fine in a café. Stop the server after.
 
 On the phone: **landscape** (portrait is gated with a message), the on-screen
@@ -343,6 +343,33 @@ finite number on a key the defaults already have. **Neither the page nor the
 save endpoint exists in a build** — the endpoint is a `configureServer` hook in
 `vite.config.js`, which the production build never calls.
 → [endgame.md](docs/notes/endgame.md)
+
+### Fix a sprite's size and place — `/sprites.html`
+
+The same arrangement for the drawings. `npm run dev`, then **`/sprites.html`**
+(or the debug panel's *SPRITE EDITOR* row).
+
+- **Poses**: every kitten pose in groups — Everyday, Arena, Kendo, Home,
+  Simulator, Bamboo Infiltration — plus Lionheart, laid over another with
+  transparency or slid beside it, with her front foot, body centre and ink top
+  measured and snappable. Each group has a **Stand vs …** sequence; sequences
+  play at 0.05×–4×.
+- **Sheets**: every png under `public/sprites` (asked of the dev server, so a
+  new sheet is listed the day it lands), the ninja atlases broken into their
+  clips. Order and mirror a turnaround's columns, a sheet's cells or a clip's
+  frames; switch door-mat designs off in the game. Play it as a turntable,
+  loop, ping-pong, once, or hold N seconds on each.
+- **Undo/redo** (Ctrl+Z / Ctrl+Y) with the last changes listed, a badge per tab
+  for what is unsaved, and a Save that says how many changes it writes — it
+  writes both tabs at once.
+
+Save writes **`src/spritefix.json`** — overrides only: `poses` keyed by sheet
+(`ember/kiai`, so Storm and Blossom wear Ember's and Frost's fixes), `sheets`
+by the file's path (`kittens/ember/grid_v2`, `ninja/ember:sneak`), and `off`
+for switched-off cells. **Every sheet loaded through `loadSpriteAtlas` honours
+its saved order**, so a sheet added later needs no wiring. The page draws with
+the game's own code, so what lines up there lines up in the game. Dev only,
+twice over, like the balance page. → [art.md](docs/notes/art.md)
 
 ### The numbers, at a glance
 

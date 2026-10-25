@@ -11,7 +11,16 @@ import { PALETTE, mergeParts, valueNoise } from '../world/build.js';
 
 /** What a cane of bamboo is worth. Named because a Snake Way coin is worth
  *  five of them (`COIN_CANES`), and a copy of 25 would drift. */
-export const BAMBOO_POINTS = 25;
+/**
+ * 20% MORE FOR EVERY PROP, Oct 2026. The orb price stopped scaling with the
+ * party (powerorb.js ORB_PRICE: a flat 1300), so four kittens now share a pot
+ * that used to be priced for them; Richard: "We can also add a total of 20%
+ * point increase in the world for all the mischief to help with the scaling
+ * issue." Applied to the base values here, so the pot (`world.pointsTotal`),
+ * the score a knock pays and a bamboo coin all move together.
+ */
+export const MISCHIEF_BONUS = 1.2;
+export const BAMBOO_POINTS = Math.round(25 * MISCHIEF_BONUS);
 
 const SHARED_MAT = toonVertexMat();
 const GEO_CACHE = new Map();
@@ -165,7 +174,7 @@ export class Prop {
     this.katanaOnly = kind === 'bamboo';
     /** Worth more, because cutting it means landing first. Icicles are worth
      *  a little extra too — they're a flight away from anywhere. */
-    this.points = kind === 'bamboo' ? BAMBOO_POINTS : kind === 'icicle' ? 15 : 10;
+    this.points = kind === 'bamboo' ? BAMBOO_POINTS : Math.round((kind === 'icicle' ? 15 : 10) * MISCHIEF_BONUS);
   }
 
   /** Shove it. `dir` is a normalised XZ direction, `power` roughly 1. */

@@ -649,3 +649,143 @@ sense for the player, and 4 directions for longer animations. It became:
 - **Size.** The four atlases total about 10MB (the archer alone is 3.9MB).
   They are lazy-loaded, so `world-check`'s 1.5MB grid limit exempts them.
   Quantizing them or moving to WebP is the follow-up.
+
+## The sprite editor — `/sprites.html`, Oct 2026
+
+Richard: "Since we have so much trouble with getting the correct scale of the
+sprites, let's build a sprite adjustment editor so I can manually align the
+sprites placement and scale and we can save that ... we will re-use this sprite
+scale alignment tool later." Three passes of measured fractions in
+`KENDO_POSE_H` had each been right by its own measure and wrong on screen.
+
+**What it is.** `sprites.html` + `src/sprite-editor.js`, dev only (not a build
+input; the save is `/__spritefix`, a `configureServer` hook). It saves
+`src/spritefix.json`, read by `src/core/spritefix.js`:
+
+- `poses["ember/kiai"] = { s, x, y }`. `s` multiplies the size the code already
+  gives the pose (`KENDO_POSE_H`, `KENDO_CEREMONY_H`, the home sizes). `x` moves
+  the pose FORWARD, the way the drawing points, so it follows the mirror. `y`
+  moves it up. Both are in her heights. These are overrides only; the code's
+  numbers stay the defaults.
+- `sheets["kittens/ember/grid_v2"] = { order, flip }` re-deals a turnaround's
+  columns (keyed by the file's path since the second pass, below). The values
+  are 0-based in the file and 1-based on the page. Every row is treated the
+  same.
+
+**Keyed by sheet, not kitten.** Storm and Blossom are recolours, so they wear
+Ember's and Frost's fixes. Building the editor exposed the same bug in
+`KENDO_POSE_H`, which was keyed by name: Storm had been drawing every kendo pose
+at the shared fractions, with a kiai two-thirds the size of Ember's. It now
+looks the table up by the sheet's kitten.
+
+**It draws with the game's code.** Every pose on the stage is the billboard a
+real `Player` builds in `setKendoArt` / `setHomeArt` with the draft in force
+(`setSpriteFix`). The turntable is a real Player wearing `applySheetFix`'s
+output. The guides (front foot, body centre, ink top) are read off the
+drawing's pixels, mapped through the quad the billboard is wearing that frame.
+The snaps solve numerically (nudge, re-measure, step) instead of inverting
+`footX`'s sign conventions, which differ for the clinch's left-facing drawing
+and the home poses.
+
+**The first values, set with it.** Each was snapped, then checked by eye:
+
+- Ember seiza: body over the cross, `x -0.0055`.
+- Ember riposte (`kparry`): front foot on the guard's front foot, `x 0.1756`.
+- Frost riposte: front foot on the guard's, `x 0.1371`.
+- Frost strike (`kiai`): front foot on the guard's, `x 0.1184`. That also put
+  her torso over the shadow.
+
+The scales are Richard's percentages from the same message.
+
+**A trap it already sprang.** The snap first read B's position off the last
+*rendered* frame. A hidden browser pane renders nothing, so a snap made right
+after changing B's kitten aimed at the previous kitten's foot: Frost's riposte
+went to Ember's foot, 0.778 against 0.638. Snaps now measure on the spot.
+
+**Not applied: the grid_v2 column order in the request.** Richard's example was
+`[1,2,4,7,6,5,8,9]`, dropping columns 3 and 10. Column 3 (0-based 2) is the
+sheet's RIGHT profile, measured in gfx.js `faceCamera`'s tie-breaking comment;
+dropping it leaves the most-used facing on a three-quarter view. The Sheets tab
+previews it on the turntable, so that is his call to make, looking at it.
+**He made it.** His saved `spritefix.json` carries exactly that order,
+`[0,1,3,6,5,4,7,8]`, so the right profile is gone from the in-game turnaround and
+a kitten walking right shows the nearest three-quarter view. It is his file and
+stays as he saved it; the Sheets tab puts it back with *as drawn*.
+
+### The second pass
+
+Richard: "let's add more Sheets to it ... and any future sprite sheets that get
+added to the game", plus undo, a history, unsaved marks, Lionheart, and every
+kitten pose grouped by activity with a "Stand vs ..." each.
+
+- **Sheets are keyed by path** under `public/sprites` (`kittens/ember/grid_v2`,
+  `hospital/cat`), and a clip by `ninja/<id>:<clip>`. The dev server lists every
+  png by reading its IHDR (`listSprites` in vite.config.js), so a new sheet is on
+  the page the day it lands. `LEGACY_SHEET` still reads the two old keys
+  (`ember/grid_v2`, `frost/grid`) and the page renames them on load; world-check
+  fails if the shipped file still uses one.
+- **The fix is applied where sheets load, not per caller.** `loadSpriteAtlas`
+  applies `sheetFix(sheetIdOf(url))` itself, so a future sheet honours its saved
+  order with no wiring. `main.js`'s `_loadSprite` opts out and applies it after
+  its column-count checks, because those count the columns AS DRAWN.
+- **Clips.** `ClipSprite` reads `ninja/<id>:<clip>`: `order` re-deals the
+  frames, `flip` mirrors a step, and a one-shot ends after the frames it PLAYS.
+- **Single-file poses** (eat, bless, warp, breath, scared, sweep, riposte) go
+  through `Player._poseBoard`, which reads `poses[...]` like the kendo ones, and
+  the simulator's `vr_*` poses take `s` and `y`.
+- **`off`** switches cells off in the game. Today only the door mats read it
+  (`enabledOf('housing/doormats', DOOR_MATS)`), and it can never empty a set: the
+  last one on stays on. A mat already laid in a switched-off design draws the
+  default instead; nothing is deleted from a save.
+- **Flip takes IMAGE numbers.** Order lists images; flip used to list SLOTS, so
+  "1,2,4,7" with flip "3" mirrored image 4. The page now takes the image number
+  and stores the slot, with a tooltip on both fields.
+- **"B in front" did nothing** because `renderOrder` was set on the Billboard's
+  Object3D, which three.js does not sort by; it has to be on `bb.mesh`. It is now
+  an "A on top / B on top" toggle, and world-check pins the mesh line.
+- **The turntable button did work**, but only to stop the preview following the
+  slot she was clicking, which is invisible. It is now one of five preview
+  modes: turntable, loop, ping-pong, once, and hold N seconds on each.
+- **Undo/redo** keeps the whole draft per step (Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z),
+  coalescing drags within 700 ms. The last changes are listed and clickable,
+  each tab carries a count of what is unsaved, *revert* buttons are disabled
+  when there is nothing to revert, Save says how many changes on which tab it
+  writes, and switching tabs with changes on the one being left says that Save
+  writes both.
+- **Lionheart** is drawn off his own sheet at `EDITOR_LION_H`, and the page
+  zooms out for him; world-check pins the editor's sizes to the game's.
+
+### Third pass: one facing at a time, a clip's height, and a camera that moves
+
+Richard, Oct 2026: "changing the order and flip values seems to be applying it
+to all 'facing' animations in the clip, it should only apply it to each
+individual facing animations"; "there is no way for me to edit the height of
+the two clips, mount and rope"; "is there a way to tilt and pan the camera with
+mouse or some keyboard commands?"
+
+- **A clip's order is per FACING.** The Sheets tab now writes
+  `ninja/ember:mount@2` (`clipKey`) for the facing picked. `sheetFix(id, n,
+  fix, row)` tries that key first, then the bare `ninja/ember:mount`, so the
+  file saved before keeps meaning what it meant for every facing that has none
+  of its own. *As drawn* on a facing that would fall back writes an explicit
+  1..n; deleting the key would bring the clip's order straight back. *This order
+  for every facing* writes the bare key and removes the per-facing ones.
+  `ClipSprite.faceCamera` picks the facing row FIRST, because the facing decides
+  whose order counts the steps. The vite cleaner's `KEY` takes the `@n`, or the
+  save would have silently dropped every one.
+- **A clip takes `{ s, y }`** under `poses["ninja/ember:mount"]` (`clipPoseFix`),
+  on the Poses tab like any pose: scale and height, never forward (it is drawn
+  from four or eight sides). It is applied to the MESH in `ClipSprite._hang`,
+  every draw: `y` in her heights, `s` about the origin. The origin is her feet
+  for a standing clip and the rope for a hanging one, so a bigger rope clip still
+  hangs from the rope. world-check measures the paw line staying on 0.
+- **The view pans and tilts.** Right- or middle-drag pans (so does a left drag
+  wherever there is nothing of hers to drag), Shift+right-drag or Shift+wheel
+  tilts, `I J K L` pan, `T G` tilt, `R` resets. Pan slides the FRUSTUM. **There
+  is no orbit, on purpose:** every billboard picks its drawing from the lens's
+  bearing, so a lens moved round her would change which drawing is on show.
+  Turning her is the facing button and the Sheets tab's turntable.
+
+**Trap: the hidden pane.** A hidden browser pane renders no rAF frames, so the
+readout stayed `undefined` and an `img.decode()` never resolved. The page has
+`spriteEditor.frame()` for a synchronous frame when it is being driven.

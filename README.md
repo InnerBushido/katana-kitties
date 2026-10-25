@@ -820,11 +820,11 @@ get it off your sister. With four there are duplicates, because one Ward between
 four kittens means three of you could never find one.
 
 **A dealer opens a stall in the market.** He buys and sells for the points you
-earned knocking things over — but he is expensive on purpose: every point in
-the world is 4550, so a fair split buys you *three* orbs. He keeps **four each
-of Gale, Long Cut, Adamant and Leap** — the four worth stacking — and **one
-each of the four moves**. Four of anything costs 2600, which is more than you
-will ever have. Selling gives you 75% back, and he takes a spare out of your
+earned knocking things over — but he is expensive on purpose: a Kotodama is
+**1300 points**, however many of you are playing, and every point in the world
+adds up to about 5460. He keeps **four each of Gale, Long Cut, Adamant and
+Leap** — the four worth stacking — and **one each of the four moves**. Four of
+anything costs 5200, which is nearly the whole world. Selling gives you 75% back, and he takes a spare out of your
 bag before he takes one off you.
 
 **So you trade.** Open **CHARACTER PROFILE** from the pause menu and you each

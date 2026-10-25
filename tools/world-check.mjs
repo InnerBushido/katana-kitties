@@ -50,7 +50,7 @@ import {
   snapshot, describe, restore,
   castRow, applyCast, meaningful, newSessionId, landAt,
 } from '../src/systems/savegame.js';
-import { Prop, BAMBOO_POINTS } from '../src/entities/prop.js';
+import { Prop, BAMBOO_POINTS, MISCHIEF_BONUS } from '../src/entities/prop.js';
 import { STEAL, DBREATH, ARENA_POWERS, BreathTally, arenaPowerFor } from '../src/entities/clanpower.js';
 import {
   SHRINE_DAIS, SHRINE_STEPS, SHRINE_GATE,
@@ -116,6 +116,7 @@ import {
 } from '../src/systems/arenaquest.js';
 import { MenuNav } from '../src/systems/menunav.js';
 import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss, cssFor } from '../src/core/palette.js';
+import { poseFix, sheetFix, setSpriteFix, SPRITE_FIX, sheetIdOf, isOff, enabledOf, LEGACY_SHEET } from '../src/core/spritefix.js';
 import {
   splitLayout, mapWidth, mapSpot, assignMaps, nearestMap, keyMaps, fitDistance, stablePanes,
   cardRect,
@@ -302,7 +303,7 @@ console.log('\n--- bamboo ---');
 const bamboo = world.props.filter((p) => p.kind === 'bamboo');
 line('bamboo props', bamboo.length);
 ok('bamboo is katana-only and worth more',
-  bamboo.length > 20 && bamboo.every((p) => p.katanaOnly && p.points === 25));
+  bamboo.length > 20 && bamboo.every((p) => p.katanaOnly && p.points === BAMBOO_POINTS && BAMBOO_POINTS === Math.round(25 * MISCHIEF_BONUS)));
 ok('nothing else is katana-only',
   world.props.filter((p) => p.kind !== 'bamboo').every((p) => !p.katanaOnly));
 const homeGrove = bamboo.filter((p) => Math.hypot(p.home.x - 58, p.home.z - 44) < 12);
@@ -1345,7 +1346,7 @@ console.log('\n--- the snow island is no longer empty ---');
   const icicles = world.props.filter((p) => p.kind === 'icicle');
   line('icicles', icicles.length);
   ok('icicles exist and are worth more than a crate',
-    icicles.length > 15 && icicles.every((p) => p.points === 15));
+    icicles.length > 15 && icicles.every((p) => p.points === Math.round(15 * MISCHIEF_BONUS) && p.points > Math.round(10 * MISCHIEF_BONUS)));
   ok('they are all on the frost island', icicles.every(on));
   ok('the frost island has plenty to break', world.props.filter(on).length >= 20,
     `${world.props.filter(on).length} props`);
@@ -2384,6 +2385,36 @@ console.log('\n--- clan buffs actually do something ---');
   for (let i = 0; i < 10; i++) leap.update(1 / 60, pad0, world, [], null);
   line('jumps after landing: plain vs Shadowtail', `2 vs ${leap.jumpsLeft}`);
   ok('Shadowtail lands with three jumps', leap.jumpsLeft === 3);
+
+  /* THE BUNNY'S TURN CAPS HER JUMP (housing/petplay.js `hopJump`). Richard, Oct 2026: "the player jumps
+     1.25x's higher than the bunny and gravity is 1.25x's stronger". A real jump, with Shadowtail's lift on
+     her to show the cap wins over a clan: the apex is the bunny's times hopUp, and she is down faster than
+     a free jump. Airtime is printed — with the bunny's 0.3s hop, hers is longer (Richard's "about the same
+     time" asks for a lower apex or a stronger pull than 1.25 and 1.25 give). */
+  {
+    const { PLAY: PP } = await import('../src/systems/housing/petplay.js');
+    const jumpOnce = (p) => {
+      for (let i = 0; i < 10; i++) p.update(1 / 60, pad0, world, [], null);
+      const y0 = p.position.y;
+      let top = y0, t = 0;
+      // HELD to the top: a jump let go early is cut short (player.js), which is not what is being measured
+      const jp = { mx: 0, my: 0, down: (a) => a === 'jump', pressed: (a) => a === 'jump' && t === 0 };   // one press: a second is the double jump
+      for (; t < 3; t += 1 / 240) {
+        p.update(1 / 240, jp, world, [], null);
+        top = Math.max(top, p.position.y);
+        if (t > 0.05 && p.onGround) break;
+      }
+      return { apex: top - y0, air: t };
+    };
+    const capped = mk(byId('leap'));
+    capped.hopJump = { h: PP.hopH * PP.hopUp, g: PP.hopGrav };
+    const hop = jumpOnce(capped);
+    const free = jumpOnce(mk(null));
+    line('bunny-turn jump: apex / airtime (free jump)', `${hop.apex.toFixed(3)} / ${hop.air.toFixed(2)}s  (${free.apex.toFixed(2)} / ${free.air.toFixed(2)}s), the bunny ${PP.hopH} / ${PP.hopT}s`);
+    ok('on the bunny’s turn her jump tops out at 1.25x its hop, under 1.25x gravity, whatever her clan',
+      PP.hopUp === 1.25 && PP.hopGrav === 1.25 && Math.abs(hop.apex - PP.hopH * PP.hopUp) < 0.03 && hop.air < free.air,
+      `apex ${hop.apex.toFixed(3)} vs ${(PP.hopH * PP.hopUp).toFixed(3)}`);
+  }
 
   // breath — the cone reaches further
   const dr = new Dragon(new THREE.Texture(), 0, spawn.y, 40, { breed: BREEDS[1] });
@@ -3473,7 +3504,7 @@ console.log('\n--- the panda in the ring ---');
       const psrc = readFileSync(new URL('../src/entities/player.js', import.meta.url), 'utf8');
       ok('返 both stance drawings hold the blade out to the RIGHT, which is what the Billboard is told',
         reach.every((r) => r.right - r.left > 0.1)
-        && /setRiposteArt\(art\) \{[\s\S]{0,400}mirror: true,\s*artFacesRight: true,/.test(psrc),
+        && /setRiposteArt\(art\) \{[\s\S]{0,400}this\._poseBoard\('ripostePose', art, 1, \{ mirror: true, artFacesRight: true \}\);/.test(psrc),
         reach.map((r) => `${r.s} ${r.left.toFixed(2)}/${r.right.toFixed(2)}`).join(' '));
       const m = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
       const files = ['ember', 'frost'].map((s) => `kittens/${s}/riposte.png`);
@@ -3525,8 +3556,8 @@ console.log('\n--- the panda in the ring ---');
       const kparry = ['ember', 'frost'].map((s) => ink(`kittens/${s}/kparry`));
       ok('剣 both kendo guards, both riposte guards and both kiai face RIGHT — by the shinai, or by the tail behind a wind-up — which is what the Billboard is told',
         guard.every((r) => r.reach > 0.1) && kparry.every((r) => r.reach > 0.05) && kiai.every((r) => r.reach > 0.05 || r.tail > 0.1)
-        // 2000, not 900: the ceremony's sizing comment now sits above the Billboard
-        && /setKendoArt\(art\) \{[\s\S]{0,2000}mirror: true,[^\n]*\n[^\n]*\n\s*artFacesRight: key !== 'kclinchLPose',/.test(psrc),
+        // 2800, not 900: the ceremony's sizing comment, and the sprite editor's, now sit above the Billboard
+        && /setKendoArt\(art\) \{[\s\S]{0,2800}mirror: true,[^\n]*\n[^\n]*\n\s*artFacesRight: key !== 'kclinchLPose',/.test(psrc),
         [...guard, ...kparry, ...kiai].map((r) => `${r.f} ${r.reach.toFixed(3)}/${r.tail.toFixed(3)}`).join(' '));
       /* THE GUARD KNOCKED ASIDE AND THE CLINCH, Oct 2026. The clinch is two
          drawings a kitten, one for each side of the crossed shinai, and two of
@@ -6068,6 +6099,281 @@ console.log('\n--- the balance file, and what a typo in it may do ---');
   ok('...and nothing has made tuning.html a build input', !/input\s*:/.test(vite));
   ok('...and the save endpoint is still dev-server only',
     /configureServer\(server\)/.test(vite) && !/apply:\s*'build'/.test(vite));
+}
+
+console.log('\n--- the sprite editor: what it saves, and what the game does with it ---');
+{
+  /* /sprites.html writes src/spritefix.json and core/spritefix.js reads it
+     (Richard, Oct 2026: "let's build a sprite adjustment editor so I can
+     manually align the sprites placement and scale and we can save that").
+     A file a page writes is a file that will one day hold something odd, so
+     every field degrades to the code's own number rather than NaN-ing a quad
+     or vanishing a kitten - and these are asked of the real functions. */
+  const one = (f) => ({ poses: { 'ember/kiai': f } });
+  const bad = poseFix('ember', 'kiai', one({ s: 'big', x: NaN, y: Infinity }));
+  ok('a sprite fix that is not a finite number is the code’s number', bad.s === 1 && bad.x === 0 && bad.y === 0, JSON.stringify(bad));
+  ok('...and a scale of nothing, or of a giant, is no scale at all',
+    poseFix('ember', 'kiai', one({ s: 0 })).s === 1 && poseFix('ember', 'kiai', one({ s: 50 })).s === 1
+    && poseFix('ember', 'kiai', one({ s: 0.5 })).s === 0.5);
+  ok('...and nothing saved changes nothing', JSON.stringify(poseFix('frost', 'kiai', {})) === '{"s":1,"x":0,"y":0}');
+  const order = (o, flip) => ({ sheets: { 'ember/grid_v2': { order: o, flip } } });
+  ok('a column order naming a column the sheet has not got is no reorder at all',
+    sheetFix('ember/grid_v2', 10, order([0, 1, 10])) === null && sheetFix('ember/grid_v2', 10, order([])) === null
+    && sheetFix('ember/grid_v2', 10, order([0, 1.5])) === null && sheetFix('ember/grid_v2', 10, {}) === null);
+  // Richard's example, "[1,2,4,7,6,5,8,9]", 1-based on the page and 0-based in the file
+  const sf = sheetFix('ember/grid_v2', 10, order([0, 1, 3, 6, 5, 4, 7, 8], [2, 9, -1]));
+  ok('...and a good one comes through, with the mirrors it has no column for dropped',
+    sf?.order.join() === '0,1,3,6,5,4,7,8' && sf.flip.join() === '2', JSON.stringify(sf));
+
+  /* THE FIX REACHES THE QUAD, through a real Player's `setKendoArt`: `s`
+     scales the drawing, `y` lifts it in her heights, and `x` moves it
+     FORWARD - the way the drawing points, so the clinch's left-facing
+     drawing moves the other way on its unmirrored quad. Keyed by SHEET:
+     Storm is Ember's drawings recoloured, so she wears Ember's fix. */
+  const tex = new THREE.Texture();
+  tex.image = { width: 256, height: 256 };
+  const art = { texture: tex, contentScale: 0.8, pad: 0.05, feetX: 0.02 };
+  const build = (fix, style = PLAYER_STYLE[0]) => {
+    setSpriteFix(fix);
+    const p = new Player({ texture: new THREE.Texture(), index: 0, cols: 8, rows: 4, mirror: false, style, height: 2.9 });
+    p.setKendoArt({ guard: art, kiai: art, kclinchL: art });
+    setSpriteFix(SPRITE_FIX);
+    return p;
+  };
+  const box = (b) => { const g = b._footGeo?.[0] ?? b.mesh.geometry; g.computeBoundingBox(); return g.boundingBox; };
+  const mid = (b) => { const q = box(b); return (q.min.x + q.max.x) / 2; };
+  const fix = { s: 0.5, x: 0.1, y: 0.2 };
+  const p0 = build({});
+  const p1 = build({ poses: { 'ember/kiai': fix, 'ember/kclinchL': fix } });
+  const pS = build({ poses: { 'ember/kiai': fix } }, PLAYER_STYLE[2]);
+  const q0 = p0.kiaiPose.width;
+  const q1 = p1.kiaiPose.width;
+  // where the quad's centre would be at that size with no `x`, so only `x` is measured
+  const at = (q) => -(art.feetX * q);
+  ok('a saved scale draws the pose that much bigger or smaller', Math.abs(q1 / q0 - 0.5) < 1e-9, `${q0.toFixed(3)} -> ${q1.toFixed(3)}`);
+  ok('...a saved lift raises her feet by that many of her heights',
+    Math.abs((box(p1.kiaiPose).min.y - (-art.pad * q1)) - 0.2 * 2.9) < 1e-6, box(p1.kiaiPose).min.y.toFixed(3));
+  ok('...a saved forward moves her the way the drawing points, the clinch’s left one included',
+    Math.abs(mid(p1.kiaiPose) - at(q1) - 0.29) < 1e-6 && Math.abs(mid(p1.kclinchLPose) - at(p1.kclinchLPose.width) + 0.29) < 1e-6,
+    `${(mid(p1.kiaiPose) - at(q1)).toFixed(3)} / ${(mid(p1.kclinchLPose) - at(p1.kclinchLPose.width)).toFixed(3)}`);
+  ok('...and Storm, drawn from Ember’s sheet, wears Ember’s fix', Math.abs(pS.kiaiPose.width - q1) < 1e-9 && p1.kendoPose.width === p0.kendoPose.width);
+  ok('...and the editor’s draft is gone again once it has drawn', poseFix('ember', 'kiai').s === (SPRITE_FIX.poses?.['ember/kiai']?.s ?? 1));
+
+  /* THE FILE AS SHIPPED is what the page's cleaner would write: no key that
+     is not `sheet/file`, nothing the cleaner would drop, no scale refused. */
+  const { cleanSpriteFix } = await import('../vite.config.js');
+  const shipped = JSON.parse(readFileSync(new URL('../src/spritefix.json', import.meta.url), 'utf8'));
+  ok('src/spritefix.json is exactly what the save would write',
+    JSON.stringify(cleanSpriteFix(shipped)) === JSON.stringify({ poses: shipped.poses ?? {}, sheets: shipped.sheets ?? {}, off: shipped.off ?? {} }));
+  ok('...and no sheet in it is under a key the game no longer reads by (the first editor\u2019s `ember/grid_v2`)',
+    Object.keys(shipped.sheets ?? {}).every((k) => !Object.values(LEGACY_SHEET).includes(k)), Object.keys(shipped.sheets ?? {}).join());
+  ok('...and every scale in it is one the game will use', Object.values(shipped.poses ?? {}).every((f) => f.s === undefined || (f.s > 0.05 && f.s < 20)));
+  const dirty = cleanSpriteFix({
+    poses: { '../x': { s: 1 }, 'ember/kiai': { s: 'a', x: 0.123456789 } },
+    sheets: { 'ember/grid_v2': { order: [1, '2', -1, 3.5], flip: 'x' }, 'Bad Key': { order: [1] } },
+  });
+  ok('the save keeps numbers on sheet/file keys and drops everything else',
+    JSON.stringify(dirty) === '{"poses":{"ember/kiai":{"x":0.1235}},"sheets":{"ember/grid_v2":{"order":[1],"flip":[]}},"off":{}}', JSON.stringify(dirty));
+  /* THE SECOND PASS'S KEYS: a sheet by its path under public/sprites, a ninja clip by path and clip, and
+     the `off` lists - names or indices, each once, nothing that could not be either. */
+  const keys = cleanSpriteFix({
+    sheets: { 'kittens/ember/grid_v2': { order: [0, 2] }, 'ninja/ember:sneak': { order: [3, 2, 1, 0], flip: [1] }, 'ninja/ember:Sneak Bad': { order: [0] } },
+    off: { 'housing/doormats': ['koi', 'koi', 3, 'x y', -1, 2.5, 'risingsun'], '../etc': ['a'], 'housing/empty': [] },
+  });
+  ok('...and keeps the second editor\u2019s: sheet paths, clip keys, and the switched-off lists',
+    JSON.stringify(keys) === '{"poses":{},"sheets":{"kittens/ember/grid_v2":{"order":[0,2],"flip":[]},"ninja/ember:sneak":{"order":[3,2,1,0],"flip":[1]}},"off":{"housing/doormats":["koi",3,"risingsun"]}}', JSON.stringify(keys));
+  const { listSprites } = await import('../vite.config.js');
+  const listed = listSprites();
+  ok('the editor\u2019s sheet list is every png under public/sprites, with its size',
+    listed.length >= 100 && listed.some((s) => s.id === 'housing/doormats' && s.w === 640 && s.h === 800)
+    && listed.some((s) => s.id === 'kittens/ember/grid_v2') && listed.every((s) => s.w > 0 && s.h > 0 && !/\.png$/.test(s.id)), `${listed.length} sheets`);
+
+  /* DEV ONLY, like the balance page: not a build input, the endpoint a
+     configureServer hook, and its debug-panel row inside the same DEV guard. */
+  const vite = readFileSync(new URL('../vite.config.js', import.meta.url), 'utf8').replace(/\r/g, '');
+  ok('...and the sprite save is dev-server only too',
+    /const spriteServer = \{[\s\S]{0,120}configureServer\(server\) \{\s*server\.middlewares\.use\('\/__spritefix'/.test(vite)
+    && /plugins: \[tuningServer, spriteServer\]/.test(vite) && !/input\s*:/.test(vite));
+  const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8').replace(/\r/g, '');
+  const rowFrom = main.indexOf('const TUNING_ROW =');
+  const row = rowFrom < 0 ? '' : main.slice(rowFrom, main.indexOf('\n\n', rowFrom));
+  ok('...and the debug panel reaches the sprite editor only in a dev build',
+    row.includes('import.meta.env?.DEV') && row.includes('data-open="/sprites.html"') && /\n\s*:\s*'';$/.test(row));
+  /* EVERY SHEET THE GAME LOADS honours a saved order (Richard: "and any future sprite sheets that get
+     added to the game"): `loadSpriteAtlas` re-deals by the file's own path, so no call site has to
+     remember. `_loadSprite` asks its counts of the sheet AS DRAWN and deals it after - a saved order
+     that drops two of ten columns must not read as a broken sheet and swap her for the placeholder. */
+  ok('a sheet\u2019s key is its path under public/sprites',
+    sheetIdOf('/sprites/kittens/ember/grid_v2.png') === 'kittens/ember/grid_v2' && sheetIdOf('/sprites/hospital/cat.png?v=2') === 'hospital/cat'
+    && sheetIdOf('/elsewhere/x.png') === null && sheetIdOf(undefined) === null);
+  ok('...and the first editor\u2019s two keys are still read, so a file it saved keeps working',
+    sheetFix('kittens/ember/grid_v2', 10, { sheets: { 'ember/grid_v2': { order: [1, 0] } } })?.order.join() === '1,0'
+    && sheetFix('kittens/ember/grid_v2', 10, { sheets: { 'kittens/ember/grid_v2': { order: [2] }, 'ember/grid_v2': { order: [1, 0] } } })?.order.join() === '2');
+  const sheetSrc = readFileSync(new URL('../src/core/spritesheet.js', import.meta.url), 'utf8').replace(/\r/g, '');
+  ok('every sheet loaded through loadSpriteAtlas is re-dealt by its saved fix',
+    /export async function loadSpriteAtlas\(url, opts = \{\}\) \{\n\s*const atlas = await packAtlas\(url, opts\);\n\s*if \(opts\.sheetFix === false \|\| !atlas\) return atlas;\n\s*return applySheetFix\(atlas, sheetFix\(sheetIdOf\(url\), atlas\.cols\), THREE\);/.test(sheetSrc));
+  ok('...and the kittens\u2019 loader counts the sheet as drawn, then deals it',
+    /cell: 384, maxAtlas: this\.device\.atlasMax, sheetFix: false,[\s\S]{0,700}return applySheetFix\(a, sheetFix\(sheetIdOf\(url\), a\.cols\), THREE\);/.test(main)
+    && /this\._spawnPlayers\(ember, frost\);/.test(main) && !/fixed\(ember/.test(main));
+
+  /* A BAMBOO INFILTRATION CLIP plays the saved FRAME order (`ninja/ember:sneak`) - asked of a real
+     ClipSprite: which cell `_setCell` lands on at each step, mirrored or not, and when a one-shot ends. */
+  const { ClipSprite } = await import('../src/systems/dream/ninjasprite.js');
+  const { NINJA_ATLAS } = await import('../src/systems/dream/ninjaclips.js');
+  const ctex = new THREE.Texture();
+  ctex.image = { width: 2040, height: 1632 };
+  const clipCells = (fix, name, facing = 0) => {
+    setSpriteFix(fix);
+    const c = new ClipSprite(ctex, NINJA_ATLAS.ember, 2.9);
+    c.setClip(name);
+    c.facing = facing;
+    c.faceCamera({ position: new THREE.Vector3(0, 0, 40) }); // the facing first: it decides whose order counts
+    const out = [];
+    for (let k = 0; k < c.clipFrames; k++) {
+      c.clipT = (k + 0.5) / c.clip.fps;
+      c.faceCamera({ position: new THREE.Vector3(0, 0, 40) });
+      const rx = c.tex.repeat.x;
+      const u0 = rx < 0 ? c.tex.offset.x + rx : c.tex.offset.x;
+      out.push(`${Math.floor((u0 + Math.abs(rx) / 2) * c.cols) - c.clip.col}${rx < 0 ? 'F' : ''}`);
+    }
+    const len = c.clipFrames / c.clip.fps;
+    c.clipT = len - 0.01;
+    const before = c.clipDone;
+    c.clipT = len + 0.01;
+    const after = c.clipDone; // asked while the fix is in force: ClipSprite reads it on every call
+    setSpriteFix(SPRITE_FIX);
+    return { cells: out.join(), done: !before && after };
+  };
+  ok('a ninja clip with no saved order plays its frames as drawn',
+    clipCells({}, 'sneak').cells === '0,1,2,3', clipCells({}, 'sneak').cells);
+  const rev = clipCells({ sheets: { 'ninja/ember:sneak': { order: [3, 2, 1, 0], flip: [2] } } }, 'sneak');
+  ok('...and with one, plays it - mirrors where the order says',
+    rev.cells === '3,2,1F,0', rev.cells);
+  const cut = clipCells({ sheets: { 'ninja/ember:mount': { order: [0, 2, 4] } } }, 'mount');
+  ok('...and a one-shot ends after the frames it PLAYS, not the frames drawn',
+    cut.cells === '0,2,4' && cut.done, JSON.stringify(cut));
+  ok('...and an order naming a frame the clip has not got is no order',
+    clipCells({ sheets: { 'ninja/ember:sneak': { order: [0, 9] } } }, 'sneak').cells === '0,1,2,3');
+
+  /* ONE FACING AT A TIME (Richard, Oct 2026: "changing the order and flip values seems to be applying it
+     to all 'facing' animations in the clip, it should only apply it to each individual facing"). A
+     facing's own key wins for that facing and touches no other; one with none plays the clip's. */
+  const dirs = NINJA_ATLAS.ember.clips.mount.dirs;
+  const right = (1 / dirs) * Math.PI * 2; // facing row 1, square to a lens on +z
+  const perFacing = { sheets: { 'ninja/ember:mount': { order: [4, 3, 2, 1, 0] }, 'ninja/ember:mount@1': { order: [0, 1, 2], flip: [1] } } };
+  ok('a facing’s own frame order plays on that facing',
+    clipCells(perFacing, 'mount', right).cells === '0,1F,2', clipCells(perFacing, 'mount', right).cells);
+  ok('...and not on any other: they play the whole clip’s',
+    clipCells(perFacing, 'mount', 0).cells === '4,3,2,1,0', clipCells(perFacing, 'mount', 0).cells);
+  ok('...and a facing’s order alone leaves the others as drawn',
+    clipCells({ sheets: { 'ninja/ember:mount@1': { order: [1, 0] } } }, 'mount', 0).cells === '0,1,2,3,4');
+
+  /* A CLIP'S HEIGHT AND SIZE ("there is no way for me to edit the height of the two clips, mount and
+     rope"): `poses["ninja/ember:mount"]` = { s, y }, on the mesh. A hanging clip scales about the
+     rope, so a bigger rope clip still hangs from the rope - its paw line stays on the origin. */
+  const hung = (fix, name) => {
+    setSpriteFix(fix);
+    const c = new ClipSprite(ctex, NINJA_ATLAS.ember, 2.9);
+    c.setClip(name);
+    c.faceCamera({ position: new THREE.Vector3(0, 0, 40) });
+    setSpriteFix(SPRITE_FIX);
+    const g = c.mesh.geometry;
+    g.computeBoundingBox();
+    // where the paw line (`pad` below the quad's top) lands, and the quad's height, as drawn
+    const top = c.mesh.position.y + g.boundingBox.max.y * c.mesh.scale.y;
+    return { y: c.mesh.position.y, h: (g.boundingBox.max.y - g.boundingBox.min.y) * c.mesh.scale.y, paw: top - c.man.pad * c.S * c.mesh.scale.y };
+  };
+  const m0 = hung({}, 'mount');
+  const m1 = hung({ poses: { 'ninja/ember:mount': { s: 1.5, y: 0.25, x: 9 } } }, 'mount');
+  ok('a clip’s saved height lifts it that many of her heights, and its scale sizes it',
+    Math.abs(m1.y - m0.y - 0.25 * 2.9) < 1e-9 && Math.abs(m1.h / m0.h - 1.5) < 1e-9, `${m0.y} -> ${m1.y}, ${m0.h.toFixed(3)} -> ${m1.h.toFixed(3)}`);
+  const r0 = hung({}, 'rope');
+  const r1 = hung({ poses: { 'ninja/ember:rope': { s: 1.4 } } }, 'rope');
+  ok('...and a hanging clip scaled still hangs from the rope (its paws on the origin)',
+    Math.abs(r0.paw) < 1e-6 && Math.abs(r1.paw) < 1e-6 && Math.abs(r1.h / r0.h - 1.4) < 1e-9, `${r0.paw} ${r1.paw}`);
+  const cleaned = cleanSpriteFix({ sheets: { 'ninja/ember:mount@2': { order: [1, 0] }, 'ninja/ember:mount@x': { order: [0] } }, poses: { 'ninja/ember:rope': { s: 1.2, y: 0.1 } } });
+  ok('...and the save keeps a facing’s key and a clip’s pose fix',
+    JSON.stringify(cleaned) === '{"poses":{"ninja/ember:rope":{"s":1.2,"y":0.1}},"sheets":{"ninja/ember:mount@2":{"order":[1,0],"flip":[]}},"off":{}}', JSON.stringify(cleaned));
+  const edSrc = readFileSync(new URL('../src/sprite-editor.js', import.meta.url), 'utf8').replace(/\r/g, '');
+  ok('...and the editor edits a clip one facing at a time, and gives a clip size and height',
+    /if \(kind === 'clip'\) \{ S\.baseId = id; S\.fixId = clipKey\(id, S\.row\); \}/.test(edSrc)
+    && /P\.kind === 'vrsingle' \|\| P\.kind === 'clip'\) return 'sy'/.test(edSrc)
+    && /if \(P\.kind === 'clip'\) return `ninja\/\$\{this\.sheet\}:\$\{P\.clip\}`/.test(edSrc));
+  /* "is there a way to tilt and pan the camera with mouse or some keyboard commands?" - and no orbit:
+     a lens moved off its bearing would change which drawing every billboard picks. */
+  ok('...and its view pans and tilts by mouse and key, by sliding the frustum and never the lens’s bearing',
+    /e\.button === 1 \|\| e\.button === 2/.test(edSrc) && /low === 'j' \|\| low === 'l'/.test(edSrc) && /low === 't' \|\| low === 'g'/.test(edSrc)
+    && /const mid = \(sheetMode \? 0 : B\.dx \/ 2\) \+ panX;/.test(edSrc) && /cam\.position\.set\(0, /.test(edSrc));
+
+  /* THE SINGLE POSES TAKE A FIX TOO (player.js `_poseBoard`): the eat crouch, the bless, the warp and
+     the rest, as the kendo set does - and in the headset, size and height only. */
+  const simArt = { texture: tex, contentScale: 0.8, pad: 0.05 };
+  const poser = (fix) => {
+    setSpriteFix(fix);
+    const p = new Player({ texture: new THREE.Texture(), index: 0, cols: 8, rows: 4, mirror: false, style: PLAYER_STYLE[0], height: 2.9 });
+    p.setEatArt(art);
+    p.setRiposteArt(art);
+    p.setSimPoseArt({ eat: simArt });
+    setSpriteFix(SPRITE_FIX);
+    return p;
+  };
+  const s0 = poser({});
+  const s1 = poser({ poses: { 'ember/eat': { s: 0.5, y: 0.2 }, 'ember/riposte': { x: 0.1 }, 'ember/vr_eat': { s: 2, y: 0.1 } } });
+  ok('a saved fix on a single pose draws it that size and lifts it, as on the kendo set',
+    Math.abs(s1.eatPose.width / s0.eatPose.width - 0.5) < 1e-9
+    && Math.abs((box(s1.eatPose).min.y - (-art.pad * s1.eatPose.width)) - 0.2 * 2.9) < 1e-6);
+  ok('...and moves the Riposte stance forward, the way its blade points',
+    Math.abs(mid(s1.ripostePose) - mid(s0.ripostePose) - 0.29) < 1e-6, (mid(s1.ripostePose) - mid(s0.ripostePose)).toFixed(3));
+  ok('...and nothing saved is the quad it always was (no footX pair on a pose with no fix)',
+    !s0.eatPose._footGeo && !s0.ripostePose._footGeo);
+  setSpriteFix({ poses: { 'ember/vr_eat': { s: 2, y: 0.1 } } });
+  s1.setSimLook(true);
+  const v1 = s1.eatPose.width;
+  const vy = (() => { const g = s1.eatPose.mesh.geometry; g.computeBoundingBox(); return g.boundingBox.min.y; })();
+  setSpriteFix(SPRITE_FIX);
+  s0.setSimLook(true);
+  ok('...and in the headset its vr_ fix: size and height',
+    Math.abs(v1 / s0.eatPose.width - 2) < 1e-9 && Math.abs(vy - (-simArt.pad * v1 + 0.1 * 2.9)) < 1e-6, `${v1.toFixed(3)} ${vy.toFixed(3)}`);
+
+  /* THE DOOR MATS' SWITCHES: a design switched off is not offered and not dealt, a home that already
+     chose it draws the first that is on and KEEPS its choice, and a list can never switch off them all. */
+  const { DOOR_MATS } = await import('../src/systems/housing/catalog.js');
+  const offKoi = { off: { 'housing/doormats': ['koi'] } };
+  ok('a switched-off door mat is not offered',
+    isOff('housing/doormats', 'koi', offKoi) && !isOff('housing/doormats', 'sakura', offKoi)
+    && enabledOf('housing/doormats', DOOR_MATS, undefined, offKoi).length === DOOR_MATS.length - 1
+    && !enabledOf('housing/doormats', DOOR_MATS, undefined, offKoi).some((m) => m.id === 'koi'));
+  ok('...and switching off every one switches off none (a list degrades, never empties)',
+    enabledOf('housing/doormats', DOOR_MATS, undefined, { off: { 'housing/doormats': DOOR_MATS.map((m) => m.id) } }).length === DOOR_MATS.length);
+  const { matOf } = await import('../src/systems/housing/homeisle.js');
+  setSpriteFix({ off: { 'housing/doormats': ['koi', DOOR_MATS[0].id] } });
+  const drawnOff = matOf('koi');
+  const drawnOn = matOf('sakura');
+  setSpriteFix(SPRITE_FIX);
+  ok('...and a home that chose it draws the first design that is on, and the others theirs',
+    drawnOff === DOOR_MATS[1] && drawnOn.id === 'sakura' && matOf('koi').id === 'koi', `${drawnOff.id} ${drawnOn.id}`);
+  const cards = readFileSync(new URL('../src/systems/housing/cards.js', import.meta.url), 'utf8').replace(/\r/g, '');
+  const hedit = readFileSync(new URL('../src/systems/housing/editor.js', import.meta.url), 'utf8').replace(/\r/g, '');
+  ok('...and the styles list and the first mat a home is dealt both ask which are on',
+    /it\.mat \? enabledOf\('housing\/doormats', DOOR_MATS\)/.test(cards)
+    && /L\.style === \(it\.mat \? DOOR_MATS\[0\]\.id : styles\[0\]\?\.id\)/.test(cards)
+    && /const on = enabledOf\('housing\/doormats', DOOR_MATS\);\n\s*const m = on\[h % on\.length\];/.test(hedit));
+
+  /* THE EDITOR'S OWN NUMBERS are copies (importing their owners would boot half the game): pinned here
+     against the owners, and its B-on-top switch set where three sorts - on the mesh. */
+  const ed = readFileSync(new URL('../src/sprite-editor.js', import.meta.url), 'utf8').replace(/\r/g, '');
+  const DDm = await import('../src/systems/dreamdojo.js');
+  const SHm = await import('../src/systems/dream/shadow.js');
+  const shSrc = readFileSync(new URL('../src/systems/dream/shadow.js', import.meta.url), 'utf8');
+  ok('the sprite editor draws the kittens and Lionheart at the game\u2019s sizes',
+    /const EDITOR_HEIGHT = \{ ember: 2\.9, frost: 2\.85 \};/.test(ed)
+    && /ember: \{ art: ember, height: 2\.9, dirSense: 1 \},\n\s*frost: \{ art: frost, height: 2\.85, dirSense: 1 \},/.test(main)
+    && new RegExp(`const EDITOR_LION_H = ${DDm.LION_HEIGHT};`).test(ed) && DDm.LION_HEIGHT === SHm.SHADOW_H
+    && /const SHADOW_TINT = 0xc8a8ff;/.test(ed) && /this\.posed \? 0xc8a8ff/.test(shSrc));
+  ok('...and its "B on top" sets the order on the MESH, where three sorts (on the Billboard it did nothing)',
+    /this\.bb\.mesh\.renderOrder = top \? 20 : 5;/.test(ed) && !/this\.bb\.renderOrder =/.test(ed));
+  ok('...and every pose group has its "Stand vs" sequence',
+    /SEQS\[`Stand vs \$\{name\}`\] = \{ text: list\.filter\(\(p\) => p\.id !== 'stand'\)/.test(ed));
 }
 
 console.log('\n--- a full-screen scene has no split to furnish ---');
@@ -8646,18 +8952,24 @@ console.log('\n--- half a second of not being there ---');
   /* --- the economy --- */
   const price = orbPrice(world.pointsTotal);
   const sell = orbSellPrice(world.pointsTotal);
-  const purse = world.pointsTotal / 2;
   line('points in the world', `${world.pointsTotal} across ${world.props.length} props`);
-  line('buy / sell', `${price} / ${sell}  (an even share is ${Math.round(purse)})`);
-  ok('a whole even share buys 3 orbs', Math.floor(purse / price) === 3);
-  ok('...and never 5', Math.floor(purse / price) < 5);
+  line('buy / sell', `${price} / ${sell}  (one kitten's whole pot buys ${(world.pointsTotal / price).toFixed(1)})`);
+  /* A FLAT 1300 (Richard, Oct 2026), and every prop pays 20% more than it did:
+     the pot is the props' BASE values times MISCHIEF_BONUS, summed from the
+     props themselves, so a knock and the pot cannot disagree. */
+  {
+    const { MISCHIEF_BONUS: MB } = await import('../src/entities/prop.js');
+    const base = world.props.reduce((n, p) => n + (p.kind === 'bamboo' ? 25 : p.kind === 'icicle' ? 15 : 10), 0);
+    ok('a Kotodama is 1300 at every party size, not a share of the pot',
+      [1, 2, 3, 4].every((n) => orbPrice(world.pointsTotal, n) === 1300), `${price}`);
+    ok('...and the mischief pays 20% more than its base values',
+      MB === 1.2 && Math.abs(world.pointsTotal / base - 1.2) < 0.01, `${world.pointsTotal} / ${base}`);
+  }
   ok('selling returns 75%', Math.abs(sell / price - 0.75) < 0.002);
   /* BUY-THEN-SELL MUST LOSE MONEY. At 100% or more the two girls can bounce
      one orb off the counter for ever and buy the whole shelf, which deletes
      both the scarcity and the reason to trade with each other. */
   ok('...so buying and selling back is a loss', sell < price);
-  ok('the price is derived from the world, not typed in',
-    orbPrice(world.pointsTotal * 2) === price * 2);
 
   /* --- the Awakening --- */
   const fakeGame = {
@@ -9144,7 +9456,7 @@ console.log('\n--- half a second of not being there ---');
   ok('...so buying it and selling it back is still a loss, not a profit',
     K.sellPriceOf('aegis') < K.priceOf('aegis'));
   ok('...and one purse cannot reach the pair it needs',
-    K.priceOf('ward') + 2 * K.priceOf('aegis') > purse);
+    K.priceOf('ward') + 2 * K.priceOf('aegis') > world.pointsTotal / 2);
   ok('the refusal quotes the orb its own price', (() => {
     const q = aw.players[0];
     const had = q.score;
@@ -9157,7 +9469,12 @@ console.log('\n--- half a second of not being there ---');
      shelf: four Gale orbs on the counter and a wallet that reaches three orbs
      TOTAL is what turns "I want another one" into a conversation with her
      sister rather than a walk to the market. */
-  ok('a whole purse still buys only 3', Math.floor(purse / price) === 3);
+  /* The price is a flat ORB_PRICE now (Richard, Oct 2026: "just set the price of 1 normal Kotodama at
+     1300. We will add more ways for players to get points in the world"), so this is a two-way share of
+     the mischief alone, which is what "a whole purse" was — and it now buys two or three, never a stack. */
+  const purse = world.pointsTotal / 2;
+  line('a two-way share of the mischief', `${Math.round(purse)} of ${world.pointsTotal} = ${(purse / price).toFixed(2)} orbs`);
+  ok('a whole purse buys two or three, not a stack', Math.floor(purse / price) >= 2 && Math.floor(purse / price) <= 3);
   ok('...far short of one full stack of four',
     price * STOCK_STACKABLE > purse);
   ok('the whole shelf costs more than one purse holds',
@@ -15606,42 +15923,18 @@ console.log('\n--- the three power moves ---');
   ok('...and never fewer than one of each findable kind',
     worldSpawnCount(1) >= WORLD_ORB_IDS.length);
 
-  /* THE PRICE IS A SHARE OF A FIXED POT, so it has to fall as the party grows
-     or a kitten's share silently stops buying the three orbs it is meant to. */
-  const pot = 4550;
-  ok('two players pay what they always paid', orbPrice(pot, 2) === 650);
-  ok('four players pay half that', orbPrice(pot, 4) === 325);
-  ok('a share still buys three or four orbs at any party size',
-    [2, 3, 4].every((n) => {
-      const buys = (pot / n) / orbPrice(pot, n);
-      return buys >= 3 && buys <= 4;
-    }));
-  ok('selling still loses money at every party size',
-    [2, 3, 4].every((n) => orbSellPrice(pot, n) < orbPrice(pot, n)));
-
-  /* THE DEBUG ENDGAME'S PURSE IS THAT SAME SHARE, and this is the check the
-     bug it had would have failed. `Game._debugEndgame` used to hand every
-     player `pointsTotal / 2` regardless of how many there were — so at four it
-     paid out twice the money in the world, and since the PRICE is derived from
-     the pot (`pointsTotal / players / 3.5`) it quietly made the whole shop half
-     price for everybody. It is `/ partySize` now, which is the same arithmetic
-     the price already uses, so the two cannot drift apart.
-
-     Written against `Math.floor`, which is what the key does: four shares must
-     never add up to more than the world actually contains. */
+  /* THE PRICE IS FLAT; THE DEBUG PURSE IS STILL ONE HONEST SHARE. The price
+     used to be `pointsTotal / players / 3.5`; it is 1300 now at every party
+     size (Richard, Oct 2026). `Game._debugEndgame` still hands each kitten
+     `pointsTotal / partySize`, and four shares must never add up to more than
+     the world contains — the check for the bug it once had (`/ 2` at four). */
   {
+    const pot = world.pointsTotal;
     const purse = (n) => Math.floor(pot / n);
     ok('the debug purse is one honest share each',
       [2, 3, 4].every((n) => purse(n) * n <= pot));
-    ok('...and it buys the same three or four orbs at every party size',
-      [2, 3, 4].every((n) => {
-        const buys = purse(n) / orbPrice(pot, n);
-        return buys >= 3 && buys <= 4;
-      }), [2, 3, 4].map((n) => (purse(n) / orbPrice(pot, n)).toFixed(1)).join(' '));
-    /* The bug, stated: half the pot each at four players is eight orbs apiece
-       off a shelf holding six of the stackable kinds. */
-    ok('...and half the pot each would have been wrong at four',
-      Math.floor(pot / 2) / orbPrice(pot, 4) > 4);
+    ok('selling still loses money at every party size',
+      [1, 2, 3, 4].every((n) => orbSellPrice(pot, n) < orbPrice(pot, n)));
   }
 
   /* THE SHELF GROWS WITH THE PARTY, or the third kitten to reach the market
@@ -16074,15 +16367,25 @@ console.log('\n--- the three power moves ---');
      makes one row with two wordings honest rather than a shortcut. */
   const phoneTouch = deviceProfileFor({ coarse: true, touchPoints: 5, cores: 8, override: 'auto' });
   const phoneForced = deviceProfileFor({ coarse: true, touchPoints: 5, cores: 8, override: 'mobile' });
-  ok('on a detected phone, `auto` and `mobile` are the same state',
+  ok('on a detected phone with no controller, `auto` and `mobile` are the same state',
     phoneTouch.padOn === phoneForced.padOn
     && phoneTouch.touchPrimary === phoneForced.touchPrimary
     && phoneTouch.tier === phoneForced.tier);
-  /* ...WHICH IS WHAT LETS THE `mobile` ROW BE HIDDEN THERE. It is not a state
-     being taken away; it is a duplicate wearing a label ("test touch on this
-     computer") that names a machine the player is not holding. */
-  ok('...so hiding the test-mode option on a phone removes no reachable state',
-    /data-phone-hide/.test(readFileSync(new URL('../index.html', import.meta.url), 'utf8')));
+  /* ...BUT NOT WITH ONE. Richard, Oct 2026: Automatic "will disable the
+     touchscreen joystick controls on screen and use the controller instead"
+     when one is connected. So the two differ, the `mobile` row is no longer a
+     duplicate, and it is shown on a phone as "Always the on-screen stick". */
+  {
+    const autoPad = deviceProfileFor({ coarse: true, touchPoints: 5, cores: 8, override: 'auto', pads: 1 });
+    const forcedPad = deviceProfileFor({ coarse: true, touchPoints: 5, cores: 8, override: 'mobile', pads: 1 });
+    const deskPad = deviceProfileFor({ coarse: false, touchPoints: 0, cores: 8, override: 'auto', pads: 1 });
+    ok('...but with a controller connected, Automatic hides the stick and keeps the phone UI, and Always ON does not',
+      autoPad.padOn === false && autoPad.touchPrimary === true && autoPad.tier === phoneTouch.tier
+      && forcedPad.padOn === true && deskPad.padOn === false && deskPad.touchPrimary === false);
+    ok('...so the always-on option is shown on a phone, with its own phone wording',
+      !/data-phone-hide/.test(readFileSync(new URL('../index.html', import.meta.url), 'utf8'))
+      && /value="mobile"\s*data-phone="Always the on-screen stick"/.test(readFileSync(new URL('../index.html', import.meta.url), 'utf8')));
+  }
   /* AND THE TWO WORDINGS LIVE NEXT TO EACH OTHER, in the markup, so a change to
      one is made while looking at the other. Strings for this row in main.js
      would be the version that drifts. */
@@ -16092,7 +16395,7 @@ console.log('\n--- the three power moves ---');
       html.indexOf('id="touch-note"'));
     ok('...and both spellings of the row sit together in the markup',
       /data-phone="Player 1 plays as"/.test(row)
-      && /data-phone="Mobile input/.test(row)
+      && /data-phone="Automatic/.test(row)
       && /data-phone="Gamepad/.test(row));
   }
   /* KEYED OFF `detected`, NOT `touchPrimary`, AND THIS IS THE ONE THAT WOULD
@@ -22042,7 +22345,7 @@ console.log('\n--- one press is not enough, and one player drives ---');
      `findIndex` and the check went red over code that had not changed. The
      same trap the save-menu checks name, one section down. */
   {
-    const from = main.indexOf('    const asked = this.input.players.findIndex(');
+    const from = main.indexOf('    let asked = this.input.players.findIndex(');
     const to = main.indexOf('_claimMenu(asked)');
     ok('...and the pause button claims the menu for the pad that pressed it',
       from >= 0 && to > from && /findIndex/.test(main.slice(from, to)));
@@ -32098,7 +32401,7 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
     const sat = C.find((c) => c.kind === 'satan');
     ok('...Mr Satan\'s on his road, twice the size of the rest',
       !!sat && sat.road.arena && C.every((c) => c === sat || Math.abs(sat.r - c.r * 2) < 1e-6));
-    ok('...worth five canes of bamboo', COIN_CANES * BAMBOO_POINTS === 125);
+    ok('...worth five canes of bamboo', COIN_CANES === 5 && COIN_CANES * BAMBOO_POINTS === 5 * BAMBOO_POINTS);
     ok('...and all there once the roads are', C.every((c) => c.group.visible));
     const c0 = C.find((c) => c.kind === 'snake');
     ok('...touched on the deck, where a kitten running the road is',
@@ -35345,14 +35648,14 @@ console.log('\n--- mobile, October: the skip, the start, the griffin, the talkin
      be there regardless of the input." A phone with the stick switched off
      keeps the corner button, and in that mode it does ONE thing: skip. */
   ok('a phone with the stick off still has the corner button, set before it is shown',
-    /this\.touchPad\.setCornerOnly\(phone && !pad\);\s*this\.touchPad\.onCornerSkip = \(\) => this\._skipScene\(\);\s*this\.touchPad\.setVisible\(pad \|\| phone\);/.test(M));
+    /this\.touchPad\.setCornerOnly\(phone && !pad\);\s*this\.touchPad\.onCornerSkip = \(\) => this\._skipScene\(\);[\s\S]{0,400}this\.touchPad\.onCornerMenu = \(\) => \{ this\._cornerMenuAsk = true; \};\s*this\.touchPad\.setVisible\(pad \|\| phone\);/.test(M));
   {
     const { TouchPad } = await import('../src/core/touchpad.js');
     const pause = { id: 'pause' }; const jump = { id: 'jump', dataset: { action: 'jump' } };
-    let skips = 0;
+    let skips = 0; let menus = 0;
     const fake = (mode) => ({
       visible: true, cornerOnly: true, pause, _pauseMode: mode,
-      onCornerSkip: () => { skips++; }, _active: new Map(), _held: {},
+      onCornerSkip: () => { skips++; }, onCornerMenu: () => { menus++; }, _active: new Map(), _held: {},
     });
     const tap = (pad, target) => TouchPad.prototype._down.call(pad, {
       target: { closest: () => target }, pointerId: 1, preventDefault() {},
@@ -35360,12 +35663,17 @@ console.log('\n--- mobile, October: the skip, the start, the griffin, the talkin
     const a = fake('skip'); tap(a, pause);
     const b = fake('menu'); tap(b, pause);
     const c = fake('skip'); tap(c, jump);
-    ok('...and in that mode a tap on it skips a scene, and nothing else does anything',
-      skips === 1 && !a._active.size && !b._active.size && !c._active.size && !c._held.jump, `skips ${skips}`);
+    /* "the menu button in the top-right corner is not appearing on screen when
+       mobile input is disabled, it should appear regardless" (Oct 2026): out
+       of a scene the same tap asks for the MENU, queued for the frame. */
+    ok('...and in that mode a tap on it skips a scene or asks for the menu, and nothing else does anything',
+      skips === 1 && menus === 1 && !a._active.size && !b._active.size && !c._active.size && !c._held.jump, `skips ${skips} menus ${menus}`);
+    ok('...and the frame answers that ask as player 1’s (or the open menu’s owner’s) Start',
+      /if \(this\._cornerMenuAsk\) \{\s*this\._cornerMenuAsk = false;\s*if \(asked < 0 && this\.players\.length\) asked = this\.paused \? \(this\.menuOwner \?\? 0\) : 0;/.test(M));
   }
-  ok('...with the stick, the face buttons and the out-of-scene MENU all off the screen',
-    /#touch-pad\.corner-only \.tp-zone,\s*#touch-pad\.corner-only \.tp-cluster,\s*#touch-pad\.corner-only:not\(\.scene\) \.tp-pause \{\s*display: none;/.test(C)
-      || (/#touch-pad\.corner-only \.tp-zone/.test(C) && /#touch-pad\.corner-only:not\(\.scene\) \.tp-pause \{ display: none; \}/.test(C)));
+  ok('...with the stick and the face buttons off the screen, and the corner button never hidden',
+    /#touch-pad\.corner-only \.tp-zone,\s*#touch-pad\.corner-only \.tp-cluster \{ display: none; \}/.test(C)
+      && !/corner-only[^{]*\.tp-pause/.test(C));
   ok('...and the per-frame pad work is skipped when there is no pad to do it for',
     /if \(scene \|\| this\.touchPad\.cornerOnly\) return;/.test(M)
       && /if \(!this\.touchPad\.cornerOnly\) this\._updateMathForDojo\(\);/.test(M));
@@ -39267,7 +39575,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const apex2 = apex + (jv * 0.86) ** 2 / (2 * gr);
     const bar = (y) => [{ sec: 'x', a0: -15, b0: 0, y0: y, a1: -9, b1: 0, y1: y, thick: CO.BAR_THICK }];
     ok('正弦 player.js\'s double jump is still a second push of 0.86 — the reach the course is built against',
-      /this\.velocity\.y = JUMP_V \* 0\.86 \* jumpK;/.test(src), `apex ${apex.toFixed(2)}, two jumps ${apex2.toFixed(2)}`);
+      /this\.velocity\.y = jumpV \* 0\.86;/.test(src) && /const jumpV = this\.hopJump \? [^:]+: JUMP_V \* jumpK;/.test(src), `apex ${apex.toFixed(2)}, two jumps ${apex2.toFixed(2)}`);
     /* "Keep in mind, player has sprint and double jump ability, so they can
        jump over most of the objects in this course with a well timed
        sprint/double jump ... need to make sure that the lasers go high enough

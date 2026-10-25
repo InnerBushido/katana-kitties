@@ -222,7 +222,16 @@ export function xrayVertexMat(opts = {}) {
           if (uClipOn[i] < 0.5) continue;
           vec2 dq = vXrayWorld.xz - uClipA[i].xy;
           vec2 lq = vec2(dq.x * uClipA[i].z - dq.y * uClipA[i].w, dq.x * uClipA[i].w + dq.y * uClipA[i].z);
-          if (abs(lq.x) < uClipB[i].x && abs(lq.y) < uClipB[i].y && vXrayWorld.y > uClipB[i].z) discard;
+          /* A FADE, NOT A KNIFE. Richard, Oct 2026: "When a bridge is being cut off because of the floor
+             below it, let's use a fading xray shader at the area where it should be cut off, so that rather
+             than being sharp cutoff, it is more of a fade away." Over w (uClipB.w) into the box, and half
+             that above its line, dithered like the x-ray's own rim; w = 0 is the hard cut it always was. */
+          float ex = min(uClipB[i].x - abs(lq.x), uClipB[i].y - abs(lq.y));
+          float ey = vXrayWorld.y - uClipB[i].z;
+          if (ex <= 0.0 || ey <= 0.0) continue;
+          float fw = uClipB[i].w;
+          float gone = fw > 0.0 ? min(smoothstep(0.0, fw, ex), smoothstep(0.0, fw * 0.5, ey)) : 1.0;
+          if (gone > 0.999 || gone > xrayDither(gl_FragCoord.xy)) discard;
         }` : ''}
         if (vXrayK > 0.004) {
           float cut = 0.0;
@@ -319,8 +328,9 @@ export function xrayVertexMat(opts = {}) {
   };
   /**
    * The clip boxes, for a material made with `clips` (none otherwise):
-   * `[{ x, z, cos, sin, hw, hd, y }]` — a box centred at (x, z) turned like a
-   * house's `toLocal`, half-sizes hw and hd, open upward from y. Not drawn in it.
+   * `[{ x, z, cos, sin, hw, hd, y, fade }]` — a box centred at (x, z) turned like a
+   * house's `toLocal`, half-sizes hw and hd, open upward from y. Not drawn in it,
+   * past `fade` in from its sides (0, or missing: not drawn in it at all).
    */
   mat.setClips = (boxes = []) => {
     for (let i = 0; i < clips; i++) {
@@ -328,7 +338,7 @@ export function xrayVertexMat(opts = {}) {
       u.uClipOn.value[i] = b ? 1 : 0;
       if (!b) continue;
       u.uClipA.value[i].set(b.x, b.z, b.cos, b.sin);
-      u.uClipB.value[i].set(b.hw, b.hd, b.y, 0);
+      u.uClipB.value[i].set(b.hw, b.hd, b.y, Number.isFinite(b.fade) && b.fade > 0 ? b.fade : 0);
     }
   };
   // read-only, for world-check: two materials' cuts compared (the teahouse's is smaller)
@@ -382,7 +392,8 @@ export function clipBoxes(mat, clips) {
           if (uClipOn[i] < 0.5) continue;
           vec2 dq = vClipWorld.xz - uClipA[i].xy;
           vec2 lq = vec2(dq.x * uClipA[i].z - dq.y * uClipA[i].w, dq.x * uClipA[i].w + dq.y * uClipA[i].z);
-          if (abs(lq.x) < uClipB[i].x && abs(lq.y) < uClipB[i].y && vClipWorld.y > uClipB[i].z) discard;
+          // the glow strip has no dither: it goes half way through the deck's fade (uClipB.w), so a lit rail never outlasts its deck
+          if (abs(lq.x) < uClipB[i].x - uClipB[i].w * 0.5 && abs(lq.y) < uClipB[i].y - uClipB[i].w * 0.5 && vClipWorld.y > uClipB[i].z) discard;
         }`);
   };
   mat.customProgramCacheKey = () => `clipbox-${clips}`;
@@ -390,7 +401,7 @@ export function clipBoxes(mat, clips) {
     for (let i = 0; i < clips; i++) {
       const b = boxes[i];
       u.uClipOn.value[i] = b ? 1 : 0;
-      if (b) { u.uClipA.value[i].set(b.x, b.z, b.cos, b.sin); u.uClipB.value[i].set(b.hw, b.hd, b.y, 0); }
+      if (b) { u.uClipA.value[i].set(b.x, b.z, b.cos, b.sin); u.uClipB.value[i].set(b.hw, b.hd, b.y, Number.isFinite(b.fade) && b.fade > 0 ? b.fade : 0); }
     }
   };
   return mat;
@@ -661,6 +672,25 @@ export class Billboard extends THREE.Object3D {
 
   /** Called once per camera, before that viewport renders. */
   faceCamera(camera) {
+    /* LAID ALONG A HEADING, NOT TURNED TO THE LENS: `alongYaw` is the way
+       her HEAD points, and the quad's width runs that way. Only the futon asks
+       (player.js). Richard, Oct 2026: "When player is sleeping on the futon, we
+       should have their sprite drawn in the direction of the bed ... No need
+       for camera billboarding ... seems to be needed to rotate along the
+       y-axis about 45 degrees" — 45 being the default camera's yaw against a
+       bed laid square to the house. Of the two faces, the one toward this
+       camera; mirrored so the head is at the pillow end whichever it is. */
+    if (Number.isFinite(this.alongYaw)) {
+      this.getWorldPosition(_wp);
+      const a = this.alongYaw;
+      let th = a - Math.PI / 2;
+      if (Math.sin(th) * (camera.position.x - _wp.x) + Math.cos(th) * (camera.position.z - _wp.z) < 0) th += Math.PI;
+      this.mesh.rotation.y = th;
+      // the quad's right is (cos th, -sin th): does it point the way her head does?
+      const headRight = Math.cos(th) * Math.sin(a) - Math.sin(th) * Math.cos(a) > 0;
+      this._setCell(0, this.row, this.artFacesRight ? !headRight : headRight);
+      return;
+    }
     // Must be the sprite's WORLD position. A Billboard is parented to its
     // entity's group, so `this.position` is a local offset — usually (0,0,0) —
     // and using it measures the camera angle from the world origin instead of

@@ -1016,33 +1016,26 @@ export function aggregate(ids = []) {
 /**
  * What the stall charges.
  *
- * DERIVED FROM THE WORLD, NOT PICKED. Every point either kitten will ever have
- * comes from knocking something over, the orbs only exist once everything has
- * been knocked over, so the entire economy is a fixed pot: `world.pointsTotal`,
- * currently 4550 across 216 props. Two girls who split it evenly hold about
- * 2275 each, and the brief is that all of it buys three or four orbs — so the
- * price is that share divided by 3.5.
+ * A FIXED 1300, WHATEVER THE PARTY. It used to be derived from the world's
+ * point pot divided by the party (`pointsTotal / players / 3.5`), so one
+ * kitten paid 1300 and four paid 325 each. Richard, Oct 2026: "We shouldn't
+ * do this anymore and instead, just set the price of 1 normal Kotodama at
+ * 1300. We will add more ways for players to get points in the world other
+ * than just mischief". Once points come from more than the props, the pot is
+ * no longer the whole economy and a price derived from it would be wrong in
+ * both directions — so the price is the number, and the pot only decides how
+ * many a party can afford (MISCHIEF_BONUS in prop.js is the first nudge to
+ * that: 20% more for every prop, so a bigger party still reaches orbs).
  *
- * That number matters more than it looks. Eight types, a stall that stocks one
- * of each, and a wallet that reaches three of them is what makes TRADING the
- * way you build a set rather than an extra you can ignore: there is no amount
- * of playing that buys a stack, and the only other copies in the world are the
- * ones lying on the islands and the ones in your sister's hand.
- *
- * THE SHARE IS PER PLAYER, so the divisor is the party size rather than 2. The
- * pot is fixed — it is every prop in the world — so four kittens split it four
- * ways, and leaving the price alone would quietly halve what each of them can
- * buy and turn "your share buys three or four" into "your share buys one and a
- * half". Two players give exactly the number they gave before.
- *
- * @param {number} totalPoints every point earnable in the world
- * @param {number} players     how many kittens are splitting it
+ * The signature still takes the pot and the party so every caller keeps
+ * working, and so that if a scaled rule ever comes back it comes back here.
  */
+export const ORB_PRICE = 1300;
 export const BUYS_PER_PURSE = 3.5;
 export const SELL_FRACTION = 0.75;
 
-export const orbPrice = (totalPoints, players = 2) =>
-  Math.round(totalPoints / Math.max(1, players) / BUYS_PER_PURSE);
+// eslint-disable-next-line no-unused-vars
+export const orbPrice = (totalPoints, players = 2) => ORB_PRICE;
 export const orbSellPrice = (totalPoints, players = 2) =>
   Math.round(orbPrice(totalPoints, players) * SELL_FRACTION);
 

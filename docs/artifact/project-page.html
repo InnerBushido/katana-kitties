@@ -606,8 +606,8 @@ npm run artifact              <span class="c"># is this published page still cur
 
   <div class="note pink">
     <span class="hd">One caveat</span>
-    <p><code>--host</code> also exposes <code>/tuning.html</code>, whose save endpoint POSTs a file
-      into the source tree with no authentication. Fine on a home network with two children on it.
+    <p><code>--host</code> also exposes <code>/tuning.html</code> and <code>/sprites.html</code>,
+      whose save endpoints POST files into the source tree with no authentication. Fine on a home network with two children on it.
       Not fine in a café. Stop the server when the test is done.</p>
   </div>
 
@@ -788,6 +788,29 @@ git push origin alpha</code></pre>
     exists in a build</b> — the endpoint is a <code>configureServer</code> hook, which the production
     build never calls. A page that writes into the source tree is a fine thing on a laptop and an
     appalling one on the open internet.</p>
+
+  <h3>Fix a sprite's size and place: <code>/sprites.html</code></h3>
+  <p>The same arrangement for the drawings. <code>npm run dev</code>, then <code>/sprites.html</code>
+    (or the debug panel's <b>SPRITE EDITOR</b> row).</p>
+  <ul>
+    <li><b>Poses</b>: every kitten pose in groups (Everyday, Arena, Kendo, Home, Simulator, Bamboo
+      Infiltration) plus Lionheart. Lay one over another with transparency or slide it beside it;
+      her front foot, body centre and ink top are measured and snappable. Each group has a
+      <b>Stand vs …</b> sequence, and sequences play at 0.05×–4×.</li>
+    <li><b>Sheets</b>: every png under <code>public/sprites</code>, listed by the dev server so a new
+      sheet appears the day it lands, with the ninja atlases broken into their clips. Order and
+      mirror a turnaround's columns, a sheet's cells or a clip's frames, and switch door-mat designs
+      off in the game. Preview as a turntable, loop, ping-pong, once, or hold N seconds on each.</li>
+    <li><b>Undo/redo</b> (Ctrl+Z / Ctrl+Y) with the last changes listed, a badge per tab for what
+      is unsaved, and a Save that says how many changes it writes. It writes both tabs at once.</li>
+  </ul>
+  <p>Save writes <code>src/spritefix.json</code>. Like <code>tuning.json</code>, it holds overrides
+    only: <code>poses</code> keyed by sheet (<code>ember/kiai</code>, so Storm and Blossom wear
+    Ember's and Frost's fixes), <code>sheets</code> by the file's path
+    (<code>kittens/ember/grid_v2</code>, <code>ninja/ember:sneak</code>), and <code>off</code> for
+    switched-off cells. <b>Every sheet loaded through <code>loadSpriteAtlas</code> honours its saved
+    order</b>, so a sheet added later needs no wiring. The page draws with the game's own code, so
+    what lines up there lines up in the game. Dev only, twice over, like the balance page.</p>
 
   <h3>The numbers, at a glance</h3>
   <p style="font-size:14px;color:var(--text-dim)"><b>This table is generated out of

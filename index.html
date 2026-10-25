@@ -1959,14 +1959,12 @@
           <span id="set-touch-label" data-phone="Player 1 plays as">On-screen stick</span>
           <select id="set-touch">
             <option value="auto"
-              data-phone="Mobile input — the on-screen stick">Automatic (on for phones and tablets)</option>
-            <!-- HIDDEN ON A PHONE, because there it is the same state as
-                 `auto` wearing a label that names a machine the player is not
-                 holding. `_shapeTouchSetting` also moves a stored `mobile` onto
-                 `auto` for display, which is honest precisely because the two
-                 are identical once `detected` is true. -->
+              data-phone="Automatic — the stick, or a controller when one is connected">Automatic (on for phones and tablets)</option>
+            <!-- On a phone this was hidden while `auto` and `mobile` were the
+                 same state. They are not any more: `auto` hides the stick when a
+                 controller is connected and `mobile` never does. -->
             <option value="mobile"
-              data-phone-hide>Always ON — test touch on this computer</option>
+              data-phone="Always the on-screen stick">Always ON — test touch on this computer</option>
             <option value="desktop"
               data-phone="Gamepad — Player 1 on a controller">Always OFF — controller or keyboard</option>
           </select>

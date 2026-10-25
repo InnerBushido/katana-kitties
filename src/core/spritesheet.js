@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { applySheetFix, sheetFix, sheetIdOf } from './spritefix.js';
 
 /* ---------------------------------------------------------------------------
    Turns a generated character turnaround (N views on a white background, at
@@ -905,7 +906,23 @@ export function uniformBoxes(w, h, cols, rows) {
   })));
 }
 
+/**
+ * Load, measure and pack a sheet — and then RE-DEAL ITS COLUMNS by whatever
+ * the sprite editor saved for it (core/spritefix.js, keyed by the file's path
+ * under public/sprites). Here and not at each call site, so every sheet the
+ * game loads honours a saved order, the next one added included: Richard,
+ * Oct 2026, "and any future sprite sheets that get added to the game".
+ * With nothing saved, or an order that does not fit the sheet, the atlas is
+ * the one that was packed. `sheetFix: false` is for the editor, which shows
+ * the columns as drawn.
+ */
 export async function loadSpriteAtlas(url, opts = {}) {
+  const atlas = await packAtlas(url, opts);
+  if (opts.sheetFix === false || !atlas) return atlas;
+  return applySheetFix(atlas, sheetFix(sheetIdOf(url), atlas.cols), THREE);
+}
+
+async function packAtlas(url, opts = {}) {
   /* `pad` is transparent margin left around every cell's art. Sprite atlases
      bleed without it: bilinear filtering and mipmaps sample past the cell
      boundary and drag the neighbouring frame in along the edge. Padding plus

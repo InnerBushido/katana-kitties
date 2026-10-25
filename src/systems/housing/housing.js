@@ -164,9 +164,25 @@ export const LOWER_XRAY = 2.5;
 /** A bridge is cut this far above the floor she is on (`clipBridges`). The storey is FLOOR_H (4.6) to the next deck; 3.9, under a bridge's beams, left a third-floor bridge
  *  0.26 into the 2nd-floor room where it slopes down through that floor's wall (world-check measures it). Nothing on a deck at her own floor reaches 3.2. */
 export const BRIDGE_CLIP_UNDER = 3.2;
+/** ...and FADED over this far in from the footprint's edge, not cut on it: "rather than being sharp cutoff, it is more of a fade away". Colliders untouched — it is only drawn. */
+export const BRIDGE_CLIP_FADE = 1.2;
 /** The islands' rise in the ending (`rise`): over this part of the road clock (the gates are its first 0.35, snakeway.js), from this far under. */
 export const RISE = { from: 0.4, to: 0.95, depth: 70 };
-export const XRAY_UP = { t: 3, moving: 0.6 };
+/* ...and REVISED, Oct 2026: "the xray shader should be enabled when player is
+   jumping and not just when moving around. Let's make the xray shader expand
+   right away if player moves or jumps and then when they stop moving or
+   jumping, it should wait 1.5s before shrinking again. It should shrink to a
+   minimum size to the size of the player." So `_xrayUp` jumps to 1 on a step
+   or a jump, holds there `hold` seconds after the last one, then runs down over
+   `t`; and the hole is never smaller than `min` (a scale on the cone's 2.1 at
+   her chest: 1.47, half her 2.9 height — a hole the size of her). It used to
+   shrink to nothing, and a girl standing still downstairs vanished under the
+   tatami over her. */
+export const XRAY_UP = { t: 3, moving: 0.6, hold: 1.5, min: 0.7 };
+/** The upstairs hole's scale for an x-ray level `e` (0..1): `min` standing still, LOWER_XRAY on the move. */
+export const xrayUpScale = (e) => XRAY_UP.min + (LOWER_XRAY - XRAY_UP.min) * Math.max(0, Math.min(1, e));
+/** The tatami is laid ON the slab, 0.06 thick (homehouse.js): a ceiling for the downstairs hole has to clear it, or the flooring stays. */
+export const FLOORING_TOP = 0.08;
 
 /**
  * HOW STEEP THE DOOR SHOT MAY LOOK DOWN, for house shell `S`: its 0.16, or
@@ -1000,8 +1016,12 @@ export class Housing {
     }
     for (const p of players) {
       if (!p?.velocity) continue;
-      const mv = Math.hypot(p.velocity.x, p.velocity.z) > XRAY_UP.moving;
-      p._xrayUp = Math.max(0, Math.min(1, (p._xrayUp ?? 1) + (mv ? 2 : -1) * dt / XRAY_UP.t));
+      // a step or a jump: full at once, held XRAY_UP.hold after the last one, then down over XRAY_UP.t
+      const mv = Math.hypot(p.velocity.x, p.velocity.z) > XRAY_UP.moving || p.onGround === false;
+      if (mv) { p._xrayUp = 1; p._xrayHold = XRAY_UP.hold; continue; }
+      p._xrayHold = Math.max(0, (p._xrayHold ?? 0) - dt);
+      if (p._xrayHold > 0) continue;
+      p._xrayUp = Math.max(0, (p._xrayUp ?? 1) - dt / XRAY_UP.t);
     }
     this._mounts(players);
     this.holo.update(dt, players);
@@ -1587,20 +1607,38 @@ export class Housing {
           const f = a ? cut.get(a.hs.hk) : null;
           const lower = a && f > a.f && Number.isFinite(a.hs.shell.floorY[a.f + 1]);
           scale.push(lower ? LOWER_XRAY : 1);
-          ceil.push(lower ? a.hs.gy + a.hs.shell.floorY[a.f + 1] + 0.02 : null);
+          ceil.push(lower ? a.hs.gy + a.hs.shell.floorY[a.f + 1] + FLOORING_TOP : null);
           k.push(a ? XRAY_INDOOR : 1);
         }
       }
-      // ...and a sister downstairs, through the floor over her too (XRAY_UP): after all four kittens' own slots
-      for (const [j, i] of who.entries()) {
-        const p = players[i], a = at[j];
-        if (!p || !a || seen.length >= XRAY_SLOTS) continue;
-        const f = cut.get(a.hs.hk);
-        const e = p._xrayUp ?? 1;
-        if (!(f > a.f) || !Number.isFinite(a.hs.shell.floorY[a.f + 1]) || e < 0.02) continue;
+      /* ...and a sister downstairs, through the floor over her too (XRAY_UP): after all four kittens' own slots.
+         EVERY sister in the house, not only this pane's: Richard, Oct 2026, "when one of the players is on the
+         2nd floor, above the other player, in a house, the flooring of the 2nd floor is not being affected by
+         the players xray shader on the 1st floor." In split screen the upstairs girl's pane never had her
+         sister in it, so the floor over the girl below was drawn solid there and she was simply under it. A
+         sister from another pane takes the ordinary floor-and-slab hole first (`FLOORING_TOP`), which her
+         own pane's members already have from the loop above. */
+      const below = [];
+      for (const [i, p] of players.entries()) {
+        const j = who.indexOf(i);
+        const a = j >= 0 ? at[j] : p ? I.houseAt(p.position.x, p.position.y, p.position.z) : null;
+        const f = a ? cut.get(a.hs.hk) : null;
+        if (!p || !a || !(f > a.f) || !Number.isFinite(a.hs.shell.floorY[a.f + 1])) continue;
+        below.push({ p, a, mine: j >= 0, top: a.hs.gy + a.hs.shell.floorY[a.f + 1] });
+      }
+      for (const { p, top } of below.filter((q) => !q.mine)) {
+        if (seen.length >= XRAY_SLOTS) break;
         seen.push(new THREE.Vector3(p.position.x, p.position.y + 1.4, p.position.z));
-        floors.push(a.hs.gy + a.hs.shell.floorY[a.f + 1] + 0.02);
-        scale.push(LOWER_XRAY * e);
+        floors.push(p.position.y + 0.35);
+        scale.push(xrayUpScale(p._xrayUp ?? 1));
+        ceil.push(top + FLOORING_TOP);
+        k.push(XRAY_INDOOR);
+      }
+      for (const { p, top } of below) {
+        if (seen.length >= XRAY_SLOTS) break;
+        seen.push(new THREE.Vector3(p.position.x, p.position.y + 1.4, p.position.z));
+        floors.push(top + 0.02);
+        scale.push(xrayUpScale(p._xrayUp ?? 1));
         ceil.push(null);
         k.push(XRAY_INDOOR);
       }
@@ -1671,9 +1709,16 @@ export class Housing {
         const f = cut.get(hs.hk), S = hs.shell;
         if (!(f >= 0) || f >= S.floorY.length - 1 || clips.length >= BRIDGE_CLIPS) continue;
         const [hw, hd] = S.half[f];
-        clips.push({ x: hs.wx, z: hs.wz, cos: hs.cos, sin: hs.sin, hw, hd, y: hs.gy + S.floorY[f] + BRIDGE_CLIP_UNDER });
+        clips.push({ x: hs.wx, z: hs.wz, cos: hs.cos, sin: hs.sin, hw, hd, y: hs.gy + S.floorY[f] + BRIDGE_CLIP_UNDER, fade: BRIDGE_CLIP_FADE });
       }
-      I.clipBridges(clips);
+      // ...but never the one she is standing on: that one is drawn whole, "so player can see where to go"
+      const onLink = new Set();
+      for (const i of who) {
+        const p = players[i];
+        const L = p && I.over(p.position.x, p.position.z) ? I.heightAt(p.position.x, p.position.z, p.position.y + 0.1)?.deck?.link : null;
+        if (L != null) onLink.add(L);
+      }
+      I.clipBridges(clips, onLink);
       /* THE DOORS THE HOUSE HIDES: every doorway on a floor this pane shows,
          facing away from its camera, near somebody in it (`DOOR_XRAY`). */
       const cam = camera.position;

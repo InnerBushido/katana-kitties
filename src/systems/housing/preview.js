@@ -21,7 +21,15 @@ import { drawItem, fitTo, loadModel } from './models.js';
 const W = 200, H = 140;
 
 export class Preview {
-  constructor() {
+  /**
+   * @param {(id: string) => THREE.Object3D|null} [builder] the real thing for
+   *   an id drawItem only has a stand-in for — the yard's BUILT things (the
+   *   koi pond, the onsen ...), which are made by the island, not loaded.
+   *   Richard, Oct 2026: they "appear as large cubes in the Build Something
+   *   for Yard screen, instead of a cube, should show the 3D object".
+   */
+  constructor(builder = null) {
+    this.builder = builder;
     this.want = new Map(); // index → item id
     this.r = null;
     this.failed = false;
@@ -59,6 +67,10 @@ export class Preview {
 
   _set(id) {
     if (this.cur?.id === id) return;
+    /* A BUILT one is this card's own mesh, made for it, so its geometry goes
+       with it; a model or a stand-in is shared with the yard and is not ours
+       to dispose. */
+    if (this.cur?.built) this.cur.obj?.traverse((o) => o.geometry?.dispose?.());
     this.spin.clear();
     this.cur = { id, obj: null };
     if (!id) return;
@@ -80,6 +92,25 @@ export class Preview {
       this.cam.position.set(0, s.y * 0.55 + d * 0.32, d);
       this.cam.lookAt(0, s.y * 0.45, 0);
     };
+    const real = this.builder?.(id);
+    if (real) {
+      /* AT ITS OWN SIZE: the camera below frames whatever it is handed, and
+         `fitTo` would squash a 16-unit treehouse to the 3 a stand-in uses. */
+      this.spin.add(real);
+      this.cur.obj = real;
+      this.cur.built = true;
+      const box = new THREE.Box3().setFromObject(real);
+      const c = box.getCenter(new THREE.Vector3());
+      real.position.x -= c.x;
+      real.position.z -= c.z;
+      real.position.y -= box.min.y;
+      const s = box.getSize(new THREE.Vector3());
+      const R = Math.max(s.x, s.y, s.z) * 0.62 + 0.2;
+      const d = R / Math.tan((this.cam.fov * Math.PI) / 360) * 1.15;
+      this.cam.position.set(0, s.y * 0.55 + d * 0.32, d);
+      this.cam.lookAt(0, s.y * 0.45, 0);
+      return;
+    }
     put(drawItem(id, 2, { cups: 3 }));
     if (it?.model) loadModel(it.model).then((m) => { if (m) put(m); });
   }

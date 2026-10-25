@@ -91,6 +91,7 @@ import { Inspector } from './systems/inspector.js';
 import { Payne, PAYNE_CLIPS, PAYNE_TOWN } from './systems/payne.js';
 import { Housing } from './systems/housing/housing.js';
 import { TEA_SHEET } from './systems/housing/teahouse.js';
+import { sheetFix, applySheetFix, sheetIdOf } from './core/spritefix.js';
 import { DreamDojo } from './systems/dreamdojo.js';
 import { WorldPeek } from './systems/worldpeek.js';
 import { SIM } from './world/simworld.js';
@@ -200,6 +201,11 @@ const TUNING_ROW = import.meta.env?.DEV
     + '<div class="dbg-row" data-open="/tuning.html">'
     + '<span class="k">&#8599;</span> BALANCE PAGE &mdash; every ability\'s '
     + 'numbers, on sliders</div>'
+    /* ...and the sprite editor, inside the same guard for the same reasons:
+       sprites.html is not a build input and /__spritefix is dev-server only. */
+    + '<div class="dbg-row" data-open="/sprites.html">'
+    + '<span class="k">&#8599;</span> SPRITE EDITOR &mdash; kendo and home '
+    + 'poses\' size and place, sheet column order</div>'
   : '';
 
 /* HOW MANY FRAMES THE COST READOUT AVERAGES OVER. Two seconds at 60fps, which
@@ -873,6 +879,10 @@ class Game {
        becomes visible on is already the reduced one. */
     this.touchPad.setCornerOnly(phone && !pad);
     this.touchPad.onCornerSkip = () => this._skipScene();
+    /* Queued, not acted on here: the pointer event lands between frames, and
+       the frame's own Start handling is what knows about pickers, cards and
+       the name entry (see "UI FALL-THROUGH" in docs/notes/gotchas.md). */
+    this.touchPad.onCornerMenu = () => { this._cornerMenuAsk = true; };
     this.touchPad.setVisible(pad || phone);
     /* THE PAD ALWAYS CARRIES WASD AS ITS SECOND SURFACE — see `_freeKeysets` in
        core/input.js. On a phone there is no keyboard and that costs nothing; on
@@ -1584,6 +1594,8 @@ class Game {
 
     setLoad('Sharpening claws…');
     await frame();
+    /* (The sprite editor's column fixes are already in `ember` and `frost`: `loadSpriteAtlas` re-deals
+       every sheet it loads by what /sprites.html saved for it - core/spritefix.js.) */
     this._spawnPlayers(ember, frost);
     this._spawnDragons(dragonTex, dragonFlyTex);
     /* KEPT FOR THE ENDING, and for nothing else. `FinaleShow` draws two little
@@ -2196,8 +2208,11 @@ class Game {
          reduced `maxAtlas` cannot reach a floor-pinned sheet, which is what
          makes it the safe knob. See core/device.js; the checks are in
          world-check under "THE DEVICE ATLAS BUDGET". */
+      /* `sheetFix: false`, then the fix by hand: the counts below are asked of the sheet AS DRAWN, and a
+         saved order that drops two of ten columns must not read as "only found 8/10 views" and swap her
+         for the placeholder. */
       const a = await loadSpriteAtlas(url, {
-        views, rows, cell: 384, maxAtlas: this.device.atlasMax,
+        views, rows, cell: 384, maxAtlas: this.device.atlasMax, sheetFix: false,
       });
       if (a.cols < 1) throw new Error('no views found');
       if (rows > 1 && a.rows !== rows) {
@@ -2207,7 +2222,7 @@ class Game {
         throw new Error(`only found ${a.cols}/${views} views`);
       }
       console.log(`[art] ${url} → ${a.cols} directions x ${a.rows} poses`);
-      return a;
+      return applySheetFix(a, sheetFix(sheetIdOf(url), a.cols), THREE);
     } catch (err) {
       console.warn(`[art] ${url} → falling back to drawn placeholder:`, err.message);
       const f = fallback();
@@ -3047,6 +3062,16 @@ class Game {
          describes the state you are already in makes you flip it to find out
          what the other one does, which on this one costs you your seat. */
       if (this.device.detected) {
+        if (this.device.override === 'auto') {
+          note.textContent = pad
+            ? 'Automatic: no controller is connected, so Player 1 is the on-screen '
+              + 'stick. Connect one and press a button on it, and the stick hides '
+              + 'and the controller takes over.'
+            : 'Automatic: a controller is connected, so Player 1 is gamepad 1 and '
+              + 'the on-screen stick is hidden. Disconnect it and the stick comes '
+              + 'back. The ≡ corner button opens the menu either way.';
+          return;
+        }
         if (pad) {
           note.textContent = 'Player 1 is the on-screen stick — left thumb to '
             + 'move, buttons on the right. A gamepad paired to this phone joins '
@@ -3103,6 +3128,22 @@ class Game {
       this.audio.resume();
     });
     describeTouch();
+    /* AUTOMATIC FOLLOWS THE PAD — `profileFor` counts connected gamepads, so a
+       controller arriving or leaving is the same re-detect the select does.
+       Only on 'auto', and only when `padOn` actually moves: `_applyTouchMode`
+       re-deals every device when it does, which is right for "a controller is
+       now player 1" and churn for anything else. */
+    const followPads = () => {
+      if (this.device.override !== 'auto') return;
+      const next = detectDevice();
+      if (next.padOn === this.device.padOn) return;
+      this.device.padOn = next.padOn;
+      this._applyTouchMode();
+      describeTouch();
+      if (this.state === 'play') this.toast(next.padOn ? 'Controller gone — the on-screen stick is back' : 'Controller connected — the on-screen stick is hidden');
+    };
+    window.addEventListener('gamepadconnected', followPads);
+    window.addEventListener('gamepaddisconnected', followPads);
 
     const jc = document.getElementById('set-joycon');
     jc.value = this.input.joyconRotation;
@@ -10439,9 +10480,17 @@ class Game {
     /* WHICH pad, not whether any pad — see `_claimMenu`. `findIndex` rather
        than `some` is the entire difference between a menu one player drives
        and a menu four players wrestle over. */
-    const asked = this.input.players.findIndex(
+    let asked = this.input.players.findIndex(
       (p) => (p.source === 'gamepad' || p.source === 'touch') && p.pressed('start'),
     );
+    /* THE CORNER BUTTON WITH NO STICK ON SCREEN (`TouchPad.onCornerMenu`): a
+       phone on a controller, whose menu must still open to a thumb. It asks as
+       whoever already owns an open menu, else player 1 — one tap is one press,
+       and it goes down every branch below exactly as her pad's Start would. */
+    if (this._cornerMenuAsk) {
+      this._cornerMenuAsk = false;
+      if (asked < 0 && this.players.length) asked = this.paused ? (this.menuOwner ?? 0) : 0;
+    }
     /* HER OWN START CLOSES HER OWN CARD, and does not also open the pause menu
        behind it. The card is read later in the frame (`Inspector.update`), so
        without this the press would be taken twice — the card would close and

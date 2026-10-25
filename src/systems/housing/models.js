@@ -368,7 +368,16 @@ export function drawItem(id, sz = 2, opts = {}) {
   // a path piece's stand-in (the real one is homeisle.js `pathParts`)
   if (id.startsWith('path_')) return mesh([box(1.6, 0.1, 3.2, id === 'path_carpet' ? 0xc0202a : 0xb8a888)]);
   switch (id) {
-    case 'futon': return mesh([box(1.6, 0.25, 3.4, 0xf4efe2), box(1.6, 0.12, 2.2, 0x6f8fd8, 0, 0.25, 0.5), box(1.1, 0.2, 0.6, 0xffffff, 0, 0.25, -1.3)]);
+    /* The blanket is its own mesh, `blanket`, so a nap can take it off: "temporarily remove the blue cube
+       above the futon while the player is sleeping on it, so it looks like the player is under the covers"
+       — the drawing of her asleep has its own covers (activities.js `_nap`). */
+    case 'futon': {
+      const g = new THREE.Group();
+      const bl = mesh([box(1.6, 0.12, 2.2, 0x6f8fd8, 0, 0.25, 0.5)]);
+      bl.name = 'blanket';
+      g.add(mesh([box(1.6, 0.25, 3.4, 0xf4efe2), box(1.1, 0.2, 0.6, 0xffffff, 0, 0.25, -1.3)]), bl);
+      return g;
+    }
     case 'kotatsu': return mesh([box(3, 0.12, 3, 0x7a4a2a, 0, 0.75), box(3.4, 0.6, 3.4, 0xc0504d), cyl(0.3, 0.3, 0.08, 0xffd27a, 0.6, 0.88, 0.4)]);
     case 'tansu': return mesh([box(1.6, 1.6, 1, 0x8a5a32), box(1.5, 0.05, 0.05, 0x2a1a10, 0, 0.55, 0.52), box(1.5, 0.05, 0.05, 0x2a1a10, 0, 1.1, 0.52)]);
     case 'kitchen': return mesh([box(3.6, 1.0, 1.4, 0x9a6a3a), box(3.6, 0.08, 1.4, 0xd8d0c0, 0, 1.0), cyl(0.4, 0.35, 0.3, 0x333333, -0.8, 1.08), cyl(0.35, 0.3, 0.25, 0x555555, 0.8, 1.08)]);

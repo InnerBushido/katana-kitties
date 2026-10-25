@@ -142,6 +142,13 @@ export class HomeActivities {
     if (p) { p.homePose = null; p.homeLift = 0; }
     // she was lifted onto the futon; she gets up where she lay down from
     if (h?.back && p?.position) { p.position.x = h.back.x; p.position.z = h.back.z; }
+    if (h?.act === 'nap') this._blanket(h.s);
+  }
+
+  /** The futon's blanket is off while anybody is asleep on it (`drawItem('futon')`). */
+  _blanket(s) {
+    const bl = s?.body?.getObjectByName?.('blanket');
+    if (bl) bl.visible = ![...this.held.values()].some((h) => h.act === 'nap' && h.s?.body === s.body);
   }
 
   /* -------------------------------- shrine -------------------------------- */
@@ -338,6 +345,7 @@ export class HomeActivities {
     }
     this._hold(p, 'nap', HOLD.nap, { s, back });
     p.homePose = 'futon';
+    this._blanket(s);
     this.game.toast(`${p.name} snuggles under the futon… zzz`, p.index);
   }
 
@@ -675,7 +683,7 @@ export class HomeActivities {
     const fighting = T?.state && T.state !== 'off';
     for (const [i, h] of this.held) {
       const p = players[i];
-      if (!p || fighting) { this._release(p ?? {}); this.held.delete(i); continue; }
+      if (!p || fighting) { this._release(p ?? {}); this.held.delete(i); if (h.act === 'nap') this._blanket(h.s); continue; }
       h.t += dt;
       p.velocity?.set?.(0, Math.min(0, p.velocity.y), 0);
       if (h.act === 'meal' || h.t < h.dur) continue;
