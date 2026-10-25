@@ -724,6 +724,49 @@ described at the bottom of this section for its lessons.
   Scribe heard no words in any of them. A missing file leaves the course on
   the simulator's music.
 
+**The Oct 2026 pass (Richard's list).** Each fix below has a world-check.
+- **Doors fit her, and so does everything else.** A door was 1.8 wide for a
+  kitten 1.5 across (`PLAYER_RADIUS` 0.75), with a post at each edge. The old
+  tight gaps were only passable because `resolveSolids` pushed her in a
+  lucky order. Doors are now at least `DOOR_MIN` (2.8). `courseProblems`
+  floods a 0.25 raster at her real size (`kittenRaster`). The half-unit guard
+  raster found no cell centres in a 3-wide diagonal corridor, so it made
+  courses look uncrossable. The flood checks every door, ladder foot,
+  lantern, barrel (`HIDE_REACH` 1.9; at 1.4 there was a 5cm sliver), pickup
+  and rope. It found four real layout bugs: the castle's front door opening
+  onto its fence, stacks blocking the keep, the shrine's last barrel across
+  its path, and a castle samurai patrolling through walls.
+  `tools/bamboo-probe.mjs` prints them.
+- **The edge is solid, and there is a backstop.** The fence is a band of
+  solid canes `FENCE.thick` deep. `_bounds` puts her back on the last
+  walkable ground she stood over. A barrel's exit (`_exitSpot`) only lands on
+  ground she fits on, which is how she used to come out behind the fence.
+- **One press, one meaning.** INTERACT or JUMP gets into a barrel, onto a rope
+  (a press now; it used to grab her as she jumped under one) or onto a
+  ladder, and the jump is eaten. JUMP never asks to leave. Within `NEAR_K`
+  times the reach of any of them, an INTERACT that reaches nothing does
+  nothing at all, so the question only comes up in the open.
+- **The party is one party.** One capture fades every pane, puts everybody at
+  the lantern lit last by anybody, and puts every guard at `patrolAt(…, 0)`.
+  Only the kitten caught pays. The party shares one camera (`groupShot`),
+  which follows player 1 past `PARTY_CAM.split` until they are back within
+  `rejoin`.
+- **Seen going in is caught.** A samurai who saw her climb into a barrel in
+  the last 0.6s walks over and tips her out. An archer waits 3s, then shoots
+  the barrel: half the time she is caught, otherwise she is spooked out.
+- **Nothing flies through walls.** A shot stopped 0.6 short of a wall still
+  had a kitten just the other side inside `SHOT.hitR`, so the hit now asks
+  `blocked` too. Her shuriken's ring never goes red through a wall, a blocked
+  shuriken knocks nobody out, and pebbles stop where they hit.
+- **Sprint** is `SPRINT.k` (1.15×) her walk, set as a gait under the game's
+  own sprint, and it fills a guard's meter twice as fast.
+- **Stacks** of boxes, firewood or rice replace the crates. They never stand
+  in a door's mouth or at a ladder's foot, because `courseProblems` would
+  fail.
+- **The Village was redesigned** from his marked-up maps, with four routes.
+  `tools/bamboo-plan.mjs village --before <ref>` draws them beside the old
+  plan, for sign-off.
+
 **v1, for its lessons.** It was a seeded forest with one route, and four
 watchers whose sight swept θ(t) = θ₀ + S·sin(ωt + φ). The first layout could
 not be crossed. A time-expanded search over (place, time) proved it, and one

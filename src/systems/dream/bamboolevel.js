@@ -19,6 +19,10 @@
      houses     a room you can walk into: walls `h` high with doors, a roof at
                 `h` you can stand on, and (if it has one) a ladder
      towers     a post with a floor on top — where an archer stands
+     trails     corridors like `paths`, walked THROUGH bamboo: open ground with
+                canes standing in it, off its middle (`trailCanes`), that hide
+                her from a samurai the way the forest does. The way to a place
+                that is meant to be found — "it should not look like a bug"
      decks      floating floors, { a, b, r, y }
      ropes      { from: [a, b], to: [a, b], y } — she hangs under them
      clumps / thickets / barrels / crates   cover, of different heights
@@ -53,9 +57,41 @@ export const PLAZA = {
 
 /** Heights a kitten's eyes and a guard's are at, above the floor they stand on. */
 export const EYE = { guard: 2.3, stand: 1.6, crawl: 0.5 };
-/** Cover heights: anything lower than the sight line where it crosses does not block. */
-export const COVER = { clump: 6, barrel: 1.35, crate: 1.1, thicket: 1.0, smoke: 4.5, forest: 99 };
-export const RADII = { clump: 0.9, barrel: 0.6, crate: 0.75, thicket: 1.6, smoke: 3.5 };
+/** Cover heights: anything lower than the sight line where it crosses does not block.
+ *  A `crate` is a STACK now — boxes, firewood or rice bales, drawn by bamboo.js
+ *  `_stack` — and stands taller than the one box it replaced: Richard, "replace
+ *  with something more interesting that looks like an obstacle". */
+export const COVER = { clump: 6, barrel: 1.35, crate: 1.6, thicket: 1.0, smoke: 4.5, forest: 99 };
+export const RADII = { clump: 0.9, barrel: 0.6, crate: 0.8, thicket: 1.6, smoke: 3.5 };
+/**
+ * THE KITTEN'S SIZE, as the course is measured against it. `Player.radius` is
+ * PLAYER_RADIUS (0.75) for every kitten at every screen size — the collider
+ * never scales with the pane. Copied, not imported: this file is read by
+ * tools that load no scene, and world-check holds the two equal.
+ */
+export const KITTEN_R = 0.75;
+/**
+ * A DOOR IS THIS WIDE AT LEAST. A wall is posts r 0.3 every 0.45 INCLUDING
+ * one on each edge of the opening, so a 1.8 door had 1.2 of clear width for a
+ * kitten 1.5 across — Richard, Oct 2026: "the doors are very tight and may
+ * need to be bigger in general". Nobody fitted; the ones who got through were
+ * squeezed through by the order the posts pushed in. 2.8 leaves 0.35 a side.
+ */
+export const DOOR_MIN = 2.8;
+/**
+ * THE FENCE: a cane post every 0.7 on forest ground within `near` of the
+ * walkable, solid to `top` — under the 5.2 roofs, so a rope between two of
+ * them is not stopped by the canes it crosses ("the collider there needs to be
+ * lower on the bamboo area") — and drawn `thick` deep in a denser band, so the
+ * edge of a course reads as a wall. The wall that HOLDS is `walkAt`: bamboo.js
+ * puts a kitten back on the last walkable ground she stood over, so no post
+ * spacing, barrel or jump can let her out.
+ */
+export const FENCE = { near: 1.25, step: 0.7, r: 0.35, top: 5.0, thick: 2.6 };
+/** A trail's canes: `r` each, none nearer than `lane` to its middle. */
+export const TRAIL = { lane: 1.15, r: 0.18 };
+/** A tower's post, as a sight line and a shot meet it (bamboo.js draws it 0.45–0.6). */
+export const TOWER_POST = 0.6;
 /** A samurai does not look up: a kitten more than this above his floor is not seen by him. */
 export const SAMURAI_UP = 3.2;
 /** An archer on a tower looks down as far as he likes, and up this far. */
@@ -83,10 +119,20 @@ export const DIFFS = [
 
 /** Her crawl, as a fraction of her walk (`Player.gaitK`). WALK_SPEED is 10.5. */
 export const SNEAK = { gait: 0.4, speed: 10.5 * 0.4 };
+/**
+ * HER SPRINT IN HERE: 1.15x her walk, not the game's 17 (1.6x). Richard: "make
+ * them run slightly faster, like 1.15x's faster to have some benefit but not
+ * break the course". As a gait over SPRINT_SPEED, so `Player` knows nothing
+ * of it; world-check holds player.js's 10.5 and 17 to these. And a samurai's
+ * meter fills `meterK` times as fast on a kitten who is sprinting — "their
+ * 'arrest' time is half the amount of time".
+ */
+export const SPRINT = { k: 1.15, walk: 10.5, run: 17, gait: (10.5 * 1.15) / 17, meterK: 2 };
 /** Seconds added to a run's time per capture — the score is the time. */
 export const CAUGHT_COST = 15;
 
 const deg = (d) => (d * Math.PI) / 180;
+const NONE = [];
 export const wrap = (x) => Math.atan2(Math.sin(x), Math.cos(x));
 
 /* ------------------------------- geometry ------------------------------- */
@@ -127,7 +173,7 @@ export function houseWalls(H) {
   for (const [k, [p, q]] of Object.entries(sides)) {
     const along = k[0] === 'a' ? 1 : 0;          // which coordinate runs along the side
     const lo = p[along]; const hi = q[along];
-    const gaps = (H.doors ?? []).filter((d) => d.side === k).map((d) => [d.at - d.w / 2, d.at + d.w / 2]).sort((x, y) => x[0] - y[0]);
+    const gaps = (H.doors ?? []).filter((d) => d.side === k).map((d) => [d.at - doorW(d) / 2, d.at + doorW(d) / 2]).sort((x, y) => x[0] - y[0]);
     let from = lo;
     for (const [g0, g1] of [...gaps, [hi, hi]]) {
       if (g0 > from + 0.05) {
@@ -139,6 +185,17 @@ export function houseWalls(H) {
     }
   }
   return out;
+}
+
+/** A door's width: what the course says, never under DOOR_MIN. */
+export const doorW = (d) => Math.max(d.w ?? DOOR_MIN, DOOR_MIN);
+
+/** The middle of a door's opening, and the unit normal OUT of the house. */
+export function doorMouth(H, d) {
+  if (d.side === 'a0') return { a: H.a0, b: d.at, na: -1, nb: 0 };
+  if (d.side === 'a1') return { a: H.a1, b: d.at, na: 1, nb: 0 };
+  if (d.side === 'b0') return { a: d.at, b: H.b0, na: 0, nb: -1 };
+  return { a: d.at, b: H.b1, na: 0, nb: 1 };
 }
 
 /** Where a house's ladder stands: outside the wall it names, at `at` along it,
@@ -177,6 +234,7 @@ export function levelOf(C) {
     if (polyDist(gate, a, b) <= GATE.w / 2) return true;
     if (a < R.a0 + 0.9 || Math.hypot(a, b) > WALK_R) return false;
     for (const P of C.paths ?? []) if (polyDist(P.pts, a, b) <= P.w / 2) return true;
+    for (const P of C.trails ?? []) if (polyDist(P.pts, a, b) <= P.w / 2) return true;
     for (const r of C.rects ?? []) if (a >= r.a0 && a <= r.a1 && b >= r.b0 && b <= r.b1) return true;
     for (const d of C.rings ?? []) { const r = Math.hypot(a - d.a, b - d.b); if (r <= d.r1 && r >= (d.r0 ?? 0)) return true; }
     for (const H of C.houses ?? []) if (a >= H.a0 && a <= H.a1 && b >= H.b0 && b <= H.b1) return true;
@@ -187,13 +245,52 @@ export function levelOf(C) {
   for (let i = 0; i < nA; i++) for (let j = 0; j < nB; j++) {
     forest[i * nB + j] = !walk[i * nB + j] && inRegion(ca(i), cb(j)) ? 1 : 0;
   }
+  /* A TRAIL is walkable AND bamboo: a samurai's sight stops in it as it does
+     in the forest (`blocked`), and the canes standing in it (`trailCanes`)
+     are solid, so it reads as — and is — a way through the woods rather than
+     a hole in the fence. Its own raster: walking on it is not the forest. */
+  const trail = new Uint8Array(nA * nB);
+  const onTrail = (a, b) => (C.trails ?? []).some((P) => polyDist(P.pts, a, b) <= P.w / 2)
+    && !(C.paths ?? []).some((P) => polyDist(P.pts, a, b) <= P.w / 2)
+    && !(C.rects ?? []).some((r) => a >= r.a0 && a <= r.a1 && b >= r.b0 && b <= r.b1)
+    && !(C.houses ?? []).some((H) => a >= H.a0 && a <= H.a1 && b >= H.b0 && b <= H.b1);
+  for (let i = 0; i < nA; i++) for (let j = 0; j < nB; j++) trail[i * nB + j] = walk[i * nB + j] && onTrail(ca(i), cb(j)) ? 1 : 0;
+  /* THE CANES IN A TRAIL, seeded off the course id so a trail is the same
+     trail every visit: either side of its middle, never ON it — the clear lane
+     is 2 × (FENCE.trailLane − cane r) = 1.94 across, over a kitten's 1.5. */
+  const trailCanes = [];
+  {
+    let s = 0x7a11 ^ (C.id.length * 131);
+    const R = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+    for (const P of C.trails ?? []) {
+      for (let k = 0; k < P.pts.length - 1; k++) {
+        const [a0, b0] = P.pts[k]; const [a1, b1] = P.pts[k + 1];
+        const len = Math.hypot(a1 - a0, b1 - b0);
+        const ua = (a1 - a0) / len; const ub = (b1 - b0) / len;
+        for (let t = 0.4; t < len; t += 0.55) {
+          for (const side of [-1, 1]) {
+            if (R() < 0.25) continue;
+            const off = side * (TRAIL.lane + R() * (P.w / 2 - TRAIL.lane - 0.1));
+            const a = a0 + ua * t - ub * off; const b = b0 + ub * t + ua * off;
+            // Off the middle of EVERY leg of every trail — a bend's canes must not land in the next leg's lane.
+            if ((C.trails ?? []).some((Q) => polyDist(Q.pts, a, b) < TRAIL.lane)) continue;
+            if (!walkable(a, b) || !onTrail(a, b)) continue;
+            // ...nor at a ladder's foot, or across a door: the trail leads TO those.
+            if ((C.houses ?? []).some((H) => (H.ladder && Math.hypot(a - ladderFoot(H).a, b - ladderFoot(H).b) < 2.4)
+              || (H.doors ?? []).some((d) => { const m = doorMouth(H, d); return Math.hypot(a - m.a, b - m.b) < doorW(d) / 2 + 1.6; }))) continue;
+            trailCanes.push({ a, b, r: TRAIL.r, h: 3.4 + R() * 2.6 });
+          }
+        }
+      }
+    }
+  }
   /* THE FENCE: a cane post at every forest point within reach of the walkable
-     ground, on a 0.7 lattice — dense enough that a kitten (r 0.5) cannot pass
+     ground, on a 0.7 lattice — dense enough that a kitten (r 0.75) cannot pass
      between two, sparse enough to stay a few hundred solids. Further in, the
-     forest is drawing only: nobody can get to it. */
+     forest is drawing only, and `walkAt` is the wall: nobody can get to it. */
   const fence = [];
-  const near = 1.25;
-  const step = 0.7;
+  const near = FENCE.near;
+  const step = FENCE.step;
   for (let a = R.a0 + 0.2; a <= R.a1; a += step) {
     for (let b = R.b0; b <= R.b1; b += step) {
       if (!inRegion(a, b) || walkable(a, b)) continue;
@@ -208,14 +305,34 @@ export function levelOf(C) {
       if (hit) fence.push({ a, b });
     }
   }
+  /* THE DENSE BAND: forest within FENCE.thick of the walkable, drawn thick
+     (bamboo.js), so the edge of a course is a wall of canes and not a hedge
+     with the forest's ordinary spacing showing through it. */
+  const band = new Uint8Array(nA * nB);
+  {
+    const k = Math.ceil(FENCE.thick / GRID);
+    for (let i = 0; i < nA; i++) for (let j = 0; j < nB; j++) {
+      if (!walk[i * nB + j]) continue;
+      for (let di = -k; di <= k; di++) for (let dj = -k; dj <= k; dj++) {
+        if (di * di + dj * dj > k * k) continue;
+        const ii = i + di; const jj = j + dj;
+        if (ii < 0 || jj < 0 || ii >= nA || jj >= nB) continue;
+        if (forest[ii * nB + jj]) band[ii * nB + jj] = 1;
+      }
+    }
+  }
   const walls = (C.houses ?? []).flatMap(houseWalls);
+  /* A TOWER'S POST stops a sight line and a shot below its floor — an archer
+     on top looks over it, a kitten behind it is behind it. Not cover in the
+     list (it is not crouched behind), so it is asked on its own in `blocked`. */
+  const posts = (C.towers ?? []).map((t) => ({ a: t.a, b: t.b, r: TOWER_POST, top: t.h }));
   const cover = [
     ...(C.clumps ?? []).map((c) => ({ ...c, kind: 'clump', r: c.r ?? RADII.clump, top: COVER.clump, solid: true, samuraiOnly: true })),
     ...(C.barrels ?? []).map((c) => ({ ...c, kind: 'barrel', r: RADII.barrel, top: COVER.barrel, solid: true })),
     ...(C.crates ?? []).map((c) => ({ ...c, kind: 'crate', r: RADII.crate, top: COVER.crate, solid: true })),
     ...(C.thickets ?? []).map((c) => ({ ...c, kind: 'thicket', r: c.r ?? RADII.thicket, top: COVER.thicket, solid: false, samuraiOnly: true })),
   ];
-  const L = { C, nA, nB, walk, forest, fence, walls, cover, ca, cb, cell: (a, b) => cellOf(a, b, nA, nB) };
+  const L = { C, nA, nB, walk, forest, trail, trailCanes, band, fence, walls, posts, cover, ca, cb, cell: (a, b) => cellOf(a, b, nA, nB) };
   /* WHERE A GUARD CAN WALK: walkable, and clear of every wall and every solid
      by half a unit, so an investigation never routes him through a barrel. */
   const path = new Uint8Array(nA * nB);
@@ -225,11 +342,179 @@ export function levelOf(C) {
     if (walls.some((w) => segDist(a, b, w.a0, w.b0, w.a1, w.b1) < 0.45)) continue;
     if (cover.some((c) => c.solid && Math.hypot(a - c.a, b - c.b) < c.r + 0.3)) continue;
     if ((C.towers ?? []).some((t) => Math.hypot(a - t.a, b - t.b) < (t.r ?? 1.4) + 0.3)) continue;
+    if (trailCanes.some((c) => Math.hypot(a - c.a, b - c.b) < c.r + 0.3)) continue;
     path[i * nB + j] = 1;
   }
   L.path = path;
   _levels.set(C.id, L);
   return L;
+}
+
+/** Is (a, b) ground a kitten may stand over — the course's floor, a house, a trail? */
+export function walkAt(L, a, b) {
+  const c = L.cell(a, b);
+  return c >= 0 && !!L.walk[c];
+}
+
+/**
+ * WHERE A KITTEN'S MIDDLE CAN BE, at her real size: over walkable ground, and
+ * KITTEN_R clear of every post, wall, solid and cane the game will push her
+ * off. The question "can she get there" is asked on this, not on `path` (a
+ * guard's, half a unit clear) — "many times the box obstacles are in front of
+ * a door" and "a box blocking the walking path to the ladder" are both places
+ * where a guard fitted and she did not.
+ *
+ * ON ITS OWN, FINER RASTER (KIT_GRID). On the half-unit one a 3-wide corridor
+ * running diagonally has a clear band 0.9 across with no cell centres in it
+ * for a stretch, and the flood called four of the five courses uncrossable
+ * that kittens cross every afternoon. At a quarter it agrees with the game.
+ */
+export const KIT_GRID = 0.25;
+export function kittenRaster(L) {
+  if (L.kit) return L.kit;
+  const R = REGION;
+  const nA = Math.ceil((R.a1 - R.a0) / KIT_GRID);
+  const nB = Math.ceil((R.b1 - R.b0) / KIT_GRID);
+  const kit = new Uint8Array(nA * nB);
+  // Point solids binned 2 units square, so each cell asks only its neighbours.
+  const pts = [
+    ...L.cover.filter((c) => c.solid).map((c) => ({ a: c.a, b: c.b, r: c.r })),
+    ...L.fence.map((f) => ({ a: f.a, b: f.b, r: FENCE.r })),
+    ...L.trailCanes.map((c) => ({ a: c.a, b: c.b, r: c.r })),
+    ...(L.C.towers ?? []).map((t) => ({ a: t.a, b: t.b, r: t.r ?? 1.4 })),
+  ];
+  const BIN = 2;
+  const bins = new Map();
+  const key = (u, v) => `${Math.floor(u / BIN)},${Math.floor(v / BIN)}`;
+  for (const q of pts) { const k = key(q.a, q.b); if (!bins.has(k)) bins.set(k, []); bins.get(k).push(q); }
+  const near = (a, b) => {
+    const out = [];
+    for (let du = -BIN; du <= BIN; du += BIN) for (let dv = -BIN; dv <= BIN; dv += BIN) out.push(...(bins.get(key(a + du, b + dv)) ?? []));
+    return out;
+  };
+  for (let i = 0; i < nA; i++) for (let j = 0; j < nB; j++) {
+    const a = R.a0 + (i + 0.5) * KIT_GRID; const b = R.b0 + (j + 0.5) * KIT_GRID;
+    if (!walkAt(L, a, b)) continue;
+    if (L.walls.some((w) => segDist(a, b, w.a0, w.b0, w.a1, w.b1) < 0.3 + KITTEN_R)) continue;
+    if (near(a, b).some((q) => Math.hypot(a - q.a, b - q.b) < q.r + KITTEN_R)) continue;
+    kit[i * nB + j] = 1;
+  }
+  kit.nA = nA; kit.nB = nB;
+  kit.cell = (a, b) => {
+    const i = Math.floor((a - R.a0) / KIT_GRID); const j = Math.floor((b - R.b0) / KIT_GRID);
+    return i < 0 || j < 0 || i >= nA || j >= nB ? -1 : i * nB + j;
+  };
+  L.kit = kit;
+  return kit;
+}
+
+/**
+ * EVERY CELL (of `kittenRaster`) A KITTEN CAN WALK TO FROM `from`, on the
+ * ground, at her size: 8 neighbours, no corner cutting. Roofs are not in it —
+ * they are reached by ladders, and `courseProblems` asks about those.
+ */
+export function reachable(L, from = START) {
+  const kit = kittenRaster(L);
+  const { nA, nB } = kit;
+  const seen = new Uint8Array(nA * nB);
+  seen.cell = kit.cell;
+  const s = kit.cell(from.a, from.b);
+  if (s < 0 || !kit[s]) return seen;
+  seen[s] = 1;
+  const q = [s];
+  for (let h = 0; h < q.length; h++) {
+    const k = q[h]; const i = Math.floor(k / nB); const j = k % nB;
+    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
+      if (!di && !dj) continue;
+      const ii = i + di; const jj = j + dj;
+      if (ii < 0 || jj < 0 || ii >= nA || jj >= nB) continue;
+      const kk = ii * nB + jj;
+      if (!kit[kk] || seen[kk]) continue;
+      if (di && dj && !(kit[i * nB + jj] && kit[ii * nB + j])) continue;
+      seen[kk] = 1;
+      q.push(kk);
+    }
+  }
+  return seen;
+}
+
+/** Can she stand somewhere within `r` of (a, b), reached from the start? */
+export function reachesNear(L, seen, a, b, r) {
+  for (let da = -r; da <= r; da += KIT_GRID) for (let db = -r; db <= r; db += KIT_GRID) {
+    if (da * da + db * db > r * r) continue;
+    const c = seen.cell(a + da, b + db);
+    if (c >= 0 && seen[c]) return true;
+  }
+  return false;
+}
+
+/** How near a ladder's foot she climbs it from (bamboo.js LADDER.reach). */
+export const LADDER_REACH = 0.9;
+/**
+ * HOW NEAR A BARREL'S MIDDLE SHE CLIMBS IN FROM (bamboo.js HIDE_R). It was 1.4
+ * against a barrel r 0.6 and a kitten r 0.75 — 1.35 apart at the closest the
+ * collider lets them be, so the press worked in a 5 cm sliver, and only once
+ * she had already walked into the barrel.
+ */
+export const HIDE_REACH = 1.9;
+/** A rope is hung from when it is this far above her feet (bamboo.js ROPE). */
+export const HANG = { lo: 1.6, hi: 3.8 };
+
+/**
+ * EVERYTHING ABOUT A COURSE'S LAYOUT THAT WOULD STILL LOOK FINE ON SCREEN
+ * WHILE BEING BROKEN, as sentences — empty when there is nothing. Asked at
+ * her real size (`kittenRaster`), from the start:
+ *   every door has ground she can reach on both sides of it, and nothing
+ *     solid in its mouth ("many times the box obstacles are in front of a door")
+ *   every ladder's foot can be stood at, and the roof it climbs to is a roof
+ *   every lantern, pickup and barrel can be got to, and so can the scroll
+ *   every rope hangs over a roof at both ends, low enough to grab from it,
+ *     and at least one of those roofs has a ladder she can get to
+ * world-check fails on any; tools/bamboo-probe.mjs prints them.
+ */
+export function courseProblems(C) {
+  const L = levelOf(C);
+  const seen = reachable(L, START);
+  const out = [];
+  const at = (p) => `(${(+p.a).toFixed(1)}, ${(+p.b).toFixed(1)})`;
+  const solids = [...L.cover.filter((c) => c.solid), ...L.trailCanes.map((c) => ({ ...c, kind: 'trail cane' }))];
+  for (const H of C.houses ?? []) {
+    for (const d of H.doors ?? []) {
+      const m = doorMouth(H, d);
+      const name = `${H.id}'s ${d.side} door at ${d.at}`;
+      if (doorW(d) < DOOR_MIN) out.push(`${name} is ${doorW(d)} wide, under ${DOOR_MIN}`);
+      for (const [k, side] of [[1.6, 'outside'], [-1.6, 'inside']]) {
+        if (!reachesNear(L, seen, m.a + m.na * k, m.b + m.nb * k, 0.8)) out.push(`${name}: she cannot get to its ${side}`);
+      }
+      for (const c of solids) {
+        if (segDist(c.a, c.b, m.a - m.na * 1.6, m.b - m.nb * 1.6, m.a + m.na * 2.2, m.b + m.nb * 2.2) < c.r + KITTEN_R + 0.15) {
+          out.push(`a ${c.kind} at ${at(c)} stands in ${name}`);
+        }
+      }
+    }
+    if (H.ladder) {
+      const f = ladderFoot(H);
+      if (!reachesNear(L, seen, f.a, f.b, LADDER_REACH)) out.push(`${H.id}'s ladder: she cannot stand at its foot ${at(f)}`);
+      // Not one on the far side of the wall: a barrel indoors does not crowd a ladder outdoors.
+      for (const c of solids) if (!inHouse(H, c.a, c.b) && Math.hypot(c.a - f.a, c.b - f.b) < c.r + KITTEN_R + 0.6) out.push(`a ${c.kind} at ${at(c)} crowds ${H.id}'s ladder`);
+    }
+  }
+  const all = (xs) => xs ?? [];
+  for (const l of all(C.lanterns)) if (!reachesNear(L, seen, l.a, l.b, 1.1)) out.push(`the lantern at ${at(l)} cannot be reached`);
+  for (const k of all(C.pickups)) if (!reachesNear(L, seen, k.a, k.b, 1.0)) out.push(`the ${k.kind} at ${at(k)} cannot be reached`);
+  for (const b of all(C.barrels)) if (!reachesNear(L, seen, b.a, b.b, HIDE_REACH - 0.1)) out.push(`the barrel at ${at(b)} cannot be got into`);
+  if (!reachesNear(L, seen, C.scroll.a, C.scroll.b, 1.5)) out.push(`the scroll at ${at(C.scroll)} cannot be reached`);
+  const roofOf = (a, b) => all(C.houses).find((H) => inHouse(H, a, b));
+  const climbable = (H) => !!H?.ladder && reachesNear(L, seen, ladderFoot(H).a, ladderFoot(H).b, LADDER_REACH);
+  for (const R of all(C.ropes)) {
+    const ends = [R.from, R.to].map(([a, b]) => ({ a, b, H: roofOf(a, b) }));
+    for (const e of ends) {
+      if (!e.H) out.push(`a rope's end at ${at(e)} is over no roof`);
+      else if (R.y - e.H.h < HANG.lo || R.y - e.H.h > HANG.hi) out.push(`a rope's end over ${e.H.id} hangs ${(R.y - e.H.h).toFixed(1)} above its roof — not grabbable`);
+    }
+    if (!ends.some((e) => climbable(e.H))) out.push(`the rope ${at(ends[0])}–${at(ends[1])} has no ladder up to either end`);
+  }
+  return out;
 }
 
 function cellOf(a, b, nA, nB) {
@@ -319,14 +604,18 @@ export function blocked(L, e, k, who, smokes = []) {
     for (let s = 1; s < n; s++) {
       const u = s / n;
       const c = L.cell(e.a + da * u, e.b + db * u);
-      if (c >= 0 && L.forest[c]) return true;
+      // A trail's canes hide her as the forest's do — under their tops.
+      if (c >= 0 && (L.forest[c] || (L.trail?.[c] && yAt(u) < COVER.clump))) return true;
     }
   }
-  for (const c of L.cover) {
-    if (c.samuraiOnly && who === 'archer') continue;
-    const u = ((c.a - e.a) * da + (c.b - e.b) * db) / (d * d || 1);
-    if (u <= 0 || u >= 1) continue;
-    if (Math.hypot(e.a + da * u - c.a, e.b + db * u - c.b) < c.r && yAt(u) < c.top) return true;
+  // Two loops, not one over a spread: this runs for every ray of every cone, every other frame.
+  for (const list of [L.cover, L.posts ?? NONE]) {
+    for (const c of list) {
+      if (c.samuraiOnly && who === 'archer') continue;
+      const u = ((c.a - e.a) * da + (c.b - e.b) * db) / (d * d || 1);
+      if (u <= 0 || u >= 1) continue;
+      if (Math.hypot(e.a + da * u - c.a, e.b + db * u - c.b) < c.r && yAt(u) < c.top) return true;
+    }
   }
   for (const w of L.walls) {
     const u = crossT(e.a, e.b, k.a, k.b, w.a0, w.b0, w.a1, w.b1);
@@ -402,10 +691,21 @@ export function solve(C, n, { tMax = 200, cell = 1.0, from = START, guards = nul
   const nA = Math.ceil((R.a1 - R.a0) / cell);
   const nB = Math.ceil((R.b1 - R.b0) / cell);
   const ok = new Uint8Array(nA * nB);
+  /* Where SHE fits (`kittenRaster`), sampled at this search's cell. On the
+     guards' raster the solver crawled a 1.5-wide kitten through 1.2-wide
+     doors — which is how the doors stayed too tight for a whole version. */
+  const kit = kittenRaster(L);
   for (let i = 0; i < nA; i++) for (let j = 0; j < nB; j++) {
     const a = R.a0 + (i + 0.5) * cell; const b = R.b0 + (j + 0.5) * cell;
-    const c = L.cell(a, b);
-    if (c >= 0 && L.path[c]) ok[i * nB + j] = 1;
+    // Any kitten cell in this search cell: the search is coarse, she is not.
+    let fit = false;
+    for (let u = -cell / 2 + KIT_GRID / 2; u < cell / 2 && !fit; u += KIT_GRID) {
+      for (let v = -cell / 2 + KIT_GRID / 2; v < cell / 2 && !fit; v += KIT_GRID) {
+        const c = kit.cell(a + u, b + v);
+        if (c >= 0 && kit[c]) fit = true;
+      }
+    }
+    if (fit) ok[i * nB + j] = 1;
   }
   const dt = cell / SNEAK.speed;
   const goal = C.scroll;

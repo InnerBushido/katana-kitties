@@ -39992,7 +39992,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const DS2 = readFileSync(new URL('../src/systems/dreamdojo.js', import.meta.url), 'utf8');
     ok('正弦 main.js frames a session member with the course\'s focus, anchors her on the runner, and the shared rig takes its shot',
       /this\.dream\?\.sine\?\.cameraFocus\?\.\(p\)/.test(MS2)
-      && /pts: this\.players\.map\(\(p\) => this\.dream\?\.sine\?\.paneAnchor\?\.\(p\) \?\? p\.position\)/.test(MS2)
+      && /pts: this\.players\.map\(\(p\) => this\.dream\?\.sine\?\.paneAnchor\?\.\(p\)( \?\? this\.dream\?\.bamboo\?\.paneAnchor\?\.\(p\))? \?\? p\.position\)/.test(MS2)
       && /const course = this\.dream\?\.sine\?\.groupShot\?\.\(members\)/.test(MS2)
       && /if \(rig\.courseT > 0 && rig\.courseShot\) \{/.test(MS2));
     ok('...and the Dream Dojo racks the kit in _applyKit, forgets her on the way out before the kit comes apart, and drops the session on exitAll',
@@ -40401,22 +40401,308 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     B._noise(sam.at.a + 1, sam.at.b, B.D.noise.walk);
     ok('忍 a guard hears a step inside its ring and not one outside it', deaf !== 'heard' && sam.mode === 'heard', `${deaf} ${sam.mode}`);
     sam.reset(B.clock);
-    // CAUGHT: hands up, no legs, the pane fades, and she is put back on her feet at her start. Never hurt.
+    /* CAUGHT: hands up, no legs, the pane fades, and she is put back on her
+       feet at her start — AND SO IS HER SISTER, who was not caught and pays
+       nothing for it. Richard: "when a player gets caught, all players should
+       respawn at the checkpoint and all game states should get reset (like
+       have all the npc's start in their default spot, facing the default
+       way)". Never hurt. */
     const hp0 = her.hp;
+    const run2 = S.runs.get(1);
+    put(sis, sp({ a: run2.slot.a + 4, b: run2.slot.b }));
+    for (const g of B.view.guards) if (g.active) g.off = 7.3;     // somewhere along his rounds that is not their start
+    B.fire('star', { a: 0, b: 0, y: 1.5 }, { a: 1, b: 0, y: 1.5 }, null);
     B.caught(0, null);
     pad.mx = 1;
     st = d.spec.steer(d, pad);
     const frozen = st.mx === 0 && run.capture;
     pad.mx = 0;
-    let fadeMax = 0;
-    for (let k = 0; k < 150; k++) { step(1 / 60); fadeMax = Math.max(fadeMax, B.fadeOf(0)); }
+    let fadeMax = 0; let fadeSis = 0; let guardsAtStart = null;
+    for (let k = 0; k < 150; k++) {
+      const swapping = run.capture && run.capture.t < BM.ARREST.swap;
+      step(1 / 60);
+      fadeMax = Math.max(fadeMax, B.fadeOf(0)); fadeSis = Math.max(fadeSis, B.fadeOf(1));
+      // The frame of the swap: every guard on the first step of his rounds, facing its first way.
+      if (swapping && run.capture && run.capture.t >= BM.ARREST.swap) {
+        guardsAtStart = B.view.guards.filter((g) => g.active).every((g) => {
+          const P0 = BL.patrolAt(g.g, B.D, 0);
+          // One frame of his walk after the swap (the clock moves before he does): a few centimetres at most.
+          return g.mode === 'patrol' && Math.hypot(g.at.a - P0.a, g.at.b - P0.b) < 0.15 && Math.abs(BL.wrap((g.at.look ?? 0) - (P0.look ?? 0))) < 0.15 && Math.abs(g.off + B.clock) < 0.05;
+        }) && B.shots.list.length === 0;
+      }
+    }
     const q = B.coords(her);
+    const q2 = B.coords(sis);
     ok('忍 caught: no legs, the pane fades to black, she is back at her start, and the run goes on',
       frozen && fadeMax > 0.95 && !run.capture && run.caught === 1 && Math.hypot(q.a - run.slot.a, q.b - run.slot.b) < 0.01 && d.state === 'live' && B.fadeOf(0) === 0,
       `${fadeMax.toFixed(2)} ${q.a.toFixed(2)},${q.b.toFixed(2)} ${d.state}`);
+    ok('...and the WHOLE PARTY goes back with her: her sister\'s pane fades too, she is at her own start, and pays nothing',
+      fadeSis > 0.95 && !run2.capture && run2.caught === 0 && Math.hypot(q2.a - run2.slot.a, q2.b - run2.slot.b) < 0.01 && !S.capture,
+      `${fadeSis.toFixed(2)} ${q2.a.toFixed(2)},${q2.b.toFixed(2)} caught ${run2.caught}`);
+    ok('...and every guard is back on the first step of his rounds, facing its first way, with nothing left in the air', guardsAtStart === true);
+    // The checkpoint is the PARTY's: a lantern lit by her sister is where a capture of hers puts both.
+    {
+      const L0 = B.view.lanterns.find((l) => l.on);
+      put(sis, sp(L0));
+      step(1 / 60);
+      const cpOk = S.cp && Math.hypot(S.cp.a - L0.a, S.cp.b - L0.b) < 1e-6;
+      B.caught(0, null);
+      for (let k = 0; k < 150; k++) step(1 / 60);
+      const qa = B.coords(her); const qb = B.coords(sis);
+      ok('忍 the lantern her SISTER lit is where a capture of HERS puts them both — in its ring, apart, on ground they fit on',
+        cpOk && Math.hypot(qa.a - L0.a, qa.b - L0.b) < BM.SAFE.lantern && Math.hypot(qb.a - L0.a, qb.b - L0.b) < BM.SAFE.lantern
+        && Math.hypot(qa.a - qb.a, qa.b - qb.b) > 1.2 && run.caught === 2 && run2.caught === 0,
+        `${qa.a.toFixed(1)},${qa.b.toFixed(1)} ${qb.a.toFixed(1)},${qb.b.toFixed(1)} apart ${Math.hypot(qa.a - qb.a, qa.b - qb.b).toFixed(2)}`);
+      // Back to the start for the checks below, as if nothing had been lit.
+      S.cp = null; S.lit.clear();
+      put(her, sp(run.slot)); put(sis, sp(run2.slot));
+      run.ok = { a: run.slot.a, b: run.slot.b }; run2.ok = { a: run2.slot.a, b: run2.slot.b };
+      step(1 / 60);
+    }
     ok('...and a capture is never a hit (non-negotiable 3)', her.hp === hp0
       && !/\.hurt\(/.test(readFileSync(new URL('../src/systems/dream/bamboo.js', import.meta.url), 'utf8'))
       && !/\.hurt\(/.test(readFileSync(new URL('../src/systems/dream/bambooguards.js', import.meta.url), 'utf8')));
+    /* --- the Oct 2026 pass: Richard's list, each item as the behaviour he asked for --- */
+    {
+      const bsrc = readFileSync(new URL('../src/systems/dream/bamboo.js', import.meta.url), 'utf8');
+      const { PLAYER_RADIUS } = await import('../src/entities/player.js');
+      const psrc = readFileSync(new URL('../src/entities/player.js', import.meta.url), 'utf8');
+      // Does the segment (ax,az)-(bx,bz) cross wall w? (bamboolevel.js keeps its own crossT private.)
+      const segX = (ax, az, bx, bz, w) => {
+        const rx = bx - ax; const rz = bz - az; const sx = w.b1 - w.b0; const sxa = w.a1 - w.a0;
+        const den = rx * sx - rz * sxa;
+        if (Math.abs(den) < 1e-9) return false;
+        const t = ((w.a0 - ax) * sx - (w.b0 - az) * sxa) / den;
+        const u = ((w.a0 - ax) * rz - (w.b0 - az) * rx) / den;
+        return t > 0 && t < 1 && u >= 0 && u <= 1;
+      };
+      // DOORS: "the doors are too tight ... make sure both kittens' colliders are identical regardless of split screen".
+      ok('忍 the kitten the courses are checked at is the kitten the game pushes: KITTEN_R is PLAYER_RADIUS, one constant',
+        BL.KITTEN_R === PLAYER_RADIUS && !/PLAYER_RADIUS\s*\*|radius\s*=\s*.*split/i.test(psrc.match(/PLAYER_RADIUS[^\n]*/g).join('\n')));
+      const narrow = [];
+      for (const C of BL.COURSES) for (const H of C.houses ?? []) for (const dr of H.doors ?? []) if ((dr.w ?? BL.DOOR_MIN) < BL.DOOR_MIN) narrow.push(`${C.id} ${dr.side}@${dr.at} ${dr.w}`);
+      ok('...and every door is at least DOOR_MIN wide — her 1.5 across, with room either side', narrow.length === 0 && BL.DOOR_MIN >= 2 * BL.KITTEN_R + 1.2, narrow.join(' '));
+      // EVERY PLACE SHE NEEDS, AT HER REAL SIZE: doors, ladders, lanterns, barrels, pickups, ropes, the scroll.
+      const probs = BL.COURSES.flatMap((C) => BL.courseProblems(C).map((s) => `${C.id}: ${s}`));
+      ok('忍 every course: every door walked through, every ladder foot stood at, every lantern, barrel, pickup and rope reached, at her size',
+        probs.length === 0, probs.slice(0, 4).join(' | '));
+      // GUARDS DON'T WALK THROUGH WALLS (the castle's strip samurai did).
+      const ghosts = [];
+      for (const C of BL.COURSES) {
+        const Lv = BL.levelOf(C);
+        for (let n = 0; n < 3; n++) for (const g of BL.guardsOn(C, n)) {
+          let prev = BL.patrolAt(g, BL.DIFFS[n], 0);
+          for (let t = 0.1; t < 60; t += 0.1) {
+            const P = BL.patrolAt(g, BL.DIFFS[n], t);
+            const y = (g.y ?? 0) + 1;
+            if (Math.hypot(P.a - prev.a, P.b - prev.b) > 1e-4 && Lv.walls.some((w) => w.top > y && segX(prev.a, prev.b, P.a, P.b, w))) { ghosts.push(`${C.id}/${n}@${P.a.toFixed(1)},${P.b.toFixed(1)}`); break; }
+            prev = P;
+          }
+        }
+      }
+      ok('忍 no guard\'s rounds walk him through a wall', ghosts.length === 0, ghosts.join(' '));
+      // SPRINT: 1.15x her walk, and twice the meter.
+      const walkV = +psrc.match(/const WALK_SPEED = ([\d.]+)/)[1]; const runV = +psrc.match(/const SPRINT_SPEED = ([\d.]+)/)[1];
+      pad.hold = new Set(['sprint']);
+      d.spec.steer(d, pad);
+      const gaitSprint = her.gaitK;
+      pad.hold = new Set();
+      d.spec.steer(d, pad);
+      ok('忍 a sprint on the course is 1.15x her walk ("barely faster"), off the game\'s own two speeds',
+        BL.SPRINT.walk === walkV && BL.SPRINT.run === runV && Math.abs(runV * gaitSprint - walkV * 1.15) < 1e-9 && her.gaitK === 1,
+        `${runV}x${gaitSprint}`);
+      {
+        const G = B.view.guards.find((g) => g.active && g.kind === 'samurai');
+        G.reset(B.clock);
+        const k0 = { i: 9, a: G.at.a + Math.cos(G.at.look ?? 0) * 3, b: G.at.b + Math.sin(G.at.look ?? 0) * 3, y: BL.EYE.stand, feet: 0, hidden: false };
+        const fill = (sprint) => { G.meter = new Map(); G._look(0.05, { T: B.clock, D: B.D, live: true, kittens: [{ ...k0, sprint }], smokes: [] }); return G.meterOf(9); };
+        const mw = fill(false); const ms = fill(true);
+        G.reset(B.clock);
+        ok('...and a sprinting kitten fills a guard\'s meter twice as fast as a walking one', mw > 0 && Math.abs(ms - 2 * mw) < 1e-9, `${mw} ${ms}`);
+      }
+      // THE NINJA BUTTONS. In the open: JUMP is a jump and never asks; INTERACT asks.
+      her.onGround = true;
+      const bar = B.view.barrels[0];
+      const open = (() => {
+        // A spot on the course with nothing in NEAR_K of its reach.
+        const kit = BL.kittenRaster(B.level);
+        for (let a = -14; a < 20; a += 0.5) for (let b = -12; b < 12; b += 0.5) {
+          const c = kit.cell(a, b);
+          if (c < 0 || !kit[c]) continue;
+          put(her, sp({ a, b }));
+          if (!B._reach(run).near && !B.safeAt(B.coords(her))) return { a, b };
+        }
+        return null;
+      })();
+      run.carry.smoke = 0;
+      pad.edge = new Set(['jump']);
+      st = d.spec.steer(d, pad);
+      const jumped = st.pressed('jump') && !D.choices[0];
+      pad.edge = new Set();
+      d.spec.steer(d, pad);
+      ok('忍 JUMP with nothing in reach is a jump — and never opens "leave the course"', !!open && jumped && !run.hidden);
+      d.spec.quit();
+      const asked = !!D.choices[0];
+      D.closeChoice(her);
+      ok('...and INTERACT there asks', asked && !D.choices[0]);
+      // Near a barrel but not at it: a press does nothing at all.
+      const far = { a: bar.a + BM.HIDE_R * 2, b: bar.b };
+      const kitR = BL.kittenRaster(B.level);
+      let nearSpot = null;
+      for (let k = 0; k < 16 && !nearSpot; k++) {
+        const th = (k / 16) * Math.PI * 2;
+        for (const r of [BM.HIDE_R * 1.3, BM.HIDE_R * 1.8, BM.HIDE_R * 2.4]) {
+          const s = { a: bar.a + Math.cos(th) * r, b: bar.b + Math.sin(th) * r };
+          const c = kitR.cell(s.a, s.b);
+          if (c >= 0 && kitR[c]) { nearSpot = s; break; }
+        }
+      }
+      put(her, sp(nearSpot ?? far));
+      d.spec.quit();
+      ok('忍 INTERACT NEAR a barrel but not at it does nothing — no question pops up instead (NEAR_K)',
+        !!nearSpot && !D.choices[0] && !run.hidden && B._reach(run).near && !B._reach(run).barrel);
+      // At the barrel: JUMP is INTERACT — in, and the jump eaten; JUMP again — out, onto ground she fits on.
+      const at = B._exitSpot(bar, 0);
+      put(her, sp(at));
+      pad.edge = new Set(['jump']);
+      st = d.spec.steer(d, pad);
+      const inBarrel = run.hidden === bar && !st.pressed('jump');
+      pad.edge = new Set();
+      d.spec.steer(d, pad);
+      pad.edge = new Set(['jump']);
+      d.spec.steer(d, pad);
+      pad.edge = new Set();
+      d.spec.steer(d, pad);
+      const out = B.coords(her);
+      const oc = kitR.cell(out.a, out.b);
+      ok('忍 JUMP at a barrel gets her into it (and she does not also jump); JUMP again gets her out onto ground she fits on',
+        inBarrel && !run.hidden && oc >= 0 && !!kitR[oc] && her.group.visible, `${out.a.toFixed(2)},${out.b.toFixed(2)}`);
+      // OUT OF A BARREL BACKING ONTO THE FENCE: never behind it.
+      {
+        let worst = 0;
+        for (const C of BL.COURSES) {
+          const Lc = BL.levelOf(C); const kc = BL.kittenRaster(Lc);
+          const fake = { level: Lc };
+          for (const b of C.barrels ?? []) for (let k = 0; k < 8; k++) {
+            const s = BM.BambooInfiltration.prototype._exitSpot.call(fake, b, (k / 8) * Math.PI * 2);
+            const c = kc.cell(s.a, s.b);
+            if (!(c >= 0 && kc[c])) worst++;
+          }
+        }
+        ok('...and out of EVERY barrel on every course, whichever way she faces, she lands on ground she fits on', worst === 0, `${worst} bad exits`);
+      }
+      // SEEN GOING IN: a samurai who saw her walks over and tips her out — caught, there and then.
+      {
+        const G = B.view.guards.find((g) => g.active && g.kind === 'samurai');
+        G.reset(B.clock);
+        put(her, sp(at));
+        her.onGround = true;
+        run.sawBy.set(G, B.clock);
+        const c0 = run.caught;
+        B._ninjaPress(run, 'interact');
+        const fetching = !!G.fetching && run.hidden === bar;
+        let k = 0;
+        for (; k < 60 * 30 && !run.capture; k++) step(1 / 30);
+        ok('忍 a samurai who SAW her get into the barrel walks to it and tips her out — caught, in the open',
+          fetching && !!run.capture && run.caught === c0 + 1 && !run.hidden && her.group.visible, `${k} frames, fetching ${fetching}`);
+        for (let j = 0; j < 150; j++) step(1 / 60);
+        // ...and one who did NOT see her walks past: no memory, no fetch.
+        put(her, sp(at));
+        run.sawBy.clear();
+        B._ninjaPress(run, 'interact');
+        ok('...and a barrel nobody saw her get into is a hiding place', run.hidden === bar && !B.view.guards.some((g) => g.fetching));
+        B._unhide(run);
+      }
+      // THE ARCHER: watches the barrel SPOTTED.wait s, then an arrow into it — a coin, caught or spooked.
+      for (const [coin, want] of [[0.1, 'caught'], [0.9, 'spooked']]) {
+        const G = B.view.guards.find((g) => g.active && g.kind === 'samurai');
+        G.reset(B.clock);
+        const kind0 = G.kind; G.kind = 'archer';         // the watch is the archer's, wherever he stands
+        put(her, sp(at)); her.onGround = true;
+        run.sawBy.clear();
+        B._ninjaPress(run, 'interact');
+        // Standing on the far side of the barrel from her, a step off it: the line is clear.
+        const st0 = B._exitSpot(bar, Math.PI);
+        G.at.a = st0.a; G.at.b = st0.b; G.at.y = 0;
+        B.rng = () => coin;
+        const c0 = run.caught;
+        G.watchBarrel(run.i, bar, BM.SPOTTED.wait);
+        let firedAt = null; let t = 0;
+        for (let k = 0; k < 30 * 8 && run.hidden; k++) {
+          G._watch(1 / 30); B.shots.update(1 / 30, { kittens: [] }, () => {}, (s) => { if (s.barrel && !s.blocked) B.arrowInBarrel(s); });
+          t += 1 / 30;
+          if (firedAt == null && !G.watching) firedAt = t;
+        }
+        G.kind = kind0; B.rng = null;
+        const got = run.capture ? 'caught' : !run.hidden ? 'spooked' : 'still hidden';
+        ok(`忍 an archer who saw her get in waits ${BM.SPOTTED.wait}s, then puts an arrow in the barrel — and on that coin she is ${want}`,
+          got === want && Math.abs(firedAt - BM.SPOTTED.wait) < 0.05 && run.caught === c0 + (want === 'caught' ? 1 : 0), `${got} at ${firedAt?.toFixed(2)}`);
+        for (let j = 0; j < 150; j++) step(1 / 60);
+        G.reset(B.clock);
+      }
+      // OUT OF BOUNDS: her middle over the fence goes back to the last ground she stood over.
+      {
+        put(her, sp(run.slot)); step(1 / 60);
+        const ok0 = { ...run.ok };
+        let off = null;
+        for (let b = 0; b < 40 && !off; b += 0.25) if (!BL.walkAt(B.level, run.slot.a, run.slot.b + b)) off = { a: run.slot.a, b: run.slot.b + b + 1 };
+        put(her, sp(off));
+        step(1 / 60);
+        const qb = B.coords(her);
+        ok('忍 a kitten whose middle gets past the fence is put back on the last walkable ground she stood over',
+          !!off && BL.walkAt(B.level, qb.a, qb.b) && Math.hypot(qb.a - ok0.a, qb.b - ok0.b) < 0.6, `${qb.a.toFixed(2)},${qb.b.toFixed(2)}`);
+        ok('...and the fence is a band of SOLID canes thicker than a jump can clear', BL.FENCE.thick >= 2.4 && BL.FENCE.step < 2 * BL.KITTEN_R
+          && /FENCE\.r/.test(bsrc) && /L\.band/.test(bsrc));
+      }
+      // NOTHING THROUGH A WALL: a shuriken at her, stopped by a wall 0.5 from her, does not catch her.
+      {
+        const SH = await import('../src/systems/dream/bambooguards.js');
+        const CV = BL.COURSES.find((C) => (C.houses ?? []).length);
+        const Lv = BL.levelOf(CV);
+        const H = CV.houses[0];
+        const fakeB = { level: Lv, isle: I, _w: () => ({ x: 0, y: 0, z: 0 }), dream: { game: {} } };
+        const shots = new SH.Shots(fakeB, new THREE.Group());
+        // A stretch of side a0 with wall and no door: fired from outside at a kitten 0.3 inside it.
+        let mid = null;
+        for (let b = H.b0 + 0.6; b < H.b1 - 0.6 && mid == null; b += 0.3) if (Lv.walls.some((w) => w.top > 2 && segX(H.a0 - 1, b, H.a0 + 1, b, w))) mid = b;
+        const kIn = { i: 0, a: H.a0 + 0.3, b: mid, y: 1.5, feet: 0, hidden: false };
+        const wallAt = mid != null;
+        let hit = 0; let landed = null;
+        // From 3.1 out, so a frame of flight ends 0.1 short of the wall, with her 0.4 from it — inside SHOT.hitR.
+        const s = shots.fire('star', { a: H.a0 - 3.1, b: mid, y: 1.5 }, { a: kIn.a, b: kIn.b, y: 1.5 }, null);
+        for (let k = 0; k < 60; k++) shots.update(1 / 60, { kittens: [kIn] }, () => hit++, (x) => { landed = x; });
+        ok('忍 a guard\'s shuriken stops at a wall — and does not catch the kitten half a step the other side of it',
+          wallAt && hit === 0 && landed === s && s.blocked === true, `wall ${wallAt} hit ${hit}`);
+        ok('...and her shuriken that hit a wall on its way puts nobody to sleep, and her ring never goes red through one',
+          /if \(!s\.blocked && g\?\.awake/.test(bsrc) && /_mineTarget[\s\S]{0,700}blocked\(L,/.test(bsrc));
+        ok('...and a pebble is stopped by what it flies into, and clatters there', /PEBBLES[\s\S]{0,600}blocked\(this\.level/.test(bsrc));
+      }
+      // THE PARTY'S CAMERA: one pane for the session, all of them in it — and past `split`, player 1's.
+      {
+        put(her, sp(run.slot)); put(sis, sp(run2.slot));
+        step(1 / 60);
+        const g1 = B.groupShot([0, 1]);
+        const same = B.paneAnchor(her) === B.paneAnchor(sis) && !!B.paneAnchor(her);
+        put(sis, sp({ a: run.slot.a + BM.PARTY_CAM.split + 4, b: 0 }));
+        step(1 / 60);
+        const split = B._party.split && Math.hypot(B._party.centre.x - her.position.x, B._party.centre.z - her.position.z) < 1e-6;
+        put(sis, sp({ a: run.slot.a + BM.PARTY_CAM.split - 3, b: 0 }));
+        step(1 / 60);
+        const held = B._party.split;               // between rejoin and split: still hers (hysteresis)
+        put(sis, sp({ a: run.slot.a + BM.PARTY_CAM.rejoin - 4, b: 0 }));
+        step(1 / 60);
+        const back = !B._party.split;
+        const wide = B.groupShot([0, 1]).dist;
+        ok('忍 the party shares one pane and one shot, its camera\'s own angle (BAMBOO_CAM)',
+          same && !!g1 && g1.pitch === BM.BAMBOO_CAM.pitch && g1.dist >= BM.BAMBOO_CAM.dist && !D.wantsSolo(her) && !D.wantsSolo(sis));
+        ok('...too far apart, it follows player 1 — and takes them all in again only once they are back within `rejoin`',
+          split && held && back && wide >= BM.BAMBOO_CAM.dist && BM.partyDist(BM.PARTY_CAM.split) > BM.BAMBOO_CAM.dist && BM.partyDist(200) === BM.PARTY_CAM.maxDist,
+          `${split} ${held} ${back} ${wide.toFixed(1)} ${BM.partyDist(BM.PARTY_CAM.split).toFixed(1)}`);
+        const mainSrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+        ok('...and main.js asks the island for both', /bamboo\?\.paneAnchor\?\.\(p\)/.test(mainSrc) && /bamboo\?\.groupShot\?\.\(members\)/.test(mainSrc));
+        put(sis, sp(run2.slot)); step(1 / 60);
+      }
+    }
     // SANCTUARY, in play: a lantern a samurai looks straight at, stood on in the open for 20s — never caught.
     {
       const C0 = B.course;
@@ -40432,7 +40718,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     put(her, sp(C0.scroll));
     d.update(1 / 60);
     ok('忍 reaching the scroll wins, and the score is the clock plus the captures',
-      d.state === 'won' && Math.abs(d.spec.score(d) - (d.t + BL.CAUGHT_COST)) < 1e-6, `${d.state} ${d.spec.score(d)}`);
+      d.state === 'won' && run.caught >= 1 && Math.abs(d.spec.score(d) - (d.t + run.caught * BL.CAUGHT_COST)) < 1e-6, `${d.state} ${d.spec.score(d)}`);
     const rowsB = BB.bambooRows(D.progress, { course: C0.id, diff: 0, who: 'all' });
     ok('...and it is on the board for that course and difficulty', rowsB.length === 1 && Math.abs(rowsB[0].time - d.spec.score(d)) < 0.01,
       JSON.stringify(rowsB));

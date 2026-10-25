@@ -1230,6 +1230,8 @@ export class DreamDojo {
        "split screen and shared camera can focus on the player in the
        obstacle course" (dream/sine.js `paneAnchor`). */
     if (this.sine?.inSession?.(p)) return false;
+    // ...and Bamboo Infiltration's, for the same reason (dream/bamboo.js `groupShot`).
+    if (this.bamboo?.inSession?.(p)) return false;
     const s = this.st[p?.index];
     /* ...AND A FIRST-TIMER ROUND THE RACKS. Richard: "if there is a player
        that needs to grab the VR equipment for the first time from the Dream

@@ -12853,7 +12853,10 @@ class Game {
          the obstacle course". So the session is one group, and the shared
          rig takes the course's shot (`groupShot` in `_updateRig`). Null for
          everybody else, always outside the simulator. */
-      pts: this.players.map((p) => this.dream?.sine?.paneAnchor?.(p) ?? p.position),
+      /* ...AND BAMBOO INFILTRATION'S PARTY, at its middle (dream/bamboo.js
+         `paneAnchor`): "use a shared camera for multiple players on one
+         screen for this mini game". */
+      pts: this.players.map((p) => this.dream?.sine?.paneAnchor?.(p) ?? this.dream?.bamboo?.paneAnchor?.(p) ?? p.position),
       /* A GIRL READING HER OWN CARD GETS HER OWN PANE, for the same reason a
          girl on a dragon does: she is not sharing a view with her sister right
          now, and a card drawn over a shared pane covers half of somebody
@@ -13434,7 +13437,7 @@ class Game {
          a per-player focus does nothing while merged). Eased in and out on
          its own weight; exactly 0 everywhere else, and nothing below changes
          while it is, so the town's two-player camera is untouched. */
-      const course = this.dream?.sine?.groupShot?.(members) ?? null;
+      const course = this.dream?.sine?.groupShot?.(members) ?? this.dream?.bamboo?.groupShot?.(members) ?? null;
       rig.courseT = (rig.courseT ?? 0) + ((course ? 1 : 0) - (rig.courseT ?? 0)) * Math.min(1, dt * 2.2);
       if (rig.courseT < 0.001) rig.courseT = 0;
       if (course) rig.courseShot = { yaw: course.yaw, pitch: course.pitch };

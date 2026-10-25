@@ -13,6 +13,7 @@ import { BAMBOO_BOARD, bambooBoardLines, bambooFilterRows } from './bambooboard.
 import {
   COURSES, courseById, starsId, DIFFS, levelOf, guardsOn, lanternsOn, pickupsOn, houseWalls, ladderFoot,
   REGION, GATE, PLAZA, EYE, RADII, COVER, SNEAK, CAUGHT_COST, GRID, wrap, segDist,
+  walkAt, inHouse, blocked, kittenRaster, HIDE_REACH, LADDER_REACH, HANG, FENCE, TRAIL, SPRINT,
 } from './bamboolevel.js';
 
 // The courses' recordings (tools/capture/bamboo-music.mjs) join the game's
@@ -56,8 +57,18 @@ Object.assign(MUSIC_FILES, BAMBOO_MUSIC);
    Nothing in this file calls `hurt` and world-check holds it to that.
 
    ONE PRESS NEVER LEAVES (non-negotiable 7). INTERACT mid-run is her ninja
-   button — out of a barrel, into one, drop the smoke bomb — and only when it
-   has nothing else to do does it ASK whether to leave, cursor on "no".
+   button — out of a barrel, into one, onto a rope or a ladder, drop the smoke
+   bomb — and only when it has nothing else to do, and nothing to do it with
+   anywhere near her, does it ASK whether to leave, cursor on "no". JUMP is the
+   same button for the barrel, the rope and the ladder, and never asks.
+
+   THE PARTY IS ONE PARTY (Oct 2026). Richard: "when a player gets caught, all
+   players should respawn at the checkpoint and all game states should get
+   reset (like have all the npc's start in their default spot, facing the
+   default way)". One capture fades every pane, puts every kitten back at the
+   party's lantern, and the guards back on the first step of their rounds — so
+   they share one camera too (`groupShot`), which follows the first of them if
+   they wander too far apart: "to force players to be close to each other".
 --------------------------------------------------------------------------- */
 
 /** Her camera on the course: high and behind the plaza, so the course runs up the screen. */
@@ -66,17 +77,42 @@ export const BAMBOO_CAM = { dist: 24, pitch: 0.95, lift: 1 };
 export const BAMBOO_BIRD = { ...BIRD, dist: 92, pitch: 1.2, sway: 0.35 };
 /** A throw: held ATTACK charges for `charge` s; it lands `min` to `max` ahead of her. */
 export const THROW = { charge: 1.0, min: 2, max: 13, mineR: 1.6, flight: 0.65, arc: 2.6 };
-/** Hanging from a rope: grabbed within `grab` flat with the rope `lo`..`hi` above her feet. */
-export const ROPE = { grab: 0.9, lo: 1.6, hi: 3.8, speed: 3.4, mount: 0.5, cd: 0.5 };
+/** Hanging from a rope: grabbed within `grab` flat with the rope `lo`..`hi` above her feet,
+ *  on a PRESS (INTERACT or JUMP) — it used to take her as she jumped under it,
+ *  which made a jump on a roof under a rope a thing she could not do. */
+export const ROPE = { grab: 1.2, lo: HANG.lo, hi: HANG.hi, speed: 3.4, mount: 0.5, cd: 0.5 };
 /** A ladder: climbed at `speed`; she steps `onto` units in onto the roof at the top. */
-export const LADDER = { speed: 3.2, reach: 0.9, onto: 1.4, push: 0.75 };
+export const LADDER = { speed: 3.2, reach: LADDER_REACH, onto: 1.4, push: 0.75 };
+/**
+ * NOTHING TO DO HERE YET, SO DO NOTHING. Within NEAR_K times the reach of a
+ * barrel, a rope or a ladder, on its level, a press that does not reach it
+ * does nothing at all — Richard: "many times player presses the interact
+ * button to do something (ex. jump in barrel) and instead the menu pops up
+ * unexpectedly". The question to leave is for a press made in the open.
+ */
+export const NEAR_K = 3;
 /** A smoke bomb: a cloud COVER.smoke tall, `r` wide, for `t` seconds. */
 export const SMOKE = { r: RADII.smoke, t: 6 };
 /** A walking step is heard this often; a picked-up thing comes back after `respawn`. */
 export const NOISE_EVERY = 0.45;
 export const PICKUP = { r: 1.1, respawn: 12 };
-/** Hiding in a barrel: within this of its middle. */
-export const HIDE_R = 1.4;
+/** Hiding in a barrel: within this of its middle (bamboolevel.js HIDE_REACH says why 1.9). */
+export const HIDE_R = HIDE_REACH;
+/**
+ * SEEN GOING IN. A samurai who saw her climb into a barrel walks to it and
+ * tips her out — caught, there and then; an archer waits `wait` seconds and
+ * puts an arrow in it, and it is a coin: `hit` of the time she is caught, the
+ * rest she is spooked out of it. Richard's numbers. "Saw" is: in his cone and
+ * unblocked in the last `memory` seconds before she went in.
+ */
+export const SPOTTED = { memory: 0.6, wait: 3, hit: 0.5 };
+/**
+ * THE PARTY'S CAMERA (`groupShot`): over the plaza's shoulder like hers, the
+ * distance fitted to how far apart they are — and past `split` units apart it
+ * follows the first kitten and stops trying, until they are within `rejoin`
+ * again (the hysteresis keeps it from flapping at the line).
+ */
+export const PARTY_CAM = { split: 22, rejoin: 16, maxDist: 38, fov: 50, aspect: 16 / 9, margin: 3 };
 /** The capture, in seconds: hands up, the fade starts, she is put back, the fade ends. */
 export const ARREST = { fade0: 0.7, swap: 1.5, end: 2.1 };
 /** Touching an awake guard is a capture too. */
@@ -94,9 +130,16 @@ export const SAFE = { lantern: 1.15, start: { a: -15.8, b: 0, r: 2.0 } };
 /** Where the kittens start: two by two on the path inside the gate. */
 export const SLOTS = [{ a: -16.5, b: -0.9 }, { a: -16.5, b: 0.9 }, { a: -15.1, b: -0.9 }, { a: -15.1, b: 0.9 }];
 const BARRIER = { h: 3.6, w: GATE.w + 1.2, idle: HOLO.cyan, live: 0xff2a4a };
+/** What a `crate` is drawn as, in turn (or `stack:` on the course's row). */
+export const STACKS = ['boxes', 'wood', 'rice'];
 const RING_COL = 0xf4f8ff;
 
 const lerp = (a, b, u) => a + (b - a) * u;
+/** How far back the party's camera sits for kittens `spread` apart from their middle. */
+export function partyDist(spread) {
+  const fit = (spread + PARTY_CAM.margin) / Math.tan(THREE.MathUtils.degToRad(PARTY_CAM.fov / 2));
+  return Math.min(PARTY_CAM.maxDist, Math.max(BAMBOO_CAM.dist, fit));
+}
 const nameOf = (p) => p?.style?.name ?? p?.name;
 const styleIdx = (p) => Math.max(0, PLAYER_STYLE.findIndex((s) => s.name === p?.style?.name));
 
@@ -235,6 +278,58 @@ export class BambooInfiltration {
   }
 
   /**
+   * A STACK — what a `crate` is now. Richard: "replace with something more
+   * interesting that looks like an obstacle, like stacked wood or stacked
+   * barrels of rice or stacked boxes". Every kind is COVER.crate tall and
+   * inside RADII.crate, so the drawing is the size of the solid and the sight
+   * rule (`blocked`) is the size of both.
+   */
+  _stack(kind) {
+    const g = new THREE.Group();
+    const H = COVER.crate;
+    const mat = (color, o = 0.92) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity: o });
+    if (kind === 'wood') {
+      // Firewood, three rows of logs end-on, and the cut ends lit.
+      const wood = mat(0x6b4526); const cut = mat(0xd9a866);
+      const r = H / 6;
+      [[3, 0], [2, 1], [1, 2]].forEach(([n, row]) => {
+        for (let k = 0; k < n; k++) {
+          const log = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 1.2, 8).rotateX(Math.PI / 2), [wood, cut, cut]);
+          log.position.set((k - (n - 1) / 2) * r * 2.05, r + row * r * 1.75, 0);
+          g.add(log);
+        }
+      });
+    } else if (kind === 'rice') {
+      // Rice bales: two straw bales and one on top, each with a rope round its waist.
+      const straw = mat(0xd8c070); const band = mat(0x7a5426);
+      const r = 0.38; const h = H / 2;
+      for (const [x, z, y] of [[-0.36, 0, 0], [0.36, 0, 0], [0, 0, h]]) {
+        const bale = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 1.08, h * 0.98, 12).translate(0, h / 2, 0), straw);
+        bale.position.set(x, y, z);
+        const rope = new THREE.Mesh(new THREE.TorusGeometry(r * 1.04, 0.035, 4, 16).rotateX(Math.PI / 2), band);
+        rope.position.y = h * 0.5;
+        bale.add(rope);
+        g.add(bale);
+      }
+    } else {
+      // Boxes: two side by side and one on top, turned a little, with their lids marked.
+      const box = mat(0x8a6a3a); const edge = mat(0xc9a46a);
+      const s = H / 2;
+      for (const [x, y, z, t] of [[-0.33, 0, 0.05, 0.08], [0.36, 0, -0.06, -0.1], [0.02, s, 0, 0.32]]) {
+        const b = new THREE.Mesh(new THREE.BoxGeometry(s * 0.9, s * 0.96, s * 0.9).translate(0, s * 0.48, 0), box);
+        b.position.set(x, y, z);
+        b.rotation.y = t;
+        const lid = new THREE.Mesh(new THREE.BoxGeometry(s * 0.94, 0.05, 0.08), edge);
+        lid.position.y = s * 0.96;
+        b.add(lid);
+        g.add(b);
+      }
+    }
+    g.userData.stack = kind;
+    return g;
+  }
+
+  /**
    * ONE COURSE'S DRAWING, AND ITS SOLIDS, in a group off a pivot at the hub's
    * centre — the Sine Gauntlet's swipe (`SWIPE`), so ◀▶ in the picker turns
    * one course off the island and the next one on.
@@ -291,8 +386,26 @@ export class BambooInfiltration {
         }
       }
       for (const f of L.fence) {
-        solid(f.a, f.b, 0.35);
+        solid(f.a, f.b, FENCE.r, FENCE.top);
         canes.push({ a: f.a, b: f.b, h: 3.2 + R() * 1.6, lean: (R() - 0.5) * 0.1 });
+      }
+      /* THE DENSE BAND behind the fence, on a lattice nearly twice as tight as
+         the forest's: Richard, "increase the solidity of the 'out of bounds'
+         area ... should be a solid thick bamboo forest player can't get to or
+         through". What HOLDS her is `walkAt` (`_bounds`); this is what says so. */
+      for (let a = REGION.a0 + 0.1; a <= REGION.a1; a += 0.6) {
+        for (let b = REGION.b0; b <= REGION.b1; b += 0.6) {
+          const ca = a + (R() - 0.5) * 0.4; const cb = b + (R() - 0.5) * 0.4;
+          const c = L.cell(ca, cb);
+          if (c < 0 || !L.band[c]) continue;
+          canes.push({ a: ca, b: cb, h: 4.4 + R() * 2.6, lean: (R() - 0.5) * 0.12 });
+        }
+      }
+      /* THE TRAIL'S CANES, every one solid: a way through the woods she
+         weaves along, "not as dense as the normal 'out of bounds' area". */
+      for (const t of L.trailCanes) {
+        solid(t.a, t.b, t.r);
+        canes.push({ a: t.a, b: t.b, h: t.h, lean: (R() - 0.5) * 0.12 });
       }
       for (const c of L.cover.filter((x) => x.kind === 'clump')) {
         for (let k = 0; k < 6; k++) {
@@ -312,7 +425,8 @@ export class BambooInfiltration {
       inst.frustumCulled = false;
       inner.add(inst);
     }
-    // COVER: barrels and crates you can crouch behind (and hop over), long grass you crawl in.
+    // COVER: barrels and stacks you can crouch behind, long grass you crawl in.
+    let stackN = C.id.length;
     for (const c of L.cover) {
       if (c.kind === 'clump') { solid(c.a, c.b, c.r); continue; }
       const q = this._w(c.a, c.b);
@@ -327,9 +441,8 @@ export class BambooInfiltration {
         view.barrels.push({ a: c.a, b: c.b, mesh: m });
         solid(c.a, c.b, c.r, COVER.barrel);
       } else if (c.kind === 'crate') {
-        m = new THREE.Mesh(new THREE.BoxGeometry(1.3, COVER.crate, 1.3).translate(0, COVER.crate / 2, 0),
-          new THREE.MeshBasicMaterial({ color: 0x8a6a3a, transparent: true, opacity: 0.9 }));
-        m.rotation.y = Math.atan2(this.isle.fwd.x, this.isle.fwd.z);
+        m = this._stack(c.stack ?? STACKS[stackN++ % STACKS.length]);
+        m.rotation.y = Math.atan2(this.isle.fwd.x, this.isle.fwd.z) + (c.turn ?? 0);
         solid(c.a, c.b, c.r, COVER.crate);
       } else {
         // A thicket: tufts, not solid — she crawls into it.
@@ -399,12 +512,44 @@ export class BambooInfiltration {
       inner.add(post, top, rail);
       solid(T.a, T.b, T.r);
     }
-    // ROPES: a line between two roofs, hung from.
+    /* ROPES: a line between two roofs, hung from — and ITS SHADOW on whatever
+       is under it, roof or street, with a ring on each roof where she stands
+       to grab it. Richard: "the rope has no shadow, so it's hard to see where
+       it is placed". From the plaza's camera a thin line seven units up reads
+       as being anywhere along the lens's ray; the shadow pins it to the floor. */
+    const shadowMat = new THREE.MeshBasicMaterial({ color: 0x03070c, transparent: true, opacity: 0.5, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
+    const grabMat = new THREE.MeshBasicMaterial({ color: 0xe8d3a0, transparent: true, opacity: 0.45, depthWrite: false, toneMapped: false });
     for (const R of C.ropes ?? []) {
       const p0 = this._w(R.from[0], R.from[1], R.y); const p1 = this._w(R.to[0], R.to[1], R.y);
       const path = new THREE.LineCurve3(new THREE.Vector3(p0.x, p0.y, p0.z), new THREE.Vector3(p1.x, p1.y, p1.z));
-      inner.add(new THREE.Mesh(new THREE.TubeGeometry(path, 1, 0.06, 5, false),
-        new THREE.MeshBasicMaterial({ color: 0xe8d3a0, toneMapped: false })));
+      inner.add(new THREE.Mesh(new THREE.TubeGeometry(path, 1, 0.08, 6, false),
+        new THREE.MeshBasicMaterial({ color: 0xf2dfae, toneMapped: false })));
+      const len = Math.hypot(R.to[0] - R.from[0], R.to[1] - R.from[1]);
+      const ua = (R.to[0] - R.from[0]) / len; const ub = (R.to[1] - R.from[1]) / len;
+      const pos = [];
+      const floor = (a, b) => (C.houses ?? []).find((H) => inHouse(H, a, b))?.h ?? 0;
+      for (let t = 0; t < len; t += 0.25) {
+        const t1 = Math.min(len, t + 0.25);
+        const a0 = R.from[0] + ua * t; const b0 = R.from[1] + ub * t;
+        const a1 = R.from[0] + ua * t1; const b1 = R.from[1] + ub * t1;
+        const y = floor((a0 + a1) / 2, (b0 + b1) / 2) + 0.05;
+        const c = [[a0 - ub * 0.16, b0 + ua * 0.16], [a1 - ub * 0.16, b1 + ua * 0.16], [a1 + ub * 0.16, b1 - ua * 0.16], [a0 + ub * 0.16, b0 - ua * 0.16]]
+          .map(([u, v]) => this._w(u, v, y));
+        for (const k of [0, 1, 2, 0, 2, 3]) pos.push(c[k].x, c[k].y, c[k].z);
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      const sh = new THREE.Mesh(g, shadowMat);
+      sh.renderOrder = 1;
+      inner.add(sh);
+      for (const [a, b] of [R.from, R.to]) {
+        const H = (C.houses ?? []).find((h) => inHouse(h, a, b));
+        if (!H) continue;
+        const q = this._w(a, b, H.h + 0.06);
+        const ring = new THREE.Mesh(new THREE.RingGeometry(ROPE.grab - 0.12, ROPE.grab, 28).rotateX(-Math.PI / 2), grabMat);
+        ring.position.set(q.x, q.y, q.z);
+        inner.add(ring);
+      }
       view.ropes.push({ a0: R.from[0], b0: R.from[1], a1: R.to[0], b1: R.to[1], y: R.y });
     }
     // LANTERNS (checkpoints) — all of them built; which are out is the difficulty's.
@@ -716,7 +861,9 @@ export class BambooInfiltration {
   _start(list) {
     const C = this.course;
     const n = this.diff;
-    this.session = { course: C.id, diff: n, live: false, t: 0, runs: new Map(), results: [] };
+    /* `cp` is the PARTY's checkpoint — the lantern lit last, by anybody — and
+       `capture` the one capture everybody is being put back for. */
+    this.session = { course: C.id, diff: n, live: false, t: 0, runs: new Map(), results: [], cp: null, lit: new Set(), capture: null };
     const S = this.session;
     this._activate();
     this.shots.clear();
@@ -744,6 +891,8 @@ export class BambooInfiltration {
         carry: { shuriken: 0, smoke: 0 }, latch: false, sneak: false, charge: null, hidden: null,
         capture: null, noiseT: 0, ropeCd: 0, wasGround: true, peakY: 0, crawlT: 0, throwT: -9,
         last: this.coords(p), rec: new GhostRecorder(),
+        // The last walkable ground she stood over (`_bounds`), and who has had her in his eye, when.
+        ok: { a: slot.a, b: slot.b }, sawBy: new Map(), sprinting: false,
       };
       if (this.art) p.setClipArt?.(this.art.kittens[styleIdx(p)], ClipSprite);
       run.aim = new THREE.Mesh(new THREE.RingGeometry(0.75, 0.95, 28).rotateX(-Math.PI / 2),
@@ -881,6 +1030,14 @@ export class BambooInfiltration {
   _steer(run, d, pad) {
     const p = run.p;
     const live = d.state === 'live';
+    /* JUMP IS THE NINJA BUTTON TOO, for a barrel, a rope or a ladder in reach
+       — Richard: "let's make the jump button work like the interact button,
+       but let's not have the jump button pull up the 'leave the course' menu".
+       A press it spends is eaten for the frame, so she does not also jump
+       (and a rope just grabbed does not read it as "let go"). With nothing in
+       reach it is her jump. */
+    run.eat = null;
+    if (live && !run.capture && pad.pressed?.('jump') && this._ninjaPress(run, 'jump')) run.eat = 'jump';
     if (live && pad.pressed?.('mount')) {
       if (pad.doubled?.('mount')) run.latch = true;
       else if (run.latch) run.latch = false;
@@ -893,8 +1050,14 @@ export class BambooInfiltration {
       if (live && !frozen) this._throw(run);
       run.charge = null;
     }
-    p.gaitK = run.charge != null ? 0 : run.sneak ? SNEAK.gait : 1;
-    const masked = (a) => a === 'mount' || a === 'attack' || (a === 'sprint' && run.sneak) || (frozen && a !== 'start' && a !== 'map' && a !== 'interact');
+    /* Her sprint here is SPRINT.k of her walk (bamboolevel.js) — set as a gait
+       under the game's sprint, so the button still reads as SPRINT to her
+       legs and her noise, and nothing outside the island moves. */
+    const sprint = !run.sneak && !!pad.down?.('sprint');
+    run.sprinting = sprint && !frozen;
+    p.gaitK = run.charge != null ? 0 : run.sneak ? SNEAK.gait : sprint ? SPRINT.gait : 1;
+    const masked = (a) => a === 'mount' || a === 'attack' || (a === 'sprint' && run.sneak) || (a === run.eat)
+      || (frozen && a !== 'start' && a !== 'map' && a !== 'interact');
     run.padIn = pad;
     return (run.pad ??= new Proxy({}, {
       get: (_, k) => {
@@ -909,16 +1072,11 @@ export class BambooInfiltration {
     }));
   }
 
-  /** INTERACT mid-run: out of a barrel, into one, the smoke bomb — or, with nothing else to do, ask. */
+  /** INTERACT mid-run: whatever is in reach — or, with nothing in reach or near, ask. */
   _ninjaButton(run) {
     const D = this.dream;
     const p = run.p;
-    if (run.capture) return;
-    if (run.hidden) { this._unhide(run); return; }
-    const q = this.coords(p);
-    const barrel = !p.rig && p.onGround && this.view.barrels.find((b) => Math.hypot(b.a - q.a, b.b - q.b) < HIDE_R);
-    if (barrel && run.drill?.state === 'live') { this._hide(run, barrel); return; }
-    if (run.carry.smoke > 0 && run.drill?.state === 'live') { this._smoke(run, q); return; }
+    if (this._ninjaPress(run, 'interact')) return;
     if (D.choices?.[p.index]) return;
     D.openChoice(p, {
       title: 'LEAVE THE COURSE?',
@@ -929,9 +1087,88 @@ export class BambooInfiltration {
     });
   }
 
+  /**
+   * ONE PRESS OF THE NINJA BUTTON, by INTERACT (`via` 'interact') or JUMP
+   * ('jump'). Out of a barrel; onto a rope; up or down a ladder; into a
+   * barrel; and for INTERACT only, the smoke bomb. True when the press was
+   * spent — and, for INTERACT, also when something is NEAR but not in reach
+   * (`_reach`, NEAR_K), so that press does nothing instead of asking to leave.
+   * False means: JUMP is a jump, INTERACT may ask.
+   */
+  _ninjaPress(run, via) {
+    const p = run.p;
+    const live = run.drill?.state === 'live';
+    if (run.capture) return via === 'interact';
+    if (run.hidden) { this._unhide(run); return true; }
+    // On a rope or a ladder JUMP is the rig's ("JUMP lets go"), and INTERACT does nothing — it never asks up there.
+    if (p.rig) return via === 'interact';
+    if (!live) return false;
+    const R = this._reach(run);
+    if (R.rope) { this._ropeRig(run, R.rope.R, R.rope.u); return true; }
+    if (R.ladder) { this._ladderRig(run, R.ladder.Ld, R.ladder.y0, R.ladder.dir); return true; }
+    if (R.barrel) { this._hide(run, R.barrel); return true; }
+    if (via === 'jump') return false;
+    if (R.near) return true;
+    if (run.carry.smoke > 0) { this._smoke(run, this.coords(p)); return true; }
+    return false;
+  }
+
+  /**
+   * WHAT IS IN HER REACH: the rope over her head (her feet on a roof under it,
+   * or in the air), the ladder at her feet or at the roof's edge, the nearest
+   * barrel — and `near`: any of them within NEAR_K of its reach, on her level.
+   */
+  _reach(run) {
+    const p = run.p;
+    const q = this.coords(p);
+    const out = { rope: null, ladder: null, barrel: null, near: false };
+    for (const R of this.view.ropes) {
+      const dy = R.y - q.y;
+      const d = segDist(q.a, q.b, R.a0, R.b0, R.a1, R.b1);
+      if (!out.rope && run.ropeCd <= 0 && dy >= ROPE.lo && dy <= ROPE.hi && d <= ROPE.grab) {
+        const ea = R.a1 - R.a0; const eb = R.b1 - R.b0;
+        const u = Math.max(0.02, Math.min(0.98, ((q.a - R.a0) * ea + (q.b - R.b0) * eb) / (ea * ea + eb * eb)));
+        out.rope = { R, u };
+      }
+      if (dy >= ROPE.lo - 1 && dy <= ROPE.hi + 1.5 && d <= ROPE.grab * NEAR_K) out.near = true;
+    }
+    for (const Ld of this.view.ladders) {
+      const f = Ld.foot;
+      const top = { a: f.a + Ld.into.a * LADDER.onto, b: f.b + Ld.into.b * LADDER.onto };
+      if (q.y < 0.6) {
+        const d = Math.hypot(q.a - f.a, q.b - f.b);
+        if (d < LADDER.reach && p.onGround) out.ladder ??= { Ld, y0: 0, dir: 1 };
+        if (d < LADDER.reach * NEAR_K) out.near = true;
+      } else if (Math.abs(q.y - Ld.top) < 0.4) {
+        const d = Math.hypot(q.a - top.a, q.b - top.b);
+        if (d < LADDER.onto && p.onGround) out.ladder ??= { Ld, y0: Ld.top, dir: -1 };
+        if (d < LADDER.onto * NEAR_K) out.near = true;
+      }
+    }
+    if (q.y < 1) {
+      let bd = HIDE_R;
+      for (const b of this.view.barrels) {
+        const d = Math.hypot(b.a - q.a, b.b - q.b);
+        if (d < bd && p.onGround) { bd = d; out.barrel = b; }
+        if (d < HIDE_R * NEAR_K) out.near = true;
+      }
+    }
+    return out;
+  }
+
   _hide(run, barrel) {
     const p = run.p;
     run.hidden = barrel;
+    /* WHO SAW HER GET IN. Richard: "if an npc spots a player go into a barrel
+       or hiding obstacle, then they should be able to go up to it and force
+       the player out and instantly arrest them". Seen = in his eye in the
+       last SPOTTED.memory s (`sawBy`, filled every frame by `_stepWorld`). */
+    const T = this.clock;
+    const saw = [...run.sawBy].filter(([g, t]) => g.active && g.awake && g.arresting == null && T - t <= SPOTTED.memory).map(([g]) => g);
+    const sam = saw.filter((g) => g.kind === 'samurai').sort((x, y) => Math.hypot(x.at.a - barrel.a, x.at.b - barrel.b) - Math.hypot(y.at.a - barrel.a, y.at.b - barrel.b))[0];
+    if (sam) sam.fetch(run.i, barrel);
+    for (const g of saw) if (g.kind === 'archer') g.watchBarrel(run.i, barrel, SPOTTED.wait);
+    run.spottedIn = saw.length > 0;
     const at = this._w(barrel.a, barrel.b);
     p.position.set(at.x + SIM.dx, at.y + 0.05, at.z + SIM.dz);
     p.velocity?.set(0, 0, 0);
@@ -939,7 +1176,9 @@ export class BambooInfiltration {
     p.group.visible = false;
     run.charge = null;
     this.dream.game.sfx?.('knock', 0.5);
-    this.dream.hint(p, `in the barrel — nobody can see you. [${this.dream.key(p, 'interact')}] climbs out`);
+    this.dream.hint(p, run.spottedIn
+      ? `${saw.map((g) => g.kind === 'archer' ? 'the ARCHER' : 'a SAMURAI').join(' and ')} SAW you get in! [${this.dream.key(p, 'interact')}] climbs out`
+      : `in the barrel — nobody can see you. [${this.dream.key(p, 'interact')}] climbs out`);
   }
 
   _unhide(run) {
@@ -948,10 +1187,56 @@ export class BambooInfiltration {
     run.hidden = null;
     if (p.rig?.bamboo) p.rig = null;
     p.group.visible = true;
-    // Out the way she is facing, a step clear of the barrel.
-    const th = this._facingAng(p);
-    this._place(p, b.a + Math.cos(th) * 1.2, b.b + Math.sin(th) * 1.2, 0, th);
+    const at = this._exitSpot(b, this._facingAng(p));
+    this._place(p, at.a, at.b, 0, at.th);
+    run.ok = { a: at.a, b: at.b };
+    run.last = this.coords(p);
     this.dream.game.sfx?.('knock', 0.5);
+  }
+
+  /**
+   * OUT OF A BARREL ONTO GROUND SHE FITS ON: the way she faces if it is clear,
+   * else the nearest clear bearing to it, a step clear of the barrel. The old
+   * exit — 1.2 the way she faced, unchecked — is how she came out of the
+   * alley's barrel behind the fence (Richard: "player can appear behind bamboo
+   * brush after jumping out of barrel").
+   */
+  _exitSpot(b, th0) {
+    const kit = kittenRaster(this.level);
+    for (const r of [HIDE_R - 0.3, HIDE_R, HIDE_R + 0.5]) {
+      for (let k = 0; k < 16; k++) {
+        const th = th0 + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * (Math.PI / 8);
+        const a = b.a + Math.cos(th) * r; const bb = b.b + Math.sin(th) * r;
+        const c = kit.cell(a, bb);
+        if (c >= 0 && kit[c]) return { a, b: bb, th };
+      }
+    }
+    return { a: b.a, b: b.b, th: th0 };
+  }
+
+  /** A samurai who saw her get in has walked to the barrel (bambooguards.js `fetch`): out, and caught. */
+  tipOut(i, barrel, g) {
+    const run = this.session?.runs.get(i);
+    if (!run || run.hidden !== barrel) return false;
+    this.dream.hint(run.p, 'he SAW you get in — tipped out of the barrel!');
+    this.caught(i, g, { force: true });
+    return true;
+  }
+
+  /** An archer's arrow, into a barrel he saw her get into: a coin — caught, or spooked out of it. */
+  arrowInBarrel(s) {
+    const w = s.barrel;
+    const run = this.session?.runs.get(w?.i);
+    if (!run || run.hidden !== w.barrel) return false;
+    if ((this.rng ?? Math.random)() < SPOTTED.hit) {
+      this.dream.hint(run.p, 'the ARROW found you in the barrel!');
+      this.caught(run.i, s.by, { force: true });
+    } else {
+      this._unhide(run);
+      this.dream.game.sfx?.('deny');
+      this.dream.hint(run.p, 'THUNK! an arrow in the barrel — you jumped out. RUN!');
+    }
+    return true;
   }
 
   /** Her facing as an island bearing. */
@@ -984,14 +1269,23 @@ export class BambooInfiltration {
     return { a: q.a + Math.cos(th) * r, b: q.b + Math.sin(th) * r, th, from: q };
   }
 
-  /** The awake guard her shuriken would put down, if it were thrown now. */
+  /**
+   * The awake guard her shuriken would put down, if it were thrown now — and
+   * only one she has a clear line to: the ring does not go red for a guard
+   * behind a wall (Richard: "Can't throw rocks or shurikens through walls or
+   * obstacles"). It flies at chest height, so a crate she stands behind is in
+   * the way of it.
+   */
   _mineTarget(run, at) {
     if (run.carry.shuriken <= 0) return null;
+    const L = this.level;
     let best = null; let bd = THROW.mineR;
     for (const g of this.view.guards) {
       if (!g.active || !g.awake) continue;
       const d = Math.hypot(g.at.a - at.a, g.at.b - at.b);
-      if (d < bd) { bd = d; best = g; }
+      if (d >= bd) continue;
+      if (blocked(L, { a: at.from.a, b: at.from.b, y: at.from.y + 1.4 }, { a: g.at.a, b: g.at.b, y: (g.at.y ?? 0) + 1.4 }, 'samurai')) continue;
+      bd = d; best = g;
     }
     return best;
   }
@@ -1018,7 +1312,9 @@ export class BambooInfiltration {
     const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), new THREE.MeshBasicMaterial({ color: 0xcfd6dc }));
     mesh.position.set(from.x, from.y, from.z);
     this.root.add(mesh);
-    this.pebbles.push({ a0: at.from.a, b0: at.from.b, y0: at.from.y + 1.4, a1: at.a, b1: at.b, t: 0, mesh, by: run });
+    // Thrown from a roof, it lands on the floor it was aimed at — unless that is a roof too.
+    const y1 = this._floorAt(at.a, at.b, at.from.y);
+    this.pebbles.push({ a0: at.from.a, b0: at.from.b, y0: at.from.y + 1.4, a1: at.a, b1: at.b, y1, t: 0, mesh, by: run, pa: at.from.a, pb: at.from.b, py: at.from.y + 1.4 });
     this.dream.game.sfx?.('slash', 0.35);
   }
 
@@ -1040,18 +1336,47 @@ export class BambooInfiltration {
   /** A guard's shuriken or arrow (bambooguards.js asks the island to throw it). */
   fire(kind, from, to, by) { return this.shots.fire(kind, from, to, by); }
 
-  /** CAUGHT: hands up, a samurai walks over, the screen fades, back to her lantern. */
-  caught(i, by) {
-    const run = this.session?.runs.get(i);
-    if (!run || run.capture || run.hidden || run.drill?.state !== 'live') return;
+  /** The height of the floor at (a, b) for something coming down from `y`: a roof under it, or the ground. */
+  _floorAt(a, b, y) {
+    for (const H of this.course.houses ?? []) if (inHouse(H, a, b) && y >= H.h - 0.3) return H.h;
+    return 0;
+  }
+
+  /**
+   * CAUGHT — AND SO IS EVERYBODY. Richard: "when a player gets caught, all
+   * players should respawn at the checkpoint and all game states should get
+   * reset (like have all the npc's start in their default spot, facing the
+   * default way)". Her hands go up and a samurai walks over; every pane in
+   * the session fades; at the swap (`_partyReset`) every kitten is put at the
+   * party's lantern and every guard on the first step of his rounds. Only the
+   * kitten caught pays CAUGHT_COST. `force` is a capture out of a barrel (a
+   * guard who saw her get in): hidden is not safe from that.
+   */
+  caught(i, by, { force = false } = {}) {
+    const S = this.session;
+    const run = S?.runs.get(i);
+    if (!run || S.capture || run.capture || (run.hidden && !force) || run.drill?.state !== 'live') return;
     const p = run.p;
-    run.capture = { t: 0, by };
+    if (run.hidden) {
+      // Tipped out where everybody can see her: beside the barrel, hands up.
+      const b = run.hidden;
+      run.hidden = null;
+      if (p.rig?.bamboo) p.rig = null;
+      p.group.visible = true;
+      const at = this._exitSpot(b, this._facingAng(p));
+      this._place(p, at.a, at.b, 0, at.th);
+    }
+    S.capture = { i, by };
     run.caught++;
-    run.charge = null;
-    run.latch = false;
-    if (p.rig?.bamboo) p.rig = null;
-    p.rig = { bamboo: true, step: () => p.velocity?.set(0, 0, 0) };
-    for (const g of this.view.guards) g.meter.delete(i);
+    for (const r of S.runs.values()) {
+      if (r.drill?.state !== 'live') continue;
+      r.capture = { t: 0, by, me: r === run };
+      r.charge = null;
+      r.latch = false;
+      if (r.p.rig?.bamboo && !r.hidden) r.p.rig = null;
+      if (!r.hidden) r.p.rig = { bamboo: true, step: () => r.p.velocity?.set(0, 0, 0) };
+      for (const g of this.view.guards) g.meter.delete(r.i);
+    }
     // The nearest awake samurai comes for her; an archer who shot her keeps his "!".
     const q = this.coords(p);
     let walker = by?.kind === 'samurai' && by.awake ? by : null;
@@ -1067,8 +1392,53 @@ export class BambooInfiltration {
     if (by && by !== walker && by.awake) by.arrest(i, { a: q.a, b: q.b });
     run.capture.walker = walker;
     this.dream.game.sfx?.('spotted');
-    const back = run.lit.size ? 'your lantern' : 'the start';
-    this.dream.hint(p, `CAUGHT! +${CAUGHT_COST}s, back to ${back}. Crawl with [${this.dream.key(p, 'mount')}] — nobody hears a crawl`);
+    const back = S.cp ? 'the lantern' : 'the start';
+    this.dream.hint(p, `CAUGHT! +${CAUGHT_COST}s, everybody back to ${back}. Crawl with [${this.dream.key(p, 'mount')}] — nobody hears a crawl`);
+    for (const r of S.runs.values()) if (r !== run && r.capture) this.dream.hint(r.p, `${p.name} was CAUGHT — everybody back to ${back}!`);
+  }
+
+  /**
+   * THE SWAP, under the fade: every kitten at the party's lantern (or her own
+   * place at the start), every guard where the course first stands him —
+   * `patrolAt(…, 0)`, his first step and his first facing — and nothing left
+   * in the air. The lanterns stay lit: a checkpoint is a checkpoint.
+   */
+  _partyReset() {
+    const S = this.session;
+    if (!S) return;
+    const kit = kittenRaster(this.level);
+    const fits = (a, b) => { const c = kit.cell(a, b); return c >= 0 && !!kit[c]; };
+    // Round the lantern, inside its ring (SAFE.lantern), each on ground she fits on.
+    const ROUND = [[-0.6, -0.75], [-0.6, 0.75], [0.6, -0.75], [0.6, 0.75]];
+    let k = 0;
+    for (const r of S.runs.values()) {
+      if (r.drill?.state !== 'live') continue;
+      const p = r.p;
+      if (r.hidden) { r.hidden = null; p.group.visible = true; }
+      let at = { a: r.slot.a, b: r.slot.b, th: 0 };
+      if (S.cp) {
+        const o = ROUND[k++ % ROUND.length];
+        at = fits(S.cp.a + o[0], S.cp.b + o[1]) ? { a: S.cp.a + o[0], b: S.cp.b + o[1], th: S.cp.th } : { ...S.cp };
+      }
+      if (p.rig?.bamboo) p.rig = null;
+      this._place(p, at.a, at.b, 0, at.th);
+      p.rig = { bamboo: true, step: () => p.velocity?.set(0, 0, 0) };
+      r.cp = at;
+      r.ok = { a: at.a, b: at.b };
+      r.last = this.coords(p);
+      r.carry = { shuriken: 0, smoke: 0 };
+      r.sawBy.clear();
+      r.ropeCd = 0;
+    }
+    for (const g of this.view.guards) if (g.active) g.reset(this.clock, 0);
+    this.shots.clear();
+    for (const pb of this.pebbles) pb.mesh.removeFromParent();
+    this.pebbles = [];
+    for (const s of this.smokes) { s.mesh.removeFromParent(); s.ring.removeFromParent(); }
+    this.smokes = [];
+    for (const r of this.rings) r.mesh.removeFromParent();
+    this.rings = [];
+    for (const pk of this.view.pickups) { if (!pk.on) continue; pk.gone = 0; pk.g.visible = true; }
   }
 
   /** How dark her pane is (the capture's fade), for `DreamDojo.drawPaneFx`. */
@@ -1085,13 +1455,11 @@ export class BambooInfiltration {
     const p = run.p;
     const t0 = c.t;
     c.t += dt;
-    if (t0 < ARREST.swap && c.t >= ARREST.swap) {
-      this._place(p, run.cp.a, run.cp.b, 0, run.cp.th);
-      for (const g of this.view.guards) if (g.arresting === run.i) g.release();
-    }
+    if (c.me && t0 < ARREST.swap && c.t >= ARREST.swap) this._partyReset();
     if (c.t >= ARREST.end) {
       run.capture = null;
-      if (p.rig?.bamboo) p.rig = null;
+      if (p.rig?.bamboo && !run.hidden) p.rig = null;
+      if (this.session) this.session.capture = null;
     }
   }
 
@@ -1161,19 +1529,22 @@ export class BambooInfiltration {
       p.position.x = w.x + SIM.dx;
       p.position.z = w.z + SIM.dz;
     }
-    if (!p.rig) {
-      this._grabRope(run, q);
-      this._startLadder(run, q);
-    }
-    // LANTERNS: walked past is lit, and the newest lit is where a capture puts her.
+    this._bounds(run, q);
+    // A rope is taken on a PRESS now (`_ninjaPress`); a ladder by a press, or by walking into it.
+    if (!p.rig) this._startLadder(run, q);
+    // LANTERNS: walked past is lit — the newest lit by ANYBODY is where a capture puts the party.
+    const S = this.session;
     for (const l of this.view.lanterns) {
       if (!l.on || run.lit.has(l)) continue;
       if (Math.hypot(q.a - l.a, q.b - l.b) < 1.4 && q.y < 1) {
         run.lit.add(l);
         run.cp = { a: l.a, b: l.b, th: this._facingAng(p) };
+        if (S && !S.lit.has(l)) { S.lit.add(l); S.cp = { ...run.cp }; }
         l.light.material.color.set(p.style?.colour ?? HOLO.gold);
         this.dream.game.sfx?.('star');
-        this.dream.hint(p, 'lantern lit — nobody sees you in its ring, and if you are caught you come back here');
+        this.dream.hint(p, S?.runs.size > 1
+          ? 'lantern lit — nobody sees you in its ring, and if anybody is caught you ALL come back here'
+          : 'lantern lit — nobody sees you in its ring, and if you are caught you come back here');
       }
     }
     // PICKUPS: one of each kind carried at a time; the card says what it does.
@@ -1205,20 +1576,25 @@ export class BambooInfiltration {
     }
   }
 
-  /** In the air under a rope, near enough: she grabs it. */
-  _grabRope(run, q) {
+  /**
+   * SHE STAYS ON THE COURSE. Richard: "player can appear behind bamboo brush
+   * after jumping out of barrel". The fence (a thick band of solid canes,
+   * `FENCE.thick`) is what stops her; this is what stops her if anything
+   * ever gets her past it — a jump, a push, a barrel — and it is the honest
+   * backstop for every way nobody has thought of yet: her middle over
+   * unwalkable ground goes back to the last walkable ground she stood over.
+   * Not on a rope or a ladder (they hang over the street, which is walkable
+   * anyway) and not in a barrel.
+   */
+  _bounds(run, q) {
     const p = run.p;
-    if (p.onGround || run.ropeCd > 0) return;
-    for (const R of this.view.ropes) {
-      const dy = R.y - q.y;
-      if (dy < ROPE.lo || dy > ROPE.hi) continue;
-      if (segDist(q.a, q.b, R.a0, R.b0, R.a1, R.b1) > ROPE.grab) continue;
-      const ea = R.a1 - R.a0; const eb = R.b1 - R.b0;
-      const len2 = ea * ea + eb * eb;
-      const u = Math.max(0.02, Math.min(0.98, ((q.a - R.a0) * ea + (q.b - R.b0) * eb) / len2));
-      this._ropeRig(run, R, u);
-      return;
-    }
+    if (p.rig || run.hidden || run.capture) return;
+    if (walkAt(this.level, q.a, q.b)) { run.ok = { a: q.a, b: q.b }; return; }
+    const w = this._w(run.ok.a, run.ok.b);
+    p.position.x = w.x + SIM.dx;
+    p.position.z = w.z + SIM.dz;
+    if (p.velocity) { p.velocity.x = 0; p.velocity.z = 0; }
+    run.last = { ...run.last, a: run.ok.a, b: run.ok.b };
   }
 
   /**
@@ -1251,7 +1627,8 @@ export class BambooInfiltration {
           // Off the end, onto the roof it is tied to.
           const k = this.u <= 0 ? 0 : 1;
           const a = k ? R.a1 : R.a0; const b = k ? R.b1 : R.b0;
-          const w = B._w(a, b, R.y - 2.6);
+          // On the roof it is tied to, at THAT roof's height (it was R.y - 2.6, under a 5.2 roof).
+          const w = B._w(a, b, B._floorAt(a, b, R.y - HANG.hi) + 0.05);
           p.position.set(w.x + SIM.dx, w.y, w.z + SIM.dz);
           drop(0);
           return;
@@ -1357,8 +1734,24 @@ export class BambooInfiltration {
     return [
       { text: state[0], size: 1.45, color: state[1], glow: !!run.capture },
       { text: `${d.t.toFixed(1)}s${run.caught ? `  + ${run.caught * CAUGHT_COST}s` : ''}   lanterns ${run.lit.size}${carry ? `   ${carry}` : ''}`, size: 1.25, color: HOLO.cyan, jp: !!carry },
-      { text: `[${this.dream.key(p, 'interact')}] ${run.hidden ? 'climb out' : run.carry.smoke ? 'smoke bomb' : 'barrel · leave'}`, size: 0.8, color: 0x7f9fa8 },
+      { text: this._promptLine(run), size: 0.8, color: 0x7f9fa8 },
     ];
+  }
+
+  /** What her two ninja buttons would do right now, in words — the card's last line. */
+  _promptLine(run) {
+    const p = run.p;
+    const I = this.dream.key(p, 'interact');
+    const J = this.dream.key(p, 'jump');
+    if (run.capture) return '';
+    if (run.hidden) return `[${I}] or [${J}] climb out`;
+    if (p.rig) return `[${J}] let go`;
+    const R = this._reach(run);
+    if (R.rope) return `[${I}] or [${J}] grab the rope`;
+    if (R.ladder) return `[${I}] or [${J}] ${R.ladder.dir > 0 ? 'climb the ladder' : 'climb down'}`;
+    if (R.barrel) return `[${I}] or [${J}] hide in the barrel`;
+    if (R.near) return 'get closer…';
+    return `[${I}] ${run.carry.smoke ? 'smoke bomb' : 'leave the course?'}`;
   }
 
   /* -------------------------------- a frame ------------------------------- */
@@ -1445,7 +1838,8 @@ export class BambooInfiltration {
       const crawl = run.sneak && p.onGround && !p.rig;
       const eye = p.rig?.kind === 'rope' ? q.y - 1.0 : q.y + (crawl ? EYE.crawl : EYE.stand);
       const hidden = !!run.hidden || !!run.capture || this.safeAt(q);
-      kittens.push({ i: run.i, a: q.a, b: q.b, y: eye, feet: p.rig?.kind === 'rope' ? q.y - 2.4 : q.y, hidden, va: run.va ?? 0, vb: run.vb ?? 0 });
+      kittens.push({ i: run.i, a: q.a, b: q.b, y: eye, feet: p.rig?.kind === 'rope' ? q.y - 2.4 : q.y, hidden, va: run.va ?? 0, vb: run.vb ?? 0,
+        sprint: !!run.sprinting && p.onGround && !p.rig, run });
     }
     for (const s of this.smokes) {
       s.t -= dt;
@@ -1462,23 +1856,39 @@ export class BambooInfiltration {
       g.update(dt, ctx);
       if (this._paintFlip) g.paintCone(D, this.smokes, live);
     }
+    // Who had whom in his eye, and when — what `_hide` asks ("did anybody SEE her get in?").
+    for (const k of kittens) for (const g of k.seenBy ?? []) k.run.sawBy.set(g, T);
     this.shots.update(dt, ctx, (k, s) => this.caught(k.i, s.by), (s) => {
+      // An arrow at a barrel lands IN it — unless something on the way stopped it first.
+      if (s.barrel) { if (!s.blocked) this.arrowInBarrel(s); return; }
       if (s.kind !== 'mine') return;
+      // A shuriken that hit a wall on the way put nobody to sleep, however near him it stopped.
       const g = s.guard;
-      if (g?.awake && Math.hypot(g.at.a - s.a, g.at.b - s.b) < THROW.mineR) {
+      if (!s.blocked && g?.awake && Math.hypot(g.at.a - s.a, g.at.b - s.b) < THROW.mineR) {
         g.knockOut(T);
         this.dream.game.sfx?.('bonk');
       }
     });
-    // Pebbles: a lob, and a clatter where they land.
+    /* PEBBLES: a lob, and a clatter where they land — or where they hit. A
+       lob goes over a crate if it is high enough there, and into a wall or a
+       house if it is not: "Can't throw rocks or shurikens through walls". */
     for (const pb of this.pebbles) {
       pb.t += dt;
       const u = Math.min(1, pb.t / THROW.flight);
-      const w = this._w(lerp(pb.a0, pb.a1, u), lerp(pb.b0, pb.b1, u), lerp(pb.y0, 0.15, u) + THROW.arc * 4 * u * (1 - u));
+      const na = lerp(pb.a0, pb.a1, u); const nb = lerp(pb.b0, pb.b1, u);
+      const ny = lerp(pb.y0, (pb.y1 ?? 0) + 0.15, u) + THROW.arc * 4 * u * (1 - u);
+      if (!pb.done && blocked(this.level, { a: pb.pa, b: pb.pb, y: pb.py }, { a: na, b: nb, y: ny }, 'samurai')) {
+        pb.done = true;
+        this._noise(pb.pa, pb.pb, D.pebble, 0xdfe8ff, this._floorAt(pb.pa, pb.pb, pb.py));
+        this.dream.game.sfx?.('knock', 0.6);
+        continue;
+      }
+      pb.pa = na; pb.pb = nb; pb.py = ny;
+      const w = this._w(na, nb, ny);
       pb.mesh.position.set(w.x, w.y, w.z);
       if (u >= 1 && !pb.done) {
         pb.done = true;
-        this._noise(pb.a1, pb.b1, D.pebble, 0xdfe8ff);
+        this._noise(pb.a1, pb.b1, D.pebble, 0xdfe8ff, pb.y1 ?? 0);
         this.dream.game.sfx?.('knock', 0.6);
       }
     }
@@ -1498,6 +1908,72 @@ export class BambooInfiltration {
       k.g.rotation.y += dt * 1.6;
     }
     if (this.ghost) this.ghost.update(S?.live ? S.t : 0);
+    this._stepParty(dt);
+  }
+
+  /* ------------------------------ the party camera -------------------------- */
+
+  /** The kittens of the session in seat order, the first of them "player 1". */
+  _partyRuns() {
+    return [...(this.session?.runs.values() ?? [])].sort((x, y) => x.i - y.i);
+  }
+
+  /**
+   * ONE CAMERA FOR THE PARTY. Richard: "use a shared camera for multiple
+   * players on one screen for this mini game ... have the camera keep all
+   * players in view, and if they get too far apart, have the camera follow
+   * player 1 to force players to be close to each other." Past PARTY_CAM.split
+   * from player 1 the camera is hers alone, and whoever is out of it is told
+   * so; back within `rejoin`, it takes them all in again.
+   */
+  _stepParty(dt) {
+    const runs = this._partyRuns();
+    const P = (this._party ??= { split: false, hintT: 0, centre: new THREE.Vector3(), spread: 0 });
+    if (!runs.length) { P.split = false; return; }
+    const lead = runs[0].p.position;
+    let far = 0;
+    for (const r of runs) far = Math.max(far, Math.hypot(r.p.position.x - lead.x, r.p.position.z - lead.z));
+    if (!P.split && far > PARTY_CAM.split) P.split = true;
+    else if (P.split && far < PARTY_CAM.rejoin) P.split = false;
+    P.hintT -= dt;
+    if (P.split && P.hintT <= 0) {
+      P.hintT = 4;
+      for (const r of runs.slice(1)) {
+        const d = Math.hypot(r.p.position.x - lead.x, r.p.position.z - lead.z);
+        if (d > PARTY_CAM.rejoin) this.dream.hint(r.p, `too far from ${runs[0].p.name} — the camera follows ${runs[0].p.name}. Catch up!`);
+      }
+    }
+    // The middle of who is framed: player 1 alone while split, all of them otherwise.
+    const framed = P.split ? runs.slice(0, 1) : runs;
+    P.centre.set(0, 0, 0);
+    for (const r of framed) P.centre.add(r.p.position);
+    P.centre.multiplyScalar(1 / framed.length);
+    P.spread = 0;
+    for (const r of framed) P.spread = Math.max(P.spread, Math.hypot(r.p.position.x - P.centre.x, r.p.position.z - P.centre.z));
+    P.centre.y += BAMBOO_CAM.lift;
+  }
+
+  /** For the split screen: every kitten in the session stands at the party's middle, so they share one pane. */
+  paneAnchor(p) {
+    if (!this.inSession(p) || !this._party) return null;
+    return this._party.centre;
+  }
+
+  /**
+   * The shared rig's shot for a group in the session, or null: her own
+   * shot's angle (BAMBOO_CAM), back far enough that everybody framed fits —
+   * the spread over the half-angle of the lens, with a margin, never nearer
+   * than her own shot and never further than PARTY_CAM.maxDist.
+   */
+  groupShot(members) {
+    const players = this.dream.game.players ?? [];
+    if (!this.session || !this._party || !members?.length || !members.every((i) => this.inSession(players[i]))) return null;
+    const g = (this._groupShot ??= { centre: new THREE.Vector3(), dist: BAMBOO_CAM.dist, pitch: BAMBOO_CAM.pitch, yaw: 0 });
+    g.centre.copy(this._party.centre);
+    g.yaw = this._yaw();
+    g.pitch = BAMBOO_CAM.pitch;
+    g.dist = partyDist(this._party.spread);
+    return g;
   }
 
   /* -------------------------------- the board ------------------------------ */

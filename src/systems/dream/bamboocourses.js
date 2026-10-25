@@ -78,33 +78,52 @@ export const COURSES = [
   {
     id: 'village', kanji: '村', name: 'THE VILLAGE', music: 'village',
     blurb: 'In through the doors, up the ladders, along the ropes.',
-    teach: 'jump up to a rope to hang from it — JUMP lets go',
+    teach: 'under a rope on a roof, INTERACT (or JUMP) hangs from it — JUMP lets go',
     scroll: { a: 21.5, b: 0 },
+    /* REDESIGNED, Oct 2026, from Richard's two marked-up maps. What was wrong:
+       h1's ladder stood in the forest (the only way to it was out of bounds,
+       which looked like a bug and was one); the h3–h4 rope was "pointless, as
+       the player can climb the ladder between the buildings" and its canes
+       stopped her on it; h4's side door and ladder opened into a pocket the
+       square never reached, whose one way in had a box in it; and boxes stood
+       in front of doors. What it is now — FOUR ways to the scroll:
+         THE STREET   street → alley → through h2 → its back yard → the square
+         THE TRAIL    a path cut through the bamboo by the gate → h1's ladder →
+                      the rope over the street → h3's roof → down its ladder →
+                      the back lane → through h4 → the square
+         THE ROOFS    h2's back yard → h2's NEW ladder (Richard: "can add ladder
+                      here") → the NEW rope across the street to h4's roof
+                      ("suggested better use of rope between buildings") →
+                      down h4's ladder → the square
+         THE LANE     the lane up the right → the back lane → through h4
+       tools/bamboo-plan.mjs draws them, beside the old plan. */
     paths: [{ pts: [[-17, 0], [-9, 0]], w: 4 }],
+    trails: [{ pts: [[-11.5, -1.4], [-11.5, -6.2], [-9.4, -8.3], [-7.4, -7.4]], w: 3.6 }],
     rects: [
       { a0: -9.5, a1: 16, b0: -3, b1: 3 },          // the street
       { a0: 1, a1: 4.5, b0: -9, b1: -3 },           // the alley between the left houses
       { a0: 16, a1: 23, b0: -7, b1: 7 },            // the square, with the scroll
       { a0: -9.5, a1: -6.5, b0: 3, b1: 12 },        // the lane up the right
-      { a0: -9.5, a1: 15, b0: 12, b1: 15 },         // ...and behind the right houses
-      { a0: 13, a1: 16, b0: 7, b1: 12 },
-      { a0: 12.5, a1: 16, b0: -9, b1: -4 },         // h2's back yard, into the square's corner
+      { a0: -9.5, a1: 15, b0: 12, b1: 15.8 },       // ...and behind the right houses, wide enough to pass a stack
+      { a0: 13, a1: 18, b0: 6, b1: 12 },            // h4's side yard — open to the square now, not a pocket
+      { a0: 12.5, a1: 16, b0: -11, b1: -4 },        // h2's back yard, round to its new ladder
     ],
     houses: [
-      { id: 'h1', a0: -6.5, a1: 1, b0: -11, b1: -3, h: 4.4, doors: [{ side: 'b1', at: -3, w: 1.8 }, { side: 'a1', at: -6, w: 1.8 }], ladder: { side: 'a0', at: -7 } },
-      { id: 'h2', a0: 4.5, a1: 12.5, b0: -11, b1: -3, h: 4.4, doors: [{ side: 'a0', at: -6, w: 1.8 }, { side: 'a1', at: -6.5, w: 1.8 }] },
-      { id: 'h3', a0: -5, a1: 3, b0: 3, b1: 12, h: 5.2, doors: [{ side: 'b1', at: -1, w: 1.8 }], ladder: { side: 'b1', at: 2 } },
-      { id: 'h4', a0: 6, a1: 13, b0: 3, b1: 12, h: 5.2, doors: [{ side: 'b1', at: 9.5, w: 1.8 }, { side: 'a1', at: 7.5, w: 1.8 }], ladder: { side: 'a1', at: 10.5 } },
+      { id: 'h1', a0: -6.5, a1: 1, b0: -11, b1: -3, h: 4.4, doors: [{ side: 'b1', at: -3, w: 2.8 }, { side: 'a1', at: -6, w: 2.8 }], ladder: { side: 'a0', at: -7 } },
+      { id: 'h2', a0: 4.5, a1: 12.5, b0: -11, b1: -3, h: 4.4, doors: [{ side: 'a0', at: -6, w: 2.8 }, { side: 'a1', at: -6.5, w: 2.8 }], ladder: { side: 'a1', at: -9.6 } },
+      { id: 'h3', a0: -5, a1: 3, b0: 3, b1: 12, h: 5.2, doors: [{ side: 'b1', at: -1, w: 2.8 }], ladder: { side: 'b1', at: 2 } },
+      { id: 'h4', a0: 6, a1: 13, b0: 3, b1: 12, h: 5.2, doors: [{ side: 'b1', at: 9.5, w: 2.8 }, { side: 'a1', at: 7.5, w: 2.8 }], ladder: { side: 'a1', at: 10.5 } },
     ],
-    ropes: [{ from: [-1, -6.8], to: [-1, 6.8], y: 7.4 }, { from: [2.4, 7.5], to: [6.6, 7.5], y: 7.6 }],
+    ropes: [{ from: [-1, -6.8], to: [-1, 6.8], y: 7.4 }, { from: [9.5, -6.8], to: [9.5, 6.8], y: 7.6 }],
     towers: [{ a: 22, b: 9.2, r: 1.3, h: 5.5 }],
     clumps: [{ a: 19.5, b: -5.5 }],
-    barrels: [{ a: -8.6, b: -2.2 }, { a: 2.6, b: -8.2 }, { a: 15, b: 2.2 }, { a: -8, b: 11 }, { a: 11.6, b: -10 }],
-    crates: [{ a: 8.5, b: 2.2 }, { a: 17.4, b: -6 }, { a: 14, b: 13.8 }, { a: -0.6, b: 13.8 }],
+    barrels: [{ a: -8.6, b: -2.2 }, { a: 2.6, b: -8.2 }, { a: 15, b: 2.2 }, { a: -8.7, b: 14.9 }, { a: 11.6, b: -10 }],
+    crates: [{ a: 8.5, b: 2.2 }, { a: 17.4, b: -6 }, { a: 12, b: 15 }, { a: 4.5, b: 15 }],
     thickets: [],
     lanterns: [
       { a: -8, b: 6, d: [0, 1] },
       { a: 2.8, b: -4.4, d: [0] },
+      { a: -11.5, b: -5.4, d: [0] },
       { a: 9, b: 13.6, d: [0, 1, 2] },
     ],
     pickups: [{ kind: 'shuriken', a: -1, b: 9.5, d: [0, 1, 2] }],
@@ -133,11 +152,15 @@ export const COURSES = [
        follow one: round a curve, sight runs out at the chord that grazes the
        grove, √(r1² − r0²) each way. Two niches off its sides hold a thicket to
        crawl into while a guard goes past, and one of them the smoke bomb. */
-    paths: [{ pts: [[-17, 0], [-4.5, 0]], w: 3.6 }, { pts: [[14, 0], [17.5, -3.2], [21, -6.5]], w: 3 }],
+    /* The last leg is 4.4 wide, not 3, with its barrel to one side: at 3 the
+       barrel stood across the whole of it, and a kitten got to the scroll only
+       because the collider squeezed her past it (measured, Oct 2026 — at her
+       real size `courseProblems` found no way to the scroll at all). */
+    paths: [{ pts: [[-17, 0], [-4.5, 0]], w: 3.6 }, { pts: [[14, 0], [17.5, -3.2], [21, -6.5]], w: 4.4 }],
     rings: [{ a: 4.5, b: 0, r0: 6.5, r1: 10.5 }, { a: 4.5, b: 12.4, r0: 0, r1: 2.3 }, { a: 4.5, b: -12.4, r0: 0, r1: 2.3 }],
     clumps: [{ a: -1.9, b: 7.6 }, { a: 10.9, b: -7.6 }, { a: 13.6, b: 4.2 }],
     thickets: [{ a: 4.5, b: 13, r: 1.3 }, { a: 4.5, b: -13, r: 1.3 }, { a: -3.4, b: -5.2, r: 1.1 }],
-    barrels: [{ a: 12.2, b: 6.9 }, { a: 19.6, b: -4.2 }],
+    barrels: [{ a: 12.2, b: 6.9 }, { a: 20.25, b: -3.8 }],
     crates: [{ a: -3.6, b: 6.4 }],
     lanterns: [
       { a: -9, b: 1.3, d: [0, 1, 2] },
@@ -161,21 +184,26 @@ export const COURSES = [
     scroll: { a: 18, b: 0 },
     paths: [{ pts: [[-17, 0], [-8, 0]], w: 4 }],
     rects: [
-      { a0: -8.5, a1: 9, b0: -14, b1: 14 },          // the courtyard
+      /* ...up to the keep's wall: it stopped at 9 and the keep's front door,
+         at 10, opened onto a unit of forest and its fence. */
+      { a0: -8.5, a1: 10, b0: -14, b1: 14 },         // the courtyard
       { a0: 9, a1: 21.5, b0: -9, b1: -6 },           // round the keep's left...
       { a0: 9, a1: 21.5, b0: 6, b1: 9 },             // ...and right
     ],
     houses: [
-      { id: 'keep', a0: 10, a1: 21, b0: -6, b1: 6, h: 6, doors: [{ side: 'a0', at: 0, w: 2 }, { side: 'b0', at: 17, w: 1.8 }, { side: 'b1', at: 13, w: 1.8 }], ladder: { side: 'b1', at: 18.5 } },
-      { id: 'store', a0: -4, a1: 3, b0: -13.5, b1: -7, h: 4.2, doors: [{ side: 'b1', at: -1.5, w: 1.8 }, { side: 'a1', at: -10, w: 1.8 }] },
-      { id: 'barracks', a0: -4, a1: 4, b0: 7, b1: 13.5, h: 4.2, doors: [{ side: 'b0', at: 0, w: 1.8 }], ladder: { side: 'a0', at: 10 } },
+      { id: 'keep', a0: 10, a1: 21, b0: -6, b1: 6, h: 6, doors: [{ side: 'a0', at: 0, w: 2.8 }, { side: 'b0', at: 17, w: 2.8 }, { side: 'b1', at: 13, w: 2.8 }], ladder: { side: 'b1', at: 18.5 } },
+      { id: 'store', a0: -4, a1: 3, b0: -13.5, b1: -7, h: 4.2, doors: [{ side: 'b1', at: -1.5, w: 2.8 }, { side: 'a1', at: -10, w: 2.8 }] },
+      { id: 'barracks', a0: -4, a1: 4, b0: 7, b1: 13.5, h: 4.2, doors: [{ side: 'b0', at: 0, w: 2.8 }], ladder: { side: 'a0', at: 10 } },
     ],
     ropes: [{ from: [3, 10], to: [11.5, 4.6], y: 7.8 }],
     towers: [{ a: -7, b: -16.2, r: 1.3, h: 6 }, { a: 7.6, b: 16.4, r: 1.3, h: 6 }],
     clumps: [],
     thickets: [],
     barrels: [{ a: -6.8, b: 3.2 }, { a: 7.6, b: -2.8 }, { a: 8.2, b: 11.8 }, { a: 20.4, b: -8 }],
-    crates: [{ a: -2, b: 3.6 }, { a: 1.5, b: -4.6 }, { a: 5.6, b: 4.8 }, { a: 6, b: -11.6 }, { a: 12, b: 7.6 }, { a: 15.5, b: -7.4 }],
+    /* Two stacks came out of the 3-wide lanes round the keep, where each one
+       stood across the whole lane and in front of a door — "many times the box
+       obstacles are in front of a door". They stand at the lanes' mouths now. */
+    crates: [{ a: -2, b: 3.6 }, { a: 1.5, b: -4.6 }, { a: 5.6, b: 4.8 }, { a: 6, b: -11.6 }, { a: 8.2, b: 8.6 }, { a: 8.2, b: -8.6 }],
     lanterns: [
       { a: -6.8, b: -2.6, d: [0, 1, 2] },
       { a: 0, b: -12, d: [0, 1] },
@@ -186,7 +214,11 @@ export const COURSES = [
       { kind: 'samurai', route: [{ a: -5.5, b: -5, wait: 1.2, look: 0, scan: 35 }, { a: 6.5, b: -5, wait: 1.2, look: 90, scan: 35 },
         { a: 6.5, b: 5, wait: 1.2, look: 180, scan: 35 }, { a: -5.5, b: 5, wait: 1.2, look: -90, scan: 35 }] },
       { kind: 'samurai', route: [{ a: 12, b: -3.5, wait: 1.6, look: 90, scan: 40 }, { a: 12, b: 3.5, wait: 1.6, look: -90, scan: 40 }] },
-      { kind: 'samurai', minDiff: 1, route: [{ a: 19.8, b: -7.5, wait: 2, look: 0, scan: 30 }, { a: 19.8, b: 7.5, wait: 2, look: 180, scan: 30 }] },
+      /* Along the left lane, not across the keep: his old round (a 19.8, b ±7.5)
+         walked him through both of its side walls — a patrol is a function of
+         time, and nothing asked it whether the line it drew went through a wall
+         (world-check does now). */
+      { kind: 'samurai', minDiff: 1, route: [{ a: 20.6, b: -7.5, wait: 2, look: 180, scan: 30 }, { a: 11, b: -7.5, wait: 2, look: 0, scan: 30 }] },
       { kind: 'archer', y: 6, route: [{ a: -7, b: -16.2, wait: 999, look: 45, scan: 40, rate: 0.35 }] },
       { kind: 'archer', y: 6, minDiff: 1, route: [{ a: 7.6, b: 16.4, wait: 999, look: -135, scan: 40, rate: 0.3, ph: 2 }] },
     ],

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { HOLO } from '../../world/simworld.js';
 import { makeLabelTexture } from '../../core/label.js';
 import { ClipSprite } from './ninjasprite.js';
-import { patrolAt, canSee, reach, walkPath, blocked, wrap, EYE } from './bamboolevel.js';
+import { patrolAt, canSee, reach, walkPath, blocked, wrap, EYE, SPRINT, HIDE_REACH } from './bamboolevel.js';
 
 /* ---------------------------------------------------------------------------
    忍 THE GUARDS — samurai on the ground, archers on the towers — and what
@@ -147,9 +147,17 @@ export class Guard {
   }
 
   /** Back on his patrol at time T, everything forgotten — a new run, or a new course. */
-  reset(T) {
+  /**
+   * Back on his rounds at the session's clock `T`. `t0` is where on them: by
+   * default `T` (where the clock says he is), and 0 after a capture — the
+   * first step of his rounds, facing the way the course first faces him
+   * ("have all the npc's start in their default spot, facing the default way").
+   */
+  reset(T, t0 = T) {
     this.mode = 'patrol';
-    this.off = 0;
+    this.off = t0 - T;
+    this.fetching = null;
+    this.watching = null;
     this.meter = new Map();
     this.path = null;
     this.koT = 0;
@@ -160,8 +168,38 @@ export class Guard {
     this.target = null;
     this.home = null;
     this.arresting = null;
-    this.at = { ...patrolAt(this.g, this.B.D, T), y: this.g.y ?? 0, y0: 0 };
+    this.mark.visible = false;
+    this.at = { ...patrolAt(this.g, this.B.D, t0), y: this.g.y ?? 0, y0: 0 };
     this._place();
+  }
+
+  /**
+   * HE SAW HER GET INTO THAT BARREL: a samurai walks straight to it and tips
+   * her out (`B.tipOut`, a capture there and then). Nothing else turns his
+   * head on the way.
+   */
+  fetch(i, barrel) {
+    if (this.kind !== 'samurai' || !this.awake || this.arresting != null) return false;
+    this._leave(this.B.clock);
+    this.path = null;
+    this.fetching = { i, barrel };
+    this._mark('!', '#ff5a5a');
+    this.B.dream.game.sfx?.('spotted');
+    // To her side of it, not into it — the barrel is solid to his feet.
+    const th = Math.atan2(this.at.b - barrel.b, this.at.a - barrel.a);
+    const to = { a: barrel.a + Math.cos(th) * HIDE_REACH, b: barrel.b + Math.sin(th) * HIDE_REACH };
+    if (Math.hypot(to.a - this.at.a, to.b - this.at.b) < 0.4 || !this._walk(to, this.B.D.run, 'fetch')) this._arrive('fetch');
+    return true;
+  }
+
+  /** HE SAW HER GET IN, from a tower: he watches the barrel `wait` s, then an arrow into it. */
+  watchBarrel(i, barrel, wait) {
+    if (this.kind !== 'archer' || !this.awake) return false;
+    this.watching = { i, barrel, t: wait };
+    this.mode = 'hold';
+    this.target = { a: barrel.a, b: barrel.b };
+    this._mark('!', '#ff5a5a');
+    return true;
   }
 
   get awake() { return this.mode !== 'ko'; }
@@ -199,8 +237,9 @@ export class Guard {
   /** HEARD SOMETHING at (a, b). */
   hear(a, b, T) {
     if (!this.awake || this.mode === 'arrest' || this.arresting) return false;
+    if (this.fetching) return false;
     if (this.kind === 'archer') {
-      if (this.alert) return false;
+      if (this.alert || this.watching) return false;
       this.mode = 'hold';
       this.target = { a, b, until: GUARD.glance };
       this._mark('?', '#ffd36a');
@@ -225,6 +264,8 @@ export class Guard {
     this.alert = false;
     this.path = null;
     this.arresting = null;
+    this.fetching = null;
+    this.watching = null;
     this._clip('ko');
     this._mark('Zz', '#9fefff');
   }
@@ -308,8 +349,26 @@ export class Guard {
       default:
         break;
     }
-    if (ctx.live && this.awake && this.arresting == null) this._look(dt, ctx);
+    if (this.watching && this.awake) this._watch(dt);
+    if (ctx.live && this.awake && this.arresting == null && !this.fetching && !this.watching) this._look(dt, ctx);
     this._place();
+  }
+
+  /** The archer's count, and the arrow into the barrel at the end of it — aimed, not scattered. */
+  _watch(dt) {
+    const w = this.watching;
+    if (!w) return;
+    if (this.B.session?.runs.get(w.i)?.hidden !== w.barrel) { this.watching = null; this.mark.visible = false; this.mode = 'patrol'; return; }
+    this._turn(Math.atan2(w.barrel.b - this.at.b, w.barrel.a - this.at.a), dt);
+    this._clip('alert');
+    w.t -= dt;
+    if (w.t > 0) return;
+    this.watching = null;
+    this._clip('attack');
+    const s = this.B.fire('arrow', { a: this.at.a, b: this.at.b, y: this.at.y + 2.2 }, { a: w.barrel.a, b: w.barrel.b, y: 0.6 }, this);
+    if (s) s.barrel = { i: w.i, barrel: w.barrel };
+    this.mark.visible = false;
+    this.mode = 'patrol';
   }
 
   /** Turn toward a bearing at GUARD.turn. */
@@ -338,9 +397,17 @@ export class Guard {
     this._clip(this.speed > this.B.D.walk * 1.5 ? 'sprint' : 'walk');
   }
 
-  _arrive() {
-    const then = this.then;
+  _arrive(why = this.then) {
+    const then = why;
     this.path = null;
+    if (then === 'fetch') {
+      const f = this.fetching;
+      this.fetching = null;
+      this.mode = 'hold';
+      // She got out on her own before he arrived: nobody there, back to his rounds.
+      if (!f || !this.B.tipOut(f.i, f.barrel, this)) { this.mark.visible = false; this._goHome(); }
+      return;
+    }
     if (then === 'search') {
       this.mode = 'search';
       this.searchT = GUARD.search;
@@ -375,7 +442,8 @@ export class Guard {
       let m = this.meter.get(k.i) ?? 0;
       if (seen) {
         const d = Math.hypot(k.a - this.at.a, k.b - this.at.b);
-        m += (dt / D.seeT) * (d < range * GUARD.near ? 2 : 1);
+        // A sprinting kitten is twice as easy to make out (Richard: "fill up twice as fast").
+        m += (dt / D.seeT) * (d < range * GUARD.near ? 2 : 1) * (k.sprint ? SPRINT.meterK : 1);
       } else m = Math.max(0, m - dt * GUARD.decay);
       this.meter.set(k.i, m);
       if (m > 0 && (!best || m > best.m)) best = { ...k, m };
@@ -533,17 +601,28 @@ export class Shots {
       if (s.dead) continue;
       const na = s.a + s.va * dt; const nb = s.b + s.vb * dt; const ny = s.y + s.vy * dt;
       s.t += dt;
+      const who = s.kind === 'arrow' ? 'archer' : 'samurai';
+      // An arrow at a barrel he saw her get into lands IN it — the barrel is cover, and would stop it a step short.
+      if (s.barrel && Math.hypot(na - s.barrel.barrel.a, nb - s.barrel.barrel.b) < 0.9) {
+        s.a = na; s.b = nb; s.y = ny; s.dead = true; onLand?.(s); continue;
+      }
       // Stopped by what stops a sight line — bamboo stops a shuriken, not an arrow from a tower.
-      if (blocked(L, { a: s.a, b: s.b, y: s.y }, { a: na, b: nb, y: ny }, s.kind === 'arrow' ? 'archer' : 'samurai')) {
-        s.dead = true; onLand?.(s); continue;
+      if (blocked(L, { a: s.a, b: s.b, y: s.y }, { a: na, b: nb, y: ny }, who)) {
+        s.dead = true; s.blocked = true; onLand?.(s); continue;
       }
       s.a = na; s.b = nb; s.y = ny;
       if (s.kind === 'mine') {
         if (s.t >= s.life - 0.4) { s.dead = true; onLand?.(s); }
       } else {
+        /* A HIT IS A HIT ON HER SIDE OF THE WALL. The flight is stopped at a
+           wall, but a shot stopped 0.6 short of one still had her 0.6 the
+           other side of it inside SHOT.hitR — the "through walls" Richard
+           saw. So the hit asks the same question the flight does, from the
+           shot to her. */
         for (const k of ctx.kittens) {
           if (k.hidden) continue;
-          if (Math.hypot(k.a - s.a, k.b - s.b) < SHOT.hitR && s.y > k.feet - 0.2 && s.y < k.feet + 2.6) {
+          if (Math.hypot(k.a - s.a, k.b - s.b) < SHOT.hitR && s.y > k.feet - 0.2 && s.y < k.feet + 2.6
+            && !blocked(L, { a: s.a, b: s.b, y: s.y }, { a: k.a, b: k.b, y: s.y }, who)) {
             s.dead = true; onHit(k, s); break;
           }
         }
