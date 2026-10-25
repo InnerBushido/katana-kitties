@@ -40691,6 +40691,27 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     pad.edge = new Set();
     d.spec.steer(d, pad);
     ok('...and one more press lets it go', !run.latch && !run.sneak && her.gaitK === 1);
+    /* THE PAD HER LEGS READ is built once, on the first steer — and in the game
+       that is the COUNT-IN. Its mask once closed over that call's `frozen`, so
+       from GO onwards her legs never heard SPRINT or JUMP: "seems player is
+       walking faster than they are sprinting" (the sprint's 0.71 gait, on a
+       walk: 7.46 against 10.5). Built during the count-in here, as it is in
+       the game, then asked after GO. */
+    {
+      const pad0 = run.pad; run.pad = null;
+      d.state = 'ready';
+      d.spec.steer(d, pad);
+      d.state = 'live';
+      pad.hold = new Set(['sprint']); pad.edge = new Set(['jump']);
+      const legs = d.spec.steer(d, pad);
+      const heard = legs.down('sprint') && legs.pressed('jump');
+      ok('忍 a pad built in the count-in still hands her legs SPRINT and JUMP after GO — so her sprint is 1.15x her walk, not 0.71x',
+        heard && her.gaitK === BL.SPRINT.gait && Math.abs((BL.SPRINT.run * her.gaitK) / BL.SPRINT.walk - 1.15) < 1e-9,
+        `sprint ${legs.down('sprint')} jump ${legs.pressed('jump')} gait ${her.gaitK}`);
+      pad.hold = new Set(); pad.edge = new Set();
+      d.spec.steer(d, pad);
+      run.pad = pad0 ?? run.pad;
+    }
     // THE THROW: held ATTACK plants her and winds up; letting go lobs a pebble; the katana never sees it.
     pad.hold = new Set(['attack']);
     B._dt = 1 / 60;
@@ -40959,9 +40980,107 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         const qb = B.coords(her);
         ok('忍 a kitten whose middle gets past the fence is put back on the last walkable ground she stood over',
           !!off && BL.walkAt(B.level, qb.a, qb.b) && Math.hypot(qb.a - ok0.a, qb.b - ok0.b) < 0.6, `${qb.a.toFixed(2)},${qb.b.toFixed(2)}`);
-        ok('...and the fence is a band of SOLID canes thicker than a jump can clear', BL.FENCE.thick >= 2.4 && BL.FENCE.step < 2 * BL.KITTEN_R
-          && /FENCE\.r/.test(bsrc) && /L\.band/.test(bsrc));
+        /* The canes are DRAWN, not pushed: Richard, Oct 2026, "it is teleporting
+           the player around the bamboo area because of the colliders, instead it
+           should just prevent the player from going there". Solid canes shoved
+           her one way and `_bounds` snapped her back the other. */
+        ok('...and the fence is a band of canes thicker than a jump can clear — drawn, never solid; the edge is edgeRaster',
+          BL.FENCE.thick >= 2.4 && BL.FENCE.step < 2 * BL.KITTEN_R && /L\.band/.test(bsrc)
+          && !/solid\(f\.a/.test(bsrc) && !/solid\(t\.a/.test(bsrc) && /_bounds[\s\S]{0,1200}edgeRaster\(L\)/.test(bsrc));
+        // edgeRaster: no cell it lets her middle into is within KITTEN_R of a fence or trail cane.
+        {
+          let close = 0; let cells = 0;
+          for (const C of BL.COURSES) {
+            const Lc = BL.levelOf(C); const E = BL.edgeRaster(Lc);
+            const canes = [...Lc.fence.map((f) => ({ a: f.a, b: f.b, r: BL.FENCE.r })), ...Lc.trailCanes];
+            for (let a = -30; a < 30; a += 0.5) for (let b = -30; b < 30; b += 0.5) {
+              if (!E.at(a, b)) continue;
+              cells++;
+              const ca = Math.floor(a / 0.25) * 0.25 + 0.125; const cb = Math.floor(b / 0.25) * 0.25 + 0.125;
+              if (canes.some((c) => Math.hypot(ca - c.a, cb - c.b) < c.r + BL.KITTEN_R - 1e-6)) close++;
+            }
+          }
+          ok('...and edgeRaster keeps her middle KITTEN_R off every fence and trail cane, on every course', cells > 1000 && close === 0, `${close} of ${cells}`);
+        }
+        // THE SLIDE: a slanting step into the bamboo keeps the half that fits, and does not stop her dead.
+        {
+          const E = BL.edgeRaster(B.level);
+          let spot = null;
+          for (let a = -20; a < 20 && !spot; a += 0.25) for (let b = -20; b < 20 && !spot; b += 0.25) {
+            if (E.at(a, b) && E.at(a + 0.3, b) && !E.at(a, b + 0.3) && !E.at(a + 0.3, b + 0.3) && BL.walkAt(B.level, a + 0.3, b + 0.3)) spot = { a, b };
+          }
+          put(her, sp(spot)); her.onGround = true;
+          run.ok = { a: spot.a, b: spot.b };
+          B._bounds(run, { a: spot.a + 0.3, b: spot.b + 0.3, y: 0 });
+          const q3 = B.coords(her);
+          ok('忍 a slanting step into the bamboo keeps the half that fits: she slides along the edge, and never past it',
+            !!spot && Math.abs(q3.a - (spot.a + 0.3)) < 1e-6 && Math.abs(q3.b - spot.b) < 1e-6 && E.at(q3.a, q3.b),
+            spot ? `${q3.a.toFixed(2)},${q3.b.toFixed(2)} from ${spot.a},${spot.b}` : 'no edge found');
+          put(her, sp(run.slot)); run.ok = { a: run.slot.a, b: run.slot.b };
+        }
       }
+      /* THE ROPES. Richard, Oct 2026: "when dismounting off of the rope line, the
+         player is falling through the building below the roof line, they should
+         be landing on top of the building ... the player can dismount the rope by
+         pressing the jump/interact button while on it". And "the ninja mount
+         animation is playing above the rope rather than below it". */
+      {
+        const ropes = BL.COURSES.flatMap((C) => (C.ropes ? (Array.isArray(C.ropes) ? C.ropes : Object.values(C.ropes).flat()) : []).map((R) => ({ C, R })));
+        const tied = ropes.every(({ C, R }) => {
+          const E = BL.ropeEnds(C, R);
+          return E.H0 && E.H1 && Math.abs(E.y0 - E.H0.h - BL.ROPE_RISE) < 1e-9 && Math.abs(E.y1 - E.H1.h - BL.ROPE_RISE) < 1e-9
+            && E.y0 - BM.ROPE.ink > E.H0.h && E.y1 - BM.ROPE.ink > E.H1.h && R.y == null;
+        });
+        ok('忍 every rope is tied ROPE_RISE over the roof under EACH end, and her hang clears both roofs', ropes.length >= 3 && tied, `${ropes.length} ropes`);
+        // A rope she can be put on: the first one, on this island's grid.
+        const { C: RC, R: R0 } = ropes[0];
+        const E0 = BL.ropeEnds(RC, R0);
+        const R = { a0: R0.from[0], b0: R0.from[1], a1: R0.to[0], b1: R0.to[1], y0: E0.y0, y1: E0.y1, h0: E0.H0.h, h1: E0.H1.h };
+        const pad0 = { mx: 0, my: 0, down: () => false, pressed: () => false };
+        const padJ = { ...pad0, pressed: (a) => a === 'jump' };
+        const onRoof = () => { put(her, sp({ a: R.a0, b: R.b0 })); her.position.y += R.h0; };
+        // THE MOUNT, from where she stands; THEN the hang.
+        onRoof();
+        const y0 = B.coords(her).y;
+        B._ropeRig(run, R, 0.02);           // _reach clamps u to [0.02, 0.98]
+        her.rig.step(BM.ROPE.mount / 2, pad0);
+        const mid = B.coords(her).y;
+        run.throwT = -9;                                 // the pebble thrown above would still be drawing
+        B._always(run, d);
+        const clipMid = her.clipAs?.name;
+        her.rig.step(BM.ROPE.mount, pad0);
+        her.rig.step(1 / 60, pad0);
+        const hung = B.coords(her).y;
+        ok('忍 grabbing a rope plays the MOUNT standing where she is, and only then hangs her from the rope',
+          Math.abs(mid - y0) < 1e-6 && Math.abs(hung - (R.y0 + (R.y1 - R.y0) * 0.02)) < 0.05 && clipMid === 'mount',
+          `stood ${y0.toFixed(2)} mid ${mid.toFixed(2)} hung ${hung.toFixed(2)} of ${R.y0.toFixed(2)} clip ${clipMid}`);
+        // OFF THE END, onto the roof it is tied to — not into the house under it.
+        her.rig.u = -0.01;
+        her.rig.step(1 / 60, pad0);
+        const land = B.coords(her).y;
+        ok('...and off the end she lands ON the roof that end is tied to, not inside the house', !her.rig && Math.abs(land - (R.h0 + 0.05)) < 0.02,
+          `${land.toFixed(2)} on a ${R.h0} roof`);
+        // JUMP lets go mid-rope, from where the hang drew her feet.
+        onRoof();
+        B._ropeRig(run, R, 0.5);
+        her.rig.step(BM.ROPE.mount + 0.01, pad0);
+        her.rig.step(1 / 60, pad0);
+        her.rig.step(1 / 60, padJ);
+        const feet = B.coords(her).y;
+        const want = (R.y0 + R.y1) / 2 - BM.ROPE.ink;
+        ok('...and JUMP lets go mid-rope, her feet where the hang drew them', !her.rig && Math.abs(feet - want) < 0.05, `${feet.toFixed(2)} want ${want.toFixed(2)}`);
+        // INTERACT too.
+        onRoof();
+        B._ropeRig(run, R, 0.5);
+        her.rig.step(BM.ROPE.mount + 0.01, pad0);
+        const took = B._ninjaPress(run, 'interact');
+        ok('...and so does INTERACT — and the press is eaten, so it opens nothing', !her.rig && took === true && !D.choices[0]);
+        put(her, sp(run.slot)); run.ok = { a: run.slot.a, b: run.slot.b }; run.ropeCd = 0;
+        her.velocity?.set(0, 0, 0);
+      }
+      // THE DRILL CARD faces the lens, pitch and all — the course camera looks down at 0.95 rad.
+      ok('忍 the card over her head is turned fully to the camera (fullFace), so it reads from a looking-down lens',
+        d.panel?.fullFace === true, String(d.panel?.fullFace));
       // NOTHING THROUGH A WALL: a shuriken at her, stopped by a wall 0.5 from her, does not catch her.
       {
         const SH = await import('../src/systems/dream/bambooguards.js');
@@ -40991,13 +41110,25 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         step(1 / 60);
         const g1 = B.groupShot([0, 1]);
         const same = B.paneAnchor(her) === B.paneAnchor(sis) && !!B.paneAnchor(her);
-        put(sis, sp({ a: run.slot.a + BM.PARTY_CAM.split + 4, b: 0 }));
+        /* Somewhere she can STAND, this far from her: the edge is `edgeRaster`
+           now, and a straight line out from the start leaves the trail —
+           `_bounds` took her sister straight back to her last good step. */
+        const Eg = BL.edgeRaster(B.level);
+        const away = (r) => {
+          for (let k = 0; k < 720; k++) {
+            const th = (k / 720) * Math.PI * 2;
+            const s2 = { a: run.slot.a + Math.cos(th) * r, b: run.slot.b + Math.sin(th) * r };
+            if (Eg.at(s2.a, s2.b)) return s2;
+          }
+          return null;
+        };
+        put(sis, sp(away(BM.PARTY_CAM.split + 4)));
         step(1 / 60);
         const split = B._party.split && Math.hypot(B._party.centre.x - her.position.x, B._party.centre.z - her.position.z) < 1e-6;
-        put(sis, sp({ a: run.slot.a + BM.PARTY_CAM.split - 3, b: 0 }));
+        put(sis, sp(away(BM.PARTY_CAM.split - 3)));
         step(1 / 60);
         const held = B._party.split;               // between rejoin and split: still hers (hysteresis)
-        put(sis, sp({ a: run.slot.a + BM.PARTY_CAM.rejoin - 4, b: 0 }));
+        put(sis, sp(away(BM.PARTY_CAM.rejoin - 4)));
         step(1 / 60);
         const back = !B._party.split;
         const wide = B.groupShot([0, 1]).dist;

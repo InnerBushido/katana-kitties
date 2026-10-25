@@ -114,7 +114,7 @@ export const COURSES = [
       { id: 'h3', a0: -5, a1: 3, b0: 3, b1: 12, h: 5.2, doors: [{ side: 'b1', at: -1, w: 2.8 }], ladder: { side: 'b1', at: 2 } },
       { id: 'h4', a0: 6, a1: 13, b0: 3, b1: 12, h: 5.2, doors: [{ side: 'b1', at: 9.5, w: 2.8 }, { side: 'a1', at: 7.5, w: 2.8 }], ladder: { side: 'a1', at: 10.5 } },
     ],
-    ropes: [{ from: [-1, -6.8], to: [-1, 6.8], y: 7.4 }, { from: [9.5, -6.8], to: [9.5, 6.8], y: 7.6 }],
+    ropes: [{ from: [-1, -6.8], to: [-1, 6.8] }, { from: [9.5, -6.8], to: [9.5, 6.8] }], // tied ROPE_RISE over each roof (ropeEnds)
     towers: [{ a: 22, b: 9.2, r: 1.3, h: 5.5 }],
     clumps: [{ a: 19.5, b: -5.5 }],
     barrels: [{ a: -8.6, b: -2.2 }, { a: 2.6, b: -8.2 }, { a: 15, b: 2.2 }, { a: -8.7, b: 14.9 }, { a: 11.6, b: -10 }],
@@ -195,7 +195,7 @@ export const COURSES = [
       { id: 'store', a0: -4, a1: 3, b0: -13.5, b1: -7, h: 4.2, doors: [{ side: 'b1', at: -1.5, w: 2.8 }, { side: 'a1', at: -10, w: 2.8 }] },
       { id: 'barracks', a0: -4, a1: 4, b0: 7, b1: 13.5, h: 4.2, doors: [{ side: 'b0', at: 0, w: 2.8 }], ladder: { side: 'a0', at: 10 } },
     ],
-    ropes: [{ from: [3, 10], to: [11.5, 4.6], y: 7.8 }],
+    ropes: [{ from: [3, 10], to: [11.5, 4.6] }], // barracks to keep, sloping up (ropeEnds)
     towers: [{ a: -7, b: -16.2, r: 1.3, h: 6 }, { a: 7.6, b: 16.4, r: 1.3, h: 6 }],
     clumps: [],
     thickets: [],

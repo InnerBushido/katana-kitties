@@ -24,7 +24,8 @@
                 her from a samurai the way the forest does. The way to a place
                 that is meant to be found — "it should not look like a bug"
      decks      floating floors, { a, b, r, y }
-     ropes      { from: [a, b], to: [a, b], y } — she hangs under them
+     ropes      { from: [a, b], to: [a, b] } — she hangs under them; each end
+                tied ROPE_RISE over the roof under it (`ropeEnds`)
      clumps / thickets / barrels / crates   cover, of different heights
      lanterns   checkpoints, each listing the difficulties it is lit on
      pickups    shuriken and smoke bombs, likewise
@@ -409,6 +410,49 @@ export function kittenRaster(L) {
 }
 
 /**
+ * WHERE HER MIDDLE MAY BE ON THE GROUND, as far as the BAMBOO is concerned:
+ * walkable, and KITTEN_R clear of every fence and trail cane. The edge of the
+ * course is this raster, held by `_bounds` — the canes are drawn, not pushed.
+ * Richard, Oct 2026: "when trying to walk across the bamboo between the two
+ * building in The Village, it is teleporting the player around the bamboo
+ * area because of the colliders, instead it should just prevent the player
+ * from going there". Three hundred point colliders 0.7 apart each shove her
+ * out along its own radius, and `walkAt` then snapped her back to the last
+ * cell she was on: two rules fighting, which reads as a teleport.
+ *
+ * NOT `kittenRaster`: that one keeps her 1.05 off every WALL too, which the
+ * walls already do at her own radius, and would stop her a third of a unit
+ * short of every wall and door jamb as an invisible margin.
+ */
+export function edgeRaster(L) {
+  if (L.edge) return L.edge;
+  const R = REGION;
+  const nA = Math.ceil((R.a1 - R.a0) / KIT_GRID);
+  const nB = Math.ceil((R.b1 - R.b0) / KIT_GRID);
+  const edge = new Uint8Array(nA * nB);
+  const pts = [...L.fence.map((f) => ({ a: f.a, b: f.b, r: FENCE.r })), ...L.trailCanes.map((c) => ({ a: c.a, b: c.b, r: c.r }))];
+  const BIN = 2;
+  const bins = new Map();
+  const key = (u, v) => `${Math.floor(u / BIN)},${Math.floor(v / BIN)}`;
+  for (const q of pts) { const k = key(q.a, q.b); if (!bins.has(k)) bins.set(k, []); bins.get(k).push(q); }
+  for (let i = 0; i < nA; i++) for (let j = 0; j < nB; j++) {
+    const a = R.a0 + (i + 0.5) * KIT_GRID; const b = R.b0 + (j + 0.5) * KIT_GRID;
+    if (!walkAt(L, a, b)) continue;
+    let clear = true;
+    for (let du = -BIN; du <= BIN && clear; du += BIN) for (let dv = -BIN; dv <= BIN && clear; dv += BIN) {
+      for (const q of bins.get(key(a + du, b + dv)) ?? []) if (Math.hypot(a - q.a, b - q.b) < q.r + KITTEN_R) { clear = false; break; }
+    }
+    if (clear) edge[i * nB + j] = 1;
+  }
+  edge.at = (a, b) => {
+    const i = Math.floor((a - R.a0) / KIT_GRID); const j = Math.floor((b - R.b0) / KIT_GRID);
+    return i >= 0 && j >= 0 && i < nA && j < nB && edge[i * nB + j] === 1;
+  };
+  L.edge = edge;
+  return edge;
+}
+
+/**
  * EVERY CELL (of `kittenRaster`) A KITTEN CAN WALK TO FROM `from`, on the
  * ground, at her size: 8 neighbours, no corner cutting. Roofs are not in it —
  * they are reached by ladders, and `courseProblems` asks about those.
@@ -459,6 +503,27 @@ export const LADDER_REACH = 0.9;
 export const HIDE_REACH = 1.9;
 /** A rope is hung from when it is this far above her feet (bamboo.js ROPE). */
 export const HANG = { lo: 1.6, hi: 3.8 };
+/**
+ * HOW HIGH A ROPE IS TIED: this far above the roof under each end, so it can
+ * slope from a low roof to a high one. Richard, Oct 2026: "the player is
+ * falling through the building below the roof line ... Seems the rope lines
+ * are too low". They were one hand-set `y` for both ends, and a level rope
+ * between a 4.4 roof and a 5.2 one cannot clear both. MEASURED off the rope
+ * clip's ink (public/sprites/ninja/*.png, every facing): she hangs 1.21 of her
+ * height below the rope (Ember; Frost 1.19), and the mount clip — stood on the
+ * roof — reaches 1.23 of it up. So at 1.26 of her height (3.65 for a 2.9
+ * kitten) the hang ends with her feet just over the roof she is let down onto,
+ * and the mount ends with her paws on the rope.
+ */
+export const ROPE_RISE = 1.26 * 2.9;
+/** The roof (house) under a rope's end, or none. */
+export const roofUnder = (C, a, b) => (C.houses ?? []).find((H) => inHouse(H, a, b)) ?? null;
+/** A rope's two ends, each at ROPE_RISE over the roof under it (or the ground). */
+export function ropeEnds(C, R) {
+  const H0 = roofUnder(C, R.from[0], R.from[1]);
+  const H1 = roofUnder(C, R.to[0], R.to[1]);
+  return { H0, H1, y0: (H0?.h ?? 0) + ROPE_RISE, y1: (H1?.h ?? 0) + ROPE_RISE };
+}
 
 /**
  * EVERYTHING ABOUT A COURSE'S LAYOUT THAT WOULD STILL LOOK FINE ON SCREEN
@@ -507,11 +572,13 @@ export function courseProblems(C) {
   const roofOf = (a, b) => all(C.houses).find((H) => inHouse(H, a, b));
   const climbable = (H) => !!H?.ladder && reachesNear(L, seen, ladderFoot(H).a, ladderFoot(H).b, LADDER_REACH);
   for (const R of all(C.ropes)) {
-    const ends = [R.from, R.to].map(([a, b]) => ({ a, b, H: roofOf(a, b) }));
+    const E = ropeEnds(C, R);
+    const ends = [R.from, R.to].map(([a, b], k) => ({ a, b, H: roofOf(a, b), y: k ? E.y1 : E.y0 }));
     for (const e of ends) {
       if (!e.H) out.push(`a rope's end at ${at(e)} is over no roof`);
-      else if (R.y - e.H.h < HANG.lo || R.y - e.H.h > HANG.hi) out.push(`a rope's end over ${e.H.id} hangs ${(R.y - e.H.h).toFixed(1)} above its roof — not grabbable`);
+      else if (e.y - e.H.h < HANG.lo || e.y - e.H.h > HANG.hi) out.push(`a rope's end over ${e.H.id} hangs ${(e.y - e.H.h).toFixed(1)} above its roof — not grabbable`);
     }
+    if (R.y != null) out.push(`the rope ${at(ends[0])}–${at(ends[1])} still sets its own y: its height is the roofs' (ropeEnds)`);
     if (!ends.some((e) => climbable(e.H))) out.push(`the rope ${at(ends[0])}–${at(ends[1])} has no ladder up to either end`);
   }
   return out;

@@ -13,7 +13,8 @@ import { BAMBOO_BOARD, bambooBoardLines, bambooFilterRows } from './bambooboard.
 import {
   COURSES, courseById, starsId, DIFFS, levelOf, guardsOn, lanternsOn, pickupsOn, houseWalls, ladderFoot,
   REGION, GATE, PLAZA, EYE, RADII, COVER, SNEAK, CAUGHT_COST, GRID, wrap, segDist,
-  walkAt, inHouse, blocked, kittenRaster, HIDE_REACH, LADDER_REACH, HANG, FENCE, TRAIL, SPRINT,
+  walkAt, inHouse, blocked, kittenRaster, HIDE_REACH, LADDER_REACH, HANG, SPRINT,
+  ropeEnds, edgeRaster,
 } from './bamboolevel.js';
 
 // The courses' recordings (tools/capture/bamboo-music.mjs) join the game's
@@ -80,7 +81,7 @@ export const THROW = { charge: 1.0, min: 2, max: 13, mineR: 1.6, flight: 0.65, a
 /** Hanging from a rope: grabbed within `grab` flat with the rope `lo`..`hi` above her feet,
  *  on a PRESS (INTERACT or JUMP) — it used to take her as she jumped under it,
  *  which made a jump on a roof under a rope a thing she could not do. */
-export const ROPE = { grab: 1.2, lo: HANG.lo, hi: HANG.hi, speed: 3.4, mount: 0.5, cd: 0.5 };
+export const ROPE = { grab: 1.2, lo: HANG.lo, hi: HANG.hi, speed: 3.4, mount: 0.5, cd: 0.5, ink: 1.21 * 2.9 };
 /** A ladder: climbed at `speed`; she steps `onto` units in onto the roof at the top. */
 export const LADDER = { speed: 3.2, reach: LADDER_REACH, onto: 1.4, push: 0.75 };
 /**
@@ -369,7 +370,8 @@ export class BambooInfiltration {
       inner.add(m);
     }
     /* THE FOREST: canes on a jittered lattice over every forest cell, taller
-       further from the path, and the FENCE — the canes along its edge — solid.
+       further from the path, and the FENCE — the canes along its edge. None of
+       them is solid: the edge is `edgeRaster`, held in `_bounds`.
        X-RAYED (`sim.xray`) round every kitten, because a 6-high wall of canes
        on the camera's side of a 2.4-wide corridor is otherwise the whole
        picture. */
@@ -385,10 +387,12 @@ export class BambooInfiltration {
           canes.push({ a: ca, b: cb, h: 3.6 + R() * 3.2, lean: (R() - 0.5) * 0.14 });
         }
       }
-      for (const f of L.fence) {
-        solid(f.a, f.b, FENCE.r, FENCE.top);
-        canes.push({ a: f.a, b: f.b, h: 3.2 + R() * 1.6, lean: (R() - 0.5) * 0.1 });
-      }
+      /* THE FENCE IS DRAWN, NOT PUSHED. Its canes were solids 0.7 apart, and
+         each shoved her out along its own radius while `_bounds` pulled her
+         back — "it is teleporting the player around the bamboo area because of
+         the colliders, instead it should just prevent the player from going
+         there". The edge is `edgeRaster` now, held in `_bounds`. */
+      for (const f of L.fence) canes.push({ a: f.a, b: f.b, h: 3.2 + R() * 1.6, lean: (R() - 0.5) * 0.1 });
       /* THE DENSE BAND behind the fence, on a lattice nearly twice as tight as
          the forest's: Richard, "increase the solidity of the 'out of bounds'
          area ... should be a solid thick bamboo forest player can't get to or
@@ -401,12 +405,10 @@ export class BambooInfiltration {
           canes.push({ a: ca, b: cb, h: 4.4 + R() * 2.6, lean: (R() - 0.5) * 0.12 });
         }
       }
-      /* THE TRAIL'S CANES, every one solid: a way through the woods she
-         weaves along, "not as dense as the normal 'out of bounds' area". */
-      for (const t of L.trailCanes) {
-        solid(t.a, t.b, t.r);
-        canes.push({ a: t.a, b: t.b, h: t.h, lean: (R() - 0.5) * 0.12 });
-      }
+      /* THE TRAIL'S CANES: a way through the woods she weaves along, "not as
+         dense as the normal 'out of bounds' area". Held the way the fence is
+         (`edgeRaster` keeps her KITTEN_R off each), not pushed. */
+      for (const t of L.trailCanes) canes.push({ a: t.a, b: t.b, h: t.h, lean: (R() - 0.5) * 0.12 });
       for (const c of L.cover.filter((x) => x.kind === 'clump')) {
         for (let k = 0; k < 6; k++) {
           const t = R() * Math.PI * 2; const r = R() * c.r * 0.8;
@@ -520,7 +522,9 @@ export class BambooInfiltration {
     const shadowMat = new THREE.MeshBasicMaterial({ color: 0x03070c, transparent: true, opacity: 0.5, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
     const grabMat = new THREE.MeshBasicMaterial({ color: 0xe8d3a0, transparent: true, opacity: 0.45, depthWrite: false, toneMapped: false });
     for (const R of C.ropes ?? []) {
-      const p0 = this._w(R.from[0], R.from[1], R.y); const p1 = this._w(R.to[0], R.to[1], R.y);
+      // tied ROPE_RISE over the roof under each end, so it slopes from a low roof to a high one (`ropeEnds`)
+      const E = ropeEnds(C, R);
+      const p0 = this._w(R.from[0], R.from[1], E.y0); const p1 = this._w(R.to[0], R.to[1], E.y1);
       const path = new THREE.LineCurve3(new THREE.Vector3(p0.x, p0.y, p0.z), new THREE.Vector3(p1.x, p1.y, p1.z));
       inner.add(new THREE.Mesh(new THREE.TubeGeometry(path, 1, 0.08, 6, false),
         new THREE.MeshBasicMaterial({ color: 0xf2dfae, toneMapped: false })));
@@ -550,7 +554,7 @@ export class BambooInfiltration {
         ring.position.set(q.x, q.y, q.z);
         inner.add(ring);
       }
-      view.ropes.push({ a0: R.from[0], b0: R.from[1], a1: R.to[0], b1: R.to[1], y: R.y });
+      view.ropes.push({ a0: R.from[0], b0: R.from[1], a1: R.to[0], b1: R.to[1], y0: E.y0, y1: E.y1, h0: E.H0?.h ?? 0, h1: E.H1?.h ?? 0 });
     }
     // LANTERNS (checkpoints) — all of them built; which are out is the difficulty's.
     view.lanterns = (C.lanterns ?? []).map((l) => {
@@ -1010,6 +1014,10 @@ export class BambooInfiltration {
       goalText: 'reach the scroll — unseen', goal: 1, showCount: false, bands: C.bands[n], lowerIsBetter: true,
       score: (d) => d.t + run.caught * CAUGHT_COST,
       grace: 3, leaveR: this.isle.r + 6, noBar: true,
+      /* THE CARD SQUARE ON TO THE LENS, pitch and all: "it is hard to read the UI above the player, should
+         probably be billboarded towards the camera". BAMBOO_CAM looks down at 0.95 rad, so a card turned
+         about Y alone was read 54° foreshortened - the Kata Trace's card had the same note and the same fix. */
+      setup: (d) => { d.panel.fullFace = true; },
       start: () => { if (B.session) B.session.live = true; },
       steer: (d, pad) => B._steer(run, d, pad),
       quit: () => B._ninjaButton(run),
@@ -1056,9 +1064,18 @@ export class BambooInfiltration {
     const sprint = !run.sneak && !!pad.down?.('sprint');
     run.sprinting = sprint && !frozen;
     p.gaitK = run.charge != null ? 0 : run.sneak ? SNEAK.gait : sprint ? SPRINT.gait : 1;
-    const masked = (a) => a === 'mount' || a === 'attack' || (a === 'sprint' && run.sneak) || (a === run.eat)
-      || (frozen && a !== 'start' && a !== 'map' && a !== 'interact');
     run.padIn = pad;
+    /* EVERYTHING IN HERE IS READ LIVE, off `run` and `d`, never off this
+       call's locals. The proxy is built ONCE, on the first steer — which is
+       the count-in — so a `masked` that closed over this call's `frozen` kept
+       the count-in's answer for the whole run: every button but START, MAP
+       and INTERACT masked from her legs forever. Richard: "seems player is
+       walking faster than they are sprinting" — her gait was set to the
+       sprint's 0.71 (from the real pad, above) while her legs, asking the
+       proxy, never heard SPRINT, so she walked at 0.71 of a walk: 7.46
+       against 10.5, measured in the running game. */
+    const masked = (a) => a === 'mount' || a === 'attack' || (a === 'sprint' && run.sneak) || (a === run.eat)
+      || ((d.state !== 'live' || !!run.capture || !!run.hidden) && a !== 'start' && a !== 'map' && a !== 'interact');
     return (run.pad ??= new Proxy({}, {
       get: (_, k) => {
         const P = run.padIn;
@@ -1100,8 +1117,12 @@ export class BambooInfiltration {
     const live = run.drill?.state === 'live';
     if (run.capture) return via === 'interact';
     if (run.hidden) { this._unhide(run); return true; }
-    // On a rope or a ladder JUMP is the rig's ("JUMP lets go"), and INTERACT does nothing — it never asks up there.
-    if (p.rig) return via === 'interact';
+    /* On a rope or a ladder JUMP is the rig's ("JUMP lets go"), and INTERACT lets go too — Richard: "the
+       player can dismount the rope by pressing the jump/interact button while on it". Never asks up there. */
+    if (p.rig) {
+      if (via === 'interact') p.rig.letGo?.();
+      return via === 'interact';
+    }
     if (!live) return false;
     const R = this._reach(run);
     if (R.rope) { this._ropeRig(run, R.rope.R, R.rope.u); return true; }
@@ -1123,13 +1144,12 @@ export class BambooInfiltration {
     const q = this.coords(p);
     const out = { rope: null, ladder: null, barrel: null, near: false };
     for (const R of this.view.ropes) {
-      const dy = R.y - q.y;
+      const ea = R.a1 - R.a0; const eb = R.b1 - R.b0;
+      const u = Math.max(0.02, Math.min(0.98, ((q.a - R.a0) * ea + (q.b - R.b0) * eb) / (ea * ea + eb * eb)));
+      // a sloping rope: its height over where she stands
+      const dy = lerp(R.y0, R.y1, u) - q.y;
       const d = segDist(q.a, q.b, R.a0, R.b0, R.a1, R.b1);
-      if (!out.rope && run.ropeCd <= 0 && dy >= ROPE.lo && dy <= ROPE.hi && d <= ROPE.grab) {
-        const ea = R.a1 - R.a0; const eb = R.b1 - R.b0;
-        const u = Math.max(0.02, Math.min(0.98, ((q.a - R.a0) * ea + (q.b - R.b0) * eb) / (ea * ea + eb * eb)));
-        out.rope = { R, u };
-      }
+      if (!out.rope && run.ropeCd <= 0 && dy >= ROPE.lo && dy <= ROPE.hi && d <= ROPE.grab) out.rope = { R, u };
       if (dy >= ROPE.lo - 1 && dy <= ROPE.hi + 1.5 && d <= ROPE.grab * NEAR_K) out.near = true;
     }
     for (const Ld of this.view.ladders) {
@@ -1489,7 +1509,7 @@ export class BambooInfiltration {
     const rk = p.rig?.kind;
     if (run.capture) p.clipAs = { name: 'handsup', t: run.capture.t };
     else if (now - run.throwT < 0.45) p.clipAs = { name: 'throw', t: now - run.throwT };
-    else if (rk === 'rope') p.clipAs = now - p.rig.t0 < ROPE.mount ? { name: 'mount', t: now - p.rig.t0 } : { name: 'rope', t: p.rig.walkT };
+    else if (rk === 'rope') p.clipAs = p.rig.mountT < ROPE.mount ? { name: 'mount', t: p.rig.mountT } : { name: 'rope', t: p.rig.walkT };
     else if (rk === 'ladder') p.clipAs = { name: 'climb', t: p.rig.walkT };
     else if (run.sneak && p.onGround && d.state === 'live') p.clipAs = { name: 'sneak', t: run.crawlT };
     else p.clipAs = null;
@@ -1578,42 +1598,82 @@ export class BambooInfiltration {
 
   /**
    * SHE STAYS ON THE COURSE. Richard: "player can appear behind bamboo brush
-   * after jumping out of barrel". The fence (a thick band of solid canes,
-   * `FENCE.thick`) is what stops her; this is what stops her if anything
-   * ever gets her past it — a jump, a push, a barrel — and it is the honest
-   * backstop for every way nobody has thought of yet: her middle over
-   * unwalkable ground goes back to the last walkable ground she stood over.
-   * Not on a rope or a ladder (they hang over the street, which is walkable
-   * anyway) and not in a barrel.
+   * after jumping out of barrel". The fence's canes are only drawn (a thick
+   * band of them, `FENCE.thick`); THIS is what stops her — at the bamboo on
+   * the ground, and over unwalkable ground in a jump, a push, a barrel, and
+   * every way nobody has thought of yet. Not on a rope or a ladder (they
+   * hang over the street, which is walkable anyway) and not in a barrel.
    */
   _bounds(run, q) {
     const p = run.p;
     if (p.rig || run.hidden || run.capture) return;
-    if (walkAt(this.level, q.a, q.b)) { run.ok = { a: q.a, b: q.b }; return; }
-    const w = this._w(run.ok.a, run.ok.b);
+    /* SHE SLIDES ALONG THE EDGE. On the ground the edge is the bamboo
+       (`edgeRaster`: walkable, and her radius off every fence and trail cane);
+       off it — a roof, a jump — her middle over walkable ground. A step that
+       does not fit keeps whichever half of it does, so pushing at the edge on
+       a slant walks her along it; only a step with no part that fits puts her
+       back. Where she is now does not fit either (just put down by a barrel
+       or a capture on the edge of a cell), the old rule stands, or she could
+       never move off it. */
+    const L = this.level;
+    const E = edgeRaster(L);
+    const fits = (a, b) => (q.y > 0.6 ? walkAt(L, a, b) : E.at(a, b));
+    if (fits(q.a, q.b) || !fits(run.ok.a, run.ok.b) && walkAt(L, q.a, q.b)) { run.ok = { a: q.a, b: q.b }; return; }
+    const o = run.ok;
+    const to = fits(o.a, q.b) ? { a: o.a, b: q.b } : fits(q.a, o.b) ? { a: q.a, b: o.b } : o;
+    const w = this._w(to.a, to.b);
     p.position.x = w.x + SIM.dx;
     p.position.z = w.z + SIM.dz;
-    if (p.velocity) { p.velocity.x = 0; p.velocity.z = 0; }
-    run.last = { ...run.last, a: run.ok.a, b: run.ok.b };
+    if (to === o && p.velocity) { p.velocity.x = 0; p.velocity.z = 0; }
+    run.ok = { a: to.a, b: to.b };
+    run.last = { ...run.last, a: to.a, b: to.b };
   }
 
   /**
    * HANGING UNDER A ROPE: the stick, projected on the rope, moves her along
-   * it; JUMP lets go, and so does either end — onto the roof it is tied to.
+   * it; JUMP or INTERACT lets go, and so does either end — onto the roof it
+   * is tied to.
+   *
+   * FIRST THE MOUNT, FROM WHERE SHE STANDS. Richard: "the ninja mount
+   * animation is playing above the rope rather than below it ... Maybe,
+   * before attaching the player to the rope, we first play the mount
+   * animation and then can attach player and play the rope animation". The
+   * mount is drawn standing (feet-aligned) and the hang hanging (paw-
+   * aligned), so playing the mount AT the rope stood her on it. Now she is
+   * stood under the rope, on her own floor, for `ROPE.mount` while her paws
+   * go up to it — ROPE_RISE is measured so they arrive at it — and only then
+   * hangs from it.
    */
   _ropeRig(run, R, u) {
     const B = this;
     const p = run.p;
     const len = Math.hypot(R.a1 - R.a0, R.b1 - R.b0);
     const dirL = isleDir(this.isle, Math.atan2(R.b1 - R.b0, R.a1 - R.a0));
+    const foot = { a: lerp(R.a0, R.a1, u), b: lerp(R.b0, R.b1, u), y: this.coords(p).y };
     this.dream.game.sfx?.('land', 0.5);
+    const drop = (vy) => { p.rig = null; run.ropeCd = ROPE.cd; p.velocity.set(0, vy, 0); };
     p.rig = {
-      bamboo: true, kind: 'rope', R, u, t0: this.dream.t ?? 0, walkT: 0,
+      bamboo: true, kind: 'rope', R, u, t0: this.dream.t ?? 0, walkT: 0, mountT: 0,
+      /* LETTING GO MID-ROPE: her feet where the hang drew them, so she does not
+         pop up to the rope and fall the whole way. During the mount she is
+         still standing, and simply stops. */
+      letGo() {
+        if (this.mountT < ROPE.mount) { drop(0); return; }
+        const y = lerp(R.y0, R.y1, this.u) - ROPE.ink;
+        const w = B._w(lerp(R.a0, R.a1, this.u), lerp(R.b0, R.b1, this.u), Math.max(0, y));
+        p.position.set(w.x + SIM.dx, w.y, w.z + SIM.dz);
+        drop(0);
+      },
       step(dt, pad) {
         p.velocity.set(0, 0, 0);
         p.onGround = false;
-        const drop = (vy) => { p.rig = null; run.ropeCd = ROPE.cd; p.velocity.set(0, vy, 0); };
-        if (pad.pressed?.('jump')) { drop(0); return; }
+        if (pad.pressed?.('jump')) { this.letGo(); return; }
+        if (this.mountT < ROPE.mount) {
+          this.mountT += dt;
+          const w = B._w(foot.a, foot.b, foot.y);
+          p.position.set(w.x + SIM.dx, w.y, w.z + SIM.dz);
+          return;
+        }
         const { fwd, right } = p._moveBasis(pad);
         const wx = right.x * pad.mx - fwd.x * pad.my;
         const wz = right.z * pad.mx - fwd.z * pad.my;
@@ -1627,13 +1687,17 @@ export class BambooInfiltration {
           // Off the end, onto the roof it is tied to.
           const k = this.u <= 0 ? 0 : 1;
           const a = k ? R.a1 : R.a0; const b = k ? R.b1 : R.b0;
-          // On the roof it is tied to, at THAT roof's height (it was R.y - 2.6, under a 5.2 roof).
-          const w = B._w(a, b, B._floorAt(a, b, R.y - HANG.hi) + 0.05);
+          /* ON TOP OF the roof it is tied to. It asked `_floorAt(R.y - HANG.hi)`,
+             which is "a roof under her, if she is already up at it" — 7.4 - 3.8
+             is under a 4.4 roof's threshold, so it answered the GROUND, and she
+             was put down inside the house: "falling through the building below
+             the roof line". The roof under the end is known; it is that one. */
+          const w = B._w(a, b, (k ? R.h1 : R.h0) + 0.05);
           p.position.set(w.x + SIM.dx, w.y, w.z + SIM.dz);
           drop(0);
           return;
         }
-        const w = B._w(lerp(R.a0, R.a1, this.u), lerp(R.b0, R.b1, this.u), R.y);
+        const w = B._w(lerp(R.a0, R.a1, this.u), lerp(R.b0, R.b1, this.u), lerp(R.y0, R.y1, this.u));
         p.position.set(w.x + SIM.dx, w.y, w.z + SIM.dz);
       },
     };
@@ -1671,11 +1735,12 @@ export class BambooInfiltration {
     p.facing = isleFacing(this.isle, f.face);
     p.rig = {
       bamboo: true, kind: 'ladder', y: y0, walkT: 0,
+      letGo() { p.rig = null; },
       step(dt, pad) {
         p.velocity.set(0, 0, 0);
         p.onGround = false;
         p.facing = isleFacing(B.isle, f.face);
-        if (pad.pressed?.('jump')) { p.rig = null; return; }
+        if (pad.pressed?.('jump')) { this.letGo(); return; }
         this.y += dir * LADDER.speed * dt;
         this.walkT += dt;
         if (dir > 0 && this.y >= Ld.top) {

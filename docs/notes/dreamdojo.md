@@ -737,10 +737,28 @@ described at the bottom of this section for its lessons.
   onto its fence, stacks blocking the keep, the shrine's last barrel across
   its path, and a castle samurai patrolling through walls.
   `tools/bamboo-probe.mjs` prints them.
-- **The edge is solid, and there is a backstop.** The fence is a band of
-  solid canes `FENCE.thick` deep. `_bounds` puts her back on the last
-  walkable ground she stood over. A barrel's exit (`_exitSpot`) only lands on
-  ground she fits on, which is how she used to come out behind the fence.
+- **The edge is held, not pushed** (Oct 2026). The fence is a band of canes
+  `FENCE.thick` deep, and since Richard's "it is teleporting the player
+  around the bamboo area because of the colliders, instead it should just
+  prevent the player from going there" neither they nor the trail canes are
+  solid: three hundred point colliders each shoved her out along their own
+  radius while `_bounds` snapped her back, and the two fought. The edge is
+  `edgeRaster` (walkable, and `KITTEN_R` off every cane), held in `_bounds`,
+  which keeps whichever half of a slanting step fits, so she slides along
+  it. Not `kittenRaster`, whose wall margin would stop her short of every
+  door. A barrel's exit (`_exitSpot`) only lands on ground she fits on, which
+  is how she used to come out behind the fence.
+- **Ropes are tied to the roofs** (Oct 2026). "When dismounting off of the
+  rope line, the player is falling through the building below the roof
+  line." The end asked `_floorAt(R.y - HANG.hi)`, which answered the GROUND
+  under a 4.4 roof, and one hand-set `y` per rope hung her through h3's roof
+  and 1.8 below the keep's. Each end is now `ROPE_RISE` (1.26 of her height,
+  measured off the rope clip's ink: she hangs 1.21 below it) over the roof
+  under it (`ropeEnds`), so a rope slopes. Off an end she lands on that
+  roof, and JUMP or INTERACT lets go mid-rope with her feet where the hang
+  drew them. The MOUNT plays standing where she grabbed and only then does
+  she hang. It is drawn feet-aligned and the hang paw-aligned, so playing it
+  at the rope stood her on top of the rope.
 - **One press, one meaning.** INTERACT or JUMP gets into a barrel, onto a rope
   (a press now; it used to grab her as she jumped under one) or onto a
   ladder, and the jump is eaten. JUMP never asks to leave. Within `NEAR_K`
@@ -759,7 +777,17 @@ described at the bottom of this section for its lessons.
   `blocked` too. Her shuriken's ring never goes red through a wall, a blocked
   shuriken knocks nobody out, and pebbles stop where they hit.
 - **Sprint** is `SPRINT.k` (1.15×) her walk, set as a gait under the game's
-  own sprint, and it fills a guard's meter twice as fast.
+  own sprint, and it fills a guard's meter twice as fast. For a while it was
+  0.71× ("walking faster than they are sprinting"; 7.46 against 10.5,
+  measured in the game). The pad her legs read is built once, in the
+  count-in, and its mask had closed over the count-in's `frozen`, so after
+  GO her legs never heard SPRINT, or JUMP, while the gait still applied the
+  sprint's 0.71. The mask reads `run` and `d` live now. The check builds the
+  pad in the count-in, as the game does. The old one built it after GO,
+  which is why it passed.
+- **The card over her head faces the lens** (`fullFace`, pitch and all), as
+  the Kata card does. The course camera looks down at 0.95 rad, and a card
+  turned about Y only was read edge-on.
 - **Stacks** of boxes, firewood or rice replace the crates. They never stand
   in a door's mouth or at a ladder's foot, because `courseProblems` would
   fail.
