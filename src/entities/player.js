@@ -7321,7 +7321,20 @@ export class Player {
    * right now, which is the one a kid would reach for.
    */
   _boardSnake(road, hit, pad) {
-    const { fwd, right } = this._viewBasis();
+    /* "IS SHE PRESSING ONWARD" IS ASKED THROUGH THE BASIS THAT WALKED HER
+       HERE — the held one (`_moveBasis`'s `_peekHold`) when there is one,
+       not the lens drawn this frame. Richard, Oct 2026: "the input is
+       reversing for the player and instead of continuing in the direction
+       they are going, they get turned around". Measured: walking onto a
+       bridge holding S with the look across 40% of the way round, the held
+       S was taking her straight up the road, but read through the HALF-SWUNG
+       lens it was 70 degrees off onward, failed the 0.2 test below, and the
+       ride locked onward to a different key — so the S still under her thumb
+       meant "back down the road" (velocity along the road +6 -> -7.8 in a
+       fifth of a second, and the off-road hold then walked her away). With
+       no hold this is `_viewBasis`, exactly as before. */
+    const H = this._peekHold;
+    const { fwd, right } = H && Number.isFinite(H.yaw) ? this._basis(H.yaw) : this._viewBasis();
     const mx = pad?.mx ?? 0;
     const my = pad?.my ?? 0;
     const wx = right.x * mx - fwd.x * my;
@@ -7332,10 +7345,9 @@ export class Player {
     let { x: sx, y: sy } = this._snakeOnward(hit.tx * dir, hit.tz * dir);
     const m = Math.hypot(mx, my);
     if (m > 0.3) {
-      const px = mx / m;
-      const py = my / m;
-      const l0 = Math.hypot(sx, sy) || 1;
-      if ((px * sx + py * sy) / l0 > 0.2) { sx = px; sy = py; }
+      // In the WORLD, so the held basis and the lens on screen need not agree.
+      const wl = (Math.hypot(wx, wz) || 1) * (Math.hypot(hit.tx, hit.tz) || 1);
+      if ((wx * hit.tx + wz * hit.tz) * dir / wl > 0.2) { sx = mx / m; sy = my / m; }
     }
     const l = Math.hypot(sx, sy) || 1;
     this.snakeRide = { road, s: hit.s, dir, t: 0, stick: { x: sx / l, y: sy / l }, rest: 0, free: null };
