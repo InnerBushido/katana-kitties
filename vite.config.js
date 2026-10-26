@@ -196,6 +196,17 @@ const spriteServer = {
 
 export default defineConfig({
   plugins: [tuningServer, spriteServer],
+  /* THE REPO LIVES IN ONEDRIVE, and OneDrive turns node_modules into cloud
+     files: every one a reparse point (tag 0x9000e01a), pinned or not. Vite 8
+     resolves with Rolldown's resolver, which follows symlinks by default and
+     cannot canonicalise those — so `import 'three'` failed in the dev server
+     AND the build with "Does the file exist?" while Node, world-check and the
+     files themselves were fine. Measured with Rolldown's own ResolverFactory:
+     `symlinks: true` → "Cannot find module 'three'", `false` → resolved.
+     Nothing in this project is a symlinked package, so not following them
+     costs nothing. Clearing node_modules/.vite and pinning the folder
+     "always keep on this device" were both tried first; neither helps. */
+  resolve: { preserveSymlinks: true },
   server: {
     port,
     // Only insist on the port when somebody actually asked for one — an
