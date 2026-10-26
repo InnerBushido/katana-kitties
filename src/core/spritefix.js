@@ -113,6 +113,29 @@ export function sheetFix(id, cols, fix = LIVE, row = null) {
   return { order: [...order], flip };
 }
 
+/**
+ * The flip box's IMAGE numbers -> the SLOTS the file mirrors. Each mention
+ * claims the next slot showing that image that is not claimed yet, so with
+ * order 1,2,3,6,5,6,7,8, "6" mirrors the first 6 alone and "6, 6" both.
+ * Richard, Oct 2026: "When I put 6 for flip, it seems to flip both 6's in
+ * the ordering". The file always held slots, so the game could draw this; it
+ * was the box that read "6" as every 6. A mention with no slot left is
+ * returned in `extra`, so the editor can say so instead of dropping it.
+ * 0-based throughout.
+ */
+export function flipSlots(order, imgs) {
+  const flip = []; const extra = [];
+  for (const c of imgs) {
+    const k = order.findIndex((o, i) => o === c && !flip.includes(i));
+    if (k < 0) extra.push(c); else flip.push(k);
+  }
+  return { flip: flip.sort((a, b) => a - b), extra };
+}
+
+/** ...and back: the image in each mirrored slot, in slot order, repeats kept, so `flipSlots` reads it back to the same slots
+ *  whenever the mirrored ones are each the earliest of their image. */
+export const flipImages = (order, flip) => [...flip].sort((a, b) => a - b).map((k) => order[k]);
+
 /** `ninja/ember:mount` + facing 2 -> `ninja/ember:mount@2`: one facing's own frame order. */
 export const clipKey = (id, row) => `${id}@${row}`;
 
