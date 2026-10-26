@@ -41,6 +41,7 @@ import { TourShadow } from './dream/tourshadow.js';
 import { TourCast } from './dream/tourcast.js';
 import { holoDojo } from './dream/holodojo.js';
 import { PeekTrigger, stationFirst } from './dream/peek.js';
+import { buildPeekMarks } from './dream/peekmarks.js';
 import { NAV, navGrid, navPath, padObstacles } from './dream/padnav.js';
 import { tickKeptPandas, dropKept } from './dream/pandatrial.js';
 import { enterHolo, leaveHolo, grantHolo, holoLeft, HoloChoice, HOLO_MAX_EACH } from './dream/holokit.js';
@@ -1792,6 +1793,26 @@ export class DreamDojo {
     this.waypoints = new Waypoints(this);
     this.sim.tickers.push((dt) => this.waypoints?.update(dt));
     g.world.simWaypoints = () => this.waypoints?.forMap(SIM.dx, SIM.dz) ?? [];
+    this._buildPeekMarks();
+  }
+
+  /**
+   * WHERE THE CAMERA CHANGES, ON THE FLOOR (dream/peekmarks.js): gold where
+   * the look across starts, orange where the ride does. The mouths are in
+   * the world; the layer's root is moved by SIM, so the group is moved back
+   * by it. Built again, it replaces the last set.
+   */
+  _buildPeekMarks() {
+    // The SAME ends `_peekFor` reads, never a second set: its `far` is compared by identity (`_peekGroup`).
+    this._ends ??= this._peekEnds();
+    this.peekMarks?.dispose();
+    this.peekMarks = buildPeekMarks(this.sim, this._ends);
+    this.peekMarks.group.position.set(-SIM.dx, 0, -SIM.dz);
+    this.sim.root.add(this.peekMarks.group);
+    if (!this._peekMarksTick) {
+      this._peekMarksTick = (dt) => this.peekMarks?.tick(dt);
+      this.sim.tickers.push(this._peekMarksTick);
+    }
   }
 
   /**

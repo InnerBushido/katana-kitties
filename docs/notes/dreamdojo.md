@@ -1950,6 +1950,47 @@ quoted in the code, beside the change it caused.
 - Walking up at a run, it turns on 4.7-4.9 from each of the seven home
   mouths. That is the layer's own trigger (start 8.4, dwell 0.35s).
 
+**A held push reversed on the step onto a bridge** (`Player._boardSnake`,
+Oct 2026):
+- His note: "when the camera is changing from normal camera to the look
+  across the bridge camera, the input is reversing for the player and
+  instead of continuing in the direction they are going, they get turned
+  around".
+- **Measured in the game, not reasoned.** The look-across hold did its job:
+  S held kept walking her straight up the road. The reversal was the
+  BOARDING. She reached the deck with the lens 40% of the way round, and
+  `_boardSnake` asked "is she pressing onward?" through that half-swung lens.
+  There her S was 70° off onward, so it failed the 0.2 test and the ride
+  locked onward to a different key. The S still under her thumb then meant
+  "back down the road": +6 to -7.8 along it in 0.2 s, and the off-road
+  hold walked her away.
+- Boarding now judges the push through the basis that walked her there (the
+  held one, when there is one), in world space. With no hold it is
+  `_viewBasis`, as before. A check boards mid-swing: old code onward -0.90,
+  new 1.00. Live, the same walk holds +10.5 along the bridge onto and
+  across it.
+
+**Where the camera changes, on the floor** (`dream/peekmarks.js`, Oct 2026):
+- His note: "a half circle, holographic laser line on the ground marking the
+  boundary ... for the camera to switch to the 'look across the bridge'
+  camera mode ... also mark at the entrance/exit of the bridge where the
+  camera will switch to the 'crossing the bridge' camera mode ... different
+  colors".
+- **Gold half circle:** `PEEK.start` (8.4) round each mouth, on the deck
+  side, the `peekZone` rule itself. It is drawn only where there is floor at
+  the mouth's height, so it stops at a disc's rim instead of hanging in the
+  void.
+- **Orange bar:** across the deck where the RIDE begins. It is found by
+  walking the centre line until `heightAt` hands back the bridge's road,
+  which is all `_stepSnake` asks. That is 0 to 3.05 past the mouth across
+  the 22 mouths, because the walked deck runs into each island. A bar at the
+  mouth would have promised the change early.
+- **What failed:** magenta was the first colour for the bar. The hub's rim
+  and every bridge's edges are magenta, and the bar disappeared into both in
+  the first screenshot.
+- Ground strips with a bright core, soft glow and slow pulse, drawn additive
+  (not `THREE.Line`, which is a pixel wide).
+
 **The sim's Turning Circle as a video game** (`holodojo.js`, `main.js`
 `simDojoC`, `DreamDojo.simDojoAt`):
 - His note: "Camera should zoom out ... the hologram orb rotating in place

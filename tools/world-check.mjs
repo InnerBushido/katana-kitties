@@ -44445,6 +44445,33 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const ends = D._ends = D._peekEnds();
     ok('望 every bridge in the layer has a look across from both of its mouths', ends.length === 2 * sim.bridges.length
       && ends.every((E) => Number.isFinite(E.far.x + E.far.y + E.far.z)), `${ends.length} for ${sim.bridges.length}`);
+    /* WHERE THE CAMERA CHANGES, ON THE FLOOR. Richard: "draw a half circle, holographic laser line on the
+       ground marking the boundary ... also mark at the entrance/exit of the bridge where the camera will
+       switch to the 'crossing the bridge' camera mode ... different colors". Both lines are read off the
+       rules they mark: the arc is PEEK.start on the deck side, the bar is where `heightAt` first hands back
+       the bridge's road - the only thing `_stepSnake` asks - and a step short of it does not. */
+    {
+      const PM = await import('../src/systems/dream/peekmarks.js');
+      let badRide = 0; let badArc = 0; let arcPts = 0; const past = [];
+      for (const E2 of ends) {
+        const R = PM.rideStart(sim, E2);
+        const before = R && sim.heightAt(R.x - E2.toward.x * 0.1, R.z - E2.toward.z * 0.1, E2.mouth.y + 1);
+        if (!R || before?.platform?.snake === E2.road) badRide++;
+        else past.push(R.s);
+        for (const run of PM.lookArc(sim, E2)) for (const q of run) {
+          arcPts++;
+          const dx = q.x - E2.mouth.x; const dz = q.z - E2.mouth.z;
+          if (Math.abs(Math.hypot(dx, dz) - PK.PEEK.start) > 1e-6 || dx * E2.toward.x + dz * E2.toward.z > 1e-6) badArc++;
+        }
+      }
+      D._buildPeekMarks();
+      const pm = D.peekMarks;
+      ok('望 the floor marks the look across (a half circle of PEEK.start, on the deck side) and the ride (a bar where the road begins), in two colours',
+        badRide === 0 && badArc === 0 && arcPts > ends.length * 20 && !!pm && pm.drawn.ride === ends.length && pm.drawn.look >= ends.length
+        && pm.group.parent === sim.root && PM.PEEK_MARKS.look !== PM.PEEK_MARKS.ride
+        && /this\._buildPeekMarks\(\);\s*\}/.test(readFileSync(new URL('../src/systems/dreamdojo.js', import.meta.url), 'utf8')),
+        `ride ${badRide} bad, arc ${badArc}/${arcPts} bad, drawn ${pm?.drawn.look}/${pm?.drawn.ride}, ride starts ${Math.min(...past).toFixed(2)}..${Math.max(...past).toFixed(2)} past the mouth`);
+    }
     const G = D.isles.gallery;
     const gW = W(G);
     const E = ends.find((e) => Math.hypot(e.far.x - gW.x, e.far.z - gW.z) < 1);
