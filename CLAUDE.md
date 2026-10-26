@@ -37,10 +37,14 @@ npm run docs                  # regenerate the controls + balance tables, in PRO
 npm run artifact              # is the published page behind? says what to do if so
 ```
 
-**`alpha` is the testing channel** — an ordinary branch that only ever
-fast-forwards to `main`, live at
-`https://katana-kitties-git-alpha-dream-dojo.vercel.app`. Pushing it is not
-pushing `origin/main`. See PROJECT.md §3.
+**`alpha` is the testing channel**, live at
+`https://katana-kitties-git-alpha-dream-dojo.vercel.app`. Work branches are
+**published to GitHub and every commit pushed**, then merged into `alpha`;
+`main` takes `alpha` once Richard has played it. **No branch is deleted until
+its work is on `origin/main`** — reaching `alpha` is not enough. Keep branches
+separate: merging one into another drags it along to `alpha` (Oct 2026, kendo
+rode in on the bamboo branch). Pushing `alpha` is not pushing `origin/main`.
+See PROJECT.md §3.
 
 **Balance numbers are edited on a page, not in the code.** `npm run dev`, then
 open **`/tuning.html`**: every ability's timings and damage with a sentence each

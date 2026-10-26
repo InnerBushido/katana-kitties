@@ -179,15 +179,22 @@ beta — a tester opens the URL, or installs it to their phone's home screen and
 plays it fullscreen. **`main` is what the girls play and is not for testing.**
 
 ```bash
-git checkout alpha && git merge main --ff-only    # alpha only ever follows main
+git push -u origin mixed/some-pass                 # a work branch is published, every commit pushed
+git checkout alpha && git merge mixed/some-pass   # then merged into the testing channel
 git push origin alpha
 ```
 
-**Alpha follows `main`, it does not lead it.** Work lands on a typed branch, is
-merged into local `main`, and `alpha` fast-forwards to it — so `alpha` is always
-a commit that exists on `main` and there is never a fix on the testing channel
-that the real game has not had. **`origin/main` is still not pushed until
-Richard has played it**; `alpha` is the step before that, not a way around it.
+**Branches go to `alpha` first, and `main` follows `alpha`.** Richard, Oct 2026:
+"with commits on branches, we should be pushing the branch and the commits to
+Github and not just leaving them as local commits ... We will then merge the
+branches to Alpha branch but keep the branches around until they are merged
+from Alpha to origin main, then we can clean up and remove the branches." So a
+work branch lives on GitHub as well as locally, **and is not deleted, here or
+there, until its work is on `origin/main`**. Reaching `alpha` is not enough.
+**Keep branches separate**: a branch merged into another goes to `alpha` with
+it, which is how the kendo pass reached `alpha` on the bamboo branch's back.
+**`origin/main` is still not pushed until Richard has played it**; `alpha` is
+the step before that, not a way around it.
 
 **Every other branch gets the same treatment**, at the same shape of alias — so
 a single risky change can be handed to somebody without going near `alpha`:
@@ -695,10 +702,11 @@ are handled by machine instead of by memory. → [docs.md](docs/notes/docs.md)
 
 **Git:** typed branches (`feature/`, `bugfix/`, `mixed/`), a `commit-msg` hook
 that stamps `[branch]` on non-main commits, a `pre-commit` hook that regenerates
-this file's tables, merged locally, and **never pushed to `origin/main` until
-Richard has played it**. Branches are kept until pushed, then `git branch -d`
-(never `-D`). **`alpha` is the testing channel** and only ever fast-forwards to
-`main` — §3.
+this file's tables, every work branch **published to GitHub with each commit pushed**, merged into
+`alpha` to test, and **never pushed to `origin/main` until Richard has played
+it**. A branch is kept, locally and on GitHub, until its work is on
+`origin/main`, then `git branch -d` (never `-D`). **`alpha` is the testing
+channel** — §3.
 
 ---
 

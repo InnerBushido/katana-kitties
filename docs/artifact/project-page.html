@@ -630,7 +630,8 @@ npm run artifact              <span class="c"># is this published page still cur
     it is the version other people are asked to play. Push to it and Vercel builds it within a
     minute at a <b>stable</b> address that never changes.</p>
 
-<pre><code>git checkout alpha &amp;&amp; git merge main --ff-only   <span class="c"># alpha only ever FOLLOWS main</span>
+<pre><code>git push -u origin mixed/some-pass                <span class="c"># a work branch is published, every commit pushed</span>
+git checkout alpha &amp;&amp; git merge mixed/some-pass  <span class="c"># then merged into the testing channel</span>
 git push origin alpha</code></pre>
 
   <p>That link is the whole channel — there is no Discord, no TestFlight, no Steam beta. A tester
@@ -638,13 +639,13 @@ git push origin alpha</code></pre>
     <b><code>main</code> is what the girls play and is not for testing.</b></p>
 
   <div class="note gold">
-    <span class="hd">Alpha follows <code>main</code>; it does not lead it</span>
-    <p>Work lands on a typed branch, is merged into local <code>main</code>, and <code>alpha</code>
-      fast-forwards to it. <code>--ff-only</code> is the whole rule, and it buys the property worth
-      having: <code>alpha</code> can never carry a fix the real game does not have, so there is never
-      a merge to bring back and never a question about which of the two is ahead in content. It is
-      ahead only in <em>release</em>. <b>Pushing <code>alpha</code> is not a way around the rule that
-      <code>origin/main</code> waits until Richard has played it</b> — it is the step before it.</p>
+    <span class="hd">Branches go to <code>alpha</code> first; <code>main</code> follows it</span>
+    <p>Every work branch is <b>published to GitHub, with each commit pushed</b>, then merged into
+      <code>alpha</code> for testing. <b>No branch is deleted, locally or on GitHub, until its work is on
+      <code>origin/main</code></b> — reaching <code>alpha</code> is not enough. Keep branches separate:
+      a branch merged into another goes to <code>alpha</code> with it. <b>Pushing <code>alpha</code> is
+      not a way around the rule that <code>origin/main</code> waits until Richard has played it</b> — it
+      is the step before it.</p>
   </div>
 
   <p><b>Every other branch gets the same treatment</b>, at
@@ -1453,11 +1454,11 @@ git push origin alpha</code></pre>
     <span class="hd">Git</span>
     <p>Typed branches (<code>feature/</code>, <code>bugfix/</code>, <code>mixed/</code>), a
       <code>commit-msg</code> hook that stamps <code>[branch]</code> on non-main commits, a
-      <code>pre-commit</code> hook that regenerates this page's tables, merged locally, and
-      <b>never pushed to <code>origin/main</code> until Richard has played it</b>. Branches are kept
-      until pushed, then <code>git branch -d</code> — never <code>-D</code>.
-      <b><code>alpha</code> is the testing channel</b> and only ever fast-forwards to
-      <code>main</code>.</p>
+      <code>pre-commit</code> hook that regenerates this page's tables. Every work branch is
+      <b>published to GitHub with each commit pushed</b>, merged into <code>alpha</code> to test, and
+      <b>never pushed to <code>origin/main</code> until Richard has played it</b>. A branch is kept,
+      here and on GitHub, until its work is on <code>origin/main</code>, then <code>git branch -d</code>
+      — never <code>-D</code>. <b><code>alpha</code> is the testing channel.</b></p>
   </div>
 </section>
 
