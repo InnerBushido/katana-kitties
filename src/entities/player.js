@@ -2248,7 +2248,7 @@ export class Player {
    */
   _moveBasis(pad) {
     const pushed = (pad?.mx ?? 0) ** 2 + (pad?.my ?? 0) ** 2 > 1e-4;
-    const H = this._peekHold;
+    let H = this._peekHold;
     const borrowed = this.viewOwn === false && Number.isFinite(this.viewYaw);
     /* ...AND A LENS THAT IS TURNING TO A KNOWN PLACE. The kendo match's turns
        a quarter round when the plane does (housing/kendo.js `KENDO_TURN`).
@@ -2285,7 +2285,13 @@ export class Player {
     this._roadLast = onRoad;
     if (this._peekHold?.offRoad) {
       if (pushed) return this._basis(this._peekHold.yaw);
+      /* `H` too: it was read before this let go, and a stale H with the hold
+         gone sent the rule below to `this._peekHold.yaw` on null - "Cannot
+         read properties of null (reading 'yaw')", Oct 2026, the frame she let
+         go of the stick after a road while a shared pane or a bridge peek
+         had the lens. */
       this._peekHold = null;
+      H = null;
     }
     if (land != null && !this.bridgePeek?.live && !borrowed && !(this.camSwing && pushed) && !(H && pushed)) {
       this._peekHold = null;

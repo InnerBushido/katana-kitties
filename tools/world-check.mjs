@@ -44246,6 +44246,20 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       const next = her._moveBasis(up).fwd.clone();
       her.bridgePeek.w = 0; // the look across ends while she holds it
       const after = her._moveBasis(up).fwd.clone();
+      /* OFF A ROAD, THEN LET GO WHILE ANOTHER LENS HAS HER: Richard's crash, "Cannot read properties of null
+         (reading 'yaw')" in _moveBasis. The road's hold was cleared but a copy read before it was not. */
+      {
+        const pk = her._peekHold; const ro = her.snakeRide; const rl = her._roadLast; const vo = her.viewOwn;
+        her._peekHold = null; her.snakeRide = { fake: true }; her._moveBasis(up);
+        her.snakeRide = null; her._moveBasis(up);
+        const wasHeld = !!her._peekHold?.offRoad;
+        her.viewOwn = false; her.viewYaw = 1.2;
+        let threw = null; let b = null;
+        try { b = her._moveBasis({ mx: 0, my: 0 }); } catch (e) { threw = e.message; }
+        ok('...and letting go after a road while a shared lens has her does not crash, and reads through that lens',
+          wasHeld && !threw && !!b && Math.abs(b.fwd.x + Math.sin(1.2)) < 1e-9, threw ?? `held ${wasHeld}`);
+        her._peekHold = pk; her.snakeRide = ro; her._roadLast = rl; her.viewOwn = vo;
+      }
       her._moveBasis({ mx: 0, my: 0 });
       const home = her._moveBasis(up).fwd.clone();
       const yawOf = (v) => Math.atan2(-v.x, -v.z);
