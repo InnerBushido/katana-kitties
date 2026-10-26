@@ -786,6 +786,26 @@ mouse or some keyboard commands?"
   bearing, so a lens moved round her would change which drawing is on show.
   Turning her is the facing button and the Sheets tab's turntable.
 
+### Fourth pass: a flip names one slot, and a sheet's rows have their own order
+
+Richard, Oct 2026, on `kittens/frost/vr`'s Jump row: "I want the ordering to be
+1, 2, 3, 6, 5, 6, 7, 8 ... flip the first occurrence of 6 but not the 2nd ...
+if we have "6, 6" for flip, then it would flip both".
+
+- **Each image number in the flip box is ONE slot**: the first slot showing it
+  that is not already mirrored (`flipSlots`). "6" mirrors the first 6, "6, 6"
+  both, and a third 6 is reported rather than dropped. The box reads back with
+  the repeats (`flipImages`), so Enter on an unchanged box changes nothing.
+- **A sheet's rows each take their own order**, the way a clip's facings do:
+  `kittens/frost/vr@2` is the jump row (`clipKey`), and the bare key stays every
+  other row's. `gridFix(id, cols, rows)` gathers them and `applySheetFix` deals
+  each row by its own. Before this, a turnaround's order re-dealt all four rows.
+- **Every row must have as many slots** as the sheet's order (or its columns as
+  drawn): the atlas is a grid. `gridFix` ignores a row that does not, and the
+  editor refuses it with a status saying how many it needs. To change the count
+  for the whole sheet, set it on one row and press *this order for every row*,
+  which writes the bare key and removes every row's own.
+
 **Trap: the hidden pane.** A hidden browser pane renders no rAF frames, so the
 readout stayed `undefined` and an `img.decode()` never resolved. The page has
 `spriteEditor.frame()` for a synchronous frame when it is being driven.

@@ -91,7 +91,7 @@ import { Inspector } from './systems/inspector.js';
 import { Payne, PAYNE_CLIPS, PAYNE_TOWN } from './systems/payne.js';
 import { Housing } from './systems/housing/housing.js';
 import { TEA_SHEET } from './systems/housing/teahouse.js';
-import { sheetFix, applySheetFix, sheetIdOf } from './core/spritefix.js';
+import { gridFix, applySheetFix, sheetIdOf } from './core/spritefix.js';
 import { DreamDojo } from './systems/dreamdojo.js';
 import { WorldPeek } from './systems/worldpeek.js';
 import { SIM } from './world/simworld.js';
@@ -2222,7 +2222,7 @@ class Game {
         throw new Error(`only found ${a.cols}/${views} views`);
       }
       console.log(`[art] ${url} → ${a.cols} directions x ${a.rows} poses`);
-      return applySheetFix(a, sheetFix(sheetIdOf(url), a.cols), THREE);
+      return applySheetFix(a, gridFix(sheetIdOf(url), a.cols, a.rows), THREE);
     } catch (err) {
       console.warn(`[art] ${url} → falling back to drawn placeholder:`, err.message);
       const f = fallback();

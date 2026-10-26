@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { applySheetFix, sheetFix, sheetIdOf } from './spritefix.js';
+import { applySheetFix, gridFix, sheetIdOf } from './spritefix.js';
 
 /* ---------------------------------------------------------------------------
    Turns a generated character turnaround (N views on a white background, at
@@ -919,7 +919,7 @@ export function uniformBoxes(w, h, cols, rows) {
 export async function loadSpriteAtlas(url, opts = {}) {
   const atlas = await packAtlas(url, opts);
   if (opts.sheetFix === false || !atlas) return atlas;
-  return applySheetFix(atlas, sheetFix(sheetIdOf(url), atlas.cols), THREE);
+  return applySheetFix(atlas, gridFix(sheetIdOf(url), atlas.cols, atlas.rows), THREE);
 }
 
 async function packAtlas(url, opts = {}) {

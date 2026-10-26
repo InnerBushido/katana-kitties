@@ -31,6 +31,14 @@
  *           to each individual facing". The bare key is still read, for every
  *           facing that has none of its own — the file he saved before keeps
  *           working, and keeps meaning what it meant.
+ *           A SHEET's rows can have their own too, the same way:
+ *           `kittens/frost/vr@2` is the jump row's order alone (`gridFix`).
+ *           Richard, Oct 2026: "For kittensrostr and the Jump row, I want
+ *           the ordering to be 1, 2, 3, 6, 5, 6, 7, 8". The bare key is every
+ *           row's that has none of its own, as before. A sheet stays a GRID,
+ *           so a row's own order is the same length as every other row's (the
+ *           bare order's, or the columns as drawn); one that is not is
+ *           ignored here and refused in the editor, never half-drawn.
  *           A clip can carry a POSE fix too, `poses["ninja/ember:mount"]`:
  *           `{ s, y }` only (`clipPoseFix`), so the mount and the rope can be
  *           stood at the same height ("there should be way for me to edit
@@ -114,6 +122,34 @@ export function sheetFix(id, cols, fix = LIVE, row = null) {
 }
 
 /**
+ * A whole sheet's fix, rows included: the bare fix (or the columns as drawn,
+ * when only rows have one) with `rows[r]` set for each row that has its own
+ * of the right length. Without any row of its own it IS `sheetFix`, the same
+ * object shape it always was, so a file with no `@` keys draws exactly as
+ * before. Null when there is nothing to do.
+ */
+export function gridFix(id, cols, rows, fix = LIVE) {
+  const base = sheetFix(id, cols, fix);
+  const n = base?.order.length ?? cols;
+  let own = null;
+  for (let r = 0; r < rows; r++) {
+    if (!fix?.sheets?.[clipKey(id, r)]) continue;
+    const f = sheetFix(id, cols, fix, r);
+    if (f?.order.length !== n) continue;
+    (own ??= Array(rows).fill(null))[r] = f;
+  }
+  if (!own) return base;
+  return { ...(base ?? { order: [...Array(cols).keys()], flip: [] }), rows: own };
+}
+
+/** One row's fix out of `gridFix`: its own, or the sheet's (without the `rows` list). */
+export function rowOf(g, row) {
+  if (!g) return null;
+  if (g.rows?.[row]) return g.rows[row];
+  return { order: g.order, flip: g.flip };
+}
+
+/**
  * The flip box's IMAGE numbers -> the SLOTS the file mirrors. Each mention
  * claims the next slot showing that image that is not claimed yet, so with
  * order 1,2,3,6,5,6,7,8, "6" mirrors the first 6 alone and "6, 6" both.
@@ -148,8 +184,9 @@ export function clipPoseFix(id, fix = LIVE) {
 }
 
 /**
- * Re-deal an atlas's columns (`sheetFix`): a new canvas, `order.length` cells
- * wide, every row the same, the `flip` columns mirrored in place. The atlas
+ * Re-deal an atlas's columns (`sheetFix`, or `gridFix` with its rows): a new
+ * canvas, `order.length` cells wide, each row by its own fix where it has one
+ * and the sheet's where not, the `flip` columns mirrored in place. The atlas
  * comes back with its texture and `cols` replaced and everything measured
  * (contentScale, pad, aspect) as it was — those are per cell, and a cell is
  * copied whole. Unchanged without a DOM or a fix.
@@ -164,9 +201,10 @@ export function applySheetFix(atlas, fix, THREE) {
   c.height = img.height;
   const g = c.getContext('2d');
   for (let r = 0; r < atlas.rows; r++) {
-    fix.order.forEach((src, k) => {
+    const f = fix.rows?.[r] ?? fix;
+    f.order.forEach((src, k) => {
       g.save();
-      if (fix.flip.includes(k)) {
+      if (f.flip.includes(k)) {
         g.translate((k + 1) * cell, 0);
         g.scale(-1, 1);
         g.drawImage(img, src * cell, r * ch, cell, ch, 0, r * ch, cell, ch);
