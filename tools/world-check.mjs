@@ -116,7 +116,7 @@ import {
 } from '../src/systems/arenaquest.js';
 import { MenuNav } from '../src/systems/menunav.js';
 import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss, cssFor } from '../src/core/palette.js';
-import { poseFix, sheetFix, setSpriteFix, SPRITE_FIX, sheetIdOf, isOff, enabledOf, LEGACY_SHEET } from '../src/core/spritefix.js';
+import { poseFix, sheetFix, setSpriteFix, SPRITE_FIX, sheetIdOf, isOff, enabledOf, LEGACY_SHEET, flipSlots, flipImages, applySheetFix } from '../src/core/spritefix.js';
 import {
   splitLayout, mapWidth, mapSpot, assignMaps, nearestMap, keyMaps, fitDistance, stablePanes,
   cardRect,
@@ -6299,6 +6299,29 @@ console.log('\n--- the sprite editor: what it saves, and what the game does with
     /if \(kind === 'clip'\) \{ S\.baseId = id; S\.fixId = clipKey\(id, S\.row\); \}/.test(edSrc)
     && /P\.kind === 'vrsingle' \|\| P\.kind === 'clip'\) return 'sy'/.test(edSrc)
     && /if \(P\.kind === 'clip'\) return `ninja\/\$\{this\.sheet\}:\$\{P\.clip\}`/.test(edSrc));
+  /* "When I put 6 for flip, it seems to flip both 6's in the ordering ... if we have "6" for flip, it should only
+     flip the first "6" in ordering, and if we have "6, 6" for flip, then it would flip both". His Jump row, in
+     0-based images: order 1,2,3,6,5,6,7,8. */
+  {
+    const ord = [0, 1, 2, 5, 4, 5, 6, 7];
+    const one = flipSlots(ord, [5]); const two = flipSlots(ord, [5, 5]); const three = flipSlots(ord, [5, 5, 5]);
+    ok('the flip box mirrors ONE slot per mention: "6" the first 6 alone, "6, 6" both, and a third 6 is reported, not dropped',
+      one.flip.join() === '3' && !one.extra.length && two.flip.join() === '3,5' && three.flip.join() === '3,5' && three.extra.join() === '5',
+      `${one.flip} | ${two.flip} | ${three.flip} +${three.extra}`);
+    ok('...and reads back as it was typed, repeats kept, so Enter on an unchanged box changes nothing',
+      flipImages(ord, one.flip).join() === '5' && flipImages(ord, two.flip).join() === '5,5'
+      && flipSlots(ord, flipImages(ord, two.flip)).flip.join() === two.flip.join());
+    ok('...and the editor uses it both ways, with no dedupe left in the read-back',
+      /const \{ flip, extra \} = flipSlots\(order, flipImgs\)/.test(edSrc) && /\$\('sh-flip'\)\.value = fix \? flipImages\(fix\.order, fix\.flip\)/.test(edSrc));
+    // And the game draws exactly the slots the file names: the second 6 stays as drawn.
+    const cells = [];
+    const fakeG = { save() {}, restore() {}, translate() {}, scale(x) { this.m = x < 0; }, drawImage(img, sx, sy, sw, sh, dx) { cells.push(this.m ? 'M' : '.'); this.m = false; } };
+    const docWas = globalThis.document;
+    globalThis.document = { createElement: () => ({ getContext: () => fakeG }) };
+    applySheetFix({ cols: 8, rows: 1, texture: { image: { width: 8, height: 1 } } }, { order: ord, flip: one.flip }, { CanvasTexture: function () {} });
+    globalThis.document = docWas;
+    ok('...and the game mirrors that slot and not the other 6', cells.join('') === '...M....', cells.join(''));
+  }
   /* "is there a way to tilt and pan the camera with mouse or some keyboard commands?" - and no orbit:
      a lens moved off its bearing would change which drawing every billboard picks. */
   ok('...and its view pans and tilts by mouse and key, by sliding the frustum and never the lens’s bearing',
