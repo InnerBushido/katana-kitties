@@ -116,7 +116,7 @@ import {
 } from '../src/systems/arenaquest.js';
 import { MenuNav } from '../src/systems/menunav.js';
 import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss, cssFor } from '../src/core/palette.js';
-import { poseFix, sheetFix, setSpriteFix, SPRITE_FIX, sheetIdOf, isOff, enabledOf, LEGACY_SHEET, flipSlots, flipImages, applySheetFix } from '../src/core/spritefix.js';
+import { poseFix, sheetFix, setSpriteFix, SPRITE_FIX, sheetIdOf, isOff, enabledOf, LEGACY_SHEET, flipSlots, flipImages, applySheetFix, gridFix, rowOf } from '../src/core/spritefix.js';
 import {
   splitLayout, mapWidth, mapSpot, assignMaps, nearestMap, keyMaps, fitDistance, stablePanes,
   cardRect,
@@ -6211,9 +6211,9 @@ console.log('\n--- the sprite editor: what it saves, and what the game does with
     && sheetFix('kittens/ember/grid_v2', 10, { sheets: { 'kittens/ember/grid_v2': { order: [2] }, 'ember/grid_v2': { order: [1, 0] } } })?.order.join() === '2');
   const sheetSrc = readFileSync(new URL('../src/core/spritesheet.js', import.meta.url), 'utf8').replace(/\r/g, '');
   ok('every sheet loaded through loadSpriteAtlas is re-dealt by its saved fix',
-    /export async function loadSpriteAtlas\(url, opts = \{\}\) \{\n\s*const atlas = await packAtlas\(url, opts\);\n\s*if \(opts\.sheetFix === false \|\| !atlas\) return atlas;\n\s*return applySheetFix\(atlas, sheetFix\(sheetIdOf\(url\), atlas\.cols\), THREE\);/.test(sheetSrc));
+    /export async function loadSpriteAtlas\(url, opts = \{\}\) \{\n\s*const atlas = await packAtlas\(url, opts\);\n\s*if \(opts\.sheetFix === false \|\| !atlas\) return atlas;\n\s*return applySheetFix\(atlas, gridFix\(sheetIdOf\(url\), atlas\.cols, atlas\.rows\), THREE\);/.test(sheetSrc));
   ok('...and the kittens\u2019 loader counts the sheet as drawn, then deals it',
-    /cell: 384, maxAtlas: this\.device\.atlasMax, sheetFix: false,[\s\S]{0,700}return applySheetFix\(a, sheetFix\(sheetIdOf\(url\), a\.cols\), THREE\);/.test(main)
+    /cell: 384, maxAtlas: this\.device\.atlasMax, sheetFix: false,[\s\S]{0,700}return applySheetFix\(a, gridFix\(sheetIdOf\(url\), a\.cols, a\.rows\), THREE\);/.test(main)
     && /this\._spawnPlayers\(ember, frost\);/.test(main) && !/fixed\(ember/.test(main));
 
   /* A BAMBOO INFILTRATION CLIP plays the saved FRAME order (`ninja/ember:sneak`) - asked of a real
@@ -6296,7 +6296,7 @@ console.log('\n--- the sprite editor: what it saves, and what the game does with
     JSON.stringify(cleaned) === '{"poses":{"ninja/ember:rope":{"s":1.2,"y":0.1}},"sheets":{"ninja/ember:mount@2":{"order":[1,0],"flip":[]}},"off":{}}', JSON.stringify(cleaned));
   const edSrc = readFileSync(new URL('../src/sprite-editor.js', import.meta.url), 'utf8').replace(/\r/g, '');
   ok('...and the editor edits a clip one facing at a time, and gives a clip size and height',
-    /if \(kind === 'clip'\) \{ S\.baseId = id; S\.fixId = clipKey\(id, S\.row\); \}/.test(edSrc)
+    /if \(kind === 'clip' \|\| S\.byRow\) \{ S\.baseId = id; S\.fixId = clipKey\(id, S\.row\); \}/.test(edSrc)
     && /P\.kind === 'vrsingle' \|\| P\.kind === 'clip'\) return 'sy'/.test(edSrc)
     && /if \(P\.kind === 'clip'\) return `ninja\/\$\{this\.sheet\}:\$\{P\.clip\}`/.test(edSrc));
   /* "When I put 6 for flip, it seems to flip both 6's in the ordering ... if we have "6" for flip, it should only
@@ -6321,6 +6321,39 @@ console.log('\n--- the sprite editor: what it saves, and what the game does with
     applySheetFix({ cols: 8, rows: 1, texture: { image: { width: 8, height: 1 } } }, { order: ord, flip: one.flip }, { CanvasTexture: function () {} });
     globalThis.document = docWas;
     ok('...and the game mirrors that slot and not the other 6', cells.join('') === '...M....', cells.join(''));
+  }
+  /* PER ROW: "For kittens\frost\vr and the Jump row, I want the ordering to be 1, 2, 3, 6, 5, 6, 7, 8" - the JUMP
+     row's, not every row's. `kittens/frost/vr@2` is that row (clipKey, as a clip's facing), the bare key stays every
+     other row's, and a row's own order must be as long as the rest or the sheet stops being a grid. */
+  {
+    const ord = [0, 1, 2, 5, 4, 5, 6, 7];
+    const only = gridFix('kittens/frost/vr', 8, 4, { sheets: { 'kittens/frost/vr@2': { order: ord, flip: [3] } } });
+    ok('a sheet row can have its own order: the jump row takes it, and the other rows stay as drawn',
+      only?.rows?.[2]?.order.join() === ord.join() && only.rows[2].flip.join() === '3' && only.order.join() === '0,1,2,3,4,5,6,7' && !only.flip.length
+      && rowOf(only, 0).order.join() === '0,1,2,3,4,5,6,7' && rowOf(only, 2) === only.rows[2], JSON.stringify(only));
+    const both = gridFix('kittens/frost/vr', 8, 4, { sheets: { 'kittens/frost/vr': { order: [7, 6, 5, 4, 3, 2, 1, 0] }, 'kittens/frost/vr@2': { order: ord } } });
+    ok('...and over a sheet-wide order, the other rows keep the sheet’s', rowOf(both, 1).order.join() === '7,6,5,4,3,2,1,0' && rowOf(both, 2).order.join() === ord.join());
+    const short = gridFix('kittens/frost/vr', 8, 4, { sheets: { 'kittens/frost/vr@2': { order: [0, 1, 2] } } });
+    ok('...and a row whose order is a different length is ignored rather than tearing the grid', short?.rows === undefined, JSON.stringify(short));
+    const plain = { sheets: { 'kittens/frost/vr': { order: [1, 0], flip: [1] } } };
+    ok('...and a sheet with no row keys is exactly what it always was',
+      JSON.stringify(gridFix('kittens/frost/vr', 8, 4, plain)) === JSON.stringify(sheetFix('kittens/frost/vr', 8, plain)) && gridFix('kittens/frost/vr', 8, 4, {}) === null);
+    // the game deals each row by its own: rows 0,1,3 as drawn, row 2 the jump order with its first 6 mirrored
+    const seen = [];
+    const fakeG = { save() {}, restore() {}, translate() {}, scale(x) { this.m = x < 0; }, drawImage(img, sx, sy) { seen.push(`${sx}${this.m ? 'M' : ''}`); this.m = false; } };
+    const docWas = globalThis.document;
+    globalThis.document = { createElement: () => ({ getContext: () => fakeG }) };
+    applySheetFix({ cols: 8, rows: 4, texture: { image: { width: 8, height: 4 } } }, only, { CanvasTexture: function () {} });
+    globalThis.document = docWas;
+    const rowsSeen = [0, 1, 2, 3].map((r) => seen.slice(r * 8, r * 8 + 8).join(','));
+    ok('...and the game deals each row by its own order: only the jump row changes, its first 6 mirrored',
+      rowsSeen[0] === '0,1,2,3,4,5,6,7' && rowsSeen[3] === rowsSeen[0] && rowsSeen[2] === '0,1,2,5M,4,5,6,7', rowsSeen.join(' | '));
+    ok('...and the save keeps a sheet row’s key',
+      JSON.stringify(cleanSpriteFix({ sheets: { 'kittens/frost/vr@2': { order: ord } } }).sheets) === `{"kittens/frost/vr@2":{"order":[${ord}],"flip":[]}}`);
+    ok('...and the editor edits a turnaround or a many-row sheet one row at a time, refuses a row of the wrong length, and offers "every row"',
+      /S\.byRow = \(kind === 'turn' \|\| kind === 'cells'\) && !!S\.rows;/.test(edSrc) && /if \(!bad\.length && rowLenBad\(S, order\.length\)\) return;/.test(edSrc)
+      && /if \(rowLenBad\(S, f\.order\.length\)\) return;/.test(edSrc) && /this order for every \$\{kind === 'clip' \? 'facing' : 'row'\}/.test(edSrc)
+      && /gridFix\(id, raw\[id\]\.cols, raw\[id\]\.rows, draft\)/.test(edSrc));
   }
   /* "is there a way to tilt and pan the camera with mouse or some keyboard commands?" - and no orbit:
      a lens moved off its bearing would change which drawing every billboard picks. */

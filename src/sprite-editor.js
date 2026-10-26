@@ -32,7 +32,7 @@ import { PLAYER_STYLE } from './core/palette.js';
 import { loadSpriteAtlas, recolourAtlas } from './core/spritesheet.js';
 import {
   setSpriteFix, poseFix, sheetFix, applySheetFix, SPRITE_FIX, KENDO_FILE, HOME_FILE, SINGLE_FILE, LEGACY_SHEET, clipKey,
-  flipSlots, flipImages,
+  flipSlots, flipImages, gridFix, rowOf,
 } from './core/spritefix.js';
 import { TEA_SHEET } from './systems/housing/teahouse.js';
 import { DOOR_MATS, DOOR_MAT_SHEET } from './systems/housing/catalog.js';
@@ -266,7 +266,7 @@ async function loadArt() {
 }
 
 /** A sheet with the DRAFT's order on it, as `loadSpriteAtlas` deals the saved one in the game. */
-const dealt = (id) => (raw[id] ? applySheetFix(raw[id], sheetFix(id, raw[id].cols, draft), THREE) : null);
+const dealt = (id) => (raw[id] ? applySheetFix(raw[id], gridFix(id, raw[id].cols, raw[id].rows, draft), THREE) : null);
 
 /* Recolours are made once per kitten and kept until a sheet fix changes: Storm and Blossom ARE Ember's
    and Frost's drawings, and wear their fixes (keyed by sheet). */
@@ -1089,8 +1089,8 @@ function wireDrag() {
  *   single  one drawing: nothing to order. Its size and place are fixed in Poses, where it has one.
  */
 const KIND_NOTE = {
-  turn: 'A turnaround: each column is one angle. The turntable is the game\'s own pick of column for every angle.',
-  cells: 'Separate drawings the game picks between. A new order is honoured wherever the game loads this sheet.',
+  turn: 'A turnaround: each column is one angle. The turntable is the game\'s own pick of column for every angle. Each row has its own order: the one picked below is the one you edit.',
+  cells: 'Separate drawings the game picks between. A new order is honoured wherever the game loads this sheet. With more than one row, each row has its own.',
   clip: 'One Bamboo Infiltration clip: its frames, in the order they play. Each facing has its own order: the one picked below is the one you edit.',
   frames: 'An animation the game plays straight through. Shown here; nothing to re-deal.',
   set: 'A set of designs on one sheet. Each one can be switched off so the game stops offering it.',
@@ -1171,15 +1171,17 @@ function wireSheets() {
     asDrawn(curSheet);
     commit(`sheet:${id}:reset`, `${id}: as drawn`);
   };
-  /* ONE FACING'S ORDER FOR THE WHOLE CLIP: written to the bare key, and every facing's own key goes,
-     so they all play it. The undo is one step. */
+  /* ONE FACING'S (OR ROW'S) ORDER FOR THE WHOLE CLIP OR SHEET: written to the bare key, and every
+     facing's or row's own key goes, so they all play it. The undo is one step. This is also the way
+     to change how MANY slots a sheet has: a row alone cannot (`rowLen`). */
   $('sh-every').onclick = () => {
     const S = curSheet;
-    if (S?.kind !== 'clip') return;
-    if (S.fix && !isAsDrawn(S.fix)) draft.sheets[S.baseId] = clone(S.fix); else delete draft.sheets[S.baseId];
-    for (let r = 0; r < S.clip.dirs; r++) delete draft.sheets[clipKey(S.baseId, r)];
-    commit(`sheet:${S.baseId}:every`, `${S.baseId}: ${S.rows[S.row]}'s order for every facing`);
-    status(`Every facing of ${S.clipName} now plays the ${S.rows[S.row]} order.`);
+    if (!S?.baseId) return;
+    const what = S.kind === 'clip' ? 'facing' : 'row';
+    if (S.fix && !isAsDrawn(S.fix)) draft.sheets[S.baseId] = clone({ order: S.fix.order, flip: S.fix.flip }); else delete draft.sheets[S.baseId];
+    for (let r = 0; r < S.rows.length; r++) delete draft.sheets[clipKey(S.baseId, r)];
+    commit(`sheet:${S.baseId}:every`, `${S.baseId}: ${S.rows[S.row]}'s order for every ${what}`);
+    status(`Every ${what} of ${S.kind === 'clip' ? S.clipName : S.baseId} now plays the ${S.rows[S.row]} order.`);
   };
   $('sh-revert').onclick = () => {
     const id = curSheet?.fixId;
@@ -1242,8 +1244,21 @@ const parseNums = (t) => t.split(/[\s,]+/).filter(Boolean).map((v) => Number(v) 
    (an order 1..n): deleting its key would show the clip's order again, which is what was asked away. */
 function asDrawn(S) {
   if (S.kind === 'clip' && sheetFix(S.baseId, S.drawn, draft)) draft.sheets[S.fixId] = { order: [...Array(S.drawn).keys()], flip: [] };
-  else delete draft.sheets[S.fixId];
+  // A sheet's row the same - but only when "as drawn" is as many slots as every other row; else back to the sheet's.
+  else if (S.byRow && sheetFix(S.baseId, S.drawn, draft) && rowLen(S) === S.drawn) draft.sheets[S.fixId] = { order: [...Array(S.drawn).keys()], flip: [] };
+  else {
+    delete draft.sheets[S.fixId];
+    if (S.byRow && sheetFix(S.baseId, S.drawn, draft) && rowLen(S) !== S.drawn) {
+      status(`${S.rows[S.row]} plays the sheet's order again: the sheet has ${rowLen(S)} slots and every row must too, so this row alone cannot go back to all ${S.drawn} drawings. "This order for every row" can.`, true);
+    }
+  }
 }
+
+/** How many slots each row of a sheet has: the sheet-wide order's, or the columns as drawn. A row's own order must
+ *  match it, or the sheet would stop being a grid - `gridFix` ignores one that does not, so the editor refuses it. */
+const rowLen = (S) => sheetFix(S.baseId, S.drawn, draft)?.order.length ?? S.drawn;
+const rowLenBad = (S, n) => S.byRow && n !== rowLen(S)
+  && (status(`Every row of ${S.baseId} has ${rowLen(S)} slots, so ${S.rows[S.row]}'s order needs ${rowLen(S)} too (this one has ${n}). To change how many the whole sheet has, set it on one row and press "this order for every row" first.`, true), true);
 
 /** The order box is IMAGE numbers; so is the flip box - turned into slots here, which is what the file holds.
  *  One mention per slot: "6" is the first 6 in the order, "6, 6" the first two (`flipSlots`). */
@@ -1259,6 +1274,7 @@ function applyOrderText() {
     return;
   }
   const bad = [...order, ...flipImgs].filter((c) => c >= S.drawn);
+  if (!bad.length && rowLenBad(S, order.length)) return;
   if (bad.length) { status(`This ${S.kind === 'clip' ? 'clip has' : 'sheet has'} ${S.drawn} images; ${[...new Set(bad)].map((c) => c + 1).join(', ')} is not one of them. Nothing applied.`, true); return; }
   const { flip, extra } = flipSlots(order, flipImgs);
   draft.sheets[S.fixId] = { order, flip };
@@ -1319,10 +1335,15 @@ async function buildSheet() {
     fillSelect($('sh-row'), S.rows.map((r, i) => [String(i), r]), String(Math.max(0, keep)));
   }
   S.row = S.rows ? Number($('sh-row').value) : 0;
-  // a clip is edited one FACING at a time: its key is the facing's, and it falls back to the clip's
-  if (kind === 'clip') { S.baseId = id; S.fixId = clipKey(id, S.row); }
-  $('sh-every').hidden = kind !== 'clip';
-  const fix = kind === 'clip' ? sheetFix(S.baseId, S.drawn, draft, S.row) : S.fixId ? sheetFix(S.fixId, S.drawn, draft) : null;
+  /* a clip is edited one FACING at a time: its key is the facing's, and it falls back to the clip's.
+     A sheet with rows the same, one ROW at a time (Richard: "For kittensrostr and the Jump row ...") */
+  S.byRow = (kind === 'turn' || kind === 'cells') && !!S.rows;
+  if (kind === 'clip' || S.byRow) { S.baseId = id; S.fixId = clipKey(id, S.row); }
+  $('sh-every').hidden = !S.baseId;
+  $('sh-every').textContent = `this order for every ${kind === 'clip' ? 'facing' : 'row'}`;
+  // the whole sheet, every row's own included - what the stage's Player and the cells plane are dealt
+  S.grid = S.byRow && a ? gridFix(id, S.drawn, a.rows, draft) : null;
+  const fix = kind === 'clip' ? sheetFix(S.baseId, S.drawn, draft, S.row) : S.byRow ? rowOf(S.grid, S.row) : S.fixId ? sheetFix(S.fixId, S.drawn, draft) : null;
   S.fix = fix;
   S.order = fix?.order ?? [...Array(S.drawn).keys()];
   S.n = kind === 'set' ? DOOR_MATS.length : kind === 'frames' && a ? a.cols * a.rows : S.order.length;
@@ -1425,6 +1446,7 @@ function tileClick(S, c, slots, e) {
       f.flip = f.flip.filter((q) => q !== i).map((q) => (q > i ? q - 1 : q));
       if (!f.order.length) { status('A sheet cannot drop every image. Use "as drawn" to start over.', true); return; }
     } else f.order.push(c);
+    if (rowLenBad(S, f.order.length)) return;
     draft.sheets[S.fixId] = f;
     commit(`sheet:${S.fixId}:tile`, `${S.fixId}: ${slots.length ? 'dropped' : 'added back'} img ${c + 1}`);
     return;
@@ -1489,7 +1511,7 @@ function buildSheetStage(S) {
   scene.add(sheetLayer);
   if (S.kind === 'turn' && S.atlas) {
     // a real Player wearing the re-dealt sheet, as the game deals it
-    const a = applySheetFix(S.atlas, S.fix, THREE);
+    const a = applySheetFix(S.atlas, S.grid ?? S.fix, THREE);
     const who = S.id.split('/')[1];
     const kit = Math.max(0, PLAYER_STYLE.findIndex((s) => s.sheet === who && !s.recolour));
     const p = new Player({
@@ -1510,7 +1532,7 @@ function buildSheetStage(S) {
   } else {
     S.plane = cellPlane();
     sheetLayer.add(S.plane);
-    if (S.kind === 'cells' && S.atlas) S.dealtAtlas = applySheetFix(S.atlas, S.fix, THREE);
+    if (S.kind === 'cells' && S.atlas) S.dealtAtlas = applySheetFix(S.atlas, S.grid ?? S.fix, THREE);
   }
 }
 
