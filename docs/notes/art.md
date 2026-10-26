@@ -796,6 +796,13 @@ if we have "6, 6" for flip, then it would flip both".
   that is not already mirrored (`flipSlots`). "6" mirrors the first 6, "6, 6"
   both, and a third 6 is reported rather than dropped. The box reads back with
   the repeats (`flipImages`), so Enter on an unchanged box changes nothing.
+- **A minus SKIPS one.** Richard, on the attack row 1,4,3,6,5,6,7,4: "not flip
+  the first occurrence of 4 but ... flip the 2nd ... mark the first occurrence
+  as "-4" so it gets skipped". `-4` claims the next 4 and leaves it plain, so
+  `-4, 4` mirrors the second 4 alone. Internally a skip is `~c` (image 0 has no
+  `-0`). The read-back writes a skip for every plain slot before an image's last
+  mirrored one, so any set of mirrored slots can be shown and re-entered; the
+  old "Enter would move it" warning is gone with the case. The tooltip says it.
 - **A sheet's rows each take their own order**, the way a clip's facings do:
   `kittens/frost/vr@2` is the jump row (`clipKey`), and the bare key stays every
   other row's. `gridFix(id, cols, rows)` gathers them and `applySheetFix` deals

@@ -116,7 +116,7 @@ import {
 } from '../src/systems/arenaquest.js';
 import { MenuNav } from '../src/systems/menunav.js';
 import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss, cssFor } from '../src/core/palette.js';
-import { poseFix, sheetFix, setSpriteFix, SPRITE_FIX, sheetIdOf, isOff, enabledOf, LEGACY_SHEET, flipSlots, flipImages, applySheetFix, gridFix, rowOf } from '../src/core/spritefix.js';
+import { poseFix, sheetFix, setSpriteFix, SPRITE_FIX, sheetIdOf, isOff, enabledOf, LEGACY_SHEET, flipSlots, flipImages, flipText, applySheetFix, gridFix, rowOf } from '../src/core/spritefix.js';
 import {
   splitLayout, mapWidth, mapSpot, assignMaps, nearestMap, keyMaps, fitDistance, stablePanes,
   cardRect,
@@ -6312,7 +6312,20 @@ console.log('\n--- the sprite editor: what it saves, and what the game does with
       flipImages(ord, one.flip).join() === '5' && flipImages(ord, two.flip).join() === '5,5'
       && flipSlots(ord, flipImages(ord, two.flip)).flip.join() === two.flip.join());
     ok('...and the editor uses it both ways, with no dedupe left in the read-back',
-      /const \{ flip, extra \} = flipSlots\(order, flipImgs\)/.test(edSrc) && /\$\('sh-flip'\)\.value = fix \? flipImages\(fix\.order, fix\.flip\)/.test(edSrc));
+      /const \{ flip, extra \} = flipSlots\(order, flipImgs\)/.test(edSrc) && /\$\('sh-flip'\)\.value = fix \? flipText\(flipImages\(fix\.order, fix\.flip\)\)/.test(edSrc)
+      && /const flipImgs = parseFlip\(/.test(edSrc));
+    /* "I want the attack row to have order 1, 4, 3, 6, 5, 6, 7, 4, but to not flip the first occurrence of 4 but to flip
+       the 2nd ... mark the first occurrence as "-4" so it gets skipped". A skip is `~c` (image 0 has no -0). */
+    const atk = [0, 3, 2, 5, 4, 5, 6, 3];
+    const skip = flipSlots(atk, [~3, 3]);
+    ok('...and "-4, 4" skips the first 4 and mirrors the second; a skip with nothing left is reported',
+      skip.flip.join() === '7' && !skip.extra.length && flipSlots(atk, [~3]).flip.length === 0
+      && flipSlots(atk, [~3, ~3, ~3]).extra.join() === '3', `${skip.flip} | ${flipSlots(atk, [~3, ~3, ~3]).extra}`);
+    ok('...and every set of mirrored slots reads back as a box that writes it again: "-4, 4", "6, -6"... never a warning',
+      flipText(flipImages(atk, [7])) === '-4, 4' && flipText(flipImages(atk, [3])) === '6' && flipText(flipImages(atk, [5])) === '-6, 6'
+      && [[7], [3], [5], [3, 5], [1, 7], [0, 5, 7]].every((f) => flipSlots(atk, flipImages(atk, f)).flip.join() === f.join())
+      && !/not the first of/.test(edSrc), flipText(flipImages(atk, [7])));
+    ok('...and the flip box’s tooltip says so', /A MINUS SKIPS one: -4 leaves the next 4 plain/.test(readFileSync(new URL('../sprites.html', import.meta.url), 'utf8')));
     // And the game draws exactly the slots the file names: the second 6 stays as drawn.
     const cells = [];
     const fakeG = { save() {}, restore() {}, translate() {}, scale(x) { this.m = x < 0; }, drawImage(img, sx, sy, sw, sh, dx) { cells.push(this.m ? 'M' : '.'); this.m = false; } };

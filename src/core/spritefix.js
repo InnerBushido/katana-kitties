@@ -157,20 +157,36 @@ export function rowOf(g, row) {
  * the ordering". The file always held slots, so the game could draw this; it
  * was the box that read "6" as every 6. A mention with no slot left is
  * returned in `extra`, so the editor can say so instead of dropping it.
+ *
+ * A SKIP claims the next slot and leaves it plain: `~c` here, "-4" in the box.
+ * Richard, Oct 2026, on the attack row 1,4,3,6,5,6,7,4: "not flip the first
+ * occurrence of 4 but ... flip the 2nd occurrence of 4. Maybe an easy solution
+ * is to mark the first occurrence as "-4" so it gets skipped". So "-4, 4" is
+ * the second 4 alone. `~c` rather than `-c` because image 0 has no `-0`.
  * 0-based throughout.
  */
 export function flipSlots(order, imgs) {
-  const flip = []; const extra = [];
-  for (const c of imgs) {
-    const k = order.findIndex((o, i) => o === c && !flip.includes(i));
-    if (k < 0) extra.push(c); else flip.push(k);
+  const flip = []; const used = []; const extra = [];
+  for (const t of imgs) {
+    const c = t < 0 ? ~t : t;
+    const k = order.findIndex((o, i) => o === c && !used.includes(i));
+    if (k < 0) { extra.push(c); continue; }
+    used.push(k);
+    if (t >= 0) flip.push(k);
   }
   return { flip: flip.sort((a, b) => a - b), extra };
 }
 
-/** ...and back: the image in each mirrored slot, in slot order, repeats kept, so `flipSlots` reads it back to the same slots
- *  whenever the mirrored ones are each the earliest of their image. */
-export const flipImages = (order, flip) => [...flip].sort((a, b) => a - b).map((k) => order[k]);
+/** ...and back, as tokens `flipSlots` reads to the same slots: walking the order, every slot of an image up to its last
+ *  mirrored one - `c` where mirrored, `~c` (a skip) where not. So 1,4,3,6,5,6,7,4 with the last 4 mirrored reads "-4, 4". */
+export function flipImages(order, flip) {
+  const last = new Map();
+  for (const k of flip) last.set(order[k], Math.max(last.get(order[k]) ?? -1, k));
+  return order.flatMap((c, k) => (k <= (last.get(c) ?? -1) ? [flip.includes(k) ? c : ~c] : []));
+}
+
+/** A token list as the box shows it, 1-based: "-4, 4". */
+export const flipText = (toks) => toks.map((t) => (t < 0 ? `-${~t + 1}` : `${t + 1}`)).join(', ');
 
 /** `ninja/ember:mount` + facing 2 -> `ninja/ember:mount@2`: one facing's own frame order. */
 export const clipKey = (id, row) => `${id}@${row}`;
