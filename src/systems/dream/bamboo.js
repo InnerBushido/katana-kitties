@@ -10,6 +10,7 @@ import { ClipSprite, loadNinjaArt } from './ninjasprite.js';
 import { Guard, Shots, isleDir, isleFacing } from './bambooguards.js';
 import { GhostRecorder, GhostFigure, GMODE, ghostFor, offerGhost } from './ghost.js';
 import { BAMBOO_BOARD, bambooBoardLines, bambooFilterRows } from './bambooboard.js';
+import { HoldRing } from './holdring.js';
 import {
   COURSES, courseById, starsId, DIFFS, levelOf, guardsOn, lanternsOn, pickupsOn, houseWalls, ladderFoot,
   REGION, GATE, PLAZA, EYE, RADII, COVER, SNEAK, CAUGHT_COST, GRID, wrap, segDist,
@@ -61,7 +62,15 @@ Object.assign(MUSIC_FILES, BAMBOO_MUSIC);
    button — out of a barrel, into one, onto a rope or a ladder, drop the smoke
    bomb — and only when it has nothing else to do, and nothing to do it with
    anywhere near her, does it ASK whether to leave, cursor on "no". JUMP is the
-   same button for the barrel, the rope and the ladder, and never asks.
+   same button in every way but that one, and never asks — and is NEVER a
+   jump in here (Oct 2026, `_steer`).
+
+   THE SCROLL AND THE LANTERNS ARE HELD, NOT WALKED PAST (Oct 2026). Richard:
+   "the player needs to stand next to the scroll and hold the action/jump
+   button for 1 second before they complete the level ... Likewise, lets do
+   something similar for the checkpoints/lanterns". A ring fills round her
+   while she holds it, over everything (dream/holdring.js) — gold for the
+   scroll, blue for a lantern; never green, which is the bamboo's own.
 
    THE PARTY IS ONE PARTY (Oct 2026). Richard: "when a player gets caught, all
    players should respawn at the checkpoint and all game states should get
@@ -97,6 +106,13 @@ export const SMOKE = { r: RADII.smoke, t: 6 };
 /** A walking step is heard this often; a picked-up thing comes back after `respawn`. */
 export const NOISE_EVERY = 0.45;
 export const PICKUP = { r: 1.1, respawn: 12 };
+/**
+ * HOLD TO TAKE IT: `t` seconds of INTERACT or JUMP held, standing within the
+ * old walk-past distances (`scroll`, `lantern`). Gold for the scroll; a clear
+ * sky blue for a lantern, chosen against the holo-bamboo's green and the
+ * plaza's cyan. The ring sits at `chest` of her height, `r` across.
+ */
+export const HOLD = { t: 1, scroll: 1.6, lantern: 1.4, gold: 0xffd56a, blue: 0x4aa3ff, chest: 0.55, r: 1.3 };
 /** Hiding in a barrel: within this of its middle (bamboolevel.js HIDE_REACH says why 1.9). */
 export const HIDE_R = HIDE_REACH;
 /**
@@ -947,6 +963,10 @@ export class BambooInfiltration {
     p.group.visible = true;
     run.aim?.removeFromParent();
     run.smokeRing?.removeFromParent();
+    run.holdRing?.dispose();
+    run.holdRing = null;
+    run.hold = null;
+    run.planted = false;
     for (const g of this.view.guards) { g.meter.delete(run.i); if (g.arresting === run.i) g.release(); }
   }
 
@@ -1038,14 +1058,16 @@ export class BambooInfiltration {
   _steer(run, d, pad) {
     const p = run.p;
     const live = d.state === 'live';
-    /* JUMP IS THE NINJA BUTTON TOO, for a barrel, a rope or a ladder in reach
-       — Richard: "let's make the jump button work like the interact button,
-       but let's not have the jump button pull up the 'leave the course' menu".
-       A press it spends is eaten for the frame, so she does not also jump
-       (and a rope just grabbed does not read it as "let go"). With nothing in
-       reach it is her jump. */
-    run.eat = null;
-    if (live && !run.capture && pad.pressed?.('jump') && this._ninjaPress(run, 'jump')) run.eat = 'jump';
+    /* JUMP IS THE NINJA BUTTON, AND ONLY THAT — Richard: "let's make the jump
+       button work like the interact button, but let's not have the jump
+       button pull up the 'leave the course' menu". It used to fall through
+       to a real jump when nothing was in reach, which only arrived when the
+       count-in's mask stopped swallowing it (40499ce); Oct 2026: "we are now
+       allowing the player to jump, let's remove that as I believe it is not
+       necessary ... we just want the action and jump button to do the same
+       thing". So it is masked from her legs outright (below), and a rope's
+       "JUMP lets go" still hears it, off the raw pad (`run.padIn`). */
+    if (live && !run.capture && pad.pressed?.('jump')) this._ninjaPress(run, 'jump');
     if (live && pad.pressed?.('mount')) {
       if (pad.doubled?.('mount')) run.latch = true;
       else if (run.latch) run.latch = false;
@@ -1057,13 +1079,23 @@ export class BambooInfiltration {
     else if (run.charge != null) {
       if (live && !frozen) this._throw(run);
       run.charge = null;
+      run.planted = true;
     }
+    /* ...AND SHE STAYS PLANTED UNTIL THE STICK IS LET GO. Richard: "It's hard
+       to throw stone in bamboo infiltration on keyboard ... after the stone
+       is thrown, the player doesn't move until after they reset the direction
+       by letting go of or zero'ing out the direction buttons so that they
+       don't just automatically start walking in the direction of where they
+       are throwing the stone". On a keyboard the aim IS a held walking key,
+       so the frame the throw left her paw she walked off after it, toward
+       the guard she had just thrown at. */
+    if (run.planted && (pad.mx ?? 0) ** 2 + (pad.my ?? 0) ** 2 <= 1e-4) run.planted = false;
     /* Her sprint here is SPRINT.k of her walk (bamboolevel.js) — set as a gait
        under the game's sprint, so the button still reads as SPRINT to her
        legs and her noise, and nothing outside the island moves. */
     const sprint = !run.sneak && !!pad.down?.('sprint');
     run.sprinting = sprint && !frozen;
-    p.gaitK = run.charge != null ? 0 : run.sneak ? SNEAK.gait : sprint ? SPRINT.gait : 1;
+    p.gaitK = run.charge != null || run.planted ? 0 : run.sneak ? SNEAK.gait : sprint ? SPRINT.gait : 1;
     run.padIn = pad;
     /* EVERYTHING IN HERE IS READ LIVE, off `run` and `d`, never off this
        call's locals. The proxy is built ONCE, on the first steer — which is
@@ -1074,13 +1106,14 @@ export class BambooInfiltration {
        sprint's 0.71 (from the real pad, above) while her legs, asking the
        proxy, never heard SPRINT, so she walked at 0.71 of a walk: 7.46
        against 10.5, measured in the running game. */
-    const masked = (a) => a === 'mount' || a === 'attack' || (a === 'sprint' && run.sneak) || (a === run.eat)
+    const masked = (a) => a === 'mount' || a === 'attack' || a === 'jump' || (a === 'sprint' && run.sneak)
       || ((d.state !== 'live' || !!run.capture || !!run.hidden) && a !== 'start' && a !== 'map' && a !== 'interact');
     return (run.pad ??= new Proxy({}, {
       get: (_, k) => {
         const P = run.padIn;
         const still = d.state !== 'live' || !!run.capture || !!run.hidden;
-        if (k === 'mx' || k === 'my' || k === 'rx' || k === 'ry') return still ? 0 : P[k];
+        if (k === 'mx' || k === 'my') return still || run.planted ? 0 : P[k];
+        if (k === 'rx' || k === 'ry') return still ? 0 : P[k];
         if (k === 'nudge') return () => (still ? 0 : P.nudge?.() ?? 1);
         if (k === 'down' || k === 'pressed' || k === 'doubled') return (a, w) => !masked(a) && !!P[k]?.(a, w);
         const v = P[k];
@@ -1107,10 +1140,10 @@ export class BambooInfiltration {
   /**
    * ONE PRESS OF THE NINJA BUTTON, by INTERACT (`via` 'interact') or JUMP
    * ('jump'). Out of a barrel; onto a rope; up or down a ladder; into a
-   * barrel; and for INTERACT only, the smoke bomb. True when the press was
-   * spent — and, for INTERACT, also when something is NEAR but not in reach
-   * (`_reach`, NEAR_K), so that press does nothing instead of asking to leave.
-   * False means: JUMP is a jump, INTERACT may ask.
+   * barrel; the smoke bomb. True when the press was spent — also when
+   * something is NEAR but not in reach (`_reach`, NEAR_K), or she is at the
+   * scroll or an unlit lantern, so that press does nothing instead of asking
+   * to leave. False means INTERACT may ask; JUMP never does (`_steer`).
    */
   _ninjaPress(run, via) {
     const p = run.p;
@@ -1124,11 +1157,12 @@ export class BambooInfiltration {
       return via === 'interact';
     }
     if (!live) return false;
+    // At the scroll or an unlit lantern the press is the start of a HOLD (`_stepHold`): never a menu, never smoke.
+    if (this._holdAt(run, this.coords(p))) return true;
     const R = this._reach(run);
     if (R.rope) { this._ropeRig(run, R.rope.R, R.rope.u); return true; }
     if (R.ladder) { this._ladderRig(run, R.ladder.Ld, R.ladder.y0, R.ladder.dir); return true; }
     if (R.barrel) { this._hide(run, R.barrel); return true; }
-    if (via === 'jump') return false;
     if (R.near) return true;
     if (run.carry.smoke > 0) { this._smoke(run, this.coords(p)); return true; }
     return false;
@@ -1525,6 +1559,8 @@ export class BambooInfiltration {
     run.last = q;
     run.crawlT += moved / Math.max(0.5, SNEAK.speed) * 1.6;
     run.ropeCd = Math.max(0, run.ropeCd - dt);
+    // A hold is broken by a capture or a barrel, and its ring with it - those return before `_stepHold` runs.
+    if (run.capture || run.hidden) { run.hold = null; run.holdRing?.set(null); }
     if (run.capture) { this._stepCapture(run, dt); return; }
     // The ghost recorder: where she is, what she is doing.
     run.rec.tick(dt, () => [q.a, q.b, Math.max(0, q.y), this._facingAng(p),
@@ -1552,11 +1588,13 @@ export class BambooInfiltration {
     this._bounds(run, q);
     // A rope is taken on a PRESS now (`_ninjaPress`); a ladder by a press, or by walking into it.
     if (!p.rig) this._startLadder(run, q);
-    // LANTERNS: walked past is lit — the newest lit by ANYBODY is where a capture puts the party.
+    // LANTERNS AND THE SCROLL: held for HOLD.t, not walked past (`_stepHold`).
+    const done = this._stepHold(run, q, dt);
+    // A LANTERN: the newest lit by ANYBODY is where a capture puts the party.
     const S = this.session;
     for (const l of this.view.lanterns) {
       if (!l.on || run.lit.has(l)) continue;
-      if (Math.hypot(q.a - l.a, q.b - l.b) < 1.4 && q.y < 1) {
+      if (done === l) {
         run.lit.add(l);
         run.cp = { a: l.a, b: l.b, th: this._facingAng(p) };
         if (S && !S.lit.has(l)) { S.lit.add(l); S.cp = { ...run.cp }; }
@@ -1587,7 +1625,7 @@ export class BambooInfiltration {
     }
     // THE SCROLL.
     const C = this.course;
-    if (Math.hypot(q.a - C.scroll.a, q.b - C.scroll.b) < 1.6 && q.y < 1.5) {
+    if (done === 'scroll') {
       d.progress();
       if (d.state === 'won') {
         offerGhost(starsId(C.id, this.session.diff), { name: p.name, style: styleIdx(p), time: d.t + run.caught * CAUGHT_COST, samples: run.rec.samples });
@@ -1815,8 +1853,48 @@ export class BambooInfiltration {
     if (R.rope) return `[${I}] or [${J}] grab the rope`;
     if (R.ladder) return `[${I}] or [${J}] ${R.ladder.dir > 0 ? 'climb the ladder' : 'climb down'}`;
     if (R.barrel) return `[${I}] or [${J}] hide in the barrel`;
+    const H = this._holdAt(run, this.coords(p));
+    if (H) return `hold [${I}] or [${J}] — ${H === 'scroll' ? 'take the scroll!' : 'light the lantern'}`;
     if (R.near) return 'get closer…';
-    return `[${I}] ${run.carry.smoke ? 'smoke bomb' : 'leave the course?'}`;
+    return run.carry.smoke ? `[${I}] or [${J}] smoke bomb` : `[${I}] leave the course?`;
+  }
+
+  /**
+   * What she is standing at that wants a HOLD: 'scroll', an unlit lantern (of
+   * hers), or null. The old walk-past distances and heights, so nothing about
+   * where these are reached has moved — only that reaching is now holding.
+   */
+  _holdAt(run, q) {
+    if (run.p.rig || run.hidden || run.capture) return null;
+    const C = this.course;
+    if (C && Math.hypot(q.a - C.scroll.a, q.b - C.scroll.b) < HOLD.scroll && q.y < 1.5) return 'scroll';
+    for (const l of this.view.lanterns) {
+      if (l.on && !run.lit.has(l) && Math.hypot(q.a - l.a, q.b - l.b) < HOLD.lantern && q.y < 1) return l;
+    }
+    return null;
+  }
+
+  /**
+   * THE HOLD, one frame: INTERACT or JUMP held at the same thing fills the
+   * ring; letting go, or stepping away, empties it. Returns the thing the
+   * moment it fills (once), else null. Read off the RAW pad, `run.padIn`:
+   * JUMP is masked from her legs and that mask must not mask this.
+   */
+  _stepHold(run, q, dt) {
+    const at = this._holdAt(run, q);
+    const pad = run.padIn;
+    const held = !!at && run.drill?.state === 'live' && (!!pad?.down?.('interact') || !!pad?.down?.('jump'));
+    if (!held || run.hold?.at !== at) run.hold = held ? { at, t: 0 } : null;
+    let done = null;
+    if (run.hold) {
+      run.hold.t += dt;
+      if (run.hold.t >= HOLD.t) { done = at; run.hold = null; }
+    }
+    run.holdRing ??= new HoldRing(this.root, HOLD.r);
+    const p = run.p;
+    run.holdRing.set(run.hold ? { x: p.position.x, y: p.position.y + (p.height ?? 1.6) * HOLD.chest, z: p.position.z } : null,
+      run.hold ? run.hold.t / HOLD.t : 0, at === 'scroll' ? HOLD.gold : HOLD.blue);
+    return done;
   }
 
   /* -------------------------------- a frame ------------------------------- */

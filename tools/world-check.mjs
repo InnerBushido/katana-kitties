@@ -40773,8 +40773,8 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       d.state = 'live';
       pad.hold = new Set(['sprint']); pad.edge = new Set(['jump']);
       const legs = d.spec.steer(d, pad);
-      const heard = legs.down('sprint') && legs.pressed('jump');
-      ok('忍 a pad built in the count-in still hands her legs SPRINT and JUMP after GO — so her sprint is 1.15x her walk, not 0.71x',
+      const heard = legs.down('sprint') && !legs.pressed('jump');
+      ok('忍 a pad built in the count-in still hands her legs SPRINT after GO (and never JUMP: "let\'s remove that") — so her sprint is 1.15x her walk, not 0.71x',
         heard && her.gaitK === BL.SPRINT.gait && Math.abs((BL.SPRINT.run * her.gaitK) / BL.SPRINT.walk - 1.15) < 1e-9,
         `sprint ${legs.down('sprint')} jump ${legs.pressed('jump')} gait ${her.gaitK}`);
       pad.hold = new Set(); pad.edge = new Set();
@@ -40791,6 +40791,24 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     pad.hold = new Set();
     d.spec.steer(d, pad);
     ok('...and letting go throws a pebble, since she has no shuriken', B.pebbles.length === 1 && run.charge == null);
+    /* ...AND SHE STAYS WHERE SHE THREW FROM until the stick is let go. Richard: "the player doesn't move until
+       after they reset the direction by letting go of or zero'ing out the direction buttons". The aim on a
+       keyboard is a held walking key. A short wind-up (under the 0.12 a throw needs) plants her the same way
+       without a second pebble in the air for the checks below. */
+    {
+      pad.mx = 1; pad.hold = new Set(['attack']);
+      for (let k = 0; k < 3; k++) d.spec.steer(d, pad);
+      pad.hold = new Set();
+      const legs = [];
+      for (let k = 0; k < 20; k++) { st = d.spec.steer(d, pad); legs.push(st.mx); }
+      const stillHeld = legs.every((v) => v === 0) && her.gaitK === 0;
+      pad.mx = 0; d.spec.steer(d, pad);
+      pad.mx = 1; st = d.spec.steer(d, pad);
+      const walksAgain = st.mx === 1 && her.gaitK === 1;
+      pad.mx = 0; d.spec.steer(d, pad);
+      ok('忍 after a throw a stick still held does not walk her after it — she walks again once it has been let go',
+        stillHeld && walksAgain && B.pebbles.length === 1, `held ${legs.join('')} gait ${her.gaitK}`);
+    }
     // A NOISE is heard inside its ring and not outside it.
     const sam = B.view.guards.find((g) => g.active && g.kind === 'samurai');
     sam.reset(B.clock);
@@ -40842,7 +40860,27 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     {
       const L0 = B.view.lanterns.find((l) => l.on);
       put(sis, sp(L0));
+      /* HELD, NOT WALKED PAST. Richard: "hold the action/jump button for 1 second ... Likewise, lets do
+         something similar for the checkpoints/lanterns" — blue, never the bamboo's green. */
+      const pi2 = run2.padIn;
+      const hp = { mx: 0, my: 0, hold: new Set(), down(a) { return this.hold.has(a); }, pressed() { return false; } };
+      run2.padIn = hp;
       step(1 / 60);
+      const walkedPast = run2.lit.has(L0);
+      hp.hold = new Set(['jump']);
+      for (let k = 0; k < 30; k++) step(1 / 60);
+      const half = !run2.lit.has(L0) && run2.holdRing?.mesh.visible && Math.abs(run2.holdRing.mat.uniforms.uFill.value - 0.5) < 0.04
+        && run2.holdRing.mat.uniforms.uColor.value.getHex() === BM.HOLD.blue;
+      hp.hold = new Set();
+      step(1 / 60);
+      const reset = !run2.hold && !run2.holdRing.mesh.visible;
+      hp.hold = new Set(['interact']);
+      for (let k = 0; k < 62; k++) step(1 / 60);
+      run2.padIn = pi2;
+      const g = new THREE.Color(BM.HOLD.blue);
+      ok('忍 a lantern is lit by HOLDING interact or jump for a second beside it, a blue ring filling round her — not by walking past',
+        !walkedPast && half && reset && run2.lit.has(L0) && !run2.holdRing.mesh.visible && g.g < g.b,
+        `walked ${walkedPast} half ${half} reset ${reset} lit ${run2.lit.has(L0)}`);
       const cpOk = S.cp && Math.hypot(S.cp.a - L0.a, S.cp.b - L0.b) < 1e-6;
       B.caught(0, null);
       for (let k = 0; k < 150; k++) step(1 / 60);
@@ -40918,7 +40956,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         G.reset(B.clock);
         ok('...and a sprinting kitten fills a guard\'s meter twice as fast as a walking one', mw > 0 && Math.abs(ms - 2 * mw) < 1e-9, `${mw} ${ms}`);
       }
-      // THE NINJA BUTTONS. In the open: JUMP is a jump and never asks; INTERACT asks.
+      // THE NINJA BUTTONS. In the open: JUMP is NOT a jump, and never asks; INTERACT asks.
       her.onGround = true;
       const bar = B.view.barrels[0];
       const open = (() => {
@@ -40933,12 +40971,12 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         return null;
       })();
       run.carry.smoke = 0;
-      pad.edge = new Set(['jump']);
+      pad.edge = new Set(['jump']); pad.hold = new Set(['jump']);
       st = d.spec.steer(d, pad);
-      const jumped = st.pressed('jump') && !D.choices[0];
-      pad.edge = new Set();
+      const noJump = !st.pressed('jump') && !st.down('jump') && !D.choices[0];
+      pad.edge = new Set(); pad.hold = new Set();
       d.spec.steer(d, pad);
-      ok('忍 JUMP with nothing in reach is a jump — and never opens "leave the course"', !!open && jumped && !run.hidden);
+      ok('忍 JUMP with nothing in reach is NOT a jump ("let\'s remove that") — and never opens "leave the course"', !!open && noJump && !run.hidden);
       d.spec.quit();
       const asked = !!D.choices[0];
       D.closeChoice(her);
@@ -41224,7 +41262,36 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     // THE SCROLL: the score is the clock plus CAUGHT_COST a capture.
     const C0 = B.course;
     put(her, sp(C0.scroll));
-    d.update(1 / 60);
+    /* HELD. Richard: "the player needs to stand next to the scroll and hold the action/jump button for 1
+       second before they complete the level ... a circular bar appearing around them that is shown over
+       all of the environment ... billboard towards the camera properly ... scroll can be gold". */
+    {
+      pad.hold = new Set(); pad.edge = new Set(['interact']);
+      d.spec.steer(d, pad);
+      d.spec.quit();
+      const noMenu = !D.choices[0];
+      pad.edge = new Set();
+      d.spec.steer(d, pad);
+      d.update(1 / 60);
+      const standing = d.state === 'live';
+      pad.hold = new Set(['interact']);
+      d.spec.steer(d, pad);
+      for (let k = 0; k < 30; k++) d.update(1 / 60);
+      const R = run.holdRing;
+      const mid = d.state === 'live' && R?.mesh.visible && R.mat.uniforms.uColor.value.getHex() === BM.HOLD.gold
+        && Math.abs(R.mat.uniforms.uFill.value - 0.5) < 0.04;
+      // Over everything, and turned to whichever lens is drawing it — in the WORLD, whatever the island's turn.
+      const cam = new THREE.PerspectiveCamera();
+      cam.position.set(5, 9, -4); cam.lookAt(0, 0, 0); cam.updateMatrixWorld();
+      R.mesh.onBeforeRender(null, null, cam);
+      const qq = new THREE.Quaternion(); R.mesh.matrixWorld.decompose(new THREE.Vector3(), qq, new THREE.Vector3());
+      const faces = qq.angleTo(cam.quaternion) < 1e-6 && R.mat.depthTest === false && R.mesh.renderOrder >= 1000;
+      for (let k = 0; k < 31; k++) d.update(1 / 60);
+      pad.hold = new Set();
+      ok('忍 the scroll is taken by HOLDING interact or jump for a second — a press never asks to leave there, and standing at it is not enough',
+        noMenu && standing && mid && d.state === 'won', `menu ${!noMenu} standing ${standing} mid ${mid} ${d.state}`);
+      ok('...the ring round her is gold, drawn over everything, and faces the lens that draws it', mid && faces);
+    }
     ok('忍 reaching the scroll wins, and the score is the clock plus the captures',
       d.state === 'won' && run.caught >= 1 && Math.abs(d.spec.score(d) - (d.t + run.caught * BL.CAUGHT_COST)) < 1e-6, `${d.state} ${d.spec.score(d)}`);
     const rowsB = BB.bambooRows(D.progress, { course: C0.id, diff: 0, who: 'all' });

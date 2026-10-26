@@ -761,9 +761,40 @@ described at the bottom of this section for its lessons.
   at the rope stood her on top of the rope.
 - **One press, one meaning.** INTERACT or JUMP gets into a barrel, onto a rope
   (a press now; it used to grab her as she jumped under one) or onto a
-  ladder, and the jump is eaten. JUMP never asks to leave. Within `NEAR_K`
-  times the reach of any of them, an INTERACT that reaches nothing does
-  nothing at all, so the question only comes up in the open.
+  ladder. JUMP never asks to leave. Within `NEAR_K` times the reach of any
+  of them, an INTERACT that reaches nothing does nothing at all, so the
+  question only comes up in the open.
+- **JUMP is never a jump on a course** (Oct 2026). His note: "we are now
+  allowing the player to jump, let's remove that as I believe it is not
+  necessary ... we just want the action and jump button to do the same
+  thing". With nothing in reach JUMP used to fall through to a real jump.
+  That only began when the count-in mask stopped swallowing it (the sprint
+  fix below). Now `'jump'` is masked from her legs outright, and JUMP does
+  everything INTERACT does except ask to leave, smoke bomb included. A rope's
+  "JUMP lets go" still hears it, because the rig reads the raw pad
+  (`run.padIn`).
+- **The scroll and the lanterns are held, not walked past** (Oct 2026). His
+  note: "stand next to the scroll and hold the action/jump button for 1
+  second ... a circular bar appearing around them that is shown over all of
+  the environment ... billboard towards the camera properly ... scroll can
+  be gold color and checkpoints can be blue ... (avoid any green that looks
+  like the holographic bamboo)".
+  - `HOLD`: 1 s of INTERACT or JUMP, within the old walk-past distances
+    (1.6 for the scroll, 1.4 for a lantern), so where they are reached has
+    not moved.
+  - Letting go, stepping away, a capture or a barrel empties it.
+  - A press there is spent: it never asks to leave and never drops smoke.
+  - The ring is `dream/holdring.js`. It has no depth test and a render
+    order of 1000. It is billboarded in `onBeforeRender`, so in split
+    screen it faces every lens that draws it in the frame, and it is
+    composed in the WORLD, because the island it hangs off is turned.
+  - Gold `0xffd56a` for the scroll; sky blue `0x4aa3ff` for a lantern.
+- **After a throw she stays put until the stick is let go** (Oct 2026). His
+  note: "It's hard to throw stone in bamboo infiltration on keyboard ...
+  the player doesn't move until after they reset the direction". On a
+  keyboard the aim is a held walking key, so the frame the throw left she
+  walked off after it. `run.planted` zeroes her walking stick (not the
+  camera stick) and her gait until the stick reads zero once.
 - **The party is one party.** One capture fades every pane, puts everybody at
   the lantern lit last by anybody, and puts every guard at `patrolAt(…, 0)`.
   Only the kitten caught pays. The party shares one camera (`groupShot`),
