@@ -44677,6 +44677,25 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
           wasHeld && !threw && !!b && Math.abs(b.fwd.x + Math.sin(1.2)) < 1e-9, threw ?? `held ${wasHeld}`);
         her._peekHold = pk; her.snakeRide = ro; her._roadLast = rl; her.viewOwn = vo;
       }
+      /* STEPPING ONTO THE BRIDGE WHILE THE LOOK ACROSS IS STILL SWINGING: Richard, "the input is reversing
+         for the player ... they get turned around". The held push walked her straight up the road, but
+         boarding judged "is she pressing onward" through the half-swung lens, locked onward to another
+         key, and her held stick then meant BACK. Measured live: +6 -> -7.8 along the road in 0.2s. */
+      {
+        const pk = her._peekHold; const ro = her.snakeRide; const vy = her.viewYaw; const vel = her.velocity.clone();
+        her._peekHold = { yaw: 0.3 }; her.viewYaw = 0.3 + 2.2; // the lens is 126 degrees round from the held basis
+        const tx = -Math.sin(0.3); const tz = -Math.cos(0.3); // the road runs exactly where the held push points
+        her.velocity.set(tx * 10, 0, tz * 10);
+        her._boardSnake({ length: 100, frameAt: () => ({ tx, tz }) }, { tx, tz, s: 5 }, up);
+        const st = her.snakeRide?.stick;
+        const wsh = new THREE.Vector3();
+        her._snakeWish(up, wsh, 0);
+        const on = (wsh.x * tx + wsh.z * tz) / (wsh.length() || 1);
+        ok('...and boarding a bridge mid-swing keeps the held push as ONWARD, not the key the half-turned lens would pick',
+          !!st && Math.abs(st.x) < 1e-9 && Math.abs(st.y + 1) < 1e-9 && on > 0.99,
+          `stick ${st?.x.toFixed(2)},${st?.y.toFixed(2)}, onward ${on.toFixed(2)}`);
+        her._peekHold = pk; her.snakeRide = ro; her.viewYaw = vy; her.velocity.copy(vel);
+      }
       her._moveBasis({ mx: 0, my: 0 });
       const home = her._moveBasis(up).fwd.clone();
       const yawOf = (v) => Math.atan2(-v.x, -v.z);
