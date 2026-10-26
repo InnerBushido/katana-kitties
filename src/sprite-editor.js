@@ -32,7 +32,7 @@ import { PLAYER_STYLE } from './core/palette.js';
 import { loadSpriteAtlas, recolourAtlas } from './core/spritesheet.js';
 import {
   setSpriteFix, poseFix, sheetFix, applySheetFix, SPRITE_FIX, KENDO_FILE, HOME_FILE, SINGLE_FILE, LEGACY_SHEET, clipKey,
-  flipSlots, flipImages, gridFix, rowOf,
+  flipSlots, flipImages, flipText, gridFix, rowOf,
 } from './core/spritefix.js';
 import { TEA_SHEET } from './systems/housing/teahouse.js';
 import { DOOR_MATS, DOOR_MAT_SHEET } from './systems/housing/catalog.js';
@@ -1239,6 +1239,9 @@ function stepSheet(d) {
 }
 
 const parseNums = (t) => t.split(/[\s,]+/).filter(Boolean).map((v) => Number(v) - 1).filter((v) => Number.isInteger(v) && v >= 0);
+// the flip box also takes "-4": skip the next 4, leaving it plain (`flipSlots`). A skip is `~c`, so `-1` is image 0.
+const parseFlip = (t) => t.split(/[\s,]+/).filter(Boolean).map((v) => (v.startsWith('-') ? (Number(v.slice(1)) >= 1 ? ~(Number(v.slice(1)) - 1) : NaN) : Number(v) - 1))
+  .filter((v) => Number.isInteger(v) && (v >= 0 || ~v >= 0));
 
 /* "As drawn" for a facing that would otherwise fall back to the whole clip's order has to SAY as drawn
    (an order 1..n): deleting its key would show the clip's order again, which is what was asked away. */
@@ -1261,24 +1264,24 @@ const rowLenBad = (S, n) => S.byRow && n !== rowLen(S)
   && (status(`Every row of ${S.baseId} has ${rowLen(S)} slots, so ${S.rows[S.row]}'s order needs ${rowLen(S)} too (this one has ${n}). To change how many the whole sheet has, set it on one row and press "this order for every row" first.`, true), true);
 
 /** The order box is IMAGE numbers; so is the flip box - turned into slots here, which is what the file holds.
- *  One mention per slot: "6" is the first 6 in the order, "6, 6" the first two (`flipSlots`). */
+ *  One mention per slot: "6" is the first 6 in the order, "6, 6" the first two, "-6, 6" the second alone (`flipSlots`). */
 function applyOrderText() {
   const S = curSheet;
   if (!S?.fixId) return;
   const order = parseNums($('sh-order').value);
-  const flipImgs = parseNums($('sh-flip').value);
+  const flipImgs = parseFlip($('sh-flip').value);
   if (!order.length) {
     asDrawn(S);
     commit(`sheet:${S.fixId}:order`, `${S.fixId}: as drawn`);
     status('No order - the sheet is drawn as it was loaded.');
     return;
   }
-  const bad = [...order, ...flipImgs].filter((c) => c >= S.drawn);
+  const bad = [...order, ...flipImgs.map((t) => (t < 0 ? ~t : t))].filter((c) => c >= S.drawn);
   if (!bad.length && rowLenBad(S, order.length)) return;
   if (bad.length) { status(`This ${S.kind === 'clip' ? 'clip has' : 'sheet has'} ${S.drawn} images; ${[...new Set(bad)].map((c) => c + 1).join(', ')} is not one of them. Nothing applied.`, true); return; }
   const { flip, extra } = flipSlots(order, flipImgs);
   draft.sheets[S.fixId] = { order, flip };
-  commit(`sheet:${S.fixId}:order`, `${S.fixId}: order ${order.map((c) => c + 1).join(',')}${flip.length ? ` flip ${flipImages(order, flip).map((c) => c + 1).join(',')}` : ''}`);
+  commit(`sheet:${S.fixId}:order`, `${S.fixId}: order ${order.map((c) => c + 1).join(',')}${flip.length ? ` flip ${flipText(flipImages(order, flip))}` : ''}`);
   // A mention with no slot left is said, not dropped: "6, 6, 6" against two 6s is a typo she should see.
   const said = [...new Set(extra)].map((c) => `${c + 1} is in the order ${order.filter((o) => o === c).length || 'no'} time${order.filter((o) => o === c).length === 1 ? '' : 's'}`);
   status(`${S.fixId}: ${order.length} slots, ${flip.length} mirrored (slot${flip.length === 1 ? '' : 's'} ${flip.map((k) => k + 1).join(', ') || '-'}).${said.length ? ` Not flipped: ${said.join('; ')}.` : ''}`, said.length > 0);
@@ -1349,14 +1352,10 @@ async function buildSheet() {
   S.n = kind === 'set' ? DOOR_MATS.length : kind === 'frames' && a ? a.cols * a.rows : S.order.length;
   if (S.fixId) {
     $('sh-order').value = fix ? fix.order.map((c) => c + 1).join(', ') : '';
-    /* One number per mirrored slot, repeats kept: "6, 6" when both are. A file whose mirrored slot is a LATER 6 with the
-       first left plain (only Alt-click on a tile, or an older editor, could make one) cannot be written in this box,
-       which counts from the first - so it says so rather than showing a "6" that would move the mirror on Enter. */
-    $('sh-flip').value = fix ? flipImages(fix.order, fix.flip).map((c) => c + 1).join(', ') : '';
-    const back = fix && flipSlots(fix.order, flipImages(fix.order, fix.flip)).flip;
-    if (fix && back.join() !== [...fix.flip].sort((a, b) => a - b).join()) {
-      status(`${S.fixId}: mirrored slot${fix.flip.length === 1 ? '' : 's'} ${[...fix.flip].sort((a, b) => a - b).map((k) => k + 1).join(', ')} - not the first of ${fix.flip.length === 1 ? 'its' : 'their'} image, which the flip box counts from. Enter in the box would move ${fix.flip.length === 1 ? 'it' : 'them'}.`, true);
-    }
+    /* One token per slot up to the last mirrored one, repeats kept: "6, 6" when both are, "-4, 4" when only the later
+       4 is. Every set of mirrored slots can be written this way, so Enter on an unchanged box changes nothing - the
+       warning that used to say "Enter would move it" for a later-only mirror is gone with the case. */
+    $('sh-flip').value = fix ? flipText(flipImages(fix.order, fix.flip)) : '';
   }
   shStep = Math.min(shStep, S.n - 1);
   buildStrip(S);
