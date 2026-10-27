@@ -601,7 +601,9 @@ export class Shots {
       if (s.dead) continue;
       const na = s.a + s.va * dt; const nb = s.b + s.vb * dt; const ny = s.y + s.vy * dt;
       s.t += dt;
-      const who = s.kind === 'arrow' ? 'archer' : 'samurai';
+      /* `s.who` overrides: her shuriken LOCKED ON an archer (bamboo.js LOCK) flies an archer's line, over
+         the bamboo and the brush to his tower, and is stopped by walls, roofs, crates and barrels. */
+      const who = s.who ?? (s.kind === 'arrow' ? 'archer' : 'samurai');
       // An arrow at a barrel he saw her get into lands IN it — the barrel is cover, and would stop it a step short.
       if (s.barrel && Math.hypot(na - s.barrel.barrel.a, nb - s.barrel.barrel.b) < 0.9) {
         s.a = na; s.b = nb; s.y = ny; s.dead = true; onLand?.(s); continue;

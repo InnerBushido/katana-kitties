@@ -40774,8 +40774,8 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       pad.hold = new Set(['sprint']); pad.edge = new Set(['jump']);
       const legs = d.spec.steer(d, pad);
       const heard = legs.down('sprint') && !legs.pressed('jump');
-      ok('忍 a pad built in the count-in still hands her legs SPRINT after GO (and never JUMP: "let\'s remove that") — so her sprint is 1.15x her walk, not 0.71x',
-        heard && her.gaitK === BL.SPRINT.gait && Math.abs((BL.SPRINT.run * her.gaitK) / BL.SPRINT.walk - 1.15) < 1e-9,
+      ok('忍 a pad built in the count-in still hands her legs SPRINT after GO (and never JUMP: "let\'s remove that") — so her sprint is 1.2x her walk, not 0.71x',
+        heard && her.gaitK === BL.SPRINT.gait && Math.abs((BL.SPRINT.run * her.gaitK) / BL.SPRINT.walk - 1.2) < 1e-9,
         `sprint ${legs.down('sprint')} jump ${legs.pressed('jump')} gait ${her.gaitK}`);
       pad.hold = new Set(); pad.edge = new Set();
       d.spec.steer(d, pad);
@@ -40937,15 +40937,15 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         }
       }
       ok('忍 no guard\'s rounds walk him through a wall', ghosts.length === 0, ghosts.join(' '));
-      // SPRINT: 1.15x her walk, and twice the meter.
+      // SPRINT: 1.2x her walk (Oct 2026, up from 1.15), and twice the meter.
       const walkV = +psrc.match(/const WALK_SPEED = ([\d.]+)/)[1]; const runV = +psrc.match(/const SPRINT_SPEED = ([\d.]+)/)[1];
       pad.hold = new Set(['sprint']);
       d.spec.steer(d, pad);
       const gaitSprint = her.gaitK;
       pad.hold = new Set();
       d.spec.steer(d, pad);
-      ok('忍 a sprint on the course is 1.15x her walk ("barely faster"), off the game\'s own two speeds',
-        BL.SPRINT.walk === walkV && BL.SPRINT.run === runV && Math.abs(runV * gaitSprint - walkV * 1.15) < 1e-9 && her.gaitK === 1,
+      ok('忍 a sprint on the course is 1.2x her walk ("barely faster", then "1.2x"), off the game\'s own two speeds',
+        BL.SPRINT.walk === walkV && BL.SPRINT.run === runV && Math.abs(runV * gaitSprint - walkV * 1.2) < 1e-9 && her.gaitK === 1,
         `${runV}x${gaitSprint}`);
       {
         const G = B.view.guards.find((g) => g.active && g.kind === 'samurai');
@@ -40966,7 +40966,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
           const c = kit.cell(a, b);
           if (c < 0 || !kit[c]) continue;
           put(her, sp({ a, b }));
-          if (!B._reach(run).near && !B.safeAt(B.coords(her))) return { a, b };
+          if (!B._reach(run).near && !B.safeAt(B.coords(her), run)) return { a, b };
         }
         return null;
       })();
@@ -40997,6 +40997,64 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       d.spec.quit();
       ok('忍 INTERACT NEAR a barrel but not at it does nothing — no question pops up instead (NEAR_K)',
         !!nearSpot && !D.choices[0] && !run.hidden && B._reach(run).near && !B._reach(run).barrel);
+      /* ...UNLESS SHE CARRIES A SMOKE BOMB. Richard, Oct 2026: "with a smoke bomb in the barrel's 'get
+         closer' zone, she can use the smoke bomb. In the 'hide in a barrel' zone, the button hides her
+         instead. JUMP behaves the same way." `near` ate the press she meant for the bomb. */
+      {
+        const n0 = B.smokes.length;
+        run.carry.smoke = 1;
+        pad.edge = new Set(['jump']); d.spec.steer(d, pad); pad.edge = new Set(); d.spec.steer(d, pad);
+        const smoked = B.smokes.length === n0 + 1 && run.carry.smoke === 0 && !run.hidden && !D.choices[0];
+        for (const s of B.smokes) { s.mesh.removeFromParent(); s.ring.removeFromParent(); }
+        B.smokes = [];
+        run.carry.smoke = 1;
+        put(her, sp(B._exitSpot(bar, 0))); her.onGround = true;
+        d.spec.quit();
+        const hid = run.hidden === bar && run.carry.smoke === 1 && B.smokes.length === 0;
+        if (run.hidden) B._unhide(run);
+        run.carry.smoke = 0;
+        put(her, sp(nearSpot ?? far));
+        ok('...but with a SMOKE BOMB, JUMP there drops it — and at the barrel itself the press hides her, bomb kept',
+          !!nearSpot && smoked && hid, `smoked ${smoked} hid ${hid}`);
+      }
+      /* THE SCROLL AND A LANTERN SHE HAS NOT LIT are "near" too: Richard, Oct 2026, "near the scroll or an
+         unlit lantern, ACTION must not open the menu (same rule as barrels). After the lantern is lit, the
+         menu works as normal." A spot twice the hold distance out, where nothing else is near. */
+      {
+        const kitN = BL.kittenRaster(B.level);
+        const fitsN = (s) => { const c = kitN.cell(s.a, s.b); return c >= 0 && !!kitN[c]; };
+        const ring = (o, r) => Array.from({ length: 24 }, (_, k) => ({ a: o.a + Math.cos((k / 24) * Math.PI * 2) * r, b: o.b + Math.sin((k / 24) * Math.PI * 2) * r })).filter(fitsN);
+        let lan = null;
+        for (const l of B.view.lanterns.filter((x) => x.on && !run.lit.has(x))) {
+          for (const s of ring(l, BM.HOLD.lantern * 2)) {
+            put(her, sp(s)); her.onGround = true;
+            if (!B._reach(run).near || B._holdAt(run, B.coords(her))) continue;
+            run.lit.add(l); const clear = !B._reach(run).near; run.lit.delete(l);
+            if (clear) { lan = { l, s }; break; }
+          }
+          if (lan) break;
+        }
+        let noMenu = false; let menuAfter = false;
+        if (lan) {
+          put(her, sp(lan.s)); her.onGround = true;
+          d.spec.quit();
+          noMenu = !D.choices[0];
+          run.lit.add(lan.l);
+          d.spec.quit();
+          menuAfter = !!D.choices[0];
+          D.closeChoice(her);
+          run.lit.delete(lan.l);
+        }
+        ok('忍 walking up to a lantern she has NOT lit, INTERACT opens nothing — once she has lit it, it asks as anywhere',
+          !!lan && noMenu && menuAfter, lan ? `${lan.l.a},${lan.l.b}` : 'no lantern spot');
+        const C = B.course;
+        const sc = ring(C.scroll, BM.HOLD.scroll * 2).find((s) => { put(her, sp(s)); her.onGround = true; return !B._holdAt(run, B.coords(her)); });
+        if (sc) { put(her, sp(sc)); her.onGround = true; d.spec.quit(); }
+        const scrollQuiet = !!sc && B._reach(run).near && !D.choices[0];
+        D.closeChoice(her);
+        ok('...and so does walking up to the scroll', scrollQuiet);
+        put(her, sp(nearSpot ?? far));
+      }
       // At the barrel: JUMP is INTERACT — in, and the jump eaten; JUMP again — out, onto ground she fits on.
       const at = B._exitSpot(bar, 0);
       put(her, sp(at));
@@ -41144,7 +41202,6 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         const E0 = BL.ropeEnds(RC, R0);
         const R = { a0: R0.from[0], b0: R0.from[1], a1: R0.to[0], b1: R0.to[1], y0: E0.y0, y1: E0.y1, h0: E0.H0.h, h1: E0.H1.h };
         const pad0 = { mx: 0, my: 0, down: () => false, pressed: () => false };
-        const padJ = { ...pad0, pressed: (a) => a === 'jump' };
         const onRoof = () => { put(her, sp({ a: R.a0, b: R.b0 })); her.position.y += R.h0; };
         // THE MOUNT, from where she stands; THEN the hang.
         onRoof();
@@ -41167,15 +41224,20 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         const land = B.coords(her).y;
         ok('...and off the end she lands ON the roof that end is tied to, not inside the house', !her.rig && Math.abs(land - (R.h0 + 0.05)) < 0.02,
           `${land.toFixed(2)} on a ${R.h0} roof`);
-        // JUMP lets go mid-rope, from where the hang drew her feet.
+        /* JUMP lets go mid-rope, from where the hang drew her feet — pressed on HER PAD, through the steer,
+           which is the only way it arrives in the game. This check used to hand the rig a pad that said
+           JUMP, and passed; the rig is handed the steer's proxy, which masks JUMP, so in the game JUMP
+           never let go. Richard, Oct 2026: "JUMP should drop her from a rope the way ACTION does". */
         onRoof();
         B._ropeRig(run, R, 0.5);
         her.rig.step(BM.ROPE.mount + 0.01, pad0);
         her.rig.step(1 / 60, pad0);
-        her.rig.step(1 / 60, padJ);
+        pad.edge = new Set(['jump']); d.spec.steer(d, pad); pad.edge = new Set();
         const feet = B.coords(her).y;
         const want = (R.y0 + R.y1) / 2 - BM.ROPE.ink;
-        ok('...and JUMP lets go mid-rope, her feet where the hang drew them', !her.rig && Math.abs(feet - want) < 0.05, `${feet.toFixed(2)} want ${want.toFixed(2)}`);
+        ok('...and JUMP on her pad lets go mid-rope, her feet where the hang drew them, and asks nothing',
+          !her.rig && Math.abs(feet - want) < 0.05 && !D.choices[0] && !/pressed\?\.\('jump'\)\) \{ this\.letGo/.test(bsrc),
+          `${feet.toFixed(2)} want ${want.toFixed(2)}`);
         // INTERACT too.
         onRoof();
         B._ropeRig(run, R, 0.5);
@@ -41185,9 +41247,281 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         put(her, sp(run.slot)); run.ok = { a: run.slot.a, b: run.slot.b }; run.ropeCd = 0;
         her.velocity?.set(0, 0, 0);
       }
+      /* THE OCT 2026 PASS ON THE VILLAGE — houses, ladders, an archer on his tower, ropes, a pickup. The
+         session's course (the path) has none of them, so the village is built beside it and swapped in for
+         these, the way the picker's swipe builds the next course; and taken out of the world again after. */
+      {
+        const SH = await import('../src/systems/dream/bambooguards.js');
+        const v0 = B.view; const id0 = B.courseId;
+        const VC = BL.COURSES.find((C) => C.id === 'village');
+        const V = B._buildCourse(VC);
+        B.view = V; B.courseId = VC.id;
+        her.rig = null; run.hidden = null; run.ropeCd = 0; run.charge = null; run.planted = false;
+        /* LADDERS BY A PRESS. Richard: "ladders climb on the ACTION/JUMP buttons, not automatically". At the
+           foot, pushing the stick into the wall for half a second: not on it. A press: on it. A second press
+           (a mash) does not drop her off it halfway up, and neither does JUMP. */
+        {
+          const Ld = V.ladders[0];
+          put(her, sp(Ld.foot)); her.onGround = true; run.ok = { a: Ld.foot.a, b: Ld.foot.b };
+          const want = SH.isleDir(I, Ld.foot.face);
+          const { fwd, right } = her._moveBasis(pad);
+          const det = fwd.x * right.z - right.x * fwd.z;
+          const push = { ...pad, mx: (fwd.x * want.z - fwd.z * want.x) / det, my: (right.x * want.z - right.z * want.x) / det, hold: new Set(), edge: new Set(), dbl: new Set() };
+          push.down = pad.down; push.pressed = pad.pressed; push.doubled = pad.doubled;
+          for (let k = 0; k < 30; k++) { d.spec.steer(d, push); d.spec.tick(d, 1 / 60); put(her, sp(Ld.foot)); her.onGround = true; }
+          const walkedOn = !!her.rig;
+          d.spec.steer(d, pad);
+          d.spec.quit();
+          const onIt = her.rig?.kind === 'ladder';
+          d.spec.quit();
+          pad.edge = new Set(['jump']); d.spec.steer(d, pad); pad.edge = new Set();
+          const stayed = her.rig?.kind === 'ladder' && !D.choices[0];
+          her.rig = null;
+          ok('忍 a ladder is climbed on a PRESS, never by walking into it — and a second press, or JUMP, does not drop her off it',
+            V.ladders.length > 0 && !walkedOn && onIt && stayed && !/_startLadder\(run/.test(bsrc), `walked ${walkedOn} on ${onIt} stayed ${stayed}`);
+        }
+        /* THE ROOF EDGE. Richard: "the canes beside buildings shove her off the roof and she falls. They should
+           only block her." Up there the edge was `walkAt` — the very last centimetre of roof — so a step put
+           her past the wall, she began to drop, and the wall's posts shoved her into the street. Measured,
+           every roof side on every course that meets the bamboo: how far inside the roof the edge now holds
+           her. One sprint frame at 60fps is 0.21; the old rule held her at 0.00. */
+        {
+          let worst = Infinity; let worstOld = Infinity; let sides = 0;
+          for (const C of BL.COURSES) {
+            const Lc = BL.levelOf(C); const Ec = BL.edgeRaster(Lc);
+            for (const H of C.houses ?? []) {
+              for (const [axis, sgn, edge, lo, hi] of [['a', 1, H.a1, H.b0, H.b1], ['a', -1, H.a0, H.b0, H.b1], ['b', 1, H.b1, H.a0, H.a1], ['b', -1, H.b0, H.a0, H.a1]]) {
+                for (let s = lo + 0.5; s <= hi - 0.5; s += 0.5) {
+                  const at = (u) => (axis === 'a' ? { a: u, b: s } : { a: s, b: u });
+                  const past = at(edge + 0.3 * sgn);
+                  if (BL.walkAt(Lc, past.a, past.b)) continue;       // ground past it: stepping off a roof is allowed
+                  const mid = axis === 'a' ? (H.a0 + H.a1) / 2 : (H.b0 + H.b1) / 2;
+                  const last = (fits) => { let u = mid; while (Math.abs(u - mid) < 40 && fits(at(u + 0.01 * sgn))) u += 0.01 * sgn; return (edge - u) * sgn; };
+                  worst = Math.min(worst, last((q) => Ec.at(q.a, q.b)));
+                  worstOld = Math.min(worstOld, last((q) => BL.walkAt(Lc, q.a, q.b)));
+                  sides++;
+                }
+              }
+            }
+          }
+          // ...and the very case: the last centimetre of h1's forest side is not somewhere she is left standing.
+          const H1 = VC.houses.find((H) => H.id === 'h1');
+          const roofMid = { a: (H1.a0 + H1.a1) / 2, b: -9.5 };
+          put(her, sp(roofMid)); her.position.y += H1.h; her.onGround = true;
+          run.ok = { ...roofMid };
+          const edgeQ = { a: H1.a1 - 0.02, b: -9.5, y: H1.h };
+          put(her, sp(edgeQ)); her.position.y += H1.h;
+          B._bounds(run, edgeQ);
+          const qe = B.coords(her);
+          ok('忍 where a roof meets the bamboo, the edge holds her ON the roof, clear of its wall — never on its last centimetre',
+            sides > 50 && worst >= 0.22 && worst > (BL.SPRINT.walk * BL.SPRINT.k) / 60 && worstOld < 0.05 && qe.a <= H1.a1 - 0.25
+            && !/q\.y > 0\.6 \? walkAt/.test(bsrc),
+            `${sides} sides, held ${worst.toFixed(2)} in (was ${worstOld.toFixed(2)}); h1 put back to a=${qe.a.toFixed(2)} of ${H1.a1}`);
+        }
+        /* THE ARCHER LOCK-ON (LOCK). Richard: "only from a rooftop or a rope. Hold slash and aim toward the
+           archer: within throwing radius and within 45° it locks on ... thrown straight at him, it hits unless
+           a major barrier ... only shuriken. If the throw would be a rock, play a cancel sound and show a red
+           circle." Hanging from a village rope, the archer stood 8 out on a clear line. */
+        {
+          const VR = (Array.isArray(VC.ropes) ? VC.ropes : Object.values(VC.ropes).flat())[0];
+          const VE = BL.ropeEnds(VC, VR);
+          const R = { a0: VR.from[0], b0: VR.from[1], a1: VR.to[0], b1: VR.to[1], y0: VE.y0, y1: VE.y1, h0: VE.H0.h, h1: VE.H1.h };
+          const pad0 = { mx: 0, my: 0, down: () => false, pressed: () => false };
+          put(her, sp({ a: R.a0, b: R.b0 })); her.position.y += R.h0;
+          B._ropeRig(run, R, 0.5);
+          her.rig.step(BM.ROPE.mount + 0.01, pad0);
+          her.rig.step(1 / 60, pad0);
+          const G = V.guards.find((g) => g.kind === 'archer');
+          const G0 = { ...G.at }; const act0 = G.active;
+          G.active = true; G.mode = 'walk';
+          const q = B.coords(her); const from = B._handAt(run);
+          let th = null;
+          for (let k = 0; k < 16 && th == null; k++) {
+            const t = (k / 16) * Math.PI * 2;
+            const to = { a: q.a + Math.cos(t) * 8, b: q.b + Math.sin(t) * 8, y: G0.y + 1.4 };
+            if (!BL.blocked(B.level, from, to, 'archer')) th = t;
+          }
+          const place = (r, t) => { G.at = { ...G0, a: q.a + Math.cos(t) * r, b: q.b + Math.sin(t) * r }; };
+          const face = (t) => { her.facing = SH.isleFacing(I, t); };
+          place(8, th); face(th);
+          const at0 = B._lockOn(run)?.g === G;
+          face(th + THREE.MathUtils.degToRad(40));
+          const at40 = B._lockOn(run)?.g === G;
+          face(th + THREE.MathUtils.degToRad(50));
+          const at50 = B._lockOn(run)?.g === G;
+          face(th); place(BM.THROW.max + 1, th);
+          const tooFar = B._lockOn(run)?.g === G;
+          place(8, th);
+          // With a shuriken: straight at him, an archer's line, and he sleeps.
+          run.carry.shuriken = 1; run.charge = 1;
+          B._throw(run); run.charge = null;
+          const s = B.shots.list[B.shots.list.length - 1];
+          const thrown = s?.kind === 'mine' && s.guard === G && s.who === 'archer' && run.carry.shuriken === 0;
+          let landed = null;
+          for (let k = 0; k < 120 && !landed; k++) B.shots.update(1 / 60, { kittens: [] }, () => {}, (x) => { if (x === s) landed = x; });
+          const hits = landed === s && !s.blocked && Math.hypot(G.at.a - s.a, G.at.b - s.b) < BM.THROW.mineR;
+          // With none: the cancel sound, a red ring on him, and nothing thrown.
+          fakeGame.sounds.length = 0;
+          const n0 = B.shots.list.length; const p0 = B.pebbles.length;
+          run.charge = 1; B._throw(run); run.charge = null;
+          B._always(run, d);
+          const refused = B.shots.list.length === n0 && B.pebbles.length === p0 && fakeGame.sounds.includes('deny') && !!run.flash
+            && run.aim.visible && run.aim.material.color.getHex() === 0xff3b3b;
+          // On the rope with nobody to lock on to and no shuriken: no pebble either — the same refusal.
+          place(40, th);
+          fakeGame.sounds.length = 0;
+          run.flash = null; run.charge = 1; B._throw(run); run.charge = null;
+          const ropeNoPebble = B.pebbles.length === p0 && fakeGame.sounds.includes('deny') && !!run.flash;
+          // Winding up on a rope, the stick turns her and does not carry her along it.
+          const sticks = [[1, 0], [0, 1], [-1, 0], [0, -1]].map(([mx, my]) => ({ ...pad0, mx, my }));
+          let frozen = true; let moves = false;
+          for (const P of sticks) {
+            const u0 = her.rig.u;
+            run.charge = 0.5; her.rig.step(1 / 60, P);
+            if (her.rig.u !== u0) frozen = false;
+            run.charge = null; her.rig.step(1 / 60, P);
+            if (her.rig.u !== u0) moves = true;
+            her.rig.u = u0;
+          }
+          // On the ground: no lock-on at all.
+          her.rig = null; run.flash = null;
+          put(her, sp({ a: q.a, b: q.b })); her.onGround = true;
+          place(8, th); face(th);
+          const ground = B._lockOn(run);
+          G.at = G0; G.active = act0;
+          ok('忍 on a rope or a roof, aiming within 45° of an archer in throwing range locks on — at 40° yes, at 50° and out of range no, on the ground never',
+            th != null && at0 && at40 && !at50 && !tooFar && ground === null, `clear ${th != null} 0° ${at0} 40° ${at40} 50° ${at50} far ${tooFar} ground ${ground}`);
+          ok('...a locked SHURIKEN flies straight at him on an archer\'s line and puts him to sleep',
+            thrown && hits, `thrown ${thrown} landed ${!!landed} blocked ${s?.blocked}`);
+          ok('...with no shuriken it is REFUSED: the cancel sound and a red ring on him, no pebble — and a pebble from a rope is refused too',
+            refused && ropeNoPebble, `refused ${refused} rope ${ropeNoPebble}`);
+          ok('...and winding up on a rope she stays where she hangs and the stick aims her', frozen && moves);
+          ok('...and a stopped shot is an archer\'s line for it (`s.who`), never the samurai\'s that stops at the bamboo',
+            /const who = s\.who \?\? \(/.test(readFileSync(new URL('../src/systems/dream/bambooguards.js', import.meta.url), 'utf8')));
+        }
+        /* THE PICKUP TOAST, TWICE AS LONG. Richard: "pickup messages for shuriken/smoke bomb stay on screen twice
+           as long". Asked of the game's own length rule, so a long line is twice a long hold. */
+        {
+          const k = V.pickups[0];
+          const t0 = fakeGame.toast; const h0 = fakeGame.toastHold;
+          let got = null;
+          fakeGame.toast = (t, i, c, h) => { got = { t, h }; };
+          fakeGame.toastHold = (t) => 100 + t.length;
+          k.on = true; k.gone = 0;
+          run.carry = { shuriken: 0, smoke: 0 };
+          put(her, sp(k)); her.onGround = true; run.ok = { a: k.a, b: k.b };
+          d.spec.tick(d, 1 / 60);
+          fakeGame.toast = t0; fakeGame.toastHold = h0;
+          const mainSrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+          ok('忍 a pickup\'s toast is held twice the game\'s own hold for its length',
+            !!got && got.h === 2 * (100 + got.t.length) && /holdMs > 0 \? holdMs : this\.toastHold\(text\)/.test(mainSrc) && /^  toastHold\(text\) \{/m.test(mainSrc),
+            got ? `${got.h} for ${got.t.length} chars` : 'no toast');
+          run.carry = { shuriken: 0, smoke: 0 };
+        }
+        B._unsolid(V);
+        for (const g of V.guards) g.dispose();
+        V.pivot.removeFromParent();
+        B.view = v0; B.courseId = id0;
+        her.rig = null; run.flash = null; run.charge = null;
+        put(her, sp(run.slot)); run.ok = { a: run.slot.a, b: run.slot.b }; her.onGround = true;
+      }
+      /* THE BRUSH (BRUSH), on the path's own thickets. Richard: "sprite goes 50% transparent in the brush ...
+         a subtle leaf-rustle sound while walking or running through it ... a 'whirlwind' vanish sound when she
+         crouches in it ... text on the card says she can hide there ... crawling in the brush radius: a 75%
+         chance she is not spotted, for as long as she stays there. Standing: 25%, and moving re-rolls it every
+         0.5s." The dice are B.rng, so each roll is a number this check chose. */
+      {
+        const T = B.level.cover.find((c) => c.kind === 'thicket');
+        const q = { a: T.a, b: T.b, y: 0 };
+        const fr = { p: { rig: null, onGround: true, hideFade: 0 }, sneak: true, brush: null };
+        let rolls = 0; let roll = 0.7;
+        B.rng = () => { rolls++; return roll; };
+        fakeGame.sounds.length = 0;
+        B._stepBrush(fr, q, 1 / 60, 3);
+        const crawlIn = fr.brush?.hid === true && fr.p.hideFade === BM.BRUSH.fade && fakeGame.sounds.includes('vanish');
+        roll = 0.99;
+        for (let k = 0; k < 180; k++) B._stepBrush(fr, q, 1 / 60, 3);
+        const kept = fr.brush.hid === true && rolls === 1 && !fakeGame.sounds.includes('rustle');
+        // Up on her feet, in it: a new roll at 25%, and moving re-rolls it every half second.
+        fr.sneak = false; roll = 0.2; rolls = 0;
+        B._stepBrush(fr, q, 1 / 60, 0);
+        const standIn = fr.brush.hid === true && rolls === 1;
+        roll = 0.3;
+        for (let k = 0; k < 60; k++) B._stepBrush(fr, q, 1 / 60, 0);
+        const stillKept = fr.brush.hid === true && rolls === 1;
+        fakeGame.sounds.length = 0;
+        // 125 frames, not 120: the fourth half-second lands on frame 120 or 121 by floating point.
+        for (let k = 0; k < 125; k++) B._stepBrush(fr, q, 1 / 60, 6);
+        const rerolled = fr.brush.hid === false && rolls === 5;
+        const rustles = fakeGame.sounds.filter((x) => x === 'rustle').length;
+        // Out of it: whole again, no roll.
+        B._stepBrush(fr, { a: T.a + T.r + 0.5, b: T.b, y: 0 }, 1 / 60, 6);
+        const out = fr.brush === null && fr.p.hideFade === 0;
+        // A losing crawl roll (0.8 > 0.75) does not hide her.
+        fr.sneak = true; roll = 0.8;
+        B._stepBrush(fr, q, 1 / 60, 3);
+        const lost = fr.brush.hid === false;
+        B.rng = null;
+        ok('忍 crawling into the brush rolls once at 75% — 0.7 hides her, 0.8 does not — the whirlwind plays, she is half there, and the roll holds while she stays',
+          crawlIn && kept && lost, `in ${crawlIn} kept ${kept} lost ${lost} rolls ${rolls}`);
+        ok('...standing in it is 25%, kept while she stands still and re-rolled every 0.5s while she moves (4 in 2s), with the leaves rustling as she goes',
+          standIn && stillKept && rerolled && rustles >= 6 && rustles <= 8, `stand ${standIn} still ${stillKept} reroll ${rerolled} rustles ${rustles}`);
+        ok('...and out of the brush she is whole again', out);
+        // In play: the winning roll is `hidden` to every guard, the card says so, and her drawing fades by it.
+        const c0 = { ...run.carry };
+        put(her, sp(T)); her.onGround = true; run.ok = { a: T.a, b: T.b };
+        run.latch = true; d.spec.steer(d, pad);
+        B.rng = () => 0.1;
+        d.spec.tick(d, 1 / 60);
+        const card = d.spec.paint(d)?.[0]?.text ?? '';
+        const inPlay = run.brush?.hid === true && her.hideFade === BM.BRUSH.fade && /brush/i.test(card)
+          && /\|\| !!run\.brush\?\.hid/.test(bsrc);
+        run.latch = false; d.spec.steer(d, pad);
+        d.spec.tick(d, 1 / 60);
+        const standCard = d.spec.paint(d)?.[0]?.text ?? '';
+        B.rng = null;
+        put(her, sp(run.slot)); run.ok = { a: run.slot.a, b: run.slot.b };
+        d.spec.tick(d, 1 / 60);
+        run.carry = c0;
+        ok('...in play the win is HIDDEN to every guard, the card says where she is ("crawl to hide" standing), and out of it she is whole',
+          inPlay && /crawl to hide/.test(standCard) && her.hideFade === 0 && !run.brush, `"${card}" | "${standCard}"`);
+        const audSrc = readFileSync(new URL('../src/core/audio.js', import.meta.url), 'utf8');
+        ok('...her drawing takes the fade the window look uses (alphaTest with it, the clip too), and the two sounds exist',
+          /Math\.max\(this\.lookFade \?\? 0, this\.hideFade \?\? 0\)/.test(psrc) && /clipPose\.mat\.alphaTest = /.test(psrc)
+          && /case 'rustle':/.test(audSrc) && /case 'vanish':/.test(audSrc));
+      }
       // THE DRILL CARD faces the lens, pitch and all — the course camera looks down at 0.95 rad.
       ok('忍 the card over her head is turned fully to the camera (fullFace), so it reads from a looking-down lens',
         d.panel?.fullFace === true, String(d.panel?.fullFace));
+      /* ...DRAWN OVER THE ROOFS, a little bigger. Richard, Oct 2026: "make the text a bit bigger and easier to
+         read, but not overbearing. Stop the roofs from hiding the card." */
+      ok('...and no roof hides it: no depth test, drawn after the world (the hold ring\'s rule), wider than a drill\'s, the prompt line ≥ 1',
+        d.panel.mat.depthTest === false && d.panel.mesh.renderOrder >= 1000 && d.panel.w === BM.CARD.w && d.panel.h === BM.CARD.h
+        && BM.CARD.w > 5.4 && BM.CARD.w <= 7 && BM.CARD.sizes[2] >= 1
+        && Math.abs(d.panel.position.y - d.panel.h / 2 - ((her.height ?? 2.6) + 2.3 - 1.7 / 2)) < 1e-9,
+        `depth ${d.panel.mat.depthTest} order ${d.panel.mesh.renderOrder} ${d.panel.w}x${d.panel.h}`);
+      /* THE ITEMS ON THE PROMPT LINE: "show the shuriken/smoke-bomb items on the same line as the input text. If
+         it doesn't fit, drop 'leave the course' or other text until the items are spent." Measured on HER
+         card's canvas, with text 12px a character (Nunito 800 at the prompt's 22.8px is about 12.5). */
+      {
+        const fake = { panel: { cv: d.panel.cv, g: { font: '', measureText: (t) => ({ width: t.length * 12 }) } } };
+        const c0 = { ...run.carry };
+        put(her, sp(open)); her.onGround = true;
+        run.carry = { shuriken: 0, smoke: 0 };
+        const bare = B._promptLine(run, fake);
+        run.carry = { shuriken: 1, smoke: 0 };
+        const one = B._promptLine(run, fake);
+        put(her, sp(B._exitSpot(bar, 0))); her.onGround = true;
+        run.carry = { shuriken: 1, smoke: 1 };
+        const both = B._promptLine(run, fake);
+        const fitsAll = [bare, one, both].every((t) => t.length * 12 <= d.panel.cv.width * 0.9);
+        run.carry = c0;
+        put(her, sp(open));
+        ok('...and what she carries rides on the prompt line: "leave the course?" makes way for it, and the line is never shrunk to fit',
+          /leave the course/.test(bare) && !/leave/.test(one) && /SHURIKEN/.test(one) && /SHURIKEN/.test(both) && /SMOKE BOMB/.test(both)
+          && /barrel/.test(both) && fitsAll && !d.spec.paint(d).some((l, i) => i === 1 && /手裏剣|煙/.test(l.text)),
+          `"${bare}" | "${one}" | "${both}"`);
+      }
       // NOTHING THROUGH A WALL: a shuriken at her, stopped by a wall 0.5 from her, does not catch her.
       {
         const SH = await import('../src/systems/dream/bambooguards.js');
@@ -41249,15 +41583,40 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         put(sis, sp(run2.slot)); step(1 / 60);
       }
     }
-    // SANCTUARY, in play: a lantern a samurai looks straight at, stood on in the open for 20s — never caught.
+    /* SANCTUARY, in play — AS RICHARD HAS IT NOW (Oct 2026): "it must not shield her before she has lit it
+       ... protection only applies after a respawn there, until she first leaves its radius. After that it
+       gives no protection." A lantern a samurai looks straight at: stood on fresh, she is caught there;
+       put back there by that capture, 20s in his eye and nobody touches her; one step out and back, and
+       it is an ordinary place again. Her sister waits in the start's ring, armed, so the capture is hers. */
     {
       const C0 = B.course;
       const hot = BL.lanternsOn(C0, 0).find((l) => where.has(`${C0.id}/0@${l.a},${l.b}`));
-      put(her, sp(hot));
+      const cp0 = S.cp;
+      put(sis, sp(run2.slot)); B._armSafe(run2, null);
+      put(her, sp(hot)); step(1 / 30);
+      const fresh = !run.safe && !B.safeAt(B.coords(her), run);
+      S.cp = { a: hot.a, b: hot.b, th: 0 };         // the party's lantern, so the capture puts her back HERE
       const c0 = run.caught;
-      for (let k = 0; k < 20 * 30; k++) step(1 / 30);
-      ok("忍 standing in a lantern’s ring that a guard looks straight at, nobody catches her",
-        !!hot && run.caught === c0 && !run.capture && d.state === 'live', `${hot?.a},${hot?.b} caught ${run.caught - c0}`);
+      let k = 0;
+      for (; k < 60 * 30 && run.caught === c0; k++) step(1 / 30);
+      const caughtThere = run.caught === c0 + 1;
+      for (let j = 0; j < (BM.ARREST.end + 0.2) * 30; j++) step(1 / 30);
+      const q1 = B.coords(her);
+      const armed = !!run.safe && B.safeAt(q1, run) && Math.hypot(q1.a - hot.a, q1.b - hot.b) < BM.SAFE.lantern;
+      const c1 = run.caught;
+      for (let j = 0; j < 20 * 30; j++) step(1 / 30);
+      const held = run.caught === c1 && !run.capture && d.state === 'live';
+      put(her, sp({ a: hot.a + BM.SAFE.lantern + 0.6, b: hot.b })); step(1 / 60);
+      put(her, sp(hot)); step(1 / 60);
+      const spent = !run.safe && !B.safeAt(B.coords(her), run);
+      S.cp = cp0;
+      const bsrc = readFileSync(new URL('../src/systems/dream/bamboo.js', import.meta.url), 'utf8');
+      ok("忍 a lantern's ring is NO sanctuary before she has been put back there — stood in it fresh, the guard who looks at it catches her",
+        !!hot && fresh && caughtThere, `${hot?.a},${hot?.b} fresh ${fresh}, caught after ${(k / 30).toFixed(1)}s`);
+      ok('...put back there by a capture, nobody catches her in it for 20s — and one step out spends it',
+        armed && held && spent, `armed ${armed} held ${held} spent ${spent}`);
+      ok('...and lighting a lantern arms nothing: only a respawn does (`_armSafe` in _start and _partyReset, nowhere else)',
+        (bsrc.match(/this\._armSafe\(/g) ?? []).length === 2 && /_armSafe\(run, null\)/.test(bsrc) && /_armSafe\(r, S\.cp\)/.test(bsrc));
     }
     // THE SCROLL: the score is the clock plus CAUGHT_COST a capture.
     const C0 = B.course;
@@ -44588,6 +44947,29 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     D.st[0].peek = null;
     const deep = tw(2);
     ok('...on after walking into it for a moment, or at once deep inside it going toward the mouth', deep?.w === 1);
+    /* AT THE GOLD LINE, NOT HALFWAY IN. Richard: "the camera doesn't actually change to the look across
+       the bridge camera until the player is about halfway into the radius". The arc is `start` (checked
+       above); the dwell was served inside it. Walked in from outside at a walk and at a sprint, a frame
+       at a time, it now fires within one frame's stride of the line. */
+    {
+      const fireAt = (speed) => {
+        D.st[0].peek = null;
+        for (let k = S0 + PK.PEEK.lead + 1; k > 0; k -= speed * F) {
+          const q = at(k);
+          her.position.set(q.x, E.mouth.y, q.z);
+          her.velocity.set(E.toward.x * speed, 0, E.toward.z * speed);
+          if (D._peekFor(her)) return k;
+        }
+        return -1;
+      };
+      const walkAt = fireAt(10.5);
+      const sprintAt = fireAt(17);
+      D.st[0].peek = null;
+      ok('望 walking or sprinting at the mouth, the look across fires AT the gold line (within one frame\'s stride) - the dwell is served before it',
+        S0 - walkAt <= 10.5 * F + 1e-6 && S0 - sprintAt <= 17 * F + 1e-6 && walkAt <= S0 && sprintAt <= S0,
+        `line ${S0}, walk fires at ${walkAt.toFixed(2)}, sprint at ${sprintAt.toFixed(2)}`);
+      tw(2); // back ON, for the buffer checks below
+    }
     const hold6 = tw(S0 + 1, 30);
     const still = walk(S0 + 1, 0, 0, 120);
     const out8 = walk(PK.PEEK.exit + 0.5, 0, 0);
@@ -44826,8 +45208,8 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const pl = read('../src/entities/player.js');
     const mn = read('../src/main.js');
     ok('...on her own camera and on a group\'s, and BEFORE the ride camera, which starts from wherever it left the lens',
-      /this\.bridgePeek\.apply\([^\n]*peekHold\(this\.snakeCam, ride\)\);\r?\n\s*this\.snakeCam\.apply\(dt, ride,/.test(pl)
-      && /rig\.bridgePeek\.apply\([^\n]*peekHold\(rig\.snakeCam, ride\)\);\r?\n\s*rig\.snakeCam\.apply\(dt, ride,/.test(mn));
+      /this\.bridgePeek\.apply\([^\n]*peekHold\(this\.snakeCam, ride\)\);\r?\n\s*\/\/[^\n]*\r?\n\s*this\.snakeCam\.apply\(dt, peekDefers\(this\.bridgePeek, this\.snakeCam, ride\) \? null : ride,/.test(pl)
+      && /rig\.bridgePeek\.apply\([^\n]*peekHold\(rig\.snakeCam, ride\)\);\r?\n\s*rig\.snakeCam\.apply\(dt, peekDefers\(rig\.bridgePeek, rig\.snakeCam, ride\) \? null : ride,/.test(mn));
     /* ONE MOVE ONTO THE BRIDGE. Richard: "the transition from looking down
        the bridge to the bridge camera seems to not translate very well as the
        easing seems a bit off. If the player just runs across the bridge ...
@@ -44850,6 +45232,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         const look = new THREE.Vector3();
         const pAt = { ...at4, x: f0.x, y: f0.y, z: f0.z };
         let step = 0; let turn = 0; let starts = 0; let was = null; let dir0 = null; let moving = false;
+        let early = 0; let rideAt = -1;
         for (let k = 0; k < peekFrames + 150; k++) {
           const on = k < peekFrames;
           const S = on ? { ...pAt, w: 1 } : null;
@@ -44860,24 +45243,32 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
           cam.position.set(look.x + 17, look.y + 14, look.z + 17);
           cam.lookAt(look);
           bp.apply(F, S, cam, look, PK.peekHold(sc, ride));
-          sc.apply(F, ride, cam, look);
+          const deferred = PK.peekDefers(bp, sc, ride);
+          sc.apply(F, deferred ? null : ride, cam, look);
+          // the ride never moves while the look across is still sweeping
+          if (ride && bp.live && bp.w < 1 && sc.w > 0) early++;
+          if (ride && !deferred && rideAt < 0) rideAt = bp.w;
           const d = new THREE.Vector3(); cam.getWorldDirection(d);
           if (was) {
             const st = was.distanceTo(cam.position);
             if (k > 1) step = Math.max(step, st);
-            if (k > peekFrames) turn = Math.max(turn, THREE.MathUtils.radToDeg(d.angleTo(dir0)));
+            if (k > peekFrames && rideAt >= 0) turn = Math.max(turn, THREE.MathUtils.radToDeg(d.angleTo(dir0)));
             if (st > 0.02 && !moving) { starts++; moving = true; } else if (st < 0.005) moving = false;
           }
           was = cam.position.clone(); dir0 = d.clone();
         }
-        return { step, turn, starts, gone: !bp.live && sc.w === 1 };
+        return { step, turn, starts, early, rideAt, gone: !bp.live && sc.w === 1 };
       };
       const full = runIn(Math.ceil(PK.PEEK.sweepIn / F) + 20);
       const quick = runIn(Math.round(0.45 / F));
-      ok('...and onto the bridge it is ONE move: the look across finishes under the ride and never goes back, and the ride turns the aim from where it was, never a snap',
+      /* ...IN ORDER. Richard, sixth pass: "the 'look across bridge' camera needs to finish transitioning
+         to behind the player before transitioning to the new [ride] camera". The ride does not move a
+         frame while the look across is short of 1, and starts the frame it gets there - so a kitten who
+         ran straight on now sees two moves one after the other (two starts), never two at once. */
+      ok('...and onto the bridge the look across FINISHES first, then the ride takes over from it: never both moving at once, never back home, never a snap',
         // The ride's own bar (the arena road's): two units and four degrees a frame at most.
-        [full, quick].every((m) => m.turn < 4 && m.step < 2 && m.gone) && full.starts <= 2 && quick.starts === 1,
-        `full: turn ${full.turn.toFixed(2)}deg/frame, ${full.starts} starts; running straight on: turn ${quick.turn.toFixed(2)}, step ${quick.step.toFixed(2)}, ${quick.starts} starts`);
+        [full, quick].every((m) => m.turn < 4 && m.step < 2 && m.gone && m.early === 0 && m.rideAt === 1) && full.starts <= 2 && quick.starts <= 2,
+        `full: turn ${full.turn.toFixed(2)}deg/frame, ${full.starts} starts, ride at ${full.rideAt}; running straight on: turn ${quick.turn.toFixed(2)}, step ${quick.step.toFixed(2)}, ${quick.starts} starts, ride at ${quick.rideAt}, ${quick.early} early frames`);
     }
     // In a drill, the drill keeps the camera.
     D.drills[0] = { state: 'live' };

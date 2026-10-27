@@ -116,6 +116,29 @@ import * as THREE from 'three';
    the island. Blending both as one orbit round the aim (SnakeCam's way) was
    tried first and measured: its aim slides 130 units out to the island, so
    the orbit's centre went with it and the lens moved 7.7 units in a frame.
+
+   THE LINE ON THE FLOOR WAS HONEST, THE TRIGGER WAS LATE — RICHARD'S SIXTH
+   PASS. "The yellow half circle radius ... seems to be too big in the game
+   as the camera doesn't actually change ... until the player is about
+   halfway into the radius. Is this an issue of using the diameter instead of
+   radius". It was neither: the gold arc IS `start` (peekmarks.js draws
+   `PEEK.start` round the mouth, and world-check measures every point of it).
+   The lag was the `dwell` — 0.35 s of walking at the mouth INSIDE the line
+   before it fired, 3.7 units at a walk (10.5) and 6 at a sprint — plus the
+   first few frames of the lens's ease. So the dwell is now served OUTSIDE
+   the line, in a `lead` band before it: a kitten who has been heading for
+   the mouth that long fires the moment she crosses the gold, and the
+   "definitely in the zone" buffer Richard asked for in the second pass is
+   kept, only moved to where it costs nothing.
+
+   AND IN ORDER, NOT ON TOP — THE SAME PASS. "the 'look across bridge' camera
+   needs to finish transitioning to behind the player before transitioning
+   to the new [ride] camera". The fifth pass let the ride blend in over a
+   look across still sweeping (`hold`), so a kitten who triggered it and ran
+   straight on watched two moves at once. Now `peekDefers` holds the ride
+   back until the look across has finished its whole sweep, and the held look
+   across FOLLOWS her meanwhile (`apply` carries her offset from the aim), so
+   the lens trails her onto the deck instead of standing where she boarded.
 --------------------------------------------------------------------------- */
 
 export const PEEK = {
@@ -124,7 +147,12 @@ export const PEEK = {
    *  that ("1.5x's - 2x's the radius")~~, and 12.5% smaller again: "too big
    *  now, so lets make it 10 - 15% smaller". */
   start: 8.4,
-  dwell: 0.35,
+  /** ~~0.35, inside `start`~~ — served in the `lead` band OUTSIDE it, so the
+   *  gold line is where it fires (see the head of this file). 4.5 / 0.25 is
+   *  0.43 s of band at a walk (10.5) and 0.26 s at a sprint (17): both arm
+   *  before the line. */
+  dwell: 0.25,
+  lead: 4.5,
   /** Inside this, going toward it, turns it on at once. */
   inner: 4.2,
   /** The buffer: once on, it stays on out to here... */
@@ -172,6 +200,14 @@ export function peekHold(snake, riding) {
   if (!riding) return null;
   return snake && snake.w >= 1 ? 'gone' : 'hold';
 }
+
+/** Whether the ride camera `snake` must wait for the look across `peek` to
+ *  finish its sweep before it starts: "the 'look across bridge' camera needs
+ *  to finish transitioning to behind the player before transitioning to the
+ *  new [ride] camera". Never once the ride has begun — it is not stopped. */
+export function peekDefers(peek, snake, riding) {
+  return !!riding && !!peek?.live && peek.w < 1 && !(snake?.w > 0.002);
+}
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 
 /**
@@ -210,7 +246,7 @@ export function peekPose(S) {
  * when out to `past` onto it), else her distance and whether she is heading
  * for it, away from it, or neither. Pure.
  */
-export function peekZone(pos, vel, E, on = false) {
+export function peekZone(pos, vel, E, on = false, reach = PEEK.exit) {
   const dx = pos.x - E.mouth.x;
   const dz = pos.z - E.mouth.z;
   if (Math.abs(pos.y - E.mouth.y) > 3) return null;
@@ -218,7 +254,7 @@ export function peekZone(pos, vel, E, on = false) {
   const out = dx * E.toward.x + dz * E.toward.z;
   if (out > (on ? PEEK.past : 0.5)) return null;
   const d = Math.hypot(dx, dz);
-  if (d > PEEK.exit) return null;
+  if (d > reach) return null;
   const sp = Math.hypot(vel.x, vel.z);
   const moving = sp >= PEEK.moving;
   // The way she goes against the way the bridge goes: crossing it, or not.
@@ -281,16 +317,19 @@ export class PeekTrigger {
       if (this.away >= PEEK.awayT) { this.reset(); return null; }
       return this.end;
     }
+    // Armed in the `lead` band outside the line, fired ON it (the head of this file).
+    const reach = PEEK.start + PEEK.lead;
     let best = null;
     let bz = null;
     for (const E of ends) {
-      const z = peekZone(pos, vel, E);
-      if (!z || z.d > PEEK.start || !z.toward) continue;
+      const z = peekZone(pos, vel, E, false, reach);
+      if (!z || !z.toward) continue;
       if (!bz || z.d < bz.d) { best = E; bz = z; }
     }
     if (!best) { this.cand = null; this.dwell = 0; return null; }
     if (best !== this.cand) { this.cand = best; this.dwell = 0; }
     this.dwell += dt;
+    if (bz.d > PEEK.start) return null;
     if (bz.d <= PEEK.inner || this.dwell >= PEEK.dwell) {
       this.end = best;
       this.cand = null;
@@ -326,12 +365,23 @@ export class BridgePeek {
     else if (hold === 'hold' && !subject && this.w > 0.002) this.w = Math.min(1, this.w + dt / PEEK.sweepIn);
     else if (want > this.w) this.w = Math.min(want, this.w + dt / PEEK.sweepIn);
     else this.w = Math.max(want, this.w - dt / PEEK.sweepOut);
-    if (subject) this.last = subject;
+    if (subject) {
+      this.last = subject;
+      // where she stands against the aim, so a HELD look across can follow her
+      this._off = { x: subject.x - look.x, y: subject.y - look.y, z: subject.z - look.z };
+    }
     if (!subject && this.w < 0.002) {
       this.w = 0;
       return false;
     }
-    const P = peekPose(subject ?? this.last);
+    /* HELD, IT FOLLOWS HER. It used to stand where she boarded, which was
+       fine while the ride blended in over it at once; now the ride waits for
+       it to finish (`peekDefers`), and a lens left standing at the mouth for
+       that second would watch her run off down the bridge. */
+    const S = subject ?? (hold === 'hold' && this._off
+      ? { ...this.last, x: look.x + this._off.x, y: look.y + this._off.y, z: look.z + this._off.z }
+      : this.last);
+    const P = peekPose(S);
     // Both lenses as bearing / pitch / distance round HER (the ordinary aim)...
     const polar = (x, y, z) => {
       const d = Math.hypot(x, y, z) || 1;

@@ -87,12 +87,25 @@ export const BAMBOO_CAM = { dist: 24, pitch: 0.95, lift: 1 };
 export const BAMBOO_BIRD = { ...BIRD, dist: 92, pitch: 1.2, sway: 0.35 };
 /** A throw: held ATTACK charges for `charge` s; it lands `min` to `max` ahead of her. */
 export const THROW = { charge: 1.0, min: 2, max: 13, mineR: 1.6, flight: 0.65, arc: 2.6 };
+/**
+ * LOCK-ON, FROM UP HIGH (Oct 2026). Richard: "only from a rooftop or a rope.
+ * Hold slash and aim toward the archer: within throwing radius and within 45°
+ * it locks on ... thrown straight at him, it hits unless a major barrier
+ * (buildings, barrels, boxes) is in the way ... only shuriken. If the throw
+ * would be a rock, play a cancel sound and show a red circle." So: an awake
+ * archer within `reach` and `half` of her facing, the line to him asked as an
+ * ARCHER'S line (`blocked(..., 'archer')`: walls, roofs, crates and barrels
+ * stop it, the bamboo and the brush do not — he is on a tower over them). A
+ * pebble from a rope is refused the same way: there is nothing to lob from a
+ * rope at. `flash` is how long the red refusal ring stays.
+ */
+export const LOCK = { half: Math.PI / 4, reach: THROW.max, flash: 0.6 };
 /** Hanging from a rope: grabbed within `grab` flat with the rope `lo`..`hi` above her feet,
  *  on a PRESS (INTERACT or JUMP) — it used to take her as she jumped under it,
  *  which made a jump on a roof under a rope a thing she could not do. */
 export const ROPE = { grab: 1.2, lo: HANG.lo, hi: HANG.hi, speed: 3.4, mount: 0.5, cd: 0.5, ink: 1.21 * 2.9 };
 /** A ladder: climbed at `speed`; she steps `onto` units in onto the roof at the top. */
-export const LADDER = { speed: 3.2, reach: LADDER_REACH, onto: 1.4, push: 0.75 };
+export const LADDER = { speed: 3.2, reach: LADDER_REACH, onto: 1.4 };
 /**
  * NOTHING TO DO HERE YET, SO DO NOTHING. Within NEAR_K times the reach of a
  * barrel, a rope or a ladder, on its level, a press that does not reach it
@@ -105,7 +118,7 @@ export const NEAR_K = 3;
 export const SMOKE = { r: RADII.smoke, t: 6 };
 /** A walking step is heard this often; a picked-up thing comes back after `respawn`. */
 export const NOISE_EVERY = 0.45;
-export const PICKUP = { r: 1.1, respawn: 12 };
+export const PICKUP = { r: 1.1, respawn: 12, toastK: 2 };
 /**
  * HOLD TO TAKE IT: `t` seconds of INTERACT or JUMP held, standing within the
  * old walk-past distances (`scroll`, `lantern`). Gold for the scroll; a clear
@@ -113,6 +126,20 @@ export const PICKUP = { r: 1.1, respawn: 12 };
  * plaza's cyan. The ring sits at `chest` of her height, `r` across.
  */
 export const HOLD = { t: 1, scroll: 1.6, lantern: 1.4, gold: 0xffd56a, blue: 0x4aa3ff, chest: 0.55, r: 1.3 };
+/**
+ * THE BRUSH — a thicket, `L.cover` kind 'thicket', within its `r` and on the
+ * ground (Oct 2026). Richard: "sprite goes 50% transparent in the brush ... a
+ * subtle leaf-rustle sound while walking or running through it ... a
+ * 'whirlwind' vanish sound when she crouches in it ... crawling in the brush
+ * radius: a 75% chance she is not spotted, for as long as she stays there.
+ * Standing: 25%, and moving re-rolls it every 0.5s." One roll as she comes in
+ * or changes posture in it; a crawl keeps it, a moving stand re-rolls every
+ * `every`. A winning roll hides her from every guard the way a barrel does;
+ * a losing one is the old rule, and a thicket is already cover from a samurai
+ * (`blocked`, under COVER.thicket) — so the roll is what the brush adds, never
+ * what it takes away. `fade` is how see-through she is (`Player.hideFade`).
+ */
+export const BRUSH = { crawl: 0.75, stand: 0.25, every: 0.5, fade: 0.5, rustle: 0.32 };
 /** Hiding in a barrel: within this of its middle (bamboolevel.js HIDE_REACH says why 1.9). */
 export const HIDE_R = HIDE_REACH;
 /**
@@ -142,10 +169,29 @@ export const TOUCH_R = 0.9;
  * back where the next one was waiting. Moving lanterns into hiding would
  * have made the checkpoints the places nobody walks; a ring you are safe in
  * is the rule a nine-year-old already knows from tag.
+ *
+ * ...BUT ONLY THE RING SHE WAS JUST PUT DOWN IN, AND ONLY UNTIL SHE LEAVES IT
+ * (Oct 2026). Richard: "It must not shield her before she has lit it ...
+ * protection only applies after a respawn there, until she first leaves its
+ * radius. After that it gives no protection." Every lantern used to be a
+ * sanctuary from GO, lit or not, so an unlit one was a free place to stand in
+ * a samurai's eye. Now the ring is armed per kitten (`run.safe`) where she
+ * starts and where a capture puts her back — which is the measured reason
+ * the sanctuary exists — and disarmed the first frame she is outside it.
+ * Lighting a lantern is not a respawn, so it arms nothing.
  */
 export const SAFE = { lantern: 1.15, start: { a: -15.8, b: 0, r: 2.0 } };
 /** Where the kittens start: two by two on the path inside the gate. */
 export const SLOTS = [{ a: -16.5, b: -0.9 }, { a: -16.5, b: 0.9 }, { a: -15.1, b: -0.9 }, { a: -15.1, b: 0.9 }];
+/**
+ * THE CARD OVER HER HEAD (`_spec`, `_paint`): `w` x `h` (the drill's own is
+ * 5.4 x 1.7), drawn at `order` with no depth test so a roof never hides it,
+ * and three lines at `sizes` — the prompt line was 0.8, which nobody could
+ * read. Text is sized off the card's HEIGHT (holo.js `layoutLines`), so the
+ * extra width is room for the prompt and her items side by side, not bigger
+ * letters: the state line grows 10%, the prompt half again.
+ */
+export const CARD = { w: 6.4, h: 1.8, order: 1001, sizes: [1.5, 1.15, 1.15] };
 const BARRIER = { h: 3.6, w: GATE.w + 1.2, idle: HOLO.cyan, live: 0xff2a4a };
 /** What a `crate` is drawn as, in turn (or `stack:` on the course's row). */
 export const STACKS = ['boxes', 'wood', 'rice'];
@@ -272,12 +318,16 @@ export class BambooInfiltration {
 
   inSession(p) { return !!(p && this.session?.runs.has(p.index)); }
 
-  /** Is island point q in a sanctuary — the start's ring, or an out lantern's? On the ground only. */
-  safeAt(q) {
-    if (q.y > 1) return false;
+  /** Is island point q in HER sanctuary (`run.safe`, armed by a respawn — see SAFE)? On the ground only. */
+  safeAt(q, run) {
+    const s = run?.safe;
+    return !!s && q.y <= 1 && Math.hypot(q.a - s.a, q.b - s.b) < s.r;
+  }
+
+  /** Arm her sanctuary: the ring she has just been put down in — the party's lantern, or the start's. */
+  _armSafe(run, cp) {
     const st = SAFE.start;
-    if (Math.hypot(q.a - st.a, q.b - st.b) < st.r) return true;
-    return this.view.lanterns.some((l) => l.on && Math.hypot(q.a - l.a, q.b - l.b) < SAFE.lantern);
+    run.safe = cp ? { a: cp.a, b: cp.b, r: SAFE.lantern } : { a: st.a, b: st.b, r: st.r };
   }
   runOf(p) { return p ? this.session?.runs.get(p.index) ?? null : null; }
 
@@ -922,6 +972,7 @@ export class BambooInfiltration {
         new THREE.MeshBasicMaterial({ color: 0xb35cff, transparent: true, opacity: 0.35, toneMapped: false, depthWrite: false }));
       run.smokeRing.visible = false;
       this.root.add(run.aim, run.smokeRing);
+      this._armSafe(run, null);
       S.runs.set(p.index, run);
       this.dream.startDrill(p, this._spec(run, C, n), { x: this.isle.x, y: this.isle.y, z: this.isle.z, r: this.isle.r, fwd: this.isle.fwd });
       run.drill = this.dream.drills[p.index];
@@ -960,6 +1011,8 @@ export class BambooInfiltration {
     if (p.rig?.bamboo) p.rig = null;
     p.clipAs = null;
     p.gaitK = 1;
+    p.hideFade = 0;
+    run.brush = null;
     p.group.visible = true;
     run.aim?.removeFromParent();
     run.smokeRing?.removeFromParent();
@@ -1037,7 +1090,15 @@ export class BambooInfiltration {
       /* THE CARD SQUARE ON TO THE LENS, pitch and all: "it is hard to read the UI above the player, should
          probably be billboarded towards the camera". BAMBOO_CAM looks down at 0.95 rad, so a card turned
          about Y alone was read 54° foreshortened - the Kata Trace's card had the same note and the same fix. */
-      setup: (d) => { d.panel.fullFace = true; },
+      /* ...AND OVER THE ROOFS, A LITTLE BIGGER. Richard, Oct 2026: "make the text a bit bigger and easier
+         to read, but not overbearing. Stop the roofs from hiding the card." The card is drawn after
+         everything and through it (the hold ring's rule, CARD.order), and wider (CARD). */
+      card: { w: CARD.w, h: CARD.h },
+      setup: (d) => {
+        d.panel.fullFace = true;
+        d.panel.mat.depthTest = false;
+        d.panel.mesh.renderOrder = CARD.order;
+      },
       start: () => { if (B.session) B.session.live = true; },
       steer: (d, pad) => B._steer(run, d, pad),
       quit: () => B._ninjaButton(run),
@@ -1065,8 +1126,8 @@ export class BambooInfiltration {
        count-in's mask stopped swallowing it (40499ce); Oct 2026: "we are now
        allowing the player to jump, let's remove that as I believe it is not
        necessary ... we just want the action and jump button to do the same
-       thing". So it is masked from her legs outright (below), and a rope's
-       "JUMP lets go" still hears it, off the raw pad (`run.padIn`). */
+       thing". So it is masked from her legs outright (below) — and from a
+       rope's, which is why letting go of one is `_ninjaPress`'s, here. */
     if (live && !run.capture && pad.pressed?.('jump')) this._ninjaPress(run, 'jump');
     if (live && pad.pressed?.('mount')) {
       if (pad.doubled?.('mount')) run.latch = true;
@@ -1074,8 +1135,10 @@ export class BambooInfiltration {
     }
     run.sneak = run.latch || !!pad.down?.('mount');
     const frozen = d.state !== 'live' || !!run.capture || !!run.hidden;
-    // THE THROW: held ATTACK winds it up, she plants and aims with the stick; letting go throws.
-    if (live && !frozen && !p.rig && pad.down?.('attack')) run.charge = Math.min(THROW.charge, (run.charge ?? 0) + (this._dt ?? 1 / 60));
+    /* THE THROW: held ATTACK winds it up, she plants and aims with the stick; letting go throws. On a
+       rope too, once she hangs from it (LOCK): the rope stops carrying her while she aims (`_ropeRig`). */
+    const canThrow = !p.rig || (p.rig.kind === 'rope' && p.rig.mountT >= ROPE.mount);
+    if (live && !frozen && canThrow && pad.down?.('attack')) run.charge = Math.min(THROW.charge, (run.charge ?? 0) + (this._dt ?? 1 / 60));
     else if (run.charge != null) {
       if (live && !frozen) this._throw(run);
       run.charge = null;
@@ -1150,11 +1213,15 @@ export class BambooInfiltration {
     const live = run.drill?.state === 'live';
     if (run.capture) return via === 'interact';
     if (run.hidden) { this._unhide(run); return true; }
-    /* On a rope or a ladder JUMP is the rig's ("JUMP lets go"), and INTERACT lets go too — Richard: "the
-       player can dismount the rope by pressing the jump/interact button while on it". Never asks up there. */
+    /* ON A ROPE EITHER BUTTON LETS GO — Richard: "the player can dismount the rope by pressing the
+       jump/interact button while on it", and, Oct 2026, "JUMP should drop her from a rope the way ACTION
+       does, but without opening the menu". It never did: the rope listened for JUMP on the pad it was
+       handed, which is the steer proxy — and the proxy masks JUMP from her legs — so only INTERACT ever
+       let go. Here, where both arrive, it is one line. ON A LADDER a press does nothing: she got on it
+       by a press, and a mashed second one would drop her off it halfway up. Never asks up there. */
     if (p.rig) {
-      if (via === 'interact') p.rig.letGo?.();
-      return via === 'interact';
+      if (p.rig.kind === 'rope') p.rig.letGo?.();
+      return true;
     }
     if (!live) return false;
     // At the scroll or an unlit lantern the press is the start of a HOLD (`_stepHold`): never a menu, never smoke.
@@ -1163,15 +1230,20 @@ export class BambooInfiltration {
     if (R.rope) { this._ropeRig(run, R.rope.R, R.rope.u); return true; }
     if (R.ladder) { this._ladderRig(run, R.ladder.Ld, R.ladder.y0, R.ladder.dir); return true; }
     if (R.barrel) { this._hide(run, R.barrel); return true; }
-    if (R.near) return true;
+    /* THE SMOKE BOMB BEFORE "GET CLOSER". Richard, Oct 2026: "with a smoke bomb in the barrel's 'get
+       closer' zone, she can use the smoke bomb. In the 'hide in a barrel' zone, the button hides her
+       instead." `near` exists to stop a press opening the menu; a kitten carrying smoke was never going
+       to be asked anything, so it only ate the press she meant for the bomb. */
     if (run.carry.smoke > 0) { this._smoke(run, this.coords(p)); return true; }
+    if (R.near) return true;
     return false;
   }
 
   /**
    * WHAT IS IN HER REACH: the rope over her head (her feet on a roof under it,
    * or in the air), the ladder at her feet or at the roof's edge, the nearest
-   * barrel — and `near`: any of them within NEAR_K of its reach, on her level.
+   * barrel — and `near`: any of them, the scroll, or a lantern she has not
+   * lit, within NEAR_K of its reach, on her level.
    */
   _reach(run) {
     const p = run.p;
@@ -1206,6 +1278,15 @@ export class BambooInfiltration {
         if (d < bd && p.onGround) { bd = d; out.barrel = b; }
         if (d < HIDE_R * NEAR_K) out.near = true;
       }
+    }
+    /* ...AND THE SCROLL, AND A LANTERN SHE HAS NOT LIT. Richard, Oct 2026: "near the scroll or an unlit
+       lantern, ACTION must not open the menu (same rule as barrels). After the lantern is lit, the menu
+       works as normal." Inside the hold distance the press is already the start of a hold (`_holdAt`);
+       this is the walk up to it, NEAR_K of that distance, on the same heights `_holdAt` asks. */
+    const C = this.course;
+    if (C && q.y < 1.5 && Math.hypot(q.a - C.scroll.a, q.b - C.scroll.b) < HOLD.scroll * NEAR_K) out.near = true;
+    for (const l of this.view.lanterns) {
+      if (l.on && !run.lit.has(l) && q.y < 1 && Math.hypot(q.a - l.a, q.b - l.b) < HOLD.lantern * NEAR_K) out.near = true;
     }
     return out;
   }
@@ -1333,12 +1414,13 @@ export class BambooInfiltration {
   _mineTarget(run, at) {
     if (run.carry.shuriken <= 0) return null;
     const L = this.level;
+    const from = this._handAt(run);
     let best = null; let bd = THROW.mineR;
     for (const g of this.view.guards) {
       if (!g.active || !g.awake) continue;
       const d = Math.hypot(g.at.a - at.a, g.at.b - at.b);
       if (d >= bd) continue;
-      if (blocked(L, { a: at.from.a, b: at.from.b, y: at.from.y + 1.4 }, { a: g.at.a, b: g.at.b, y: (g.at.y ?? 0) + 1.4 }, 'samurai')) continue;
+      if (blocked(L, from, { a: g.at.a, b: g.at.b, y: (g.at.y ?? 0) + 1.4 }, 'samurai')) continue;
       bd = d; best = g;
     }
     return best;
@@ -1354,11 +1436,26 @@ export class BambooInfiltration {
     const p = run.p;
     if ((run.charge ?? 0) < 0.12) return;
     const at = this._aimPoint(run);
+    // LOCKED ON AN ARCHER from a roof or a rope (LOCK): the shuriken, straight at him — or a refusal.
+    const lk = this._lockOn(run);
+    if (lk?.g && run.carry.shuriken > 0) {
+      run.throwT = this.dream.t ?? 0;
+      run.carry.shuriken--;
+      const s = this.shots.fire('mine', this._handAt(run), { a: lk.g.at.a, b: lk.g.at.b, y: (lk.g.at.y ?? 0) + 1.4 }, { colour: p.style?.colour });
+      s.guard = lk.g;
+      s.who = 'archer';
+      return;
+    }
+    if (lk?.g || (lk?.rope && !this._mineTarget(run, at))) {
+      this._refuse(run, lk.g ? { a: lk.g.at.a, b: lk.g.at.b, y: lk.g.at.y ?? 0 } : { a: at.a, b: at.b, y: this._floorAt(at.a, at.b, at.from.y) },
+        lk.g ? 'no SHURIKEN — a pebble can\'t reach an archer. Find one first!' : 'only a SHURIKEN can be thrown from a rope');
+      return;
+    }
     run.throwT = this.dream.t ?? 0;
     const g = this._mineTarget(run, at);
     if (g) {
       run.carry.shuriken--;
-      const s = this.shots.fire('mine', { a: at.from.a, b: at.from.b, y: at.from.y + 1.4 }, { a: g.at.a, b: g.at.b, y: (g.at.y ?? 0) + 1.4 }, { colour: p.style?.colour });
+      const s = this.shots.fire('mine', this._handAt(run), { a: g.at.a, b: g.at.b, y: (g.at.y ?? 0) + 1.4 }, { colour: p.style?.colour });
       s.guard = g;
       return;
     }
@@ -1370,6 +1467,44 @@ export class BambooInfiltration {
     const y1 = this._floorAt(at.a, at.b, at.from.y);
     this.pebbles.push({ a0: at.from.a, b0: at.from.b, y0: at.from.y + 1.4, a1: at.a, b1: at.b, y1, t: 0, mesh, by: run, pa: at.from.a, pb: at.from.b, py: at.from.y + 1.4 });
     this.dream.game.sfx?.('slash', 0.35);
+  }
+
+  /** Where a throw leaves her paw: chest high standing, under the rope hanging (the eye `_stepWorld` gives her). */
+  _handAt(run) {
+    const q = this.coords(run.p);
+    return { a: q.a, b: q.b, y: run.p.rig?.kind === 'rope' ? q.y - 1.0 : q.y + 1.4 };
+  }
+
+  /**
+   * THE ARCHER SHE IS LOCKED ON TO (LOCK), or none: `{ rope, g }` while she is
+   * up on a roof or hanging from a rope, null on the ground. The nearest in
+   * angle to her facing within LOCK.half, in LOCK.reach, awake, on a clear line.
+   */
+  _lockOn(run) {
+    const p = run.p;
+    const q = this.coords(p);
+    const rope = p.rig?.kind === 'rope' && p.rig.mountT >= ROPE.mount;
+    if (!rope && !(p.onGround && !p.rig && q.y > 0.6)) return null;
+    const from = this._handAt(run);
+    const th = this._facingAng(p);
+    let g = null; let bw = LOCK.half;
+    for (const G of this.view.guards) {
+      if (!G.active || !G.awake || G.kind !== 'archer') continue;
+      const da = G.at.a - q.a; const db = G.at.b - q.b;
+      if (Math.hypot(da, db) > LOCK.reach) continue;
+      const w = Math.abs(wrap(Math.atan2(db, da) - th));
+      if (w > bw) continue;
+      if (blocked(this.level, from, { a: G.at.a, b: G.at.b, y: (G.at.y ?? 0) + 1.4 }, 'archer')) continue;
+      bw = w; g = G;
+    }
+    return { rope, g };
+  }
+
+  /** A THROW REFUSED (non-negotiable 6): the cancel sound, a red ring where it would have gone, and why. */
+  _refuse(run, at, why) {
+    run.flash = { t: LOCK.flash, ...at };
+    this.dream.game.sfx?.('deny');
+    this.dream.hint(run.p, why);
   }
 
   /** A sound at (a, b) carrying `r`: every guard inside it is told, and the ring shows how far. */
@@ -1478,6 +1613,7 @@ export class BambooInfiltration {
       this._place(p, at.a, at.b, 0, at.th);
       p.rig = { bamboo: true, step: () => p.velocity?.set(0, 0, 0) };
       r.cp = at;
+      this._armSafe(r, S.cp);
       r.ok = { a: at.a, b: at.b };
       r.last = this.coords(p);
       r.carry = { shuriken: 0, smoke: 0 };
@@ -1524,14 +1660,24 @@ export class BambooInfiltration {
     const p = run.p;
     const now = this.dream.t ?? 0;
     const q = this.coords(p);
-    // The aim ring while she winds up; the smoke bomb's reach while she carries one.
+    /* The aim ring while she winds up — ON THE ARCHER while she is locked on to one (LOCK), red when the
+       shuriken would fly — and the refusal's red ring after a throw that was not allowed. The smoke
+       bomb's reach while she carries one. */
+    if (run.flash) { run.flash.t -= this._dt ?? 1 / 60; if (run.flash.t <= 0) run.flash = null; }
     if (run.aim) {
-      run.aim.visible = run.charge != null;
-      if (run.aim.visible) {
-        const at = this._aimPoint(run);
-        const w = this._w(at.a, at.b, 0.07);
+      run.aim.visible = run.charge != null || !!run.flash;
+      if (run.flash) {
+        const w = this._w(run.flash.a, run.flash.b, (run.flash.y ?? 0) + 0.07);
         run.aim.position.set(w.x, w.y, w.z);
-        run.aim.material.color.set(this._mineTarget(run, at) ? 0xff3b3b : RING_COL);
+        run.aim.material.color.set(0xff3b3b);
+        run.aim.material.opacity = 0.9 * (0.55 + 0.45 * Math.cos(run.flash.t * 30));
+      } else if (run.aim.visible) {
+        const lk = this._lockOn(run);
+        const at = this._aimPoint(run);
+        const w = lk?.g ? this._w(lk.g.at.a, lk.g.at.b, (lk.g.at.y ?? 0) + 0.07) : this._w(at.a, at.b, this._floorAt(at.a, at.b, at.from.y) + 0.07);
+        run.aim.position.set(w.x, w.y, w.z);
+        run.aim.material.color.set((lk?.g ? run.carry.shuriken > 0 : this._mineTarget(run, at)) ? 0xff3b3b : RING_COL);
+        run.aim.material.opacity = 0.8;
       }
       run.smokeRing.visible = run.carry.smoke > 0 && !run.hidden;
       if (run.smokeRing.visible) {
@@ -1542,7 +1688,7 @@ export class BambooInfiltration {
     // Her drawing: hands up, the throw, the rope, the ladder, the crawl — or herself.
     const rk = p.rig?.kind;
     if (run.capture) p.clipAs = { name: 'handsup', t: run.capture.t };
-    else if (now - run.throwT < 0.45) p.clipAs = { name: 'throw', t: now - run.throwT };
+    else if (now - run.throwT < 0.45 && !p.rig) p.clipAs = { name: 'throw', t: now - run.throwT };
     else if (rk === 'rope') p.clipAs = p.rig.mountT < ROPE.mount ? { name: 'mount', t: p.rig.mountT } : { name: 'rope', t: p.rig.walkT };
     else if (rk === 'ladder') p.clipAs = { name: 'climb', t: p.rig.walkT };
     else if (run.sneak && p.onGround && d.state === 'live') p.clipAs = { name: 'sneak', t: run.crawlT };
@@ -1560,7 +1706,8 @@ export class BambooInfiltration {
     run.crawlT += moved / Math.max(0.5, SNEAK.speed) * 1.6;
     run.ropeCd = Math.max(0, run.ropeCd - dt);
     // A hold is broken by a capture or a barrel, and its ring with it - those return before `_stepHold` runs.
-    if (run.capture || run.hidden) { run.hold = null; run.holdRing?.set(null); }
+    // So is the brush: she is in a barrel, or being put back.
+    if (run.capture || run.hidden) { run.hold = null; run.holdRing?.set(null); run.brush = null; p.hideFade = 0; }
     if (run.capture) { this._stepCapture(run, dt); return; }
     // The ghost recorder: where she is, what she is doing.
     run.rec.tick(dt, () => [q.a, q.b, Math.max(0, q.y), this._facingAng(p),
@@ -1568,6 +1715,7 @@ export class BambooInfiltration {
     if (run.hidden) return;
     // NOISE: walking and sprinting are heard; a crawl is not, and nor is a kitten on a rope.
     const speed = moved / Math.max(dt, 1e-3);
+    this._stepBrush(run, q, dt, speed);
     run.noiseT -= dt;
     if (p.onGround && !p.rig && !run.sneak && speed > 1.2 && run.noiseT <= 0) {
       run.noiseT = NOISE_EVERY;
@@ -1586,8 +1734,9 @@ export class BambooInfiltration {
       p.position.z = w.z + SIM.dz;
     }
     this._bounds(run, q);
-    // A rope is taken on a PRESS now (`_ninjaPress`); a ladder by a press, or by walking into it.
-    if (!p.rig) this._startLadder(run, q);
+    /* A rope AND a ladder are taken on a PRESS (`_ninjaPress`). A ladder also took her as she walked into
+       it (`_startLadder`, gone): Richard, Oct 2026, "ladders climb on the ACTION/JUMP buttons, not
+       automatically" - a kitten walking along a wall was carried up a roof she never asked for. */
     // LANTERNS AND THE SCROLL: held for HOLD.t, not walked past (`_stepHold`).
     const done = this._stepHold(run, q, dt);
     // A LANTERN: the newest lit by ANYBODY is where a capture puts the party.
@@ -1601,8 +1750,8 @@ export class BambooInfiltration {
         l.light.material.color.set(p.style?.colour ?? HOLO.gold);
         this.dream.game.sfx?.('star');
         this.dream.hint(p, S?.runs.size > 1
-          ? 'lantern lit — nobody sees you in its ring, and if anybody is caught you ALL come back here'
-          : 'lantern lit — nobody sees you in its ring, and if you are caught you come back here');
+          ? 'lantern lit — if anybody is caught you ALL come back here, safe in its ring until you step out'
+          : 'lantern lit — if you are caught you come back here, safe in its ring until you step out');
       }
     }
     // PICKUPS: one of each kind carried at a time; the card says what it does.
@@ -1614,12 +1763,18 @@ export class BambooInfiltration {
       k.gone = PICKUP.respawn;
       k.g.visible = false;
       this.dream.game.sfx?.('starfound');
-      this.dream.game.toast?.(k.kind === 'shuriken'
-        ? `${p.name} found a SHURIKEN! Hold [${this.dream.key(p, 'attack')}] and aim the ring at a guard — it turns RED — and let go: he sleeps for ${D.ko}s`
-        : `${p.name} found a SMOKE BOMB! [${this.dream.key(p, 'interact')}] drops it: nobody sees into the purple ring for ${SMOKE.t}s`, p.index);
+      /* TWICE THE USUAL HOLD — Richard, Oct 2026: "pickup messages for shuriken/smoke bomb stay on screen
+         twice as long". They are the only instructions for the two things, and they are long. */
+      const G = this.dream.game;
+      const say = k.kind === 'shuriken'
+        ? `${p.name} found a SHURIKEN! Hold [${this.dream.key(p, 'attack')}] and aim the ring at a guard — it turns RED — and let go: he sleeps for ${D.ko}s. On a roof or a rope, aim at an ARCHER to lock on`
+        : `${p.name} found a SMOKE BOMB! [${this.dream.key(p, 'interact')}] drops it: nobody sees into the purple ring for ${SMOKE.t}s`;
+      G.toast?.(say, p.index, null, PICKUP.toastK * (G.toastHold?.(say) ?? 0));
     }
+    // HER SANCTUARY IS SPENT the first frame she is outside it (SAFE): stepping back in is not a respawn.
+    if (run.safe && !this.safeAt(q, run)) run.safe = null;
     // TOUCHING A GUARD is a capture too — but not in a sanctuary.
-    for (const g of this.safeAt(q) ? [] : this.view.guards) {
+    for (const g of this.safeAt(q, run) ? [] : this.view.guards) {
       if (!g.active || !g.awake) continue;
       if (Math.hypot(g.at.a - q.a, g.at.b - q.b) < TOUCH_R && Math.abs((g.at.y ?? 0) - q.y) < 1.5) { this.caught(run.i, g); return; }
     }
@@ -1634,6 +1789,36 @@ export class BambooInfiltration {
     }
   }
 
+  /** The thicket she is standing in (BRUSH), or null: within its radius, on the ground. */
+  _brushAt(q) {
+    if (q.y > 0.6) return null;
+    return this.level.cover.find((c) => c.kind === 'thicket' && Math.hypot(q.a - c.a, q.b - c.b) < c.r) ?? null;
+  }
+
+  /** One frame in the brush (BRUSH): the roll, the fade, the rustle and the vanish. */
+  _stepBrush(run, q, dt, speed) {
+    const p = run.p;
+    const at = !p.rig && p.onGround ? this._brushAt(q) : null;
+    if (!at) { run.brush = null; p.hideFade = 0; return; }
+    const crawl = !!run.sneak;
+    const roll = () => (this.rng ?? Math.random)() < (crawl ? BRUSH.crawl : BRUSH.stand);
+    const was = run.brush;
+    if (!was || was.crawl !== crawl) {
+      // In, or down into a crawl in it: the whirlwind — she has gone into the leaves.
+      if (crawl) this.dream.game.sfx?.('vanish', 0.7);
+      run.brush = { crawl, hid: roll(), t: BRUSH.every, rustle: 0 };
+    } else if (!crawl && speed > 1.2 && (was.t -= dt) <= 0) {
+      was.t += BRUSH.every;
+      was.hid = roll();
+    }
+    // Walking or running through it, the leaves are heard by HER (not a noise any guard hears: that is `_noise`).
+    if (!crawl && speed > 1.2 && (run.brush.rustle -= dt) <= 0) {
+      run.brush.rustle = BRUSH.rustle;
+      this.dream.game.sfx?.('rustle', 0.8);
+    }
+    p.hideFade = BRUSH.fade;
+  }
+
   /**
    * SHE STAYS ON THE COURSE. Richard: "player can appear behind bamboo brush
    * after jumping out of barrel". The fence's canes are only drawn (a thick
@@ -1645,9 +1830,9 @@ export class BambooInfiltration {
   _bounds(run, q) {
     const p = run.p;
     if (p.rig || run.hidden || run.capture) return;
-    /* SHE SLIDES ALONG THE EDGE. On the ground the edge is the bamboo
-       (`edgeRaster`: walkable, and her radius off every fence and trail cane);
-       off it — a roof, a jump — her middle over walkable ground. A step that
+    /* SHE SLIDES ALONG THE EDGE. The edge is the bamboo (`edgeRaster`:
+       walkable, and her radius off every fence and trail cane), on the ground
+       and off it alike (below). A step that
        does not fit keeps whichever half of it does, so pushing at the edge on
        a slant walks her along it; only a step with no part that fits puts her
        back. Where she is now does not fit either (just put down by a barrel
@@ -1655,7 +1840,14 @@ export class BambooInfiltration {
        never move off it. */
     const L = this.level;
     const E = edgeRaster(L);
-    const fits = (a, b) => (q.y > 0.6 ? walkAt(L, a, b) : E.at(a, b));
+    /* THE SAME EDGE ON A ROOF. It was `walkAt` up there — her middle over walkable ground — and a roof
+       that ends at the forest let her walk to the very last cell of it, past the wall under her. She
+       was put back there as she began to drop, below the wall's top, and the house's wall posts
+       (`resolveSolids`, which only spare a kitten at or over `top`) shoved her along the wall and off
+       into the street. Richard, Oct 2026: "the canes beside buildings shove her off the roof ... they
+       should only block her". `edgeRaster` holds her KITTEN_R off the canes, which on every course is
+       still on the roof: at least 0.26 inside it, measured on every side that meets the bamboo. */
+    const fits = (a, b) => E.at(a, b);
     if (fits(q.a, q.b) || !fits(run.ok.a, run.ok.b) && walkAt(L, q.a, q.b)) { run.ok = { a: q.a, b: q.b }; return; }
     const o = run.ok;
     const to = fits(o.a, q.b) ? { a: o.a, b: q.b } : fits(q.a, o.b) ? { a: q.a, b: o.b } : o;
@@ -1705,7 +1897,6 @@ export class BambooInfiltration {
       step(dt, pad) {
         p.velocity.set(0, 0, 0);
         p.onGround = false;
-        if (pad.pressed?.('jump')) { this.letGo(); return; }
         if (this.mountT < ROPE.mount) {
           this.mountT += dt;
           const w = B._w(foot.a, foot.b, foot.y);
@@ -1716,7 +1907,10 @@ export class BambooInfiltration {
         const wx = right.x * pad.mx - fwd.x * pad.my;
         const wz = right.z * pad.mx - fwd.z * pad.my;
         const along = wx * dirL.x + wz * dirL.z;
-        if (Math.abs(along) > 0.2) {
+        if (run.charge != null) {
+          // WINDING UP A THROW: she stays where she hangs and turns to the stick, which is her aim.
+          if (Math.hypot(wx, wz) > 0.2) p.facing = Math.atan2(wx, wz);
+        } else if (Math.abs(along) > 0.2) {
           this.u += (along * ROPE.speed * dt) / len;
           this.walkT += dt;
           p.facing = Math.atan2(dirL.x * Math.sign(along), dirL.z * Math.sign(along));
@@ -1741,30 +1935,7 @@ export class BambooInfiltration {
     };
   }
 
-  /** At a ladder's foot pushing into the wall: up. On the roof at its top pushing out: down. */
-  _startLadder(run, q) {
-    const p = run.p;
-    const pad = run.padIn;
-    if (!pad || !p.onGround) return;
-    const push = Math.hypot(pad.mx ?? 0, pad.my ?? 0);
-    if (push < 0.5) return;
-    const { fwd, right } = p._moveBasis(pad);
-    const wish = this._isleAng(right.x * pad.mx - fwd.x * pad.my, right.z * pad.mx - fwd.z * pad.my);
-    for (const Ld of this.view.ladders) {
-      const f = Ld.foot;
-      const top = { a: f.a + Ld.into.a * LADDER.onto, b: f.b + Ld.into.b * LADDER.onto };
-      if (q.y < 0.6 && Math.hypot(q.a - f.a, q.b - f.b) < LADDER.reach && Math.abs(wrap(wish - f.face)) < LADDER.push) {
-        this._ladderRig(run, Ld, 0, 1);
-        return;
-      }
-      if (Math.abs(q.y - Ld.top) < 0.4 && Math.hypot(q.a - top.a, q.b - top.b) < LADDER.onto && Math.abs(wrap(wish - f.face - Math.PI)) < LADDER.push) {
-        this._ladderRig(run, Ld, Ld.top, -1);
-        return;
-      }
-    }
-  }
-
-  /** ON THE LADDER: up or down it at LADDER.speed, facing the wall; JUMP lets go. */
+  /** ON THE LADDER: up or down it at LADDER.speed, facing the wall, to the end (`_ninjaPress`). */
   _ladderRig(run, Ld, y0, dir) {
     const B = this;
     const p = run.p;
@@ -1774,11 +1945,10 @@ export class BambooInfiltration {
     p.rig = {
       bamboo: true, kind: 'ladder', y: y0, walkT: 0,
       letGo() { p.rig = null; },
-      step(dt, pad) {
+      step(dt) {
         p.velocity.set(0, 0, 0);
         p.onGround = false;
         p.facing = isleFacing(B.isle, f.face);
-        if (pad.pressed?.('jump')) { this.letGo(); return; }
         this.y += dir * LADDER.speed * dt;
         this.walkT += dt;
         if (dir > 0 && this.y >= Ld.top) {
@@ -1825,38 +1995,81 @@ export class BambooInfiltration {
     }
     if (d.state !== 'live') return null;
     const D = this.D;
+    const crawl = run.sneak && p.onGround && !p.rig;
     const state = run.capture ? ['CAUGHT!', 0xff6a6a]
       : run.hidden ? ['HIDDEN in the barrel', 0x9fefff]
-        : p.rig?.kind === 'rope' ? ['on the rope — JUMP lets go', 0x9fefff]
-          : p.rig?.kind === 'ladder' ? ['climbing', 0x9fefff]
-            : run.charge != null ? [this._mineTarget(run, this._aimPoint(run)) ? 'let go: SHURIKEN!' : 'let go: pebble', HOLO.gold]
-              : run.sneak ? [run.latch ? 'CRAWLING (latched) — silent' : 'CRAWLING — silent', 0x6dffb0]
-                : this.safeAt(this.coords(p)) ? ['SAFE in the ring — nobody sees you here', HOLO.gold]
-                  : [`WALKING — heard ${D.noise.walk}m away`, 0xffb347];
-    const carry = [run.carry.shuriken ? '手裏剣' : '', run.carry.smoke ? '煙' : ''].filter(Boolean).join(' ');
+        : run.charge != null ? this._chargeState(run)
+          : p.rig?.kind === 'rope' ? ['on the rope', 0x9fefff]
+            : p.rig?.kind === 'ladder' ? ['climbing', 0x9fefff]
+              : run.brush ? (crawl ? ['CRAWLING in the brush — hard to spot', 0x6dffb0] : ['IN THE BRUSH — crawl to hide', 0x6dffb0])
+                : run.sneak ? [run.latch ? 'CRAWLING (latched) — silent' : 'CRAWLING — silent', 0x6dffb0]
+                  : this.safeAt(this.coords(p), run) ? ['SAFE in the ring — until you step out', HOLO.gold]
+                    : [`WALKING — heard ${D.noise.walk}m away`, 0xffb347];
+    const [s0, s1, s2] = CARD.sizes;
     return [
-      { text: state[0], size: 1.45, color: state[1], glow: !!run.capture },
-      { text: `${d.t.toFixed(1)}s${run.caught ? `  + ${run.caught * CAUGHT_COST}s` : ''}   lanterns ${run.lit.size}${carry ? `   ${carry}` : ''}`, size: 1.25, color: HOLO.cyan, jp: !!carry },
-      { text: this._promptLine(run), size: 0.8, color: 0x7f9fa8 },
+      { text: state[0], size: s0, color: state[1], glow: !!run.capture },
+      { text: `${d.t.toFixed(1)}s${run.caught ? `  + ${run.caught * CAUGHT_COST}s` : ''}   lanterns ${run.lit.size}`, size: s1, color: HOLO.cyan },
+      { text: this._promptLine(run, d, s2), size: s2, color: 0xc8eef6 },
     ];
   }
 
-  /** What her two ninja buttons would do right now, in words — the card's last line. */
-  _promptLine(run) {
+  /** The card's first line while she winds up a throw: what letting go would do (`_lockOn`). */
+  _chargeState(run) {
+    const L = this._lockOn(run);
+    if (L?.g) return run.carry.shuriken > 0 ? ['let go: SHURIKEN at the ARCHER!', 0xff6a6a] : ['no SHURIKEN — a pebble can\'t reach him', 0xffb347];
+    if (L?.rope) return ['only a SHURIKEN from a rope', 0xffb347];
+    return [this._mineTarget(run, this._aimPoint(run)) ? 'let go: SHURIKEN!' : 'let go: pebble', HOLO.gold];
+  }
+
+  /**
+   * What her two ninja buttons would do right now, in words — the card's last
+   * line — AND WHAT SHE IS CARRYING, on the same line. Richard, Oct 2026:
+   * "show the shuriken/smoke-bomb items on the same line as the input text. If
+   * it doesn't fit, drop 'leave the course' or other text until the items are
+   * spent." Measured on the card's own canvas at the line's own size, because
+   * a line that does not fit is SHRUNK to fit (holo.js `layoutLines`) — which
+   * is the unreadable line this replaced. "leave the course?" goes first, then
+   * the INTERACT half of "[I] or [J]", then the words.
+   */
+  _promptLine(run, d, size = CARD.sizes[2]) {
+    if (run.capture) return '';
+    const words = this._promptWords(run);
+    const list = (bomb) => [run.carry.shuriken ? 'SHURIKEN' : '', run.carry.smoke ? bomb : ''].filter(Boolean).map((s) => `· ${s}`).join(' ');
+    const items = list('SMOKE BOMB');
+    if (!items) return words.text;
+    const w = words.leave ? '' : words.text; const s = words.leave ? '' : words.short;
+    const tries = [[w, items], [s, items], [s, list('SMOKE')], ['', items]].map(([a, b]) => (a ? `${a}   ${b}` : b));
+    return tries.find((t) => this._cardFits(d, t, size)) ?? items;
+  }
+
+  /** Does `text` fit across the card at `size`, unshrunk? The test `layoutLines` makes (holo.js MAX_W). */
+  _cardFits(d, text, size) {
+    const P = d?.panel;
+    if (!P?.g) return text.length <= 40;
+    P.g.font = `800 ${(P.cv.height / 10) * size}px Nunito, sans-serif`;
+    return P.g.measureText(text).width <= P.cv.width * 0.9;
+  }
+
+  /** The prompt in words: `text`, the same with only JUMP named (`short`), and whether it is the question to leave. */
+  _promptWords(run) {
     const p = run.p;
     const I = this.dream.key(p, 'interact');
     const J = this.dream.key(p, 'jump');
-    if (run.capture) return '';
-    if (run.hidden) return `[${I}] or [${J}] climb out`;
-    if (p.rig) return `[${J}] let go`;
+    const both = (what) => ({ text: `[${I}] or [${J}] ${what}`, short: `[${J}] ${what}` });
+    const one = (text) => ({ text, short: text });
+    if (run.capture) return one('');
+    if (run.hidden) return both('climb out');
+    if (p.rig?.kind === 'rope') return both('let go');
+    if (p.rig) return one('climbing…');
     const R = this._reach(run);
-    if (R.rope) return `[${I}] or [${J}] grab the rope`;
-    if (R.ladder) return `[${I}] or [${J}] ${R.ladder.dir > 0 ? 'climb the ladder' : 'climb down'}`;
-    if (R.barrel) return `[${I}] or [${J}] hide in the barrel`;
+    if (R.rope) return both('grab the rope');
+    if (R.ladder) return both(R.ladder.dir > 0 ? 'climb the ladder' : 'climb down');
+    if (R.barrel) return both('hide in the barrel');
     const H = this._holdAt(run, this.coords(p));
-    if (H) return `hold [${I}] or [${J}] — ${H === 'scroll' ? 'take the scroll!' : 'light the lantern'}`;
-    if (R.near) return 'get closer…';
-    return run.carry.smoke ? `[${I}] or [${J}] smoke bomb` : `[${I}] leave the course?`;
+    if (H) return { text: `hold [${I}] or [${J}] — ${H === 'scroll' ? 'take the scroll!' : 'light the lantern'}`, short: `hold [${J}] — ${H === 'scroll' ? 'the scroll!' : 'the lantern'}` };
+    if (run.carry.smoke) return both('smoke bomb');
+    if (R.near) return one('get closer…');
+    return { text: `[${I}] leave the course?`, short: '', leave: true };
   }
 
   /**
@@ -1980,7 +2193,7 @@ export class BambooInfiltration {
       const q = this.coords(p);
       const crawl = run.sneak && p.onGround && !p.rig;
       const eye = p.rig?.kind === 'rope' ? q.y - 1.0 : q.y + (crawl ? EYE.crawl : EYE.stand);
-      const hidden = !!run.hidden || !!run.capture || this.safeAt(q);
+      const hidden = !!run.hidden || !!run.capture || this.safeAt(q, run) || !!run.brush?.hid;
       kittens.push({ i: run.i, a: q.a, b: q.b, y: eye, feet: p.rig?.kind === 'rope' ? q.y - 2.4 : q.y, hidden, va: run.va ?? 0, vb: run.vb ?? 0,
         sprint: !!run.sprinting && p.onGround && !p.rig, run });
     }

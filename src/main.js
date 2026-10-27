@@ -27,7 +27,7 @@ import { clusterPlayers, MERGE_IN, MERGE_OUT } from './core/cluster.js';
 import { SNAKE, COIN_CANES } from './world/snakeway.js';
 import { BAMBOO_POINTS } from './entities/prop.js';
 import { SnakeCam } from './systems/snakecam.js';
-import { BridgePeek, peekHold } from './systems/dream/peek.js';
+import { BridgePeek, peekHold, peekDefers } from './systems/dream/peek.js';
 import { Dragon, BREEDS } from './entities/dragon.js';
 import { Panda, PANDA, PANDA_TIERS, tierFor, toNextTier } from './entities/panda.js';
 import { ClanLeader, LEADERS } from './entities/leader.js';
@@ -9551,10 +9551,7 @@ class Game {
         this._combos.set(key, live);
       }
     }
-    const hold = holdMs > 0 ? holdMs : Math.min(
-      TOAST_MAX,
-      Math.max(TOAST_MIN, TOAST_BASE + String(text).length * TOAST_PER_CHAR)
-    );
+    const hold = holdMs > 0 ? holdMs : this.toastHold(text);
     const fadeAt = setTimeout(() => el.classList.add('fade'), hold);
     const gone = setTimeout(() => {
       el.remove();
@@ -9568,6 +9565,12 @@ class Game {
        shows a maximum of 4 of the last messages" — so it is now pinned by a
        check rather than only by this comment. */
     while (wrap.children.length > 4) wrap.firstChild.remove();
+  }
+
+  /** How long `toast` holds `text` by default, in ms: the per-character curve, capped. Asked from outside
+   *  by a caller that wants a multiple of it — Bamboo Infiltration's pickups hold for twice it. */
+  toastHold(text) {
+    return Math.min(TOAST_MAX, Math.max(TOAST_MIN, TOAST_BASE + String(text).length * TOAST_PER_CHAR));
   }
 
   /**
@@ -13572,7 +13575,7 @@ class Game {
          hers carries the same layer — see `Player._updateCamera`. */
       const ride = members.length > 1 ? this._snakeGroup(members) : null;
       rig.bridgePeek.apply(dt, members.length > 1 ? this._peekGroup(members) : null, rig.camera, rig.target, peekHold(rig.snakeCam, ride));
-      rig.snakeCam.apply(dt, ride,
+      rig.snakeCam.apply(dt, peekDefers(rig.bridgePeek, rig.snakeCam, ride) ? null : ride,
         rig.camera, rig.target, this.world.islands);
       /* AFTER `lookAt`, so the shake moves the camera without re-aiming it.
          Offsetting before would have `lookAt` cancel most of it out — the

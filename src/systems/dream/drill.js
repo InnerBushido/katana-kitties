@@ -78,8 +78,11 @@ export class Drill {
     this.root = new THREE.Group();
     this.root.name = `drill-${spec.id}-${p.index}`;
     dream.sim.root.add(this.root);
-    this.panel = new HoloPanel({ w: 5.4, h: 1.7, px: 110, edge: this.colour });
-    this.panel.position.y = (p.height ?? 2.6) + 2.3;
+    /* `spec.card` sizes the card ({ w, h }, world units); the bottom edge stays where the 5.4 x 1.7 one's
+       is, over her ears. Bamboo Infiltration's is wider, for a prompt line that carries her items too. */
+    const cw = spec.card?.w ?? 5.4; const ch = spec.card?.h ?? 1.7;
+    this.panel = new HoloPanel({ w: cw, h: ch, px: 110, edge: this.colour });
+    this.panel.position.y = (p.height ?? 2.6) + 2.3 + (ch - 1.7) / 2;
     p.group.add(this.panel);
     spec.setup?.(this);
     this._paint();
