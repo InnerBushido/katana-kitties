@@ -45279,6 +45279,108 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     D.st[0].peek = null;
   }
 
+  /* --- 光 the light cycle keeps the view she boarded with --- */
+  {
+    /* Richard: "specifically for the Light Cycle circles, let's make it that the camera keeps the 'look to
+       the next island' camera angle. Also, let's make it that, if the user takes the Light Cycle to get
+       across the bridge, then we keep that camera angle until they get dropped off at the next Light Cycle
+       circle ... if they end up taking the Light Cycle again while in the normal view, then it should stay
+       in the normal view while they go across. If they step out of the circle and re-enter it, then it
+       should go back to the 'look to the next island' view". */
+    const PK = await import('../src/systems/dream/peek.js');
+    const R = D.highway.roads.find((r) => r.key === 'bamboo');
+    D._ends = D._peekEnds();
+    const st = D.st[0];
+    Object.assign(st, { peek: null, inPad: undefined, cycleView: undefined, arrived: null });
+    her.onGround = true; her.snakeRide = null; her.onCycle = false; her.pinnedAt = null; her.mount = null;
+    D.drills[0] = null;
+    const F = 1 / 60;
+    D._dt = F;
+    const l = Math.hypot(R.path[2].x - R.A.x, R.path[2].z - R.A.z);
+    const u = { x: (R.path[2].x - R.A.x) / l, z: (R.path[2].z - R.A.z) / l };
+    // `k` back from pad A, toward the hub (pad A is 3 behind its mouth)
+    const put = (k, v = 0) => {
+      her.position.set(R.A.x + SW.SIM.dx - u.x * k, R.A.y, R.A.z + SW.SIM.dz - u.z * k);
+      her.velocity.set(u.x * v, 0, u.z * v);
+      return D._peekFor(her);
+    };
+    put(8); put(8);
+    const outside = put(8);
+    const stepIn = put(0.4);
+    // Walking up the highway: the pad is square on her line, nearer than the mouth - it used to hold the
+    // look across back until she was past it (`stationFirst`).
+    Object.assign(st, { peek: null, inPad: undefined });
+    let upAt = null;
+    for (let k = 12; k > 2.3; k -= 6 * F) if (put(k, 6) && upAt == null) upAt = k;
+    const E = D._cycleEnd(R.A);
+    // Ride it with the look across up: every frame is the cycle's look across, at the same island.
+    const ride = (way) => {
+      D.highway.ride(her, R, way);
+      let n = 0; let across = 0; let far = null; let mixed = 0;
+      while (her.onCycle && n < 2000) {
+        D.highway.update(F);
+        // the frame it stops on is the drop-off, `after` below - not a ride frame
+        if (!her.onCycle) break;
+        const at = D._peekFor(her);
+        if (at?.cycle) { across++; if (far && at.far !== far) mixed++; far = at.far; }
+        n++;
+      }
+      return { n, across, far, mixed, after: D._peekFor(her) };
+    };
+    put(0.4);
+    const r1 = ride(1);
+    // Dropped off beside pad B: stepping onto it to ride back is NOT stepping in...
+    const B = D.highway.stations.find((s) => Math.hypot(s.x - R.B.x, s.z - R.B.z) < 1e-6);
+    her.position.set(B.x + SW.SIM.dx, B.y, B.z + SW.SIM.dz); her.velocity.set(0, 0, 0);
+    const ontoB = D._peekFor(her);
+    const r2 = ride(-1);
+    // ...and back at A: out of the circle, back in, and the look across is back - and rides again.
+    const out = put(7);
+    const backIn = put(0.4);
+    const r3 = ride(1);
+    ok('光 a light cycle pad turns the look across ON when she steps into it, and no longer holds it back on the way up the highway',
+      !outside && !!stepIn && stepIn.far === E?.far && upAt != null && upAt > 3,
+      `outside ${!!outside}, step in ${!!stepIn}, walking up it came on ${upAt?.toFixed(2)} back from the pad`);
+    ok('...ridden with it up, the look across rides the whole way at the same island, and lets go when she is put down',
+      r1.n > 100 && r1.across === r1.n && r1.mixed === 0 && r1.far === E.far && !r1.after,
+      `${r1.across}/${r1.n} frames across, ${r1.mixed} switched island, after ${!!r1.after}`);
+    ok('...dropped off, she keeps her own camera: onto the pad she arrived at, and the whole ride back',
+      !ontoB && r2.n > 100 && r2.across === 0 && !r2.after, `onto it ${!!ontoB}, ${r2.across}/${r2.n} frames across`);
+    ok('...and out of the circle and back in, the look across is back, and rides with her again',
+      !out && !!backIn && r3.across === r3.n && r3.n > 100, `out ${!!out}, back in ${!!backIn}, ${r3.across}/${r3.n}`);
+    /* "keep the camera close to the player from a set distance ... the separation between camera and player
+       can increase as the player goes faster, but it should not be lagging behind too much, so likely some
+       strong easing". Lag at speed v solves lag (rate + gain lag) = v: 5.8 at 55, 3.0 at 25. And off a cycle
+       the look across is the pose, to the bit - the walking one is untouched. */
+    const lens = new THREE.PerspectiveCamera(38, 16 / 9, 0.1, 2000);
+    const chase = (v, cycle = true) => {
+      const bp = new PK.BridgePeek();
+      bp.w = 1;
+      const far = { x: 0, y: 0, z: 400 };
+      let S = null; let worst = 0; let jump = 0; let prev = null;
+      for (let f = 0; f < 300; f++) {
+        const z = Math.min(v, f * v / 30) * f * F;   // up to speed over half a second, like the ramp
+        S = { x: 0, y: 0, z, far, w: 1, cycle };
+        lens.position.set(0, 12, z - 14); lens.lookAt(0, 0, z);
+        bp.apply(F, S, lens, new THREE.Vector3(0, 0, z));
+        if (prev) jump = Math.max(jump, lens.position.distanceTo(prev) - v * F);
+        prev = lens.position.clone();
+        if (f > 200) worst = Math.max(worst, lens.position.distanceTo(new THREE.Vector3().copy(PK.peekPose(S))));
+      }
+      return { lag: worst, jump };
+    };
+    const fast = chase(55); const slow = chase(25); const walkOn = chase(10, false);
+    ok('...and the lens chases her seat at a gap that grows with her speed and stays small: about 5.8 at the cycle\'s 55, 3 at 25',
+      fast.lag > 5 && fast.lag < 6.6 && slow.lag > 2.5 && slow.lag < 3.5 && walkOn.lag < 1e-9 && fast.jump < 1.5
+      && PK.CYCLE_CAM.up > PK.PEEK.up,
+      `55: ${fast.lag.toFixed(2)} behind (worst extra step ${fast.jump.toFixed(2)}), 25: ${slow.lag.toFixed(2)}, walking: ${walkOn.lag.toExponential(1)}`);
+    ok('...and a group framed together gets the cycle\'s look only when every one of them is up on one',
+      /cycle &&= !!at\.cycle/.test(read('../src/main.js')));
+    D.highway.stop(her);
+    Object.assign(st, { peek: null, inPad: undefined, cycleView: undefined, arrived: null });
+    her.velocity.set(0, 0, 0);
+  }
+
   /* --- the bridges are Snake Way roads, and she is boarded onto them --- */
   const B0 = sim.bridges.find((b) => b.mouths.length === 2) ?? sim.bridges[0];
   {

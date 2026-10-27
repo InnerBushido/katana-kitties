@@ -139,6 +139,36 @@ import * as THREE from 'three';
    back until the look across has finished its whole sweep, and the held look
    across FOLLOWS her meanwhile (`apply` carries her offset from the aim), so
    the lens trails her onto the deck instead of standing where she boarded.
+
+   THE LIGHT CYCLE KEEPS THE LOOK — RICHARD'S SEVENTH PASS. "specifically for
+   the Light Cycle circles, let's make it that the camera keeps the 'look to
+   the next island' camera angle ... if the user takes the Light Cycle to get
+   across the bridge, then we keep that camera angle until they get dropped
+   off at the next Light Cycle circle ... if they end up taking the Light
+   Cycle again while in the normal view, then it should stay in the normal
+   view ... If they step out of the circle and re-enter it, then it should go
+   back to the 'look to the next island' view".
+     · A cycle pad is not a kiosk for `stationFirst`: walking up a highway the
+       pad stands three units in front of the mouth, square on her line, so it
+       used to hold the look across back until she was past it.
+     · Stepping INTO a pad (an edge, outside to inside) turns the look across
+       on at once for that pad's own mouth (`PeekTrigger.force`). Arriving on
+       one is not stepping into it, so a kitten dropped off gets her ordinary
+       camera back and keeps it if she rides straight back.
+     · Ridden with the look across up, the look across rides with her
+       (`subject.cycle`), higher and further back (`CYCLE_CAM`), until the
+       cycle stops; then it eases home like any other.
+     · "keep the camera close to the player from a set distance ... the
+       separation between camera and player can increase as the player goes
+       faster, but it should not be lagging behind too much, so likely some
+       strong easing for catching the camera up to the player the further the
+       distance separates". The lens CHASES the pose rather than standing on
+       it, at a rate that grows with how far behind it is: lag = speed / rate,
+       and rate = `rate` + `gain` x lag, so at the cycle's 55 the lens settles
+       about 5.8 behind its spot and it can never fall much further than that.
+       A plain exponential follow (a fixed rate) was the obvious one, and at
+       55 it trails by 55 / rate — 9 units at a rate of 6, and pulling it in by
+       raising the rate makes the hop on a snap.
 --------------------------------------------------------------------------- */
 
 export const PEEK = {
@@ -192,6 +222,11 @@ export const PEEK = {
   past: 6,
 };
 
+/** The look across with her on a light cycle (the head of this file): the pose
+ *  it chases, and the chase. Lag at a steady speed v solves
+ *  lag x (rate + gain x lag) = v: 5.8 at the cycle's 55, 3.0 at 25. */
+export const CYCLE_CAM = { back: 9, up: 4.4, shoulder: 1.2, aimUp: 3, rate: 6, gain: 0.6 };
+
 const ss = (x) => x * x * (3 - 2 * x);
 
 /** What the look across should do while the ride camera `snake` comes in for
@@ -227,14 +262,16 @@ export function peekPose(S) {
   // gate sign (on the right of every mouth) is not between her and the lens.
   const rx = -uz;
   const rz = ux;
-  const back = PEEK.back + (S.spread ?? 0) * 0.7;
-  const sh = PEEK.shoulder * (S.side ?? 1);
+  // On a light cycle: higher, for the seat she is up on (`CYCLE_CAM`).
+  const C = S.cycle ? CYCLE_CAM : null;
+  const back = (C ? C.back : PEEK.back) + (S.spread ?? 0) * 0.7;
+  const sh = (C ? C.shoulder : PEEK.shoulder) * (S.side ?? 1);
   return {
     x: S.x - ux * back - rx * sh,
-    y: S.y + (S.up ?? PEEK.up),
+    y: S.y + (C ? C.up : S.up ?? PEEK.up),
     z: S.z - uz * back - rz * sh,
     lx: S.far.x,
-    ly: S.far.y + PEEK.aimUp,
+    ly: S.far.y + (C ? C.aimUp : PEEK.aimUp),
     lz: S.far.z,
   };
 }
@@ -305,6 +342,14 @@ export class PeekTrigger {
   reset() {
     this.end = null;     // ON: the end she is looking across from
     this.cand = null;    // OFF: the end she is walking into
+    this.dwell = 0;
+    this.away = 0;
+  }
+
+  /** ON at once, for `E`: she stepped into a light cycle's pad (the head of this file). */
+  force(E) {
+    this.end = E;
+    this.cand = null;
     this.dwell = 0;
     this.away = 0;
   }
@@ -381,7 +426,7 @@ export class BridgePeek {
     const S = subject ?? (hold === 'hold' && this._off
       ? { ...this.last, x: look.x + this._off.x, y: look.y + this._off.y, z: look.z + this._off.z }
       : this.last);
-    const P = peekPose(S);
+    const P = this._chase(dt, peekPose(S), !!S.cycle);
     // Both lenses as bearing / pitch / distance round HER (the ordinary aim)...
     const polar = (x, y, z) => {
       const d = Math.hypot(x, y, z) || 1;
@@ -403,5 +448,21 @@ export class BridgePeek {
     // ...and the aim on its own, from her out to the island.
     camera.lookAt(this._L.copy(look).lerp(this._aim.set(P.lx, P.ly, P.lz), wa));
     return true;
+  }
+
+  /** On a light cycle the pose is CHASED, at a rate that grows with how far
+   *  behind it is (`CYCLE_CAM`, the head of this file); off one it is the pose,
+   *  and the chase only remembers where the lens is, so the hop on starts from
+   *  there. Pure in everything but `this._P`. */
+  _chase(dt, P, cycle) {
+    const C = this._P;
+    if (!cycle || !C) {
+      this._P = { ...P };
+      return P;
+    }
+    const lag = Math.hypot(P.x - C.x, P.y - C.y, P.z - C.z);
+    const k = 1 - Math.exp(-(CYCLE_CAM.rate + CYCLE_CAM.gain * lag) * dt);
+    for (const key of ['x', 'y', 'z', 'lx', 'ly', 'lz']) C[key] += (P[key] - C[key]) * k;
+    return { ...C };
   }
 }

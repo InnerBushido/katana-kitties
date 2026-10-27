@@ -12991,17 +12991,20 @@ class Game {
     let far = null;
     let w = 1;
     let lead = null;
+    let cycle = true;
     for (const i of members) {
       const at = this.players[i]?.peekAt;
       if (!at || (far && at.far !== far)) return null;
       far = at.far;
       w = Math.min(w, at.w);
       lead ??= at;
+      cycle &&= !!at.cycle;
     }
     if (!far) return null;
     const mid = this._centroid(members);
-    // the shoulder and height the real world's mouths choose (worldpeek.js)
-    return { x: mid.x, y: mid.y, z: mid.z, far, w, spread: this._spread(members), side: lead.side, up: lead.up };
+    // the shoulder and height the real world's mouths choose (worldpeek.js);
+    // the light cycle's pose only when every one of them is up on one (peek.js)
+    return { x: mid.x, y: mid.y, z: mid.z, far, w, spread: this._spread(members), side: lead.side, up: lead.up, cycle };
   }
 
   /**
