@@ -1928,6 +1928,95 @@ console.log('\n--- nothing in public/help/ is dead weight ---');
      cannot be kept alive by an unrelated `arena.jpg` elsewhere in the markup. */
   ok('every picture in public/help/ is pointed at by the panel', orphans.length === 0,
     orphans.join(', '));
+
+  /* ...AND SAYS HOW BIG IT IS. The panel lazy-loads its pictures, so the
+     width and height on the tag are the only size the layout has until the
+     file arrives; a wrong ratio is a card that jumps under the finger that is
+     scrolling it. The ratio, not the pixels: the clan symbols are drawn at
+     twice the size they are shown, for a phone's sharp screen, on purpose.
+     What is never right is a tag that is a different SHAPE from its file, or
+     one that asks for more pixels than the file has. Found when the glossary
+     reused the shrine still and its tag, copied from the Clans card, was 4px
+     out — so was the Clans card's. */
+  const dims = (b) => {
+    if (b[0] === 0x89) return [b.readUInt32BE(16), b.readUInt32BE(20)];      // PNG IHDR
+    if (b[0] === 0x47) return [b.readUInt16LE(6), b.readUInt16LE(8)];        // GIF screen
+    for (let i = 2; i < b.length;) {                                         // JPEG: the first SOF
+      if (b[i] !== 0xff) { i++; continue; }
+      if (b[i + 1] >= 0xc0 && b[i + 1] <= 0xc3) return [b.readUInt16BE(i + 7), b.readUInt16BE(i + 5)];
+      i += 2 + b.readUInt16BE(i + 2);
+    }
+    return [0, 0];
+  };
+  const wrong = [];
+  let tags = 0;
+  for (const m of html.matchAll(/<img\b[^>]*?(?:src|data-help-gif)="\/help\/([^"]+)"[^>]*>/g)) {
+    tags++;
+    const w = +(/\bwidth="(\d+)"/.exec(m[0])?.[1] ?? 0); const h = +(/\bheight="(\d+)"/.exec(m[0])?.[1] ?? 0);
+    const [rw, rh] = dims(readFileSync(new URL(m[1], help)));
+    if (!w || !h || Math.abs(w / h - rw / rh) > 0.002 * (rw / rh) || w > rw || h > rh) wrong.push(`${m[1]} says ${w}x${h}, is ${rw}x${rh}`);
+  }
+  ok('...and every picture on the panel states its own shape, and no more pixels than it has',
+    tags > 40 && wrong.length === 0, wrong.join('; ') || `${tags} pictures`);
+}
+
+console.log('\n--- 日本語 every Japanese word in the game is in the glossary ---');
+{
+  /* Richard, Oct 2026: "let's create a Japanese Dictionary/Terminology/Culture
+     page in Help ... with every Japanese term in the game". EVERY is the word a
+     page cannot keep on its own: the game grows a sign a week, and a glossary
+     written once is a glossary that is wrong by the next island. So the list
+     is taken from the code — every quoted string in src/ with a kanji in it,
+     comments stripped — and each word has to be somewhere on the page.
+     A lone kana is a SOUND, not a word, and is exempt: the Flash Step's rain
+     of letters is mostly katakana, which the "How to read it" card explains as
+     an alphabet. The dev-only pages are exempt too, because no player sees
+     them. */
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const a = html.indexOf('<!-- doc-glossary -->'); const z = html.indexOf('<!-- /doc-glossary -->');
+  const gl = a >= 0 && z > a ? html.slice(a, z) : '';
+  const topic = helpTopic(html, 'Japanese words &amp; culture');
+  ok('the Help panel has a Japanese words & culture topic, between the Dream Dojo and saving',
+    topic.length > 0 && gl.includes(topic.slice(0, 200))
+    && html.indexOf('id="help-words"') > html.indexOf('<span class="ht-title">The Dream Dojo')
+    && html.indexOf('id="help-words"') < html.indexOf('<span class="ht-title">Saving your progress</span>'));
+  const cats = [...gl.matchAll(/<details class="help-card help-sub" name="help-words">\s*<summary class="help-topic">\s*<span class="ht-ico"[^>]*>[^<]*<\/span>\s*<span class="ht-title">([^<]+)<\/span>/g)].map((m) => m[1]);
+  ok('...in sub-topics a reader can find a word by: reading, the dojo, the orbs, the signs, home, Shinto, music',
+    ['How to read it', 'The dojo and the sword', 'The Kotodama orbs', 'The Dream Dojo, sign by sign',
+      'Home and garden', 'Shinto, spirit and manners', 'Music'].every((c) => cats.includes(c)), cats.join(' | '));
+
+  const src = new URL('../src/', import.meta.url);
+  const walk = (dir) => readdirSync(new URL(dir, src), { withFileTypes: true })
+    .flatMap((e) => (e.isDirectory() ? walk(dir + e.name + '/') : [dir + e.name]));
+  const words = new Map();
+  for (const f of walk('').filter((f) => f.endsWith('.js') && !/tuning-page|sprite-editor/.test(f))) {
+    const code = stripComments(readFileSync(new URL(f, src), 'utf8'));
+    for (const m of code.matchAll(/(['"`])((?:(?!\1)[^\n])*?[\u3400-\u9fff](?:(?!\1)[^\n])*?)\1/g)) {
+      for (const w of m[2].match(/[\u3040-\u30ff\u3400-\u9fff]+/g) ?? []) {
+        if (!/[\u3400-\u9fff]/.test(w) && w.length === 1) continue;
+        if (!words.has(w)) words.set(w, f);
+      }
+    }
+  }
+  const missing = [...words].filter(([w]) => !gl.includes(w));
+  ok('...and every word the game writes in Japanese is explained on it',
+    words.size > 60 && missing.length === 0,
+    missing.length ? missing.map(([w, f]) => `${w} (${f})`).join(', ') : `${words.size} words`);
+
+  /* EVERY ENTRY HAS ALL THREE: the word, how it is written in our letters,
+     and how to say it. The respelling is the half most likely to be left off,
+     and it is the half a nine-year-old reading on her own needs. */
+  const entries = [...gl.matchAll(/<div class="jp-e">\s*<dt>([\s\S]*?)<\/dt>\s*<dd>([\s\S]*?)<\/dd>/g)];
+  const thin = entries.filter((m) => !/<b class="jp-r">[^<]+<\/b>/.test(m[1]) || !/<span class="jp-say">say <i>[^<]+<\/i><\/span>/.test(m[1])
+    || m[2].replace(/<[^>]+>/g, '').trim().length < 6);
+  ok('...each with how it is written in our letters, how to say it, and what it means',
+    entries.length > 120 && thin.length === 0, thin.map((m) => m[1].replace(/<[^>]+>/g, '').trim()).join(' | ') || `${entries.length} entries`);
+  /* THE TAP-IN for a word with a story behind it is a third accordion level,
+     and like "The rare orbs" it needs a group of its own: sharing a parent's
+     name would close the card it was opened inside (see the fold checks). */
+  const more = [...gl.matchAll(/<details class="help-card help-sub jp-more" name="([^"]+)">/g)].map((m) => m[1]);
+  ok('...and the words with a story behind them open one in their own group, which closes neither parent',
+    more.length >= 8 && more.every((n) => n === 'help-jp-more'), `${more.length} stories`);
 }
 
 console.log('\n--- a join does not wipe the scoreboard ---');
@@ -19132,10 +19221,13 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
   /* FOURTEEN, AND A FOURTH GROUP: "Ask Payne" lives inside "Quests &
      achievements", which is a top-level `help` card, so it gets `help-quests`
      for the reason the other three have theirs. */
-  /* FIFTEEN: "Riposte expanded" joined the two in "The rare orbs". */
+  /* FIFTEEN: "Riposte expanded" joined the two in "The rare orbs".
+     TWENTY-FOUR: the glossary's nine kinds of word, in `help-words`. Its
+     tap-ins carry `jp-more` and their own `help-jp-more`, and are checked
+     with the glossary. */
   ok('...and every sub-card is in its parent\'s own accordion group',
-    subs.length === 15
-    && subs.every((n) => ['help-move', 'help-arena', 'help-rare', 'help-quests'].includes(n)),
+    subs.length === 24
+    && subs.every((n) => ['help-move', 'help-arena', 'help-rare', 'help-quests', 'help-words'].includes(n)),
     `${subs.length}: ${[...new Set(subs)].join(', ')}`);
   ok('...and the three expanders are the ones in the third group',
     subs.filter((n) => n === 'help-rare').length === 3);

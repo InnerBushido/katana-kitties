@@ -682,6 +682,16 @@ every sentence was true, most were pinned against the code by a check that
 wanted them kept, and nothing ever asked what they added up to. A card gets
 long one correct paragraph at a time.
 
+**Two flags a new island or a new word has to follow.** An unfinished simulator
+island carries `wip: true` in `src/systems/dream/islands.js`. That one flag
+puts the orange 工事中 mark (`src/core/wipmark.js`, one shape for the canvas,
+the SVG and the Help page's CSS) on its signs, its bridge end, the light cycle's
+card, both maps, Lionheart's list and its Help card, which sorts to the bottom.
+Finishing an island is deleting the flag. And **every Japanese word the game
+writes has an entry in Help's *Japanese words & culture* glossary**, with its
+meaning and how to say it. `world-check` reads every quoted string in `src/`
+and fails on a word the page does not explain.
+
 **Every new screen is designed for a phone at the same time as for a desktop**,
 and two rules come out of that. **A `body.touch-ui` rule is part of the work,
 not a follow-up** — the award card at the ending shipped with none at all, so a
