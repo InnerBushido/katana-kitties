@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { SIM, HOLO } from '../../world/simworld.js';
 import { Kiosk, idleIn } from './kiosk.js';
+import { isWip } from './islands.js';
+import { WIP_TEXT, WIP_ORANGE } from '../../core/wipmark.js';
 
 /* ---------------------------------------------------------------------------
    THE DATA HIGHWAY AND ITS LIGHT CYCLES — 光.
@@ -96,13 +98,20 @@ export class DataHighway {
     }
     road.length = road.cum[road.cum.length - 1];
     for (const [end, way, to2] of [[road.A, 1, name], [road.B, -1, back]]) {
+      /* 工事中 on the way TO an unfinished island, in place of the walking
+         line: four rows is what the card is sized for, and "this one is not
+         finished" is the more useful thing to know before the ride. The way
+         back is an ordinary card — she is leaving it. */
+      const wip = way > 0 && isWip(key);
       const k = new Kiosk(this.dream, {
         x: end.x, z: end.z, y: end.y, r: 2.0, colour: HOLO.gold, kanji: '光', title: 'LIGHT CYCLE', near: 6,
         card: () => [
           { text: '光 LIGHT CYCLE', size: 2.0, color: HOLO.gold, glow: true, jp: true },
           { text: `to ${to2}`, size: 1.5 },
           { text: `${Math.round(road.length)} units · about ${Math.round(rideTime(road.length))} seconds`, size: 1.1, color: 0x9fefff },
-          { text: 'or walk it — the highway is a bridge too', size: 1.0, color: 0x9fefff },
+          wip
+            ? { text: `工事中 ${WIP_TEXT.word} — ${WIP_TEXT.line}`, size: 1.0, color: WIP_ORANGE, jp: true, wip: true }
+            : { text: 'or walk it — the highway is a bridge too', size: 1.0, color: 0x9fefff },
         ],
         prompt: (p, key2) => `[${key2}]  RIDE TO ${to2}`,
         interact: (p) => this.ride(p, road, way),

@@ -210,9 +210,19 @@ window.__ddStills = async function (opts = {}) {
     school: { on: /FEAST/, secs: 6 }, sentries: { on: /SENTRIES/, secs: 6 },
     bamboo: { on: /INFILTRATION/, secs: 4 }, shadow: { on: /EASY/, secs: 6 },
   };
+  /* ON THE GAME'S CLOCK, NOT THE WALL'S: a hidden pane throttles its
+     timers to about one a second, and every frame's step is clamped, so
+     seven wall seconds there were half a second of drill — Lionheart had not
+     thrown his first blow. `secs` of game at 30 a second, whatever the pane. */
   const until = async (secs) => {
-    const t0 = performance.now();
-    while (performance.now() - t0 < secs * 1000) await step(5);
+    const gd = g.clock.getDelta;
+    g.clock.getDelta = () => 1 / 30;
+    try {
+      for (let k = 0; k < secs * 30; k++) {
+        g._tick(performance.now());
+        if (k % 10 === 0) await new Promise((r) => setTimeout(r, 0));
+      }
+    } finally { g.clock.getDelta = gd; }
   };
   /* The list is islands.js's, not `D.isles`: that only exists once a kitten
      is in the simulator, so asking for one island before going in filmed
@@ -269,6 +279,20 @@ window.__ddStills = async function (opts = {}) {
         cam = camAt(
           { x: I.x + Math.sin(yaw) * back + SIM.dx, y: I.y + I.r * (opts.wideUp ?? 0.95), z: I.z + Math.cos(yaw) * back + SIM.dz },
           { x: I.x + SIM.dx, y: I.y, z: I.z + SIM.dz }, 50);
+      } else if (key === 'shadow' && (D.shadow?.boss?.group ?? D.shadow?.boss)?.position) {
+        /* THE SHADOW, OVER HER SHOULDER AT HIM. The fight stands her at the
+           ring's entry (shadow.js `_entry`) and he walks in on her, so the
+           island-wide lens — from the hub side at the middle — framed an empty
+           floor with the two of them off its left edge. Behind her, on the
+           line to him, aimed past her toward him. */
+        const B = (D.shadow.boss.group ?? D.shadow.boss).position;
+        const hx = p.position.x - SIM.dx; const hz = p.position.z - SIM.dz;
+        const dx = B.x - hx; const dz = B.z - hz; const dl = Math.hypot(dx, dz) || 1;
+        const back = opts.shadowBack ?? 9; const up = opts.shadowUp ?? 6; const side = opts.shadowSide ?? 4;
+        const k = opts.shadowAim ?? 0.55;
+        cam = camAt(
+          { x: hx - (dx / dl) * back + (dz / dl) * side + SIM.dx, y: I.y + up, z: hz - (dz / dl) * back - (dx / dl) * side + SIM.dz },
+          { x: hx + dx * k + SIM.dx, y: I.y + 2, z: hz + dz * k + SIM.dz }, 50);
       } else if (key === 'kata' && D.kata?.cameraFocus?.(p)) {
         /* THE KATA, as she sees it: up her floor at him, from her run's own
            yaw and pitch (kata.js KATA_CAM), only nearer for a 480px card.

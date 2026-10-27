@@ -30,7 +30,7 @@ import { Ranks, SECRET_LINE } from './dream/rank.js';
 import { ShadowFight, SHADOW_LINES, HANDOVER } from './dream/shadow.js';
 import { LionVoice, VOICE_TAIL } from './dream/lionvoice.js';
 import { Rundown } from './dream/rundown.js';
-import { ISLANDS, islandCentre } from './dream/islands.js';
+import { ISLANDS, islandCentre, PORT_SIGN } from './dream/islands.js';
 import { SimBar, holoFlicker } from './dream/holo.js';
 import { Approach } from './dream/approach.js';
 import { Lecture } from './dream/lecture.js';
@@ -48,6 +48,7 @@ import { enterHolo, leaveHolo, grantHolo, holoLeft, HoloChoice, HOLO_MAX_EACH } 
 import { LionGuide, LOST_AFTER, LOST_AGAIN, LOST_MAX } from './dream/lionguide.js';
 import { Kiosk, idleIn, isleSpot } from './dream/kiosk.js';
 import { Waypoints } from './dream/waypoint.js';
+import { WIP_TEXT, WIP_ORANGE } from '../core/wipmark.js';
 
 /** Her single-cell pose billboards, which the tube puppet mirrors. */
 const PUPPET_POSES = ['eatPose', 'blessPose', 'warpPose', 'breathPose', 'scaredPose', 'sweepPose'];
@@ -1786,6 +1787,7 @@ export class DreamDojo {
       ...this.school.stations, ...this.ranks.stations, ...this.shadow.stations,
       ...this.highway.stations];
     this._buildMapKiosk();
+    this.tubesSign = this._tubesSign();
     g.world.simSite = this.simSite();
     /* 道標 WAYPOINTS, set on the Map of the Simulator (dream/waypoint.js),
        drawn on the corner minimap through `simWaypoints`. */
@@ -1927,9 +1929,11 @@ export class DreamDojo {
     // with a light cycle at each end (highway.js).
     if (spec.cycle) this.highway.add(key, spec.name, from, to, prev ? ISLANDS[spec.from].name : undefined);
     else this.sim.addBridge(from, to, { wobble: 3, waves: 1, name: `${key} bridge` });
-    const sign = this.sim.addSign(c.x + c.dir.x * (spec.r - 2), c.y + 12, c.z + c.dir.z * (spec.r - 2), spec.kanji, spec.name);
+    const sign = this.sim.addSign(c.x + c.dir.x * (spec.r - 2), c.y + 12, c.z + c.dir.z * (spec.r - 2), spec.kanji, spec.name,
+      HOLO.cyan, { wip: !!spec.wip });
     const gate = this._gateSign(key);
-    return { key, x: c.x, y: c.y, z: c.z, r: spec.r, fwd: c.dir, sign, gate };
+    const warn = spec.wip ? this._wipSign(to, c.dir, spec.cycle ? HIGHWAY.halfW : 2.2) : null;
+    return { key, x: c.x, y: c.y, z: c.z, r: spec.r, fwd: c.dir, sign, gate, warn };
   }
 
   /**
@@ -1960,8 +1964,45 @@ export class DreamDojo {
     const dc = this.game.world.dojoCentre;
     const c = islandCentre(dc, this.layout.u, ISLANDS[via]);
     const at = gateSignSpot(dc, c.dir, ISLANDS[via].cycle ? HIGHWAY.halfW : 2.2);
-    return this.sim.addSign(at.x, at.y + hops * GATE_SIGN.stack, at.z, spec.kanji, spec.name, HOLO.cyan,
-      { scale: GATE_SIGN.scale, sub: hops ? `past the ${ISLANDS[via].name}` : '' });
+    return this.sim.addSign(at.x, at.y + hops * GATE_SIGN.stack, at.z, spec.kanji, spec.name, HOLO.cyan, {
+      scale: GATE_SIGN.scale,
+      sub: hops ? `past the ${ISLANDS[via].name}` : spec.wip ? `${WIP_TEXT.word} — ${WIP_TEXT.line}` : '',
+      wip: !!spec.wip,
+    });
+  }
+
+  /**
+   * 夢道場 THE DREAM DOJO TUBES, on the hub beside the port bridge's mouth:
+   * every island's bridge has its name there, and the one bridge every
+   * kitten walks first had none. A gate sign in all but where — on the
+   * OTHER side of the mouth, because the map kiosk (MAP_KIOSKS[0], side 7)
+   * already stands on the gate-sign side of this one and its card hangs at
+   * the sign's height.
+   */
+  _tubesSign() {
+    const dc = this.game.world.dojoCentre;
+    const r = 47 - GATE_SIGN.back;
+    const side = -(2.2 + GATE_SIGN.side);
+    const u = this.layout.u;
+    return this.sim.addSign(dc.x + u.x * r - u.z * side, dc.y + GATE_SIGN.up, dc.z + u.z * r + u.x * side,
+      PORT_SIGN.kanji, PORT_SIGN.name, HOLO.cyan, { scale: GATE_SIGN.scale, sub: 'Lionheart · your tubes · the way out' });
+  }
+
+  /**
+   * 工事中 AT THE OTHER END. Richard: "also at the entrances/exits of the
+   * bridges saying something like 'may not work as expected' or
+   * 'experimental'". The hub end is the gate sign's own line; this is the
+   * island end, where she steps off: beside the deck the way the gate sign
+   * is (the bridge camera looks along the deck, so a sign over it is in her
+   * face), and a stride onto the island, so the light cycle's pad at a
+   * highway's end is not under it.
+   */
+  _wipSign(to, dir, halfW) {
+    const side = halfW + GATE_SIGN.side;
+    const x = to.x + dir.x * 3 - dir.z * side;
+    const z = to.z + dir.z * 3 + dir.x * side;
+    return this.sim.addSign(x, to.y + GATE_SIGN.up, z, WIP_TEXT.kanji, WIP_TEXT.word, WIP_ORANGE,
+      { scale: GATE_SIGN.scale, sub: WIP_TEXT.line, wip: true });
   }
 
   /**

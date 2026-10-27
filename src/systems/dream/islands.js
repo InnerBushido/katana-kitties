@@ -25,19 +25,38 @@
 export const ISLANDS = {
   gallery: { ang: 38, dist: 128, r: 24, dy: 4, name: 'KOTODAMA GALLERY', kanji: '言霊' },
   hall: { ang: -38, dist: 128, r: 24, dy: 2, name: 'CLAN TRIAL HALL', kanji: '一族' },
-  range: { ang: 78, dist: 138, r: 24, dy: 6, name: 'TAMESHIGIRI RANGE', kanji: '試斬' },
+  range: { ang: 78, dist: 138, r: 24, dy: 6, name: 'TAMESHIGIRI RANGE', kanji: '試斬', wip: true },
   /* r 28, not 22: the 記 Kata Board stands in its north-east corner now
      (kataboard.js), where at 22 there was only Lionheart's attack spots. */
   kata: { ang: -78, dist: 138, r: 28, dy: 8, name: 'KATA TRACE', kanji: '型' },
-  storm: { ang: 116, dist: 150, r: 24, dy: 3, name: 'KUDAMONO STORM', kanji: '果物' },
+  storm: { ang: 116, dist: 150, r: 24, dy: 3, name: 'KUDAMONO STORM', kanji: '果物', wip: true },
   sine: { ang: -116, dist: 150, r: 26, dy: 5, name: 'SINE GAUNTLET', kanji: '正弦' },
-  sentries: { ang: 150, dist: 250, r: 26, dy: 10, name: 'HOLO-SENTRIES', kanji: '番兵', cycle: true },
+  sentries: { ang: 150, dist: 250, r: 26, dy: 10, name: 'HOLO-SENTRIES', kanji: '番兵', cycle: true, wip: true },
   bamboo: { ang: -150, dist: 250, r: 30, dy: 0, name: 'BAMBOO INFILTRATION', kanji: '忍', cycle: true },
   school: { ang: 180, dist: 150, r: 28, dy: 0, name: 'ARENA SCHOOL', kanji: '闘技' },
   /* STRAIGHT ON PAST THE SCHOOL, so its highway starts on the school's far
      rim (`from`) rather than at the hub — see `_raiseIsland`. */
   shadow: { ang: 180, dist: 330, r: 30, dy: 26, name: 'SHADOW LIONHEART', kanji: '影', cycle: true, from: 'school' },
 };
+
+/* 工事中 UNDER CONSTRUCTION. Richard, Oct 2026: "Tameshigiri Range,
+   Kudamono Storm, Holo-Sentries" are to carry an orange mark next to their
+   names wherever their names are — the island and hub signs, a sign at the
+   island end of the bridge, the map, the minimap, the light cycle's card,
+   Lionheart's list and the Help page, which puts them at the bottom. ONE
+   FLAG (`wip` above), read by all of them, so finishing an island is
+   deleting three letters; world-check holds every place to it. What the mark
+   looks like is core/wipmark.js. */
+export const isWip = (key) => !!ISLANDS[key]?.wip;
+
+/* THE PORT'S NAME — Lionheart's island, where the tubes are and where every
+   kitten arrives. Richard: "Lets add a 3D name near the Dojo of the Turning
+   Circle bridge for the 'Your Tubes' island and let's name it 'The Dream
+   Dojo Tubes'." 夢道場, yume dōjō, is "Dream Dojo". The sign, the waypoint
+   line and both maps read this. `short` is for the maps, which name every
+   island in a word: "DREAM DOJO TUBES" on Lionheart's map ran its first
+   letter under the Trial Hall's disc. */
+export const PORT_SIGN = { kanji: '夢道場', name: 'THE DREAM DOJO TUBES', map: 'DREAM DOJO TUBES', short: 'TUBES' };
 
 /**
  * WHAT EACH ISLAND IS, IN TWO SIZES: a word for a map with ten of them on it,
@@ -62,7 +81,7 @@ export const ISLE_ABOUT = {
   gallery: { short: 'GALLERY', about: 'Every Kotodama orb on a pedestal. Try its drill — win it, and that orb is yours in here.' },
   hall: { short: 'TRIAL HALL', about: 'All six clans. Swear an oath, then pass the trial that needs its power.' },
   range: { short: 'RANGE', about: 'Three sword drills: ONE SWING, COMBO 60 and CLEAN CUT.' },
-  kata: { short: 'KATA', about: 'Pick any song. Lionheart attacks on the beat — step off his blows and jump his sweeps. Write your own routines too.' },
+  kata: { short: 'KATA', about: "Lionheart's dance battle. Pick a song, step off his blows on the beat, jump his sweeps and slash him back. Dance together, write your own routines, and top the Kata Board." },
   storm: { short: 'STORM', about: 'Cut the holo-fruit out of the air before it lands. Leave the purple viruses alone.' },
   sine: { short: 'SINE', about: 'An obstacle course of laser bars, one kitten at a time. Duck, jump and dodge — the fastest time wins.' },
   sentries: { short: 'SENTRIES', about: 'Sentries that shoot back, always with a warning. Dodge or raise your Ward, then hit the core.' },

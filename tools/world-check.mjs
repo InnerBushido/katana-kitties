@@ -42263,6 +42263,24 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         && LG.GUIDE_ORDER.length === KEYS.length && KEYS.every((k) => LG.GUIDE_ORDER.includes(k)),
         KEYS.filter((k) => !ISL.ISLE_ABOUT[k]).join());
 
+      /* 工事中: he lists the finished islands first and sends her to them
+         first, the Shadow last as ever, and marks the unfinished three on his
+         list and his map. */
+      {
+        const at = (k) => LG.GUIDE_ORDER.indexOf(k);
+        const wipK = KEYS.filter(ISL.isWip);
+        const fine = KEYS.filter((k) => !ISL.isWip(k) && k !== 'shadow');
+        ok('...工事中 he lists the unfinished islands after every finished one, and the Shadow last',
+          wipK.every((w) => fine.every((k) => at(k) < at(w))) && at('shadow') === KEYS.length - 1, LG.GUIDE_ORDER.join());
+        const svg = D.guide.mapSvg(her);
+        const list = D.guide.markup(her.index, 'lionQuests', 0, () => '');
+        ok('...and marks them on his map and on his list, three of each',
+          (svg.match(/class="wip-svg"/g) ?? []).length === wipK.length
+          && (list.match(/class="wip-mark"/g) ?? []).length === wipK.length
+          && wipK.every((k) => new RegExp(`${ISL.ISLANDS[k].name}</b> <span class="wip-mark"`).test(list)),
+          `${(svg.match(/wip-svg/g) ?? []).length} on the map, ${(list.match(/wip-mark/g) ?? []).length} on the list`);
+      }
+
       /* LEFT AND RIGHT ARE MEASURED, off where the islands actually stand, as
          she walks in off the port bridge — the side his `islands` line has
          always named them on, and now his directions name them on too. */
@@ -42807,6 +42825,22 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         drift.length === 0, drift.join());
       ok('...each headed by its own kanji and name',
         KEYS.every((k) => cardOf(k).includes(`>${ISL.ISLANDS[k].kanji}</span>`)));
+      /* 工事中: "All the 'under construction' experiences should display at
+         the bottom of the list ... in the Help screen", marked, after a line
+         that says what the mark means. */
+      const order = [...sec.matchAll(/data-isle="(\w+)"/g)].map((m) => m[1]);
+      const wipK = KEYS.filter(ISL.isWip);
+      const head = (k) => /<h4 class="clan-name">[\s\S]*?<\/h4>/.exec(cardOf(k))?.[0] ?? '';
+      const legend = /<p class="ht-note dd-wip-legend">([\s\S]*?)<\/p>/.exec(sec)?.[1] ?? '';
+      ok('...工事中 the unfinished islands\' cards are the last ones, and carry the mark in their header — and only they do',
+        order.slice(-wipK.length).sort().join() === [...wipK].sort().join()
+        && KEYS.every((k) => /class="wip-mark"/.test(head(k)) === ISL.isWip(k) && /dd-wip/.test(sec.slice(sec.lastIndexOf('<li', sec.indexOf(`data-isle="${k}"`)), sec.indexOf(`data-isle="${k}"`))) === ISL.isWip(k)),
+        order.join());
+      ok('...after a line that shows the mark and says what it means: experimental, at your own risk',
+        /class="wip-mark"/.test(legend) && /experimental/i.test(legend) && /own risk/.test(legend) && /may not work as\s+expected/.test(legend)
+        && sec.indexOf('dd-wip-legend') < sec.indexOf(`data-isle="${order[order.length - wipK.length]}"`)
+        && sec.indexOf('dd-wip-legend') > sec.indexOf(`data-isle="${order[order.length - wipK.length - 1]}"`),
+        legend.replace(/\s+/g, ' ').slice(0, 120));
       ok('...with Lionheart, the arcade and the map legend, and the 凶 explained',
         ['/help/dojo/lionheart.png', '/help/dojo/arcade.jpg', '/help/dojo/map.jpg'].every((f) => sec.includes(f))
         && /凶[\s\S]{0,200}EASY,\s*MEDIUM and HARD[\s\S]{0,200}1\.25×/.test(sec));
@@ -44499,6 +44533,95 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       /ARENA SCHOOL/.test(sh.userData.sign.sub) && !sc.userData.sign.sub
       && Math.hypot(sh.position.x - sc.position.x, sh.position.z - sc.position.z) < 1e-6 && sh.position.y > sc.position.y,
       sh.userData.sign.sub);
+  }
+
+  /* --- 工事中 the unfinished islands say so, wherever their names are --- */
+  {
+    /* Richard: "let's add warning/construction signs next to the names of the
+       parts/islands in the simulator that are currently 'under construction'
+       ... Tameshigiri Range, Kudamono Storm, Holo-Sentries ... also at the
+       entrances/exits of the bridges saying something like 'may not work as
+       expected' or 'experimental'". ONE FLAG, `wip`, and every place below
+       is asked whether it agrees with it — so finishing an island is deleting
+       the flag, and nothing can keep warning about it afterwards. */
+    const WM = await import('../src/core/wipmark.js');
+    const keys = Object.keys(ISL.ISLANDS);
+    const wip = keys.filter(ISL.isWip);
+    ok('工事中 the islands marked unfinished are the three Richard named, and only them',
+      wip.join() === 'range,storm,sentries', wip.join());
+    const disagree = keys.filter((k) => !!D.isles[k].sign.userData.sign.wip !== ISL.isWip(k)
+      || !!D.isles[k].gate.userData.sign.wip !== ISL.isWip(k));
+    ok('...its sign over the island and its sign on the hub both carry the mark, and no other island\'s do',
+      disagree.length === 0, disagree.join());
+    ok('...and the hub\'s says what the mark means, in words: EXPERIMENTAL, may not work as expected',
+      wip.every((k) => /EXPERIMENTAL/.test(D.isles[k].gate.userData.sign.sub) && /may not work as expected/.test(D.isles[k].gate.userData.sign.sub)),
+      wip.map((k) => D.isles[k].gate.userData.sign.sub).join(' | '));
+    // The island END of the bridge: on the island, a stride in, and beside the deck as the gate sign is.
+    const half = 13 * DD.GATE_SIGN.scale / 2;
+    const bad = [];
+    for (const k of keys) {
+      const I = D.isles[k]; const w = I.warn;
+      if (!ISL.isWip(k)) { if (w) bad.push(`${k}: warned and finished`); continue; }
+      if (!w) { bad.push(`${k}: no sign at the island end`); continue; }
+      const s = w.userData.sign;
+      const g = w.position;
+      const fromC = Math.hypot(g.x - I.x, g.z - I.z);
+      const along = (g.x - I.x) * I.fwd.x + (g.z - I.z) * I.fwd.z;
+      let clear = Infinity;
+      for (const B of sim.bridges) for (const q of B.deck.pts) clear = Math.min(clear, Math.hypot(g.x - q.x, g.z - q.z) - B.road.halfW);
+      if (s.kanji !== WM.WIP_TEXT.kanji || !s.wip || !/EXPERIMENTAL/.test(s.name) || !/may not work as expected/.test(s.sub)) bad.push(`${k}: says ${s.kanji} ${s.name} / ${s.sub}`);
+      if (fromC > I.r || along > 0) bad.push(`${k}: ${fromC.toFixed(1)} from the centre, ${along.toFixed(1)} along`);
+      if (clear <= half) bad.push(`${k}: ${clear.toFixed(2)} from a deck`);
+    }
+    ok('...and a third sign stands where she steps off its bridge: 工事中 EXPERIMENTAL, on the island\'s near half, never over a deck',
+      bad.length === 0, bad.join('; '));
+    const cards = D.highway.kiosks.map((k) => k.o.card().map((l) => l.text).join(' / '));
+    const warned = cards.filter((t) => /工事中/.test(t));
+    ok('...and the light cycle\'s card for the ride TO the Holo-Sentries says so, and no other ride\'s does',
+      warned.length === 1 && /to HOLO-SENTRIES/.test(warned[0]) && /may not work as expected/.test(warned[0])
+      && cards.filter((t) => /to HOLO-SENTRIES/.test(t)).length === 1, warned.join(' | '));
+    /* THE CORNER MINIMAP, by its source: drawing it here needs a canvas
+       this check does not have. The mark is asked by key, beside the word. */
+    const mm = read('../src/systems/minimap.js');
+    ok('...and the corner minimap draws the mark beside the name of every island the flag says',
+      /const ic = isWip\(d\.key\) \? 9 \* dpr : 0;/.test(mm) && /drawWip\(c, tx - tw \/ 2/.test(mm));
+    // The Help page draws it in CSS, which cannot import the shape: the same two paths.
+    const css = read('../src/style.css');
+    const uri = /\.wip-mark \{[\s\S]*?url\("data:image\/svg\+xml,([^"]+)"\)/.exec(css)?.[1] ?? '';
+    ok('...and the Help page\'s mark is the same triangle, path for path',
+      uri.includes(WM.WIP_PATH) && uri.includes(WM.WIP_BANG) && uri.includes(WM.WIP_ORANGE.replace('#', '%23')));
+  }
+
+  /* --- 夢道場 the Dream Dojo Tubes are named on the hub, like every island --- */
+  {
+    /* Richard: "Lets add a 3D name near the Dojo of the Turning Circle bridge
+       for the 'Your Tubes' island and let's name it 'The Dream Dojo Tubes'." */
+    const T = D._tubesSign();
+    const s = T.userData.sign;
+    const g = T.position;
+    const mouth = { x: dc.x + L.u.x * 47, z: dc.z + L.u.z * 47 };
+    const half = 13 * DD.GATE_SIGN.scale / 2;
+    let clear = Infinity; let who = '';
+    for (const B of sim.bridges) for (const q of B.deck.pts) {
+      const d = Math.hypot(g.x - q.x, g.z - q.z) - B.road.halfW;
+      if (d < clear) { clear = d; who = B.deck.name ?? '?'; }
+    }
+    // The map kiosk on the port spoke stands on the gate-sign side; this one must not be in its card.
+    const a = DD.MAP_KIOSKS[0];
+    const kx = dc.x + L.u.x * a.r - L.u.z * a.side; const kz = dc.z + L.u.z * a.r + L.u.x * a.side;
+    const fromKiosk = Math.hypot(g.x - kx, g.z - kz);
+    const fromGates = Math.min(...Object.values(D.isles).map((I) => Math.hypot(g.x - I.gate.position.x, g.z - I.gate.position.z)));
+    ok('夢道場 THE DREAM DOJO TUBES is named on the hub, by the port bridge\'s mouth, in the words Richard chose',
+      s.name === 'THE DREAM DOJO TUBES' && s.kanji === ISL.PORT_SIGN.kanji && Math.hypot(g.x - mouth.x, g.z - mouth.z) < 10
+      && Math.abs(g.y - dc.y - DD.GATE_SIGN.up) < 1e-6, `${s.kanji} ${s.name} ${Math.hypot(g.x - mouth.x, g.z - mouth.z).toFixed(1)} from the mouth`);
+    ok('...beside the deck and not over it, across the mouth from the map kiosk, clear of every gate sign',
+      clear > half && fromKiosk > 2 * half && fromGates > 2 * half,
+      `${clear.toFixed(2)} clear of ${who}, ${fromKiosk.toFixed(1)} from the kiosk, ${fromGates.toFixed(1)} from a gate sign`);
+    const WPn = await import('../src/systems/dream/waypoint.js');
+    ok('...and the map and the waypoint call it that too', WPn.destName('port') === ISL.PORT_SIGN.map
+      && /THE DREAM DOJO TUBES/.test(`THE ${ISL.PORT_SIGN.map}`) && /PORT_SIGN\.short/.test(read('../src/systems/dream/lionguide.js')) && WPn.destShort('port') === ISL.PORT_SIGN.short);
+    T.removeFromParent();
+    sim.signs.splice(sim.signs.indexOf(T), 1);
   }
 
   /* --- 望 the look across: over her shoulder at the island, before she steps on --- */

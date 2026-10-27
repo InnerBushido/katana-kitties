@@ -1,4 +1,5 @@
-import { ISLANDS, ISLE_ABOUT } from './islands.js';
+import { ISLANDS, ISLE_ABOUT, isWip, PORT_SIGN } from './islands.js';
+import { wipSvg, wipHtml } from '../../core/wipmark.js';
 import { featuredPool, picksFor } from './rank.js';
 import { SHADOW_LEVELS, inherited, kyoLeft } from './shadow.js';
 import { DESTS, destName, destShort } from './waypoint.js';
@@ -43,7 +44,11 @@ import { DESTS, destName, destShort } from './waypoint.js';
 
 /** The islands in the order he suggests them: round from the port, near ones
  *  first, then the highways, then his Shadow — the order they are met in. */
-export const GUIDE_ORDER = ['gallery', 'hall', 'range', 'kata', 'storm', 'sine', 'school', 'sentries', 'bamboo', 'shadow'];
+/* THE UNFINISHED THREE LAST, before only the Shadow (which is the finale
+   wherever it sits): he sends a kitten fresh in to the islands that work
+   first, and lists them in that order, the way the Help page does. Was
+   gallery, hall, range, kata, storm, sine, school, sentries, bamboo, shadow. */
+export const GUIDE_ORDER = ['gallery', 'hall', 'kata', 'sine', 'school', 'bamboo', 'range', 'storm', 'sentries', 'shadow'];
 
 /** His states on the shared card. The root, and what its rows open. */
 export const LION_STATES = ['lion', 'lionQuests', 'lionMap', 'lionKyo'];
@@ -428,7 +433,10 @@ export class LionGuide {
         + (next === key ? `<circle cx="${I.x}" cy="${I.z}" r="${I.r + f * 0.5}" class="ln-ring"/>` : '')
         + marks(key, I.x, I.z, I.r)
         + `<text x="${lx}" y="${lz}" font-size="${f}" class="ln-lbl${next === key ? ' next' : ''}">${esc(r?.short ?? key)}`
-        + `<tspan class="ln-st" font-size="${f * 0.8}">${stars}</tspan></text></g>`;
+        + `<tspan class="ln-st" font-size="${f * 0.8}">${stars}</tspan></text>`
+        // 工事中 over the name, not beside it: a name is centred and any width.
+        + (isWip(key) ? wipSvg(lx, lz - f * 1.45, f * 1.1) : '')
+        + '</g>';
     }).join('');
     const hub = `<g${tap('dojo')}><circle cx="${dc.x}" cy="${dc.z}" r="50" class="ln-hub"/>${marks('dojo', dc.x, dc.z, 50)}`
       + `<text x="${dc.x}" y="${dc.z + f * 0.35}" font-size="${f * 0.85}" class="ln-lbl hub">DOJO</text></g>`;
@@ -440,7 +448,7 @@ export class LionGuide {
       const tx = port.x + ((port.x - dc.x) / po) * (port.r + f * 2.2);
       const tz = port.z + ((port.z - dc.z) / po) * (port.r + f * 2.2) + f * 0.3;
       pd = `<g${tap('port')}><circle cx="${port.x}" cy="${port.z}" r="${port.r}" class="ln-port"/>${marks('port', port.x, port.z, port.r)}`
-        + `<text x="${tx}" y="${tz}" font-size="${f * 0.8}" class="ln-lbl hub">YOUR TUBES</text></g>`;
+        + `<text x="${tx}" y="${tz}" font-size="${f * 0.8}" class="ln-lbl hub">${PORT_SIGN.short}</text></g>`;
     }
     // The map kiosks, as on the corner minimap: one wherever there is a map.
     const kiosks = (D.mapKiosks ?? []).map((k) => k.group.position)
@@ -475,7 +483,7 @@ export class LionGuide {
           : r.max == null ? (r.got ? `${r.got}★ in katas` : 'no kata yet')
             : `${r.got} of ${r.max}★`;
         const where = r.visited ? what : 'not been yet';
-        return `<li class="pn-q ${cls}"><i>${mark}</i>${esc(r.kanji)} <b>${esc(r.name)}</b>`
+        return `<li class="pn-q ${cls}"><i>${mark}</i>${esc(r.kanji)} <b>${esc(r.name)}</b>${isWip(r.key) ? ` ${wipHtml()}` : ''}`
           + ` <span class="pc-dim">${esc(where)}</span></li>`;
       };
       const reps = this.report(p);

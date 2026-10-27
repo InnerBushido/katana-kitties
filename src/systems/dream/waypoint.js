@@ -48,7 +48,7 @@
 --------------------------------------------------------------------------- */
 
 import * as THREE from 'three';
-import { ISLANDS, ISLE_ABOUT } from './islands.js';
+import { ISLANDS, ISLE_ABOUT, PORT_SIGN } from './islands.js';
 import { holoSolid } from './targets.js';
 
 /* `gap` IS WHAT THE CAMERA SEES. Measured in the browser through her own
@@ -93,14 +93,14 @@ export const DESTS = ['dojo', 'port', ...Object.keys(ISLANDS)];
 /** A place's name, for the map and the toasts. */
 export function destName(key) {
   if (key === 'dojo') return 'DOJO OF THE TURNING CIRCLE';
-  if (key === 'port') return 'YOUR TUBES';
+  if (key === 'port') return PORT_SIGN.map;
   return ISLANDS[key]?.name ?? key;
 }
 
 /** A place's short name, for the minimap. */
 export function destShort(key) {
   if (key === 'dojo') return 'DOJO';
-  if (key === 'port') return 'TUBES';
+  if (key === 'port') return PORT_SIGN.short;
   return ISLE_ABOUT[key]?.short ?? key;
 }
 
