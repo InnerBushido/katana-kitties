@@ -631,6 +631,15 @@ for her final approval, and on 2026-10-04: "Payne approved the lines and her voi
 photos went to Higgsfield as image references and nowhere else. →
 [payne.md](docs/notes/payne.md)
 
+**Eight pictures in Help are not ours, and all eight may ship.** The photos and
+woodblock prints in the Japanese glossary (`public/help/japan/`) came off
+Wikimedia Commons, and every one is **public domain or CC0** — no legal duty to
+credit. Each is credited anyway: an **[n]** on the picture opens Help's last
+topic, **Picture credits**. A picture comes in only under PD, CC0 or CC BY;
+**never NC, ND or ShareAlike, and never a photo of a recognisable stranger**.
+`world-check` fails on a licence outside that list or a picture without its
+credit. → [credits.md](docs/notes/credits.md)
+
 **`out/` is a local-only repo with no remote, deliberately.** It holds generated
 artwork and trailer working files, 9MB+ of PNG that Vite would never ship. The
 *tools* are what is versioned, not their output.
@@ -741,6 +750,7 @@ you are about to change that area, and not before.
 | [four-players.md](docs/notes/four-players.md) | seating, the split screen, panes, leagues |
 | [input.md](docs/notes/input.md) | controllers, the vJoy/Joy-Con route, the Chrome stick bug, keyboard sets |
 | [help.md](docs/notes/help.md) | the Help panel and the rig that films it |
+| [credits.md](docs/notes/credits.md) | the pictures the game did not make: which licences may ship, the Picture credits page, adding one |
 | [tournament.md](docs/notes/tournament.md) | the ring, rounds, attacks, ring-outs, the feast |
 | [dragon-hunt.md](docs/notes/dragon-hunt.md) | the seven stars, the grottos, the spire, Ryuuseki |
 | [endgame.md](docs/notes/endgame.md) | the 100% ending, the eight Kotodama, the economy, **the quests that pay an orb at the ending**, **the last five and the hunt for them**, **the balance page** |

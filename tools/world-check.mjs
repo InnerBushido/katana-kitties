@@ -2019,6 +2019,55 @@ console.log('\n--- 日本語 every Japanese word in the game is in the glossary 
     more.length >= 8 && more.every((n) => n === 'help-jp-more'), `${more.length} stories`);
 }
 
+console.log('\n--- © every picture the game did not make is credited, and free to ship ---');
+{
+  /* Richard, Oct 2026: "let's add these in if these are open source and able
+     to be put into the project ... in case we want to eventually launch this
+     game as an official project". The glossary's pictures of Japan came off
+     Wikimedia Commons, and the one way that goes wrong later is quietly: a
+     picture added next year with a NonCommercial licence, or with no line in
+     the credits, looks exactly like a correct one on the page. So every file
+     in public/help/japan/ must be on the page, carry an [n] that resolves,
+     and have a credit whose licence is one a commercial release may ship
+     with no further duty. CC BY would be allowed too (the credit line IS its
+     duty); nothing else is. docs/notes/credits.md. */
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const a = html.indexOf('<!-- doc-credits -->'); const z = html.indexOf('<!-- /doc-credits -->');
+  const cr = a >= 0 && z > a ? html.slice(a, z) : '';
+  ok('Help has a Picture credits topic, last, after Saving your progress',
+    cr.includes('id="help-credits"') && cr.includes('<span class="ht-title">Picture credits</span>')
+    && a > html.indexOf('<span class="ht-title">Saving your progress</span>')
+    && html.indexOf('class="help-card" name="help"', z) < 0);
+  const credits = new Map([...cr.matchAll(/<li id="(credit-\d+)" data-licence="([^"]+)">([\s\S]*?)<\/li>/g)]
+    .map((m) => [m[1], { lic: m[2], body: m[3] }]));
+  const FREE = ['Public domain', 'CC0', 'CC BY 4.0', 'CC BY 3.0', 'CC BY 2.0'];
+  const bad = [...credits].filter(([, c]) => !FREE.includes(c.lic)
+    || !/<b>[^<]+<\/b>/.test(c.body) || !/href="https:\/\/commons\.wikimedia\.org\/wiki\/File:[^"]+"/.test(c.body)
+    || (c.lic.startsWith('CC') && !/creativecommons\.org\/(licenses|publicdomain)\//.test(c.body)));
+  ok('...each credit names the work, links its source, and is under a licence a release can ship',
+    credits.size >= 8 && bad.length === 0, bad.map(([k, c]) => `${k} (${c.lic})`).join(', ') || `${credits.size} credits`);
+  const dir = new URL('../public/help/japan/', import.meta.url);
+  const files = readdirSync(dir);
+  const figs = [...html.matchAll(/<figure class="help-shot jp-pic">\s*<img src="\/help\/japan\/([^"]+)"[\s\S]*?<\/figure>/g)];
+  const unref = files.filter((f) => {
+    const fig = figs.find((m) => m[1] === f);
+    const ref = fig && /<a class="credit-ref" href="#(credit-\d+)"/.exec(fig[0]);
+    return !ref || !credits.has(ref[1]);
+  });
+  ok('...and every picture from outside the game shows its [n], and the [n] is a real credit',
+    files.length >= 8 && unref.length === 0, unref.join(', ') || `${files.length} pictures`);
+  const used = new Set(figs.map((m) => /href="#(credit-\d+)"/.exec(m[0])?.[1]));
+  const spare = [...credits.keys()].filter((k) => !used.has(k));
+  ok('...and no credit is left over for a picture that has gone', spare.length === 0, spare.join(', '));
+  /* THE [n] IS WIRED, not a fragment. A `#credit-3` into a shut <details>
+     scrolls to nothing; `Game._showCredit` opens the card and then finds the
+     line, after the accordion's own scroll has run. */
+  const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  ok('...and the [n] opens Picture credits at its line, rather than jumping into a shut card',
+    /closest\('a\.credit-ref'\)[\s\S]{0,120}preventDefault\(\)[\s\S]{0,60}_showCredit\(/.test(main)
+    && /_showCredit\(hash\) \{[\s\S]*?addEventListener\('toggle'[\s\S]*?card\.open = true/.test(main));
+}
+
 console.log('\n--- a join does not wipe the scoreboard ---');
 {
   /* `_buildHud` THROWS THE BADGES AWAY AND BUILDS THEM FROM A TEMPLATE, and
