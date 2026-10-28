@@ -26,9 +26,21 @@ alias is the one we wanted, but `vercel` commands about this project need
 `--scope dream-dojo` if the CLI's default ever changes. `.vercel/project.json`
 holds the link and is gitignored.
 
+## Only `main` and `alpha` build (Oct 2026)
+
+**What follows was true until Oct 2026, and is now true only of `alpha`.**
+Richard: "I don't want to be deploying Vercel every time we push a branch, I expect only pushing to the main or alpha branch will publish to Vercel... all the other branch pushes are to backup the work". Since then `vercel.json` carries an `ignoreCommand`
+that exits 0 (skip the build) for any `VERCEL_GIT_COMMIT_REF` other than `main`
+or `alpha`, and 1 (build) for those two. That is Vercel's convention, and it is
+backwards from what the exit code reads like. Branches cut before the file
+existed do not carry it, so the project's *Ignored Build Step* setting holds
+the same command. A branch's old `-git-<branch>-` alias keeps whatever it last
+built. Combining branches before anybody else sees them is now the local
+`alpha` checkout's job; see PROJECT.md §3.
+
 ## Testing a branch from anywhere: push it, and Vercel builds a preview
 
-**Every branch pushed to GitHub gets its own deployment, automatically.** Asked
+**Every branch pushed to GitHub got its own deployment, automatically.** Asked
 for when Richard was away from home and wanted the unmerged work on his phone;
 `alpha` was pushed and a **Preview** deployment was Ready inside a minute, at a
 stable alias that does not move when the branch is pushed again:
@@ -161,9 +173,10 @@ build, and there is nothing to POST to.
 host is not allowed"* — so a tunnel also needs `server.allowedHosts` in
 `vite.config.js` before it will serve anything at all.
 
-Both are surmountable, and neither is worth it when a branch push does the job
-without the laptop being awake. **Tunnel only when you need HMR against a real
-phone**; use a preview deployment for everything else.
+Both are surmountable, and neither is worth it when an `alpha` push does the
+job without the laptop being awake. **Tunnel only when you need HMR against a
+real phone**; use the `alpha` preview for everything else. A work branch no
+longer builds one (see the top of this file).
 
 **19MB OF DEAD SPRITE SHEETS ARE OUT OF `public/`, AND WHERE THEY WENT IS THE
 POINT.** `ember_grid.png`, `frost_grid_v2.png` and the two `kitten_*_sheet.png`

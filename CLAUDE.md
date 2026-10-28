@@ -44,6 +44,11 @@ npm run artifact              # is the published page behind? says what to do if
 its work is on `origin/main`** — reaching `alpha` is not enough. Keep branches
 separate: merging one into another drags it along to `alpha` (Oct 2026, kendo
 rode in on the bamboo branch). Pushing `alpha` is not pushing `origin/main`.
+**A branch push is a backup**: `vercel.json` builds only `main` and `alpha`.
+Branches are merged into the LOCAL `alpha` checkout at
+`C:\Users\Hypot\kk-worktrees\alpha` and played there, and **`alpha` is pushed
+only when Richard says so** (`git -c kk.release=true push origin alpha`;
+`.githooks/pre-push` refuses it otherwise).
 See PROJECT.md §3.
 
 **Balance numbers are edited on a page, not in the code.** `npm run dev`, then

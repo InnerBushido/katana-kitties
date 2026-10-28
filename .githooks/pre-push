@@ -1,0 +1,42 @@
+#!/bin/sh
+#
+# REFUSE TO PUSH `alpha` OR `main` UNLESS THIS ONE PUSH SAYS IT MEANS IT.
+#
+# WHY: since Oct 2026 a work-branch push is a BACKUP and nothing else (vercel.json
+# builds only `main` and `alpha`), and the branches are merged into a LOCAL
+# `alpha` that is played before anybody else sees it. Richard: "have the commits
+# fast-forward merged into the Alpha branch locally before we push the alpha
+# branch". So `alpha` now sits ahead of `origin/alpha` most of the time, and a
+# bare `git push` or a `git push --all` from that checkout would publish it.
+# `main` has always been "only once Richard has played it". Both pushes are a
+# release to somebody, and a release is exactly what one press must not do.
+#
+# TO MEAN IT, in any shell:
+#
+#   git -c kk.release=true push origin alpha
+#
+# A config flag rather than an environment variable, because `VAR=1 git push`
+# is bash, and PowerShell, which this machine's terminals open in, has no such
+# syntax.
+#
+# A DELETE IS REFUSED TOO: `git push origin :alpha` arrives here as a push of
+# the all-zeros object, to the same ref.
+#
+# LIKE EVERY HOOK HERE it only exists in a checkout whose branch carries it, and
+# only once `git config core.hooksPath .githooks` has been run. So it is a
+# guard against a slip, not a lock. See PROJECT.md section 3.
+
+[ "$(git config --bool kk.release 2>/dev/null)" = "true" ] && exit 0
+
+refused=""
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/heads/alpha|refs/heads/main) refused="$refused ${remote_ref#refs/heads/}" ;;
+  esac
+done
+
+[ -z "$refused" ] && exit 0
+
+echo "pre-push: refusing to push$refused -- that is a release, not a backup." >&2
+echo "          If you mean it:  git -c kk.release=true push origin$refused" >&2
+exit 1

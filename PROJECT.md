@@ -179,9 +179,9 @@ beta — a tester opens the URL, or installs it to their phone's home screen and
 plays it fullscreen. **`main` is what the girls play and is not for testing.**
 
 ```bash
-git push -u origin mixed/some-pass                 # a work branch is published, every commit pushed
-git checkout alpha && git merge mixed/some-pass   # then merged into the testing channel
-git push origin alpha
+git push -u origin mixed/some-pass        # a work branch is published, every commit pushed: a BACKUP
+git -C C:/Users/Hypot/kk-worktrees/alpha merge --no-ff mixed/some-pass   # into the LOCAL alpha, played there
+git -c kk.release=true push origin alpha  # only when Richard says so: this is the release
 ```
 
 **Branches go to `alpha` first, and `main` follows `alpha`.** Richard, Oct 2026:
@@ -196,16 +196,28 @@ it, which is how the kendo pass reached `alpha` on the bamboo branch's back.
 **`origin/main` is still not pushed until Richard has played it**; `alpha` is
 the step before that, not a way around it.
 
-**Every other branch gets the same treatment**, at the same shape of alias — so
-a single risky change can be handed to somebody without going near `alpha`:
+**The local `alpha` is a checkout of its own**, at
+`C:\Users\Hypot\kk-worktrees\alpha` (a git worktree, outside OneDrive like the
+others). Richard, Oct 2026, wanted each branch's commits merged into `alpha`
+locally before `alpha` itself is pushed. So every branch in flight is merged
+there as it gets commits, and the combination is played there, with its own
+`npm run dev`. The branch being worked on stays where it is. It is a real merge
+and not a fast-forward: once two branches are in flight, `alpha` has commits
+neither of them has. Merging the same branch again later only brings in its new
+commits.
 
-```
-https://katana-kitties-git-<branch>-dream-dojo.vercel.app
-```
+**Pushing `alpha` or `main` needs `-c kk.release=true`.** `.githooks/pre-push`
+refuses both otherwise (a delete too), because the local `alpha` is now ahead of
+`origin/alpha` most of the time, and a bare `git push` from that checkout would
+release it. Like the other hooks, it only exists on a branch that carries it.
 
-No laptop has to be awake, it is real HTTPS, and **it never takes the production
-alias** — so the game the girls play is untouched by any amount of branch
-pushing. **Preview URLs are public**: SSO protection was deliberately turned off
+**Only `main` and `alpha` build on Vercel.** Every branch used to get its own
+preview at `katana-kitties-git-<branch>-dream-dojo.vercel.app`. Richard, Oct
+2026: "I don't want to be deploying Vercel every time we push a branch, I expect only pushing to the main or alpha branch will publish to Vercel... all the other branch pushes are to backup the work". So `vercel.json`'s `ignoreCommand` skips every other
+branch, and the old branch aliases stay on whatever they last built. **A branch
+cut before `vercel.json` existed does not carry it** and still builds when
+pushed; the project's own *Settings ▸ Git ▸ Ignored Build Step*, set to the same
+command, covers those. **Preview URLs are public**: SSO protection was deliberately turned off
 on 29 Aug 2026 so a branch build can be **installed to a phone's home screen and
 played fullscreen**, which needs the manifest and the icons fetchable and not
 merely the page. `vercel project protection` shows it and puts it back.
