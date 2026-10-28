@@ -180,7 +180,8 @@ plays it fullscreen. **`main` is what the girls play and is not for testing.**
 
 ```bash
 git push -u origin mixed/some-pass        # a work branch is published, every commit pushed: a BACKUP
-git -C C:/Users/Hypot/kk-worktrees/alpha merge --no-ff mixed/some-pass   # into the LOCAL alpha, played there
+git switch alpha && git merge --no-ff mixed/some-pass   # into the LOCAL alpha, and played there
+git switch mixed/some-pass                # ...and back to work
 git -c kk.release=true push origin alpha  # only when Richard says so: this is the release
 ```
 
@@ -196,15 +197,21 @@ it, which is how the kendo pass reached `alpha` on the bamboo branch's back.
 **`origin/main` is still not pushed until Richard has played it**; `alpha` is
 the step before that, not a way around it.
 
-**The local `alpha` is a checkout of its own**, at
-`C:\Users\Hypot\kk-worktrees\alpha` (a git worktree, outside OneDrive like the
-others). Richard, Oct 2026, wanted each branch's commits merged into `alpha`
-locally before `alpha` itself is pushed. So every branch in flight is merged
-there as it gets commits, and the combination is played there, with its own
-`npm run dev`. The branch being worked on stays where it is. It is a real merge
-and not a fast-forward: once two branches are in flight, `alpha` has commits
-neither of them has. Merging the same branch again later only brings in its new
-commits.
+**The local `alpha` is merged into in the ONE project folder.** Richard, Oct
+2026, wanted each branch's commits merged into `alpha` locally before `alpha`
+itself is pushed. So every branch in flight is merged into the local `alpha` as
+it gets commits, and the combination is played by switching to `alpha` and
+running `npm run dev`. It is a real merge and not a fast-forward: once two
+branches are in flight, `alpha` has commits neither of them has. Merging the
+same branch again later only brings in its new commits.
+
+**One folder, no worktrees.** A separate `alpha` checkout was tried for an
+afternoon, with two more for side sessions, and Richard: "Go all the way to
+single folder." A worktree is made only when he asks for two sessions to work
+at the same time, because two sessions in one folder overwrite each other's
+files. The price of one folder: switching to a branch without the newest assets
+deletes them from the folder and brings them back on the way back, and OneDrive
+syncs both. That is a nuisance, not a loss.
 
 **Pushing `alpha` or `main` needs `-c kk.release=true`.** `.githooks/pre-push`
 refuses both otherwise (a delete too), because the local `alpha` is now ahead of
