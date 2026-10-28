@@ -1830,6 +1830,28 @@ truck's row:
   not drawn. So a gate now has to be DRAWN as well as forming, and that is
   checked.
 
+## Payne's introduction to the world
+
+The first hello in the market, and a row on her card after that. Its design
+and rules are in [payne.md](payne.md#the-introduction-to-the-world), and the
+animation is in [art.md](art.md).
+
+What matters for this file: it is a StoryScene script with its own shot table
+(`introShot`). She stands on the stage for every line, like Patchfur at the
+ending, while the world she is talking about goes by behind her:
+
+- the market;
+- a crane up off it into the sky over the archipelago on "Look up";
+- a heap of props still standing;
+- a shrine, and then a dragon;
+- the town, wide;
+- the arena;
+- the Dojo of the Turning Circle, from over its rim;
+- the ring;
+- the sky, for her mission.
+
+Every subject is framed left of centre, clear of her.
+
 ## The arena exit
 
 > "Once the arena fight is over, if the players started the fight at the

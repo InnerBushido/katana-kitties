@@ -219,6 +219,11 @@ src/
                decides everything she says; hints and teases are OPT-IN; the
                card sits above the warning strip via `payneSpot` in split.js.
                docs/notes/payne.md)
+             payneintro (her INTRODUCTION TO THE WORLD — a StoryScene script
+               with its own shots and `PayneActor`, her on a <canvas> in the
+               cutscene, played from video-cut WebP pages; first hello and a
+               card row) payneclips (the clip table the game AND
+               tools/capture/payne-sheet.mjs read)
              sweepfx (the Goblin Sweep's ring - the poller trick again, over
                Player.sweepSeq; the sweep itself is `ATTACKS.sweep`)
              finaletide (what is BEHIND Patchfur at the ending: one measured

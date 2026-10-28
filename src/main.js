@@ -10310,9 +10310,17 @@ class Game {
         for (const o of p.wornOrbs ?? []) o.update(dt, p.position);
         for (const o of p.featOrbs ?? []) o.update(dt, this.orbCentre(p));
       }
+      /* PAYNE'S INTRODUCTION IS SHOT IN THE TOWN, not the Dream Dojo: its
+         shrine and its dragon are on screen, so they are ticked like the
+         dragon hunt's scenes tick them, and the simulator is never warmed for
+         a scene that never goes into it. */
+      if (this.storyScene.kind === 'intro') {
+        for (const s of this.world.shrines) s.update(dt, []);
+        for (const L of this.leaders) L.update(dt, []);
+      }
       this._updateMusic(dt);
       // The simulator going up a slice a frame, before the tour cuts into it.
-      this._primeSim(this.storyScene.camera);
+      if (this.storyScene.kind !== 'intro') this._primeSim(this.storyScene.camera);
       // Its lens says which world it is in: see StoryScene.update.
       this._renderView(this.storyScene.camera, 0, 0,
         ...this.renderer.getSize(new THREE.Vector2()).toArray(), null, true, this.storyScene.loc);

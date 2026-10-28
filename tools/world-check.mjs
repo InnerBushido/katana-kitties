@@ -48415,6 +48415,12 @@ console.log('\n--- the beat-map grid is one stop, then its lines, then a line\'s
   await housingChecks({ ok, world });
 }
 
+/* PAYNE'S INTRODUCTION TO THE WORLD — its own file, against this World. */
+{
+  const { payneIntroChecks } = await import('./checks/payneintro.mjs');
+  await payneIntroChecks({ ok, world });
+}
+
 console.log(fails
   ? `\n${fails} of ${checks} CHECK(S) FAILED`
   : `\nall ${checks} checks passed`);

@@ -1265,6 +1265,17 @@ git push origin alpha</code></pre>
         <td><code>capture/tea-sheet.mjs</code>, then <code>sprite-bake.mjs --proof</code></td>
       </tr>
       <tr>
+        <td><b>A cutscene actor cut from video, at 4× the tea ceremony</b></td>
+        <td>Payne's introduction: three Kling 3.0 takes at 960×960 (about 50 credits, Oct 2026),
+          cut into 148 cells 768 tall, plus a 384 set for the cautious tier. The cells are keyed by
+          the tool's own magenta un-mix (a video's edges are blends, which <code>chromaKey</code>
+          calls paint) and written as WebP pages with alpha, which the scene fetches when it
+          starts and drops when it ends. <code>src/systems/payneclips.js</code> is the clip table
+          both the tool and the game read. The downsample is <code>premul.mjs</code>, shared with
+          sprite-bake. Its checks are in <code>checks/payneintro.mjs</code>.</td>
+        <td><code>capture/payne-sheet.mjs</code></td>
+      </tr>
+      <tr>
         <td><b>Steam shelf art &amp; icons</b></td>
         <td>Crops and composites the title art into all six sizes — from the <b>master</b>, because
           every crop is a pixel coordinate measured on that file and the shipped copy is now WebP.

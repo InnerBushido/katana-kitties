@@ -38,7 +38,7 @@ the `voice_id` below. About **0.15 credits a line**.
 | **Snowmantle** | Icewhisker. Himalayan. | **Imogen** | `3811e986-0891-47cf-a1f5-78a1d62a547a` | `ice` `shrine_ice` |
 | **Bambooheart** | Pandapaw. Ragdoll. | **Hana** | `c25f78a0-714e-42af-8da3-a399cef94968` | `panda` `shrine_panda` |
 | **Mr. Satan** | the tournament, and the trailer. The only insincere voice in the game. | **Harrison** | `573e5163-59b3-4926-aab1-951ef2985f81` | all `sat_*` — the thirteen roll-call pieces `sat_rc_*`, the six bare numbers `sat_n0`–`sat_n5` and the four cues of the last fifteen seconds among them; **and six of the trailer's fourteen lines** (1-3, 9, 10, 13) |
-| **Payne** | the quest-giver in the market. A goblin cat, and a real person who agreed to be in the game — [payne.md](payne.md). Cheerful, cheeky, teases. | **Pixie** | `0178ef57-ada4-43d9-992b-8d9221045bb4` | all forty-five `payne_*`, including "Heyyy, …!" and "Oi! …!" for each of the four kittens |
+| **Payne** | the quest-giver in the market. A goblin cat, and a real person who agreed to be in the game — [payne.md](payne.md). Cheerful, cheeky, teases. | **Pixie** | `0178ef57-ada4-43d9-992b-8d9221045bb4` | every `payne_*`, including "Heyyy, …!" and "Oi! …!" for each of the four kittens, and the thirteen `payne_intro_*` |
 | **the trailer voice** | not in the game at all. The straight narrator Mr. Satan interrupts — and the one who has to say "right meow" with a straight face. | **Desmond** | `563f728c-e249-5a85-97ab-8461e8c09da6` | **six trailer lines** — 4-8 and the sign-off |
 | **Ryuuseki** | the dragon the seven stars call. | **unresolved — see below** | — | `summon1` `summon2` |
 | **Lionheart** | the Dream Dojo's arcade owner, and his Shadow. Cool, confident, a showman about his sword — **and never seductive**, which is a rule about the WORDS ([below](#lionheart-is-barrett-and-the-wording-is-half-the-casting)). | **Barrett** | `d603a8cd-3fe1-55e0-9245-617a2589131e` | all nine `lion_*`: `idle` `honor` `sim` `simidle` `islands` in the arcade, `shadow_hello` `shadow_cross` `handover` `prize` in his Shadow's fight |
@@ -62,7 +62,7 @@ voice/
   leaders/    12 — the six chiefs, a bare take and a shrine take each
   ryuuseki/    2 — `summon1` `summon2`
   kittens/     4 — `cross0`-`cross3`, the Cross Slash's verdict
-  payne/      45 — every `payne_*`: quests, hints, teases, the trick, the names, the Very Last One's temper
+  payne/      67 — every `payne_*`: quests, hints, teases, the trick, the names, the Very Last One's temper, the tour, the introduction to the world (13)
   lionheart/  37 — every `lion_*`: the arcade, the hologram in the sim, and his Shadow
   roshi/       5 — every `roshi_*`: the three hellos, bought and sold
 ```
