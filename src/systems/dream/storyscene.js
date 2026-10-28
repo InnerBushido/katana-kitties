@@ -715,7 +715,9 @@ export class StoryScene {
     this.total = 0;
     this.fadeIn = FADE;
     this.ending = false;
-    this.musicTrack = null;
+    /* Payne's introduction is scored with her own tour theme, the whole way:
+       it is one person talking, and the tour's cues are the Dream Dojo's. */
+    this.musicTrack = kind === 'intro' ? 'tourPayne' : null;
     this.el?.classList.remove('hidden');
     this.game.audio?.sfx?.('menu');
     this._next();
@@ -757,6 +759,15 @@ export class StoryScene {
     return this.t - this.lead;
   }
 
+  /**
+   * A shot by name. `ctx.shot` replaces the table for a script whose places
+   * are not the Dream Dojo's — Payne's introduction to the world
+   * (systems/payneintro.js) is the town, the shrines and the arena.
+   */
+  _shot(name, k, t = null) {
+    return (this.ctx?.shot ?? shotFor)(name, this.ctx, k, t);
+  }
+
   /** The actor a shot brings on (`ctx.actors[shot]`), started with the
    *  line and stopped with it. */
   _stopActor() {
@@ -772,6 +783,11 @@ export class StoryScene {
     this._stopActor();
     const row = this.rows[this.i];
     if (!row) { this.finish(); return; }
+    /* ...AND THE ONE WHO IS ON STAGE FOR THE WHOLE SCENE (`ctx.stage`), which
+       is not an actor: an actor belongs to a shot and goes with it, and
+       Payne's introduction has her on every line. Handed each row, so what
+       she does is the row's business (`row.act`). */
+    this.ctx?.stage?.start?.(row);
     // The music turns with the picture: on the row's own shot (TOUR_MUSIC).
     if (this.kind === 'tour' && TOUR_MUSIC[row.shot]) this.musicTrack = TOUR_MUSIC[row.shot];
     /* A SHOT MAY BRING ON AN ACTOR — the tour's Shadow Lionheart, who
@@ -780,16 +796,16 @@ export class StoryScene {
     const act = this.ctx?.actors?.[row.shot];
     if (act) {
       // The shot's name too: the tour's cast plays two lines, differently.
-      act.start?.(this.ctx, shotFor(row.shot, this.ctx, 0, 0).pos, row.shot);
+      act.start?.(this.ctx, this._shot(row.shot, 0, 0).pos, row.shot);
       this.actor = act;
     }
     const prev = this.rows[this.i - 1];
-    const prevEnd = prev ? shotFor(prev.shot, this.ctx, 1) : null;
+    const prevEnd = prev ? this._shot(prev.shot, 1) : null;
     /* A DIP AT A CHANGE OF PLACE, AND OUT OF A LINE THAT ENDED BLACK — the
        isles line fades out on its last word ("fade out and in quickly at the
        end before transitioning to the Shadow Lionheart scene"), and the next
        line coming up out of that black is the "in". */
-    this.dipAt = prev && (prevEnd.loc !== shotFor(row.shot, this.ctx, 0).loc || (prevEnd.black ?? 0) >= 0.99) ? 0 : -1;
+    this.dipAt = prev && (prevEnd.loc !== this._shot(row.shot, 0).loc || (prevEnd.black ?? 0) >= 0.99) ? 0 : -1;
     /* A LEAD IS PICTURE BEFORE THE VOICE. Richard, on the cut into the
        simulator: "fade into the simulator world and showing what that looks
        like, circling around the world before switching to zoom in to the
@@ -799,7 +815,7 @@ export class StoryScene {
     this.voiceEl = null;
     this.dur = this._dur(row);
     // A change of reality dips in slower than a cut between two shots of one.
-    this.dipT = prev && prevEnd.loc !== shotFor(row.shot, this.ctx, 0).loc ? DIP_LOC : DIP;
+    this.dipT = prev && prevEnd.loc !== this._shot(row.shot, 0).loc ? DIP_LOC : DIP;
     if (this.lead <= 0) this._speak(row);
     const lion = row.who === 'lion';
     const colour = lion ? '#ff4b4b' : '#7fd35a';
@@ -818,6 +834,8 @@ export class StoryScene {
     if (!g) return;
     g.clearRect(0, 0, cv.width, cv.height);
     cv.style.borderColor = colour;
+    // The little box is for a speaker NOT in the picture (summonscene.js).
+    if (this.ctx?.stage) { cv.style.display = 'none'; return; }
     if (who === 'payne') {
       cv.style.display = '';
       this.game.payne?.drawFace?.(cv);
@@ -846,6 +864,8 @@ export class StoryScene {
     this.el?.classList.add('hidden');
     if (this.fadeEl) this.fadeEl.style.opacity = '0';
     this.game.audio?.stopSpeaking?.();
+    // The skip path as much as the end: she steps off, her pages are let go.
+    this.ctx?.stage?.stop?.();
     this.rows = [];
     this.cast = [];
     this.kind = null;
@@ -875,12 +895,13 @@ export class StoryScene {
        read the clip's own playhead when it is playing, not the line's clock,
        which starts before a clip that is still buffering. */
     const cue = this.cueClock();
-    const s = shotFor(row.shot, this.ctx, k, cue);
+    const s = this._shot(row.shot, k, cue);
     this.camera.position.set(s.pos.x, s.pos.y, s.pos.z);
     this.camera.lookAt(s.look.x, s.look.y, s.look.z);
     this.camera.updateMatrixWorld?.();
     // On the same clock as the lens: the Shadow's Cross is cued on a word.
     this.actor?.update?.(cue, this.camera);
+    this.ctx?.stage?.update?.(cue, dt);
     /* WHICH WORLD THIS LENS IS IN, for the renderer (`Game._renderView`).
        A pane is drawn with the simulator in it only when its kittens are in
        the simulator, and a scene's lens has no kittens — so the tour's three
@@ -910,7 +931,7 @@ export class StoryScene {
        world went to black in one frame. A line that does its own fading (the
        ending's sky pull) ends black already and this adds nothing. */
     const nx = this.rows[this.i + 1];
-    if (nx && shotFor(nx.shot, this.ctx, 0).loc !== shotFor(row.shot, this.ctx, 1).loc) {
+    if (nx && this._shot(nx.shot, 0).loc !== this._shot(row.shot, 1).loc) {
       black = Math.max(black, ease(clamp01((this.t - (this.dur - FADE_OUT)) / FADE_OUT)));
     }
     // A shot's own fades, on its own clock (the tour's cut to the Kata, and

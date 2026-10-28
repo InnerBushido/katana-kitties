@@ -339,7 +339,7 @@ preset, and ~~are as pending her approval as~~ were approved with the first 39.
 
 ## What is saved
 
-`p.payne` = `{met, hints, sweep, rounds, told, teased, lastAsks, iceTold, mad}`, in the cast row like
+`p.payne` = `{met, hints, sweep, rounds, told, teased, intro, lastAsks, iceTold, mad}`, in the cast row like
 everything else a kitten owns, so a girl who leaves and comes back still knows
 the Sweep. `cleanPayne` gives a blank ledger rather than a NaN for anything
 malformed. The timers are deliberately **not** saved: a load is a fresh two
@@ -384,6 +384,62 @@ that into a refusal. The check calls `choose(her, 'view')` both ways: a start
 returns 'scene' with no toast, and a refusal returns 'payneDojo' with one.
 
 All nine new lines are ~~pending Payne's approval~~ approved by her, like the rest.
+
+## The introduction to the world
+
+Richard, Oct 2026: a cutscene the first time a player talks to Payne,
+replayable from her card. It explains the mischief, the entropy that sets the
+kotodama free, the islands coming back together, bad karma, and caring for
+nature in the Shinto way, and then lists the objectives, "similar in feel to
+the ending". Payne starts masked, unmasks, and puts the mask back on for her
+"space mission" to worlds with "too much order and boredom".
+
+- **Thirteen lines, `payne_intro_1..13`** (`PAYNE_INTRO`, in
+  systems/payneintro.js), all Pixie, about 75 seconds of speech. They are
+  spread into `PAYNE_LINES` like the tour's, so the card and the scene cannot
+  disagree.
+- **It is a StoryScene script** (`kind: 'intro'`), not a new player. The Dream
+  Dojo's scene already skips on Escape or Start alone, times each line off its
+  recording, and falls back to a reading time. The intro adds two things
+  through the scene's `ctx`:
+  - `shot`: its own camera table, `introShot`, covering the town, a heap of
+    props still standing, a shrine, a dragon, the arena and the Dojo.
+  - `stage`: Payne herself, `PayneActor`.
+
+  The music is `tourPayne` throughout.
+- **She is a canvas in the cutscene's DOM** (`#cs-actor`), not a quad in front
+  of the camera. She stands on the right, on the bottom letterbox bar, under
+  `#cs-fade` so that a dip to black takes her with the picture. Every shot
+  frames its subject LEFT of her (`LEAN`), and world-check projects each shot
+  to prove it. Her market billboard is hidden for the length of the scene, so
+  there are never two of her.
+- **The first hello IS the scene.** `greet` starts it when this kitten has
+  never met her and nobody has seen the intro yet; her card closes
+  (`Inspector.openPayne`). **It counts as seen the moment it starts**
+  (non-negotiable 7): `intro` is set on every seated kitten then, so a sister
+  who watched over her shoulder gets a plain hello on her own first talk.
+- **If it cannot play** (a sister is in the simulator, or another scene is
+  up), the first hello is just a hello and `intro` stays false.
+- **INTRODUCTION TO THE WORLD**, second on her card, plays it again. It
+  refuses in words, for the same two reasons the Dream Dojo's VIEW does.
+- **The animation comes from three Kling takes**; see art.md, *Payne's
+  introduction*. With no sheets and no voice it still plays: a missing page
+  draws her `town`/`held` still, and a missing clip becomes a reading time.
+
+**PENDING PAYNE'S APPROVAL.** The thirteen lines and the unmasked moving
+footage are new. She approved everything else before it shipped, and these go
+to her before a public build carries them.
+
+**Her face is shown earlier than planned.** "I plan to reveal her face at the
+end of the game" — the intro shows it in the first minute and then puts the
+helmet back on. After the Awakening the market billboard still swaps to `held`
+(helmet under her arm). Richard to decide whether the ending's reveal changes
+meaning ("the helmet comes off for good") or stays as it is.
+
+**"Bad karma" is a value, not a mechanic.** Nothing tracks it, and no blow can
+reach a dragon or a panda (non-negotiable 3). So line 7 says how to behave,
+and the game has nothing to count. Richard to decide whether it should point
+at something real.
 
 ## Open
 

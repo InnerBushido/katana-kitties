@@ -617,6 +617,52 @@ performance.
   1.5MB first-load line, for a kitten ~150px tall on screen. Storm and
   Blossom are recoloured.
 
+## Payne's introduction — three takes, 148 cells, Oct 2026
+
+Richard: make it the tea ceremony's way, "at least 3 or 4x's higher quality ...
+as that looked low resolution". The tea ceremony ships 192px a cell. These
+ship **768 tall** (602 wide), with a **384** set for the cautious tier.
+
+- **Three Kling 3.0 takes**, 960×960 at 24fps, on flat magenta, locked off
+  (about 50 credits in all):
+  - MASK starts from her approved `held` drawing and puts the helmet ON.
+  - TALK starts from `held` too: unmasked, helmet under her arm, pointing,
+    counting, waving, laughing.
+  - MASKED starts from MASK's last frame: masked talk, hands to the helmet, a
+    salute.
+
+  **The unmask is MASK played backwards**, so her face is always the approved
+  one. The masters are in `docs/art-masters/video/` and never ship.
+- **The cut** (`tools/capture/payne-sheet.mjs`) reads `INTRO_CLIPS` in
+  `src/systems/payneclips.js`, the same table the game plays from. That gives
+  nine clips at every third frame: eight a second, real time, "on threes".
+- **One crop for every frame of every take**, so she neither swims nor changes
+  size at a cut between takes.
+- **It has its own key, not `chromaKey`**, because of two problems:
+  - A video's edges are blends. A black line half over magenta is about
+    (110,10,105), which the distance key calls paint, so every outline came
+    out with a purple rim.
+  - Kling drew a darker-magenta ground shadow under her in MASKED.
+
+  How the key works:
+  - It measures `min(r,b) - g`: how much magenta is in the pixel.
+  - Across the ramp from paint to background, it un-mixes the frame's own
+    background colour out of the pixel.
+  - It clears anything magenta in the bottom 9% of the frame (her sneakers are
+    black and white).
+  - It adds a penalty when blue is more than 12 above red, because her belt is
+    violet (100,37,134) and the first cut turned it blue. The penalty is
+    one-sided: an olive sleeve's edge has red over blue, and the two-sided
+    version left those edges a pink fringe.
+- **WebP pages with alpha, 16 cells each**: about 9MB full size and 4MB half
+  size for all 148 cells.
+  - The cleared pixels are black underneath, because yuv420 bleeds that colour
+    a pixel into her edge, and her edge is a black line.
+  - Pages are fetched when the scene starts and released when it ends.
+- **They are played by `PayneActor`** into one `<canvas>`. The cell size is
+  measured off each page. A cut between clips is a 0.22s crossfade, since two
+  takes never meet on the same pose.
+
 ## Bamboo Infiltration's ninjas — every action, one atlas, Oct 2026
 
 Richard asked for sprite sheets and atlasing "to the fullest". The scheme is

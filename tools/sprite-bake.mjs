@@ -68,6 +68,7 @@ import { mkdirSync, writeFileSync, statSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { dirname } from 'node:path';
 import { readPNG, writePNG } from './png.mjs';
+import { resample } from './premul.mjs';
 import { TEA_SHEET } from '../src/systems/housing/teahouse.js';
 import {
   floodBackground, clearSealedPockets, chromaKey, CHROMA_MAGENTA,
@@ -286,59 +287,8 @@ const WORK = [
 
 /* ========================================================================== */
 
-/**
- * Area-average downsample in PREMULTIPLIED alpha.
- *
- * Straight per-channel averaging is the bug that makes a keyed sprite grow a
- * pale halo: a pixel half on the wing and half on the (now transparent, still
- * WHITE) background averages to something halfway to white, and then gets 50%
- * alpha, so the fringe is drawn. Weighting colour by alpha means a cleared
- * pixel contributes nothing but its emptiness, which is the whole point of it.
- */
-function resample(d, w, h, nw, nh) {
-  const o = new Uint8ClampedArray(nw * nh * 4);
-  const sx = w / nw;
-  const sy = h / nh;
-  for (let y = 0; y < nh; y++) {
-    const y0 = Math.floor(y * sy);
-    const y1 = Math.min(h, Math.ceil((y + 1) * sy));
-    for (let x = 0; x < nw; x++) {
-      const x0 = Math.floor(x * sx);
-      const x1 = Math.min(w, Math.ceil((x + 1) * sx));
-      let r = 0;
-      let g = 0;
-      let b = 0;
-      let a = 0;
-      let n = 0;
-      for (let yy = y0; yy < y1; yy++) {
-        for (let xx = x0; xx < x1; xx++) {
-          const p = (yy * w + xx) * 4;
-          const al = d[p + 3] / 255;
-          r += d[p] * al;
-          g += d[p + 1] * al;
-          b += d[p + 2] * al;
-          a += al;
-          n++;
-        }
-      }
-      const q = (y * nw + x) * 4;
-      if (a > 0) {
-        o[q] = Math.round(r / a);
-        o[q + 1] = Math.round(g / a);
-        o[q + 2] = Math.round(b / a);
-      } else {
-        /* WHITE, NOT BLACK, under a fully cleared pixel. The runtime keyer
-           runs again on the shipped file and floods from the border by
-           COLOUR — `isBackgroundish` never looks at alpha — so a black
-           border would stop the flood dead on its first pixel. Nothing is
-           drawn from it either way; it just has to stay walkable. */
-        o[q] = 255; o[q + 1] = 255; o[q + 2] = 255;
-      }
-      o[q + 3] = Math.round((a / n) * 255);
-    }
-  }
-  return o;
-}
+/* `resample` (the premultiplied downsample) lives in tools/premul.mjs, shared
+   with tools/capture/payne-sheet.mjs. */
 
 /** Composite over a loud checker so a human can see the alpha. Magenta because
  *  nothing in this game's palette is magenta — a grey checker under a grey
