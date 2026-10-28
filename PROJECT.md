@@ -634,8 +634,8 @@ photos went to Higgsfield as image references and nowhere else. →
 **Eight pictures in Help are not ours, and all eight may ship.** The photos and
 woodblock prints in the Japanese glossary (`public/help/japan/`) came off
 Wikimedia Commons, and every one is **public domain or CC0** — no legal duty to
-credit. Each is credited anyway: an **[n]** on the picture opens Help's last
-topic, **Picture credits**. A picture comes in only under PD, CC0 or CC BY;
+credit. Each is credited anyway: an **[n]** on the picture opens **Picture
+credits**, the last sub-topic of the glossary. A picture comes in only under PD, CC0 or CC BY;
 **never NC, ND or ShareAlike, and never a photo of a recognisable stranger**.
 `world-check` fails on a licence outside that list or a picture without its
 credit. → [credits.md](docs/notes/credits.md)

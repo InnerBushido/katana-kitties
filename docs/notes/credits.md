@@ -34,8 +34,12 @@ list fails it, so an NC or SA picture cannot go in by somebody not reading this.
 
 - A picture from outside is a `figure.help-shot.jp-pic`. Its caption ends in
   `<a class="credit-ref" href="#credit-N">[N]</a>`, N in page order.
-- **Picture credits** is the last Help topic, after *Saving your progress*,
-  between `<!-- doc-credits -->` markers. Each `<li id="credit-N">` names the
+- **Picture credits** is the last sub-topic of *Japanese words & culture*,
+  where the pictures are (Richard, Oct 2026: "put the picture credits at the
+  bottom of Japanese words & culture as a sub-category"; it started as a
+  top-level topic after *Saving your progress*). It sits between
+  `<!-- doc-credits -->` markers, in the glossary's `name="help-words"` group,
+  so opening it shuts the sub-topic the [n] was tapped in. Each `<li id="credit-N">` names the
   work, the artist, where the original is held, the licence, and links the
   Commons file page.
 - **The [n] does not just follow its href.** The credits card is a closed
