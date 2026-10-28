@@ -630,9 +630,9 @@ npm run artifact              <span class="c"># is this published page still cur
     it is the version other people are asked to play. Push to it and Vercel builds it within a
     minute at a <b>stable</b> address that never changes.</p>
 
-<pre><code>git push -u origin mixed/some-pass                <span class="c"># a work branch is published, every commit pushed</span>
-git checkout alpha &amp;&amp; git merge mixed/some-pass  <span class="c"># then merged into the testing channel</span>
-git push origin alpha</code></pre>
+<pre><code>git push -u origin mixed/some-pass        <span class="c"># a work branch is published, every commit pushed: a BACKUP</span>
+git -C C:/Users/Hypot/kk-worktrees/alpha merge --no-ff mixed/some-pass  <span class="c"># into the LOCAL alpha, played there</span>
+git -c kk.release=true push origin alpha  <span class="c"># only when Richard says so: this is the release</span></code></pre>
 
   <p>That link is the whole channel — there is no Discord, no TestFlight, no Steam beta. A tester
     opens the URL, or installs it to a phone's home screen and plays it fullscreen.
@@ -648,10 +648,19 @@ git push origin alpha</code></pre>
       is the step before it.</p>
   </div>
 
-  <p><b>Every other branch gets the same treatment</b>, at
-    <code>katana-kitties-git-&lt;branch&gt;-dream-dojo.vercel.app</code>, so a single risky change
-    can be handed to somebody without going near <code>alpha</code>. No laptop has to be awake, it is
-    real HTTPS, and it never takes the production alias. <b>Preview URLs are public</b>: SSO was
+  <p><b>The local <code>alpha</code> is a checkout of its own</b>, at
+    <code>C:\Users\Hypot\kk-worktrees\alpha</code>. Every branch in flight is merged there as it
+    gets commits, and the combination is played there with its own <code>npm run dev</code>.
+    It is a real merge, not a fast-forward, once two branches are in flight. <b>Pushing
+    <code>alpha</code> or <code>main</code> needs <code>-c kk.release=true</code></b>:
+    <code>.githooks/pre-push</code> refuses both otherwise, because the local <code>alpha</code>
+    is ahead of <code>origin/alpha</code> most of the time.</p>
+
+  <p><b>Only <code>main</code> and <code>alpha</code> build on Vercel</b> (Oct 2026). A work-branch
+    push is a backup: <code>vercel.json</code>'s <code>ignoreCommand</code> skips it, and a branch's
+    old <code>katana-kitties-git-&lt;branch&gt;-dream-dojo.vercel.app</code> keeps whatever it last
+    built. A branch cut before the file existed is covered by the project's own <i>Ignored Build
+    Step</i> setting, which holds the same command. <b>Preview URLs are public</b>: SSO was
     deliberately turned off on 29 Aug 2026, because installing to a home screen needs the manifest
     and the icons fetchable and not merely the page.</p>
 
