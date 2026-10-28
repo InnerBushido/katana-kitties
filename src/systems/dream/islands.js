@@ -66,7 +66,7 @@ export const ISLE_ABOUT = {
   storm: { short: 'STORM', about: 'Cut the holo-fruit out of the air before it lands. Leave the purple viruses alone.' },
   sine: { short: 'SINE', about: 'An obstacle course of laser bars, one kitten at a time. Duck, jump and dodge — the fastest time wins.' },
   sentries: { short: 'SENTRIES', about: 'Sentries that shoot back, always with a warning. Dodge or raise your Ward, then hit the core.' },
-  bamboo: { short: 'BAMBOO', about: 'Sneak through the bamboo past the watchers. Hide while they look, move when they look away.' },
+  bamboo: { short: 'BAMBOO', about: 'Sneak through the village to the scroll. Hide in barrels and brush, climb roofs, ride ropes — and lock a shuriken onto an archer from up high.' },
   school: { short: 'SCHOOL', about: "The tournament, practised: the Feast's animals, a round of every league, and the scoreboard." },
   shadow: { short: 'SHADOW', about: "Lionheart's Shadow, on three levels. Beat MEDIUM for a special orb; beat all three for his 凶 Cross Slash." },
 };

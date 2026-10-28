@@ -11,7 +11,7 @@ import { tune } from '../core/tuning.js';
 import { Label } from '../core/label.js';
 import { SNAKE } from '../world/snakeway.js';
 import { SnakeCam } from '../systems/snakecam.js';
-import { BridgePeek, peekHold } from '../systems/dream/peek.js';
+import { BridgePeek, peekHold, peekDefers } from '../systems/dream/peek.js';
 import { BOON } from '../systems/housing/boons.js';
 
 /* ---------------------------------------------------------------------------
@@ -6622,7 +6622,9 @@ export class Player {
        window with her back to the room, and the alternative is a second
        material per pane for the length of one look. */
     this._alphaTest0 ??= mat.alphaTest;
-    const lf = this.lookFade ?? 0;
+    /* ...and HALF THERE in Bamboo Infiltration's brush (`hideFade`, dream/bamboo.js BRUSH: "sprite goes
+       50% transparent in the brush"). The same fade, so the same alphaTest scaling; whichever is more. */
+    const lf = Math.max(this.lookFade ?? 0, this.hideFade ?? 0);
     mat.opacity *= 1 - lf;
     mat.alphaTest = this._alphaTest0 * Math.max(0.04, 1 - lf);
 
@@ -7079,6 +7081,9 @@ export class Player {
         this.clipPose.facing = this.facing;
         this.clipPose.mat.color.copy(mat.color);
         this.clipPose.mat.opacity = mat.opacity;
+        // ...and the fade's alphaTest with it, or the crawl in the brush is cut at the clip's own threshold.
+        this.clipPose._at0 ??= this.clipPose.mat.alphaTest;
+        this.clipPose.mat.alphaTest = this.clipPose._at0 * (mat.alphaTest / (this._alphaTest0 || 1));
       }
     }
 
@@ -7617,6 +7622,7 @@ export class Player {
     this._applyRideCam(dt);
     const ride = this.snakeSubject();
     this.bridgePeek.apply(dt, this.peekAt, this.camera, this.camTarget, peekHold(this.snakeCam, ride));
-    this.snakeCam.apply(dt, ride, this.camera, this.camTarget);
+    // ...and the ride WAITS for the look across to finish (dream/peek.js `peekDefers`).
+    this.snakeCam.apply(dt, peekDefers(this.bridgePeek, this.snakeCam, ride) ? null : ride, this.camera, this.camTarget);
   }
 }

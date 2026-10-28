@@ -121,14 +121,14 @@ export const DIFFS = [
 /** Her crawl, as a fraction of her walk (`Player.gaitK`). WALK_SPEED is 10.5. */
 export const SNEAK = { gait: 0.4, speed: 10.5 * 0.4 };
 /**
- * HER SPRINT IN HERE: 1.15x her walk, not the game's 17 (1.6x). Richard: "make
+ * HER SPRINT IN HERE: 1.2x her walk, not the game's 17 (1.6x). Richard: "make
  * them run slightly faster, like 1.15x's faster to have some benefit but not
- * break the course". As a gait over SPRINT_SPEED, so `Player` knows nothing
+ * break the course" — and, Oct 2026, "1.2x" once it had been played. As a gait over SPRINT_SPEED, so `Player` knows nothing
  * of it; world-check holds player.js's 10.5 and 17 to these. And a samurai's
  * meter fills `meterK` times as fast on a kitten who is sprinting — "their
  * 'arrest' time is half the amount of time".
  */
-export const SPRINT = { k: 1.15, walk: 10.5, run: 17, gait: (10.5 * 1.15) / 17, meterK: 2 };
+export const SPRINT = { k: 1.2, walk: 10.5, run: 17, gait: (10.5 * 1.2) / 17, meterK: 2 };
 /** Seconds added to a run's time per capture — the score is the time. */
 export const CAUGHT_COST = 15;
 

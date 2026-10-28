@@ -1608,6 +1608,23 @@ export class Audio {
         this._tone({ type: 'square', from: semi(3), to: semi(-4), dur: 0.16, gain: 0.13 * v });
         break;
 
+      /* ---- Bamboo Infiltration's brush (dream/bamboo.js BRUSH) -------------
+         Richard, Oct 2026: "a subtle leaf-rustle sound while walking or
+         running through it" and "a 'whirlwind' vanish sound when she crouches
+         in it". The rustle is two short high bands a beat apart, quiet,
+         because it plays every BRUSH.rustle s for as long as she walks; the
+         vanish is a band of noise swept UP and away with a falling sine
+         under it — the opposite shape to a landing. */
+      case 'rustle':
+        this._noise({ type: 'bandpass', from: 3600, to: 2200, dur: 0.09, gain: 0.035 * v, q: 0.9 });
+        this._noise({ type: 'bandpass', from: 2800, to: 4200, dur: 0.07, gain: 0.025 * v, q: 0.9, delay: 0.06 });
+        break;
+      case 'vanish':
+        this._noise({ type: 'bandpass', from: 320, to: 3400, dur: 0.42, gain: 0.11 * v, q: 1.6 });
+        this._noise({ type: 'bandpass', from: 900, to: 5200, dur: 0.3, gain: 0.05 * v, q: 3, delay: 0.08 });
+        this._tone({ type: 'sine', from: 740, to: 180, dur: 0.34, gain: 0.05 * v, delay: 0.04 });
+        break;
+
       /* ---- the Cross Slash's four verdicts, synthesised ------------------
          THE STAND-INS FOR cross0..cross3, and a case must exist for each key
          in SAMPLES — `sample` falls through to here whenever the mp3 is

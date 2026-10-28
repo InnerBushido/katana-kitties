@@ -49,6 +49,12 @@ import { LionGuide, LOST_AFTER, LOST_AGAIN, LOST_MAX } from './dream/lionguide.j
 import { Kiosk, idleIn, isleSpot } from './dream/kiosk.js';
 import { Waypoints } from './dream/waypoint.js';
 
+/** How far past a light cycle pad's rim the kitten it dropped off must go
+ *  before stepping onto it counts as stepping in (`_peekFor`): its lane is
+ *  2.5 off the pad's middle, so 2.0 + 3 takes in where she lands, and a
+ *  deliberate walk away. */
+export const CYCLE_LEFT = 3;
+
 /** Her single-cell pose billboards, which the tube puppet mirrors. */
 const PUPPET_POSES = ['eatPose', 'blessPose', 'warpPose', 'breathPose', 'scaredPose', 'sweepPose'];
 
@@ -1996,6 +2002,32 @@ export class DreamDojo {
    */
   _peekFor(p) {
     const s = this.st[p.index];
+    /* THE LIGHT CYCLE (dream/peek.js, the seventh pass). The view she boarded
+       with is the view she rides with: the look across if it was up, her own
+       camera if it was not, decided on the first frame she is on the cycle
+       and kept to the frame she is put down. */
+    if (s?.phase === 'sim' && p.onCycle) {
+      if (s.cycleView === undefined) {
+        const end = this._cycleEnd(this.highway?.rides[p.index]?.path?.[0]);
+        s.cycleView = s.peek?.end && end ? end : null;
+      }
+      s.peek?.reset();
+      return s.cycleView
+        ? { x: p.position.x, y: p.position.y, z: p.position.z, far: s.cycleView.far, w: 1, cycle: true }
+        : null;
+    }
+    if (s && s.cycleView !== undefined) {
+      /* Put down: by a pad she ARRIVED at, which is not stepping into it. A
+         ride ends in its lane, 2.5 to the side of the pad's middle and so
+         outside its 2.0 circle (highway.js), so the pad is HERS until she is
+         `CYCLE_LEFT` clear of it, not just until she is out of the circle —
+         otherwise her first step onto it to ride back was "stepping in". */
+      s.cycleView = undefined;
+      s.arrived = this._cyclePadAt(p, CYCLE_LEFT);
+      s.inPad = this._cyclePadAt(p);
+      s.peek?.reset();
+      return null;
+    }
     if (s?.phase !== 'sim' || !p.onGround || p.snakeRide || p.onCycle || p.mount || p.rideAlong
       || p.pandaMount || p.pinnedAt) {
       s?.peek?.reset();
@@ -2008,14 +2040,51 @@ export class DreamDojo {
        standing in one, or walking at one nearer than the mouth, there is no
        look across — "The interaction circle should have camera priority". */
     const vel = p.velocity ?? { x: 0, z: 0 };
-    this._stationsW = (this.stations ?? []).map((st) => ({ x: st.x + SIM.dx, y: st.y, z: st.z + SIM.dz, r: st.r }));
+    // ...but a light cycle's pad is not a kiosk here: it stands in front of
+    // its mouth, on her line, and "it has no effect on the camera".
+    const pads = new Set(this.highway?.stations ?? []);
+    this._stationsW = (this.stations ?? []).filter((st) => !pads.has(st))
+      .map((st) => ({ x: st.x + SIM.dx, y: st.y, z: st.z + SIM.dz, r: st.r }));
     if (stationFirst(p.position, vel, this._stationsW, this._ends)) { s.peek?.reset(); return null; }
     /* ON OR OFF, with a buffer (dream/peek.js `PeekTrigger`). The lens's own
        clock does the easing; this only says whether she is "definitely" there. */
     s.peek ??= new PeekTrigger();
+    // Stepping INTO a light cycle's pad: the look across, at once, from its mouth.
+    const pad = this._cyclePadAt(p);
+    if (s.arrived && s.arrived !== this._cyclePadAt(p, CYCLE_LEFT)) s.arrived = null;
+    if (pad && s.inPad !== undefined && pad !== s.inPad && pad !== s.arrived) {
+      const E = this._cycleEnd(pad);
+      if (E) s.peek.force(E);
+    }
+    s.inPad = pad;
     const E = s.peek.step(this._dt ?? 1 / 60, p.position, vel, this._ends);
     if (!E) return null;
     return { x: p.position.x, y: p.position.y, z: p.position.z, far: E.far, w: 1 };
+  }
+
+  /** The light cycle pad she is standing in (or within `pad` of its rim), as
+   *  the station it is (sim coordinates), or null. */
+  _cyclePadAt(p, pad = 0) {
+    for (const st of this.highway?.stations ?? []) {
+      if (Math.abs(p.position.y - st.y) > 2) continue;
+      if (Math.hypot(p.position.x - SIM.dx - st.x, p.position.z - SIM.dz - st.z) < st.r + pad) return st;
+    }
+    return null;
+  }
+
+  /** The bridge end a light cycle pad (or a ride's first point — both are
+   *  in sim coordinates) looks across from: the mouth nearest it, which is
+   *  three units off (highway.js). */
+  _cycleEnd(at) {
+    if (!at) return null;
+    this._ends ??= this._peekEnds();
+    let best = null;
+    let bd = 6;
+    for (const E of this._ends) {
+      const d = Math.hypot(E.mouth.x - SIM.dx - at.x, E.mouth.z - SIM.dz - at.z);
+      if (d < bd) { bd = d; best = E; }
+    }
+    return best;
   }
 
   /** Lionheart, in light, at his own spot on the port. */
