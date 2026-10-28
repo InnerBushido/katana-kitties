@@ -1928,6 +1928,144 @@ console.log('\n--- nothing in public/help/ is dead weight ---');
      cannot be kept alive by an unrelated `arena.jpg` elsewhere in the markup. */
   ok('every picture in public/help/ is pointed at by the panel', orphans.length === 0,
     orphans.join(', '));
+
+  /* ...AND SAYS HOW BIG IT IS. The panel lazy-loads its pictures, so the
+     width and height on the tag are the only size the layout has until the
+     file arrives; a wrong ratio is a card that jumps under the finger that is
+     scrolling it. The ratio, not the pixels: the clan symbols are drawn at
+     twice the size they are shown, for a phone's sharp screen, on purpose.
+     What is never right is a tag that is a different SHAPE from its file, or
+     one that asks for more pixels than the file has. Found when the glossary
+     reused the shrine still and its tag, copied from the Clans card, was 4px
+     out — so was the Clans card's. */
+  const dims = (b) => {
+    if (b[0] === 0x89) return [b.readUInt32BE(16), b.readUInt32BE(20)];      // PNG IHDR
+    if (b[0] === 0x47) return [b.readUInt16LE(6), b.readUInt16LE(8)];        // GIF screen
+    for (let i = 2; i < b.length;) {                                         // JPEG: the first SOF
+      if (b[i] !== 0xff) { i++; continue; }
+      if (b[i + 1] >= 0xc0 && b[i + 1] <= 0xc3) return [b.readUInt16BE(i + 7), b.readUInt16BE(i + 5)];
+      i += 2 + b.readUInt16BE(i + 2);
+    }
+    return [0, 0];
+  };
+  const wrong = [];
+  let tags = 0;
+  for (const m of html.matchAll(/<img\b[^>]*?(?:src|data-help-gif)="\/help\/([^"]+)"[^>]*>/g)) {
+    tags++;
+    const w = +(/\bwidth="(\d+)"/.exec(m[0])?.[1] ?? 0); const h = +(/\bheight="(\d+)"/.exec(m[0])?.[1] ?? 0);
+    const [rw, rh] = dims(readFileSync(new URL(m[1], help)));
+    if (!w || !h || Math.abs(w / h - rw / rh) > 0.002 * (rw / rh) || w > rw || h > rh) wrong.push(`${m[1]} says ${w}x${h}, is ${rw}x${rh}`);
+  }
+  ok('...and every picture on the panel states its own shape, and no more pixels than it has',
+    tags > 40 && wrong.length === 0, wrong.join('; ') || `${tags} pictures`);
+}
+
+console.log('\n--- 日本語 every Japanese word in the game is in the glossary ---');
+{
+  /* Richard, Oct 2026: "let's create a Japanese Dictionary/Terminology/Culture
+     page in Help ... with every Japanese term in the game". EVERY is the word a
+     page cannot keep on its own: the game grows a sign a week, and a glossary
+     written once is a glossary that is wrong by the next island. So the list
+     is taken from the code — every quoted string in src/ with a kanji in it,
+     comments stripped — and each word has to be somewhere on the page.
+     A lone kana is a SOUND, not a word, and is exempt: the Flash Step's rain
+     of letters is mostly katakana, which the "How to read it" card explains as
+     an alphabet. The dev-only pages are exempt too, because no player sees
+     them. */
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const a = html.indexOf('<!-- doc-glossary -->'); const z = html.indexOf('<!-- /doc-glossary -->');
+  const gl = a >= 0 && z > a ? html.slice(a, z) : '';
+  const topic = helpTopic(html, 'Japanese words &amp; culture');
+  ok('the Help panel has a Japanese words & culture topic, between the Dream Dojo and saving',
+    topic.length > 0 && gl.includes(topic.slice(0, 200))
+    && html.indexOf('id="help-words"') > html.indexOf('<span class="ht-title">The Dream Dojo')
+    && html.indexOf('id="help-words"') < html.indexOf('<span class="ht-title">Saving your progress</span>'));
+  const cats = [...gl.matchAll(/<details class="help-card help-sub" name="help-words">\s*<summary class="help-topic">\s*<span class="ht-ico"[^>]*>[^<]*<\/span>\s*<span class="ht-title">([^<]+)<\/span>/g)].map((m) => m[1]);
+  ok('...in sub-topics a reader can find a word by: reading, the dojo, the orbs, the signs, home, Shinto, music',
+    ['How to read it', 'The dojo and the sword', 'The Kotodama orbs', 'The Dream Dojo, sign by sign',
+      'Home and garden', 'Shinto, spirit and manners', 'Music'].every((c) => cats.includes(c)), cats.join(' | '));
+
+  const src = new URL('../src/', import.meta.url);
+  const walk = (dir) => readdirSync(new URL(dir, src), { withFileTypes: true })
+    .flatMap((e) => (e.isDirectory() ? walk(dir + e.name + '/') : [dir + e.name]));
+  const words = new Map();
+  for (const f of walk('').filter((f) => f.endsWith('.js') && !/tuning-page|sprite-editor/.test(f))) {
+    const code = stripComments(readFileSync(new URL(f, src), 'utf8'));
+    for (const m of code.matchAll(/(['"`])((?:(?!\1)[^\n])*?[\u3400-\u9fff](?:(?!\1)[^\n])*?)\1/g)) {
+      for (const w of m[2].match(/[\u3040-\u30ff\u3400-\u9fff]+/g) ?? []) {
+        if (!/[\u3400-\u9fff]/.test(w) && w.length === 1) continue;
+        if (!words.has(w)) words.set(w, f);
+      }
+    }
+  }
+  const missing = [...words].filter(([w]) => !gl.includes(w));
+  ok('...and every word the game writes in Japanese is explained on it',
+    words.size > 60 && missing.length === 0,
+    missing.length ? missing.map(([w, f]) => `${w} (${f})`).join(', ') : `${words.size} words`);
+
+  /* EVERY ENTRY HAS ALL THREE: the word, how it is written in our letters,
+     and how to say it. The respelling is the half most likely to be left off,
+     and it is the half a nine-year-old reading on her own needs. */
+  const entries = [...gl.matchAll(/<div class="jp-e">\s*<dt>([\s\S]*?)<\/dt>\s*<dd>([\s\S]*?)<\/dd>/g)];
+  const thin = entries.filter((m) => !/<b class="jp-r">[^<]+<\/b>/.test(m[1]) || !/<span class="jp-say">say <i>[^<]+<\/i><\/span>/.test(m[1])
+    || m[2].replace(/<[^>]+>/g, '').trim().length < 6);
+  ok('...each with how it is written in our letters, how to say it, and what it means',
+    entries.length > 120 && thin.length === 0, thin.map((m) => m[1].replace(/<[^>]+>/g, '').trim()).join(' | ') || `${entries.length} entries`);
+  /* THE TAP-IN for a word with a story behind it is a third accordion level,
+     and like "The rare orbs" it needs a group of its own: sharing a parent's
+     name would close the card it was opened inside (see the fold checks). */
+  const more = [...gl.matchAll(/<details class="help-card help-sub jp-more" name="([^"]+)">/g)].map((m) => m[1]);
+  ok('...and the words with a story behind them open one in their own group, which closes neither parent',
+    more.length >= 8 && more.every((n) => n === 'help-jp-more'), `${more.length} stories`);
+}
+
+console.log('\n--- © every picture the game did not make is credited, and free to ship ---');
+{
+  /* Richard, Oct 2026: "let's add these in if these are open source and able
+     to be put into the project ... in case we want to eventually launch this
+     game as an official project". The glossary's pictures of Japan came off
+     Wikimedia Commons, and the one way that goes wrong later is quietly: a
+     picture added next year with a NonCommercial licence, or with no line in
+     the credits, looks exactly like a correct one on the page. So every file
+     in public/help/japan/ must be on the page, carry an [n] that resolves,
+     and have a credit whose licence is one a commercial release may ship
+     with no further duty. CC BY would be allowed too (the credit line IS its
+     duty); nothing else is. docs/notes/credits.md. */
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const a = html.indexOf('<!-- doc-credits -->'); const z = html.indexOf('<!-- /doc-credits -->');
+  const cr = a >= 0 && z > a ? html.slice(a, z) : '';
+  ok('Help has a Picture credits topic, last, after Saving your progress',
+    cr.includes('id="help-credits"') && cr.includes('<span class="ht-title">Picture credits</span>')
+    && a > html.indexOf('<span class="ht-title">Saving your progress</span>')
+    && html.indexOf('class="help-card" name="help"', z) < 0);
+  const credits = new Map([...cr.matchAll(/<li id="(credit-\d+)" data-licence="([^"]+)">([\s\S]*?)<\/li>/g)]
+    .map((m) => [m[1], { lic: m[2], body: m[3] }]));
+  const FREE = ['Public domain', 'CC0', 'CC BY 4.0', 'CC BY 3.0', 'CC BY 2.0'];
+  const bad = [...credits].filter(([, c]) => !FREE.includes(c.lic)
+    || !/<b>[^<]+<\/b>/.test(c.body) || !/href="https:\/\/commons\.wikimedia\.org\/wiki\/File:[^"]+"/.test(c.body)
+    || (c.lic.startsWith('CC') && !/creativecommons\.org\/(licenses|publicdomain)\//.test(c.body)));
+  ok('...each credit names the work, links its source, and is under a licence a release can ship',
+    credits.size >= 8 && bad.length === 0, bad.map(([k, c]) => `${k} (${c.lic})`).join(', ') || `${credits.size} credits`);
+  const dir = new URL('../public/help/japan/', import.meta.url);
+  const files = readdirSync(dir);
+  const figs = [...html.matchAll(/<figure class="help-shot jp-pic">\s*<img src="\/help\/japan\/([^"]+)"[\s\S]*?<\/figure>/g)];
+  const unref = files.filter((f) => {
+    const fig = figs.find((m) => m[1] === f);
+    const ref = fig && /<a class="credit-ref" href="#(credit-\d+)"/.exec(fig[0]);
+    return !ref || !credits.has(ref[1]);
+  });
+  ok('...and every picture from outside the game shows its [n], and the [n] is a real credit',
+    files.length >= 8 && unref.length === 0, unref.join(', ') || `${files.length} pictures`);
+  const used = new Set(figs.map((m) => /href="#(credit-\d+)"/.exec(m[0])?.[1]));
+  const spare = [...credits.keys()].filter((k) => !used.has(k));
+  ok('...and no credit is left over for a picture that has gone', spare.length === 0, spare.join(', '));
+  /* THE [n] IS WIRED, not a fragment. A `#credit-3` into a shut <details>
+     scrolls to nothing; `Game._showCredit` opens the card and then finds the
+     line, after the accordion's own scroll has run. */
+  const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  ok('...and the [n] opens Picture credits at its line, rather than jumping into a shut card',
+    /closest\('a\.credit-ref'\)[\s\S]{0,120}preventDefault\(\)[\s\S]{0,60}_showCredit\(/.test(main)
+    && /_showCredit\(hash\) \{[\s\S]*?addEventListener\('toggle'[\s\S]*?card\.open = true/.test(main));
 }
 
 console.log('\n--- a join does not wipe the scoreboard ---');
@@ -19132,10 +19270,13 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
   /* FOURTEEN, AND A FOURTH GROUP: "Ask Payne" lives inside "Quests &
      achievements", which is a top-level `help` card, so it gets `help-quests`
      for the reason the other three have theirs. */
-  /* FIFTEEN: "Riposte expanded" joined the two in "The rare orbs". */
+  /* FIFTEEN: "Riposte expanded" joined the two in "The rare orbs".
+     TWENTY-FOUR: the glossary's nine kinds of word, in `help-words`. Its
+     tap-ins carry `jp-more` and their own `help-jp-more`, and are checked
+     with the glossary. */
   ok('...and every sub-card is in its parent\'s own accordion group',
-    subs.length === 15
-    && subs.every((n) => ['help-move', 'help-arena', 'help-rare', 'help-quests'].includes(n)),
+    subs.length === 24
+    && subs.every((n) => ['help-move', 'help-arena', 'help-rare', 'help-quests', 'help-words'].includes(n)),
     `${subs.length}: ${[...new Set(subs)].join(', ')}`);
   ok('...and the three expanders are the ones in the third group',
     subs.filter((n) => n === 'help-rare').length === 3);
@@ -42622,6 +42763,24 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         && LG.GUIDE_ORDER.length === KEYS.length && KEYS.every((k) => LG.GUIDE_ORDER.includes(k)),
         KEYS.filter((k) => !ISL.ISLE_ABOUT[k]).join());
 
+      /* 工事中: he lists the finished islands first and sends her to them
+         first, the Shadow last as ever, and marks the unfinished three on his
+         list and his map. */
+      {
+        const at = (k) => LG.GUIDE_ORDER.indexOf(k);
+        const wipK = KEYS.filter(ISL.isWip);
+        const fine = KEYS.filter((k) => !ISL.isWip(k) && k !== 'shadow');
+        ok('...工事中 he lists the unfinished islands after every finished one, and the Shadow last',
+          wipK.every((w) => fine.every((k) => at(k) < at(w))) && at('shadow') === KEYS.length - 1, LG.GUIDE_ORDER.join());
+        const svg = D.guide.mapSvg(her);
+        const list = D.guide.markup(her.index, 'lionQuests', 0, () => '');
+        ok('...and marks them on his map and on his list, three of each',
+          (svg.match(/class="wip-svg"/g) ?? []).length === wipK.length
+          && (list.match(/class="wip-mark"/g) ?? []).length === wipK.length
+          && wipK.every((k) => new RegExp(`${ISL.ISLANDS[k].name}</b> <span class="wip-mark"`).test(list)),
+          `${(svg.match(/wip-svg/g) ?? []).length} on the map, ${(list.match(/wip-mark/g) ?? []).length} on the list`);
+      }
+
       /* LEFT AND RIGHT ARE MEASURED, off where the islands actually stand, as
          she walks in off the port bridge — the side his `islands` line has
          always named them on, and now his directions name them on too. */
@@ -43166,6 +43325,22 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         drift.length === 0, drift.join());
       ok('...each headed by its own kanji and name',
         KEYS.every((k) => cardOf(k).includes(`>${ISL.ISLANDS[k].kanji}</span>`)));
+      /* 工事中: "All the 'under construction' experiences should display at
+         the bottom of the list ... in the Help screen", marked, after a line
+         that says what the mark means. */
+      const order = [...sec.matchAll(/data-isle="(\w+)"/g)].map((m) => m[1]);
+      const wipK = KEYS.filter(ISL.isWip);
+      const head = (k) => /<h4 class="clan-name">[\s\S]*?<\/h4>/.exec(cardOf(k))?.[0] ?? '';
+      const legend = /<p class="ht-note dd-wip-legend">([\s\S]*?)<\/p>/.exec(sec)?.[1] ?? '';
+      ok('...工事中 the unfinished islands\' cards are the last ones, and carry the mark in their header — and only they do',
+        order.slice(-wipK.length).sort().join() === [...wipK].sort().join()
+        && KEYS.every((k) => /class="wip-mark"/.test(head(k)) === ISL.isWip(k) && /dd-wip/.test(sec.slice(sec.lastIndexOf('<li', sec.indexOf(`data-isle="${k}"`)), sec.indexOf(`data-isle="${k}"`))) === ISL.isWip(k)),
+        order.join());
+      ok('...after a line that shows the mark and says what it means: experimental, at your own risk',
+        /class="wip-mark"/.test(legend) && /experimental/i.test(legend) && /own risk/.test(legend) && /may not work as\s+expected/.test(legend)
+        && sec.indexOf('dd-wip-legend') < sec.indexOf(`data-isle="${order[order.length - wipK.length]}"`)
+        && sec.indexOf('dd-wip-legend') > sec.indexOf(`data-isle="${order[order.length - wipK.length - 1]}"`),
+        legend.replace(/\s+/g, ' ').slice(0, 120));
       ok('...with Lionheart, the arcade and the map legend, and the 凶 explained',
         ['/help/dojo/lionheart.png', '/help/dojo/arcade.jpg', '/help/dojo/map.jpg'].every((f) => sec.includes(f))
         && /凶[\s\S]{0,200}EASY,\s*MEDIUM and HARD[\s\S]{0,200}1\.25×/.test(sec));
@@ -44858,6 +45033,95 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       /ARENA SCHOOL/.test(sh.userData.sign.sub) && !sc.userData.sign.sub
       && Math.hypot(sh.position.x - sc.position.x, sh.position.z - sc.position.z) < 1e-6 && sh.position.y > sc.position.y,
       sh.userData.sign.sub);
+  }
+
+  /* --- 工事中 the unfinished islands say so, wherever their names are --- */
+  {
+    /* Richard: "let's add warning/construction signs next to the names of the
+       parts/islands in the simulator that are currently 'under construction'
+       ... Tameshigiri Range, Kudamono Storm, Holo-Sentries ... also at the
+       entrances/exits of the bridges saying something like 'may not work as
+       expected' or 'experimental'". ONE FLAG, `wip`, and every place below
+       is asked whether it agrees with it — so finishing an island is deleting
+       the flag, and nothing can keep warning about it afterwards. */
+    const WM = await import('../src/core/wipmark.js');
+    const keys = Object.keys(ISL.ISLANDS);
+    const wip = keys.filter(ISL.isWip);
+    ok('工事中 the islands marked unfinished are the three Richard named, and only them',
+      wip.join() === 'range,storm,sentries', wip.join());
+    const disagree = keys.filter((k) => !!D.isles[k].sign.userData.sign.wip !== ISL.isWip(k)
+      || !!D.isles[k].gate.userData.sign.wip !== ISL.isWip(k));
+    ok('...its sign over the island and its sign on the hub both carry the mark, and no other island\'s do',
+      disagree.length === 0, disagree.join());
+    ok('...and the hub\'s says what the mark means, in words: EXPERIMENTAL, may not work as expected',
+      wip.every((k) => /EXPERIMENTAL/.test(D.isles[k].gate.userData.sign.sub) && /may not work as expected/.test(D.isles[k].gate.userData.sign.sub)),
+      wip.map((k) => D.isles[k].gate.userData.sign.sub).join(' | '));
+    // The island END of the bridge: on the island, a stride in, and beside the deck as the gate sign is.
+    const half = 13 * DD.GATE_SIGN.scale / 2;
+    const bad = [];
+    for (const k of keys) {
+      const I = D.isles[k]; const w = I.warn;
+      if (!ISL.isWip(k)) { if (w) bad.push(`${k}: warned and finished`); continue; }
+      if (!w) { bad.push(`${k}: no sign at the island end`); continue; }
+      const s = w.userData.sign;
+      const g = w.position;
+      const fromC = Math.hypot(g.x - I.x, g.z - I.z);
+      const along = (g.x - I.x) * I.fwd.x + (g.z - I.z) * I.fwd.z;
+      let clear = Infinity;
+      for (const B of sim.bridges) for (const q of B.deck.pts) clear = Math.min(clear, Math.hypot(g.x - q.x, g.z - q.z) - B.road.halfW);
+      if (s.kanji !== WM.WIP_TEXT.kanji || !s.wip || !/EXPERIMENTAL/.test(s.name) || !/may not work as expected/.test(s.sub)) bad.push(`${k}: says ${s.kanji} ${s.name} / ${s.sub}`);
+      if (fromC > I.r || along > 0) bad.push(`${k}: ${fromC.toFixed(1)} from the centre, ${along.toFixed(1)} along`);
+      if (clear <= half) bad.push(`${k}: ${clear.toFixed(2)} from a deck`);
+    }
+    ok('...and a third sign stands where she steps off its bridge: 工事中 EXPERIMENTAL, on the island\'s near half, never over a deck',
+      bad.length === 0, bad.join('; '));
+    const cards = D.highway.kiosks.map((k) => k.o.card().map((l) => l.text).join(' / '));
+    const warned = cards.filter((t) => /工事中/.test(t));
+    ok('...and the light cycle\'s card for the ride TO the Holo-Sentries says so, and no other ride\'s does',
+      warned.length === 1 && /to HOLO-SENTRIES/.test(warned[0]) && /may not work as expected/.test(warned[0])
+      && cards.filter((t) => /to HOLO-SENTRIES/.test(t)).length === 1, warned.join(' | '));
+    /* THE CORNER MINIMAP, by its source: drawing it here needs a canvas
+       this check does not have. The mark is asked by key, beside the word. */
+    const mm = read('../src/systems/minimap.js');
+    ok('...and the corner minimap draws the mark beside the name of every island the flag says',
+      /const ic = isWip\(d\.key\) \? 9 \* dpr : 0;/.test(mm) && /drawWip\(c, tx - tw \/ 2/.test(mm));
+    // The Help page draws it in CSS, which cannot import the shape: the same two paths.
+    const css = read('../src/style.css');
+    const uri = /\.wip-mark \{[\s\S]*?url\("data:image\/svg\+xml,([^"]+)"\)/.exec(css)?.[1] ?? '';
+    ok('...and the Help page\'s mark is the same triangle, path for path',
+      uri.includes(WM.WIP_PATH) && uri.includes(WM.WIP_BANG) && uri.includes(WM.WIP_ORANGE.replace('#', '%23')));
+  }
+
+  /* --- 夢道場 the Dream Dojo Tubes are named on the hub, like every island --- */
+  {
+    /* Richard: "Lets add a 3D name near the Dojo of the Turning Circle bridge
+       for the 'Your Tubes' island and let's name it 'The Dream Dojo Tubes'." */
+    const T = D._tubesSign();
+    const s = T.userData.sign;
+    const g = T.position;
+    const mouth = { x: dc.x + L.u.x * 47, z: dc.z + L.u.z * 47 };
+    const half = 13 * DD.GATE_SIGN.scale / 2;
+    let clear = Infinity; let who = '';
+    for (const B of sim.bridges) for (const q of B.deck.pts) {
+      const d = Math.hypot(g.x - q.x, g.z - q.z) - B.road.halfW;
+      if (d < clear) { clear = d; who = B.deck.name ?? '?'; }
+    }
+    // The map kiosk on the port spoke stands on the gate-sign side; this one must not be in its card.
+    const a = DD.MAP_KIOSKS[0];
+    const kx = dc.x + L.u.x * a.r - L.u.z * a.side; const kz = dc.z + L.u.z * a.r + L.u.x * a.side;
+    const fromKiosk = Math.hypot(g.x - kx, g.z - kz);
+    const fromGates = Math.min(...Object.values(D.isles).map((I) => Math.hypot(g.x - I.gate.position.x, g.z - I.gate.position.z)));
+    ok('夢道場 THE DREAM DOJO TUBES is named on the hub, by the port bridge\'s mouth, in the words Richard chose',
+      s.name === 'THE DREAM DOJO TUBES' && s.kanji === ISL.PORT_SIGN.kanji && Math.hypot(g.x - mouth.x, g.z - mouth.z) < 10
+      && Math.abs(g.y - dc.y - DD.GATE_SIGN.up) < 1e-6, `${s.kanji} ${s.name} ${Math.hypot(g.x - mouth.x, g.z - mouth.z).toFixed(1)} from the mouth`);
+    ok('...beside the deck and not over it, across the mouth from the map kiosk, clear of every gate sign',
+      clear > half && fromKiosk > 2 * half && fromGates > 2 * half,
+      `${clear.toFixed(2)} clear of ${who}, ${fromKiosk.toFixed(1)} from the kiosk, ${fromGates.toFixed(1)} from a gate sign`);
+    const WPn = await import('../src/systems/dream/waypoint.js');
+    ok('...and the map and the waypoint call it that too', WPn.destName('port') === ISL.PORT_SIGN.map
+      && /THE DREAM DOJO TUBES/.test(`THE ${ISL.PORT_SIGN.map}`) && /PORT_SIGN\.short/.test(read('../src/systems/dream/lionguide.js')) && WPn.destShort('port') === ISL.PORT_SIGN.short);
+    T.removeFromParent();
+    sim.signs.splice(sim.signs.indexOf(T), 1);
   }
 
   /* --- 望 the look across: over her shoulder at the island, before she steps on --- */

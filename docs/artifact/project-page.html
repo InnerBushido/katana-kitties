@@ -1388,6 +1388,13 @@ git push origin alpha</code></pre>
       and on 2026-10-04: &ldquo;Payne approved the lines and her voice, so we are good there.&rdquo;
       Her photos went to Higgsfield as image references and nowhere else.
       <code>docs/notes/payne.md</code></p>
+    <p><b>Eight pictures in Help are not ours, and all eight may ship.</b> The photos and woodblock
+      prints in the Japanese glossary came off Wikimedia Commons, and every one is <b>public domain
+      or CC0</b> — no legal duty to credit. Each is credited anyway: an <b>[n]</b> on the picture
+      opens Help's last topic, <b>Picture credits</b>. A picture comes in only under PD, CC0 or
+      CC BY; <b>never NC, ND or ShareAlike, and never a photo of a recognisable stranger</b>.
+      <code>world-check</code> fails on a licence outside that list or a picture without its credit.
+      <code>docs/notes/credits.md</code></p>
   </div>
 </section>
 
@@ -1434,6 +1441,15 @@ git push origin alpha</code></pre>
       afternoon and no check could have caught any of them: every sentence was true, most were
       pinned against the code by a check that wanted them kept, and nothing ever asked what they
       added up to. A card gets long one correct paragraph at a time.</p>
+    <p style="margin-top:10px"><b>Two flags a new island or a new word has to follow.</b> An
+      unfinished simulator island carries <code>wip: true</code> in
+      <code>src/systems/dream/islands.js</code>. That one flag puts the orange 工事中 mark
+      (<code>src/core/wipmark.js</code>, one shape for the canvas, the SVG and the Help page's CSS)
+      on its signs, its bridge end, the light cycle's card, both maps, Lionheart's list and its Help
+      card, which sorts to the bottom. Finishing an island is deleting the flag. And <b>every
+      Japanese word the game writes has an entry in Help's <em>Japanese words &amp; culture</em>
+      glossary</b>, with its meaning and how to say it. <code>world-check</code> reads every quoted
+      string in <code>src/</code> and fails on a word the page does not explain.</p>
     <p style="margin-top:10px"><b>Every new screen is designed for a phone at the same time as for
       a desktop</b>, and two rules come out of that. <b>A <code>body.touch-ui</code> rule is part of
       the work, not a follow-up</b> — the award card at the ending shipped with none at all, so a
@@ -1479,6 +1495,7 @@ git push origin alpha</code></pre>
     <div><code>four-players.md</code><span>Seating, the split screen, panes, leagues</span></div>
     <div><code>input.md</code><span>Controllers, the vJoy route, the Chrome stick bug, keyboard sets</span></div>
     <div><code>help.md</code><span>The Help panel, and the rig that films it</span></div>
+    <div><code>credits.md</code><span>The pictures the game did not make: which licences may ship, the Picture credits page</span></div>
     <div><code>tournament.md</code><span>The ring, rounds, attacks, ring-outs, the feast</span></div>
     <div><code>dragon-hunt.md</code><span>The seven stars, the grottos, the spire, Ryuuseki</span></div>
     <div><code>endgame.md</code><span>The 100% ending, the eight Kotodama, the economy, the quests that pay an orb at the ending, the last five and the hunt for them, the balance page</span></div>

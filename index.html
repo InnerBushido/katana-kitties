@@ -734,7 +734,7 @@
           </summary>
           <div class="ht-body">
             <figure class="help-shot">
-              <img src="/help/place/shrine.jpg" loading="lazy" width="1096" height="616"
+              <img src="/help/place/shrine.jpg" loading="lazy" width="1100" height="619"
                 alt="A clan shrine: a golden beam of light standing over a ring">
               <figcaption>Find the beam, stand in the ring, press join.</figcaption>
             </figure>
@@ -1716,21 +1716,6 @@
                 </div>
               </li>
 
-              <li class="clan-card dd-card" style="--clan: #8a4a12" data-isle="range">
-                <h4 class="clan-name">
-                  <span class="dd-kanji" lang="ja" aria-hidden="true">試斬</span>
-                  Tameshigiri Range
-                </h4>
-                <div class="clan-body">
-                  <img class="dd-shot" src="/help/dojo/isle-range.jpg" loading="lazy" width="480" height="300"
-                    alt="The Tameshigiri Range: a kitten at her mark with a row of orange practice posts across the floor">
-                  <div class="clan-text">
-                    <b class="clan-power">Sword control: timing and aim</b>
-                    <span class="dd-about">Three sword drills: ONE SWING, COMBO 60 and CLEAN CUT.</span>
-                  </div>
-                </div>
-              </li>
-
               <li class="clan-card dd-card" style="--clan: #7a2f1d" data-isle="kata">
                 <h4 class="clan-name">
                   <span class="dd-kanji" lang="ja" aria-hidden="true">型</span>
@@ -1738,25 +1723,10 @@
                 </h4>
                 <div class="clan-body">
                   <img class="dd-shot" src="/help/dojo/isle-kata.jpg" loading="lazy" width="480" height="300"
-                    alt="The Kata Trace: a kitten on her own floor of nine marks while Lionheart attacks from the top of it">
+                    alt="The Kata Trace: a kitten on her own floor of nine marks, stepping off a blow as Lionheart attacks from the top of it">
                   <div class="clan-text">
-                    <b class="clan-power">Watch, remember, copy</b>
-                    <span class="dd-about">Pick any song. Lionheart attacks on the beat — step off his blows and jump his sweeps. Write your own routines too.</span>
-                  </div>
-                </div>
-              </li>
-
-              <li class="clan-card dd-card" style="--clan: #5d6b14" data-isle="storm">
-                <h4 class="clan-name">
-                  <span class="dd-kanji" lang="ja" aria-hidden="true">果物</span>
-                  Kudamono Storm
-                </h4>
-                <div class="clan-body">
-                  <img class="dd-shot" src="/help/dojo/isle-storm.jpg" loading="lazy" width="480" height="300"
-                    alt="Kudamono Storm: holo-fruit baskets round the rim and a kitten in the middle, ready to cut">
-                  <div class="clan-text">
-                    <b class="clan-power">Read where it will land</b>
-                    <span class="dd-about">Cut the holo-fruit out of the air before it lands. Leave the purple viruses alone.</span>
+                    <b class="clan-power">Rhythm, footwork and nerve</b>
+                    <span class="dd-about">Lionheart's dance battle. Pick a song, step off his blows on the beat, jump his sweeps and slash him back. Dance together, write your own routines, and top the Kata Board.</span>
                   </div>
                 </div>
               </li>
@@ -1772,21 +1742,6 @@
                   <div class="clan-text">
                     <b class="clan-power">Read the wave, beat the clock</b>
                     <span class="dd-about">An obstacle course of laser bars, one kitten at a time. Duck, jump and dodge — the fastest time wins.</span>
-                  </div>
-                </div>
-              </li>
-
-              <li class="clan-card dd-card" style="--clan: #7a1f3d" data-isle="sentries">
-                <h4 class="clan-name">
-                  <span class="dd-kanji" lang="ja" aria-hidden="true">番兵</span>
-                  Holo-Sentries
-                </h4>
-                <div class="clan-body">
-                  <img class="dd-shot" src="/help/dojo/isle-sentries.jpg" loading="lazy" width="480" height="300"
-                    alt="The Holo-Sentries: a glowing sentry core across the floor and a kitten at her mark">
-                  <div class="clan-text">
-                    <b class="clan-power">Dodge, guard, strike back</b>
-                    <span class="dd-about">Sentries that shoot back, always with a warning. Dodge or raise your Ward, then hit the core.</span>
                   </div>
                 </div>
               </li>
@@ -1842,8 +1797,971 @@
               MEDIUM and HARD</b> and yours strikes with 凶 and hits <b>1.25×</b>
               as hard.
             </p>
+
+            <!-- 工事中 UNDER CONSTRUCTION — the islands flagged `wip` in
+                 src/systems/dream/islands.js, at the bottom of the list, after
+                 a line that says what the mark means. world-check holds this
+                 list to that flag. -->
+            <p class="ht-note dd-wip-legend">
+              <span class="wip-mark" title="EXPERIMENTAL: may not work as expected" aria-label="EXPERIMENTAL: may not work as expected"></span> <b lang="ja">工事中</b> <b>UNDER CONSTRUCTION.</b>
+              This orange mark means an island is <b>experimental</b>: still
+              being built. Try it at your own risk — it may not work as
+              expected, and it won't be as polished as the rest.
+            </p>
+            <ul class="clan-grid dd-grid dd-wip-grid">
+              <li class="clan-card dd-card dd-wip" style="--clan: #8a4a12" data-isle="range">
+                <h4 class="clan-name">
+                  <span class="dd-kanji" lang="ja" aria-hidden="true">試斬</span>
+                  Tameshigiri Range <span class="wip-mark" title="EXPERIMENTAL: may not work as expected" aria-label="EXPERIMENTAL: may not work as expected"></span>
+                </h4>
+                <div class="clan-body">
+                  <img class="dd-shot" src="/help/dojo/isle-range.jpg" loading="lazy" width="480" height="300"
+                    alt="The Tameshigiri Range: a kitten at her mark with a row of orange practice posts across the floor">
+                  <div class="clan-text">
+                    <b class="clan-power">Sword control: timing and aim</b>
+                    <span class="dd-about">Three sword drills: ONE SWING, COMBO 60 and CLEAN CUT.</span>
+                  </div>
+                </div>
+              </li>
+
+              <li class="clan-card dd-card dd-wip" style="--clan: #5d6b14" data-isle="storm">
+                <h4 class="clan-name">
+                  <span class="dd-kanji" lang="ja" aria-hidden="true">果物</span>
+                  Kudamono Storm <span class="wip-mark" title="EXPERIMENTAL: may not work as expected" aria-label="EXPERIMENTAL: may not work as expected"></span>
+                </h4>
+                <div class="clan-body">
+                  <img class="dd-shot" src="/help/dojo/isle-storm.jpg" loading="lazy" width="480" height="300"
+                    alt="Kudamono Storm: holo-fruit baskets round the rim and a kitten in the middle, ready to cut">
+                  <div class="clan-text">
+                    <b class="clan-power">Read where it will land</b>
+                    <span class="dd-about">Cut the holo-fruit out of the air before it lands. Leave the purple viruses alone.</span>
+                  </div>
+                </div>
+              </li>
+
+              <li class="clan-card dd-card dd-wip" style="--clan: #7a1f3d" data-isle="sentries">
+                <h4 class="clan-name">
+                  <span class="dd-kanji" lang="ja" aria-hidden="true">番兵</span>
+                  Holo-Sentries <span class="wip-mark" title="EXPERIMENTAL: may not work as expected" aria-label="EXPERIMENTAL: may not work as expected"></span>
+                </h4>
+                <div class="clan-body">
+                  <img class="dd-shot" src="/help/dojo/isle-sentries.jpg" loading="lazy" width="480" height="300"
+                    alt="The Holo-Sentries: a glowing sentry core across the floor and a kitten at her mark">
+                  <div class="clan-text">
+                    <b class="clan-power">Dodge, guard, strike back</b>
+                    <span class="dd-about">Sentries that shoot back, always with a warning. Dodge or raise your Ward, then hit the core.</span>
+                  </div>
+                </div>
+              </li>
+            </ul>
           </div>
         </details>
+
+        <!-- doc-glossary -->
+        <!-- 日本語 THE GLOSSARY. Richard, Oct 2026: "every Japanese term in the
+             game ... its meaning, philosophy, usage and how to pronounce it
+             ... in logical sub-categories ... concise, 1-2 sentences, but
+             expanded upon when it is culturally relevant". So: one sub-topic
+             per kind of word, one line each, and a tap-in where there is more
+             to the word than its meaning. `world-check` holds it to the game:
+             every `kanji:` the code puts on a sign, a kiosk or an orb has to
+             have an entry here, so a new island cannot ship a word this page
+             does not explain. The pronunciations are a respelling in English
+             sounds, not IPA, because the reader is nine. -->
+        <details class="help-card" name="help" id="help-words">
+          <summary class="help-topic">
+            <span class="ht-ico" aria-hidden="true">🗾</span>
+            <span class="ht-title">Japanese words &amp; culture</span>
+            <span class="ht-chev" aria-hidden="true">▸</span>
+          </summary>
+          <div class="ht-body">
+            <p class="ht-note">
+              Every Japanese word in the game — what it means, how to say it,
+              and where you meet it. Tap a <b>▸</b> under a word for the story
+              behind it.
+            </p>
+            <details class="help-card help-sub" name="help-words">
+              <summary class="help-topic">
+                <span class="ht-ico" lang="ja" aria-hidden="true">読</span>
+                <span class="ht-title">How to read it</span>
+                <span class="ht-chev" aria-hidden="true">▸</span>
+              </summary>
+              <div class="ht-body">
+                <p class="ht-note jp-intro">Japanese is written three ways at once, and the game uses all three.</p>
+                <dl class="jp-dict">
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">漢字</span> <b class="jp-r">kanji</b> <span class="jp-say">say <i>kahn-jee</i></span></dt>
+                    <dd>Picture-characters, first borrowed from China. Each one is a MEANING as well as a sound — 山 is mountain, 火 is fire — which is why the game's signs use one or two as a label.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">ひらがな</span> <b class="jp-r">hiragana</b> <span class="jp-say">say <i>hee-rah-gah-nah</i></span></dt>
+                    <dd>The round alphabet of sounds, for the little words that hold a sentence together.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">カタカナ</span> <b class="jp-r">katakana</b> <span class="jp-say">say <i>kah-tah-kah-nah</i></span></dt>
+                    <dd>The sharp alphabet of sounds, for words from other languages: パンダ is "panda". Most of the rain of letters round a 瞬 Flash Step is katakana.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">ローマ字</span> <b class="jp-r">rōmaji</b> <span class="jp-say">say <i>roh-mah-jee</i></span></dt>
+                    <dd>Japanese written in our letters, like every word on this page. A line over a vowel — ō, ū — means hold it twice as long.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">音</span> <b class="jp-r">saying it</b> <span class="jp-say">say <i>oh-toh</i></span></dt>
+                    <dd>Five vowels, always the same: a "ah", i "ee", u "oo", e "eh", o "oh". Every syllable gets the same little beat, with no heavy stress — ko-to-da-ma, not ko-to-DA-ma.</dd>
+                  </div>
+                </dl>
+              </div>
+            </details>
+            <details class="help-card help-sub" name="help-words">
+              <summary class="help-topic">
+                <span class="ht-ico" lang="ja" aria-hidden="true">道</span>
+                <span class="ht-title">The dojo and the sword</span>
+                <span class="ht-chev" aria-hidden="true">▸</span>
+              </summary>
+              <div class="ht-body">
+                <p class="ht-note jp-intro">The words of the training hall — and of the ring.</p>
+                <dl class="jp-dict">
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">道場</span> <b class="jp-r">dōjō</b> <span class="jp-say">say <i>doh-joh</i></span></dt>
+                    <dd>"The place of the way": a hall where a martial art is practised. You bow on the way in and on the way out.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">道</span> <b class="jp-r">dō / michi</b> <span class="jp-say">say <i>doh / mee-chee</i></span></dt>
+                    <dd>"The way", or "the road". It ends kendō, bushidō and Shintō: something you practise your whole life, not something you finish learning.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">刀</span> <b class="jp-r">katana</b> <span class="jp-say">say <i>kah-tah-nah</i></span></dt>
+                    <dd>The curved, single-edged sword of the samurai. In this game it only knocks scenery over — outside the ring, nobody gets hurt.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">侍</span> <b class="jp-r">samurai</b> <span class="jp-say">say <i>sah-moo-rye</i></span></dt>
+                    <dd>The warrior class of old Japan. The word means "one who serves".</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">武士道</span> <b class="jp-r">bushidō</b> <span class="jp-say">say <i>boo-shee-doh</i></span></dt>
+                    <dd>"The way of the warrior": how a samurai was meant to behave.</dd>
+                    <dd>
+                      <details class="help-card help-sub jp-more" name="help-jp-more">
+                        <summary class="help-topic">
+                          <span class="ht-ico" lang="ja" aria-hidden="true">武</span>
+                          <span class="ht-title">Bushidō expanded</span>
+                          <span class="ht-chev" aria-hidden="true">▸</span>
+                        </summary>
+                        <div class="ht-body">
+                          <p class="ht-note">Courage, honesty, kindness to the weak, good manners, self-control, and keeping your word. Most of what we know about it was written down long after the samurai, when people looked back on them.</p>
+                          <p class="ht-note">It is mostly about how you act when you WIN and when you LOSE: you bow to the person you beat, and you thank the person who beat you.</p>
+                        </div>
+                      </details>
+                    </dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">剣士</span> <b class="jp-r">kenshi</b> <span class="jp-say">say <i>ken-shee</i></span></dt>
+                    <dd>A swordsman or swordswoman — the Arena School's ranks, KENSHI 3rd Class to 1st Class.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">先生</span> <b class="jp-r">sensei</b> <span class="jp-say">say <i>sen-seh</i></span></dt>
+                    <dd>Teacher — written "born before", someone who walked the road ahead of you. Lionheart is the holo-sensei.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">剣道</span> <b class="jp-r">kendō</b> <span class="jp-say">say <i>ken-doh</i></span></dt>
+                    <dd>"The way of the sword": Japanese fencing, with bamboo swords and armour. A home's kendo room is a little one.</dd>
+                    <dd>
+                      <details class="help-card help-sub jp-more" name="help-jp-more">
+                        <summary class="help-topic">
+                          <span class="ht-ico" lang="ja" aria-hidden="true">剣</span>
+                          <span class="ht-title">Kendo words</span>
+                          <span class="ht-chev" aria-hidden="true">▸</span>
+                        </summary>
+                        <div class="ht-body">
+                          <p class="ht-note"><b lang="ja">竹刀</b> <b>shinai</b> <i>shee-nye</i> — the bamboo practice sword. <b lang="ja">木剣</b> <b>bokken</b> <i>boh-ken</i> — a wooden one, for kata.</p>
+                          <p class="ht-note"><b lang="ja">防具</b> <b>bōgu</b> <i>boh-goo</i> — the armour: <b lang="ja">面</b> <b>men</b>, the helmet and mask, <b lang="ja">小手</b> <b>kote</b>, the gloves, and <b lang="ja">胴</b> <b>dō</b>, the chest plate.</p>
+                          <figure class="help-shot jp-pic">
+                            <img src="/help/japan/kendo.jpg" loading="lazy" width="500" height="684"
+                              alt="An old black-and-white photo of a young samurai sitting in kendo armour, a bamboo sword in his hand and his mask beside him">
+                            <figcaption>A young samurai in his bōgu, about 160 years ago. His men is on the stand beside him. <a class="credit-ref" href="#credit-1" title="Picture credit 1">[1]</a></figcaption>
+                          </figure>
+                          <p class="ht-note"><b lang="ja">一本</b> <b>ippon</b> <i>eep-pon</i> — "one point": a clean strike, with the right target, the right posture and your whole spirit in it. The kendo room calls IPPON.</p>
+                          <p class="ht-note"><b lang="ja">気合</b> <b>kiai</b> <i>kee-eye</i> — the shout that puts your spirit into a strike. <b lang="ja">礼</b> <b>rei</b> <i>ray</i> — the bow that starts and ends every bout. <b lang="ja">正座</b> <b>seiza</b> <i>say-zah</i> — kneeling with your feet tucked under you.</p>
+                          <p class="ht-note"><b lang="ja">残心</b> <b>zanshin</b> <i>zahn-sheen</i> — "the mind that stays": after the strike, you stay ready, and you never celebrate on the spot.</p>
+                        </div>
+                      </details>
+                    </dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">型</span> <b class="jp-r">kata</b> <span class="jp-say">say <i>kah-tah</i></span></dt>
+                    <dd>A form: a set pattern of moves, practised until your body knows it without thinking. Kata Trace is a dance of them.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">試斬</span> <b class="jp-r">tameshigiri</b> <span class="jp-say">say <i>tah-meh-shee-gee-ree</i></span></dt>
+                    <dd>"Test cutting": slicing rolled straw mats to practise a clean, true swing — the Tameshigiri Range.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">一閃</span> <b class="jp-r">issen</b> <span class="jp-say">say <i>ees-sen</i></span></dt>
+                    <dd>"One flash": a single, perfect stroke. ONE SWING on the Range.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">連撃</span> <b class="jp-r">rengeki</b> <span class="jp-say">say <i>ren-geh-kee</i></span></dt>
+                    <dd>A chain of blows, one after another. COMBO 60.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">角</span> <b class="jp-r">kaku</b> <span class="jp-say">say <i>kah-koo</i></span></dt>
+                    <dd>An angle, or a corner. CLEAN CUT is all about the angle of the cut.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">薙</span> <b class="jp-r">nagi</b> <span class="jp-say">say <i>nah-gee</i></span></dt>
+                    <dd>A wide sweeping cut, as with a naginata, a curved blade on a long pole. Shadow Lionheart's ankle-height sweep — jump it.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">忍</span> <b class="jp-r">shinobi</b> <span class="jp-say">say <i>shee-noh-bee</i></span></dt>
+                    <dd>To sneak — and also to ENDURE, to bear something patiently. A 忍者 ninja is "a person of 忍".</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">忍者</span> <b class="jp-r">ninja</b> <span class="jp-say">say <i>neen-jah</i></span></dt>
+                    <dd>The spies and scouts of old Japan, who won by not being seen. Bamboo Infiltration.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">手裏剣</span> <b class="jp-r">shuriken</b> <span class="jp-say">say <i>shoo-ree-ken</i></span></dt>
+                    <dd>"A blade hidden in the hand": a small throwing star.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">煙</span> <b class="jp-r">kemuri</b> <span class="jp-say">say <i>keh-moo-ree</i></span></dt>
+                    <dd>Smoke — the smoke bomb you carry in the bamboo.</dd>
+                  </div>
+                </dl>
+              </div>
+            </details>
+            <details class="help-card help-sub" name="help-words">
+              <summary class="help-topic">
+                <span class="ht-ico" lang="ja" aria-hidden="true">言</span>
+                <span class="ht-title">The Kotodama orbs</span>
+                <span class="ht-chev" aria-hidden="true">▸</span>
+              </summary>
+              <div class="ht-body">
+                <p class="ht-note jp-intro">Every orb is one kanji, because every orb is one word with its power inside it.</p>
+                <dl class="jp-dict">
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">言霊</span> <b class="jp-r">kotodama</b> <span class="jp-say">say <i>koh-toh-dah-mah</i></span></dt>
+                    <dd>"Word-spirit": the old Japanese belief that words have a soul.</dd>
+                    <dd>
+                      <details class="help-card help-sub jp-more" name="help-jp-more">
+                        <summary class="help-topic">
+                          <span class="ht-ico" lang="ja" aria-hidden="true">言</span>
+                          <span class="ht-title">Kotodama expanded</span>
+                          <span class="ht-chev" aria-hidden="true">▸</span>
+                        </summary>
+                        <div class="ht-body">
+                          <figure class="help-shot">
+                            <img src="/help/place/orbs.jpg" loading="lazy" width="1096" height="612"
+                              alt="Kotodama orbs glowing over the town, each one a kanji in a coloured ball">
+                            <figcaption>Each orb is one word: its kanji is its power.</figcaption>
+                          </figure>
+                          <p class="ht-note">In old Japan, people believed that saying a thing helped to MAKE it happen — so good words bring good things, and at a wedding nobody says "cut" or "end". Poems were offered at shrines because a beautiful word was a gift the kami could feel.</p>
+                          <p class="ht-note">That is the idea behind the orbs: each is a single word, and when you wear it, its power is yours. When the town is knocked over, the energy that was held in it is set free as kotodama.</p>
+                        </div>
+                      </details>
+                    </dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">疾</span> <b class="jp-r">Hayate</b> <span class="jp-say">say <i>hah-yah-teh</i></span></dt>
+                    <dd>A sudden gale (疾風) — GALE: you run faster.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">斬</span> <b class="jp-r">Nagagiri</b> <span class="jp-say">say <i>nah-gah-gee-ree</i></span></dt>
+                    <dd>"Long cut" — 斬 alone means to cut down. LONG CUT: your katana reaches further.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">剛</span> <b class="jp-r">Kongō</b> <span class="jp-say">say <i>kohn-goh</i></span></dt>
+                    <dd>Adamant, diamond-hard (金剛) — 剛 alone is "strong, unbending". ADAMANT: more health in the ring.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">跳</span> <b class="jp-r">Tobi</b> <span class="jp-say">say <i>toh-bee</i></span></dt>
+                    <dd>A leap. LEAP: one more jump in the air.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">壁</span> <b class="jp-r">Kabe</b> <span class="jp-say">say <i>kah-beh</i></span></dt>
+                    <dd>A wall. WARD: a shield you cannot be hurt through.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">落</span> <b class="jp-r">Otoshi</b> <span class="jp-say">say <i>oh-toh-shee</i></span></dt>
+                    <dd>A drop, a fall. POWER DIVE: fall like a hammer.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">十</span> <b class="jp-r">Jūji</b> <span class="jp-say">say <i>joo-jee</i></span></dt>
+                    <dd>A cross (十字). The kanji 十 is the number TEN, and it is shaped like one. CROSS SLASH.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">突</span> <b class="jp-r">Totsugeki</b> <span class="jp-say">say <i>toh-tsoo-geh-kee</i></span></dt>
+                    <dd>A charge — 突 alone is "thrust". CHARGE: straight through.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">守</span> <b class="jp-r">Nagamori</b> <span class="jp-say">say <i>nah-gah-moh-ree</i></span></dt>
+                    <dd>"Long guarding" — 守 is to protect, as in お守り omamori, a shrine's lucky charm. LONG GUARD.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">瞬</span> <b class="jp-r">Shunpo</b> <span class="jp-say">say <i>shoon-poh</i></span></dt>
+                    <dd>"Flash step" — 瞬 is the blink of an eye. FLASH STEP.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">空</span> <b class="jp-r">kū / sora</b> <span class="jp-say">say <i>koo / soh-rah</i></span></dt>
+                    <dd>The sky — and emptiness. It falls in the rain of letters round a Flash Step, with 閃 sen, "a flash", and 疑 gi, "doubt": where did she go?</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">遠</span> <b class="jp-r">Enpo</b> <span class="jp-say">say <i>en-poh</i></span></dt>
+                    <dd>"Far step" — 遠 is far away. FAR STEP.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">返</span> <b class="jp-r">Kaeshi</b> <span class="jp-say">say <i>kah-eh-shee</i></span></dt>
+                    <dd>"Returning" a blow: a counter. RIPOSTE.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">間</span> <b class="jp-r">Ma</b> <span class="jp-say">say <i>mah</i></span></dt>
+                    <dd>The gap — the space between two things. LONG PARRY.</dd>
+                    <dd>
+                      <details class="help-card help-sub jp-more" name="help-jp-more">
+                        <summary class="help-topic">
+                          <span class="ht-ico" lang="ja" aria-hidden="true">間</span>
+                          <span class="ht-title">Ma expanded</span>
+                          <span class="ht-chev" aria-hidden="true">▸</span>
+                        </summary>
+                        <div class="ht-body">
+                          <p class="ht-note">Ma is one of the most Japanese ideas there is: the PAUSE that gives a thing its shape. The silence between two notes of music, the empty space in a painting, the moment before a bow.</p>
+                          <p class="ht-note">In sword-fighting it is <b lang="ja">間合い</b> <b>maai</b> — the distance between two fighters, where one step decides everything. The Long Parry holds that moment open for longer.</p>
+                        </div>
+                      </details>
+                    </dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">凶</span> <b class="jp-r">kyō</b> <span class="jp-say">say <i>kyoh</i></span></dt>
+                    <dd>Bad luck — the worst fortune you can draw on an おみくじ omikuji paper at a shrine. People tie a bad one to a rack and walk away from it. Lionheart's Cross Slash is stamped with it. (今日 kyō, "today", sounds exactly the same!)</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">秘</span> <b class="jp-r">hi</b> <span class="jp-say">say <i>hee</i></span></dt>
+                    <dd>Secret — 秘 EXTRA HARD.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">盗</span> <b class="jp-r">tō</b> <span class="jp-say">say <i>toh</i></span></dt>
+                    <dd>To steal — the Steal Mischief clan power.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">息</span> <b class="jp-r">iki</b> <span class="jp-say">say <i>ee-kee</i></span></dt>
+                    <dd>Breath — the Dragon Breath clan power.</dd>
+                  </div>
+                </dl>
+              </div>
+            </details>
+            <details class="help-card help-sub" name="help-words">
+              <summary class="help-topic">
+                <span class="ht-ico" lang="ja" aria-hidden="true">夢</span>
+                <span class="ht-title">The Dream Dojo, sign by sign</span>
+                <span class="ht-chev" aria-hidden="true">▸</span>
+              </summary>
+              <div class="ht-body">
+                <p class="ht-note jp-intro">Every sign in Lionheart's simulator, and what it says.</p>
+                <dl class="jp-dict">
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">夢</span> <b class="jp-r">yume</b> <span class="jp-say">say <i>yoo-meh</i></span></dt>
+                    <dd>A dream. 夢道場 yume dōjō is the Dream Dojo — and THE DREAM DOJO TUBES.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">夢道場</span> <b class="jp-r">yume dōjō</b> <span class="jp-say">say <i>yoo-meh doh-joh</i></span></dt>
+                    <dd>The Dream Dojo — the sign beside the bridge to your tubes.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">一族</span> <b class="jp-r">ichizoku</b> <span class="jp-say">say <i>ee-chee-zoh-koo</i></span></dt>
+                    <dd>A clan, a family line — the Clan Trial Hall.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">果物</span> <b class="jp-r">kudamono</b> <span class="jp-say">say <i>koo-dah-moh-noh</i></span></dt>
+                    <dd>Fruit — Kudamono Storm.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">正弦</span> <b class="jp-r">seigen</b> <span class="jp-say">say <i>say-gen</i></span></dt>
+                    <dd>Sine, the maths of the turning circle — written "true string". The Sine Gauntlet.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">番兵</span> <b class="jp-r">banpei</b> <span class="jp-say">say <i>bahn-pay</i></span></dt>
+                    <dd>A sentry, a guard on watch — the Holo-Sentries.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">闘技</span> <b class="jp-r">tōgi</b> <span class="jp-say">say <i>toh-gee</i></span></dt>
+                    <dd>A fighting contest (闘技場 is an arena) — the Arena School.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">影</span> <b class="jp-r">kage</b> <span class="jp-say">say <i>kah-geh</i></span></dt>
+                    <dd>Shadow — Shadow Lionheart, and Shadowtail.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">光</span> <b class="jp-r">hikari</b> <span class="jp-say">say <i>hee-kah-ree</i></span></dt>
+                    <dd>Light — the light cycles.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">地図</span> <b class="jp-r">chizu</b> <span class="jp-say">say <i>chee-zoo</i></span></dt>
+                    <dd>A map.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">道標</span> <b class="jp-r">michishirube</b> <span class="jp-say">say <i>mee-chee-shee-roo-beh</i></span></dt>
+                    <dd>A signpost — "the road's mark". Your waypoint.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">記</span> <b class="jp-r">ki</b> <span class="jp-say">say <i>kee</i></span></dt>
+                    <dd>A record — the score boards.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">譜</span> <b class="jp-r">fu</b> <span class="jp-say">say <i>foo</i></span></dt>
+                    <dd>A musical score — the Beat Maps.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">今日</span> <b class="jp-r">kyō</b> <span class="jp-say">say <i>kyoh</i></span></dt>
+                    <dd>Today — today's training.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">出口</span> <b class="jp-r">deguchi</b> <span class="jp-say">say <i>deh-goo-chee</i></span></dt>
+                    <dd>Exit, "the mouth out". Every real train station in Japan has this sign.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">応援</span> <b class="jp-r">ōen</b> <span class="jp-say">say <i>oh-en</i></span></dt>
+                    <dd>Cheering — the stands.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">板</span> <b class="jp-r">ita</b> <span class="jp-say">say <i>ee-tah</i></span></dt>
+                    <dd>A board — the scoreboard.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">食</span> <b class="jp-r">shoku</b> <span class="jp-say">say <i>shoh-koo</i></span></dt>
+                    <dd>Food, eating — the Feast.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">対</span> <b class="jp-r">tai</b> <span class="jp-say">say <i>tye</i></span></dt>
+                    <dd>Versus. 3対2 is read "three versus two".</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">幽</span> <b class="jp-r">yū</b> <span class="jp-say">say <i>yoo</i></span></dt>
+                    <dd>A ghost (幽霊 yūrei) — the ghost run beside you.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">工事中</span> <b class="jp-r">kōjichū</b> <span class="jp-say">say <i>koh-jee-choo</i></span></dt>
+                    <dd>"Under construction" — the orange mark on an island that is still being built.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">竹林</span> <b class="jp-r">chikurin</b> <span class="jp-say">say <i>chee-koo-reen</i></span></dt>
+                    <dd>A bamboo grove — THE BAMBOO PATH.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">村</span> <b class="jp-r">mura</b> <span class="jp-say">say <i>moo-rah</i></span></dt>
+                    <dd>A village.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">円</span> <b class="jp-r">en</b> <span class="jp-say">say <i>en</i></span></dt>
+                    <dd>A circle — and the name of Japan's money, the yen.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">城</span> <b class="jp-r">shiro</b> <span class="jp-say">say <i>shee-roh</i></span></dt>
+                    <dd>A castle.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">小波</span> <b class="jp-r">sazanami</b> <span class="jp-say">say <i>sah-zah-nah-mee</i></span></dt>
+                    <dd>Ripples — the easy course.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">激流</span> <b class="jp-r">gekiryū</b> <span class="jp-say">say <i>geh-kee-ryoo</i></span></dt>
+                    <dd>Rapids, a raging current — the hard one.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">登竜</span> <b class="jp-r">tōryū</b> <span class="jp-say">say <i>toh-ryoo</i></span></dt>
+                    <dd>The climbing dragon — THE DRAGON GATE.</dd>
+                    <dd>
+                      <details class="help-card help-sub jp-more" name="help-jp-more">
+                        <summary class="help-topic">
+                          <span class="ht-ico" lang="ja" aria-hidden="true">登</span>
+                          <span class="ht-title">The Dragon Gate</span>
+                          <span class="ht-chev" aria-hidden="true">▸</span>
+                        </summary>
+                        <div class="ht-body">
+                          <figure class="help-shot">
+                            <img src="/help/dojo/isle-sine.jpg" loading="lazy" width="480" height="300"
+                              alt="The Sine Gauntlet: a course of laser bars and stones snaking across the island">
+                            <figcaption>The Sine Gauntlet, where the Dragon Gate is the skill course.</figcaption>
+                          </figure>
+                          <p class="ht-note"><b lang="ja">登竜門</b> <b>tōryūmon</b> <i>toh-ryoo-mon</i>: an old story says that a carp which swims all the way up a great waterfall turns into a dragon. So a hard test that changes you is still called a "dragon gate".</p>
+                          <p class="ht-note">It is why koi stand for courage, and why on Children's Day, 5 May, families fly carp streamers called <b lang="ja">鯉のぼり</b> <b>koinobori</b>. <b lang="ja">龍尾</b> <b>ryūbi</b> <i>ryoo-bee</i>, "the dragon's tail", is the Gate's last stretch.</p>
+                          <figure class="help-shot jp-pic">
+                            <img src="/help/japan/carp.jpg" loading="lazy" width="500" height="722"
+                              alt="A woodblock print of a giant black carp streamer flying from a pole, high over a river and a city, with Mount Fuji far behind">
+                            <figcaption>A koinobori flying over old Tokyo, in a print by Hiroshige from 1857. <a class="credit-ref" href="#credit-2" title="Picture credit 2">[2]</a></figcaption>
+                          </figure>
+                        </div>
+                      </details>
+                    </dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">龍尾</span> <b class="jp-r">ryūbi</b> <span class="jp-say">say <i>ryoo-bee</i></span></dt>
+                    <dd>The dragon's tail.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">桃</span> <b class="jp-r">momo</b> <span class="jp-say">say <i>moh-moh</i></span></dt>
+                    <dd>Peach — the hero of an old tale, Momotarō, was born out of one.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">梨</span> <b class="jp-r">nashi</b> <span class="jp-say">say <i>nah-shee</i></span></dt>
+                    <dd>A Japanese pear: round, crunchy and very juicy.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">蜜柑</span> <b class="jp-r">mikan</b> <span class="jp-say">say <i>mee-kahn</i></span></dt>
+                    <dd>A satsuma — eaten round the kotatsu all winter.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">西瓜</span> <b class="jp-r">suika</b> <span class="jp-say">say <i>soo-ee-kah</i></span></dt>
+                    <dd>A watermelon, "west melon". At the beach, people split one blindfolded with a stick.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">毒</span> <b class="jp-r">doku</b> <span class="jp-say">say <i>doh-koo</i></span></dt>
+                    <dd>Poison — the purple viruses. Leave them alone.</dd>
+                  </div>
+                </dl>
+              </div>
+            </details>
+            <details class="help-card help-sub" name="help-words">
+              <summary class="help-topic">
+                <span class="ht-ico" lang="ja" aria-hidden="true">猫</span>
+                <span class="ht-title">Animals and elements</span>
+                <span class="ht-chev" aria-hidden="true">▸</span>
+              </summary>
+              <div class="ht-body">
+                <p class="ht-note jp-intro">The kanji on the clans, the kata floors and the kendo room.</p>
+                <dl class="jp-dict">
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">猫</span> <b class="jp-r">neko</b> <span class="jp-say">say <i>neh-koh</i></span></dt>
+                    <dd>A cat.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">獅子</span> <b class="jp-r">shishi</b> <span class="jp-say">say <i>shee-shee</i></span></dt>
+                    <dd>A lion — 獅 is on Lionheart's badge. At New Year, lion dancers in a shishi mask snap at people's heads for good luck.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">雷</span> <b class="jp-r">kaminari</b> <span class="jp-say">say <i>kah-mee-nah-ree</i></span></dt>
+                    <dd>Thunder — Thunderpaw, and Storm's kata floor.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">河</span> <b class="jp-r">kawa</b> <span class="jp-say">say <i>kah-wah</i></span></dt>
+                    <dd>A river — Riverclaw.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">熊</span> <b class="jp-r">kuma</b> <span class="jp-say">say <i>koo-mah</i></span></dt>
+                    <dd>A bear — Pandapaw. (In Chinese, a panda is 熊猫, a "bear-cat".)</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">炎</span> <b class="jp-r">honō</b> <span class="jp-say">say <i>hoh-noh</i></span></dt>
+                    <dd>A flame — Ember's kata floor.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">氷</span> <b class="jp-r">kōri</b> <span class="jp-say">say <i>koh-ree</i></span></dt>
+                    <dd>Ice — Frost's.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">花</span> <b class="jp-r">hana</b> <span class="jp-say">say <i>hah-nah</i></span></dt>
+                    <dd>A flower — Blossom's.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">虎</span> <b class="jp-r">tora</b> <span class="jp-say">say <i>toh-rah</i></span></dt>
+                    <dd>A tiger, for courage — Ember's animal in the kendo room.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">鶴</span> <b class="jp-r">tsuru</b> <span class="jp-say">say <i>tsoo-roo</i></span></dt>
+                    <dd>A crane, for a long life — Frost's. Fold a thousand paper cranes and you may make a wish.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">龍</span> <b class="jp-r">ryū</b> <span class="jp-say">say <i>ryoo</i></span></dt>
+                    <dd>A dragon — Storm's. A Japanese dragon is a WATER spirit that brings the rain.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">狐</span> <b class="jp-r">kitsune</b> <span class="jp-say">say <i>kee-tsoo-neh</i></span></dt>
+                    <dd>A fox — Blossom's. Foxes are the messengers of Inari, the kami of rice.</dd>
+                  </div>
+                </dl>
+              </div>
+            </details>
+            <details class="help-card help-sub" name="help-words">
+              <summary class="help-topic">
+                <span class="ht-ico" lang="ja" aria-hidden="true">家</span>
+                <span class="ht-title">Home and garden</span>
+                <span class="ht-chev" aria-hidden="true">▸</span>
+              </summary>
+              <div class="ht-body">
+                <p class="ht-note jp-intro">Roshi's sky islands are furnished like a Japanese home. Here is what you are buying.</p>
+                <dl class="jp-dict">
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">家</span> <b class="jp-r">ie</b> <span class="jp-say">say <i>ee-eh</i></span></dt>
+                    <dd>A home, a house.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">畳</span> <b class="jp-r">tatami</b> <span class="jp-say">say <i>tah-tah-mee</i></span></dt>
+                    <dd>Woven rush-straw floor mats. A room is measured in how many tatami it holds, and you take your shoes off before you step on one.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">布団</span> <b class="jp-r">futon</b> <span class="jp-say">say <i>foo-ton</i></span></dt>
+                    <dd>Bedding laid out on the tatami at night, and folded away in the morning.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">炬燵</span> <b class="jp-r">kotatsu</b> <span class="jp-say">say <i>koh-tah-tsoo</i></span></dt>
+                    <dd>A low table with a heater underneath and a quilt over it. Very hard to leave in winter.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">箪笥</span> <b class="jp-r">tansu</b> <span class="jp-say">say <i>tahn-soo</i></span></dt>
+                    <dd>A wooden chest of drawers, often with iron handles.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">障子</span> <b class="jp-r">shōji</b> <span class="jp-say">say <i>shoh-jee</i></span></dt>
+                    <dd>Sliding doors and windows made of paper on a wooden lattice, which let the light through.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">暖簾</span> <b class="jp-r">noren</b> <span class="jp-say">say <i>noh-ren</i></span></dt>
+                    <dd>A split cloth curtain in a doorway. A shop hangs it out when it opens.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">行灯</span> <b class="jp-r">andon</b> <span class="jp-say">say <i>ahn-don</i></span></dt>
+                    <dd>A paper lantern lamp that stands on the floor.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">縁側</span> <b class="jp-r">engawa</b> <span class="jp-say">say <i>en-gah-wah</i></span></dt>
+                    <dd>The wooden veranda along the garden side of a house.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">掛け軸</span> <b class="jp-r">kakejiku</b> <span class="jp-say">say <i>kah-keh-jee-koo</i></span></dt>
+                    <dd>A hanging scroll of a painting or calligraphy.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">墨</span> <b class="jp-r">sumi</b> <span class="jp-say">say <i>soo-mee</i></span></dt>
+                    <dd>The black ink of calligraphy and ink painting, ground from a stick.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">鎧</span> <b class="jp-r">yoroi</b> <span class="jp-say">say <i>yoh-roy</i></span></dt>
+                    <dd>Samurai armour, made of lacquered plates laced together.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">太鼓</span> <b class="jp-r">taiko</b> <span class="jp-say">say <i>tye-koh</i></span></dt>
+                    <dd>A big drum, played at festivals so loud you feel it.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">温泉</span> <b class="jp-r">onsen</b> <span class="jp-say">say <i>on-sen</i></span></dt>
+                    <dd>A hot spring, warmed by Japan's volcanoes.</dd>
+                    <dd>
+                      <details class="help-card help-sub jp-more" name="help-jp-more">
+                        <summary class="help-topic">
+                          <span class="ht-ico" lang="ja" aria-hidden="true">温</span>
+                          <span class="ht-title">Onsen manners</span>
+                          <span class="ht-chev" aria-hidden="true">▸</span>
+                        </summary>
+                        <div class="ht-body">
+                          <p class="ht-note">Wash first, sitting at the taps, then get in. No swimsuits, and your little towel never goes in the water — people often fold it on their head.</p>
+                          <p class="ht-note">There are thousands of onsen, because Japan sits on volcanoes. In the mountains of Nagano, snow monkeys climb into them to get warm.</p>
+                          <figure class="help-shot jp-pic">
+                            <img src="/help/japan/monkeys.jpg" loading="lazy" width="960" height="669"
+                              alt="Two furry snow monkeys sitting in a steaming hot spring among snowy rocks">
+                            <figcaption>Snow monkeys in an onsen in Nagano. <a class="credit-ref" href="#credit-3" title="Picture credit 3">[3]</a></figcaption>
+                          </figure>
+                        </div>
+                      </details>
+                    </dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">鯉</span> <b class="jp-r">koi</b> <span class="jp-say">say <i>koy</i></span></dt>
+                    <dd>A carp, bred in colours. Koi stand for courage — see the Dragon Gate.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">盆栽</span> <b class="jp-r">bonsai</b> <span class="jp-say">say <i>bohn-sye</i></span></dt>
+                    <dd>A tree kept small in a tray and shaped for years, even a lifetime.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">蹲踞</span> <b class="jp-r">tsukubai</b> <span class="jp-say">say <i>tsoo-koo-bye</i></span></dt>
+                    <dd>A low stone basin. You crouch to wash your hands at it before a tea ceremony.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">灯籠</span> <b class="jp-r">tōrō</b> <span class="jp-say">say <i>toh-roh</i></span></dt>
+                    <dd>A stone lantern, for a garden or a shrine's path.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">枯山水</span> <b class="jp-r">karesansui</b> <span class="jp-say">say <i>kah-reh-sahn-soo-ee</i></span></dt>
+                    <dd>A dry "zen" garden: raked gravel is the water and stones are the islands or the mountains. The rake lines are redrawn by hand.</dd>
+                    <dd>
+                      <details class="help-card help-sub jp-more" name="help-jp-more">
+                        <summary class="help-topic">
+                          <span class="ht-ico" lang="ja" aria-hidden="true">石</span>
+                          <span class="ht-title">The garden of stones</span>
+                          <span class="ht-chev" aria-hidden="true">▸</span>
+                        </summary>
+                        <div class="ht-body">
+                          <figure class="help-shot jp-pic">
+                            <img src="/help/japan/ryoanji.jpg" loading="lazy" width="960" height="695"
+                              alt="A wide garden of raked white gravel with a few rocks on islands of moss, behind a low earthen wall and red autumn trees">
+                            <figcaption>The rock garden at Ryōan-ji, in Kyoto. <a class="credit-ref" href="#credit-4" title="Picture credit 4">[4]</a></figcaption>
+                          </figure>
+                          <p class="ht-note">The most famous karesansui is at the temple of <b lang="ja">龍安寺</b> <b>Ryōan-ji</b> <i>ryoh-ahn-jee</i>, about 500 years old. It has fifteen stones, and wherever you sit on its veranda, one of them is always hidden behind another.</p>
+                          <p class="ht-note">Nobody knows for sure what it means. You are meant to sit, look, and be quiet for a while — and see what YOU see in it.</p>
+                        </div>
+                      </details>
+                    </dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">茶室</span> <b class="jp-r">chashitsu</b> <span class="jp-say">say <i>chah-shee-tsoo</i></span></dt>
+                    <dd>A teahouse — small, quiet and plain on purpose.</dd>
+                    <dd>
+                      <details class="help-card help-sub jp-more" name="help-jp-more">
+                        <summary class="help-topic">
+                          <span class="ht-ico" lang="ja" aria-hidden="true">茶</span>
+                          <span class="ht-title">The tea ceremony</span>
+                          <span class="ht-chev" aria-hidden="true">▸</span>
+                        </summary>
+                        <div class="ht-body">
+                          <p class="ht-note"><b lang="ja">茶の湯</b> <b>chanoyu</b> <i>chah-noh-yoo</i>, "hot water for tea": matcha is whisked and served by a host to guests, every movement done carefully. You turn the bowl before you drink, so you do not drink from its front.</p>
+                          <p class="ht-note">Its four ideas are harmony, respect, purity and calm. And <b lang="ja">一期一会</b> <b>ichigo ichie</b> <i>ee-chee-goh ee-chee-eh</i>, "one time, one meeting": this gathering will only ever happen once, so treasure it. Ember and Frost hold one in their teahouse.</p>
+                          <figure class="help-shot jp-pic">
+                            <img src="/help/japan/tea.jpg" loading="lazy" width="500" height="575"
+                              alt="A woodblock print of a woman in a kimono kneeling to whisk tea, with the kettle set into the floor in front of her">
+                            <figcaption>Whisking the tea, in a print by Kikukawa Eizan from about 200 years ago. <a class="credit-ref" href="#credit-5" title="Picture credit 5">[5]</a></figcaption>
+                          </figure>
+                        </div>
+                      </details>
+                    </dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">抹茶</span> <b class="jp-r">matcha</b> <span class="jp-say">say <i>mah-chah</i></span></dt>
+                    <dd>Powdered green tea, whisked with hot water until it froths.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">幟</span> <b class="jp-r">nobori</b> <span class="jp-say">say <i>noh-boh-ree</i></span></dt>
+                    <dd>A tall, narrow banner on a pole.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">青海波</span> <b class="jp-r">seigaiha</b> <span class="jp-say">say <i>say-gye-hah</i></span></dt>
+                    <dd>"Waves of the blue sea": the pattern of overlapping waves, a wish for calm and good luck.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">市松</span> <b class="jp-r">ichimatsu</b> <span class="jp-say">say <i>ee-chee-mah-tsoo</i></span></dt>
+                    <dd>The check pattern — named after a kabuki actor who wore it about 280 years ago.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">招き猫</span> <b class="jp-r">maneki-neko</b> <span class="jp-say">say <i>mah-neh-kee neh-koh</i></span></dt>
+                    <dd>The beckoning cat: its raised paw waves good luck, and customers, in through the door.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">達磨</span> <b class="jp-r">daruma</b> <span class="jp-say">say <i>dah-roo-mah</i></span></dt>
+                    <dd>A round wishing doll that always rolls back up. Paint in one eye when you make a wish and the other when it comes true.</dd>
+                    <dd>
+                      <details class="help-card help-sub jp-more" name="help-jp-more">
+                        <summary class="help-topic">
+                          <span class="ht-ico" lang="ja" aria-hidden="true">達</span>
+                          <span class="ht-title">Fall down seven times</span>
+                          <span class="ht-chev" aria-hidden="true">▸</span>
+                        </summary>
+                        <div class="ht-body">
+                          <p class="ht-note">The daruma's saying is <b lang="ja">七転び八起き</b> <b>nana korobi ya oki</b> <i>nah-nah koh-roh-bee yah oh-kee</i>: "fall down seven times, get up eight".</p>
+                          <p class="ht-note">Which is a good thing to know in a town where everything gets knocked over.</p>
+                        </div>
+                      </details>
+                    </dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">お握り</span> <b class="jp-r">onigiri</b> <span class="jp-say">say <i>oh-nee-gee-ree</i></span></dt>
+                    <dd>A rice ball, often wrapped in seaweed with something tasty in the middle.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">餅</span> <b class="jp-r">mochi</b> <span class="jp-say">say <i>moh-chee</i></span></dt>
+                    <dd>Sticky rice pounded into a soft, stretchy cake.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">富士山</span> <b class="jp-r">Fuji-san</b> <span class="jp-say">say <i>foo-jee-sahn</i></span></dt>
+                    <dd>Mount Fuji, Japan's tallest mountain — a volcano, and a sacred one.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">日の丸</span> <b class="jp-r">hinomaru</b> <span class="jp-say">say <i>hee-noh-mah-roo</i></span></dt>
+                    <dd>The rising sun: the red circle of the flag. Japan's own name, 日本 Nihon, means "where the sun comes from".</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">紅葉</span> <b class="jp-r">momiji</b> <span class="jp-say">say <i>moh-mee-jee</i></span></dt>
+                    <dd>Maple — and the red leaves of autumn, which people go out just to look at.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">桜</span> <b class="jp-r">sakura</b> <span class="jp-say">say <i>sah-koo-rah</i></span></dt>
+                    <dd>Cherry blossom.</dd>
+                    <dd>
+                      <details class="help-card help-sub jp-more" name="help-jp-more">
+                        <summary class="help-topic">
+                          <span class="ht-ico" lang="ja" aria-hidden="true">桜</span>
+                          <span class="ht-title">Hanami — looking at the blossom</span>
+                          <span class="ht-chev" aria-hidden="true">▸</span>
+                        </summary>
+                        <div class="ht-body">
+                          <p class="ht-note"><b lang="ja">花見</b> <b>hanami</b> <i>hah-nah-mee</i>, "flower viewing": every spring, families and friends picnic under the cherry trees.</p>
+                          <p class="ht-note">The blossom lasts only about a week, and that is the point — beautiful things don't last, so you enjoy them NOW, together.</p>
+                          <figure class="help-shot jp-pic">
+                            <img src="/help/japan/hanami.jpg" loading="lazy" width="960" height="646"
+                              alt="A woodblock print of a green hill covered in pink cherry trees, with people picnicking and walking under them">
+                            <figcaption>Hanami on Asuka Hill in old Tokyo, in a print by Hiroshige. <a class="credit-ref" href="#credit-6" title="Picture credit 6">[6]</a></figcaption>
+                          </figure>
+                        </div>
+                      </details>
+                    </dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">着物</span> <b class="jp-r">kimono</b> <span class="jp-say">say <i>kee-moh-noh</i></span></dt>
+                    <dd>"A thing to wear": the long robe with wide sleeves.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">帯</span> <b class="jp-r">obi</b> <span class="jp-say">say <i>oh-bee</i></span></dt>
+                    <dd>The wide sash tied round a kimono.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">祠</span> <b class="jp-r">hokora</b> <span class="jp-say">say <i>hoh-koh-rah</i></span></dt>
+                    <dd>A little roadside shrine — the LITTLE SHRINE.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">鐘楼</span> <b class="jp-r">shōrō</b> <span class="jp-say">say <i>shoh-roh</i></span></dt>
+                    <dd>A bell tower. At New Year, temple bells ring 108 times.</dd>
+                  </div>
+                </dl>
+              </div>
+            </details>
+            <details class="help-card help-sub" name="help-words">
+              <summary class="help-topic">
+                <span class="ht-ico" lang="ja" aria-hidden="true">神</span>
+                <span class="ht-title">Shinto, spirit and manners</span>
+                <span class="ht-chev" aria-hidden="true">▸</span>
+              </summary>
+              <div class="ht-body">
+                <p class="ht-note jp-intro">The ideas the whole game is built on — and how to be polite while you play.</p>
+                <dl class="jp-dict">
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">神道</span> <b class="jp-r">Shintō</b> <span class="jp-say">say <i>sheen-toh</i></span></dt>
+                    <dd>"The way of the kami": Japan's oldest religion.</dd>
+                    <dd>
+                      <details class="help-card help-sub jp-more" name="help-jp-more">
+                        <summary class="help-topic">
+                          <span class="ht-ico" lang="ja" aria-hidden="true">神</span>
+                          <span class="ht-title">Shinto expanded</span>
+                          <span class="ht-chev" aria-hidden="true">▸</span>
+                        </summary>
+                        <div class="ht-body">
+                          <figure class="help-shot">
+                            <img src="/help/place/shrine.jpg" loading="lazy" width="1100" height="619"
+                              alt="A clan shrine in the town, its gate and its leader standing in front of it">
+                            <figcaption>A clan shrine in the town.</figcaption>
+                          </figure>
+                          <p class="ht-note">In Shinto, kami — spirits — live in nature: in a great old tree, a waterfall, a mountain, a rock. A sacred tree wears a straw rope, <b lang="ja">注連縄</b> <b>shimenawa</b>, to show it. Shrines look after the kami, and before you pray you wash your hands and mouth at the water basin, because being clean and pure matters.</p>
+                          <p class="ht-note">Caring for nature and for living things is at its heart. That is why, in this game, the islands are woken and healed rather than conquered, and why the dragons are protected.</p>
+                        </div>
+                      </details>
+                    </dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">神</span> <b class="jp-r">kami</b> <span class="jp-say">say <i>kah-mee</i></span></dt>
+                    <dd>A spirit, a sacred presence — in nature, in a place, or in your ancestors.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">鳥居</span> <b class="jp-r">torii</b> <span class="jp-say">say <i>toh-ree-ee</i></span></dt>
+                    <dd>The gate of a shrine.</dd>
+                    <dd>
+                      <details class="help-card help-sub jp-more" name="help-jp-more">
+                        <summary class="help-topic">
+                          <span class="ht-ico" lang="ja" aria-hidden="true">鳥</span>
+                          <span class="ht-title">Through the torii</span>
+                          <span class="ht-chev" aria-hidden="true">▸</span>
+                        </summary>
+                        <div class="ht-body">
+                          <p class="ht-note">Walking through a torii, you leave the everyday world and step into a sacred one. Most are painted vermilion red. Walk at the SIDE: the middle of the path is for the kami.</p>
+                          <p class="ht-note">Fushimi Inari, in Kyoto, has about ten thousand of them in tunnels up a mountain. Each one was given by somebody, and their name is painted on its post.</p>
+                          <figure class="help-shot jp-pic">
+                            <img src="/help/japan/inari.jpg" loading="lazy" width="960" height="720"
+                              alt="A path leading through a long tunnel of bright orange torii gates standing close together">
+                            <figcaption>The torii tunnels at Fushimi Inari. <a class="credit-ref" href="#credit-7" title="Picture credit 7">[7]</a></figcaption>
+                          </figure>
+                          <p class="ht-note">And at Itsukushima a giant one stands in the sea. At high tide it seems to float, and boats sail through it.</p>
+                          <figure class="help-shot jp-pic">
+                            <img src="/help/japan/miyajima.jpg" loading="lazy" width="500" height="729"
+                              alt="A woodblock print of a huge torii standing in the sea, with a boat beside it and hills behind">
+                            <figcaption>The torii in the sea at Itsukushima, in a print by Hiroshige from 1853. <a class="credit-ref" href="#credit-8" title="Picture credit 8">[8]</a></figcaption>
+                          </figure>
+                        </div>
+                      </details>
+                    </dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">神社</span> <b class="jp-r">jinja</b> <span class="jp-say">say <i>jeen-jah</i></span></dt>
+                    <dd>A Shinto shrine — like the clan shrines in the town.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">祭り</span> <b class="jp-r">matsuri</b> <span class="jp-say">say <i>mah-tsoo-ree</i></span></dt>
+                    <dd>A festival: drums, food stalls, lanterns, and a little shrine carried through the streets.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">お守り</span> <b class="jp-r">omamori</b> <span class="jp-say">say <i>oh-mah-moh-ree</i></span></dt>
+                    <dd>A lucky charm from a shrine, kept in a bag or tied on a backpack.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">おみくじ</span> <b class="jp-r">omikuji</b> <span class="jp-say">say <i>oh-mee-koo-jee</i></span></dt>
+                    <dd>A fortune on a strip of paper, from 大吉 daikichi, great luck, all the way down to 凶 kyō.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">お辞儀</span> <b class="jp-r">ojigi</b> <span class="jp-say">say <i>oh-jee-gee</i></span></dt>
+                    <dd>Bowing. Hello, thank you and sorry can all be a bow — the deeper it is, the more you mean it.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">いただきます</span> <b class="jp-r">itadakimasu</b> <span class="jp-say">say <i>ee-tah-dah-kee-mahs</i></span></dt>
+                    <dd>Said before eating: "I humbly receive". It thanks everyone, and everything living, that made the meal. Say it round a home's dinner table.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">ごちそうさま</span> <b class="jp-r">gochisōsama</b> <span class="jp-say">say <i>goh-chee-soh-sah-mah</i></span></dt>
+                    <dd>Said after eating: "that was a feast".</dd>
+                  </div>
+                </dl>
+              </div>
+            </details>
+            <details class="help-card help-sub" name="help-words">
+              <summary class="help-topic">
+                <span class="ht-ico" lang="ja" aria-hidden="true">人</span>
+                <span class="ht-title">Names in the game</span>
+                <span class="ht-chev" aria-hidden="true">▸</span>
+              </summary>
+              <div class="ht-body">
+                <p class="ht-note jp-intro">Some names are Japanese words too.</p>
+                <dl class="jp-dict">
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">老師</span> <b class="jp-r">Rōshi</b> <span class="jp-say">say <i>roh-shee</i></span></dt>
+                    <dd>"Old teacher": a respectful word for a wise old master. Roshi sells the sky islands.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">龍石</span> <b class="jp-r">Ryuuseki</b> <span class="jp-say">say <i>ryoo-seh-kee</i></span></dt>
+                    <dd>Made up for this game — it sounds like 龍石, "dragon stone". The legendary dragon the seven stars summon.</dd>
+                  </div>
+                </dl>
+              </div>
+            </details>
+            <details class="help-card help-sub" name="help-words">
+              <summary class="help-topic">
+                <span class="ht-ico" lang="ja" aria-hidden="true">音</span>
+                <span class="ht-title">Music</span>
+                <span class="ht-chev" aria-hidden="true">▸</span>
+              </summary>
+              <div class="ht-body">
+                <p class="ht-note jp-intro">The game writes its own music in two old Japanese scales.</p>
+                <dl class="jp-dict">
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">琴</span> <b class="jp-r">koto</b> <span class="jp-say">say <i>koh-toh</i></span></dt>
+                    <dd>A long harp-like instrument with thirteen strings, laid flat and plucked. Most of the game's own music is a koto-ish pluck.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">平調子</span> <b class="jp-r">hirajōshi</b> <span class="jp-say">say <i>hee-rah-joh-shee</i></span></dt>
+                    <dd>A koto tuning: five notes that sound unmistakably Japanese. It is home — the town, the bamboo and the arena are written in it.</dd>
+                  </div>
+                  <div class="jp-e">
+                    <dt><span class="jp-k" lang="ja">陰旋法</span> <b class="jp-r">insen</b> <span class="jp-say">say <i>een-sen</i></span></dt>
+                    <dd>"The shadow scale": five notes a little darker, for the story — the opening, the ending, dusk, Lionheart and Ryuuseki.</dd>
+                  </div>
+                </dl>
+              </div>
+            </details>
+          </div>
+        </details>
+        <!-- /doc-glossary -->
 
         <details class="help-card" name="help">
           <summary class="help-topic">
@@ -1915,6 +2833,42 @@
             </p>
           </div>
         </details>
+
+        <!-- doc-credits -->
+        <!-- EVERY PICTURE THE GAME DID NOT MAKE, and where it came from.
+             Richard, Oct 2026: "let's add these in if these are open source and
+             able to be put into the project ... put the attribution next to the
+             images in the project so that we can include them in the project
+             incase we want to eventually launch this game as an official
+             project". So the bar is a COMMERCIAL release, not a family one:
+             only public domain and CC0 are let in, which need no credit at
+             all — credited anyway, on the picture ([n]) and here. A CC BY
+             picture would be allowed with this line as its credit; nothing
+             NonCommercial, NoDerivatives or ShareAlike, and no photo with a
+             recognisable stranger in it (a licence covers the photo, not the
+             people in it). `world-check` holds every file in public/help/japan/
+             to an entry here with a licence on that list. docs/notes/credits.md. -->
+        <details class="help-card" name="help" id="help-credits">
+          <summary class="help-topic">
+            <span class="ht-ico" aria-hidden="true">🖼️</span>
+            <span class="ht-title">Picture credits</span>
+            <span class="ht-chev" aria-hidden="true">▸</span>
+          </summary>
+          <div class="ht-body">
+            <p class="ht-note">Every picture in Help comes from the game itself — except these, in <b>Japanese words &amp; culture</b>. They are old prints and photos whose copyright ran out long ago, or photos their makers gave to everyone, so anyone may use them. We say who made them anyway. The number under a picture is its number here.</p>
+            <ol class="credits">
+              <li id="credit-1" data-licence="Public domain"><b>Takasugi Shinsaku in kendo armour</b>, a photograph by Ueno Hikoma, 1860s. <span class="cr-lic">Public domain.</span> <a href="https://commons.wikimedia.org/wiki/File:Takasugishinsaku_kendo.jpg" target="_blank" rel="noopener">Wikimedia Commons</a></li>
+              <li id="credit-2" data-licence="Public domain"><b>Suidō Bridge and Surugadai</b>, from <i>One Hundred Famous Views of Edo</i>, a woodblock print by Utagawa Hiroshige, 1857. Brooklyn Museum. <span class="cr-lic">Public domain.</span> <a href="https://commons.wikimedia.org/wiki/File:Utagawa_Hiroshige_I,_published_by_Uoya_Eikichi_-_Suid%C5%8D_Bridge_and_Surugadai_(Suid%C5%8Dbashi_Surugadai),_from_the_series_One_Hundred_Famous_Views_of_Edo_(..._-_Google_Art_Project.jpg" target="_blank" rel="noopener">Wikimedia Commons</a></li>
+              <li id="credit-3" data-licence="Public domain"><b>Japanese macaques in a hot spring</b>, a photograph by Fg2. <span class="cr-lic">Public domain, given by the photographer.</span> <a href="https://commons.wikimedia.org/wiki/File:JapaneseMacaqueM2216.jpg" target="_blank" rel="noopener">Wikimedia Commons</a></li>
+              <li id="credit-4" data-licence="CC0"><b>The rock garden at Ryōan-ji</b>, a photograph by lumoplank. <span class="cr-lic"><a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener">CC0 1.0</a>.</span> <a href="https://commons.wikimedia.org/wiki/File:Ninna-ji_and_Ryoan-ji,_Kyoto_-_Ryoanji7753.jpg" target="_blank" rel="noopener">Wikimedia Commons</a></li>
+              <li id="credit-5" data-licence="CC0"><b>Woman Performing the Tea Ceremony</b>, a woodblock print by Kikukawa Eizan. The Cleveland Museum of Art. <span class="cr-lic"><a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener">CC0 1.0</a>.</span> <a href="https://commons.wikimedia.org/wiki/File:Eizan_Kikugawa_-_Woman_Performing_the_Tea_Ceremony_-_1921.321_-_Cleveland_Museum_of_Art.jpg" target="_blank" rel="noopener">Wikimedia Commons</a></li>
+              <li id="credit-6" data-licence="Public domain"><b>Cherry-Blossom Viewing at Asuka Hill</b>, a woodblock print by Utagawa Hiroshige. Museo del Prado. <span class="cr-lic">Public domain.</span> <a href="https://commons.wikimedia.org/wiki/File:Cherry-Blossom_Viewing_at_Asuka_Hill_(Asukayama_hanami).jpg" target="_blank" rel="noopener">Wikimedia Commons</a></li>
+              <li id="credit-7" data-licence="CC0"><b>The torii of Fushimi Inari Taisha</b>, a photograph by lumoplank. <span class="cr-lic"><a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener">CC0 1.0</a>.</span> <a href="https://commons.wikimedia.org/wiki/File:Fushimi_Inari_Taisha-_Part_II_-_FushimiInari243.jpg" target="_blank" rel="noopener">Wikimedia Commons</a></li>
+              <li id="credit-8" data-licence="Public domain"><b>Aki Province: Itsukushima Shrine</b>, from <i>Famous Places in the Sixty-odd Provinces</i>, a woodblock print by Utagawa Hiroshige, 1853. Museum of Fine Arts, Boston. <span class="cr-lic">Public domain.</span> <a href="https://commons.wikimedia.org/wiki/File:The_Famous_Scenes_of_the_Sixty_States_50_Aki.jpg" target="_blank" rel="noopener">Wikimedia Commons</a></li>
+            </ol>
+          </div>
+        </details>
+        <!-- /doc-credits -->
 
         <button class="menu-btn back" data-close>BACK</button>
       </div>

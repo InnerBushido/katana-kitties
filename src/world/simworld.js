@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { paint } from '../core/gfx.js';
 import { mergeParts } from './build.js';
 import { SnakeRoad, resample } from './snakeway.js';
+import { drawWip, WIP_ORANGE } from '../core/wipmark.js';
 
 /* ---------------------------------------------------------------------------
    THE DREAM DOJO'S OTHER LAYER OF EXISTENCE.
@@ -1124,7 +1125,7 @@ export class SimWorld {
    * Every island has one, because in a void every island looks like every
    * other until something says which this is.
    */
-  addSign(x, y, z, kanji, name, colour = HOLO.cyan, { scale = 1, sub = '' } = {}) {
+  addSign(x, y, z, kanji, name, colour = HOLO.cyan, { scale = 1, sub = '', wip = false } = {}) {
     const cv = document.createElement('canvas');
     cv.width = 1024;
     cv.height = sub ? 400 : 320;
@@ -1139,11 +1140,17 @@ export class SimWorld {
     g.font = '900 72px Nunito, sans-serif';
     g.shadowColor = `#${new THREE.Color(colour).getHexString()}`;
     g.fillStyle = '#d6feff';
-    g.fillText(name, 512, 258);
+    /* 工事中: the mark LEFT of the name, and the name shifted right by half
+       of it so the pair stays centred — measured, because a name is any
+       width (HOLO-SENTRIES and TAMESHIGIRI RANGE are 300px apart). */
+    const mark = wip ? 84 : 0;
+    const nw = Math.min(g.measureText(name).width, 1024 - mark - 40);
+    g.fillText(name, 512 + mark / 2, 258, 1024 - mark - 40);
+    if (wip) drawWip(g, 512 - nw / 2 - 10, 252, 76);
     if (sub) {
       g.font = '800 46px Nunito, sans-serif';
-      g.fillStyle = '#9fefff';
-      g.fillText(sub, 512, 350);
+      g.fillStyle = wip ? WIP_ORANGE : '#9fefff';
+      g.fillText(sub, 512, 350, 1000);
     }
     const tex = new THREE.CanvasTexture(cv);
     tex.colorSpace = THREE.SRGBColorSpace;
@@ -1153,7 +1160,7 @@ export class SimWorld {
     }));
     m.position.set(x, y, z);
     m.renderOrder = 8;
-    m.userData.sign = { kanji, name, sub };
+    m.userData.sign = { kanji, name, sub, wip };
     this.root.add(m);
     (this.signs ??= []).push(m);
     return m;

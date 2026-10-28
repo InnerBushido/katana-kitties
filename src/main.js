@@ -2700,6 +2700,33 @@ class Game {
     this._helpToTop(card);
   }
 
+  /**
+   * A PICTURE'S [n], TAPPED: Picture credits opens at that line and lights it.
+   * Not a plain `#credit-3` jump — the line is inside a shut `<details>`, and
+   * a fragment into a shut card scrolls to nothing. Opening it fires the
+   * card's own `toggle`, whose `_helpToTop` scrolls the CARD to the top; so
+   * the line is scrolled to after that has run, not before it, or the
+   * accordion would take the page straight back up. A `toggle` listener added
+   * here runs after that one (added when Help was wired), so straight after
+   * it is enough — a requestAnimationFrame was tried and never fires in a
+   * hidden tab. A mouse and a finger only: the pad drives summaries, and the
+   * credits card is one of those.
+   */
+  _showCredit(hash) {
+    const card = document.getElementById('help-credits');
+    const li = hash && card?.querySelector(hash);
+    if (!li) return;
+    const go = () => {
+      const box = card.closest('.panel');
+      if (box) box.scrollTop += li.getBoundingClientRect().top - box.getBoundingClientRect().top - box.clientHeight / 3;
+      li.classList.add('lit');
+      setTimeout(() => li.classList.remove('lit'), 1800);
+    };
+    if (card.open) { go(); return; }
+    card.addEventListener('toggle', go, { once: true });
+    card.open = true;
+  }
+
   _helpToTop(card) {
     const box = card.closest('.panel');
     if (!box || box.scrollHeight <= box.clientHeight) return;
@@ -2746,6 +2773,13 @@ class Game {
        Both edges on purpose: closing restarts it too, so the clip is at frame
        one and paused-in-effect behind a shut card rather than running unwatched
        for as long as Help is open. */
+    // A picture's [n] goes to its line in Picture credits (`_showCredit`).
+    document.getElementById('panel-help')?.addEventListener('click', (e) => {
+      const ref = e.target.closest('a.credit-ref');
+      if (!ref) return;
+      e.preventDefault();
+      this._showCredit(ref.hash);
+    });
     let restarts = 0;
     document.querySelectorAll('#panel-help details.help-card').forEach((card) => {
       card.addEventListener('toggle', () => {

@@ -12,7 +12,8 @@
 --------------------------------------------------------------------------- */
 
 import { cssFor } from '../core/palette.js';
-import { ISLE_ABOUT } from './dream/islands.js';
+import { ISLE_ABOUT, isWip } from './dream/islands.js';
+import { drawWip } from '../core/wipmark.js';
 
 /* MARGIN ROUND THE ARCHIPELAGO AT WORLD ZOOM, AS A FRACTION OF THE BOX.
 
@@ -847,14 +848,24 @@ export class Minimap {
       /* KEPT ON THE CANVAS. The names are a fixed pixel size and the map is
          not — a phone's corner map is half a desktop's — so the bounds'
          margin alone still cut GALLERY and BAMBOO at the edge there. */
-      const half = c.measureText(word).width / 2 + 2 * dpr;
+      /* 工事中: the mark to the LEFT of the word, the pair centred where the
+         word was and kept on the canvas together. */
+      const tw = c.measureText(word).width;
+      const ic = isWip(d.key) ? 9 * dpr : 0;
+      const gap = ic ? ic + 2 * dpr : 0;
+      const half = (tw + gap) / 2 + 2 * dpr;
       x = Math.min(Math.max(x, half), this.canvas.width - half);
       y = Math.min(Math.max(y, 10 * dpr), this.canvas.height - 3 * dpr);
+      const tx = x + gap / 2;
       c.lineWidth = 3 * dpr;
       c.strokeStyle = 'rgba(4,16,24,0.92)';
-      c.strokeText(word, x, y);
+      c.strokeText(word, tx, y);
       c.fillStyle = d.key === 'port' ? '#ffb8f0' : '#c8fdff';
-      c.fillText(word, x, y);
+      c.fillText(word, tx, y);
+      if (ic) {
+        drawWip(c, tx - tw / 2 - 2 * dpr - ic / 2, y - 3 * dpr, ic);
+        (this.wipDrawn ??= new Set()).add(d.key);
+      }
     }
     // The map kiosks (DreamDojo.simSite `maps`): a gold board with a fold, the
     // kiosks' own 地図 too small to read at this size.
