@@ -318,3 +318,40 @@ for the ending, and the parade had simply never asked for it.
 *Lesson: a scene that has its own voice owns the audio for its length. Hush
 everything else on start, and restore the previous state on finish rather than
 clearing it, so a scene nested in a bigger one cannot undo that one's hush.*
+
+**A lantern stood in front of her knees in every over-the-shoulder, and the
+occlusion test said the shot was clear.** It was wrong three ways at once: the
+sight line stopped 2.5 units short of the subject, so anything just in front
+of her was never tested; only her chest was tested, so a waist-high cap was
+below the line; and the lantern's cylinder was the size of its post, not its
+cap. Once those were fixed, the rule that skips the subject's own collider
+swallowed the lantern too, because the radius it skipped by was the
+lantern's. (A raycast against the real meshes was tried first and threw on
+billboard Sprites, which need a camera to be hit.)
+*Lesson: test occlusion along two sight lines, one to the aim point and one
+low, to the knees. Run the line to within a body's width of the subject, size
+each occluder to its widest part, and skip only colliders the subject is
+standing inside.*
+
+**The blast-off lost both characters a second off the ground.** The lens
+rose straight up over them. They are upright billboards turned to the lens
+about the vertical, and from directly overhead a billboard is edge-on, so it
+vanishes.
+*Lesson: a camera over a billboard must lean. Keep it back by a share of its
+height (0.45 here, about 65 degrees down at most) all the way up, and check
+the steepest angle with a bar.*
+
+**The "kitten" shot showed Payne's back.** It was a reverse angle from the
+far side of the pair, and she is a picture that turns to the lens, so a lens
+behind her shows the front of a flat card from where her back should be.
+*Lesson: with billboard actors there is no true reverse angle. Keep every lens
+on the same side of the line as the one the billboard was drawn for, and
+frame the other character from that side.*
+
+**"Win the arena" was said over an empty patch of sky.** The arena is built
+at boot but not drawn until 80% of the game is done, and a first meeting is
+long before that. A shot aimed at a mark that exists in the data can still
+show nothing.
+*Lesson: screenshot every named mark at the point in the game the scene
+actually plays, not in a finished save. Have the scene's own set draw what it
+needs, and put back exactly what each thing was on stop.*

@@ -318,6 +318,13 @@ export class Housing {
       I.group.visible = q > 0;
       I.group.position.y = -(1 - e) * RISE.depth;
     }
+    /* THE ONE PAYNE'S INTRODUCTION IS SHOWING (payneset.js) stands up for
+       the length of the scene, risen or not: "buy a home in the sky" is said
+       over it. The scene sets and clears it, the skip too. */
+    if (this.showcase) {
+      this.showcase.group.visible = true;
+      this.showcase.group.position.y = 0;
+    }
     for (const B of this.bridges) if (B && !up) B.group.visible = false;
     return up;
   }

@@ -1941,42 +1941,6 @@ body.touch-ui .warn-line.lv-alert { font-size: 13px; }
   opacity: 1;
 }
 
-/* PAYNE ON THE STAGE (systems/payneintro.js) — standing on the bottom
-   letterbox bar, on the right. She is 70vh tall and 70 x 602/768 = 55vh
-   wide. The shots frame their subject LEFT of centre to make room for her
-   (`LEAN`).
-   THE BOX MOVES LEFT AND STOPS SHORT OF HER. The first version left it
-   centred, on a belief that at 16:9 she starts past its right edge. She
-   does not: at 1080p she starts at x=1289 and the box ends at 1400, and at
-   4:3 the caption ran straight across her knees. So while she is on (`:has`,
-   no class to keep in step), the box starts at 3vw and is at most what is
-   left of the width beside her. On a phone she stands ON the box instead
-   (the touch-ui rule below), so this is desktop only.
-   AND ONLY ON A WINDOW WIDER THAN 5:4. Beside her the box is
-   0.95vw - 55vh wide, which is under ~480px at 5:4 and was 220px in a
-   portrait window, five words a line. Narrower than that, she stands on top
-   of the full-width box, as she does on a phone. */
-#cs-actor {
-  position: absolute;
-  right: 2vw;
-  bottom: 9vh;
-  height: 70vh;
-  width: auto;
-  display: none;
-  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.45));
-}
-#cs-actor.on { display: block; }
-@media (min-aspect-ratio: 5/4) {
-  body:not(.touch-ui) #cutscene:has(#cs-actor.on) #cs-box {
-    left: 3vw;
-    transform: none;
-    width: min(880px, calc(100vw - 3vw - 2vw - 55vh - 12px));
-  }
-}
-@media (max-aspect-ratio: 1249/1000) {
-  body:not(.touch-ui) #cs-actor { height: 56vh; bottom: calc(9vh + 26px + 150px); }
-}
-
 /* Letterbox. Cheap, and it does more than look cinematic: it gives the
    dialogue box and the skip hint a solid place to sit over a bright sunset
    sky that would otherwise eat white text. */
@@ -5907,13 +5871,6 @@ body.touch-ui #cs-box {
 /* Roughly a quarter off, on top of what reflowing the script already saved. */
 body.touch-ui #cs-text { min-height: 2.3em; }
 body.touch-ui #cs-name { font-size: 15px; margin-bottom: 2px; }
-/* A landscape phone is SHORT: the box is nearly the full width and sits on
-   the bottom edge, so she stands on top of it rather than behind it — about
-   the top two-thirds of the glass, right-hand side, feet on the box's top edge.
-   Measured at 844x390: the box's top is 80px up, so 22vh puts her feet on
-   it (30vh, the first guess, left her floating 37px over it). */
-body.touch-ui #cs-actor { height: 66vh; bottom: calc(env(safe-area-inset-bottom) + 22vh); right: 1vw; }
-
 /* The progress track rides the top edge of the bottom bar, under the box rather
    than through it. */
 /* The track rides the very bottom now that there is no bar for it to sit on. */
