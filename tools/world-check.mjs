@@ -2034,10 +2034,16 @@ console.log('\n--- © every picture the game did not make is credited, and free 
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   const a = html.indexOf('<!-- doc-credits -->'); const z = html.indexOf('<!-- /doc-credits -->');
   const cr = a >= 0 && z > a ? html.slice(a, z) : '';
-  ok('Help has a Picture credits topic, last, after Saving your progress',
-    cr.includes('id="help-credits"') && cr.includes('<span class="ht-title">Picture credits</span>')
-    && a > html.indexOf('<span class="ht-title">Saving your progress</span>')
-    && html.indexOf('class="help-card" name="help"', z) < 0);
+  /* A SUB-TOPIC, THE LAST ONE, of Japanese words & culture — Richard, Oct
+     2026: "put the picture credits at the bottom of Japanese words & culture as
+     a sub-category". It was a top-level topic after Saving your progress. Its
+     group is the glossary's, so it opens and shuts like its siblings. */
+  const ga = html.indexOf('<!-- doc-glossary -->'), gz = html.indexOf('<!-- /doc-glossary -->');
+  ok('Help has Picture credits as the last sub-topic of Japanese words & culture',
+    cr.includes('<details class="help-card help-sub" name="help-words" id="help-credits">')
+    && cr.includes('<span class="ht-title">Picture credits</span>')
+    && a > ga && z < gz && ((n) => n < 0 || n > gz)(html.indexOf('name="help-words"', z))
+    && html.indexOf('<span class="ht-title">Saving your progress</span>') > gz);
   const credits = new Map([...cr.matchAll(/<li id="(credit-\d+)" data-licence="([^"]+)">([\s\S]*?)<\/li>/g)]
     .map((m) => [m[1], { lic: m[2], body: m[3] }]));
   const FREE = ['Public domain', 'CC0', 'CC BY 4.0', 'CC BY 3.0', 'CC BY 2.0'];
@@ -2065,7 +2071,7 @@ console.log('\n--- © every picture the game did not make is credited, and free 
   const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
   ok('...and the [n] opens Picture credits at its line, rather than jumping into a shut card',
     /closest\('a\.credit-ref'\)[\s\S]{0,120}preventDefault\(\)[\s\S]{0,60}_showCredit\(/.test(main)
-    && /_showCredit\(hash\) \{[\s\S]*?addEventListener\('toggle'[\s\S]*?card\.open = true/.test(main));
+    && /_showCredit\(hash\) \{[\s\S]*?closest\('details'\)[\s\S]*?up\.open = true[\s\S]*?addEventListener\('toggle'[\s\S]*?card\.open = true/.test(main));
 }
 
 console.log('\n--- a join does not wipe the scoreboard ---');

@@ -2711,11 +2711,19 @@ class Game {
    * it is enough — a requestAnimationFrame was tried and never fires in a
    * hidden tab. A mouse and a finger only: the pad drives summaries, and the
    * credits card is one of those.
+   * IT IS A SUB-TOPIC OF THE GLOSSARY (Richard, Oct 2026: "put the picture
+   * credits at the bottom of Japanese words & culture as a sub-category"), in
+   * the same `name="help-words"` group as the cards the pictures are in, so
+   * opening it shuts the one she tapped the [n] in. That is the accordion
+   * doing its job, not a bug. The parent is opened too, should a [n] ever be
+   * tapped from outside it.
    */
   _showCredit(hash) {
     const card = document.getElementById('help-credits');
     const li = hash && card?.querySelector(hash);
     if (!li) return;
+    const up = card.parentElement?.closest('details');
+    if (up && !up.open) up.open = true;
     const go = () => {
       const box = card.closest('.panel');
       if (box) box.scrollTop += li.getBoundingClientRect().top - box.getBoundingClientRect().top - box.clientHeight / 3;
