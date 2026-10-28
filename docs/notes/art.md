@@ -617,32 +617,52 @@ performance.
   1.5MB first-load line, for a kitten ~150px tall on screen. Storm and
   Blossom are recoloured.
 
-## Payne's introduction — three takes, 148 cells, Oct 2026
+## Payne's introduction — six takes, 243 cells, Oct 2026
 
 Richard: make it the tea ceremony's way, "at least 3 or 4x's higher quality ...
 as that looked low resolution". The tea ceremony ships 192px a cell. These
-ship **768 tall** (602 wide), with a **384** set for the cautious tier.
+ship at **760px to a unit of her standing height**, with a **380** set for the
+cautious tier.
 
-- **Three Kling 3.0 takes**, 960×960 at 24fps, on flat magenta, locked off
-  (about 50 credits in all):
+- **Six Kling 3.0 takes**, 960×960 at 24fps, on flat magenta, locked off. The
+  first three cost about 50 credits; the second pass's four cost 35 (8.75 a
+  take), and one of the first three was then dropped:
   - MASK starts from her approved `held` drawing and puts the helmet ON.
-  - TALK starts from `held` too: unmasked, helmet under her arm, pointing,
-    counting, waving, laughing.
-  - MASKED starts from MASK's last frame: masked talk, hands to the helmet, a
-    salute.
+    **The unmask is MASK played backwards**, so her face is always the
+    approved one.
+  - TALK starts from `held` too: unmasked, pointing, counting, waving,
+    laughing.
+  - HALT and SHRUG start from her masked `town` drawing: "Halt, traveller!",
+    the laugh and the beckon; then "Stuck?" and the salute.
+  - POINT and WAG start from `held`: the "Ta-daa!", the point at the sky, the
+    peace sign and the thumb at herself.
+  - **MASKED (`payne_masked_289ff712.mp4`) is not used.** It started from
+    MASK's last frame, and Kling drew her face through the helmet's visor
+    ("it shows her with the helmet on but you can see her face"). HALT and
+    SHRUG replace it, and they start from the masked DRAWING, not from a frame
+    of another video.
+  - **POINT was prompted with headroom**: the first point at the sky had her
+    fingertip off the top of the frame, so the new take was asked for zoomed
+    out, and the cut keeps all of the hand (world-check asks that the stage
+    is as tall as the pointing cells, 1.33 of her height).
 
-  **The unmask is MASK played backwards**, so her face is always the approved
-  one. The masters are in `docs/art-masters/video/` and never ship.
+  The masters are in `docs/art-masters/video/` and never ship.
 - **The cut** (`tools/capture/payne-sheet.mjs`) reads `INTRO_CLIPS` in
-  `src/systems/payneclips.js`, the same table the game plays from. That gives
-  nine clips at every third frame: eight a second, real time, "on threes".
-- **One crop for every frame of every take**, so she neither swims nor changes
-  size at a cut between takes.
+  `src/systems/payneclips.js`, the same table the game plays from: sixteen
+  clips at every third frame, eight a second, "on threes". **No clip loops or
+  pingpongs** (Richard: "it looks strange"); each plays once and holds.
+- **One scale per take, one crop per clip.** Each take's first frame is the
+  approved drawing it started from, so its ink height is one unit of her
+  height and its feet are the origin. Every clip is then cropped to its own
+  ink in those units and written to `src/systems/payneframes.js`. The first
+  cut used one crop for the union of every frame of every take, which was
+  right for three takes of her standing; with a hand above her head and an arm
+  flung out, the union was mostly air, and every cell paid for it.
 - **It has its own key, not `chromaKey`**, because of two problems:
   - A video's edges are blends. A black line half over magenta is about
     (110,10,105), which the distance key calls paint, so every outline came
     out with a purple rim.
-  - Kling drew a darker-magenta ground shadow under her in MASKED.
+  - Kling drew a darker-magenta ground shadow under her in the masked takes.
 
   How the key works:
   - It measures `min(r,b) - g`: how much magenta is in the pixel.
@@ -654,14 +674,17 @@ ship **768 tall** (602 wide), with a **384** set for the cautious tier.
     violet (100,37,134) and the first cut turned it blue. The penalty is
     one-sided: an olive sleeve's edge has red over blue, and the two-sided
     version left those edges a pink fringe.
-- **WebP pages with alpha, 16 cells each**: about 9MB full size and 4MB half
-  size for all 148 cells.
+- **WebP pages with alpha**, up to 4 cells across and no page past 4096px:
+  19 pages a set, about 16MB full size and 6MB half size for all 243 cells.
   - The cleared pixels are black underneath, because yuv420 bleeds that colour
     a pixel into her edge, and her edge is a black line.
   - Pages are fetched when the scene starts and released when it ends.
-- **They are played by `PayneActor`** into one `<canvas>`. The cell size is
-  measured off each page. A cut between clips is a 0.22s crossfade, since two
-  takes never meet on the same pose.
+- **They are played by `PayneActor`** into one small STAGE canvas, the
+  texture of a quad standing on her market spot (payne.md, *She stands in the
+  world*). The cell size is measured off each page. A change of clip is a
+  0.22s crossfade, since two takes never meet on the same pose, unless it is
+  one performance carried on within 6 source frames of the same take (the halt
+  into its laugh), which cuts straight.
 
 ## Bamboo Infiltration's ninjas — every action, one atlas, Oct 2026
 

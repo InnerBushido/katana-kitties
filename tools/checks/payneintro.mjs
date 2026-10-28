@@ -4,23 +4,33 @@
 
      the script says what it was asked to say, in her approved voice's files
      she starts masked, is unmasked by "Ta-daa", and is masked again to leave
-     every cell she is asked for is a cell that was cut, on a page that exists,
-     measured off the page (eighth non-negotiable)
-     every shot is finite with no world at all, and frames its subject LEFT of
-     her, clear of the stage, with the real one
+     every move plays ONCE and holds — no loop, no pingpong — and a held
+     frame is what bobs
+     every cue is on a word the line actually says
+     every cell she is asked for was cut, on a page that exists, laid out as
+     payneframes.js says, measured off the WebP (eighth non-negotiable)
+     she stands IN THE WORLD on her market spot, turned to the lens, and her
+     market billboard steps off for it and back on after
+     every shot is finite with no world at all; the shots about her have her
+     in them, head to feet, and the pointing finger is in frame
+     the blast-off rises, never goes overhead, and ends in space
+     the furnished island, the arena and the space sky all go back on stop
      the first hello IS the scene, seen by everybody the moment it starts
      (seventh), and a refusal says so (sixth)
      the scene plays with no sheets and no voice (ninth)
 --------------------------------------------------------------------------- */
 import * as THREE from 'three';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import {
-  INTRO_CLIPS, INTRO_COLS, INTRO_PER_PAGE, INTRO_CELL_H, INTRO_CELL_H_HALF, INTRO_FPS,
-  clipFrames, clipPages, pagePath,
+  INTRO_TAKES, TAKE_FROM, INTRO_CLIPS, INTRO_FPS, INTRO_UNIT_PX, INTRO_UNIT_PX_HALF,
+  clipFrames, pagePath,
 } from '../../src/systems/payneclips.js';
+import { INTRO_GEO, INTRO_STAGE } from '../../src/systems/payneframes.js';
 import {
-  PAYNE_INTRO, actFrame, maskedIn, introShot, introCtx, PayneActor, LEAN,
+  PAYNE_INTRO, INTRO_CUTS, BLAST, actFrame, maskedIn, introShot, introCtx, PayneActor,
 } from '../../src/systems/payneintro.js';
+import { IntroSet, SPACE } from '../../src/systems/payneset.js';
+import { Housing } from '../../src/systems/housing/housing.js';
 import * as PN from '../../src/systems/payne.js';
 import { StoryScene } from '../../src/systems/dream/storyscene.js';
 
@@ -40,7 +50,10 @@ function webpSize(buf) {
   return null;
 }
 
+const fin = (p) => !!p && [p.x, p.y, p.z].every(Number.isFinite);
+
 export async function payneIntroChecks({ ok, world }) {
+  console.log('\n--- payne\'s introduction to the world ---');
   /* --- the script --- */
   ok('Payne\'s introduction is thirteen lines, payne_intro_1..13, each one her card AND her recording',
     PAYNE_INTRO.length === 13 && PAYNE_INTRO.every((r, i) => r.voice === `payne_intro_${i + 1}` && r.who === 'payne'
@@ -62,143 +75,357 @@ export async function payneIntroChecks({ ok, world }) {
     missing.length === 0, missing.join(', ') || `${Object.keys(brief).length} points`);
   ok('...and no line says "Hurt" without saying what to do instead — look after them',
     PAYNE_INTRO.filter((r) => /Hurt/.test(r.text)).every((r) => /look after/.test(r.text)));
+  ok('...and every row names its own cut list, and nothing else does', PAYNE_INTRO.every((r) => INTRO_CUTS[r.shot])
+    && Object.keys(INTRO_CUTS).length === PAYNE_INTRO.length);
 
   /* --- the act: masked, unmasked, masked --- */
-  const endOf = (r) => {
-    const last = r.act.at(-1);
-    const n = clipFrames(INTRO_CLIPS[last[0]]).length;
-    const len = last[2] != null ? Math.abs(last[3] - last[2]) : n;
-    return actFrame(r.act, last[1] + len / INTRO_FPS + 0.5);
-  };
-  const m0 = actFrame(PAYNE_INTRO[0].act, 0);
-  const off = endOf(PAYNE_INTRO[2]);
-  const back = endOf(PAYNE_INTRO[11]);
-  const out = endOf(PAYNE_INTRO[12]);
-  ok('she opens MASKED, is unmasked by the end of "Ta-daa", and is masked again for her mission and her salute',
-    maskedIn(m0.clip, m0.cell) && PAYNE_INTRO.slice(3, 11).every((r) => r.act.every(([c, , f, t]) => !maskedIn(c, t ?? f ?? 0)))
-    && !maskedIn(actFrame(PAYNE_INTRO[3].act, 0).clip, actFrame(PAYNE_INTRO[3].act, 0).cell)
-    && maskedIn(back.clip, back.cell) && maskedIn(out.clip, out.cell) && off.clip === 'wave',
-    `open ${m0.clip}:${m0.cell} · after 3 ${off.clip} · end of 12 ${back.clip}:${back.cell} · end ${out.clip}`);
+  const lenOf = (r) => INTRO_CUTS[r.shot].len + (r.hold ?? 0);
+  const at = (r, t) => actFrame(r.act, t);
+  const maskedAt = (r, t) => { const f = at(r, t); return maskedIn(f.clip, f.cell); };
+  const walk = (r, dt = 0.05) => { const out = []; for (let t = 0; t <= lenOf(r); t += dt) out.push([t, at(r, t)]); return out; };
   {
-    // The helmet comes off across two lines: the cell 2 ends on is the cell 3 starts on.
-    const e2 = PAYNE_INTRO[1].act.at(-1);
-    const s3 = PAYNE_INTRO[2].act[0];
-    ok('...and the unmask is one performance across lines 2 and 3, played backwards off the re-mask\'s own take',
-      e2[0] === 'mask' && s3[0] === 'mask' && e2[3] === s3[2] && s3[3] === 0 && e2[2] > e2[3]);
+    const L = PAYNE_INTRO;
+    const unmaskedMid = L.slice(2, 11).every((r) => walk(r).every(([, f]) => !maskedIn(f.clip, f.cell)));
+    ok('she opens MASKED, has the helmet off by the end of line 2 ("Fine!"), and keeps it off through line 11',
+      maskedAt(L[0], 0) && L[0].act.every(([c]) => maskedIn(c, 0)) && maskedAt(L[1], 0) && !maskedAt(L[1], lenOf(L[1])) && unmaskedMid,
+      `open ${at(L[0], 0).clip} · end of 2 ${at(L[1], lenOf(L[1])).clip}:${at(L[1], lenOf(L[1])).cell}`);
+    ok('...and it goes back on for her mission, done before line 12 is, and she leaves wearing it',
+      !maskedAt(L[11], 0) && maskedAt(L[11], INTRO_CUTS.l12.len - 0.05) && walk(L[12]).every(([, f]) => maskedIn(f.clip, f.cell)));
+    /* THE HALT TAKE IS THE NEW ONE. Richard, Oct 2026: "it shows her with the
+       helmet on but you can see her face, the clip that needs to be fixed is
+       payne_masked_289ff712.mp4". */
+    ok('"Halt, traveller!" is the re-generated take, not payne_masked_289ff712 (helmet on, face showing), and is cut from her MASKED drawing',
+      !Object.values(INTRO_TAKES).some((p) => /289ff712/.test(p)) && TAKE_FROM[INTRO_CLIPS.halt.take] === 'town'
+      && Object.values(INTRO_TAKES).every((p) => existsSync(new URL(`../../${p}`, import.meta.url))),
+      Object.values(INTRO_TAKES).map((p) => p.split('/').pop()).join(' '));
   }
-  const bad = [];
-  for (const r of PAYNE_INTRO) {
-    let last = -1;
-    for (const [c, at, f, t] of r.act) {
-      const C = INTRO_CLIPS[c];
-      if (!C) { bad.push(`${r.voice}: no clip ${c}`); continue; }
-      const n = clipFrames(C).length;
-      if (!(at > last)) bad.push(`${r.voice}: ${c} at ${at} is not after ${last}`);
-      if (f != null && !(f >= 0 && f < n && t >= 0 && t < n)) bad.push(`${r.voice}: ${c} ${f}->${t} of ${n}`);
-      last = at;
-    }
-    for (let t = 0; t < 25; t += 0.05) {
-      const { clip, cell } = actFrame(r.act, t);
-      const n = clipFrames(INTRO_CLIPS[clip]).length;
-      if (!(cell >= 0 && cell < n && Number.isInteger(cell))) { bad.push(`${r.voice} @${t.toFixed(2)} ${clip}:${cell}`); break; }
-    }
-  }
-  ok('every cell any line asks for is a cell that was cut, in time order, all the way through the longest line',
-    bad.length === 0, bad.slice(0, 4).join(' · ') || `${PAYNE_INTRO.reduce((s, r) => s + r.act.length, 0)} cues`);
   {
-    // A pingpong turns at both ends without repeating its end cell twice running.
-    const seq = [];
-    for (let k = 0; k < 40; k++) seq.push(actFrame([['talk', 0]], k / INTRO_FPS).cell);
-    const n = clipFrames(INTRO_CLIPS.talk).length;
-    const stutter = seq.some((c, i) => i > 0 && c === seq[i - 1]);
-    ok('a talking loop plays forward and back with no seam — every step one cell, turning at both ends',
-      !stutter && seq.includes(n - 1) && seq.slice(n).includes(0) && seq.every((c, i) => i === 0 || Math.abs(c - seq[i - 1]) === 1),
-      seq.slice(0, 20).join(','));
+    const bad = [];
+    for (const r of PAYNE_INTRO) {
+      let last = -1;
+      for (const [c, t0, f, t] of r.act) {
+        const C = INTRO_CLIPS[c];
+        if (!C) { bad.push(`${r.voice}: no clip ${c}`); continue; }
+        const n = clipFrames(C).length;
+        if (!(t0 > last)) bad.push(`${r.voice}: ${c} at ${t0} is not after ${last}`);
+        if (!(t0 < INTRO_CUTS[r.shot].len)) bad.push(`${r.voice}: ${c} at ${t0} is past the line`);
+        if (f != null && !(f >= 0 && f < n && t >= 0 && t < n)) bad.push(`${r.voice}: ${c} ${f}->${t} of ${n}`);
+        last = t0;
+      }
+      for (const [t, { clip, cell }] of walk(r)) {
+        const n = clipFrames(INTRO_CLIPS[clip]).length;
+        if (!(cell >= 0 && cell < n && Number.isInteger(cell))) { bad.push(`${r.voice} @${t.toFixed(2)} ${clip}:${cell}`); break; }
+      }
+    }
+    ok('every cell any line asks for is a cell that was cut, in time order, inside the line',
+      bad.length === 0, bad.slice(0, 4).join(' · ') || `${PAYNE_INTRO.reduce((s, r) => s + r.act.length, 0)} cues`);
+  }
+  {
+    /* NO LOOP AND NO PINGPONG. Richard: "We shouldn't repeat the animations
+       in a loop or ping-pong as it looks strange. It is okay if she holds
+       some still frames when needed after an animation or can add some
+       slight bobbing animations during dull moments". So inside one entry the
+       cell only ever moves one way and then STOPS — and once it has stopped,
+       `held` grows, which is what the actor bobs on. */
+    const bad = [];
+    let holds = 0;
+    for (const r of PAYNE_INTRO) {
+      let prev = null, dir = 0;
+      for (const [t, f] of walk(r, 1 / (INTRO_FPS * 4))) {
+        if (prev && prev.entry === f.entry) {
+          const d = Math.sign(f.cell - prev.cell);
+          if (d && dir && d !== dir) { bad.push(`${r.voice} ${f.clip} turns at ${t.toFixed(2)}`); break; }
+          if (d && prev.held > 0) { bad.push(`${r.voice} ${f.clip} moves again after holding, ${t.toFixed(2)}`); break; }
+          if (d) dir = d;
+          if (!d && f.held > prev.held) holds++;
+        } else dir = 0;
+        prev = f;
+      }
+    }
+    ok('every move plays ONCE and holds its last frame — no loop, no pingpong, in any line',
+      bad.length === 0 && Object.values(INTRO_CLIPS).every((c) => !('pingpong' in c) && !('loop' in c)), bad.slice(0, 3).join(' · ') || `${holds} held steps`);
+    const t = INTRO_CUTS.l9.len - 0.1;
+    ok('...and a frame held is counted as held, so she breathes in the long still lines (line 9 is one pose)',
+      at(PAYNE_INTRO[8], t).held > 1 && at(PAYNE_INTRO[8], 0.01).held >= 0, `held ${at(PAYNE_INTRO[8], t).held.toFixed(2)}s`);
+  }
+  {
+    /* CUES ARE WORDS. Each `at` carries the word it lands on as a comment;
+       the word has to be in the line, or the comment is lying about where
+       the cue is (a re-recorded line is re-cued by ear off these). Read off
+       the source, for both her moves and the cuts. */
+    const src = read('src/systems/payneintro.js');
+    const script = src.slice(src.indexOf('export const PAYNE_INTRO = ['), src.indexOf('/** Clips she is wearing'));
+    const cuts = src.slice(src.indexOf('export const INTRO_CUTS = {'), src.indexOf('/** Which cut of a line'));
+    const bad = [];
+    let n = 0;
+    const word = (c) => (c.match(/[A-Za-z][A-Za-z'-]*/) ?? [''])[0].toLowerCase();
+    for (const blk of script.split(/\n\s*P\(/).slice(1)) {
+      const i = Number(blk.match(/^(\d+)/)?.[1]);
+      const text = PAYNE_INTRO[i - 1]?.text.toLowerCase() ?? '';
+      for (const m of blk.matchAll(/[\d.]+ \/\* ([^*]+?) \*\//g)) { n++; if (!text.includes(word(m[1]))) bad.push(`${i}: "${m[1]}"`); }
+    }
+    for (const m of cuts.matchAll(/\n\s*l(\d+):(.*)/g)) {
+      const text = PAYNE_INTRO[Number(m[1]) - 1]?.text.toLowerCase() ?? '';
+      for (const c of m[2].matchAll(/[\d.]+ \/\* ([^*]+?) \*\//g)) { n++; if (!text.includes(word(c[1]))) bad.push(`cut ${m[1]}: "${c[1]}"`); }
+    }
+    ok('every cue names the word it is on, and that word is in the line it cues', bad.length === 0 && n >= 40,
+      bad.slice(0, 4).join(' · ') || `${n} cues`);
+    const cutBad = Object.entries(INTRO_CUTS).filter(([, L]) => L.cuts[0][1] !== 0
+      || L.cuts.some((c, j) => j && !(c[1] > L.cuts[j - 1][1] + 0.5)) || !(L.cuts.at(-1)[1] < L.len - 0.5));
+    ok('...and every line\'s cuts start at 0, run in order, and none is under half a second',
+      cutBad.length === 0, cutBad.map(([k]) => k).join(' ') || `${Object.values(INTRO_CUTS).reduce((s, L) => s + L.cuts.length, 0)} cuts`);
   }
 
   /* --- the pages, measured --- */
   {
     const errs = [];
     let pages = 0;
-    for (const [tag, H] of [['full', INTRO_CELL_H], ['half', INTRO_CELL_H_HALF]]) {
-      let cw = null;
-      for (const name of Object.keys(INTRO_CLIPS)) {
-        const n = clipFrames(INTRO_CLIPS[name]).length;
-        for (let k = 0; k < clipPages(name); k++) {
-          const url = pub(pagePath(name, k, tag === 'half'));
+    ok('payneframes.js describes exactly the clips there are, at the number of cells each is cut to',
+      Object.keys(INTRO_GEO).sort().join() === Object.keys(INTRO_CLIPS).sort().join()
+      && Object.entries(INTRO_CLIPS).every(([k, C]) => INTRO_GEO[k].n === clipFrames(C).length));
+    for (const [tag, px] of [['full', INTRO_UNIT_PX], ['half', INTRO_UNIT_PX_HALF]]) {
+      const want = new Set();
+      for (const [name, G] of Object.entries(INTRO_GEO)) {
+        const cw = Math.round((G.x1 - G.x0) * px), ch = Math.round((G.y1 - G.y0) * px);
+        for (let k = 0; k < G.pages; k++) {
+          const p = pagePath(name, k, tag === 'half');
+          want.add(p.split('/').pop());
+          const url = pub(p);
           if (!existsSync(url)) { errs.push(`${tag}/${name}_${k} missing`); continue; }
           pages++;
           const s = webpSize(readFileSync(url));
-          const on = Math.min(INTRO_PER_PAGE, n - k * INTRO_PER_PAGE);
-          const cols = Math.min(INTRO_COLS, on);
-          const rows = Math.ceil(on / INTRO_COLS);
+          const on = Math.min(G.perPage, G.n - k * G.perPage);
+          const across = Math.min(G.cols, on);
+          const rows = Math.ceil(on / G.cols);
           if (!s?.alpha) errs.push(`${tag}/${name}_${k} has no alpha`);
-          if (s && s.h !== rows * H) errs.push(`${tag}/${name}_${k} ${s.h} tall, want ${rows}x${H}`);
-          if (s && s.w % cols) errs.push(`${tag}/${name}_${k} ${s.w} not ${cols} cells`);
-          const w = s ? s.w / cols : 0;
-          cw ??= w;
-          if (Math.abs(w - cw) > 0.5) errs.push(`${tag}/${name}_${k} cell ${w} wide, the rest ${cw}`);
+          // the crop is rounded once per cell, so a page may be a pixel a cell off
+          if (s && Math.abs(s.w - across * cw) > across) errs.push(`${tag}/${name}_${k} ${s.w} wide, want ${across}x${cw}`);
+          if (s && Math.abs(s.h - rows * ch) > rows) errs.push(`${tag}/${name}_${k} ${s.h} tall, want ${rows}x${ch}`);
         }
       }
+      const dir = new URL(`../../public/sprites/payne/intro/${tag === 'half' ? 'half/' : ''}`, import.meta.url);
+      const stale = readdirSync(dir).filter((f) => f.endsWith('.webp') && !want.has(f));
+      if (stale.length) errs.push(`${tag}: stale ${stale.join(' ')}`);
     }
-    ok('every page of every clip is there, full and half, with alpha, and every cell is one size — measured off the WebP',
+    ok('every page of every clip is there, full and half, with alpha, laid out as payneframes.js says — measured off the WebP — and no page is left over from an old cut',
       errs.length === 0, errs.slice(0, 4).join(' · ') || `${pages} pages`);
-    ok('...and the cells are 768 tall, four times the tea ceremony\'s 192',
-      INTRO_CELL_H === 768 && INTRO_CELL_H_HALF * 2 === INTRO_CELL_H);
-    const shipped = read('.gitignore');
-    ok('...the masters are the three videos, in docs/art-masters (never shipped), and nothing in public/ is a video',
-      Object.values(read('src/systems/payneclips.js').match(/docs\/art-masters\/video\/payne_[a-z]+_[0-9a-f]+\.mp4/g) ?? []).length === 3
-      && !/public\/sprites\/payne/.test(shipped));
+    ok('...and the masters stay in docs/art-masters (never shipped): nothing in public/ is a video',
+      Object.values(INTRO_TAKES).every((p) => p.startsWith('docs/art-masters/'))
+      && readdirSync(new URL('../../public/sprites/payne/intro/', import.meta.url)).every((f) => !/\.(mp4|webm|mov)$/.test(f)));
+    /* "when she points to the sky, her hand is getting cut off ... we need to
+       make sure there is room for her hand". The stage reaches as high as the
+       highest cell, and the pointing cells are the ones that set it. */
+    ok('the pointing take reaches above her head and the stage is tall enough to hold it',
+      INTRO_GEO.pointUp.y1 > 1.2 && INTRO_STAGE.y1 >= INTRO_GEO.pointUp.y1 - 1e-4,
+      `pointUp to ${INTRO_GEO.pointUp.y1} of her height, stage ${INTRO_STAGE.y1}`);
   }
 
   /* --- the shots --- */
+  const cam = new THREE.PerspectiveCamera(42, 16 / 9, 0.1, 6000);
+  const lens = (s) => {
+    cam.position.set(s.pos.x, s.pos.y, s.pos.z);
+    cam.lookAt(s.look.x, s.look.y, s.look.z);
+    cam.updateMatrixWorld(true);
+    cam.matrixWorldInverse.copy(cam.matrixWorld).invert();
+  };
+  const ndc = (x, y, z) => new THREE.Vector3(x, y, z).project(cam);
+  const inFrame = (v, m = 1) => v.z < 1 && Math.abs(v.x) < m && Math.abs(v.y) < m;
+  const cueTimes = (L, j, fr = [0.05, 0.5, 0.95]) => {
+    const a = L.cuts[j][1], b = j + 1 < L.cuts.length ? L.cuts[j + 1][1] : L.len;
+    return fr.map((f) => a + (b - a) * f);
+  };
   {
-    const cam = new THREE.PerspectiveCamera(42, 16 / 9, 0.1, 6000);
-    const lens = (s) => {
-      cam.position.set(s.pos.x, s.pos.y, s.pos.z);
-      cam.lookAt(s.look.x, s.look.y, s.look.z);
-      cam.updateMatrixWorld(true);
-      cam.matrixWorldInverse.copy(cam.matrixWorld).invert();
-    };
-    const fin = (p) => [p.x, p.y, p.z].every(Number.isFinite);
-    const names = [...new Set(PAYNE_INTRO.map((r) => r.shot))];
     const nan = [];
-    for (const n of names) {
-      for (let k = 0; k <= 1; k += 0.1) {
-        const s = introShot(n, {}, k);
-        if (!fin(s.pos) || !fin(s.look) || s.loc !== 'real') nan.push(`${n}@${k.toFixed(1)}`);
+    for (const [n, L] of Object.entries(INTRO_CUTS)) {
+      for (let cue = 0; cue <= L.len; cue += 0.25) {
+        const s = introShot(n, {}, 0, cue);
+        if (!fin(s.pos) || !fin(s.look) || s.loc !== 'real') nan.push(`${n}@${cue}`);
       }
     }
-    ok('every shot of the introduction aims somewhere real with NO world at all — no NaN, no missing place',
-      nan.length === 0, nan.slice(0, 4).join(' ') || `${names.length} shots`);
-
-    /* THE SUBJECT IS LEFT OF HER. She takes the right ~30% of the frame
-       (#cs-actor: 2vw in, ~55vh wide at 16:9 = NDC 0.38 to 0.96), so what a
-       shot is ABOUT has to be left of NDC 0.3, in front of the lens, and
-       above the dialogue box (NDC -0.38) on its middle. */
-    const g = {
-      world,
-      townCentre: () => world.townCentre?.clone?.() ?? new THREE.Vector3(0, 4, 20),
-      payne: { position: new THREE.Vector3(world.townCentre.x + 12, world.townCentre.y, world.townCentre.z - 6) },
-      dragons: [],
-      _worldBounds: () => ({ centre: new THREE.Vector3(0, 0, 0), radius: 260 }),
-    };
-    const ctx = introCtx(g);
-    ok('...and with this world, every place it names is found: her, the town, a heap still standing, a shrine, the arena, the Dojo',
-      ['payne', 'town', 'heap', 'shrine', 'arena', 'dojo'].every((k) => ctx[k] && fin(ctx[k])),
-      Object.entries(ctx).filter(([, v]) => v && typeof v === 'object').map(([k]) => k).join(' '));
-    const subjectOf = { market: 'payne', marketClose: 'payne', heap: 'heap', heapLow: 'heap', shrine: 'shrine', arena: 'arena', ring: 'arena', dojo: 'dojo', townWide: 'town' };
+    ok('every cut of the introduction aims somewhere real with NO world at all — no NaN, no missing place',
+      nan.length === 0, nan.slice(0, 4).join(' ') || `${Object.values(INTRO_CUTS).reduce((s, L) => s + L.cuts.length, 0)} cuts`);
+  }
+  const tc = world.townCentre?.clone?.() ?? new THREE.Vector3(0, 4, 20);
+  const her = new THREE.Vector3(tc.x + 12, world.heightAt?.(tc.x + 12, tc.z - 6)?.y ?? tc.y, tc.z - 6);
+  const toward = new THREE.Vector3(tc.x - her.x, 0, tc.z - her.z).normalize();
+  const kit = her.clone().addScaledVector(toward, 5);
+  const g = {
+    world,
+    townCentre: () => tc.clone(),
+    payne: { position: her },
+    players: [], dragons: [],
+    _worldBounds: () => ({ centre: new THREE.Vector3(0, 0, 0), radius: 260 }),
+  };
+  const ctx = introCtx(g, kit);
+  ok('with this world, every place it names is found: her, the kitten, the town, a heap, a shrine, the grotto, the arena, the Dojo',
+    ['payne', 'kitten', 'town', 'heap', 'shrine', 'grotto', 'arena', 'dojo'].every((k) => fin(ctx[k])) && typeof ctx.blocked === 'function',
+    ['payne', 'kitten', 'town', 'heap', 'shrine', 'grotto', 'arena', 'dojo'].filter((k) => !fin(ctx[k])).join(' ') || 'all found');
+  {
+    /* THE SHOTS ABOUT HER HAVE ALL OF HER IN THEM. She is a quad PAYNE_HEIGHT
+       tall on her spot; the head-to-feet ones must hold her feet and the top
+       of her head, and the close one at least her face and chest. */
+    const H = PN.PAYNE_HEIGHT;
+    const whole = new Set(['two', 'twoOther', 'ots', 'her']);
+    // herLow is "Look up.": low and close, looking up past her at the sky, so her knees go and her hand must not
+    const close = new Set(['herClose', 'herLow']);
     const miss = [];
-    for (const [n, key] of Object.entries(subjectOf)) {
-      for (const k of [0, 0.5, 1]) {
-        if (n === 'shrine' && k > 0.3) continue;
-        lens(introShot(n, ctx, k));
-        const v = new THREE.Vector3(ctx[key].x, ctx[key].y + 2, ctx[key].z).project(cam);
-        if (!(v.z < 1 && v.x > -0.9 && v.x < 0.3 && v.y > -0.38 && v.y < 0.9)) miss.push(`${n}@${k} ${v.x.toFixed(2)},${v.y.toFixed(2)}`);
-      }
+    let n = 0;
+    for (const [line, L] of Object.entries(INTRO_CUTS)) {
+      L.cuts.forEach(([name], j) => {
+        if (!whole.has(name) && !close.has(name)) return;
+        for (const t of cueTimes(L, j)) {
+          lens(introShot(line, ctx, 0, t));
+          n++;
+          const head = ndc(her.x, her.y + H, her.z), chest = ndc(her.x, her.y + H * 0.6, her.z), feet = ndc(her.x, her.y + 0.1, her.z);
+          const okk = close.has(name) ? inFrame(head, 0.98) && inFrame(chest, 0.9) : inFrame(head, 0.98) && inFrame(feet, 0.98) && Math.abs(chest.x) < 0.8;
+          if (!okk) miss.push(`${line}:${name}@${t.toFixed(1)} head ${head.y.toFixed(2)} feet ${feet.y.toFixed(2)} x ${chest.x.toFixed(2)}`);
+        }
+      });
     }
-    ok(`...and frames its subject LEFT of her and over the dialogue box (the lens leans ${LEAN} right)`,
-      miss.length === 0, miss.slice(0, 5).join(' · ') || `${Object.keys(subjectOf).length} shots x 3`);
+    ok('every shot about her has her in it — head to feet in the wide ones, face and chest in the close ones', miss.length === 0,
+      miss.slice(0, 4).join(' · ') || `${n} frames`);
+    // "Look up." — the fingertip is the top of the pointing cells
+    const top = [];
+    for (const t of cueTimes(INTRO_CUTS.l4, 0)) {
+      lens(introShot('l4', ctx, 0, t));
+      top.push(ndc(her.x, her.y + H * INTRO_GEO.pointUp.y1, her.z).y);
+    }
+    ok('...and on "Look up." the lens is low and far enough that her pointing hand is in frame',
+      INTRO_CUTS.l4.cuts[0][0] === 'herLow' && PAYNE_INTRO[3].act[0][0] === 'pointUp' && top.every((y) => y < 0.97),
+      top.map((y) => y.toFixed(2)).join(' '));
+    /* OVER THE SHOULDER means the kitten is between the lens and her: the
+       lens is on the kitten's side of Payne. */
+    const side = [];
+    for (const [line, L] of Object.entries(INTRO_CUTS)) {
+      L.cuts.forEach(([name], j) => {
+        if (name !== 'ots') return;
+        const s = introShot(line, ctx, 0, cueTimes(L, j)[1]);
+        const dLens = Math.hypot(s.pos.x - her.x, s.pos.z - her.z), dKit = Math.hypot(s.pos.x - kit.x, s.pos.z - kit.z);
+        if (!(dKit < dLens)) side.push(line);
+      });
+    }
+    ok('...and the over-the-shoulders are over the KITTEN\'s shoulder: the lens is nearer her than Payne', side.length === 0, side.join(' '));
+  }
+  {
+    /* NOTHING IN THE WAY. The turn search keeps a cut's whole move clear of
+       the lanterns, trees and houses where any turn is clear. Measured with
+       this world: the count of frames whose sight line is still blocked
+       after the search, out of every cut's start, middle and end — 3 of 129
+       when this was written (the low "Look up." past a lantern's cap, a dragon
+       star in a crowd of roofs, one end of the long two-shot), so the bar is
+       twice that. */
+    let blocked = 0, total = 0;
+    const which = [];
+    for (const [line, L] of Object.entries(INTRO_CUTS)) {
+      L.cuts.forEach(([name], j) => {
+        if (name === 'blast' || name === 'archi' || name === 'townWide') return;
+        for (const t of cueTimes(L, j, [0, 0.5, 1])) {
+          const s = introShot(line, ctx, 0, Math.min(t, L.len - 0.01));
+          total++;
+          if (ctx.blocked(s.pos, s.look)) { blocked++; which.push(`${line}:${name}`); }
+        }
+      });
+    }
+    ok('...and nothing stands between the lens and what it is looking at, in nearly every frame',
+      blocked <= 6, `${blocked} of ${total} blocked${which.length ? ': ' + [...new Set(which)].slice(0, 5).join(' ') : ''}`);
+  }
+  {
+    /* THE BLAST-OFF. Richard: "have the camera "blast off" focusing on the
+       player and Payne and starting slowly, but accelerating quickly and fast
+       into the air, like a rocket going to space". */
+    const L = INTRO_CUTS.l12;
+    const a = L.cuts.find((c) => c[0] === 'blast')[1];
+    const S = [];
+    for (let t = a; t < L.len; t += 0.1) S.push([t, introShot('l12', ctx, 0, t)]);
+    S.push([L.len, introShot('l12', ctx, 0, L.len)]);
+    const alts = S.map(([, s]) => s.pos.y - her.y);
+    const rising = alts.every((y, i) => !i || y >= alts[i - 1] - 1e-9);
+    const half = Math.floor(S.length / 2);
+    const accel = alts[half] - alts[0] < (alts.at(-1) - alts[half]) / 4;
+    const early = S.slice(0, Math.ceil(S.length * 0.3)).every(([, s]) => { lens(s); return inFrame(ndc(her.x, her.y + 3, her.z), 0.9) && inFrame(ndc(kit.x, kit.y + 1, kit.z), 0.9); });
+    const steep = S.filter(([t]) => (t - a) / (L.len - a) < BLAST.tilt).map(([, s]) => Math.atan2(s.pos.y - s.look.y, Math.hypot(s.pos.x - s.look.x, s.pos.z - s.look.z)) * 180 / Math.PI);
+    ok('the blast-off starts on the two of them, slow, then accelerates hard — rising every frame, the second half four times the first',
+      rising && accel && early, `${alts[0].toFixed(0)} → ${alts[half].toFixed(0)} → ${alts.at(-1).toFixed(0)} up`);
+    ok('...never straight overhead, where she is a picture seen edge-on', steep.every((d) => d < 72), `steepest ${Math.max(...steep).toFixed(0)}°`);
+    ok('...and it ends in space, high enough for every star, fading out on its own',
+      alts.at(-1) > SPACE.to && S.at(-1)[1].black > 0.95 && S[0][1].black === 0, `top ${alts.at(-1).toFixed(0)} · space at ${SPACE.to}`);
+  }
+
+  /* --- her, standing in the world --- */
+  {
+    const hadDoc = typeof document !== 'undefined';
+    ok('she is no longer pinned to the screen: no #cs-actor in the page or the stylesheet',
+      !/cs-actor/.test(read('index.html')) && !/cs-actor/.test(read('src/style.css')));
+    if (hadDoc) {
+      const scene = new THREE.Scene();
+      scene.fog = new THREE.Fog(0xffffff, 60, 400);
+      const bb = { visible: true };
+      const sc = { camera: new THREE.PerspectiveCamera(42, 16 / 9, 0.1, 6000) };
+      const W = { arenaOpen: false, arenaMesh: new THREE.Group(), arenaProps: new THREE.Group() };
+      W.arenaMesh.visible = W.arenaProps.visible = false;
+      const G = { scene, world: W, payne: { position: her.clone(), group: bb }, storyScene: sc, device: { atlasMax: 4096 } };
+      const A = new PayneActor(G, PN.PAYNE_HEIGHT);
+      A.start(PAYNE_INTRO[0]);
+      sc.camera.position.set(her.x + 10, her.y + 4, her.z + 3);
+      A.update(0.5, 1 / 30);
+      const q = A.group;
+      const want = Math.atan2(sc.camera.position.x - her.x, sc.camera.position.z - her.z);
+      ok('she is a quad on her own market spot, in the scene, turned to the lens about the vertical — and her market billboard steps off',
+        !!q && q.parent === scene && Math.hypot(q.position.x - her.x, q.position.z - her.z) < 1e-6
+        && Math.abs(A.mesh.rotation.y - want) < 1e-6 && A.mesh.rotation.x === 0 && bb.visible === false);
+      ok('...the arena is DRAWN for the scene (it rises at 80%), and only drawn', W.arenaMesh.visible && W.arenaProps.visible && !W.arenaOpen);
+      sc.camera.position.y = her.y + SPACE.to + 200;
+      A.update(11, 1 / 30);
+      const up = { fog: scene.fog.far, dome: A.set.dome?.visible, a: A.set.domeMat?.uniforms.a.value };
+      A.stop();
+      ok('...high up it is space: the dome and the stars come on and the fog is pushed out',
+        up.dome === true && up.a === 1 && up.fog > 400, `fog far ${up.fog.toFixed(0)}`);
+      ok('...and on stop every bit of it goes: her quad, the sky, the stars, the fog back to what it was, the arena back to hidden, the billboard back on',
+        !q.parent && scene.children.length === 0 && scene.fog.near === 60 && scene.fog.far === 400
+        && !W.arenaMesh.visible && !W.arenaProps.visible && bb.visible === true);
+      // an arena already open is left exactly alone
+      const W2 = { arenaOpen: true, arenaMesh: { visible: true } };
+      const S2 = new IntroSet({ world: W2 });
+      S2._arena(true); S2._arena(false);
+      ok('...and an arena that is already open is not touched', W2.arenaMesh.visible === true);
+    }
+  }
+
+  /* --- the furnished island --- */
+  {
+    /* "if we want to show the castles you can build during the cutscene, we
+       can temporarily spawn one of the islands and furnish it with a castle
+       and a few buildings with bridges connecting on 2nd or 3rd floor and
+       some outdoor Japanese themed decorations ... farm and animals". It is
+       the editor's own rules that lay it (so it is a home a player COULD
+       build), and nothing of it is written down. */
+    const scene = new THREE.Scene();
+    const game = {
+      world, scene, players: [], kotodama: { price: 650 }, sessionCast: new Map(), sessionId: 'check-payne',
+      toast: () => {}, onScoreChanged: () => {}, audio: null,
+      inspector: { openExt: () => true, cards: [], closeOne() {}, extOf: () => null },
+    };
+    const Hs = new Housing(game);
+    Hs.build();
+    game.housing = Hs;
+    const storeBefore = JSON.stringify(Hs.store?.homes ?? {});
+    const set = new IntroSet(game);
+    set.start();
+    const I = set.isle;
+    const H = I?.home;
+    const yard = new Set((H?.outdoor ?? []).map((o) => o.id));
+    const has = ['pen', 'onsen', 'zengarden', 'shrine', 'teahouse'].filter((k) => yard.has(k));
+    const upper = (H?.links ?? []).some((L) => L.a.floor >= 1 && L.b.floor >= 1);
+    const vis = I?.group.visible;
+    Hs._showIsles?.();
+    const kept = I?.group.visible;
+    ok('the scene furnishes an island nobody owns with a castle, annexes, a bridge between upper floors, and a yard',
+      !!H && H.house === 'castle' && (H.annex ?? []).length >= 2 && upper && has.length >= 4 && !!set.pen,
+      `${(H?.annex ?? []).length} annexes · upper bridge ${upper} · ${has.join(' ')} · pen ${!!set.pen}`);
+    ok('...shown while it plays, even though the islands are hidden until the ending', vis === true && kept === true);
+    set.stop();
+    ok('...and on stop it is unfurnished and hidden again, and the store never knew',
+      !I.home && Hs.showcase == null && JSON.stringify(Hs.store?.homes ?? {}) === storeBefore && (world.snakeOpen || !I.group.visible));
   }
 
   /* --- the scene, through the real StoryScene --- */
@@ -208,12 +435,12 @@ export async function payneIntroChecks({ ok, world }) {
     const sc = new StoryScene({ audio: null });
     const started = sc.start('intro', PAYNE_INTRO, { shot: introShot, stage });
     sc.update(1 / 30);
-    const lens = sc.camera.position.clone();
+    const l = sc.camera.position.clone();
     const scored = sc.musicTrack;
     sc.skip();
     ok('it plays through StoryScene with her on stage: each line hands her its row, the lens is the intro\'s own, and a skip takes her off',
       started && calls[0] === 'start:payne_intro_1' && calls.includes('u') && calls.at(-1) === 'stop' && !sc.active
-      && [lens.x, lens.y, lens.z].every(Number.isFinite), calls.slice(0, 4).join(' '));
+      && [l.x, l.y, l.z].every(Number.isFinite), calls.slice(0, 4).join(' '));
     ok('...scored with her own theme the whole way, and nothing else is', scored === 'tourPayne' && sc.musicTrack === null);
     /* NINTH: no voice, no sheets. A line without its clip is a reading time,
        and the stage with no pages draws her still — it never throws. */
@@ -229,36 +456,41 @@ export async function payneIntroChecks({ ok, world }) {
     bare.skip();
     const src = read('src/systems/payneintro.js');
     ok('...where a cell whose page has not landed is her market drawing, masked or not as the cell is',
-      /this\.game\.payne\?\.img\?\.\[maskedIn\(clip, cell\) \? 'town' : 'held'\]/.test(src));
+      /const art = maskedIn\(clip, cell\) \? 'town' : 'held';\s*const img = this\.game\.payne\?\.img\?\.\[art\];/.test(src));
   }
 
   /* --- the first hello, and her card --- */
   {
     const started = [];
     const toasts = [];
-    const story = { active: false, start(kind, rows, ctx) { started.push({ kind, rows, ctx }); return true; } };
-    const kid = (i) => ({ name: ['Ember', 'Frost'][i], style: { name: 'Ember' }, index: i, position: new THREE.Vector3(), payne: PN.blankPayne(), clansSworn: new Set() });
+    const story = { active: false, start(kind, rows, c) { started.push({ kind, rows, ctx: c }); return true; } };
+    const kid = (i) => ({ name: ['Ember', 'Frost'][i], style: { name: 'Ember' }, index: i, position: new THREE.Vector3(tc.x + i, tc.y, tc.z + 3), facing: 0, payne: PN.blankPayne(), clansSworn: new Set() });
     const a = kid(0);
     const b = kid(1);
-    const g = {
+    const G = {
       world, storyScene: story, players: [a, b], dream: { busy: false }, _sceneActive: () => story.active,
-      townCentre: () => world.townCentre.clone(), _worldBounds: () => ({ centre: new THREE.Vector3(), radius: 200 }),
+      townCentre: () => tc.clone(), _worldBounds: () => ({ centre: new THREE.Vector3(), radius: 200 }),
       dragons: [], toast: (t) => toasts.push(t), sfx() {}, feats: { open: true, has: () => false, claimed: {}, ledger: () => ({}) },
     };
-    const P = new PN.Payne(g);
+    const P = new PN.Payne(G);
+    P.position = her.clone();
+    G.payne = P;
     const r1 = P.greet(a);
     ok('the first time anybody talks to her, her hello IS the introduction — and the card comes down for it',
       r1 === 'scene' && started.length === 1 && started[0].kind === 'intro' && started[0].rows === PAYNE_INTRO
       && started[0].ctx.shot === introShot && started[0].ctx.stage instanceof PayneActor
       && /if \(this\.game\.payne\.greet\(p\) === 'scene'\) this\.closeAll\(\);/.test(read('src/systems/inspector.js')));
+    const face = Math.atan2(P.position.x - a.position.x, P.position.z - a.position.z);
+    ok('...and the kitten who asked turns to face her, and is who the shots are over the shoulder of',
+      Math.abs(a.facing - face) < 1e-9 && started[0].ctx.kitten && Math.hypot(started[0].ctx.kitten.x - a.position.x, started[0].ctx.kitten.z - a.position.z) < 1e-6);
     ok('...and it is SEEN the moment it starts, by every kitten in the party, not when it finishes (seventh non-negotiable)',
       a.payne.met && a.payne.intro && b.payne.intro && !b.payne.met);
     const r2 = P.greet(b);
     ok('...so her sister\'s first hello is a hello, not the same minute again', r2 === null && started.length === 1);
     ok('...and the flag is saved with the rest of her ledger', PN.cleanPayne({ intro: true }).intro === true && PN.cleanPayne({}).intro === false);
     const c = kid(0);
-    g.players = [c];
-    g.dream.busy = true;
+    G.players = [c];
+    G.dream.busy = true;
     const r3 = P.greet(c);
     ok('a first hello while a sister is in the simulator is just a hello, and the introduction waits on her card',
       r3 === null && started.length === 1 && c.payne.met && !c.payne.intro);
@@ -269,59 +501,13 @@ export async function payneIntroChecks({ ok, world }) {
     const no = P.choose(c, 'intro');
     ok('...which refuses IN WORDS while somebody is in the simulator, and keeps her card up',
       no === 'payne' && /simulator/.test(toasts.at(-1) ?? ''));
-    g.dream.busy = false;
+    G.dream.busy = false;
     story.active = true;
     const no2 = P.choose(c, 'intro');
     story.active = false;
     const yes = P.choose(c, 'intro');
     ok('...or while a scene is up, and otherwise plays it again, as many times as she likes',
       no2 === 'payne' && /try again/.test(toasts.at(-1) ?? '') && yes === 'scene' && started.length === 2);
-  }
-
-  /* --- the stage, on a phone --- */
-  {
-    const css = read('src/style.css');
-    const html = read('index.html');
-    ok('she stands in the cutscene under its fade, so a dip takes her with the picture',
-      /<canvas id="cs-actor"[^>]*><\/canvas>\s*<div id="cs-fade">/.test(html));
-    /* SHE AND THE CAPTION NEVER OVERLAP, at five windows. The first version
-       pinned `height: 70vh` and believed the centred box cleared her at 16:9:
-       it did not (1080p: she starts at 1289, the box ended at 1400), and at
-       4:3 the caption ran across her knees. So this reads the numbers out of
-       the stylesheet and lays both rectangles out. The box's height is
-       MEASURED (1024x768 and 844x390 in Firefox, two lines of text): 117px on
-       a desktop, 68px on a phone. */
-    const num = (re) => { const m = css.match(re); return m ? Number(m[1]) : NaN; };
-    const H = num(/\n#cs-actor \{[^}]*height: ([\d.]+)vh/);
-    const R = num(/\n#cs-actor \{[^}]*right: ([\d.]+)vw/);
-    const beside = num(/#cs-actor\.on\) #cs-box \{[^}]*- ([\d.]+)vh - 12px/);
-    const tallH = num(/max-aspect-ratio: 1249\/1000\)[^}]*#cs-actor \{[^}]*height: ([\d.]+)vh/);
-    const tallUp = num(/max-aspect-ratio: 1249\/1000\)[^}]*#cs-actor \{[^}]*bottom: calc\(9vh \+ 26px \+ ([\d.]+)px\)/);
-    const phH = num(/body\.touch-ui #cs-actor \{[^}]*height: ([\d.]+)vh/);
-    const phUp = num(/body\.touch-ui #cs-actor \{[^}]*bottom: calc\(env\(safe-area-inset-bottom\) \+ ([\d.]+)vh\)/);
-    const ASPECT = 602 / 768; // a cell, as the cut writes it (checked against the pages above)
-    const lay = (vw, vh, touch) => {
-      const v = vh / 100, w = vw / 100;
-      if (touch) {
-        const boxTop = vh - 12 - 68, bottom = vh - phUp * v;
-        return { clear: bottom <= boxTop + 1, top: bottom - phH * v, boxW: Math.min(0.96 * vw, 760) };
-      }
-      const actorW = H * v * ASPECT;
-      if (vw / vh >= 1.25) {
-        const boxW = Math.min(880, 0.95 * vw - beside * v - 12);
-        return { clear: 3 * w + boxW <= vw - R * w - actorW, top: vh - 9 * v - H * v, boxW, wide: beside * v >= actorW };
-      }
-      const boxTop = vh - 9 * v - 26 - 117, bottom = vh - 9 * v - 26 - tallUp;
-      return { clear: bottom <= boxTop, top: bottom - tallH * v, boxW: Math.min(880, 0.88 * vw) };
-    };
-    const wins = [[1920, 1080], [1024, 768], [1280, 1024], [834, 1000], [844, 390, true]];
-    const laid = wins.map(([w, h, t]) => [`${w}x${h}`, lay(w, h, t)]);
-    ok('the caption and Payne never overlap — 16:9, 4:3, 5:4, a portrait window and a phone — and she is never cut off at the top',
-      [H, R, beside, tallH, tallUp, phH, phUp].every(Number.isFinite)
-      && laid.every(([, L]) => L.clear && L.top >= 0 && L.wide !== false),
-      laid.map(([k, L]) => `${k}:${L.clear ? 'clear' : 'OVERLAP'}`).join(' '));
-    ok('...and the caption is never squeezed under 480px to make room for her',
-      laid.every(([, L]) => L.boxW >= 480), laid.map(([k, L]) => `${k}:${Math.round(L.boxW)}`).join(' '));
     const main = read('src/main.js');
     ok('...and the town is ticked under it, and the simulator is never warmed for it',
       /if \(this\.storyScene\.kind !== 'intro'\) this\._primeSim\(this\.storyScene\.camera\);/.test(main));

@@ -1553,7 +1553,7 @@ export class Payne {
        in the simulator, another scene up — and then it is simply her hello,
        with the row on her card for later: the introduction is a picture of
        the world, and nothing in the game waits on it having been seen. */
-    if (first && !L.intro && this.startIntro() === null) return 'scene';
+    if (first && !L.intro && this.startIntro(p) === null) return 'scene';
     this.say(p, [first ? 'payne_hello' : 'payne_back'], 'hey', { card: false, now: true });
     return null;
   }
@@ -1566,14 +1566,20 @@ export class Payne {
    * SEEN BY EVERYBODY THE MOMENT IT STARTS — seventh non-negotiable. It is
    * a minute and a quarter long and skippable on its first frame, so "has
    * she watched it" is answered by it starting, never by it finishing.
+   *
+   * `p` is the kitten who asked: the shots about Payne are over HER
+   * shoulder, and Payne stands turned to her and the lens.
    */
-  startIntro() {
+  startIntro(p = null) {
     const g = this.game;
     if (!g.storyScene) return 'not ready';
     if (g.dream?.busy) return 'busy';
     if (g.storyScene.active || g._sceneActive?.()) return 'scene';
-    this.actor ??= new PayneActor(g);
-    const ctx = { ...introCtx(g), shot: introShot, stage: this.actor };
+    /* SHE TURNS TO WHOEVER IS TALKING TO HER: the shots are over her
+       shoulder, so the lens sees her back and Payne's face. */
+    if (p?.position && this.position) p.facing = Math.atan2(this.position.x - p.position.x, this.position.z - p.position.z);
+    this.actor ??= new PayneActor(g, PAYNE_HEIGHT);
+    const ctx = { ...introCtx(g, p?.position ?? null), shot: introShot, stage: this.actor, set: this.actor.set };
     // Her own voice stops: she is in the scene, speaking from the card.
     this.queue.length = 0;
     this._end(true);
@@ -1619,7 +1625,7 @@ export class Payne {
       case 'intro': {
         /* INTRODUCTION TO THE WORLD, again. Refused IN WORDS — the Dream
            Dojo's VIEW row's two refusals, for the same two reasons. */
-        const why = this.startIntro();
+        const why = this.startIntro(p);
         if (why === 'busy') {
           g.sfx?.('deny');
           g.toast?.("Somebody's in the simulator — wait till they disconnect, then ask again", p.index);
