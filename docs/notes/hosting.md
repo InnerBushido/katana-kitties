@@ -35,8 +35,9 @@ or `alpha`, and 1 (build) for those two. That is Vercel's convention, and it is
 backwards from what the exit code reads like. Branches cut before the file
 existed do not carry it, so the project's *Ignored Build Step* setting holds
 the same command. A branch's old `-git-<branch>-` alias keeps whatever it last
-built. Combining branches before anybody else sees them is now the local
-`alpha` checkout's job; see PROJECT.md §3.
+built. Combining branches before anybody else sees them is now the job of
+the local `alpha` branch, merged into and played in the one project folder;
+see PROJECT.md §3.
 
 ## Testing a branch from anywhere: push it, and Vercel builds a preview
 
