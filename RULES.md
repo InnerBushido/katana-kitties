@@ -19,6 +19,8 @@ not reviewed it yet.
 
 Compiled 2026-10-13 from CLAUDE.md, PROJECT.md §9, the Field Guide
 (docs/artifact/project-page.html §9), docs/notes/*, and Claude's memory folder.
+Brought up to date 2026-10-29: Payne's sign-off (P1), and the git and shipping
+rules (H), which had all changed since; nothing else had moved.
 
 **The review page** is https://claude.ai/artifact/S9zerAZh9iXKp9n84Ei7cK. It
 is built from this file by `node tools/rules-page.mjs`, and Richard's marks on
@@ -179,10 +181,9 @@ cited throughout docs/notes/.
 
 ### P1 · Payne is a real person
 - **Rule:** Payne (the market quest-giver) is a real Belegarth fighter. Her photos went to Higgsfield as image references with your OK, and nowhere else.
-- **Approval:** She approved her lines and her voice on 2026-10-04 ("Payne approved the lines and her voice, so we are good there"). The old rule, that a public release waits for her approval, is struck through in payne.md.
-- **stale:** docs/notes/README.md still describes her as "pending her approval".
-- **Open question:** Do *new or changed* Payne lines need her approval again? No doc says.
-- **Lives in:** docs/notes/payne.md, docs/notes/README.md, CLAUDE.md (payne row)
+- **Approval:** She approved being in the game, and her lines and her voice on 2026-10-04 ("Payne approved the lines and her voice, so we are good there").
+- **Answered 2026-10-28:** new or changed lines, cutscenes and footage of her **no longer need her sign-off**. Richard: "We don't need Payne's approval for current or future cutscenes or voices anymore ... She has already approved being in the game and looking forward to seeing what we make." Every copy below now says so (the README row that still said "pending" was fixed too).
+- **Lives in:** docs/notes/payne.md, docs/notes/README.md, PROJECT.md, Field Guide, CLAUDE.md (payne row), src/systems/payne.js (comment), Claude memory (voice-cast)
 - **Status:** satisfied
 - **Your call:**
 - **Note:**
@@ -371,30 +372,66 @@ Live in: docs/notes/rules.md (the "gameplay rules worth not breaking").
 - **Your call:**
 - **Note:**
 
+
+### A4 · Outside pictures only if a released game may carry them
+- **Rule:** Every picture is the game's own except `public/help/japan/`. A picture comes in only if its licence lets a commercial game ship it, and it is credited on the Picture credits page.
+- **Came from:** Richard, Oct 2026, with that condition.
+- **Lives in:** docs/notes/credits.md
+- **Status:** new
+- **Your call:**
+- **Note:**
 ---
 
 ## H. Git and shipping
 
+Live in: CLAUDE.md (*Run it, check it*), PROJECT.md §3, HANDOFF.md *Branches*,
+`.githooks/`, `vercel.json`, and Claude memory (git, worktrees). The whole of
+this section was rewritten on 2026-10-29: every entry had changed since
+2026-10-13, and G2's conflict was settled by the new channel rules.
+
 ### G1 · Typed branches, stamped commits
-- **Rule:** Branches are `feature/`, `bugfix/` or `mixed/`. A commit-msg hook stamps `[branch]`. Merge into main locally with `--no-ff`. The git identity is InnerBushido; check `gh auth status` before pushing.
+- **Rule:** Branches are `feature/`, `bugfix/` or `mixed/`. A commit-msg hook stamps `[branch]`. A finished branch is merged into the **local `alpha`** with `--no-ff` (it used to be local `main`). Improvements to a feature go back on that feature's branch, and a branch is never renamed. The git identity is InnerBushido; check `gh auth status` before pushing.
 - **Status:** active
 - **Your call:**
 - **Note:**
 
-### G2 · When main gets pushed
-- **CONFLICT:** PROJECT.md §9 and the Field Guide say "**never pushed to `origin/main` until Richard has played it**", and so does the one-line memory index. The memory file itself says you dropped that on 2026-08-24: "When he says push, push — immediately, no questions, no tracking … no need to track playtests."
-- **Status:** CONFLICT
+### G2 · When alpha and main get pushed
+- **Rule:** `alpha` is pushed only when you say so, as `git -c kk.release=true push origin alpha`; `.githooks/pre-push` refuses it otherwise. `main` takes `alpha` once you have played it. Branch pushes are backups: `vercel.json` builds only `main` and `alpha`.
+- **Came from:** Richard, 2026-10-28: "I don't want to be deploying Vercel every time we push a branch, I expect only pushing to the main or alpha branch will publish to Vercel... all the other branch pushes are to backup the work."
+- **Settles the old CONFLICT:** "never pushed until Richard has played it" against "when he says push, push" (2026-08-24). Both are true now: nothing reaches `alpha` or `main` without your word, and your word is enough.
+- **Open:** the Vercel dashboard's Ignored Build Step is still yours to set, for branches cut before `vercel.json`.
+- **Enforced by:** `.githooks/pre-push`, `vercel.json`
+- **Status:** new
 - **Your call:**
 - **Note:**
 
-### G3 · alpha only fast-forwards to main
-- **Rule:** `alpha` is the testing channel and may never carry a commit that main does not have.
-- **Status:** active
+### G3 · alpha is the testing channel
+- **Rule:** `alpha` (https://katana-kitties-git-alpha-dream-dojo.vercel.app) is where work branches are merged and played; `main` takes `alpha`. Keep branches separate: merging one into another drags it to `alpha` with it, and if one needs another's code, ask first.
+- **Retired:** the old G3, "alpha only fast-forwards to main and may never carry a commit main lacks". The flow runs the other way now.
+- **Came from:** Richard, 2026-10-26, after kendo rode to `alpha` inside the bamboo branch: "make sure to separate into different branches next time".
+- **Status:** new
 - **Your call:**
 - **Note:**
 
-### G4 · Keep a branch until it is pushed, then delete it with `-d`, never `-D`
-- **Status:** active
+### G4 · Publish every branch; delete none until it is on origin/main
+- **Rule:** A work branch is pushed to GitHub as soon as it has a commit, and every commit after. No branch is deleted, locally or on GitHub, until its work is on `origin/main`; reaching `alpha` is not enough. Then `git branch -d`, never `-D`.
+- **Came from:** Richard, 2026-10-26: "we should be pushing the branch and the commits to Github and not just leaving them as local commits ... keep the branches around until they are merged from Alpha to origin main, then we can clean up".
+- **Status:** new
+- **Your call:**
+- **Note:**
+
+### G5 · One folder, no worktrees unless asked
+- **Rule:** Work happens in the one project folder, switching branches. A worktree only when you ask for two sessions working at once, and then outside OneDrive.
+- **Came from:** Richard, 2026-10-28: "Go all the way to single folder." The extra worktrees had confused him, and OneDrive synced and then alarmed about each one.
+- **Lives in:** CLAUDE.md, Claude memory (worktrees)
+- **Status:** new
+- **Your call:**
+- **Note:**
+
+### G6 · What never leaves the machine
+- **Rule:** The repo is public. `extra/scratchpad-ideas` (your own voice recordings) is not pushed without asking. `out/` is a local-only repo with no remote, and `out/trailer/ref/cackle.wav` never leaves the machine.
+- **Lives in:** Claude memory (git), docs/notes/voices.md
+- **Status:** new
 - **Your call:**
 - **Note:**
 
