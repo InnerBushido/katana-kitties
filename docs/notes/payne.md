@@ -4,8 +4,11 @@
 Society, drawn here as a green cat-goblin. Richard asked her permission to put
 her in the game and sent her the finished result for her final approval.
 **She has approved her lines and her voice** (2026-10-04). Richard:
-"Payne approved the lines and her voice, so we are good there." ~~Until she has approved it, a public release
-that includes her waits for that answer.~~ Her photos went to Higgsfield as
+"Payne approved the lines and her voice, so we are good there." **New lines,
+cutscenes and footage of her no longer go to her first** (Richard, 2026-10-28):
+"We don't need Payne's approval for current or future cutscenes or voices
+anymore ... She has already approved being in the game and looking forward
+to seeing what we make." Her photos went to Higgsfield as
 image references with Richard's OK, and to nowhere else.
 
 The brief, verbatim where it decides something:
@@ -476,9 +479,9 @@ the ending". Payne starts masked, unmasks, and puts the mask back on for her
   introduction*. With no sheets and no voice it still plays: a missing page
   draws her `town`/`held` still, and a missing clip becomes a reading time.
 
-**PENDING PAYNE'S APPROVAL.** The thirteen lines and the unmasked moving
-footage are new. She approved everything else before it shipped, and these go
-to her before a public build carries them.
+**Nothing here waits on Payne.** The thirteen lines and the unmasked moving
+footage were first held for her sign-off; since 2026-10-28 new work with her in
+it no longer is (see the top of this file).
 
 **Her face is shown earlier than planned.** "I plan to reveal her face at the
 end of the game" — the intro shows it in the first minute and then puts the

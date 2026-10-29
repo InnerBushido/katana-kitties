@@ -806,7 +806,7 @@ quoted.
     "to next" now say so, and world-check asks it of the pay table.
   - **Open:**
     - **Payne's voiced `payne_q_shadow` still says the old words.** Changing
-      it means a new take she approves, so it is left for Richard to ask her.
+      it is one new take, and since Oct 28 it no longer needs her sign-off.
     - Nobody has played any of this.
     - The Feast's and Pandapaw's bands, and MEDIUM's and HARD's knobs, are
       first numbers.

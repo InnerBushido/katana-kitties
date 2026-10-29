@@ -647,7 +647,8 @@ synthesised stand-ins after that. Three levels of degradation, on purpose.
 **Payne is a real person, and she has approved her lines and her voice.** The
 quest-giver in the market is a fighter from Belegarth Medieval Combat Society,
 drawn as a goblin cat with her permission. Richard sent her the finished result
-for her final approval, and on 2026-10-04: "Payne approved the lines and her voice, so we are good there." Her
+for her final approval, and on 2026-10-04: "Payne approved the lines and her voice, so we are good there." Since
+2026-10-28 new lines, cutscenes and footage of her no longer go to her first. Her
 photos went to Higgsfield as image references and nowhere else. →
 [payne.md](docs/notes/payne.md)
 
