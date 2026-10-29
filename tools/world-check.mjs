@@ -46277,7 +46277,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       PNd.DOJO_ACTS.map(([k]) => k).join() === 'view,ddmark,back'
       && /VIEW THE DREAM DOJO/.test(PNd.DOJO_ACTS[0][1]) && /MARK IT ON MY MAP/.test(PNd.DOJO_ACTS[1][1])
       && /key: 'dojo', title: 'THE DREAM DOJO'/.test(readD('../src/systems/payne.js')));
-    ok('...and her new lines are pending her approval like all of them, and are hers (Pixie)',
+    ok('...and her new lines are in her table like all of them, and are hers (Pixie)',
       ['payne_dd_intro', 'payne_dd_mark', 'payne_dd_busy', 'payne_q_shadow'].every((id) => PNd.PAYNE_LINES[id])
       && ST.TOUR.filter((x) => x.who === 'payne').every((x) => PNd.PAYNE_LINES[x.voice] === x.text));
     /* HER VIEW BUTTON, THROUGH HER OWN `choose`, against the real Dream Dojo:

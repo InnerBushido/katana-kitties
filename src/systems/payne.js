@@ -298,8 +298,8 @@ export const PAYNE_LINES = {
   payne_dd_busy: "Somebody's in the simulator right now! Wait till they disconnect, then I'll show you.",
   ...Object.fromEntries(TOUR.filter((r) => r.who === 'payne').map((r) => [r.voice, r.text])),
   /* ...and her INTRODUCTION TO THE WORLD, the same way and for the same
-     reason (systems/payneintro.js). NOT YET APPROVED BY PAYNE: these thirteen
-     and the unmasked footage go to her before a public build has them. */
+     reason (systems/payneintro.js). New lines no longer go to Payne first
+     (Richard, Oct 28 2026; payne.md). */
   ...Object.fromEntries(PAYNE_INTRO.map((r) => [r.voice, r.text])),
 };
 
