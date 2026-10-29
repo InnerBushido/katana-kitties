@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cutscene Review</title>
+<!--
+  THE CUTSCENE REVIEW PAGE. `npm run dev`, then open /review.html.
+
+  Richard watches a recording of a cutscene and marks what to change, exactly
+  where it happens; a session reads the notes from docs/reviews/<scene>/ and
+  knows which line, which word, which cut and which of the actor's cues each
+  one is on. Before this, notes were typed against a video player that shows
+  whole seconds, and lined up with the script by guesswork.
+
+  DEV ONLY, the same two ways as /tuning.html: `vite build` takes its inputs
+  from index.html alone, and every route it calls is a `configureServer`
+  hook (vite.config.js, *The cutscene review page*). Opened anywhere else it
+  still plays a dropped video and keeps the notes in this browser, and says so.
+
+  The brain is src/review/page.js; the sync is src/review/sync.js; the scenes
+  it knows are src/review/scenes.js. docs/notes/review.md has the why.
+-->
+<style>
+:root{
+  --bg:#0f1218; --panel:#171b24; --panel2:#1d2230; --ink:#e7eaf1; --muted:#8e97ab; --line:#2a3142;
+  --accent:#ffb347; --play:#ff5d5d; --ok:#5cc98f; --warn:#f0b350;
+  --mono:ui-monospace,"Cascadia Mono",Consolas,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;flex-direction:column;overflow:hidden}
+button,select,input,textarea{font:inherit;color:inherit}
+button{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:5px 10px;cursor:pointer}
+button:hover{border-color:var(--muted)}
+button.on{background:var(--accent);color:#1a1200;border-color:var(--accent)}
+button:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+select{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:5px 8px;max-width:340px}
+header{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;padding:8px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+header h1{font-size:15px;margin:0 8px 0 0;letter-spacing:.02em}
+header .grow{flex:1}
+.status{font-size:12.5px;color:var(--muted);font-family:var(--mono)}
+.status.ok{color:var(--ok)} .status.warn{color:var(--warn)}
+main{flex:1;display:grid;grid-template-columns:minmax(0,1fr) 360px;min-height:0}
+.stage{display:flex;flex-direction:column;min-width:0;min-height:0}
+.vwrap{position:relative;flex:1;min-height:0;background:#000;display:flex;align-items:center;justify-content:center}
+video{width:100%;height:100%;object-fit:contain;display:block}
+#overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+#overlay.draw{pointer-events:auto;cursor:crosshair}
+.drop{position:absolute;inset:0;display:flex;flex-direction:column;gap:10px;align-items:center;justify-content:center;color:var(--muted);text-align:center;padding:20px}
+.drop b{color:var(--ink);font-size:16px}
+.drop[hidden]{display:none}
+.vwrap.over{outline:3px dashed var(--accent);outline-offset:-6px}
+.subtitle{min-height:44px;padding:8px 14px;background:var(--panel);border-top:1px solid var(--line);font-size:16px}
+.subtitle .w{color:var(--muted)} .subtitle .w.said{color:var(--ink)} .subtitle .w.now{color:var(--accent)}
+.readout{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:baseline;padding:6px 14px;background:var(--panel2);border-top:1px solid var(--line);font-family:var(--mono);font-size:13px}
+.readout .big{font-size:20px;color:var(--ink)}
+.readout span{color:var(--muted)} .readout b{color:var(--ink);font-weight:600}
+.transport{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:6px 14px;background:var(--panel);border-top:1px solid var(--line)}
+.transport .sep{width:1px;height:20px;background:var(--line);margin:0 4px}
+.timeline{height:216px;border-top:1px solid var(--line);background:var(--panel);position:relative}
+#tl{width:100%;height:100%;display:block;cursor:text}
+aside{border-left:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-height:0}
+aside h2{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0;padding:10px 14px 6px;display:flex;justify-content:space-between}
+#notes{flex:1;overflow:auto;padding:0 8px 8px}
+.note{display:grid;grid-template-columns:auto 1fr;gap:2px 8px;padding:7px 8px;border-radius:6px;cursor:pointer;border:1px solid transparent}
+.note:hover{background:var(--panel2)}
+.note.sel{border-color:var(--accent);background:var(--panel2)}
+.note .when{font-family:var(--mono);font-size:12px;color:var(--muted);grid-column:1/3}
+.note .txt{grid-column:1/3;white-space:pre-wrap;overflow-wrap:anywhere}
+.note .txt.empty{color:var(--muted);font-style:italic}
+.tag{display:inline-block;font-size:11px;font-family:var(--mono);padding:1px 7px;border-radius:999px;color:#10131a;font-weight:600}
+.editor{border-top:1px solid var(--line);padding:10px 12px;display:grid;gap:8px}
+.editor[hidden]{display:none}
+.editor textarea{width:100%;min-height:92px;resize:vertical;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px}
+.tags{display:flex;flex-wrap:wrap;gap:5px}
+.tags button{font-size:12px;padding:3px 9px;border-radius:999px}
+.row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.row .status{flex:1}
+.help{padding:8px 14px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+.help kbd{font-family:var(--mono);background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:0 5px;color:var(--ink)}
+.banner{padding:6px 14px;background:#3a2a10;color:var(--warn);font-size:13px;border-bottom:1px solid var(--line)}
+.banner[hidden]{display:none}
+/* A phone is not where this is used, but a narrow window should still work:
+   the notes go under the video instead of beside it. */
+@media (max-width:900px){
+  body{overflow:auto}
+  main{grid-template-columns:1fr}
+  .vwrap{min-height:42vh}
+  aside{border-left:0;border-top:1px solid var(--line);max-height:none}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>🎬 Cutscene review</h1>
+  <label class="row">Scene <select id="scene"></select></label>
+  <label class="row">Video <select id="videos"><option value="">— choose, or drop a file —</option></select></label>
+  <button id="open" type="button" title="Open a video file from anywhere">Open file…</button>
+  <input id="file" type="file" accept="video/*" hidden>
+  <button id="resync" type="button" disabled>Re-sync to voice</button>
+  <span class="grow"></span>
+  <span id="syncStatus" class="status"></span>
+  <span id="saveStatus" class="status"></span>
+</header>
+<div id="banner" class="banner" hidden></div>
+<main>
+  <section class="stage">
+    <div class="vwrap" id="vwrap">
+      <video id="video" preload="auto" playsinline></video>
+      <canvas id="overlay"></canvas>
+      <div class="drop" id="drop"><b>Pick a recording above, or drop a video here.</b>
+        <span>Recordings in <code>Design Ideas/</code> or <code>out/review/</code> are listed automatically.</span></div>
+    </div>
+    <div class="subtitle" id="subtitle"></div>
+    <div class="readout" id="readout"></div>
+    <div class="transport">
+      <button id="play" type="button" title="Space">▶ Play</button>
+      <button data-step="-1" type="button" title="Shift+←">−1s</button>
+      <button data-step="-0.1" type="button" title="←">−0.1</button>
+      <button data-frame="-1" type="button" title=",">◂ frame</button>
+      <button data-frame="1" type="button" title=".">frame ▸</button>
+      <button data-step="0.1" type="button" title="→">+0.1</button>
+      <button data-step="1" type="button" title="Shift+→">+1s</button>
+      <span class="sep"></span>
+      <label class="row">Speed <select id="rate"><option>0.25</option><option>0.5</option><option selected>1</option><option>1.5</option></select></label>
+      <span class="sep"></span>
+      <button id="markIn" type="button" title="I">In</button>
+      <button id="markOut" type="button" title="O">Out</button>
+      <button id="addNote" type="button" title="M">＋ Note here</button>
+    </div>
+    <div class="timeline"><canvas id="tl"></canvas></div>
+  </section>
+  <aside>
+    <h2><span>Notes</span><span id="count"></span></h2>
+    <div id="notes"></div>
+    <div class="editor" id="editor" hidden>
+      <div class="status" id="edWhere"></div>
+      <div class="tags" id="edTags"></div>
+      <textarea id="edText" placeholder="What should change here? (Enter saves, Shift+Enter for a new line)"></textarea>
+      <div class="row">
+        <button id="edBox" type="button" title="B">▭ Draw a box</button>
+        <button id="edRange" type="button" title="Make this note run to the playhead">⇥ Run to playhead</button>
+        <span class="status"></span>
+        <button id="edDel" type="button">Delete note</button>
+      </div>
+    </div>
+    <div class="help">
+      <kbd>Space</kbd> play · <kbd>,</kbd><kbd>.</kbd> frame · <kbd>←</kbd><kbd>→</kbd> 0.1s (<kbd>Shift</kbd> 1s) ·
+      <kbd>↑</kbd><kbd>↓</kbd> line · <kbd>[</kbd><kbd>]</kbd> cut · <kbd>M</kbd> note · <kbd>I</kbd>/<kbd>O</kbd> range ·
+      <kbd>B</kbd> box · <kbd>1</kbd>–<kbd>7</kbd> tag · <kbd>Esc</kbd> back to the video.
+      Timeline: wheel zooms, drag scrubs, drag a line's left edge to nudge its sync.
+    </div>
+  </aside>
+</main>
+<script type="module" src="/src/review/page.js"></script>
+</body>
+</html>
