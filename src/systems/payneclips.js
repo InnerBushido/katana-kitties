@@ -54,7 +54,13 @@
    when needed after an animation or can add some slight bobbing animations
    during dull moments". The `pingpong` loops that were here are gone, and a
    held frame bobs (systems/payneintro.js).
+   ONE EXCEPTION, ASKED FOR LATER: `back: true` plays it there and back ONCE
+   — out, held `apex` seconds, and home — and then holds its FIRST frame.
+   Richard, on "kidding": "ping-pong the shrug animation at the end so that
+   it ends at RestMasked like we started". A return, not a loop: it never
+   goes round twice.
 --------------------------------------------------------------------------- */
+import CLIPS from '../payneclips.json' with { type: 'json' };
 
 export const INTRO_TAKES = {
   mask: 'docs/art-masters/video/payne_mask_72ea3ebe.mp4',
@@ -77,36 +83,14 @@ export const PAGE_MAX = 4096;
 export const INTRO_UNIT_PX = 760;
 export const INTRO_UNIT_PX_HALF = 380;
 
-export const INTRO_CLIPS = {
-  // Her two poses, standing: the first frame of a take, which is the drawing.
-  restMasked: { take: 'halt', from: 0, to: 0, step: 1 },
-  restHeld: { take: 'wag', from: 0, to: 0, step: 1 },
-  // "Halt, traveller!" — palm out, held.
-  halt: { take: 'halt', from: 4, to: 40, step: 3 },
-  // "...Ha, kidding." — the palm drops into a laugh.
-  haha: { take: 'halt', from: 46, to: 82, step: 3 },
-  // "Come closer" — a beckon, and back to her pose.
-  beckon: { take: 'halt', from: 84, to: 120, step: 3 },
-  // "Stuck?" — palms up.
-  shrug: { take: 'shrug', from: 28, to: 82, step: 3 },
-  // "Payne, out!" — and held.
-  salute: { take: 'shrug', from: 84, to: 120, step: 3 },
-  // The helmet going on, peace sign to fist on hip. Backwards: coming off.
-  mask: { take: 'mask', from: 0, to: 120, step: 3 },
-  // "Ta-daa!" — the free arm flung out.
-  tadaa: { take: 'point', from: 22, to: 46, step: 3 },
-  // "Look up." — from her pose, up, and HELD with the fingertip in frame.
-  pointUp: { take: 'point', from: 46, to: 120, step: 3 },
-  // A peace sign, waggled.
-  wag: { take: 'wag', from: 4, to: 61, step: 3 },
-  // "Payne." / "Me?" — a thumb at herself, and back.
-  thumb: { take: 'wag', from: 64, to: 118, step: 3 },
-  talk: { take: 'talk', from: 14, to: 64, step: 3 },
-  // One finger, then two: counting the job off.
-  count: { take: 'talk', from: 116, to: 160, step: 3 },
-  wave: { take: 'talk', from: 166, to: 196, step: 3 },
-  laugh: { take: 'talk', from: 204, to: 240, step: 3 },
-};
+/* THE CLIPS ARE DATA, in src/payneclips.json, so the sprite editor can make
+   and save them (/sprites.html, its PAYNE tab) and the review page can name
+   them. Richard, Oct 2026: "section off and create my own sprite animation
+   clips in the Sprite Editor that I can save and can reference, by name ...
+   so that it can be used in the cutscene editor". Each is
+   { take, from, to, step, note } and optionally `back` (see `clipRun`). A
+   clip added there is cut into pages by payne-sheet.mjs like any other. */
+export const INTRO_CLIPS = CLIPS;
 
 /** The source frame numbers a clip is cut from, in order. */
 export const clipFrames = (c) => {
@@ -115,5 +99,54 @@ export const clipFrames = (c) => {
   return out;
 };
 
+/**
+ * Where a clip is `t` seconds after it started: the cell, and how long the
+ * frame it stopped on has been held (0 while it moves — the bob waits on it).
+ * ONE FUNCTION FOR THE GAME AND THE SPRITE EDITOR, so a clip previewed there
+ * is the clip played here. `from`/`to` are cells (backwards when to < from),
+ * `rate` a speed-up. A `back` clip goes out, holds `apex` seconds, comes home,
+ * and holds its first cell.
+ */
+export function clipRun(C, t, { from, to, rate = 1 } = {}) {
+  const n = clipFrames(C).length;
+  const a = from ?? 0;
+  const b = to ?? n - 1;
+  const len = Math.abs(b - a);
+  const dir = Math.sign(b - a);
+  const fps = INTRO_FPS * rate;
+  const s = Math.max(0, t);
+  const run = s * fps;
+  if (!C.back || len === 0) {
+    const k = Math.min(Math.floor(run), len);
+    return { cell: a + dir * k, held: len === 0 ? s : Math.max(0, (run - len) / fps) };
+  }
+  const apex = (C.apex ?? 0) * fps;
+  const total = 2 * len + apex;
+  let k;
+  if (run < len) k = Math.floor(run);
+  else if (run < len + apex) k = len;
+  else k = Math.max(0, len - Math.floor(run - len - apex));
+  return { cell: a + dir * k, held: Math.max(0, (run - total) / fps) };
+}
+
 /** The file of page `k` of a clip, full or half. */
 export const pagePath = (name, k, half = false) => `/sprites/payne/intro/${half ? 'half/' : ''}${name}_${k}.webp`;
+
+/**
+ * Draw `cell` of a clip off its loaded `page` into `rect` ([x, y, w, h]).
+ * `G` is the clip's INTRO_GEO entry. Shared by her actor in the game and the
+ * sprite editor's PAYNE tab, so the editor cannot show a cell the game would
+ * cut differently.
+ * MEASURED OFF THE PAGE, NEVER ASSUMED (eighth non-negotiable): a page holds
+ * `on` cells `cols` across, so its cell is its own width and height over
+ * those — the half set is the same code.
+ */
+export function blitCell(g, page, G, cell, rect) {
+  const on = Math.min(G.perPage, G.n - Math.floor(cell / G.perPage) * G.perPage);
+  const cols = Math.min(G.cols, on);
+  const rows = Math.ceil(on / G.cols);
+  const cw = page.naturalWidth / cols;
+  const ch = page.naturalHeight / rows;
+  const j = cell % G.perPage;
+  g.drawImage(page, (j % G.cols) * cw, Math.floor(j / G.cols) * ch, cw, ch, ...rect);
+}

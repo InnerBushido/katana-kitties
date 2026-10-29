@@ -369,6 +369,13 @@ The same arrangement for the drawings. `npm run dev`, then **`/sprites.html`**
 - **Undo/redo** (Ctrl+Z / Ctrl+Y) with the last changes listed, a badge per tab
   for what is unsaved, and a Save that says how many changes it writes — it
   writes both tabs at once.
+- **Payne**: every one of her animation clips, and new ones made out of her
+  video takes — pick a take, set **from**/**to** on its frames, name it, and a
+  line's act list can use it by that name. Previews a clip alone, or a whole
+  intro line with its voice the way the scene plays it. It has its own Save,
+  which writes **`src/payneclips.json`**, and **Cut pages**, which runs
+  `payne-sheet.mjs --only=<the new clips>` for you; until then a new clip is
+  drawn off the take in orange. → [art.md](docs/notes/art.md)
 
 Save writes **`src/spritefix.json`** — overrides only: `poses` keyed by sheet
 (`ember/kiai`, so Storm and Blossom wear Ember's and Frost's fixes), `sheets`
@@ -388,6 +395,10 @@ which of the actor's cues** — to the frame. `M` drops a note there (`I`/`O` a
 range, `B` a box on the picture). Notes save to
 **`docs/reviews/<scene>/<video>.json`**, each with its place in the SCENE as
 well as the video's time, which is what a session reads to act on them.
+A fixed note is marked **processed** (`X`) and filed apart, still on the
+timeline; `X` again reopens it. **Bring notes from…** carries an older
+recording's notes onto a new one by line and word, so a re-recording after a
+pass opens with the old notes already in place to check.
 
 The words come from **`src/voicewords.json`**, measured off the shipped mp3s by
 `python tools/capture/voice-words.py payne_intro` (faster-whisper, local, free;

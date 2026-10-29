@@ -38,6 +38,7 @@ import { TEA_SHEET } from './systems/housing/teahouse.js';
 import { DOOR_MATS, DOOR_MAT_SHEET } from './systems/housing/catalog.js';
 import { ClipSprite, loadNinjaArt } from './systems/dream/ninjasprite.js';
 import { NINJA_ATLAS } from './systems/dream/ninjaclips.js';
+import { showPayne, payneDirty, payneAt } from './sprite-editor-payne.js';
 
 const $ = (id) => document.getElementById(id);
 const status = (t, warn = false) => { $('status').textContent = t; $('status').classList.toggle('warn', warn); };
@@ -913,7 +914,8 @@ function wire() {
   wireSheets();
   wireDrag();
   addEventListener('keydown', onKey);
-  addEventListener('beforeunload', (e) => { if (countOf(changes())) { e.preventDefault(); e.returnValue = ''; } });
+  $('tab-payne').onclick = () => { setPayne(true); ui.tab = 'payne'; keepUi(); };
+  addEventListener('beforeunload', (e) => { if (countOf(changes()) || payneDirty()) { e.preventDefault(); e.returnValue = ''; } });
 }
 
 function pickSeq(name) {
@@ -953,6 +955,7 @@ function step(d) {
 }
 
 function onKey(e) {
+  if (payneOn) return;   // its own keys: sprite-editor-payne.js
   const low = e.key.toLowerCase();
   const typing = e.target.matches?.('input[type=text], input[type=number], select');
   if ((e.ctrlKey || e.metaKey) && low === 's') { e.preventDefault(); save(); return; }
@@ -1120,7 +1123,25 @@ let shT = 0; // time inside the current step, or the turntable's angle
 let shPlay = true;
 let spinAngle = 0;
 
+/* THE PAYNE TAB IS ITS OWN PAGE inside this one (sprite-editor-payne.js): a
+   2D stage over the three.js one, its own save, its own keys. It has nothing
+   to share with a kitten's pose fix, so entering it hides this page's panel,
+   history and save rather than mixing two files' changes under one button. */
+let payneOn = false;
+function setPayne(show) {
+  payneOn = show;
+  showPayne(show);
+  $('tab-payne').classList.toggle('on', show);
+  $('tab-poses').classList.toggle('on', !show && !sheetMode);
+  $('tab-sheets').classList.toggle('on', !show && sheetMode);
+  for (const id of ['history', 'save', 'discard', 'status']) $(id).hidden = show;
+  $('poses').hidden = show || sheetMode;
+  $('sheets').hidden = show || !sheetMode;
+  $('cells').hidden = show || !sheetMode;
+}
+
 function setTab(sheets) {
+  if (payneOn) setPayne(false);
   if (sheets === sheetMode) return;
   sheetMode = sheets;
   $('tab-poses').classList.toggle('on', !sheets);
@@ -1663,6 +1684,8 @@ rebuild();
 $('cells').hidden = true;
 drawChrome();
 if (ui.tab === 'sheets') setTab(true);
+// the review page links a clip here as /sprites.html?payne=<clip>
+if (ui.tab === 'payne' || new URLSearchParams(location.search).has('payne')) setPayne(true);
 $('tab-poses').addEventListener('click', () => { ui.tab = 'poses'; keepUi(); });
 $('tab-sheets').addEventListener('click', () => { ui.tab = 'sheets'; keepUi(); });
 fetch('/__spritefix').then((r) => {
@@ -1671,6 +1694,6 @@ fetch('/__spritefix').then((r) => {
 requestAnimationFrame(render);
 /* For a console, and for a check driven from outside: one synchronous frame (a hidden tab draws none). */
 window.spriteEditor = {
-  A, B, draft, hist, changes, undo, redo, get sheet() { return curSheet; },
+  A, B, draft, hist, changes, undo, redo, get sheet() { return curSheet; }, payne: payneAt,
   frame() { placeCamera(); tick(0); drawGuides(); renderer.render(scene, cam); return $('readout').textContent; },
 };

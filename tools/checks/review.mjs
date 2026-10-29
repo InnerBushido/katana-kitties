@@ -15,7 +15,7 @@
    real numbers (13/13 lines at 0.858–0.929, false matches up to 0.623) are
    in sync.js beside MIN_SCORE.
 --------------------------------------------------------------------------- */
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { SR, syncLines, fillGaps, MIN_SCORE } from '../../src/review/sync.js';
 import { lineWords } from '../../src/review/scenes.js';
@@ -111,12 +111,18 @@ export async function reviewChecks({ ok }) {
   }).map((r) => r.voice);
   ok('...and every word of every line\'s SCRIPT gets a time, in order, inside its recording',
     bad.length === 0, bad.join(' ') || 'all 13');
-  /* ...and the letter alignment lands where a person measured: line 6 is one
-     of the two whose counts disagree, and its "Run" cue was set by ear. */
+  /* ...and the letter alignment lands on the MEASURED "Run": line 6 is one
+     of the two whose counts disagree, and the fraction that falls just short
+     of a word edge put it at the end of "yours" (6.04).
+     THE REFERENCE WAS THE SCENE'S CUE, 6.69, and that was whisper's start of
+     the word, not the sound's: the line is -41 to -49 dBFS from 6.50 to 7.03
+     and "Run" is said at 7.06, which is where voice-words.py now puts it
+     (Oct 2026, the quiet run that reaches the end of its scan). The cue is
+     0.37s early and is the scene's business, not this check's. */
   const run = lineWords(PAYNE_INTRO[5].text, WORDS.payne_intro_6).find((w) => /^run/i.test(w.w));
-  const runCue = PAYNE_INTRO[5].act.find(([c]) => c === 'count')[1];
-  ok('...and on a line whisper heard differently (line 6), "Run" still lands on its hand-measured cue',
-    run && Math.abs(run.a - runCue) <= 0.15, run ? `"Run" at ${run.a}, cue ${runCue}` : 'no "Run"');
+  const runAt = WORDS.payne_intro_6.words.find(([w]) => /^run/i.test(w))?.[1];
+  ok('...and on a line whisper heard differently (line 6), "Run" lands on the measured word, not at the end of "yours"',
+    run && Math.abs(run.a - runAt) <= 0.05 && run.a > 6.5, run ? `"Run" at ${run.a}, measured ${runAt}` : 'no "Run"');
   /* Whisper folds a pause into the word after it, which put line 11's
      "Second" at 2.60 — in the silence, 0.86s before it is said.
      voice-words.py moves a start past a quiet run of 0.12s inside the word;
@@ -140,4 +146,24 @@ export async function reviewChecks({ ok }) {
     !/input\s*:/.test(vite) && /reviewServer/.test(vite) && /name: 'katana-review',\s*configureServer/.test(vite));
   ok('...and it serves videos only from Design Ideas/ and out/review/, never public/ (the trailer is the only shipped video)',
     /REVIEW_ROOTS = \['Design Ideas', 'out\/review'\]/.test(vite));
+  /* The list and the server must agree on what a path means. They did not:
+     the list wrote paths relative to each root's PARENT, which is the repo
+     for 'Design Ideas' and 'out/' for 'out/review', so every recording put
+     in out/review/ was listed as 'review/x.mp4', 404'd, and the sync said
+     "Unable to decode audio data" about the 404 page. A dropped-in file is
+     made here so the check does not depend on what happens to be lying in
+     out/review/. */
+  {
+    const { listVideos, videoFile } = await import('../../vite.config.js');
+    const dir = new URL('../../out/review/', import.meta.url);
+    mkdirSync(dir, { recursive: true });
+    const probe = new URL('__check_probe.mp4', dir);
+    writeFileSync(probe, '');
+    try {
+      const vids = listVideos();
+      const mine = vids.find((v) => v.name === '__check_probe.mp4');
+      ok('...and every recording it lists is one it will serve, out/review/ included (a listed path once 404\'d)',
+        !!mine && mine.p === 'out/review/__check_probe.mp4' && vids.every((v) => videoFile(v.p)));
+    } finally { rmSync(probe, { force: true }); }
+  }
 }

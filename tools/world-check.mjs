@@ -26248,12 +26248,31 @@ console.log('\n--- one press is not enough, and one player drives ---');
     ok('...and the dragons they ride arrive with them, at the same strength',
       mounts.length === 2 && mounts.every((d) => d.riding && d.bb.visible
         && Math.abs(d.bb.mat.opacity - d.riding.mini.bb.mat.opacity) < 1e-9));
-    const before = kits.map((k) => k.mini.bb.position.clone());
+    /* WAS A COIN FLIP: 1 red in 6 runs, 0.153 against a bar of 0.15. It
+       measured how far each kitten moved in a frame, and a kitten stands on an
+       island that is still SHAKING out of the drift — (1 - dk) * QUAKE at 31
+       and 27 rad/s, which is up to ~0.11 a frame by itself — on an island
+       `_pickIsle` chose with Math.random, so the shake's phase was a dice roll.
+       What the line is about is whether she set off from THE SPOT SHE STOOD ON
+       or was re-seeded somewhere new. So: the same `from`, and her offset from
+       that spot (which moves with its island) no more than her own first step
+       along the arc, `u = max(0, k.k)` — a bound read off her own progress,
+       not a number tuned to a spread. A re-seed fails both halves by units. */
+    const before = kits.map((k) => ({ from: k.from, off: k.mini.bb.position.clone().sub(S._resolve(k.from, v)) }));
     S.cue('isles-cross');
     S.update(1 / 60, cam);
-    const jump = Math.max(...kits.map((k, i) => k.mini.bb.position.distanceTo(before[i])));
+    const over = kits.map((k, i) => {
+      if (k.from !== before[i].from) return Infinity;
+      const a = S._resolve(k.from, v).clone();
+      const b = S._resolve(k.to, new THREE.Vector3());
+      const u = Math.max(0, k.k);
+      const step = u * a.distanceTo(b) + Math.sin(u * Math.PI) * 1.5;
+      return k.mini.bb.position.clone().sub(a).distanceTo(before[i].off) - step;
+    });
+    const worst = Math.max(...over);
     ok('...and "You crossed" sets off from there, not from a new spot',
-      jump < 0.15, `${jump.toFixed(3)} units in the first frame`);
+      before.every((b) => b.off.length() < 1e-6) && worst < 1e-6,
+      `stood ${Math.max(...before.map((b) => b.off.length())).toExponential(1)} off her spot; first frame ${worst.toExponential(1)} past her own step`);
     for (let i = 0; i < 40; i++) S.update(1 / 60, cam);
     ok('...while the six on the islands stay on their perches',
       S.drags.filter((d) => !d.mount && d.host).every((d) => d.bb.visible));

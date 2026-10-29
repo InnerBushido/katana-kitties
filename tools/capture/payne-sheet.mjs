@@ -1,6 +1,14 @@
 /* ---------------------------------------------------------------------------
    PAYNE'S INTRODUCTION, CUT OUT OF SIX VIDEOS.
-   Run: node tools/capture/payne-sheet.mjs
+   Run: node tools/capture/payne-sheet.mjs                 every clip (~8 min)
+        node tools/capture/payne-sheet.mjs --only=a,b      just those clips
+
+   `--only` IS WHAT THE SPRITE EDITOR'S "Cut pages" BUTTON RUNS, for the clips
+   it made or changed: the rest keep their pages and their payneframes.js
+   rows, read back from the file this tool wrote last time. A clip no longer
+   in src/payneclips.json loses both either way. Each row records the
+   `take/from/to/step` it was cut from (`src`), which is how the editor tells
+   a clip whose pages are stale from one that is cut.
 
    The tea ceremony's route (tools/capture/tea-sheet.mjs) at four times the
    size: a video model draws one performance whose frames agree with each
@@ -34,6 +42,12 @@ import {
   INTRO_TAKES, TAKE_FROM, INTRO_CLIPS, INTRO_COLS, PAGE_MAX, INTRO_UNIT_PX, INTRO_UNIT_PX_HALF,
   clipFrames, pagePath,
 } from '../../src/systems/payneclips.js';
+import { INTRO_GEO as WAS } from '../../src/systems/payneframes.js';
+
+const ONLY = process.argv.find((a) => a.startsWith('--only='))?.slice(7).split(',').filter(Boolean) ?? null;
+for (const n of ONLY ?? []) if (!INTRO_CLIPS[n]) throw new Error(`--only: no clip "${n}" in src/payneclips.json`);
+/** The clips this run cuts, in the table's order. */
+const CUT = Object.entries(INTRO_CLIPS).filter(([n]) => !ONLY || ONLY.includes(n));
 
 const OUT = 'out/payne';
 const SHIP = 'public';
@@ -159,7 +173,7 @@ for (const take of Object.keys(INTRO_TAKES)) {
    keeps her planted across a cut (payneframes.js). */
 const M = 8;
 const geo = {};
-for (const [name, clip] of Object.entries(INTRO_CLIPS)) {
+for (const [name, clip] of CUT) {
   const { w: FW, h: FH } = frame(clip.take, 0);
   let x0 = Infinity, y0 = Infinity, x1 = -1, y1 = -1;
   for (const n of clipFrames(clip)) {
@@ -208,12 +222,21 @@ function proof(d, w, h) {
 const kb = (n) => `${(n / 1024).toFixed(0)}K`;
 const r4 = (v) => +v.toFixed(4);
 // a re-cut must not leave pages of a clip that no longer exists, or of a page count that shrank
-rmSync(`${SHIP}/sprites/payne/intro`, { recursive: true, force: true });
-mkdirSync(`${SHIP}/sprites/payne/intro/half`, { recursive: true });
+const INTRO_DIR = `${SHIP}/sprites/payne/intro`;
+if (!ONLY) rmSync(INTRO_DIR, { recursive: true, force: true });
+else {
+  for (const dir of [INTRO_DIR, `${INTRO_DIR}/half`]) {
+    for (const f of existsSync(dir) ? readdirSync(dir) : []) {
+      const m = /^(.+)_\d+\.webp$/.exec(f);
+      if (m && (ONLY.includes(m[1]) || !INTRO_CLIPS[m[1]])) rmSync(`${dir}/${f}`);
+    }
+  }
+}
+mkdirSync(`${INTRO_DIR}/half`, { recursive: true });
 let total = 0, totalHalf = 0, cells = 0;
-const out = {};
+const cutNow = {};
 
-for (const [name, clip] of Object.entries(INTRO_CLIPS)) {
+for (const [name, clip] of CUT) {
   const picks = clipFrames(clip);
   const G = geo[name];
   cells += picks.length;
@@ -259,10 +282,20 @@ for (const [name, clip] of Object.entries(INTRO_CLIPS)) {
       if (tag === 'full') writeFileSync(`${OUT}/${name}_${k}.png`, writePNG(W, H, proof(page, W, H)));
     }
   }
-  out[name] = { n: picks.length, cols, perPage, pages, x0: r4(G.x0), x1: r4(G.x1), y0: r4(G.y0), y1: r4(G.y1) };
+  cutNow[name] = {
+    n: picks.length, cols, perPage, pages, x0: r4(G.x0), x1: r4(G.x1), y0: r4(G.y0), y1: r4(G.y1),
+    src: `${clip.take}/${clip.from}/${clip.to}/${clip.step}`,
+  };
   console.log(`${name.padEnd(11)} ${clip.take.padEnd(6)} ${clip.from}-${clip.to}/${clip.step}  ${String(picks.length).padStart(2)} cells  ${cw}x${ch}  ${pages}p  y ${G.y0.toFixed(2)}..${G.y1.toFixed(2)}`);
 }
 console.log(`${cells} cells: ${kb(total)} full, ${kb(totalHalf)} half`);
+// every clip in the table's order: this run's rows, and with --only the last run's for the rest
+const out = {};
+for (const name of Object.keys(INTRO_CLIPS)) {
+  const row = cutNow[name] ?? WAS[name];
+  if (row) out[name] = row;
+  else console.warn(`  ! ${name} has never been cut: run without --only, or --only=${name}`);
+}
 
 /* --- the market's own two drawings, in the same units ------------------------
    What the stage draws when a page has not arrived (or the folder is gone):

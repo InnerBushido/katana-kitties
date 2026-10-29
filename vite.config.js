@@ -2,6 +2,7 @@ import { defineConfig } from 'vite';
 import { writeFileSync, readFileSync, readdirSync, openSync, readSync, closeSync, statSync, existsSync, mkdirSync, createReadStream } from 'node:fs';
 import { resolve as resolvePath, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
 
 /* ---------------------------------------------------------------------------
    Vite config — one job: let the dev server be told which port to use.
@@ -199,7 +200,7 @@ const spriteServer = {
 /* ---------------------------------------------------------------------------
    The cutscene review page — `review.html`, `src/review/`.
 
-   DEV ONLY, LIKE THE OTHER TWO: `configureServer`, never built. Four routes:
+   DEV ONLY, LIKE THE OTHER TWO: `configureServer`, never built. Five routes:
 
    GET  /__review/videos       every video under `Design Ideas/` and
                                `out/review/`, newest first. Those are where
@@ -212,6 +213,8 @@ const spriteServer = {
                                start and the scrubber does nothing. Only a
                                path that resolves inside one of those two
                                folders is served.
+   GET  /__review/reviews?scene=        every saved review of a scene, for
+                               bringing notes onto a new recording of it
    GET  /__review/notes?scene=&video=   the saved review, or 404
    POST /__review/notes        writes docs/reviews/<scene>/<video>.json,
                                which is where a session reads it from. The
@@ -223,7 +226,7 @@ const VIDEO_EXT = /\.(mp4|m4v|webm|mov|mkv)$/i;
 const REVIEWS = fileURLToPath(new URL('./docs/reviews/', import.meta.url));
 const slug = (s) => String(s ?? '').replace(/\.[a-z0-9]+$/i, '').replace(/[^A-Za-z0-9_.-]+/g, '_').slice(0, 120);
 
-function listVideos() {
+export function listVideos() {
   const out = [];
   const walk = (dir, root) => {
     let ents = [];
@@ -233,7 +236,11 @@ function listVideos() {
       if (e.isDirectory()) walk(p, root);
       else if (VIDEO_EXT.test(e.name)) {
         const st = statSync(p);
-        out.push({ p: relative(resolvePath(root, '..'), p).replace(/\\/g, '/'), name: e.name, size: st.size, mtime: st.mtimeMs });
+        // relative to the REPO, which is what videoFile resolves against. It was
+        // relative to the root's parent: right for 'Design Ideas', and for
+        // 'out/review' it listed 'review/x.mp4', which 404'd, and the sync then
+        // reported the 404 page as "Unable to decode audio data"
+        out.push({ p: relative(fileURLToPath(new URL('.', import.meta.url)), p).replace(/\\/g, '/'), name: e.name, size: st.size, mtime: st.mtimeMs });
       }
     }
   };
@@ -241,10 +248,26 @@ function listVideos() {
   return out.sort((a, b) => b.mtime - a.mtime);
 }
 
-function videoFile(p) {
+export function videoFile(p) {
   const base = fileURLToPath(new URL('.', import.meta.url));
   const abs = resolvePath(base, String(p ?? ''));
   return REVIEW_ROOTS.some((r) => abs.startsWith(r + sep)) && VIDEO_EXT.test(abs) && existsSync(abs) ? abs : null;
+}
+
+/** A video, WITH RANGE REQUESTS: without them a <video> cannot seek. */
+function serveVideo(req, res, f) {
+  const size = statSync(f).size;
+  const type = /\.webm$/i.test(f) ? 'video/webm' : /\.mov$/i.test(f) ? 'video/quicktime' : 'video/mp4';
+  const m = /bytes=(\d*)-(\d*)/.exec(req.headers.range ?? '');
+  res.setHeader('accept-ranges', 'bytes');
+  res.setHeader('content-type', type);
+  if (!m) { res.setHeader('content-length', size); createReadStream(f).pipe(res); return; }
+  const start = m[1] ? Number(m[1]) : Math.max(0, size - Number(m[2]));
+  const end = m[1] && m[2] ? Math.min(Number(m[2]), size - 1) : size - 1;
+  res.statusCode = 206;
+  res.setHeader('content-range', `bytes ${start}-${end}/${size}`);
+  res.setHeader('content-length', end - start + 1);
+  createReadStream(f, { start, end }).pipe(res);
 }
 
 const reviewServer = {
@@ -257,19 +280,19 @@ const reviewServer = {
       if (req.method === 'GET' && url.pathname === '/video') {
         const f = videoFile(url.searchParams.get('p'));
         if (!f) return json({ error: 'not a video under Design Ideas/ or out/review/' }, 404);
-        const size = statSync(f).size;
-        const type = /\.webm$/i.test(f) ? 'video/webm' : /\.mov$/i.test(f) ? 'video/quicktime' : 'video/mp4';
-        const m = /bytes=(\d*)-(\d*)/.exec(req.headers.range ?? '');
-        res.setHeader('accept-ranges', 'bytes');
-        res.setHeader('content-type', type);
-        if (!m) { res.setHeader('content-length', size); createReadStream(f).pipe(res); return; }
-        const start = m[1] ? Number(m[1]) : Math.max(0, size - Number(m[2]));
-        const end = m[1] && m[2] ? Math.min(Number(m[2]), size - 1) : size - 1;
-        res.statusCode = 206;
-        res.setHeader('content-range', `bytes ${start}-${end}/${size}`);
-        res.setHeader('content-length', end - start + 1);
-        createReadStream(f, { start, end }).pipe(res);
-        return;
+        return serveVideo(req, res, f);
+      }
+      // every saved review of one scene: what a new recording can bring notes across from
+      if (req.method === 'GET' && url.pathname === '/reviews') {
+        const dir = resolvePath(REVIEWS, slug(url.searchParams.get('scene')));
+        let files = [];
+        try { files = readdirSync(dir).filter((f) => f.endsWith('.json')); } catch { /* none yet */ }
+        return json(files.map((f) => {
+          try {
+            const r = JSON.parse(readFileSync(resolvePath(dir, f), 'utf8'));
+            return { video: r.video?.name, saved: r.saved, notes: r.notes?.length ?? 0, done: (r.notes ?? []).filter((n) => n.done).length };
+          } catch { return null; }
+        }).filter(Boolean));
       }
       if (url.pathname === '/notes') {
         if (req.method === 'GET') {
@@ -301,8 +324,100 @@ const reviewServer = {
   },
 };
 
+/* ---------------------------------------------------------------------------
+   Payne's animation clips — the sprite editor's PAYNE tab, src/payneclips.json.
+
+   Richard, Oct 2026: "section off and create my own sprite animations clips
+   in the Sprite Editor that I can save and can reference, by name or
+   what-not, so that it can be used in the cutscene editor." DEV ONLY, like
+   the rest of this file's servers:
+
+   GET  /__payne/take?p=     a take (docs/art-masters/video/payne_*.mp4),
+                             with range requests, for scrubbing. Nothing else
+                             in docs/ is served by this.
+   POST /__payne/clips       rewrites src/payneclips.json. CHECKED WHOLE AND
+                             REFUSED WHOLE: one bad clip and nothing is
+                             written, with the reason — a save that quietly
+                             dropped a clip would break a scene that names it.
+   POST /__payne/cut?only=   runs tools/capture/payne-sheet.mjs --only=...,
+                             one at a time, and answers with its log.
+--------------------------------------------------------------------------- */
+const PAYNE_FILE = new URL('./src/payneclips.json', import.meta.url);
+const TAKES_DIR = fileURLToPath(new URL('./docs/art-masters/video/', import.meta.url));
+const takeNames = () => readdirSync(TAKES_DIR).map((f) => /^payne_([a-z]+)_[0-9a-f]+\.mp4$/.exec(f)?.[1]).filter(Boolean);
+
+export function cleanPayneClips(o, takes = takeNames()) {
+  const out = {};
+  const bad = [];
+  for (const [name, c] of Object.entries(o ?? {})) {
+    if (!/^[a-z][A-Za-z0-9]{0,31}$/.test(name)) { bad.push(`"${name}" is not a name (a letter, then letters or digits)`); continue; }
+    const why = !takes.includes(c?.take) ? `no take "${c?.take}"`
+      : ![c.from, c.to, c.step].every(Number.isInteger) ? 'from, to and step must be whole frame numbers'
+      : c.from < 0 || c.to < c.from || c.to > 999 ? `frames ${c.from}-${c.to} run backwards or off the take`
+      : c.step < 1 || c.step > 12 ? `step ${c.step} is not 1 to 12`
+      : c.apex != null && !(Number.isFinite(c.apex) && c.apex >= 0 && c.apex <= 5) ? 'apex must be 0 to 5 seconds'
+      : null;
+    if (why) { bad.push(`${name}: ${why}`); continue; }
+    out[name] = {
+      take: c.take, from: c.from, to: c.to, step: c.step,
+      ...(c.back ? { back: true, apex: c.apex ?? 0 } : {}),
+      note: String(c.note ?? '').slice(0, 400),
+    };
+  }
+  return { clips: out, bad };
+}
+
+let payneCutting = null;
+const payneServer = {
+  name: 'katana-payne',
+  configureServer(server) {
+    server.middlewares.use('/__payne', (req, res) => {
+      const url = new URL(req.url ?? '/', 'http://x');
+      const json = (v, code = 200) => { res.statusCode = code; res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(v)); };
+      if (req.method === 'GET' && url.pathname === '/take') {
+        const name = String(url.searchParams.get('p') ?? '').split('/').pop();
+        const f = /^payne_[a-z]+_[0-9a-f]+\.mp4$/.test(name) ? resolvePath(TAKES_DIR, name) : null;
+        if (!f || !existsSync(f)) return json({ error: 'not one of Payne\'s takes' }, 404);
+        return serveVideo(req, res, f);
+      }
+      if (req.method === 'POST' && url.pathname === '/clips') {
+        let body = '';
+        req.on('data', (c) => { body += c; });
+        req.on('end', () => {
+          let parsed;
+          try { parsed = JSON.parse(body); } catch { return json({ error: 'not JSON — nothing written' }, 400); }
+          const { clips, bad } = cleanPayneClips(parsed);
+          if (bad.length) return json({ error: `nothing written: ${bad.join('; ')}` }, 400);
+          // one clip per line, so a diff of one clip is one line
+          // key by key, not a regex over the JSON, which would also space out a `":` inside a note
+          const one = (v) => `{ ${Object.entries(v).map(([k, x]) => `${JSON.stringify(k)}: ${JSON.stringify(x)}`).join(', ')} }`;
+          writeFileSync(PAYNE_FILE, `{\n${Object.entries(clips).map(([k, v]) => `  ${JSON.stringify(k)}: ${one(v)}`).join(',\n')}\n}\n`);
+          json({ ok: true, clips });
+        });
+        return;
+      }
+      if (req.method === 'POST' && url.pathname === '/cut') {
+        if (payneCutting) return json({ error: `already cutting ${payneCutting} — wait for it to finish` }, 409);
+        const have = JSON.parse(readFileSync(PAYNE_FILE, 'utf8'));
+        const only = String(url.searchParams.get('only') ?? '').split(',').filter(Boolean);
+        const missing = only.filter((n) => !have[n]);
+        if (!only.length || missing.length) return json({ error: missing.length ? `not saved yet: ${missing.join(', ')} — save the clips first` : 'which clips?' }, 400);
+        payneCutting = only.join(', ');
+        const log = [];
+        const p = spawn(process.execPath, ['tools/capture/payne-sheet.mjs', `--only=${only.join(',')}`], { cwd: fileURLToPath(new URL('.', import.meta.url)) });
+        p.stdout.on('data', (d) => log.push(String(d)));
+        p.stderr.on('data', (d) => log.push(String(d)));
+        p.on('close', (code) => { payneCutting = null; json({ ok: code === 0, code, log: log.join('') }, code === 0 ? 200 : 500); });
+        p.on('error', (e) => { payneCutting = null; json({ error: e.message }, 500); });
+        return;
+      }
+      json({ error: 'unknown route' }, 404);
+    });
+  },
+};
+
 export default defineConfig({
-  plugins: [tuningServer, spriteServer, reviewServer],
+  plugins: [tuningServer, spriteServer, reviewServer, payneServer],
   /* THE REPO LIVES IN ONEDRIVE, and OneDrive turns node_modules into cloud
      files: every one a reparse point (tag 0x9000e01a), pinned or not. Vite 8
      resolves with Rolldown's resolver, which follows symlinks by default and

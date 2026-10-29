@@ -648,9 +648,25 @@ cautious tier.
 
   The masters are in `docs/art-masters/video/` and never ship.
 - **The cut** (`tools/capture/payne-sheet.mjs`) reads `INTRO_CLIPS` in
-  `src/systems/payneclips.js`, the same table the game plays from: sixteen
+  `src/systems/payneclips.js`, the same table the game plays from: nineteen
   clips at every third frame, eight a second, "on threes". **No clip loops or
   pingpongs** (Richard: "it looks strange"); each plays once and holds.
+- **The clips are data, in `src/payneclips.json`, and are edited in the sprite
+  editor's PAYNE tab** (`/sprites.html`, `src/sprite-editor-payne.js`).
+  Richard, Oct 2026: "section off and create my own sprite animation clips in
+  the Sprite Editor ... so that it can be used in the cutscene editor". A clip
+  is `{ take, from, to, step, back?, apex?, note? }` — source frames of one
+  take — and its NAME is what a line's act list and the review page's readout
+  both say, so the three cannot disagree. The tab shows the take frame by
+  frame beside the clip as the game draws it, previews a whole line with its
+  voice through the scene's own `actFrame`, and saves through
+  `POST /__payne/clips`. A clip the pages do not have yet is drawn straight
+  off the take in orange until **Cut pages** runs
+  `payne-sheet.mjs --only=<names>` (`POST /__payne/cut`), which re-cuts just
+  those and keeps every other row of payneframes.js. Each row records its
+  `src` (`take/from/to/step`), which is how the tab tells a cut clip from a
+  stale one. A clip a line uses cannot be renamed or deleted, and the save
+  refuses the whole file if any clip is bad, saying why.
 - **One scale per take, one crop per clip.** Each take's first frame is the
   approved drawing it started from, so its ink height is one unit of her
   height and its feet are the origin. Every clip is then cropped to its own

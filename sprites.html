@@ -28,8 +28,11 @@
 * { box-sizing: border-box; }
 body { margin: 0; font: 14px/1.35 system-ui, sans-serif; color: var(--ink); background: var(--paper); display: grid; grid-template-columns: 340px 1fr; height: 100vh; overflow: hidden; }
 aside { overflow-y: auto; border-right: 2px solid var(--line); padding: 10px 12px 40px; }
-main { position: relative; display: grid; grid-template-rows: 1fr auto; min-width: 0; }
-#stage { width: 100%; height: 100%; display: block; background: #2a2230; }
+/* minmax(0, 1fr), NOT 1fr: a bare 1fr row is at least its content, and the content is a canvas whose
+   pixel size the renderer sets FROM its own client size — so it could grow and never shrink (main was
+   measured 2791px tall in an 860px window after one resize). */
+main { position: relative; display: grid; grid-template-rows: minmax(0, 1fr) auto; min-width: 0; min-height: 0; overflow: hidden; }
+#stage { width: 100%; height: 100%; display: block; background: #2a2230; min-height: 0; }
 h1 { font-size: 18px; margin: 0 0 6px; }
 h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); margin: 14px 0 6px; }
 .row { display: flex; gap: 6px; align-items: center; margin: 4px 0; flex-wrap: wrap; }
@@ -65,6 +68,14 @@ kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-
 #history li .n { min-width: 1.6em; text-align: right; opacity: .7; }
 #discard-ask { display: none; }
 #discard-ask.open { display: flex; }
+#payne-stage { position: absolute; inset: 0; width: 100%; height: 100%; display: block; z-index: 2; }
+.pn-row { display: grid; grid-template-columns: 1fr auto; gap: 0 6px; padding: 3px 6px; border-radius: 4px; cursor: pointer; border: 1px solid transparent; }
+.pn-row:hover { background: #ffe7b0; }
+.pn-row.on { border-color: var(--accent); background: #fff2d4; }
+.pn-st { font-size: 11px; justify-self: end; }
+.pn-st.cut { color: #3a7a3a; } .pn-st.stale, .pn-st.new { color: var(--warn); font-weight: 700; }
+#pn-list { max-height: 34vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 6px; background: #fffaf0; }
+#pn-status.warn { color: var(--warn); font-weight: 600; }
 #readout { position: absolute; left: 10px; top: 10px; color: #fff6de; font: 12px/1.4 ui-monospace, monospace; background: rgba(20,16,26,.7); padding: 6px 8px; border-radius: 6px; pointer-events: none; white-space: pre; }
 #cells { display: flex; flex-wrap: wrap; gap: 3px; padding: 6px; background: #f3e6c8; border-top: 2px solid var(--line); max-height: 34vh; overflow: auto; }
 .cell { position: relative; width: 78px; height: 92px; background: repeating-conic-gradient(#ddd 0 25%, #fff 0 50%) 0 0/12px 12px; border: 2px solid transparent; cursor: pointer; display: flex; flex-direction: column; }
@@ -83,7 +94,7 @@ kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-
 <body>
 <aside>
   <h1>剣 Sprite editor</h1>
-  <div class="tabs"><button id="tab-poses" class="on">Poses<span id="badge-poses" class="badge" hidden></span></button><button id="tab-sheets">Sheets<span id="badge-sheets" class="badge" hidden></span></button></div>
+  <div class="tabs"><button id="tab-poses" class="on">Poses<span id="badge-poses" class="badge" hidden></span></button><button id="tab-sheets">Sheets<span id="badge-sheets" class="badge" hidden></span></button><button id="tab-payne" title="Payne's animation clips: see every one, make new ones out of her takes">Payne</button></div>
 
   <div id="history">
     <div class="row" style="margin:0"><button id="undo" title="Undo (Ctrl+Z)">↶ undo</button><button id="redo" title="Redo (Ctrl+Y or Ctrl+Shift+Z)">↷ redo</button><span id="dirty" class="tiny"></span></div>
@@ -154,6 +165,30 @@ kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-
     <div id="sh-mode-note" class="tiny"></div>
   </section>
 
+  <section id="payne" hidden>
+    <h2>Clips <span id="pn-count" class="tiny"></span></h2>
+    <div id="pn-list"></div>
+    <div class="row"><button id="pn-new" title="A new clip starting at the playhead's frame">＋ new clip</button><button id="pn-dup">duplicate</button></div>
+    <h2>Clip</h2>
+    <div class="row"><label>name</label><input id="pn-name" type="text" title="What a line's act list calls it, like pointPose"></div>
+    <div class="row"><label>take</label><select id="pn-take"></select></div>
+    <div class="row"><label>frames</label><input id="pn-from" type="number" min="0"><span>to</span><input id="pn-to" type="number" min="0"></div>
+    <div class="row"><label>every</label><input id="pn-step" type="number" min="1" max="12" title="3 is 8fps off a 24fps take: real time, on threes"><span class="tiny">frames (3 = real time at 8fps)</span></div>
+    <div class="row"><button id="pn-set-from" title="[">[ from the playhead</button><button id="pn-set-to" title="]">to the playhead ]</button></div>
+    <div class="row"><label class="inl"><input id="pn-back" type="checkbox"> there and back</label><label class="inl">hold</label><input id="pn-apex" type="number" min="0" max="5" step="0.05"><span class="tiny">s at the far end</span></div>
+    <div class="row"><input id="pn-note" type="text" placeholder="what it is for, and whose note asked for it"></div>
+    <div id="pn-info" class="tiny"></div>
+    <div class="row"><button id="pn-revert" title="Put this clip back to what src/payneclips.json has">revert to saved</button><button id="pn-del">delete…</button></div>
+    <div class="row" id="pn-del-ask" hidden><span class="note" id="pn-del-q"></span><button id="pn-del-no">no, keep it</button><button id="pn-del-yes">yes, delete it</button></div>
+    <h2>Preview</h2>
+    <div class="row"><select id="pn-what" title="A clip on its own, or a whole line of the intro the way the game plays it, with its voice"></select></div>
+    <div class="row"><button id="pn-play">▶ play</button><label class="inl">speed</label><select id="pn-rate"><option>0.25</option><option>0.5</option><option selected>1</option></select><label class="inl"><input id="pn-loop" type="checkbox" checked> loop</label></div>
+    <div class="tiny">Left: the take at the playhead. Right: what plays, drawn the game's way — off the cut pages, or off the take (in orange) until it is cut. Strip: click a frame; <kbd>Shift</kbd>-click sets <b>from</b>, <kbd>Ctrl</kbd>-click sets <b>to</b>. Keys: <kbd>,</kbd> <kbd>.</kbd> a frame (<kbd>Shift</kbd>: a step), <kbd>[</kbd> <kbd>]</kbd> from / to, <kbd>Space</kbd> play.</div>
+    <button class="save" id="pn-save" disabled>Nothing to save</button>
+    <div class="row"><button id="pn-cut" disabled>✂ Every clip is cut</button></div>
+    <div id="pn-status" class="tiny"></div>
+  </section>
+
   <button class="save" id="save" disabled>Nothing to save</button>
   <div class="row"><button id="discard" disabled>discard changes…</button></div>
   <div class="row" id="discard-ask"><span class="note" id="discard-q"></span><button id="discard-no">no, keep editing</button><button id="discard-yes">yes, throw them away</button></div>
@@ -161,6 +196,7 @@ kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-
 </aside>
 <main>
   <canvas id="stage"></canvas>
+  <canvas id="payne-stage" hidden></canvas>
   <div id="readout"></div>
   <div id="cells"></div>
 </main>

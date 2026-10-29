@@ -40,7 +40,7 @@
    island it furnishes, the stars) goes in `stop`, which the skip runs too.
 --------------------------------------------------------------------------- */
 import * as THREE from 'three';
-import { INTRO_CLIPS, INTRO_FPS, TAKE_FROM, clipFrames, pagePath } from './payneclips.js';
+import { INTRO_CLIPS, TAKE_FROM, clipRun, pagePath, blitCell } from './payneclips.js';
 import { INTRO_GEO, INTRO_REST, INTRO_STAGE } from './payneframes.js';
 import { IntroSet } from './payneset.js';
 
@@ -54,23 +54,54 @@ import { IntroSet } from './payneset.js';
  * holds its last frame until the next entry. `from`/`to` are cell indices,
  * for playing part of a clip or playing it backwards (`mask` backwards is
  * the helmet coming OFF); `rate` speeds a clip up.
- * The `at`s are WORDS, measured — faster-whisper large-v3 word timestamps
- * (whose starts run early) checked against silencedetect -32dB/0.12s, which
- * wins where they disagree. The word each cue is on is in the comment beside
- * it, so a re-recorded line can be re-cued by ear.
+ * The `at`s are WORDS, measured — src/voicewords.json, faster-whisper's word
+ * times moved onto the sound (tools/capture/voice-words.py). The word each
+ * cue is on is in the comment beside it, so a re-recorded line can be re-cued
+ * off the review page (/review.html), which shows where every word now falls.
+ * An `at` may run past the voice into the half second every line is given,
+ * or below zero: line 3's last move starts after "Hello!" and line 4 carries
+ * it on from where it will have got to.
+ *
+ * RICHARD'S FIRST REVIEW, Oct 2026 (docs/reviews/payne-intro/): lines 1-4 are
+ * re-cued off his notes on the recording, which are quoted beside them.
  */
 const P = (n, text, act, extra = {}) => ({ who: 'payne', voice: `payne_intro_${n}`, text, shot: `l${n}`, act, ...extra });
 
 export const PAYNE_INTRO = [
+  /* "The Haha animation should start about 0.4s earlier" (1.34 -> 0.94), one
+     bounce and not three (payneclips.json `haha`); "After Haha immediately go
+     to RestMasked and hold"; "for the kidding voice ... the Shrug animation,
+     just part of it, from about the 1s - 3s mark ... ping-pong ... so that it
+     ends at RestMasked like we started" (`kidding`, there and back at 1.7x:
+     2.6s: home at 4.714, so restMasked takes over at 4.75 and never cuts
+     away from the shrug's last cell but one); and into the beckon on a hard
+     cut. */
   P(1, "Halt, traveller! ...Ha, kidding. Nobody ever halts. Come closer — this bit's important.",
-    [['halt', 0], ['haha', 1.34 /* Ha, */], ['beckon', 4.94 /* Come */]]),
-  // Her hands go up to the helmet on "a face", and it is off by "Fine!".
-  P(2, "You can't trust a face you can't see, right? Fine. Fine!",
-    [['restMasked', 0], ['mask', 0.25 /* trust */, 40, 0, 1.33]]),
+    [['halt', 0], ['haha', 0.94 /* Ha, — the laugh lands on it */], ['restMasked', 1.82 /* Ha, — the bounce done */],
+      ['kidding', 2.11 /* kidding */, null, null, 1.7], ['restMasked', 4.75 /* halts */], ['beckon', 4.94 /* Come */]]),
+  /* The face comes off AFTER "Fine." — "This is where we should start the
+     face reveal, after she says fine. This is about 1.4s later" — so the
+     unmask starts 1.36s later than it did (0.25 -> 1.61), and the faceplate
+     clears (cell 21, the first under MASK_ON: 19 cells at 1.33x = 1.79s) at
+     3.40, after the word (2.85-3.19). His two notes put the old reveal at
+     +1.90 and the new one at +3.35. "Let's
+     remove this 2nd Fine sentence": the recording is the same take cut at
+     3.40, in the silence after the first, so it is still her one read. The
+     unmask runs to 5.37, so the line HOLDS until it is done and "Ta-daa!"
+     starts on the end of it: "We will likely want to delay the next tadaa
+     part to start about that much later as well". */
+  P(2, "You can't trust a face you can't see, right? Fine.",
+    [['restMasked', 0], ['mask', 1.61 /* right? — the hands go up */, 40, 0, 1.33]], { hold: 1.6 }),
+  /* "Let's hard transition to a talking animation here like payne_wag has at
+     the first 2 seconds" (`wagTalk`); the wave moved 0.15 earlier so its
+     mouth starts ON "Hello!" (it opened 0.75s in); and after it, "start the
+     PointUp animation here, but using payne_point and starting at about the
+     1s mark so that she strikes a pose" (`pointPose`), which line 4 carries. */
   P(3, 'Ta-daa! Payne. Goblin. Professional helper. Hello!',
-    [['tadaa', 0], ['thumb', 1.0 /* Payne. — once the ta-daa has landed */], ['wave', 3.8 /* Hello! */]]),
+    [['tadaa', 0], ['thumb', 1.0 /* Payne. — once the ta-daa has landed */], ['wagTalk', 2.76 /* Professional */],
+      ['wave', 3.65 /* Hello! */], ['pointPose', 5.45 /* Hello! — after it */]]),
   P(4, 'Look up. These islands used to be ONE world. Then it got too tidy. Too still. And everything fell asleep — even the magic.',
-    [['pointUp', 0, 2, 24], ['talk', 8.0 /* And everything */]]),
+    [['pointPose', -0.3 /* Look — carried on from line 3 */], ['talk', 8.0 /* And everything */]]),
   P(5, "Every barrel, every lantern, every cane of bamboo is holding a tiny bit of sleeping power. Knock it over and — pop! — it's out.",
     [['restHeld', 0], ['count', 3.96 /* is holding */], ['laugh', 8.14 /* pop */]]),
   P(6, "That power is kotodama. Word-spirits. Catch them and they're yours: run faster, jump higher, cut further.",
@@ -87,9 +118,15 @@ export const PAYNE_INTRO = [
     [['restHeld', 0], ['thumb', 3.46 /* Second */]]),
   /* "Me?" is a thumb at herself; the two "too much"es are counted off; and
      the helmet goes back on as the lens leaves the ground, done before the
-     line is (40 cells at 1.4x is 3.6s, from 7.6 to 11.2 of 11.76). */
-  P(12, "Me? I've got a mission. Out there are worlds with the opposite problem — too much order, too much boredom. Somebody has to go and mess them up.",
-    [['thumb', 0], ['count', 5.86 /* Too much order */], ['mask', 7.6, 0, 40, 1.4]]),
+     line is (40 cells at 1.4x is 3.6s, from 9.28 to 12.85 of 13.87).
+     RE-WORDED AND RE-RECORDED, Oct 2026 — Richard: "Me? I've got a mission.
+     Out there are other worlds with the same old, boring problems — too much
+     order, too much monotony. Somebody has to go out there and shake things
+     up!" Re-cued off src/voicewords.json, keeping each cue on the same word
+     it was on in the old take ("Out" for the cut, "monotony" where
+     "boredom" was). */
+  P(12, "Me? I've got a mission. Out there are other worlds with the same old, boring problems — too much order, too much monotony. Somebody has to go out there and shake things up!",
+    [['thumb', 0], ['count', 7.71 /* Too much order */], ['mask', 9.28 /* monotony */, 0, 40, 1.4]]),
   /* Held a beat past the clip so the salute is SEEN before the fade: the
      salute is 1.6s from "Payne," at 2.36 and the line is 3.52. */
   P(13, 'Stuck? Come and find me. Payne, out!',
@@ -100,14 +137,15 @@ export const PAYNE_INTRO = [
 const MASKED = new Set(Object.keys(INTRO_CLIPS).filter((c) => TAKE_FROM[INTRO_CLIPS[c].take] === 'town'));
 /** The `mask` clip's cell from which the helmet is on (read off its proof). */
 const MASK_ON = 22;
-/** How long the last frame of one clip takes to fade under the next. */
-export const CROSSFADE = 0.22;
-/** Two cells this close in the same take are one performance: no fade. */
-const SEAMLESS = 6;
+/* NO CROSSFADE. There was one, 0.22s of the last frame fading under the
+   next clip wherever two takes met, on the reasoning that two takes do not
+   meet on the same pose. Richard, Oct 2026, watching it: "When we transition
+   from one animation to the next, dont do a fade between them, just do a
+   hard cut to the next one" — and "it's okay if it's a bit choppy". A fade
+   between two different poses is two Paynes, half-drawn, for a fifth of a
+   second. Every change of clip is a cut. */
 /** Held this long, a frame starts to bob. */
 const IDLE_AFTER = 0.3;
-
-const cellsOf = (clip) => clipFrames(INTRO_CLIPS[clip]).length;
 
 /**
  * The cell on show `t` seconds into a line's `act`. Pure, so world-check can
@@ -119,23 +157,8 @@ export function actFrame(act, t) {
   let j = 0;
   for (let i = 0; i < act.length; i++) if (t >= act[i][1]) j = i;
   const [clip, at, from, to, rate = 1] = act[j];
-  const n = cellsOf(clip);
-  const run = Math.max(0, t - at) * INTRO_FPS * rate;
-  const a = from ?? 0;
-  const b = to ?? n - 1;
-  const len = Math.abs(b - a);
-  const k = Math.min(Math.floor(run), len);
-  const held = len === 0 ? Math.max(0, t - at) : Math.max(0, (run - len) / (INTRO_FPS * rate));
-  return { clip, cell: a + Math.sign(b - a) * k, entry: j, held };
-}
-
-/** The source frame a cell is, for telling whether two cells are one move. */
-export const srcFrame = (clip, cell) => clipFrames(INTRO_CLIPS[clip])[cell];
-
-/** Is the move from (clip a, cell i) to (clip b, cell j) one performance? */
-export function seamless(a, i, b, j) {
-  if (!a || INTRO_CLIPS[a].take !== INTRO_CLIPS[b].take) return false;
-  return Math.abs(srcFrame(a, i) - srcFrame(b, j)) <= SEAMLESS;
+  const { cell, held } = clipRun(INTRO_CLIPS[clip], t - at, { from: from ?? undefined, to: to ?? undefined, rate });
+  return { clip, cell, entry: j, held };
 }
 
 /** Is she masked in this cell? */
@@ -349,7 +372,7 @@ function near(T, c, { dist, to, up, lookY, swing = 0.3, side = 0, from = null },
  */
 export const INTRO_CUTS = {
   l1: { len: 7.79, cuts: [['two', 0], ['ots', 3.06 /* Nobody */]] },
-  l2: { len: 4.08, cuts: [['ots', 0], ['herClose', 1.72 /* right? */]] },
+  l2: { len: 3.4, cuts: [['ots', 0], ['herClose', 1.72 /* right? */]] },
   l3: { len: 5.2, cuts: [['herClose', 0], ['twoOther', 1.48 /* Goblin. */], ['ots', 3.88 /* Hello! */]] },
   l4: { len: 12.27, cuts: [['herLow', 0], ['archi', 1.15 /* These islands */], ['tidy', 4.46 /* Then it got */], ['her', 8.0 /* And everything */]] },
   l5: { len: 10.08, cuts: [['barrel', 0], ['crate', 0.92 /* every lantern */], ['bamboo', 2.06 /* every cane */], ['her', 3.96 /* is holding */], ['heap', 6.93 /* Knock */], ['herClose', 8.14 /* pop */]] },
@@ -359,7 +382,10 @@ export const INTRO_CUTS = {
   l9: { len: 6.72, cuts: [['arena', 0], ['home', 0.92 /* buy a home */], ['clan', 2.68 /* bring the clans */], ['dragon', 4.46 /* creatures */]] },
   l10: { len: 6.64, cuts: [['dojo', 0], ['herClose', 3.3 /* Spoiler */]] },
   l11: { len: 5.94, cuts: [['ring', 0], ['herClose', 2.93 /* ...Second */]] },
-  l12: { len: 11.76, cuts: [['herClose', 0], ['two', 2.28 /* Out there */], ['blast', 8.1 /* ...boredom. Somebody */]] },
+  /* "Out there" stays half a second AHEAD of "Out" (2.75), in the pause, as
+     it was in the old take (2.28 against 2.78); the blast leaves on
+     "monotony" where it left on "boredom". */
+  l12: { len: 13.87, cuts: [['herClose', 0], ['two', 2.25 /* Out there */], ['blast', 9.78 /* ...monotony. Somebody */]] },
   l13: { len: 3.52, cuts: [['ots', 0]] },
 };
 
@@ -609,9 +635,6 @@ export class PayneActor {
     /** clip -> [Image|null per page]. */
     this.pages = new Map();
     this.row = null;
-    this.entry = -1;
-    this.last = null; // { clip, cell }
-    this.fadeT = 0;
     this.drawn = '';
     this.t = 0;
     this.bob = 0;
@@ -655,9 +678,6 @@ export class PayneActor {
     this.cv.width = Math.round((S.x1 - S.x0) * px);
     this.cv.height = Math.round((S.y1 - S.y0) * px);
     this.g2 = this.cv.getContext('2d');
-    this.prev = document.createElement('canvas');
-    this.prev.width = this.cv.width;
-    this.prev.height = this.cv.height;
     this.tex = new THREE.CanvasTexture(this.cv);
     this.tex.colorSpace = THREE.SRGBColorSpace;
     this.tex.generateMipmaps = false;
@@ -700,19 +720,8 @@ export class PayneActor {
       }
       this.set.start();
     }
-    if (this.row) this._hold();
     this.row = row;
-    this.entry = -1;
     this.set.line(row);
-  }
-
-  /** Keep the frame on show, to fade out under the next clip. */
-  _hold() {
-    if (!this.cv) return;
-    const g = this.prev.getContext('2d');
-    g.clearRect(0, 0, this.prev.width, this.prev.height);
-    g.drawImage(this.cv, 0, 0);
-    this.fadeT = CROSSFADE;
   }
 
   update(cue, dt = 1 / 60) {
@@ -720,17 +729,10 @@ export class PayneActor {
     const cam = this.game.storyScene?.camera;
     this.set.update(dt, cam);
     if (!this.row?.act || !this.g2) return;
-    const { clip, cell, entry, held } = actFrame(this.row.act, Math.max(0, cue));
-    /* A CUT BETWEEN CLIPS IS A CROSSFADE — two takes do not meet on the same
-       pose — UNLESS it is one performance carried on (the halt into its
-       laugh, the shrug into its salute, the unmask across two lines). */
-    if (entry !== this.entry) {
-      if (this.last && !seamless(this.last.clip, this.last.cell, clip, cell)) this._hold();
-      this.entry = entry;
-    }
-    this.last = { clip, cell };
-    this.fadeT = Math.max(0, this.fadeT - dt);
-    const key = `${clip}:${cell}:${this.fadeT > 0 ? Math.round(this.fadeT * 60) : 0}`;
+    /* NOT clamped at 0: line 4 cues a move at -0.3, carried on from line 3,
+       and before the voice starts the clock is still counting up to it. */
+    const { clip, cell, held } = actFrame(this.row.act, cue);
+    const key = `${clip}:${cell}`;
     if (key !== this.drawn) {
       this.drawn = key;
       this._draw(clip, cell);
@@ -768,34 +770,17 @@ export class PayneActor {
     const ok = page && page.complete && page.naturalWidth > 0;
     g.clearRect(0, 0, cv.width, cv.height);
     if (ok) {
-      /* MEASURED OFF THE PAGE, NEVER ASSUMED (eighth non-negotiable): a page
-         holds `on` cells `cols` across, so its cell is its own width and
-         height over those — the half set is the same code. */
-      const on = Math.min(G.perPage, G.n - Math.floor(cell / G.perPage) * G.perPage);
-      const cols = Math.min(G.cols, on);
-      const rows = Math.ceil(on / G.cols);
-      const cw = page.naturalWidth / cols;
-      const ch = page.naturalHeight / rows;
-      const j = cell % G.perPage;
-      g.drawImage(page, (j % G.cols) * cw, Math.floor(j / G.cols) * ch, cw, ch, ...this._rect(G));
+      blitCell(g, page, G, cell, this._rect(G));   // the sprite editor draws with the same call
     } else {
       // Her still: the market's own drawing, by its own feet.
       const art = maskedIn(clip, cell) ? 'town' : 'held';
       const img = this.game.payne?.img?.[art];
       if (img?.naturalWidth) g.drawImage(img, ...this._rect(INTRO_REST[art]));
     }
-    if (this.fadeT > 0) {
-      g.globalAlpha = this.fadeT / CROSSFADE;
-      g.drawImage(this.prev, 0, 0);
-      g.globalAlpha = 1;
-    }
   }
 
   stop() {
     this.row = null;
-    this.entry = -1;
-    this.last = null;
-    this.fadeT = 0;
     this.drawn = '';
     this.bob = 0;
     this.on = false;

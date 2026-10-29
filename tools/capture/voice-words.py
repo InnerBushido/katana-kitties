@@ -80,8 +80,15 @@ def to_sound(words, db):
             # a pause inside the word, or 50ms of quiet at its very start
             if run >= QUIET_RUN or (run >= 5 and i - run + 1 == i0):
                 start = i + 1
-        # quiet to the end means whisper's edges are wrong some other way: leave it
-        out.append([w, round(start / 100, 2) if i0 < start < i1 else a, b])
+        # A run that reaches the end of the scan carries on to the sound: line
+        # 2's "Fine." is quiet from 2.42 to 2.85 and the scan stops 50ms short
+        # of whisper's end (2.88), so the first version found no sound and
+        # left it at 2.42. Quiet to the word's END means whisper's edges are
+        # wrong some other way: leave it.
+        end = min(len(db), int(round(b * 100)))
+        while i0 < start < end and db[start] < QUIET_DB:
+            start += 1
+        out.append([w, round(start / 100, 2) if i0 < start < end else a, b])
     return out
 
 

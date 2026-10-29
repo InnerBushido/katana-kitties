@@ -21,6 +21,16 @@ where the change needs to occur in the cutscene"*.
    actor's cues**.
 3. `M` drops a note at the playhead. `I`/`O` make it a range, `B` draws a box
    on the picture, `1`–`7` tag it. Notes save themselves 700ms after a change.
+4. `X` (or the editor's tick) marks a note **processed**. It stays on the
+   timeline — a hollow pin in its own lane, a dashed box — and in its own list
+   under the open ones, with a line saying what was done. `X` again brings it
+   back to open, and the old "what was done" is kept under `reopened`, so a fix
+   that did not take is on the record. All / Open / Processed filter the list.
+5. **Bring notes from…** (top bar, when this scene has another reviewed
+   recording) copies that recording's notes onto this one — see below.
+6. The readout names Payne's clip at the playhead with its take and frames,
+   and the name is a link: it opens that clip in the sprite editor's **Payne**
+   tab, which edits the same table the game plays (src/payneclips.json).
 
 Keys: `Space` play · `,` `.` one frame · `←` `→` 0.1s (`Shift` 1s) · `↑` `↓`
 previous/next line · `[` `]` previous/next cut · `Esc` back to the video.
@@ -40,6 +50,33 @@ fractions of the picture.
 leaves every note's `at`, and every anchor nudged by hand, alone: the note was
 written about what was on the screen then. The **Re-sync to voice** button is
 the one thing that redoes both.
+
+**A session marks what it fixed.** Acting on a note means setting its
+`done: { at, what }` — `what` one line, with the number that changed — so the
+next recording opens with the fixed notes already filed apart from the new ones.
+
+## Carrying notes to a new recording
+
+After a pass is applied, Richard records the scene again. **Bring notes from…**
+puts the old recording's notes on the new one by their SCENE place, not their
+video time, since two recordings start at different moments. Each note says
+how it was placed (the editor's "carried" line), most sure first:
+
+- **unchanged voice** — the line's mp3 has the same sha1 in both reviews: the
+  line's anchor here plus the same time into it. Exact.
+- **word** — the line was re-recorded: the same word (by index, checked by its
+  letters, else the nearest word spelt the same), plus how far past its start
+  the note was (`wa`).
+- **line end** — a note after the line finished: the same distance past this
+  line's end.
+- **line only** — the word is gone: the same time into the line, clamped.
+
+Processed stays processed, and a carried note keeps `madeAt` (where it was
+made) beside its new `at`. Measured on a byte-identical copy of the first
+recording, all 14 notes: 13 within 5ms of where they were made; the 14th was on
+line 2's second "Fine!", which the pass deleted, and landed on the surviving
+"Fine." 0.72s earlier — the right place for it. The recording has to be synced
+first; with no anchors the button says so instead of losing every note.
 
 ## Why it syncs on the voice, not on start/end handles
 
@@ -78,9 +115,11 @@ change for the voice, will that cause major issues?"* Three things handle it:
   inside one word, not every word after it.
 
 What is NOT automatic yet: a cut or an actor's cue in `payneintro.js` is still
-a number of seconds. When line 12 is re-recorded its cuts must be re-cued by
-hand (the page shows exactly where the words now fall). Keying them to words
-off `voicewords.json` is the next step.
+a number of seconds. Line 12 was re-worded and re-recorded (Oct 2026) and its
+cues were moved by hand onto the same words off `voicewords.json` — "Out" for
+the cut, "monotony" where "boredom" was. Keying them to words automatically is
+the next step; until then **a re-recorded line's cues are re-cued by a
+session**, and an old recording's notes on that line carry by word.
 
 ## Whisper's quirks, measured
 
@@ -98,9 +137,12 @@ off `voicewords.json` is the next step.
 
 ## Notes on the intro this turned up
 
-- Line 12's "Out there" cut is at 2.28, whisper's RAW start: half a second
-  before "Out" is heard (2.78). Left alone — a cut ahead of its word can be a
-  choice — but it is the kind of thing this page is for.
+- Line 12's "Out there" cut is half a second ahead of "Out" — 2.28 against
+  2.78 in the old take, kept as 2.25 against 2.75 in the new one. Left alone; a
+  cut ahead of its word can be a choice.
+- Line 6's "count" cue and "kit" cut sit at 6.69, whisper's start of "Run":
+  the line is silent (−41 to −49dBFS) from 6.50 to 7.03 and "Run" is said at
+  7.06, so both land 0.37s early. Left for Richard's pass on that line.
 - Line 11 may really be missing its opening "And": whisper does not hear it.
   Worth a listen.
 
