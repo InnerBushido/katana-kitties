@@ -19,6 +19,7 @@ look. Everything else is one level down and read on demand.
 | how a cutscene, camera move or recorded clip is directed and checked | the `game-cutscene-director` skill, [.claude/skills/](.claude/skills/game-cutscene-director/SKILL.md) — loads itself when the work is a scene |
 | how it runs under Steam, and its artwork | [docs/notes/steam.md](docs/notes/steam.md) |
 | Roshi's islands — homes, bridges, the jukebox, and **the placeholders left** | [docs/notes/housing.md](docs/notes/housing.md) |
+| how a recording of a cutscene is marked up, and where those notes land | [docs/notes/review.md](docs/notes/review.md) — `/review.html`, notes in `docs/reviews/` |
 | which voice belongs to which character | [docs/notes/voices.md](docs/notes/voices.md) |
 | why it lags or stutters, and what is measured NOT to be why | [docs/notes/performance.md](docs/notes/performance.md) |
 | when a change earns a line in PROJECT.md, and how its tables generate themselves | [docs/notes/docs.md](docs/notes/docs.md) |
@@ -159,6 +160,9 @@ src/
   tuning.json      the overrides, and nothing else. `{}` is the shipped balance.
   tuning-page.js   /tuning.html's brain — dev only, never built
   spritefix.json   the sprite editor's overrides: pose { s, x, y }, sheet { order, flip }, off
+  review/          /review.html's brain (page, sync on the voice, scenes) — dev
+                   only, never built. voicewords.json: every intro line's words,
+                   measured by tools/capture/voice-words.py. docs/notes/review.md
   sprite-editor.js /sprites.html's brain — dev only, never built; draws with real
                    Players, so it cannot disagree with the game. docs/notes/art.md
   world/     build (all the geometry)  world (assembly, height queries)

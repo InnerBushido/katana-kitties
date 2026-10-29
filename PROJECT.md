@@ -149,7 +149,7 @@ anywhere): **no `--host`** (Vite binds `127.0.0.1` only), **Windows Firewall
 blocking inbound Node** (verified allowed on this machine, on the Public
 profile, which is what the house Wi-Fi is classified as), and **router client
 isolation** (usually only on a guest network). Note that `--host` also exposes
-`/tuning.html` and `/sprites.html`, whose save endpoints write files into the source tree with no
+`/tuning.html`, `/sprites.html` and `/review.html`, whose save endpoints write files into the source tree with no
 authentication — fine at home, not fine in a café. Stop the server after.
 
 On the phone: **landscape** (portrait is gated with a message), the on-screen
@@ -377,6 +377,24 @@ for switched-off cells. **Every sheet loaded through `loadSpriteAtlas` honours
 its saved order**, so a sheet added later needs no wiring. The page draws with
 the game's own code, so what lines up there lines up in the game. Dev only,
 twice over, like the balance page. → [art.md](docs/notes/art.md)
+
+### Mark up a cutscene recording — `/review.html`
+
+How a cutscene gets its notes. Record a play-through, put it in
+`Design Ideas/` or `out/review/` (or drop it on the page), `npm run dev`, then
+**`/review.html`**. The page finds every voice line in the recording by its
+sound, so under the playhead it says **which line, which word, which cut and
+which of the actor's cues** — to the frame. `M` drops a note there (`I`/`O` a
+range, `B` a box on the picture). Notes save to
+**`docs/reviews/<scene>/<video>.json`**, each with its place in the SCENE as
+well as the video's time, which is what a session reads to act on them.
+
+The words come from **`src/voicewords.json`**, measured off the shipped mp3s by
+`python tools/capture/voice-words.py payne_intro` (faster-whisper, local, free;
+`pip install faster-whisper`). **Re-record a line and run it again**:
+`world-check` fails until you do, and an old recording still syncs on the lines
+that did not change. Dev only, like the other two. A new cutscene is one entry
+in `src/review/scenes.js`. → [review.md](docs/notes/review.md)
 
 ### The numbers, at a glance
 

@@ -1,5 +1,7 @@
 import { defineConfig } from 'vite';
-import { writeFileSync, readFileSync, readdirSync, openSync, readSync, closeSync } from 'node:fs';
+import { writeFileSync, readFileSync, readdirSync, openSync, readSync, closeSync, statSync, existsSync, mkdirSync, createReadStream } from 'node:fs';
+import { resolve as resolvePath, relative, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /* ---------------------------------------------------------------------------
    Vite config — one job: let the dev server be told which port to use.
@@ -194,8 +196,113 @@ const spriteServer = {
   },
 };
 
+/* ---------------------------------------------------------------------------
+   The cutscene review page — `review.html`, `src/review/`.
+
+   DEV ONLY, LIKE THE OTHER TWO: `configureServer`, never built. Four routes:
+
+   GET  /__review/videos       every video under `Design Ideas/` and
+                               `out/review/`, newest first. Those are where
+                               Richard puts recordings, and neither ships:
+                               `Design Ideas/` is excluded from git and `out/`
+                               is the local-only repo. A video in `public/`
+                               would be copied into every build (N9).
+   GET  /__review/video?p=     one of them, WITH RANGE REQUESTS. Without them
+                               a <video> cannot seek: Firefox plays from the
+                               start and the scrubber does nothing. Only a
+                               path that resolves inside one of those two
+                               folders is served.
+   GET  /__review/notes?scene=&video=   the saved review, or 404
+   POST /__review/notes        writes docs/reviews/<scene>/<video>.json,
+                               which is where a session reads it from. The
+                               body is parsed and re-serialised, never written
+                               through, so a bad POST leaves the old file.
+--------------------------------------------------------------------------- */
+const REVIEW_ROOTS = ['Design Ideas', 'out/review'].map((d) => resolvePath(fileURLToPath(new URL('.', import.meta.url)), d));
+const VIDEO_EXT = /\.(mp4|m4v|webm|mov|mkv)$/i;
+const REVIEWS = fileURLToPath(new URL('./docs/reviews/', import.meta.url));
+const slug = (s) => String(s ?? '').replace(/\.[a-z0-9]+$/i, '').replace(/[^A-Za-z0-9_.-]+/g, '_').slice(0, 120);
+
+function listVideos() {
+  const out = [];
+  const walk = (dir, root) => {
+    let ents = [];
+    try { ents = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of ents) {
+      const p = resolvePath(dir, e.name);
+      if (e.isDirectory()) walk(p, root);
+      else if (VIDEO_EXT.test(e.name)) {
+        const st = statSync(p);
+        out.push({ p: relative(resolvePath(root, '..'), p).replace(/\\/g, '/'), name: e.name, size: st.size, mtime: st.mtimeMs });
+      }
+    }
+  };
+  for (const r of REVIEW_ROOTS) walk(r, r);
+  return out.sort((a, b) => b.mtime - a.mtime);
+}
+
+function videoFile(p) {
+  const base = fileURLToPath(new URL('.', import.meta.url));
+  const abs = resolvePath(base, String(p ?? ''));
+  return REVIEW_ROOTS.some((r) => abs.startsWith(r + sep)) && VIDEO_EXT.test(abs) && existsSync(abs) ? abs : null;
+}
+
+const reviewServer = {
+  name: 'katana-review',
+  configureServer(server) {
+    server.middlewares.use('/__review', (req, res) => {
+      const url = new URL(req.url ?? '/', 'http://x');
+      const json = (v, code = 200) => { res.statusCode = code; res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(v)); };
+      if (req.method === 'GET' && url.pathname === '/videos') return json(listVideos());
+      if (req.method === 'GET' && url.pathname === '/video') {
+        const f = videoFile(url.searchParams.get('p'));
+        if (!f) return json({ error: 'not a video under Design Ideas/ or out/review/' }, 404);
+        const size = statSync(f).size;
+        const type = /\.webm$/i.test(f) ? 'video/webm' : /\.mov$/i.test(f) ? 'video/quicktime' : 'video/mp4';
+        const m = /bytes=(\d*)-(\d*)/.exec(req.headers.range ?? '');
+        res.setHeader('accept-ranges', 'bytes');
+        res.setHeader('content-type', type);
+        if (!m) { res.setHeader('content-length', size); createReadStream(f).pipe(res); return; }
+        const start = m[1] ? Number(m[1]) : Math.max(0, size - Number(m[2]));
+        const end = m[1] && m[2] ? Math.min(Number(m[2]), size - 1) : size - 1;
+        res.statusCode = 206;
+        res.setHeader('content-range', `bytes ${start}-${end}/${size}`);
+        res.setHeader('content-length', end - start + 1);
+        createReadStream(f, { start, end }).pipe(res);
+        return;
+      }
+      if (url.pathname === '/notes') {
+        if (req.method === 'GET') {
+          const f = resolvePath(REVIEWS, slug(url.searchParams.get('scene')), `${slug(url.searchParams.get('video'))}.json`);
+          return existsSync(f) ? json(JSON.parse(readFileSync(f, 'utf8'))) : json({ error: 'none yet' }, 404);
+        }
+        if (req.method !== 'POST') return json({ error: 'GET or POST' }, 405);
+        let body = '';
+        req.on('data', (c) => { body += c; });
+        req.on('end', () => {
+          let r;
+          try { r = JSON.parse(body); } catch { return json({ error: 'not JSON — nothing written' }, 400); }
+          if (!r?.scene || !r?.video?.name || !Array.isArray(r.notes)) return json({ error: 'needs scene, video.name and notes — nothing written' }, 400);
+          const dir = resolvePath(REVIEWS, slug(r.scene));
+          mkdirSync(dir, { recursive: true });
+          const f = resolvePath(dir, `${slug(r.video.name)}.json`);
+          // one note per line, so a diff of one edit is one line
+          const { notes, anchors = [], ...head } = r;
+          const rows = (xs) => xs.map((n) => `    ${JSON.stringify(n)}`).join(',\n');
+          const lines = rows(notes);
+          const top = `${JSON.stringify(head, null, 2).replace(/\n}$/, '')},\n  "anchors": [\n${rows(anchors)}\n  ]`;
+          writeFileSync(f, `${top},\n  "notes": [${lines ? `\n${lines}\n  ` : ''}]\n}\n`);
+          json({ ok: true, path: relative(fileURLToPath(new URL('.', import.meta.url)), f).replace(/\\/g, '/') });
+        });
+        return;
+      }
+      json({ error: 'unknown route' }, 404);
+    });
+  },
+};
+
 export default defineConfig({
-  plugins: [tuningServer, spriteServer],
+  plugins: [tuningServer, spriteServer, reviewServer],
   /* THE REPO LIVES IN ONEDRIVE, and OneDrive turns node_modules into cloud
      files: every one a reparse point (tag 0x9000e01a), pinned or not. Vite 8
      resolves with Rolldown's resolver, which follows symlinks by default and

@@ -606,7 +606,7 @@ npm run artifact              <span class="c"># is this published page still cur
 
   <div class="note pink">
     <span class="hd">One caveat</span>
-    <p><code>--host</code> also exposes <code>/tuning.html</code> and <code>/sprites.html</code>,
+    <p><code>--host</code> also exposes <code>/tuning.html</code>, <code>/sprites.html</code> and <code>/review.html</code>,
       whose save endpoints POST files into the source tree with no authentication. Fine on a home network with two children on it.
       Not fine in a café. Stop the server when the test is done.</p>
   </div>
@@ -812,6 +812,21 @@ git push origin alpha</code></pre>
     switched-off cells. <b>Every sheet loaded through <code>loadSpriteAtlas</code> honours its saved
     order</b>, so a sheet added later needs no wiring. The page draws with the game's own code, so
     what lines up there lines up in the game. Dev only, twice over, like the balance page.</p>
+
+  <h3>Mark up a cutscene recording: <code>/review.html</code></h3>
+  <p>How a cutscene gets its notes. Record a play-through, put it in <code>Design Ideas/</code> or
+    <code>out/review/</code> (or drop it on the page), <code>npm run dev</code>, then
+    <code>/review.html</code>. The page finds every voice line in the recording by its sound, so
+    under the playhead it says <b>which line, which word, which cut and which of the actor's
+    cues</b>, to the frame. <kbd>M</kbd> drops a note there (<kbd>I</kbd>/<kbd>O</kbd> a range,
+    <kbd>B</kbd> a box on the picture). Notes save to <code>docs/reviews/&lt;scene&gt;/&lt;video&gt;.json</code>,
+    each with its place in the scene as well as the video's time, which is what a session reads to
+    act on them.</p>
+  <p>The words come from <code>src/voicewords.json</code>, measured off the shipped mp3s by
+    <code>python tools/capture/voice-words.py payne_intro</code> (faster-whisper, local and free).
+    <b>Re-record a line and run it again</b>: <code>world-check</code> fails until you do, and an old
+    recording still syncs on the lines that did not change. Dev only, like the other two. A new
+    cutscene is one entry in <code>src/review/scenes.js</code>.</p>
 
   <h3>The numbers, at a glance</h3>
   <p style="font-size:14px;color:var(--text-dim)"><b>This table is generated out of

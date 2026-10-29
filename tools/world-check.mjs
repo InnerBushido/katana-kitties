@@ -6193,7 +6193,7 @@ console.log('\n--- the sprite editor: what it saves, and what the game does with
   const vite = readFileSync(new URL('../vite.config.js', import.meta.url), 'utf8').replace(/\r/g, '');
   ok('...and the sprite save is dev-server only too',
     /const spriteServer = \{[\s\S]{0,120}configureServer\(server\) \{\s*server\.middlewares\.use\('\/__spritefix'/.test(vite)
-    && /plugins: \[tuningServer, spriteServer\]/.test(vite) && !/input\s*:/.test(vite));
+    && /plugins: \[tuningServer, spriteServer[,\]]/.test(vite) && !/input\s*:/.test(vite));
   const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8').replace(/\r/g, '');
   const rowFrom = main.indexOf('const TUNING_ROW =');
   const row = rowFrom < 0 ? '' : main.slice(rowFrom, main.indexOf('\n\n', rowFrom));
@@ -47662,6 +47662,8 @@ console.log('\n--- the beat-map grid is one stop, then its lines, then a line\'s
 {
   const { payneIntroChecks } = await import('./checks/payneintro.mjs');
   await payneIntroChecks({ ok, world });
+  const { reviewChecks } = await import('./checks/review.mjs');
+  await reviewChecks({ ok });
 }
 
 console.log(fails
