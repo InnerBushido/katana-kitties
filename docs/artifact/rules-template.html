@@ -1,0 +1,265 @@
+<title>Katana Kitties Rule Register</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a review console. Sticky toolbar of counts and filters, then one card
+   per rule with a three-way verdict (keep / change / remove) and a note. */
+:root{
+  --bg:#eef1f6; --panel:#ffffff; --ink:#18202e; --muted:#5a6478; --line:#d6dce7;
+  --indigo:#2c4a92; --indigo-soft:#e3e9f6;
+  --keep:#1f7a4d; --keep-soft:#e1f2e8;
+  --change:#a86300; --change-soft:#fbefd9;
+  --remove:#b3261e; --remove-soft:#f9e1df;
+  --display:"Dela Gothic One","Arial Black",system-ui,sans-serif;
+  --body:"Zen Kaku Gothic New",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#10141c; --panel:#181e2a; --ink:#e6eaf2; --muted:#9aa4b8; --line:#2a3344;
+  --indigo:#8fa8ec; --indigo-soft:#1f2a45;
+  --keep:#5cc98f; --keep-soft:#15301f; --change:#f0b350; --change-soft:#352611;
+  --remove:#f07b72; --remove-soft:#3a1715; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#10141c; --panel:#181e2a; --ink:#e6eaf2; --muted:#9aa4b8; --line:#2a3344;
+  --indigo:#8fa8ec; --indigo-soft:#1f2a45;
+  --keep:#5cc98f; --keep-soft:#15301f; --change:#f0b350; --change-soft:#352611;
+  --remove:#f07b72; --remove-soft:#3a1715; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.55;margin:0}
+.wrap{max-width:980px;margin:0 auto;padding-inline:16px;padding-block:28px 80px}
+h1{font-family:var(--display);font-weight:400;font-size:clamp(28px,5vw,40px);line-height:1.1;margin:0 0 8px;text-wrap:balance}
+h1 .kanji{color:var(--indigo);margin-right:.25em}
+.lede{color:var(--muted);max-width:68ch;margin:0}
+code{font-family:var(--mono);font-size:.86em;background:var(--indigo-soft);padding:1px 5px;border-radius:4px}
+b{font-weight:700}
+section.info{margin-top:22px;background:var(--panel);border:1px solid var(--line);border-radius:10px}
+section.info>summary{cursor:pointer;padding:14px 18px;font-weight:700;list-style:none;display:flex;justify-content:space-between;gap:12px}
+section.info>summary::-webkit-details-marker{display:none}
+details.info{margin-top:14px;background:var(--panel);border:1px solid var(--line);border-radius:10px}
+details.info>summary{cursor:pointer;padding:14px 18px;font-weight:700;display:flex;justify-content:space-between;align-items:center;gap:12px}
+details.info>summary::after{content:"+";font-family:var(--mono);color:var(--muted)}
+details.info[open]>summary::after{content:"−"}
+.info-body{padding:0 18px 18px}
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin:6px 0 14px}
+.step{border:1px solid var(--line);border-radius:8px;padding:12px;min-width:0}
+.step .n{font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
+.step h4{margin:2px 0 4px;font-size:15px}
+.step p{margin:0;font-size:13.5px;color:var(--muted)}
+.step.good{border-color:var(--keep)} .step.bad{border-color:var(--change)}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:500}
+.toolbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding-block:12px;margin-top:18px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
+.tally{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:13px}
+.tally .chip{border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:3px 10px;font-variant-numeric:tabular-nums}
+.chip.keep{color:var(--keep)} .chip.change{color:var(--change)} .chip.remove{color:var(--remove)}
+.bar{flex:1 1 160px;height:6px;background:var(--line);border-radius:3px;overflow:hidden;display:flex;min-width:120px}
+.bar span{display:block;height:100%}
+.filters{display:flex;flex-wrap:wrap;gap:6px}
+.filters button,.btn{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:6px;padding:5px 10px;cursor:pointer}
+.filters button[aria-pressed="true"]{background:var(--indigo);border-color:var(--indigo);color:var(--panel)}
+.btn.primary{background:var(--indigo);color:var(--panel);border-color:var(--indigo)}
+button:focus-visible,textarea:focus-visible{outline:2px solid var(--indigo);outline-offset:2px}
+.saveinfo{font-size:12.5px;color:var(--muted)}
+h2.sec{font-family:var(--display);font-weight:400;font-size:20px;margin:30px 0 4px;display:flex;gap:10px;align-items:baseline}
+h2.sec .l{font-family:var(--mono);font-size:13px;color:var(--muted)}
+p.secintro{margin:0 0 10px;color:var(--muted);font-size:13.5px}
+.rule{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--line);border-radius:8px;padding:14px 16px;margin-top:10px;display:grid;gap:8px}
+.rule[data-verdict="keep"]{border-left-color:var(--keep)}
+.rule[data-verdict="change"]{border-left-color:var(--change)}
+.rule[data-verdict="remove"]{border-left-color:var(--remove)}
+.rhead{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:baseline}
+.rid{font-family:var(--mono);font-size:12.5px;font-weight:600;color:var(--indigo)}
+.rtitle{font-weight:700;font-size:16px;flex:1 1 260px;min-width:0}
+.pill{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+.pill.CONFLICT{background:var(--remove-soft);color:var(--remove);border-color:transparent}
+.pill.stale{background:var(--change-soft);color:var(--change);border-color:transparent}
+.pill.relaxed{background:var(--indigo-soft);color:var(--indigo);border-color:transparent}
+.pill.satisfied{background:var(--keep-soft);color:var(--keep);border-color:transparent}
+.fields{display:grid;gap:4px;margin:0}
+.f{display:grid;grid-template-columns:130px 1fr;gap:10px;font-size:14px}
+.f dt{color:var(--muted);font-size:12.5px;padding-top:2px}
+.f dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.f.warn dd{background:var(--remove-soft);border-radius:6px;padding:4px 8px}
+.f.warn dt{color:var(--remove);font-weight:700}
+.f.flag dd{background:var(--change-soft);border-radius:6px;padding:4px 8px}
+.f.flag dt{color:var(--change);font-weight:700}
+@media (max-width:560px){.f{grid-template-columns:1fr;gap:0}}
+.decide{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start;border-top:1px dashed var(--line);padding-top:10px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.seg button{font:inherit;font-size:13px;font-weight:500;border:0;background:var(--panel);color:var(--muted);padding:6px 12px;cursor:pointer}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"][data-v="keep"]{background:var(--keep-soft);color:var(--keep)}
+.seg button[aria-pressed="true"][data-v="change"]{background:var(--change-soft);color:var(--change)}
+.seg button[aria-pressed="true"][data-v="remove"]{background:var(--remove-soft);color:var(--remove)}
+textarea{font:inherit;font-size:14px;flex:1 1 260px;min-width:0;min-height:38px;resize:vertical;border:1px solid var(--line);border-radius:7px;padding:6px 10px;background:var(--bg);color:var(--ink)}
+.empty{color:var(--muted);padding:30px 0;text-align:center}
+.toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:13.5px}
+.export{margin-top:10px;width:100%;min-height:160px;font-family:var(--mono);font-size:12.5px}
+@media (prefers-reduced-motion:no-preference){.rule{transition:border-color .15s}}
+</style>
+
+<div class="wrap">
+  <h1><span class="kanji">掟</span>Rule Register</h1>
+  <p class="lede">All {{COUNT}} standing rules in Katana Kitties, including the ones kept only in Claude's private memory. Mark each one <b>Keep</b>, <b>Change</b> or <b>Remove</b>, and say what you want in the note. Claude reads your marks and changes every copy of the rule. The text comes from <code>RULES.md</code> in the repo, which you can also edit in any text editor.</p>
+
+  <details class="info" id="how">
+    <summary>How a rule gets made, and how an unwanted one gets in</summary>
+    <div class="info-body">
+      <div class="steps">
+        <div class="step good"><div class="n">Route 1 · intended</div><h4>You say it</h4><p>A session writes your words into CLAUDE.md. docs.md then says to copy it into PROJECT.md §9 and the Field Guide §9. That makes three hand-kept copies.</p></div>
+        <div class="step"><div class="n">Route 2</div><h4>A bug becomes a rule</h4><p>A playtest breaks something, the fix gets a world-check assertion, and the reasoning goes into a design note. The wording is often Claude's, not yours.</p></div>
+        <div class="step bad"><div class="n">Route 3 · invisible</div><h4>Claude's memory</h4><p>When you correct Claude, it saves a memory outside the repo. It loads every session, and one of them says it overrides CLAUDE.md.</p></div>
+        <div class="step bad"><div class="n">Route 4 · drift</div><h4>Prose escalation</h4><p>A note calls something "the Nth non-negotiable, read the other way round", and later sessions treat that reading as law.</p></div>
+      </div>
+      <p style="margin:0 0 6px"><b>What would stop it.</b> Make RULES.md the only place a rule is written. Generate the CLAUDE.md block and both §9 sections from it, the way §5 and §6 already generate from code. Have world-check fail when a copy drifts. Add one standing instruction: Claude may propose a rule, but never adds one without your OK, and every rule records who decided it and when.</p>
+    </div>
+  </details>
+
+  <details class="info" id="where">
+    <summary>Where the rules live today</summary>
+    <div class="info-body tablewrap">
+      <table>
+        <thead><tr><th>Place</th><th>What it holds</th><th>Who sees it</th></tr></thead>
+        <tbody>
+          <tr><td><code>CLAUDE.md</code></td><td>The nine non-negotiables (full text) and house style</td><td>Every AI session, automatically</td></tr>
+          <tr><td><code>PROJECT.md</code> §9</td><td>A short copy of the nine, plus house style and git</td><td>Humans (the God Doc)</td></tr>
+          <tr><td>Field Guide §9<br><code>docs/artifact/project-page.html</code></td><td>The published copy of PROJECT.md §9</td><td>Whoever you send the link</td></tr>
+          <tr><td><code>docs/notes/rules.md</code></td><td>World invariants: dragons, bamboo, regrowth, sprite facing</td><td>Sessions working in that area</td></tr>
+          <tr><td><code>docs/notes/consent.md</code>, <code>gotchas.md</code>, <code>docs.md</code></td><td>The reasoning behind N6 and N7, the UI fall-through rule, and the rule about adding rules</td><td>Sessions working in that area</td></tr>
+          <tr><td><code>docs/notes/payne.md</code>, <code>voices.md</code>, <code>housing.md</code></td><td>Payne's approval, the voice cast, the kendo relaxation of N3</td><td>Sessions working in that area</td></tr>
+          <tr><td>Claude memory<br><code>~/.claude/projects/…/memory/</code></td><td>Git and push rules, sprite rules, spending limits, the housing relaxations of N3 and N4</td><td>Every AI session. <b>Not in the repo.</b></td></tr>
+          <tr><td><code>tools/world-check.mjs</code>, <code>pad-check.mjs</code></td><td>The checks that enforce most of the above</td><td>Run by hand and before a push</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </details>
+
+  <div class="toolbar" role="region" aria-label="Progress and filters">
+    <div class="tally">
+      <span class="chip" id="t-done">0 / {{COUNT}} decided</span>
+      <span class="chip keep" id="t-keep">0 keep</span>
+      <span class="chip change" id="t-change">0 change</span>
+      <span class="chip remove" id="t-remove">0 remove</span>
+      <div class="bar" aria-hidden="true"><span id="b-keep" style="background:var(--keep)"></span><span id="b-change" style="background:var(--change)"></span><span id="b-remove" style="background:var(--remove)"></span></div>
+    </div>
+    <div class="filters" id="filters"></div>
+    <div class="tally">
+      <span class="saveinfo" id="saveinfo">Connecting to saved decisions…</span>
+      <button class="btn" id="exportBtn" type="button">Copy my decisions as text</button>
+    </div>
+  </div>
+
+  <div id="list"></div>
+  <textarea id="exportBox" class="export" hidden readonly aria-label="Your decisions as text"></textarea>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+const SECTIONS = /*RULES_JSON*/[];
+const ALL = SECTIONS.flatMap(s => s.rules.map(r => ({...r, sec: s.letter})));
+const state = {};          // id -> {verdict, note}
+let filter = 'all', db = null, LS = 'kk-rules-v1';
+
+const esc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const inline = s => esc(s).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>');
+const WARN = /^(CONFLICT)/, FLAG = /^(stale|Drift|Open question|Relaxation \(Oct 2026, NOT)/;
+
+function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.hidden=false;clearTimeout(toast.h);toast.h=setTimeout(()=>t.hidden=true,2200)}
+
+function buildFilters(){
+  const opts=[['all','All'],['open','Undecided'],['flag','Conflicts & stale'],...SECTIONS.map(s=>[s.letter,s.title])];
+  const el=document.getElementById('filters');
+  el.innerHTML=opts.map(([k,l])=>`<button type="button" data-f="${k}" aria-pressed="${k===filter}">${esc(l)}</button>`).join('');
+  el.onclick=e=>{const b=e.target.closest('button');if(!b)return;filter=b.dataset.f;el.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b));render()};
+}
+
+function visible(r){
+  if(filter==='all')return true;
+  if(filter==='open')return !state[r.id]?.verdict;
+  if(filter==='flag')return /CONFLICT|stale/.test(r.status)||r.fields.some(f=>WARN.test(f.key)||/^stale|^Drift/.test(f.key));
+  return r.sec===filter;
+}
+
+function render(){
+  const list=document.getElementById('list');let html='';
+  for(const s of SECTIONS){
+    const rs=s.rules.filter(r=>visible({...r,sec:s.letter}));
+    if(!rs.length)continue;
+    html+=`<h2 class="sec"><span class="l">${s.letter}</span>${esc(s.title)}</h2>`;
+    if(s.intro)html+=`<p class="secintro">${inline(s.intro)}</p>`;
+    for(const r of rs){
+      const d=state[r.id]||{};
+      const st=r.status.split(/\s/)[0];
+      html+=`<article class="rule" id="r-${r.id}" data-verdict="${d.verdict||''}">
+        <div class="rhead"><span class="rid">${esc(r.id)}</span><span class="rtitle">${inline(r.title)}</span><span class="pill ${esc(st)}">${esc(r.status)}</span></div>
+        <dl class="fields">${r.fields.map(f=>`<div class="f ${WARN.test(f.key)?'warn':FLAG.test(f.key)?'flag':''}"><dt>${esc(f.key)}</dt><dd>${inline(f.value)}</dd></div>`).join('')}</dl>
+        <div class="decide">
+          <div class="seg" role="group" aria-label="Decision for ${esc(r.id)}">
+            ${['keep','change','remove'].map(v=>`<button type="button" data-id="${r.id}" data-v="${v}" aria-pressed="${d.verdict===v}">${v[0].toUpperCase()+v.slice(1)}</button>`).join('')}
+          </div>
+          <textarea id="note-${r.id}" data-id="${r.id}" rows="1" placeholder="${d.verdict==='change'?'What should it say instead?':'Note (optional)'}">${esc(d.note||'')}</textarea>
+        </div></article>`;
+    }
+  }
+  list.innerHTML=html||'<p class="empty">Nothing here. Every rule in this filter has a decision.</p>';
+  tally();
+}
+
+function tally(){
+  const c={keep:0,change:0,remove:0};for(const id in state){const v=state[id].verdict;if(c[v]!=null)c[v]++}
+  const done=c.keep+c.change+c.remove,n=ALL.length;
+  document.getElementById('t-done').textContent=`${done} / ${n} decided`;
+  for(const k in c){document.getElementById('t-'+k).textContent=`${c[k]} ${k}`;document.getElementById('b-'+k).style.width=(100*c[k]/n)+'%'}
+}
+
+async function save(id){
+  const d=state[id]||{};
+  try{ localStorage.setItem(LS,JSON.stringify(state)) }catch(e){}
+  if(!db)return;
+  try{ await db.doc('decisions/'+id).set({verdict:d.verdict||'',note:d.note||'',updatedAt:Date.now()}) }
+  catch(e){ toast(e && e.code==='not_granted' ? 'Saving needs your permission. Allow it from the page\'s Permissions menu.' : 'Could not save that one. Your mark is still on this device.') }
+}
+
+document.getElementById('list').addEventListener('click',e=>{
+  const b=e.target.closest('.seg button');if(!b)return;
+  const id=b.dataset.id,v=b.dataset.v;state[id]=state[id]||{};
+  state[id].verdict = state[id].verdict===v ? '' : v;   // a second press on the same choice clears it
+  const card=document.getElementById('r-'+id);card.dataset.verdict=state[id].verdict;
+  card.querySelectorAll('.seg button').forEach(x=>x.setAttribute('aria-pressed',x.dataset.v===state[id].verdict));
+  card.querySelector('textarea').placeholder=state[id].verdict==='change'?'What should it say instead?':'Note (optional)';
+  tally();save(id);
+  if(state[id].verdict==='change')card.querySelector('textarea').focus();
+});
+document.getElementById('list').addEventListener('change',e=>{
+  const t=e.target.closest('textarea');if(!t)return;
+  const id=t.dataset.id;state[id]=state[id]||{};state[id].note=t.value;save(id);
+});
+
+document.getElementById('exportBtn').onclick=async()=>{
+  const lines=ALL.filter(r=>state[r.id]?.verdict||state[r.id]?.note).map(r=>`${r.id} ${r.title}: ${(state[r.id].verdict||'(no call)').toUpperCase()}${state[r.id].note?' — '+state[r.id].note:''}`);
+  const text=lines.length?'Rule register decisions:\n'+lines.join('\n'):'No decisions yet.';
+  const box=document.getElementById('exportBox');box.value=text;box.hidden=false;
+  try{await navigator.clipboard.writeText(text);toast('Copied. Paste it to Claude.')}catch(e){box.select();toast('Copy the selected text below.')}
+};
+
+function applyRows(rows){for(const r of rows){state[r.id]={verdict:r.verdict||'',note:r.note||''}}render()}
+
+(function boot(){
+  try{Object.assign(state,JSON.parse(localStorage.getItem(LS)||'{}'))}catch(e){}
+  buildFilters();render();
+  const info=document.getElementById('saveinfo');
+  const use=window.claude&&window.claude.use;
+  if(!use){info.textContent='Saved on this device only. Use "Copy my decisions" to send them to Claude.';return}
+  window.claude.use('db').then(d=>{
+    if(!d){info.textContent='Saved on this device only. Use "Copy my decisions" to send them to Claude.';return}
+    db=d;info.textContent='Decisions save automatically, and Claude can read them.';
+    db.collection('decisions').onSnapshot(snap=>{
+      const rows=(snap.docs||[]).map(doc=>({id:doc.id,...(doc.data?doc.data():doc)}));
+      if(rows.length)applyRows(rows);
+    },()=>{info.textContent='Could not load saved decisions. New marks are kept on this device.'});
+  });
+})();
+</script>

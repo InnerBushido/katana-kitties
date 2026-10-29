@@ -29917,6 +29917,30 @@ console.log('\n--- one press is not enough, and one player drives ---');
   ok('...and names every top-level document', missingTops.length === 0,
     missingTops.length ? missingTops.join(' ') : tops.join(' '));
 
+  /* THE RULE REGISTER. RULES.md is where Richard reviews every standing rule,
+     and it was written because the nine non-negotiables had drifted apart in
+     four places (CLAUDE.md, PROJECT.md §9, the Field Guide, a memory file)
+     without anybody deciding any of it. A check can't tell whether a sentence
+     is a rule, so this holds the floor that can be checked: every
+     non-negotiable in CLAUDE.md has an entry (N1..Nn, as many as there are),
+     and every entry keeps its Status / Your call / Note lines. Without those
+     lines the review page has nothing to show and nowhere for his answer to
+     go. Adding a rule anywhere else is still on the session (CLAUDE.md says
+     so), and that part can't be asserted here. */
+  const claudeMd = readFileSync(new URL('CLAUDE.md', root), 'utf8').replace(/\r\n/g, '\n');
+  const rulesMd = readFileSync(new URL('RULES.md', root), 'utf8').replace(/\r\n/g, '\n');
+  const nnBlock = (claudeMd.split('## The non-negotiables')[1] || '').split('\n## ')[0];
+  const nnCount = (nnBlock.match(/^\d+\. \*\*/gm) || []).length;
+  const nEntries = (rulesMd.match(/^### N\d+ · /gm) || []).length;
+  ok('RULES.md has an entry for every non-negotiable in CLAUDE.md',
+    nnCount > 0 && nEntries === nnCount, `${nEntries} entries, ${nnCount} non-negotiables`);
+  const entries = rulesMd.split(/^### /m).slice(1);
+  const shapeless = entries.filter((e) =>
+    !/^- \*\*Status:\*\*/m.test(e) || !/^- \*\*Your call:\*\*/m.test(e) || !/^- \*\*Note:\*\*/m.test(e))
+    .map((e) => e.split(' ')[0]);
+  ok('...and every entry keeps its Status, Your call and Note lines', shapeless.length === 0,
+    shapeless.length ? shapeless.join(' ') : `${entries.length} rules`);
+
   /* A tool nobody knows about is a tool that gets rewritten. Every one of these
      is a thing a person types; the capture rig's internals are not. */
   const tools = readdirSync(new URL('tools/', root))

@@ -22,6 +22,7 @@ look. Everything else is one level down and read on demand.
 | which voice belongs to which character | [docs/notes/voices.md](docs/notes/voices.md) |
 | why it lags or stutters, and what is measured NOT to be why | [docs/notes/performance.md](docs/notes/performance.md) |
 | when a change earns a line in PROJECT.md, and how its tables generate themselves | [docs/notes/docs.md](docs/notes/docs.md) |
+| every standing rule, its status, and where each copy lives | [RULES.md](RULES.md) — **add any new rule here** |
 | what changed and why | `git log` — the commit messages are the session log |
 
 ## Run it, check it
@@ -73,6 +74,14 @@ anything, a sheet read in mirror image, a trade that quietly destroys an orb.
 
 Break any of these and the thing stops being the game it is. Each is enforced by
 `world-check` where a check can express it.
+
+**Every standing rule, these nine and all the others, is listed in
+[RULES.md](RULES.md), the register Richard reviews.** A session that introduces
+a rule adds it there **in the same commit** with status `new`, saying who
+decided it and when. That covers a rule he states, a bug fix promoted to "never
+do X again", and a memory saved that will steer later sessions. A session never
+marks a rule `active`, because that is his review's job. A rule that is not in
+RULES.md was never decided. See its *Keeping this file current*.
 
 1. **The maths is the point, not a bolt-on.** The Kotodama Orb draws its own
    working from *the same two numbers that position it*, and the Dojo of the

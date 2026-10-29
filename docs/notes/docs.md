@@ -22,7 +22,11 @@ That covers:
 - **a change to the inputs, or to the numbers the doc quotes** — this one is
   automated rather than remembered, see below;
 - **a rule that must not break**, which goes in the non-negotiables in
-  [CLAUDE.md](../../CLAUDE.md) *and* in the God Doc's §9.
+  [CLAUDE.md](../../CLAUDE.md) *and* in the God Doc's §9. **Every rule, a
+  non-negotiable or not, also gets an entry in [RULES.md](../../RULES.md)**,
+  as `new` with who decided it and when, in the same commit. That file is the
+  register Richard reviews, and on 2026-10-13 it found four places where these
+  copies had already drifted apart.
 
 **And the change goes in the published copy too** — see *The God Doc has a twin*
 below. That is not a separate rule; it is the same one, applied to the copy that

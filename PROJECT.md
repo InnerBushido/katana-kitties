@@ -94,6 +94,8 @@ npm run check                 # both of the above, in one line
 npm run docs                  # tools/doc-sync.mjs — regenerate the generated tables,
                               #   in this file AND in the published page's source
 npm run artifact              # tools/artifact-sync.mjs — is the published page current?
+node tools/rules-page.mjs     # RULES.md -> out/rules-page.html, the rule register's review
+                              #   page; an agent republishes it to the URL in RULES.md
 ```
 
 **PLAY IT IN FIREFOX.** Chrome cannot read Joy-Con sticks through vJoy — the
@@ -758,6 +760,7 @@ channel** — §3.
 | [CLAUDE.md](CLAUDE.md) | **loaded into every AI session.** Deliberately short: how to run it, what must not break, where to look |
 | [HANDOFF.md](HANDOFF.md) | **current state and open work.** What is played-and-live, what is untested-by-players, what is next |
 | **PROJECT.md** | this file — the one-stop sheet |
+| [RULES.md](RULES.md) | **the rule register** — every standing rule (the nine non-negotiables, house style, git, assets, and the ones that live only in Claude's memory) with where each copy lives, its status, and a KEEP / CHANGE / REMOVE line for Richard. Where copies disagree it says `CONFLICT` |
 | [docs/artifact/project-page.html](docs/artifact/project-page.html) | **the source of the published page** — edit this, never the page. `docs/artifact/published.json` records what was last pushed to it |
 | [docs/notes/README.md](docs/notes/README.md) | the index to the design notes, with a "read it before you touch" column |
 | [tools/capture/README.md](tools/capture/README.md) | **the director's guide** to filming the game to teach the game |
