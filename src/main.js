@@ -27,7 +27,7 @@ import { clusterPlayers, MERGE_IN, MERGE_OUT } from './core/cluster.js';
 import { SNAKE, COIN_CANES } from './world/snakeway.js';
 import { BAMBOO_POINTS } from './entities/prop.js';
 import { SnakeCam } from './systems/snakecam.js';
-import { BridgePeek, peekHold } from './systems/dream/peek.js';
+import { BridgePeek, peekHold, peekDefers } from './systems/dream/peek.js';
 import { Dragon, BREEDS } from './entities/dragon.js';
 import { Panda, PANDA, PANDA_TIERS, tierFor, toNextTier } from './entities/panda.js';
 import { ClanLeader, LEADERS } from './entities/leader.js';
@@ -68,7 +68,7 @@ import { loadBoard, clearBoard, BOARD_MODES } from './systems/leaderboard.js';
 import {
   listSaves, putSave, dropSave, clearSaves, snapshot, describe, restore,
   castRow, applyCast, meaningful, newSessionId, worldSig, WORLD_SHAPE_KEY,
-  AUTOSAVE_EVERY, AUTOSAVE_AFTER, MAX_SAVES, MAX_LIST, saveCap, saveByHand,
+  AUTOSAVE_EVERY, AUTOSAVE_AFTER, MAX_SAVES, MAX_LIST, saveCap, saveByHand, landAt,
 } from './systems/savegame.js';
 
 /** One order carried across a reload — `{ do: 'new' }` or `{ do: 'load', id }`
@@ -90,7 +90,10 @@ import { Feats } from './systems/feats.js';
 import { Inspector } from './systems/inspector.js';
 import { Payne, PAYNE_CLIPS, PAYNE_TOWN } from './systems/payne.js';
 import { Housing } from './systems/housing/housing.js';
+import { TEA_SHEET } from './systems/housing/teahouse.js';
+import { gridFix, applySheetFix, sheetIdOf } from './core/spritefix.js';
 import { DreamDojo } from './systems/dreamdojo.js';
+import { WorldPeek } from './systems/worldpeek.js';
 import { SIM } from './world/simworld.js';
 
 /* ---------------------------------------------------------------------------
@@ -198,6 +201,11 @@ const TUNING_ROW = import.meta.env?.DEV
     + '<div class="dbg-row" data-open="/tuning.html">'
     + '<span class="k">&#8599;</span> BALANCE PAGE &mdash; every ability\'s '
     + 'numbers, on sliders</div>'
+    /* ...and the sprite editor, inside the same guard for the same reasons:
+       sprites.html is not a build input and /__spritefix is dev-server only. */
+    + '<div class="dbg-row" data-open="/sprites.html">'
+    + '<span class="k">&#8599;</span> SPRITE EDITOR &mdash; kendo and home '
+    + 'poses\' size and place, sheet column order</div>'
   : '';
 
 /* HOW MANY FRAMES THE COST READOUT AVERAGES OVER. Two seconds at 60fps, which
@@ -871,6 +879,10 @@ class Game {
        becomes visible on is already the reduced one. */
     this.touchPad.setCornerOnly(phone && !pad);
     this.touchPad.onCornerSkip = () => this._skipScene();
+    /* Queued, not acted on here: the pointer event lands between frames, and
+       the frame's own Start handling is what knows about pickers, cards and
+       the name entry (see "UI FALL-THROUGH" in docs/notes/gotchas.md). */
+    this.touchPad.onCornerMenu = () => { this._cornerMenuAsk = true; };
     this.touchPad.setVisible(pad || phone);
     /* THE PAD ALWAYS CARRIES WASD AS ITS SECOND SURFACE — see `_freeKeysets` in
        core/input.js. On a phone there is no keyboard and that costs nothing; on
@@ -1582,6 +1594,8 @@ class Game {
 
     setLoad('Sharpening claws…');
     await frame();
+    /* (The sprite editor's column fixes are already in `ember` and `frost`: `loadSpriteAtlas` re-deals
+       every sheet it loads by what /sprites.html saved for it - core/spritefix.js.) */
     this._spawnPlayers(ember, frost);
     this._spawnDragons(dragonTex, dragonFlyTex);
     /* KEPT FOR THE ENDING, and for nothing else. `FinaleShow` draws two little
@@ -1597,6 +1611,8 @@ class Game {
        bridges out to them. After the Dream Dojo, because the home roads wind
        round every other road in the sky. See systems/housing/housing.js. */
     this.housing = new Housing(this);
+    /** The look across at the real world's bridges (systems/worldpeek.js). */
+    this.worldPeek = new WorldPeek(this);
     this.housing.build();
 
     setLoad('Writing the story…');
@@ -1902,9 +1918,38 @@ class Game {
       ['frost_kendo', 'kittens/frost/kendo.png', false],
       ['ember_kiai', 'kittens/ember/kiai.png', false],
       ['frost_kiai', 'kittens/frost/kiai.png', false],
+      /* ...and 返 in the bogu: the riposte stance, shinai held up across her.
+         Richard, Oct 2026: Ember's first kiai drawing reads as a guard, so it
+         became hers, and Frost's is that pose drawn for Frost. A missing file
+         keeps the orb's riposte stance (Player, `kparryPose`). */
+      ['ember_kparry', 'kittens/ember/kparry.png', false],
+      ['frost_kparry', 'kittens/frost/kparry.png', false],
+      /* ...the guard knocked aside (stars, can't swing) and the clinch, one
+         drawing for each side of the crossed shinai (housing/kendo.js
+         `KENDO_CLINCH`). A missing file keeps the guard. */
+      ['ember_kbroke', 'kittens/ember/kbroke.png', false],
+      ['frost_kbroke', 'kittens/frost/kbroke.png', false],
+      ['ember_kclinchR', 'kittens/ember/kclinchR.png', false],
+      ['frost_kclinchR', 'kittens/frost/kclinchR.png', false],
+      ['ember_kclinchL', 'kittens/ember/kclinchL.png', false],
+      ['frost_kclinchL', 'kittens/frost/kclinchL.png', false],
+      /* ...the match's ceremony - seiza, the reach for the shinai, the rei -
+         and the three home poses: the prayer, the onsen and the futon. Each
+         missing file falls back to the pose it replaced (Player._homeAs, and
+         the guard squashed/tipped in the kendo branch). */
+      ...['ember', 'frost'].flatMap((s) => ['seiza', 'reach', 'rei', 'pray', 'bath', 'futon'].map((p) => (
+        [`${s}_${p}`, `kittens/${s}/${p}.png`, false]))),
+      /* THE TEA CEREMONY: 32 frames, 8 x 4, one crop for all of them
+         (tools/capture/tea-sheet.mjs) — so `uniform`, and the loader takes
+         each cell whole instead of centring her on her own ink every frame.
+         1536 x 768 is its ship size (TEA_SHEET.ship); a missing file keeps
+         her in the prayer. */
+      ...['ember', 'frost'].map((s) => [`${s}_tea`, `kittens/${s}/tea.png`, false,
+        { views: TEA_SHEET.cols, rows: TEA_SHEET.rows, uniform: true, maxAtlas: 2048 }]),
       /* THE PEN'S ANIMALS (housing/farm.js). Side-on, facing LEFT. A missing
          one keeps its primitive body. */
       ['farm_chick', 'farm/chick.png', false],
+      ['farm_chick_fly', 'farm/chick_fly.png', false],
       ['farm_bunny', 'farm/bunny.png', false],
       ['farm_goat', 'farm/goat.png', false],
       /* THE CONJURED INSECT. Loaded with the other animals because it is one,
@@ -1970,7 +2015,7 @@ class Game {
       mantis: critterArt.mantis && { calm: critterArt.mantis, shock: critterArt.mantis },
     };
     this.critterArt.wings = critterArt.angel_wings;
-    this.farmArt = { chick: critterArt.farm_chick, bunny: critterArt.farm_bunny, goat: critterArt.farm_goat };
+    this.farmArt = { chick: critterArt.farm_chick, chickFly: critterArt.farm_chick_fly, bunny: critterArt.farm_bunny, goat: critterArt.farm_goat };
 
     /* THE EATING POSE IS PER STYLE, RECOLOURED, AND IT USED TO BE PER SLOT.
        `p.index === 0 ? ember_eat : frost_eat` is the same mistake `palette.js`
@@ -2058,13 +2103,24 @@ class Game {
       return a;
     });
     /* AND AN EIGHTH AND NINTH, FOR KENDO. By STYLE, never by slot. */
+    const posePack = (s, names) => {
+      const out = {};
+      for (const [k, file] of names) {
+        const a = critterArt[`${s.sheet}_${file}`];
+        out[k] = a && s.recolour ? recolourAtlas(a, s.recolour) : (a ?? null);
+      }
+      return Object.values(out).some(Boolean) ? out : null;
+    };
     this.kendoArt = PLAYER_STYLE.map((s) => {
-      const guard = s.sheet === 'ember' ? critterArt.ember_kendo : critterArt.frost_kendo;
-      const kiai = s.sheet === 'ember' ? critterArt.ember_kiai : critterArt.frost_kiai;
-      if (!guard && !kiai) return null;
-      if (!s.recolour) return { guard, kiai };
-      console.log(`[art] ${s.name} kendo poses ← ${s.sheet}_kendo/kiai recoloured`);
-      return { guard: guard && recolourAtlas(guard, s.recolour), kiai: kiai && recolourAtlas(kiai, s.recolour) };
+      const pack = posePack(s, [['guard', 'kendo'], ['kiai', 'kiai'], ['seiza', 'seiza'], ['reach', 'reach'], ['rei', 'rei'], ['kparry', 'kparry'], ['kbroke', 'kbroke'], ['kclinchR', 'kclinchR'], ['kclinchL', 'kclinchL']]);
+      if (pack && s.recolour) console.log(`[art] ${s.name} kendo poses ← ${s.sheet}_kendo/kiai/seiza/reach/rei/kparry recoloured`);
+      return pack;
+    });
+    /* THE HOME POSES, by style like the rest; `ref` is her own bless drawing,
+       the yardstick the prayer is sized against (Player.setHomeArt). */
+    this.homeArt = PLAYER_STYLE.map((s, i) => {
+      const pack = posePack(s, [['pray', 'pray'], ['bath', 'bath'], ['futon', 'futon'], ['tea', 'tea']]);
+      return pack && { ...pack, ref: this.blessArt?.[i] ?? null };
     });
 
     /* --- one emblem per clan, shown over her head when she swears ---
@@ -2152,8 +2208,11 @@ class Game {
          reduced `maxAtlas` cannot reach a floor-pinned sheet, which is what
          makes it the safe knob. See core/device.js; the checks are in
          world-check under "THE DEVICE ATLAS BUDGET". */
+      /* `sheetFix: false`, then the fix by hand: the counts below are asked of the sheet AS DRAWN, and a
+         saved order that drops two of ten columns must not read as "only found 8/10 views" and swap her
+         for the placeholder. */
       const a = await loadSpriteAtlas(url, {
-        views, rows, cell: 384, maxAtlas: this.device.atlasMax,
+        views, rows, cell: 384, maxAtlas: this.device.atlasMax, sheetFix: false,
       });
       if (a.cols < 1) throw new Error('no views found');
       if (rows > 1 && a.rows !== rows) {
@@ -2163,7 +2222,7 @@ class Game {
         throw new Error(`only found ${a.cols}/${views} views`);
       }
       console.log(`[art] ${url} → ${a.cols} directions x ${a.rows} poses`);
-      return a;
+      return applySheetFix(a, gridFix(sheetIdOf(url), a.cols, a.rows), THREE);
     } catch (err) {
       console.warn(`[art] ${url} → falling back to drawn placeholder:`, err.message);
       const f = fallback();
@@ -2409,6 +2468,7 @@ class Game {
     p.setSweepArt(this.sweepArt?.[this.roster[p.index]] ?? null);
     p.setRiposteArt(this.riposteArt?.[this.roster[p.index]] ?? null);
     p.setKendoArt(this.kendoArt?.[this.roster[p.index]] ?? null);
+    p.setHomeArt(this.homeArt?.[this.roster[p.index]] ?? null);
   }
 
   /**
@@ -2640,6 +2700,41 @@ class Game {
     this._helpToTop(card);
   }
 
+  /**
+   * A PICTURE'S [n], TAPPED: Picture credits opens at that line and lights it.
+   * Not a plain `#credit-3` jump — the line is inside a shut `<details>`, and
+   * a fragment into a shut card scrolls to nothing. Opening it fires the
+   * card's own `toggle`, whose `_helpToTop` scrolls the CARD to the top; so
+   * the line is scrolled to after that has run, not before it, or the
+   * accordion would take the page straight back up. A `toggle` listener added
+   * here runs after that one (added when Help was wired), so straight after
+   * it is enough — a requestAnimationFrame was tried and never fires in a
+   * hidden tab. A mouse and a finger only: the pad drives summaries, and the
+   * credits card is one of those.
+   * IT IS A SUB-TOPIC OF THE GLOSSARY (Richard, Oct 2026: "put the picture
+   * credits at the bottom of Japanese words & culture as a sub-category"), in
+   * the same `name="help-words"` group as the cards the pictures are in, so
+   * opening it shuts the one she tapped the [n] in. That is the accordion
+   * doing its job, not a bug. The parent is opened too, should a [n] ever be
+   * tapped from outside it.
+   */
+  _showCredit(hash) {
+    const card = document.getElementById('help-credits');
+    const li = hash && card?.querySelector(hash);
+    if (!li) return;
+    const up = card.parentElement?.closest('details');
+    if (up && !up.open) up.open = true;
+    const go = () => {
+      const box = card.closest('.panel');
+      if (box) box.scrollTop += li.getBoundingClientRect().top - box.getBoundingClientRect().top - box.clientHeight / 3;
+      li.classList.add('lit');
+      setTimeout(() => li.classList.remove('lit'), 1800);
+    };
+    if (card.open) { go(); return; }
+    card.addEventListener('toggle', go, { once: true });
+    card.open = true;
+  }
+
   _helpToTop(card) {
     const box = card.closest('.panel');
     if (!box || box.scrollHeight <= box.clientHeight) return;
@@ -2686,6 +2781,13 @@ class Game {
        Both edges on purpose: closing restarts it too, so the clip is at frame
        one and paused-in-effect behind a shut card rather than running unwatched
        for as long as Help is open. */
+    // A picture's [n] goes to its line in Picture credits (`_showCredit`).
+    document.getElementById('panel-help')?.addEventListener('click', (e) => {
+      const ref = e.target.closest('a.credit-ref');
+      if (!ref) return;
+      e.preventDefault();
+      this._showCredit(ref.hash);
+    });
     let restarts = 0;
     document.querySelectorAll('#panel-help details.help-card').forEach((card) => {
       card.addEventListener('toggle', () => {
@@ -2801,6 +2903,25 @@ class Game {
               yes: 'YES, LEAVE THE GAUNTLET',
               onYes: () => {
                 for (const p of who) G.leaveGauntlet(p);
+                this.setPaused(false);
+              },
+            });
+          }
+        }
+        if (a === 'leave-bamboo') {
+          // The same WHOSE as the Gauntlet's, above.
+          const B = this.dream?.bamboo;
+          const inIt = this.players.filter((p) => B?.inSession(p));
+          const own = this.players[this.menuOwner];
+          const who = own && inIt.includes(own) ? [own] : inIt;
+          if (who.length) {
+            this.confirm.ask({
+              title: who.length === 1 ? `TAKE ${who[0].name.toUpperCase()} OFF THE COURSE?` : 'LEAVE BAMBOO INFILTRATION?',
+              body: 'A run going now stops with no time. Stars already won are kept.',
+              no: 'NO, KEEP SNEAKING',
+              yes: 'YES, LEAVE THE COURSE',
+              onYes: () => {
+                for (const p of who) B.leaveCourse(p);
                 this.setPaused(false);
               },
             });
@@ -2983,6 +3104,16 @@ class Game {
          describes the state you are already in makes you flip it to find out
          what the other one does, which on this one costs you your seat. */
       if (this.device.detected) {
+        if (this.device.override === 'auto') {
+          note.textContent = pad
+            ? 'Automatic: no controller is connected, so Player 1 is the on-screen '
+              + 'stick. Connect one and press a button on it, and the stick hides '
+              + 'and the controller takes over.'
+            : 'Automatic: a controller is connected, so Player 1 is gamepad 1 and '
+              + 'the on-screen stick is hidden. Disconnect it and the stick comes '
+              + 'back. The ≡ corner button opens the menu either way.';
+          return;
+        }
         if (pad) {
           note.textContent = 'Player 1 is the on-screen stick — left thumb to '
             + 'move, buttons on the right. A gamepad paired to this phone joins '
@@ -3039,6 +3170,22 @@ class Game {
       this.audio.resume();
     });
     describeTouch();
+    /* AUTOMATIC FOLLOWS THE PAD — `profileFor` counts connected gamepads, so a
+       controller arriving or leaving is the same re-detect the select does.
+       Only on 'auto', and only when `padOn` actually moves: `_applyTouchMode`
+       re-deals every device when it does, which is right for "a controller is
+       now player 1" and churn for anything else. */
+    const followPads = () => {
+      if (this.device.override !== 'auto') return;
+      const next = detectDevice();
+      if (next.padOn === this.device.padOn) return;
+      this.device.padOn = next.padOn;
+      this._applyTouchMode();
+      describeTouch();
+      if (this.state === 'play') this.toast(next.padOn ? 'Controller gone — the on-screen stick is back' : 'Controller connected — the on-screen stick is hidden');
+    };
+    window.addEventListener('gamepadconnected', followPads);
+    window.addEventListener('gamepaddisconnected', followPads);
 
     const jc = document.getElementById('set-joycon');
     jc.value = this.input.joyconRotation;
@@ -3559,6 +3706,8 @@ class Game {
        saying "not in here". Rebuilt on the way in, like the rows above. */
     document.getElementById('btn-leave-gauntlet')
       ?.classList.toggle('hidden', !(on && this.players.some((p) => this.dream?.sine?.inSession(p))));
+    document.getElementById('btn-leave-bamboo')
+      ?.classList.toggle('hidden', !(on && this.players.some((p) => this.dream?.bamboo?.inSession(p))));
     document.getElementById('btn-holo-profile')
       ?.classList.toggle('hidden', !(on && this.dream?.built && this.players.some((p) => this.dream.st[p.index]?.holoWorn)));
     document.getElementById('panel-pause').classList.toggle('hidden', !on);
@@ -4494,6 +4643,22 @@ class Game {
        kittens standing in the middle of the town it opens on. */
     if (ok) this._updateFinaleHold();
     return ok;
+  }
+
+  /**
+   * WHERE HER KOTODAMA ORBIT. Richard, Oct 2026: "When player is in the
+   * simulation, it seems it is bringing the worlds regular, large kotodama
+   * orbs into the simulator with the player. It should leave that outside of
+   * the simulator like it does for any of the other orbs the player has
+   * equipped before entering the simulator." Her worn orbs are swapped for
+   * her holo kit on the way in (`DreamDojo._applyKit`); the orbs she has
+   * FOUND, and the gold quest tokens, are the real world's, so in the sim
+   * they keep circling her body in its tube (`dreamAnchor`) — moved, never
+   * dropped, so nothing is lost (non-negotiable 4) and the maths each one
+   * draws is still about the circle it is actually on (1).
+   */
+  orbCentre(p) {
+    return p.realm === 'sim' && p.dreamAnchor ? p.dreamAnchor : p.position;
   }
 
   /**
@@ -6257,7 +6422,7 @@ class Game {
    * appears to do nothing — sixth non-negotiable, and the toast is cheaper
    * than the confusion.
    */
-  /** Every Shadow song open in Kata Trace, for this session (`KataHall.songChoices`). */
+  /** Every song open in Kata Trace, for this session (`KataHall.songChoices`). */
   _toggleDreamNav() {
     if (!this.dream) { this.toast('[debug] no Dream Dojo yet — it is built on PLAY', 0); return; }
     this.dream.navDebug = !this.dream.navDebug;
@@ -6272,16 +6437,20 @@ class Game {
   }
 
   _debugShadowSongs() {
-    if (this._debugSongs) { this.toast('[debug] every Shadow song is already open in Kata Trace', 0); return; }
+    /* EVERY SONG, not every Shadow song. Richard, Oct 2026: "Let's make the
+       'Open every shadow song in Kata Trace' be 'Open every song in Kata
+       Trace' instead, so that all the locked songs are unlocked and playable"
+       — the house songs' bundles open with his recordings. */
+    if (this._debugSongs) { this.toast('[debug] every song is already open in Kata Trace', 0); return; }
     this.confirm.ask({
-      title: 'OPEN EVERY SHADOW SONG?',
-      body: 'Requiem, Darksynth, Nightmare and Nightmare (long) become playable in Kata Trace '
-        + 'for every kitten, without beating him. Until the tab is closed.',
+      title: 'OPEN EVERY SONG IN KATA TRACE?',
+      body: 'Shadow Lionheart\'s four recordings and the six house songs become playable in Kata Trace '
+        + 'for every kitten, without beating him or buying a house. Until the tab is closed.',
       no: 'NO, KEEP THEM LOCKED',
-      yes: 'YES, OPEN ALL FOUR',
+      yes: 'YES, OPEN EVERY SONG',
       onYes: () => {
         this._debugSongs = true;
-        this.toast('[debug] every Shadow song is open in Kata Trace', 0);
+        this.toast('[debug] every song is open in Kata Trace', 0);
         this._refreshDebugPanel();
       },
     });
@@ -6517,7 +6686,7 @@ class Game {
       ${row('KeyU', `${KEYSETS[1].name} &#8594; ${this._keyboardHeldBy(1)}`)}
       ${TUNING_ROW}
       <div class="dbg-sep">SHADOW LIONHEART — his songs and his secret</div>
-      ${row('DreamSongs', 'open every Shadow song in Kata Trace', this._debugSongs)}
+      ${row('DreamSongs', 'open every song in Kata Trace', this._debugSongs)}
       ${row('DreamExtra', 'open 秘 EXTRA HARD — as if 1st Class')}
       ${row('DreamNav', 'show the Dream Dojo walk paths', !!this.dream?.navDebug)}
       ${row('SineExtra', 'open 秘 EXTRA HARD in the Sine Gauntlet', !!this._debugSineExtra)}
@@ -8236,8 +8405,9 @@ class Game {
     const row = this.sessionCast.get(p?.style?.name);
     if (!row?.fromSave) return false;
     row.fromSave = false;
-    const at = row.at;
-    if (!Array.isArray(at) || at.length !== 3 || !at.every(Number.isFinite)) return false;
+    // Out of the simulator onto the middle of the pad, as `restore` does.
+    const at = landAt(this, row);
+    if (!at) return false;
     p.position.set(at[0], at[1], at[2]);
     p.group?.position.copy(p.position);
     p.camTarget?.copy(p.position);
@@ -9130,6 +9300,18 @@ class Game {
        would read as the game not knowing which way round it is. */
     if (this.travel) return this.travel === 'out' ? 'griffin' : 'flight';
     if (!this.players?.length) return null;
+    /* THE SIMULATOR'S GAMES WITH A SONG OF THEIR OWN OUTRANK HER HOUSE. Richard,
+       Oct 2026: "When player is in the simulator and playing Kata Trace or
+       fighting Shadow Lionheart, or just doing any mini-game in the simulator
+       that has music, then that music should override the users if they are
+       in their own house. When returning the music after mini-games finish,
+       should return to the house music or default music." They were below the
+       jukebox, so a kitten who went in through her holodeck played Kata Trace
+       to her sister's boombox, off the beat the run is judged on. Nothing is
+       remembered: the frame either game ends, these are null and the house's
+       song (or the island's) is simply the next answer down. */
+    const simSong = this._simGameTrack();
+    if (simSong) return simSong;
     /* HER BRIDGE'S JUKEBOX, over the dragons. Richard: "the most recent
        kitten onto a bridge picks the track, overriding other music including
        dragon music." Below the ending, the tour and the griffin, which are
@@ -9166,28 +9348,44 @@ class Game {
        the Turning Circle and "starts playing quietly, from a distance" means
        before she has left it. `musicLevel` is the swell, applied in
        `_updateMusic`. */
-    /* A KATA TRACE RUN PLAYS ITS OWN SONG, at its own speed — the one she
-       picked, which is the beat the run is judged on (dream/kata.js). Above
-       the Dojo's swell, at full level: it is a song she chose to hear. */
+    const swell = this.dream?.musicLevel?.(this.players) ?? 0;
+    /* ...AND HIS ISLAND IS QUIET: "When entering the Shadow Lionheart island,
+       the music should fade out and turn off" (DreamDojo `_shadowMood`). The
+       track stays `vr` underneath so coming back off it is a fade, not a cut. */
+    this._vrLevel = swell * (1 - (this.dream?.hush ?? 0));
+    /* HIS RECORDINGS ARE FETCHED ON THE WAY IN — bytes only, ~1.4MB each, so
+       the fight's music does not wait on the network (Audio.prefetchMusic). */
+    if (swell > 0 && !this._shadowFetched) { this._shadowFetched = true; this.audio?.prefetchMusic?.(Object.values(SHADOW_TRACK)); }
+    if (swell > 0) return 'vr';
+    const isl = this._islandTrack(dt);
+    if (isl === 'arena' && !this.inMatch) return 'saucer';
+    return isl;
+  }
+
+  /**
+   * THE SIMULATOR'S OWN SONGS, or null: a Kata Trace run's, or Shadow
+   * Lionheart's while a round of his is live. Asked above the house's jukebox
+   * (`_wantedTrack`), each at full level.
+   *
+   * A KATA TRACE RUN PLAYS ITS OWN SONG, at its own speed — the one she
+   * picked, which is the beat the run is judged on (dream/kata.js). It is a
+   * song she chose to hear, so it is not under the Dojo's swell.
+   * SHADOW LIONHEART'S FIGHT HAS HIS OWN THEME — "darker music, more gothic"
+   * — and a different one per level (`SHADOW_TRACK`): the procedural theme on
+   * EASY, then the three recordings, Requiem, Darksynth and Nightmare. A
+   * recording plays its measured loop for as long as the fight lasts.
+   */
+  _simGameTrack() {
     const kata = this.dream?.kata?.musicTrack?.();
     if (kata) { this._vrLevel = 1; return kata; }
-    /* SHADOW LIONHEART'S FIGHT HAS HIS OWN THEME — "darker music, more
-       gothic" — while a round of it is live, and a different one per level
-       (`SHADOW_TRACK`): the procedural theme on EASY, then the three
-       recordings, Requiem, Darksynth and Nightmare. A recording plays its
-       measured loop for as long as the fight lasts. */
     if (this.dream?.shadow?.state === 'live') {
       this._vrLevel = 1;
       return SHADOW_TRACK[this.dream.shadow.L?.id] ?? 'shadow';
     }
-    this._vrLevel = this.dream?.musicLevel?.(this.players) ?? 0;
-    /* HIS RECORDINGS ARE FETCHED ON THE WAY IN — bytes only, ~1.4MB each, so
-       the fight's music does not wait on the network (Audio.prefetchMusic). */
-    if (this._vrLevel > 0 && !this._shadowFetched) { this._shadowFetched = true; this.audio?.prefetchMusic?.(Object.values(SHADOW_TRACK)); }
-    if (this._vrLevel > 0) return 'vr';
-    const isl = this._islandTrack(dt);
-    if (isl === 'arena' && !this.inMatch) return 'saucer';
-    return isl;
+    // A Bamboo Infiltration course's song, while anybody is on it (null if the file is not there).
+    const bamboo = this.dream?.bamboo?.musicTrack?.();
+    if (bamboo) { this._vrLevel = 1; return bamboo; }
+    return null;
   }
 
   /**
@@ -9336,8 +9534,13 @@ class Game {
    *   this is the toast it always was.
    */
   /** `holdMs`, when given, replaces the length rule (and its TOAST_MAX cap) for
-   *  the one announcement that is worth more than seven seconds. */
-  toast(text, playerIndex = 0, combo = null, holdMs = 0) {
+   *  the one announcement that is worth more than seven seconds.
+   *  `look.colours`: ONE line for two kittens, edged in both their colours
+   *  (CSS strings), instead of the same line twice. Richard, Oct 2026, of the
+   *  kendo referee: "combine the text if it is the same ... put both their
+   *  colors in the text box". The strip is one strip for the whole screen, so
+   *  a line sent to each kitten was always printed once per kitten. */
+  toast(text, playerIndex = 0, combo = null, holdMs = 0, look = null) {
     /* IN FRONT OF HER CARD WHILE SHE HAS ONE UP. A refusal from Lionheart's
        or Payne's card is a toast to the kitten reading that card, and the card
        is drawn over the HUD the toasts live in - so the one sentence that said
@@ -9378,16 +9581,19 @@ class Game {
       el = document.createElement('div');
       el.className = `toast p${playerIndex}`;
       el.textContent = text;
+      const cs = look?.colours?.filter(Boolean) ?? [];
+      if (cs.length) {
+        el.classList.add('shared');
+        el.style.borderLeftColor = cs[0];
+        el.style.borderRightColor = cs[cs.length - 1];
+      }
       wrap.appendChild(el);
       if (key) {
         live = { el, n: 1, total: combo.add ?? 1, fadeAt: 0, gone: 0 };
         this._combos.set(key, live);
       }
     }
-    const hold = holdMs > 0 ? holdMs : Math.min(
-      TOAST_MAX,
-      Math.max(TOAST_MIN, TOAST_BASE + String(text).length * TOAST_PER_CHAR)
-    );
+    const hold = holdMs > 0 ? holdMs : this.toastHold(text);
     const fadeAt = setTimeout(() => el.classList.add('fade'), hold);
     const gone = setTimeout(() => {
       el.remove();
@@ -9401,6 +9607,12 @@ class Game {
        shows a maximum of 4 of the last messages" — so it is now pinned by a
        check rather than only by this comment. */
     while (wrap.children.length > 4) wrap.firstChild.remove();
+  }
+
+  /** How long `toast` holds `text` by default, in ms: the per-character curve, capped. Asked from outside
+   *  by a caller that wants a multiple of it — Bamboo Infiltration's pickups hold for twice it. */
+  toastHold(text) {
+    return Math.min(TOAST_MAX, Math.max(TOAST_MIN, TOAST_BASE + String(text).length * TOAST_PER_CHAR));
   }
 
   /**
@@ -10102,13 +10314,21 @@ class Game {
       for (const d of this.dragons) d.update(dt, this.world, []);
       this.dream?.update(dt);
       for (const p of this.players) {
-        for (const o of p.orbs ?? []) o.update(dt, p.position);
+        for (const o of p.orbs ?? []) o.update(dt, this.orbCentre(p));
         for (const o of p.wornOrbs ?? []) o.update(dt, p.position);
-        for (const o of p.featOrbs ?? []) o.update(dt, p.position);
+        for (const o of p.featOrbs ?? []) o.update(dt, this.orbCentre(p));
+      }
+      /* PAYNE'S INTRODUCTION IS SHOT IN THE TOWN, not the Dream Dojo: its
+         shrine and its dragon are on screen, so they are ticked like the
+         dragon hunt's scenes tick them, and the simulator is never warmed for
+         a scene that never goes into it. */
+      if (this.storyScene.kind === 'intro') {
+        for (const s of this.world.shrines) s.update(dt, []);
+        for (const L of this.leaders) L.update(dt, []);
       }
       this._updateMusic(dt);
       // The simulator going up a slice a frame, before the tour cuts into it.
-      this._primeSim(this.storyScene.camera);
+      if (this.storyScene.kind !== 'intro') this._primeSim(this.storyScene.camera);
       // Its lens says which world it is in: see StoryScene.update.
       this._renderView(this.storyScene.camera, 0, 0,
         ...this.renderer.getSize(new THREE.Vector2()).toArray(), null, true, this.storyScene.loc);
@@ -10155,9 +10375,9 @@ class Game {
          no collision, no input — which is why this is three lines rather than
          an exception carved out of `_tickPlayers`. */
       for (const p of this.players) {
-        for (const o of p.orbs ?? []) o.update(dt, p.position);
+        for (const o of p.orbs ?? []) o.update(dt, this.orbCentre(p));
         for (const o of p.wornOrbs ?? []) o.update(dt, p.position);
-        for (const o of p.featOrbs ?? []) o.update(dt, p.position);
+        for (const o of p.featOrbs ?? []) o.update(dt, this.orbCentre(p));
       }
       this._renderView(this.shrineScene.camera, 0, 0,
         ...this.renderer.getSize(new THREE.Vector2()).toArray(), null, true);
@@ -10313,9 +10533,17 @@ class Game {
     /* WHICH pad, not whether any pad — see `_claimMenu`. `findIndex` rather
        than `some` is the entire difference between a menu one player drives
        and a menu four players wrestle over. */
-    const asked = this.input.players.findIndex(
+    let asked = this.input.players.findIndex(
       (p) => (p.source === 'gamepad' || p.source === 'touch') && p.pressed('start'),
     );
+    /* THE CORNER BUTTON WITH NO STICK ON SCREEN (`TouchPad.onCornerMenu`): a
+       phone on a controller, whose menu must still open to a thumb. It asks as
+       whoever already owns an open menu, else player 1 — one tap is one press,
+       and it goes down every branch below exactly as her pad's Start would. */
+    if (this._cornerMenuAsk) {
+      this._cornerMenuAsk = false;
+      if (asked < 0 && this.players.length) asked = this.paused ? (this.menuOwner ?? 0) : 0;
+    }
     /* HER OWN START CLOSES HER OWN CARD, and does not also open the pause menu
        behind it. The card is read later in the frame (`Inspector.update`), so
        without this the press would be taken twice — the card would close and
@@ -10513,9 +10741,9 @@ class Game {
 
     // Orbs, pickups, dragons, dojo.
     for (const p of this.players) {
-      for (const o of p.orbs ?? []) o.update(dt, p.position);
+      for (const o of p.orbs ?? []) o.update(dt, this.orbCentre(p));
       for (const o of p.wornOrbs ?? []) o.update(dt, p.position);
-      for (const o of p.featOrbs ?? []) o.update(dt, p.position);
+      for (const o of p.featOrbs ?? []) o.update(dt, this.orbCentre(p));
     }
     this.kotodama.update(dt);
     this.feats.update(dt);
@@ -10526,6 +10754,8 @@ class Game {
        the thing that pins a kitten in her tube for the NEXT frame. */
     this.dream?.update(dt);
     this.housing?.update(dt);
+    // after the Dream Dojo, which writes `peekAt` for every kitten (worldpeek.js)
+    this.worldPeek?.update(dt);
     for (const pk of this.pickups) {
       if (pk.taken) continue;
       pk.update(dt);
@@ -10677,7 +10907,12 @@ class Game {
     /* THE WORLD, because the thing she leaves behind FALLS now — it hangs for
        a second in the smoke and then drops, and a drop needs a floor to find.
        See `systems/dodgefx.js`. */
-    this.dodgeFx?.update(dt, this.players, this.world);
+    /* Per kitten: a decoy dropped in the simulator lands on the SIM's floor.
+       Handed the town's World, `heightAt` 12000 units east of it was null and
+       every log fell out of sight — Richard: "the object that spawns behind
+       them should collide and stay in the world when landing on the disc
+       islands in the hologram". */
+    this.dodgeFx?.update(dt, this.players, (p) => this.dream?.worldFor?.(p) ?? this.world);
     this.sweepFx?.update(dt, this.players, this.payne?.sweeper);
     this.parryFx?.update(dt, this.players);
     /* AND THE CLAN POWERS LAST OF THE THREE, for the same reason dodgefx runs
@@ -10756,9 +10991,15 @@ class Game {
         /* ...and the Sine Gauntlet's: runner and stands alike watch the
            runner, side-on (dream/sine.js). Also sim-only. */
         : this.dream?.shadow?.cameraFocus?.(p) ?? this.dream?.sine?.cameraFocus?.(p)
+          /* ...and Bamboo Infiltration's bird's eye while she picks a course
+             (a run's own camera is its drill's, below). */
+          ?? this.dream?.bamboo?.cameraFocus?.(p)
           /* ...and a Kata Trace run's: her floor and Lionheart across the top
              of it, so every mark and all five of his spots are in the pane. */
-          ?? this.dream?.kata?.cameraFocus?.(p) ?? null;
+          ?? this.dream?.kata?.cameraFocus?.(p)
+          /* ...and a gallery drill that frames her (Drill.cameraFocus): the
+             剛 circle in close, so a beam at her shins reads against her. */
+          ?? this.dream?.drillFocus?.(p) ?? null;
       /* THE WAY ACROSS AND THE DOME (DreamDojo.cameraFocus): in close behind
          her for the stones, pulled back over the whole island inside the
          bubble. Never on the Dojo floor itself — `near` wins, so the maths
@@ -11893,6 +12134,7 @@ class Game {
       this.maps[i].focusOn = members;
       // Roshi's tour zooms this map out over the sky islands (Housing.tourMap)
       this.maps[i].tour = this.housing?.tourMap?.(members) ?? null;
+      this.maps[i].homes = this.housing?.homesMap?.() ?? null;
       this.maps[i].draw(this.players, this.dragons, this.kotodama, this.satan,
         this.ryu, this._seekMarkFor(members), this._payneGoalFor(members), this.payne);
     }
@@ -12713,7 +12955,10 @@ class Game {
          the obstacle course". So the session is one group, and the shared
          rig takes the course's shot (`groupShot` in `_updateRig`). Null for
          everybody else, always outside the simulator. */
-      pts: this.players.map((p) => this.dream?.sine?.paneAnchor?.(p) ?? p.position),
+      /* ...AND BAMBOO INFILTRATION'S PARTY, at its middle (dream/bamboo.js
+         `paneAnchor`): "use a shared camera for multiple players on one
+         screen for this mini game". */
+      pts: this.players.map((p) => this.dream?.sine?.paneAnchor?.(p) ?? this.dream?.bamboo?.paneAnchor?.(p) ?? p.position),
       /* A GIRL READING HER OWN CARD GETS HER OWN PANE, for the same reason a
          girl on a dragon does: she is not sharing a view with her sister right
          now, and a card drawn over a shared pane covers half of somebody
@@ -12726,7 +12971,16 @@ class Game {
           || (this.inspector?.busy(p.index) && !this.housing?.watchLane(p.index))
           /* ...and a kitten on her way into a tube, in it, or out of it: the
              phase is laid over HER pane, and must not wash over a sister's. */
-          || this.dream?.wantsSolo(p))
+          || this.dream?.wantsSolo(p)
+          /* ...and a kitten looking out of a window: the shot is first person,
+             through the glass, and it is hers (housing/activities.js
+             `lookingOut`). Richard: "A player looking out of a window gets her
+             own split-screen pane if she is sharing one." */
+          || this.housing?.activities?.lookingOut?.(p)
+          /* ...and a kitten riding the treehouse slide with a ride camera:
+             it is hers, in her head or chasing her round the pole
+             (housing/sliderider.js). */
+          || this.housing?.slides?.riding?.(p))
       ),
       prev: this._clusterOf,
       mergeIn: MERGE_IN,
@@ -12786,15 +13040,21 @@ class Game {
   _peekGroup(members) {
     let far = null;
     let w = 1;
+    let lead = null;
+    let cycle = true;
     for (const i of members) {
       const at = this.players[i]?.peekAt;
       if (!at || (far && at.far !== far)) return null;
       far = at.far;
       w = Math.min(w, at.w);
+      lead ??= at;
+      cycle &&= !!at.cycle;
     }
     if (!far) return null;
     const mid = this._centroid(members);
-    return { x: mid.x, y: mid.y, z: mid.z, far, w, spread: this._spread(members) };
+    // the shoulder and height the real world's mouths choose (worldpeek.js);
+    // the light cycle's pose only when every one of them is up on one (peek.js)
+    return { x: mid.x, y: mid.y, z: mid.z, far, w, spread: this._spread(members), side: lead.side, up: lead.up, cycle };
   }
 
   /**
@@ -13282,7 +13542,7 @@ class Game {
          a per-player focus does nothing while merged). Eased in and out on
          its own weight; exactly 0 everywhere else, and nothing below changes
          while it is, so the town's two-player camera is untouched. */
-      const course = this.dream?.sine?.groupShot?.(members) ?? null;
+      const course = this.dream?.sine?.groupShot?.(members) ?? this.dream?.bamboo?.groupShot?.(members) ?? null;
       rig.courseT = (rig.courseT ?? 0) + ((course ? 1 : 0) - (rig.courseT ?? 0)) * Math.min(1, dt * 2.2);
       if (rig.courseT < 0.001) rig.courseT = 0;
       if (course) rig.courseShot = { yaw: course.yaw, pitch: course.pitch };
@@ -13368,7 +13628,7 @@ class Game {
          hers carries the same layer — see `Player._updateCamera`. */
       const ride = members.length > 1 ? this._snakeGroup(members) : null;
       rig.bridgePeek.apply(dt, members.length > 1 ? this._peekGroup(members) : null, rig.camera, rig.target, peekHold(rig.snakeCam, ride));
-      rig.snakeCam.apply(dt, ride,
+      rig.snakeCam.apply(dt, peekDefers(rig.bridgePeek, rig.snakeCam, ride) ? null : ride,
         rig.camera, rig.target, this.world.islands);
       /* AFTER `lookAt`, so the shake moves the camera without re-aiming it.
          Offsetting before would have `lookAt` cancel most of it out — the
@@ -13700,6 +13960,17 @@ class Game {
    *  hides his bubble from a lens that cannot see him (`DreamDojo.faceCamera`). */
   _faceAll(camera, members = null) {
     for (const p of this.players) {
+      /* FIRST PERSON DOWN THE SLIDE: out of HER lens and nobody else's
+         (sliderider.js `hiddenFrom`) — "if there is another player on the
+         island ... they see the player in their splitscreen, but on the
+         user's view riding the slide, they don't see the sprite". What the
+         group was is kept, so a scene that hid her stays in charge of her. */
+      const hide = !!this.housing?.slides?.hiddenFrom?.(p, members);
+      if (hide || p._fpvHid) {
+        if (!p._fpvHid) p._fpvWas = p.group.visible;
+        p.group.visible = hide ? false : p._fpvWas;
+        p._fpvHid = hide;
+      }
       p.faceCamera(camera);
       p.panda?.faceCamera(camera);
       for (const o of p.orbs ?? []) o.faceCamera(camera);
@@ -14018,6 +14289,8 @@ class Game {
     // Roshi's tour poses the pane's camera itself (housing.js `tourLens`).
     if (!scene) this.housing?.tourLens(camera, members);
     this._faceAll(camera, members);
+    // a dragon in front of a look across fades out of THIS pane (worldpeek.js)
+    this.worldPeek?.fadeFor(camera, scene ? null : members);
     this._aimXray(camera, members, scene);
     this.housing?.aimView(camera, members, scene);
     // Can this lens see the big screen? Its fireworks only go off if one can.
@@ -14068,6 +14341,17 @@ class Game {
          where the ride camera is laid over this one after it was placed. See
          `Player._viewBasis`. A lens looking straight down has no heading and
          leaves the last one. */
+      /* ...AND WHETHER THAT LENS WAS HER OWN. Richard, Oct 2026: "the players
+         input should always be dependent on where the camera is and that the
+         input shouldn't change unless the camera actually changes". A kitten
+         in a shared pane is drawn by the group's rig, while her stick was read
+         through her own follow camera's `camYaw` — which a Dream Dojo gear
+         shot had swung round behind a lens nobody could see. `Player._moveBasis`
+         reads the rig's heading instead whenever this is false. */
+      for (const m of groups[i] ?? []) {
+        const p = this.players[m];
+        if (p) p.viewOwn = !cam || cam === p.camera;
+      }
       if (cam) {
         cam.getWorldDirection(_viewDir);
         if (Math.hypot(_viewDir.x, _viewDir.z) > 1e-3) {

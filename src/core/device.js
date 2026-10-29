@@ -285,7 +285,7 @@ export function writeOverride(mode) {
  *            defaultParty: number, defaultSplit: string}}
  */
 export function profileFor({
-  coarse = false, touchPoints = 0, dpr = 1, cores = 0, override = 'auto',
+  coarse = false, touchPoints = 0, dpr = 1, cores = 0, override = 'auto', pads = 0,
 } = {}) {
   /* BOTH SIGNALS, NOT EITHER. `maxTouchPoints > 0` alone calls every
      touchscreen laptop a phone and would take antialiasing off a desktop; a
@@ -319,7 +319,15 @@ export function profileFor({
      'auto' is true/true. Only "phone + force off" moves, and it moves from
      false/false to true/false — which is what it always should have been. */
   const touchPrimary = detected || override === 'mobile';
-  const padOn = override === 'auto' ? detected : override === 'mobile';
+  /* AUTOMATIC FOLLOWS THE CONTROLLER IN HER HAND. Richard, Oct 2026: "If a
+     controller is currently connected, then we can have an Automatic mode
+     where it will disable the touchscreen joystick controls on screen and use
+     the controller instead and if the controller is not connected, then it
+     will enable the touchscreen joysticks." `pads` is how many gamepads the
+     browser reports connected; `Game` re-detects on every connect and
+     disconnect. A browser only lists a pad once it has been pressed, so a
+     paired pad in a bag does not take the stick away. */
+  const padOn = override === 'auto' ? detected && pads === 0 : override === 'mobile';
 
   if (!touchPrimary) {
     return {
@@ -465,5 +473,6 @@ export function detect() {
     dpr: window.devicePixelRatio ?? 1,
     cores: navigator.hardwareConcurrency ?? 0,
     override: readOverride(),
+    pads: [...(navigator.getGamepads?.() ?? [])].filter((g) => g?.connected).length,
   });
 }

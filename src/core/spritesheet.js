@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { applySheetFix, gridFix, sheetIdOf } from './spritefix.js';
 
 /* ---------------------------------------------------------------------------
    Turns a generated character turnaround (N views on a white background, at
@@ -604,6 +605,43 @@ export function feetX(atlas, cols = 1) {
   }
 }
 
+/**
+ * WHERE HER BODY IS ACROSS a one-cell drawing, in the same units as `feetX`:
+ * the ink's centre over the band a quarter to six-tenths of the way down it,
+ * which is the torso. For a drawing whose lowest ink is not her feet — the
+ * kendo reach, where it is the shinai lying on the floor in front of her, and
+ * `feetX` read +0.35 of the cell against a body at -0.10, so she leapt back
+ * half a quad every time she reached (Richard, Oct 2026: "Ember's reach
+ * sprite is stepping backwards, should be centered on top of shadow"). 0
+ * when it cannot measure.
+ */
+export function torsoX(atlas, cols = 1) {
+  const img = atlas?.texture?.image;
+  if (!img?.width || typeof document === 'undefined') return 0;
+  try {
+    const w = Math.round(img.width / cols), h = img.height;
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(img, 0, 0, w, h, 0, 0, w, h);
+    const d = g.getImageData(0, 0, w, h).data;
+    const inkAt = (x, y) => d[(y * w + x) * 4 + 3] > 128;
+    let top = -1, bottom = -1;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) if (inkAt(x, y)) { if (top < 0) top = y; bottom = y; break; }
+    }
+    if (top < 0) return 0;
+    let sx = 0, n = 0;
+    for (let y = Math.round(top + (bottom - top) * 0.25); y < top + (bottom - top) * 0.6; y++) {
+      for (let x = 0; x < w; x++) if (inkAt(x, y)) { sx += x; n++; }
+    }
+    return n ? (sx / n + 0.5) / w - 0.5 : 0;
+  } catch {
+    return 0;
+  }
+}
+
 export function packMetrics({
   tallest, widest, inked = 0, cols = 1, rows = 1,
   cell = 512, pad = 0.06, maxAtlas = 2048,
@@ -860,7 +898,31 @@ export function findViewBoxes(imgData, w, h, expected, expectedRows = 1) {
  * @returns {Promise<{texture: THREE.CanvasTexture, cols: number, rows: number,
  *                    aspect: number}>}
  */
+/** Every cell of an exact cols x rows grid, whole (`loadSpriteAtlas`'s `uniform`). */
+export function uniformBoxes(w, h, cols, rows) {
+  const cw = Math.floor(w / cols), ch = Math.floor(h / rows);
+  return Array.from({ length: rows }, (_, r) => Array.from({ length: cols }, (_, c) => ({
+    x0: c * cw, x1: c * cw + cw - 1, y0: r * ch, y1: r * ch + ch - 1, w: cw, h: ch,
+  })));
+}
+
+/**
+ * Load, measure and pack a sheet — and then RE-DEAL ITS COLUMNS by whatever
+ * the sprite editor saved for it (core/spritefix.js, keyed by the file's path
+ * under public/sprites). Here and not at each call site, so every sheet the
+ * game loads honours a saved order, the next one added included: Richard,
+ * Oct 2026, "and any future sprite sheets that get added to the game".
+ * With nothing saved, or an order that does not fit the sheet, the atlas is
+ * the one that was packed. `sheetFix: false` is for the editor, which shows
+ * the columns as drawn.
+ */
 export async function loadSpriteAtlas(url, opts = {}) {
+  const atlas = await packAtlas(url, opts);
+  if (opts.sheetFix === false || !atlas) return atlas;
+  return applySheetFix(atlas, gridFix(sheetIdOf(url), atlas.cols, atlas.rows), THREE);
+}
+
+async function packAtlas(url, opts = {}) {
   /* `pad` is transparent margin left around every cell's art. Sprite atlases
      bleed without it: bilinear filtering and mipmaps sample past the cell
      boundary and drag the neighbouring frame in along the edge. Padding plus
@@ -881,6 +943,14 @@ export async function loadSpriteAtlas(url, opts = {}) {
        the same reason, and named for what it repairs rather than for the sheet
        that needed it, because the next one will be a different sheet. */
     fillHoles = false,
+    /* AN ANIMATION, NOT A TURNAROUND: the sheet is an exact `views` x `rows`
+       grid of frames cut from one locked-off video with ONE crop
+       (tools/capture/tea-sheet.mjs), and every cell is taken whole. The blob
+       finder centres each frame on its own ink, which is right for drawings
+       of a cat from eight sides and wrong for 32 frames of one cat: she leans
+       for the bowl, the box moves, and the recentring would slide her back
+       and forth across the tatami. Registration is the cell. */
+    uniform = false,
   } = opts;
 
   const img = await new Promise((res, rej) => {
@@ -900,7 +970,8 @@ export async function loadSpriteAtlas(url, opts = {}) {
   const keyed = keyOutBackground(
     sctx, src.width, src.height, clearPockets, fillHoles
   );
-  const grid = findViewBoxes(keyed, src.width, src.height, views, wantRows);
+  const grid = uniform ? uniformBoxes(src.width, src.height, views, wantRows)
+    : findViewBoxes(keyed, src.width, src.height, views, wantRows);
 
   const flat = grid.flat();
   if (flat.length === 0) throw new Error(`no sprite content found in ${url}`);

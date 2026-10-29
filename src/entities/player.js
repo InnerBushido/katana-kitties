@@ -1,6 +1,7 @@
 ﻿import * as THREE from 'three';
 import { Billboard } from '../core/gfx.js';
-import { feetX } from '../core/spritesheet.js';
+import { feetX, torsoX } from '../core/spritesheet.js';
+import { poseFix, KENDO_FILE, HOME_FILE, SINGLE_FILE } from '../core/spritefix.js';
 import { PANDA_SPEED, PANDA_JUMP, CLAW } from './panda.js';
 import { aggregate, WARD, AEGIS, DIVE, CROSS, CHARGE, DODGE, PARRY } from './powerorb.js';
 import { STEAL, DBREATH, BreathTally, arenaPowerFor } from './clanpower.js';
@@ -10,7 +11,7 @@ import { tune } from '../core/tuning.js';
 import { Label } from '../core/label.js';
 import { SNAKE } from '../world/snakeway.js';
 import { SnakeCam } from '../systems/snakecam.js';
-import { BridgePeek, peekHold } from '../systems/dream/peek.js';
+import { BridgePeek, peekHold, peekDefers } from '../systems/dream/peek.js';
 import { BOON } from '../systems/housing/boons.js';
 
 /* ---------------------------------------------------------------------------
@@ -28,6 +29,10 @@ import { BOON } from '../systems/housing/boons.js';
 
 const CAM_YAW = -Math.PI * 0.25;
 const CAM_PITCH_GROUND = 0.66;
+/** The window look's fade (`lookFade`): whole with the lens this far from her
+ *  chest, gone at `near`. She stands ~1.3 in from the frame and the lens
+ *  ends 0.9 in, so it passes through her (activities.js LOOK_SHOT). */
+export const LOOK_FADE = { far: 3.2, near: 0.9 };
 const CAM_PITCH_AIR = 0.60;
 
 const GRAVITY = 26;
@@ -51,6 +56,28 @@ const SPRINT_SPEED = 17;
 const ACCEL = 60;
 const AIR_ACCEL = 26;
 const JUMP_V = 11.2;
+/* THE TREEHOUSE SLIDE (housing/treehouse.js): the speed she rides at. She
+   is put on at `min` whatever she walked on with, gains `accel` a second and
+   tops out at `max` — a little over a sprint, which is what makes it a ride
+   rather than a ramp. */
+export const SLIDE_RIDE = { min: 6, accel: 18, max: 15 };
+/** Her walk to the slide's mouth when she asked to ride (sliderider.js): a calm walk, and "there" is this close. */
+export const AUTO_WALK = { speed: 4.5, reach: 0.25 };
+/**
+ * THE RIDE CAMERA (`rideCam`, sliderider.js), laid over the ordinary one.
+ * `fpv`: the lens at her eyes, `eye` up, looking `ahead` along the line she
+ * is travelling and `dip` down it. `chase`: `back` behind and `up` over her,
+ * aimed `lead` ahead — a third-person lens that swings round the pole with
+ * her. `turn` is how fast the heading it uses catches up with hers, `ease`
+ * how fast it blends in and out of the ordinary camera, `follow` how fast the
+ * chase lens catches up with where it should be.
+ */
+const _rcWant = new THREE.Vector3();
+const _rcLook = new THREE.Vector3();
+export const RIDE_CAM = { eye: 1.55, ahead: 6, dip: 1.6, back: 6.5, up: 3.6, lead: 2.5, turn: 5, ease: 2.5, follow: 5 };
+/** How far above her feet her head meets a lidded deck (SimWorld.lidAt):
+ *  the house's HEAD_H less a little, since a sim kitten is the plain one. */
+export const HEAD_ROOM = 2.2;
 const COYOTE = 0.12;
 
 /** A dead controller, for the frames a kitten is not in charge of herself.
@@ -170,10 +197,92 @@ export const COMBAT = tune('COMBAT', {
  * should turn into a dodge and they should dodge in the direction the player is
  * moving in". Here and not in kendo.js so the two files do not import each
  * other; `Kendo.sparStrike` reads `kendoDodgeT` for the immunity.
+ *
+ * A STEP OR TWO, NOT A DASH. Richard, Oct 2026: "It is too powerful and
+ * players fall out of the fighting area. It should move her only 1 or 2 steps
+ * and make her immune to hits for a short time." It was 24 a second for
+ * 0.24s and then the ordinary braking — measured, about 10 units, the width
+ * of the square. Now it covers `dist` in `t` and STOPS (her velocity is
+ * zeroed when the move ends, so no slide is added on), and the immunity is
+ * its own clock, `immune`, longer than the move: the step is the dodge, the
+ * immunity is what makes it one.
  */
-export const KENDO_DODGE = { speed: 24, t: 0.24, cool: 0.75 };
-/** The kendo drawings stand this much bigger than her — the bogu is a size up. */
-export const KENDO_SCALE = 1.25;
+/** Her body, for every wall: Housing `_segPush` adds a 0.18 skin, so a gap has to be 1.86 wide. */
+export const PLAYER_RADIUS = 0.75;
+/* ...AND HALF THAT, Oct 2026: "The dodge movement should be half the distance." 2.2 -> 1.1, in the same
+   0.14s, so it is a half-speed step and the immunity is unchanged. */
+export const KENDO_DODGE = { dist: 1.1, t: 0.14, immune: 0.36, cool: 0.75 };
+/**
+ * A KENDO MATCH IS WALKED AT A QUARTER OF HER SPEED. Richard, Oct 2026: "When
+ * doing kendo battle, the players need to move at 1/4th the speed." On top of
+ * everything else she runs at (clan, orbs, pets), in a live bout only
+ * (`kendoBout`) — a geared kitten walking about the house is not slowed.
+ */
+export const KENDO_MOVE = 0.25;
+/**
+ * A 返 THAT CAUGHT NOTHING, IN THE BOGU. Richard, Oct 2026: "once the riposte
+ * period is over, then we should give back player control and maybe put the
+ * stars above their head to indicate they can't block or attack during that
+ * time as they recover from a failed riposte." Outside the dojo a whiff
+ * plants her for `PARRY.recover` in the guard drawing, which in a match read
+ * as the game having taken her stick. Here the window closes, she walks, and
+ * the stars (`kendoLockT`) are the cost instead — longer than the plant, 0.6
+ * against 0.35, because stars have to be on long enough to be seen.
+ */
+export const KENDO_WHIFF = 0.6;
+/**
+ * The kendo drawings' size against her own. Richard, Oct 2026: "The kendo
+ * gear sprites are too big. Make them about 20% smaller and compare with the
+ * normal sprites: they can be a little bigger because of the armour, but
+ * about the same size, and smaller gives more room in the small fighting
+ * space." It was 1.25 ("probably 25% bigger", asked for earlier); 1.25 x 0.8
+ * is 1. Every drawing is normalised on its ink (`contentScale`), so 1 is her
+ * own standing size, and the men and the do are what reads a size up.
+ */
+export const KENDO_SCALE = 1;
+/* The home poses' sizes as a fraction of her height (setHomeArt). The bath is
+   a head, so it is sized as one; the futon drawing is half as tall as it is
+   wide, so this makes it about two of her long. Measured on screen. */
+/** The ceremony's drawings' heights as a fraction of the standing guard. */
+export const KENDO_CEREMONY_H = { seizaPose: 0.72, reachPose: 0.8, reiPose: 0.92 };
+/* ...AND ONE KITTEN'S OWN, WHERE HER DRAWINGS NEED IT. Richard, Oct 2026:
+   "Ember in kendo gear, in seiza and slashing: the sprite is too small. The
+   head/helmet should match the standing sprite's head size. The slash
+   sprite should be taller (player height plus the shinai above her head)."
+   Measured on her 768px drawings, the men's grill (its slats, found by
+   light neutral ink between dark rows) as a share of the ink:
+     guard  151 / 688 = 0.219 at 1
+     seiza  151 / 643 = 0.235 at 0.72 -> 0.169, 77% of the guard's  -> 0.94
+     reach  138 / 602 = 0.229 at 0.8  -> 0.183, 84%                  -> 0.96
+   and the slash, whose helmet is turned away so its grill under-reads, by
+   her BODY: feet to the top of the men is 521 of 737 there and 650 of 688
+   standing, so 1.35 makes her as tall as she stands and the shinai is the
+   extra above her head. Frost's drawings are proportioned differently
+   (kneeling, her bogu is 640px against 652 standing) and her white fur
+   defeats the grill measure, so she keeps the shared fractions until hers
+   are measured by hand. */
+/* SECOND PASS, Richard, Oct 2026: "the seiza for both sprites is too small",
+   "When clinching ... their sprites are too small, should be bigger so their
+   helmets are similar size as when they are standing", "Ember striking
+   sprite is also too small, should measure the helmets". Measured this time
+   ON SCREEN, every drawing on its own quad side by side (the grill's height
+   and the men's width against the guard's), not off the files - the file
+   reading had put the clinch at 1.01 when it drew at 0.80 of the guard:
+     seiza 0.86 -> 1.08, rei 0.86 -> 1.1, kiai 0.85 -> 1.55, clinch 0.80 -> 1.2,
+   reach 1.0 stays. */
+export const KENDO_POSE_H = {
+  Ember: { seizaPose: 1.08, reachPose: 0.96, reiPose: 1.1, kiaiPose: 1.55, kclinchRPose: 1.2, kclinchLPose: 1.2 },
+};
+export const HOME_BATH_H = 0.55;
+export const HOME_FUTON_H = 0.9;
+/** homePose -> [the drawing it needs, the old pose it wears without it]. */
+const HOME_FALLBACK = { pray: ['prayPose', 'bless'], bath: ['bathPose', 'eat'], futon: ['futonPose', 'hidden'], tea: ['teaPose', 'bless'] };
+/* How tall she is in her tea sheet's cell: the ink's height over the cell's,
+   measured by tools/capture/tea-sheet.mjs (Ember 874/898, Frost 868/892). The
+   loader's `contentScale` on a `uniform` sheet is the CELL's, so this is what
+   turns it into her — and it is what sizes her seiza in the tea sheet to her
+   seiza in the prayer drawing, which is frame 0's twin. */
+export const TEA_INK = 0.973;
 export const BASE_REACH = 3.4;
 
 export const MAX_HP = COMBAT.maxHp;
@@ -464,7 +573,7 @@ export class Player {
      *  aboard without steering anything. See Player._updatePassenger. */
     this.rideAlong = null;
     this.score = 0;
-    this.radius = 0.75;
+    this.radius = PLAYER_RADIUS;
     this.height = height;
 
     this.attackTimer = 0;
@@ -941,6 +1050,17 @@ export class Player {
     );
     this.slash.position.y = 0.9;
     this.group.add(this.slash);
+    /* ...AND THE MEN CUT'S, STOOD UP. Richard, Oct 2026: "The slash arc should
+       be vertical" — in the bogu a cut comes straight down in front of her
+       (housing/kendo.js `KENDO_HIT` is a lane, not an arc), and the flat ring
+       drew a sideways sweep the rule does not have. The same wedge in the
+       upright plane through her facing: from over her head (+Y) down past
+       level in front of her (+X), turned to face her way like the flat one. */
+    const varc = new THREE.RingGeometry(1.0, 2.0, 20, 1, -0.35, 2.0);
+    this.slashV = new THREE.Mesh(varc, this.slash.material);
+    this.slashV.position.y = 0.9;
+    this.slashV.visible = false;
+    this.group.add(this.slashV);
 
     // Player-colour ring so you can always find yourself on a busy screen.
     const mg = new THREE.RingGeometry(0.78, 0.95, 24);
@@ -1333,7 +1453,11 @@ export class Player {
   /** Spin the stars, and switch them on and off with the daze. */
   _updateDaze(dt) {
     if (!this.dazeStars) return;
-    const on = this.stunT > 0;
+    // ...and over a kendo fighter who cannot swing for a moment (housing/kendo.js `kendoLockT`)
+    /* BOOLEAN, not a truthy value: `false || undefined` is undefined, and three
+       treats only `visible === false` as hidden — so the stars stood at her
+       feet (the group's origin, with no orbit applied) from the first frame. */
+    const on = this.stunT > 0 || (!!this.kendoBout && this.kendoLockT > 0);
     this.dazeStars.visible = on;
     if (!on) return;
     this._dazeSpin = (this._dazeSpin ?? 0) + dt * 7.5;
@@ -1413,9 +1537,12 @@ export class Player {
       const a = on ? this._simPoseArt?.[file] : null;
       if (a?.texture) {
         if (!pose.userData.sim) {
-          const q = this.height * k / (a.contentScale || 1);
+          /* The sprite editor's `vr_` fix: size and height only. A look carries one quad, and the
+             forward shift is the pair of quads a mirror swaps (`footX`), which only the home look has. */
+          const fx = poseFix(this.style?.sheet ?? 'ember', `vr_${file}`);
+          const q = this.height * k / (a.contentScale || 1) * fx.s;
           pose.userData.sim = pose.makeLook(a.texture, {
-            cols: 1, rows: 1, width: q, height: q, footOffset: (a.pad ?? 0) * q,
+            cols: 1, rows: 1, width: q, height: q, footOffset: (a.pad ?? 0) * q - fx.y * this.height,
           });
         }
         pose.setLook(pose.userData.sim);
@@ -1436,28 +1563,57 @@ export class Player {
     if (this.simLook) this.setSimLook(true);
   }
 
+  /**
+   * Her ninja atlas (dream/ninjasprite.js): `{ texture, man }`, or null to
+   * take it away. Built once per atlas; `clipAs` chooses what plays. Sized off
+   * her own height, so the crawl is her size and not the sheet's.
+   */
+  setClipArt(art, Cls) {
+    if (this.clipPose?.userData.tex === art?.texture) return;
+    if (this.clipPose) { this.group.remove(this.clipPose); this.clipPose = null; }
+    if (!art?.texture || !Cls) return;
+    this.clipPose = new Cls(art.texture, art.man, this.height);
+    this.clipPose.userData.tex = art.texture;
+    this.clipPose.visible = false;
+    this.group.add(this.clipPose);
+  }
+
+  /**
+   * ONE SINGLE-CELL POSE, built the way all seven setters below build theirs: `k` of her height over
+   * the sheet's packing, feet on the drawn feet - and then the sprite editor's fix by sheet (core/
+   * spritefix.js `SINGLE_FILE`), as `setKendoArt` takes it: `s` on the size, `x` forward, `y` up.
+   * A front-facing pose has no forward, so there `x` is toward screen-right.
+   */
+  _poseBoard(key, art, k, { mirror = false, artFacesRight } = {}) {
+    if (this[key]) this.group.remove(this[key]);
+    const fx = poseFix(this.style?.sheet ?? 'ember', SINGLE_FILE[key]);
+    const quad = this.height * k / (art.contentScale || 1) * fx.s;
+    const fwd = artFacesRight === false ? -1 : 1;
+    this[key] = new Billboard(art.texture, {
+      cols: 1,
+      rows: 1,
+      mirror,
+      artFacesRight,
+      width: quad,
+      height: quad,
+      footOffset: (art.pad ?? 0) * quad - fx.y * this.height,
+      footX: -fx.x * fwd * this.height,
+    });
+    this[key].visible = false;
+    this.group.add(this[key]);
+  }
+
   setEatArt(art) {
     if (!art?.texture) return;
     // Replacing one rather than stacking a second in the group. Nothing calls
     // this twice today; a pose drawn on top of a pose is a silent bug if
     // anything ever does.
-    if (this.eatPose) this.group.remove(this.eatPose);
     /* SHORTER THAN SHE IS, because she is crouching. `contentScale` makes the
        drawn figure exactly `height` tall whatever the sheet's packing, which
        is right for every standing pose and wrong for this one: a squatting cat
        drawn to a standing cat's height is a cat that got bigger in order to
        crouch. */
-    const quad = this.height * EAT_CROUCH / (art.contentScale || 1);
-    this.eatPose = new Billboard(art.texture, {
-      cols: 1,
-      rows: 1,
-      mirror: false,
-      width: quad,
-      height: quad,
-      footOffset: (art.pad ?? 0) * quad,
-    });
-    this.eatPose.visible = false;
-    this.group.add(this.eatPose);
+    this._poseBoard('eatPose', art, EAT_CROUCH);
   }
 
   /**
@@ -1486,18 +1642,7 @@ export class Player {
    */
   setBlessArt(art) {
     if (!art?.texture) return;
-    if (this.blessPose) this.group.remove(this.blessPose);
-    const quad = this.height * BLESS_STRETCH / (art.contentScale || 1);
-    this.blessPose = new Billboard(art.texture, {
-      cols: 1,
-      rows: 1,
-      mirror: false,
-      width: quad,
-      height: quad,
-      footOffset: (art.pad ?? 0) * quad,
-    });
-    this.blessPose.visible = false;
-    this.group.add(this.blessPose);
+    this._poseBoard('blessPose', art, BLESS_STRETCH);
   }
 
   /**
@@ -1524,18 +1669,7 @@ export class Player {
    */
   setWarpArt(art) {
     if (!art?.texture) return;
-    if (this.warpPose) this.group.remove(this.warpPose);
-    const quad = this.height / (art.contentScale || 1);
-    this.warpPose = new Billboard(art.texture, {
-      cols: 1,
-      rows: 1,
-      mirror: false,
-      width: quad,
-      height: quad,
-      footOffset: (art.pad ?? 0) * quad,
-    });
-    this.warpPose.visible = false;
-    this.group.add(this.warpPose);
+    this._poseBoard('warpPose', art, 1);
   }
 
   /**
@@ -1567,18 +1701,7 @@ export class Player {
    */
   setBreathArt(art) {
     if (!art?.texture) return;
-    if (this.breathPose) this.group.remove(this.breathPose);
-    const quad = this.height / (art.contentScale || 1);
-    this.breathPose = new Billboard(art.texture, {
-      cols: 1,
-      rows: 1,
-      mirror: false,
-      width: quad,
-      height: quad,
-      footOffset: (art.pad ?? 0) * quad,
-    });
-    this.breathPose.visible = false;
-    this.group.add(this.breathPose);
+    this._poseBoard('breathPose', art, 1);
   }
 
   /**
@@ -1614,18 +1737,7 @@ export class Player {
    */
   setScaredArt(art) {
     if (!art?.texture) return;
-    if (this.scaredPose) this.group.remove(this.scaredPose);
-    const quad = this.height / (art.contentScale || 1);
-    this.scaredPose = new Billboard(art.texture, {
-      cols: 1,
-      rows: 1,
-      mirror: false,
-      width: quad,
-      height: quad,
-      footOffset: (art.pad ?? 0) * quad,
-    });
-    this.scaredPose.visible = false;
-    this.group.add(this.scaredPose);
+    this._poseBoard('scaredPose', art, 1);
   }
 
   /**
@@ -1649,18 +1761,7 @@ export class Player {
    */
   setSweepArt(art) {
     if (!art?.texture) return;
-    if (this.sweepPose) this.group.remove(this.sweepPose);
-    const quad = this.height / (art.contentScale || 1);
-    this.sweepPose = new Billboard(art.texture, {
-      cols: 1,
-      rows: 1,
-      mirror: false,
-      width: quad,
-      height: quad,
-      footOffset: (art.pad ?? 0) * quad,
-    });
-    this.sweepPose.visible = false;
-    this.group.add(this.sweepPose);
+    this._poseBoard('sweepPose', art, 1);
   }
 
   /**
@@ -1691,19 +1792,7 @@ export class Player {
    */
   setRiposteArt(art) {
     if (!art?.texture) return;
-    if (this.ripostePose) this.group.remove(this.ripostePose);
-    const quad = this.height / (art.contentScale || 1);
-    this.ripostePose = new Billboard(art.texture, {
-      cols: 1,
-      rows: 1,
-      mirror: true,
-      artFacesRight: true,
-      width: quad,
-      height: quad,
-      footOffset: (art.pad ?? 0) * quad,
-    });
-    this.ripostePose.visible = false;
-    this.group.add(this.ripostePose);
+    this._poseBoard('ripostePose', art, 1, { mirror: true, artFacesRight: true });
     // Handed over after she is already in the headset: put it on now.
     if (this.simLook) this.setSimLook(true);
   }
@@ -1719,27 +1808,126 @@ export class Player {
    * only draws it, and with no art kendo.js keeps its drawn men and shinai.
    */
   setKendoArt(art) {
-    for (const [key, a] of [['kendoPose', art?.guard], ['kiaiPose', art?.kiai]]) {
+    for (const [key, a] of [['kendoPose', art?.guard], ['kiaiPose', art?.kiai],
+      ['seizaPose', art?.seiza], ['reachPose', art?.reach], ['reiPose', art?.rei], ['kparryPose', art?.kparry],
+      ['kbrokePose', art?.kbroke], ['kclinchRPose', art?.kclinchR], ['kclinchLPose', art?.kclinchL]]) {
       if (this[key]) { this.group.remove(this[key]); this[key] = null; }
       if (!a?.texture) continue;
       /* KENDO_SCALE BIGGER than her: Richard, "The Kendo gear that player
          puts on looks too small, should be probably 25% bigger." The bogu is
-         armour over the kitten, so the drawing in it stands a size up. */
-      const quad = this.height * KENDO_SCALE / (a.contentScale || 1);
+         armour over the kitten, so the drawing in it stands a size up.
+         THE CEREMONY'S THREE are a FRACTION of her standing height
+         (`KENDO_CEREMONY_H`). Normalising a kneeling cat on her bounding box
+         stands her up to full height, and ink area does not save it either:
+         measured, the five drawings' `contentArea` sit inside 0.50-0.57,
+         because the generator fills the frame whatever the pose - seiza came
+         out a head TALLER than the guard. The fractions were set by matching
+         the size of the men across the drawings on screen. */
+      /* BY THE SHEET SHE IS DRAWN FROM, not by her name: Storm IS Ember's drawings recoloured, and keyed
+         by name she drew every pose at the shared fractions - a kiai two-thirds of Ember's. The table keeps
+         its kitten-named keys; the sheet names the kitten who was drawn. (world-check, the sprite editor) */
+      const drawn = this.style?.sheet ? this.style.sheet[0].toUpperCase() + this.style.sheet.slice(1) : this.style?.name;
+      const own = KENDO_POSE_H[drawn] ?? {};
+      /* ...TIMES WHAT THE SPRITE EDITOR SAVED (/sprites.html, core/spritefix.js), by sheet: `s` on the
+         size, `x` forward and `y` up in her heights. Richard, Oct 2026, after three passes of measured
+         fractions: "let's build a sprite adjustment editor so I can manually align the sprites placement
+         and scale and we can save that". The fractions above stay the defaults. */
+      const fx = poseFix(this.style?.sheet ?? 'ember', KENDO_FILE[key]);
+      const quad = this.height * KENDO_SCALE * (own[key] ?? KENDO_CEREMONY_H[key] ?? 1) / (a.contentScale || 1) * fx.s;
+      const fwd = key === 'kclinchLPose' ? -1 : 1;
       this[key] = new Billboard(a.texture, {
         cols: 1,
         rows: 1,
         mirror: true,
-        artFacesRight: true,
+        // the one drawing that is drawn facing LEFT: the clinch's other side (sprite-bake)
+        artFacesRight: key !== 'kclinchLPose',
         width: quad,
         height: quad,
-        footOffset: (a.pad ?? 0) * quad,
-        // her feet held still through a mirror — measured, see `feetX`
-        footX: (a.feetX ?? feetX(a)) * quad,
+        footOffset: (a.pad ?? 0) * quad - fx.y * this.height,
+        // her feet held still through a mirror — measured, see `feetX`; the
+        // reach's lowest ink is the shinai on the floor, so it is pinned by her body
+        // (and `fx.x` FORWARD: the quad is shifted the other way from its anchor, so the drawing moves on)
+        footX: (a.feetX ?? (key === 'reachPose' ? torsoX(a) : feetX(a))) * quad - fx.x * fwd * this.height,
       });
       this[key].visible = false;
       this.group.add(this[key]);
     }
+  }
+
+  /**
+   * THE HOME POSES (housing/activities.js): praying at the shrine, a head and
+   * a towel in the onsen, asleep under the futon. `{ pray, bath, futon, ref }`,
+   * any of them null; `ref` is her bless drawing, the yardstick the prayer is
+   * sized against by ink area. Before these were drawn the three borrowed the
+   * bless reach, the eating crouch and simply vanishing, and with a file
+   * missing they still do — `_homeAs` is the fallback.
+   *
+   * The prayer is side-on and mirrors; the bath is a front-on head with a flat
+   * cut at the water line, drawn ON the water (the spring's surface is the
+   * floor she stands on), and the futon is drawn whole - bedding and all -
+   * lying over the furniture's own futon.
+   */
+  setHomeArt(art) {
+    const ref = art?.ref;
+    for (const [key, a] of [['prayPose', art?.pray], ['bathPose', art?.bath], ['futonPose', art?.futon], ['teaPose', art?.tea]]) {
+      if (this[key]) { this.group.remove(this[key]); this[key] = null; }
+      if (!a?.texture) continue;
+      let quad;
+      if (key === 'teaPose') {
+        /* As tall as her prayer: frame 0 IS the prayer drawing, animated, so
+           the cut from one to the other must not change her size. The
+           prayer's ink height is its quad times its contentScale. */
+        const P = art?.pray;
+        const prayQuad = P?.texture && ref?.contentArea && P.contentArea
+          ? this.height * BLESS_STRETCH / (ref.contentScale || 1) * (ref.contentArea / P.contentArea)
+          : this.height * 0.8 / (P?.contentScale || 1);
+        const inkH = prayQuad * (P?.contentScale || 0.8);
+        quad = inkH / ((a.contentScale || 1) * TEA_INK);
+      } else if (key === 'prayPose') {
+        quad = ref?.contentArea && a.contentArea
+          ? this.height * BLESS_STRETCH / (ref.contentScale || 1) * (ref.contentArea / a.contentArea)
+          : this.height * 0.8 / (a.contentScale || 1);
+      } else if (key === 'bathPose') {
+        quad = this.height * HOME_BATH_H / (a.contentScale || 1);
+      } else {
+        quad = this.height * HOME_FUTON_H / (a.contentScale || 1);
+      }
+      const anim = key === 'teaPose';
+      // ...and the sprite editor's fix (core/spritefix.js), as for the kendo set
+      const fx = poseFix(this.style?.sheet ?? 'ember', HOME_FILE[key]);
+      quad *= fx.s;
+      const fwd = key === 'prayPose' || anim ? 1 : -1;
+      this[key] = new Billboard(a.texture, {
+        cols: anim ? a.cols : 1,
+        rows: anim ? a.rows : 1,
+        anim,
+        /* The futon turns too: both drawings (Ember's and Frost's, measured)
+           lie with the head on the LEFT, so `artFacesRight: false` and she is
+           mirrored when the pillow is on the screen's right. It was a fixed
+           quad, head left from every side of the bed. */
+        mirror: key !== 'bathPose',
+        artFacesRight: key === 'prayPose' || anim,
+        width: quad,
+        height: quad,
+        footOffset: (a.pad ?? 0) * quad - fx.y * this.height,
+        footX: -fx.x * fwd * this.height,
+      });
+      this[key].visible = false;
+      this.group.add(this[key]);
+    }
+  }
+
+  /**
+   * Does `homePose` read as the OLD pose `name`? True when it IS that name,
+   * and also when it is one of the drawn home poses whose file is missing -
+   * 'pray' falls back to 'bless', 'bath' to 'eat', 'futon' to 'hidden'. One
+   * place, so every branch that asks about the old three still answers.
+   */
+  _homeAs(name) {
+    const hp = this.homePose;
+    if (hp === name) return true;
+    const fall = HOME_FALLBACK[hp];
+    return !!fall && fall[1] === name && !this[fall[0]];
   }
 
   /* ------------------------ Powerup Kotodama ---------------------------- */
@@ -2045,14 +2233,82 @@ export class Player {
    *
    * Outside the simulator `bridgePeek` is never live and `_peekHold` never
    * set, so this IS `_basis()` — non-negotiable 5.
+   *
+   * THE SAME RULE FOR A LENS THAT IS NOT HERS. Richard, Oct 2026: "the
+   * players input should always be dependent on where the camera is and that
+   * the input shouldn't change unless the camera actually changes". In a
+   * shared pane she is drawn by the group's rig (`Game._cameraFor`), and her
+   * own follow camera — the one `camYaw` belongs to — is not on screen at
+   * all; a newcomer to the Dream Dojo had hers swung round to the gear shot
+   * while the pane stayed top-down, and the stick turned with the lens she
+   * could not see. `viewOwn` (written by `Game._render`) says whose lens drew
+   * her; when it is the rig's, the stick is read through the rig's heading.
+   * Where the rig and her camera agree — every ordinary frame — the answer
+   * is the same basis, so the game she knows has not moved.
    */
   _moveBasis(pad) {
     const pushed = (pad?.mx ?? 0) ** 2 + (pad?.my ?? 0) ** 2 > 1e-4;
-    const H = this._peekHold;
-    if (!this.bridgePeek?.live && !(H && pushed)) { this._peekHold = null; return this._basis(); }
+    let H = this._peekHold;
+    const borrowed = this.viewOwn === false && Number.isFinite(this.viewYaw);
+    /* ...AND A LENS THAT IS TURNING TO A KNOWN PLACE. The kendo match's turns
+       a quarter round when the plane does (housing/kendo.js `KENDO_TURN`).
+       Richard: "a held direction keeps its old meaning until released, then
+       the new input comes from where the camera lands, so it is always a
+       cardinal direction". The first half is the swing rule below, as it
+       stands; `land` is the second — a push let go of mid-turn, or started
+       mid-turn, is read on the lens she is turning TO, not on the angle the
+       turn happens to be at. Null everywhere but a match, so this is the
+       basis it always was (non-negotiable 5). */
+    const land = this.kendoBout && Number.isFinite(this.kendoLandYaw) ? this.kendoLandYaw : null;
+    const wasPushed = !!this._pushedLast;
+    this._pushedLast = pushed;
+    /* ...AND OFF THE END OF A ROAD. Richard, Oct 2026: "After stepping off of
+       a bridge, the player input forward direction should stay the same until
+       the player stops moving the movement direction, which is when it should
+       reset to the current, default camera view direction". On the road the
+       stick means ONWARD (`_snakeWish`), and the ride camera then eases back
+       round to the default one — so a held stick read through `camYaw` the
+       frame she stepped off turned her, and kept turning her as the lens
+       swung. The frame the ride ends, the basis is chosen so that the stick
+       she is holding still means the way she is going, and held (the same
+       `_peekHold` the swing rule below keeps) until she lets go. */
+    const onRoad = !!this.snakeRide;
+    if (this._roadLast && !onRoad && pushed && !borrowed) {
+      const sp = Math.hypot(this.velocity.x, this.velocity.z);
+      const goA = sp > 0.5 ? Math.atan2(this.velocity.x, this.velocity.z) : Math.atan2(Math.sin(this.facing), Math.cos(this.facing));
+      const B = this._basis();
+      const wx = B.right.x * pad.mx - B.fwd.x * pad.my;
+      const wz = B.right.z * pad.mx - B.fwd.z * pad.my;
+      // A basis turned by Y turns every wish by the same angle (fwd's heading is yaw + PI).
+      this._peekHold = { yaw: this.camYaw + (goA - Math.atan2(wx, wz)), offRoad: true };
+    }
+    this._roadLast = onRoad;
+    if (this._peekHold?.offRoad) {
+      if (pushed) return this._basis(this._peekHold.yaw);
+      /* `H` too: it was read before this let go, and a stale H with the hold
+         gone sent the rule below to `this._peekHold.yaw` on null - "Cannot
+         read properties of null (reading 'yaw')", Oct 2026, the frame she let
+         go of the stick after a road while a shared pane or a bridge peek
+         had the lens. */
+      this._peekHold = null;
+      H = null;
+    }
+    if (land != null && !this.bridgePeek?.live && !borrowed && !(this.camSwing && pushed) && !(H && pushed)) {
+      this._peekHold = null;
+      return this._basis(land);
+    }
+    /* ...AND FOR A LENS SWINGING ROUND HER (`camSwing`: a focus turning in or
+       out — the front door's shot, the Dojo's). Richard: "Input switching
+       when the camera changes to the front door camera, and then when it
+       changes back is not smooth". A held stick was read through the lens
+       every frame of its half-turn, so she walked a curve into the door and
+       a curve back out. Now a push held through the swing keeps the heading
+       it started with until she lets go — the bridge's rule, above. A still
+       camera never sets it, so the game she knows is untouched. */
+    if (!this.bridgePeek?.live && !borrowed && !(this.camSwing && pushed) && !(H && pushed)) { this._peekHold = null; return this._basis(); }
     const view = Number.isFinite(this.viewYaw) ? this.viewYaw : this.camYaw;
-    if (!H) this._peekHold = { yaw: view };
-    else if (!pushed) H.yaw = view;
+    if (!H) this._peekHold = { yaw: land != null && !wasPushed ? land : view };
+    else if (!pushed) H.yaw = land ?? view;
     return this._basis(this._peekHold.yaw);
   }
 
@@ -2069,6 +2325,7 @@ export class Player {
        `faceCamera` only ever squares the quad up — it can never pick a
        different cell and it can never flip. */
     if (this.eatPose?.visible) this.eatPose.faceCamera(camera);
+    if (this.clipPose?.visible) this.clipPose.faceCamera(camera);
     if (this.blessPose?.visible) this.blessPose.faceCamera(camera);
     if (this.warpPose?.visible) this.warpPose.faceCamera(camera);
     if (this.breathPose?.visible) this.breathPose.faceCamera(camera);
@@ -2077,6 +2334,21 @@ export class Player {
     if (this.ripostePose?.visible) this.ripostePose.faceCamera(camera);
     if (this.kendoPose?.visible) this.kendoPose.faceCamera(camera);
     if (this.kiaiPose?.visible) this.kiaiPose.faceCamera(camera);
+    /* ...AND EVERY OTHER POSE THAT CAN BE THE ONE ON SCREEN. Richard, Oct
+       2026: "Sprites billboard toward the camera correctly, and the two
+       opponents face each other." The match's three ceremony drawings, its
+       riposte and the three home poses were never turned: each kept the
+       rotation it was built with, so from any lens but the one it happened to
+       face it was a card seen at a slant — and, since `faceCamera` is also
+       what picks the mirror side from `facing`, a kneeling kitten could face
+       away from the opponent she was set facing. */
+    for (const k of ['seizaPose', 'reachPose', 'reiPose', 'kparryPose', 'kbrokePose', 'kclinchLPose', 'prayPose', 'bathPose', 'futonPose', 'teaPose']) {
+      if (this[k]?.visible) this[k].faceCamera(camera);
+    }
+    /* The clinch's R drawing is turned EVERY frame of a clinch, shown or not:
+       its `_pointsRight` is what picks R or L below, and a hidden billboard
+       would keep the answer from the frame it was last seen. */
+    if (this.kclinchRPose && (this.kclinchRPose.visible || this.kendoClinch)) this.kclinchRPose.faceCamera(camera);
 
     /* THE HEALTH BAR IS A FLAT QUAD AND HAS TO BE TURNED, like the leaders'
        speech bubbles are. It is parented to `group`, which never rotates, so
@@ -2142,6 +2414,14 @@ export class Player {
   /* ------------------------------- update ------------------------------- */
 
   update(dt, pad, world, dragons, hud) {
+    /* HER THUMB, BEFORE ANYTHING BELOW TAKES THE PAD AWAY. A kitten kneeling
+       in seiza is pinned (`pinnedAt`, so FROZEN_PAD), and "pressing a move
+       direction stands her up" (housing/kendo.js `_seiza`) — the one thing
+       that asks the stick of a kitten whose stick is not hers to move with. */
+    this.padStick = Math.hypot(pad?.mx ?? 0, pad?.my ?? 0);
+    /* ...and the Ward's button, HELD: in a kendo match it is the block
+       (housing/kendo.js `KENDO_BLOCK`), which kendo.js reads from here. */
+    this.padBlock = !!pad?.down?.('mount');
     /* A kitten holding a star over her head is not also sprinting off with it.
        Feeding the ground controller a dead stick freezes her without any of
        the three movement modes needing to know this pose exists.
@@ -2176,6 +2456,12 @@ export class Player {
        kitten floats up into the headset, or down out of it, the arcade owns
        where she is and her stick owns nothing. See systems/dreamdojo.js. */
     if (this.pinnedAt) pad = FROZEN_PAD;
+    /* ...AND RIDING THE TREEHOUSE SLIDE. The slide owns where she goes until
+       the run at the bottom, where the stick is hers again. */
+    if (this.slide) pad = FROZEN_PAD;
+    /* ...AND WALKING HERSELF TO IT, when she asked to ride (sliderider.js
+       `start`): `autoWalk` is a list of waypoints and the stick waits. */
+    if (this.autoWalk?.length) pad = FROZEN_PAD;
 
     /* NO POWER MOVE SURVIVES GETTING ON AN ANIMAL. `_stepSpecials` only runs
        inside the ground controller, so a ward popped a frame before mounting
@@ -2195,6 +2481,11 @@ export class Player {
     if (this.angel) this._updateAngel(dt, pad, world);
     else if (this.rideAlong) this._updatePassenger(dt, pad, world, hud);
     else if (this.mount) this._updateFlight(dt, pad, world, hud);
+    /* A RIG OWNS HER: hanging from a rope, on a ladder, hands up for an
+       arrest (dream/bamboo.js). It moves her itself and the ground controller
+       does not run — not `pinnedAt`, which is the arcade's tube and says
+       "stand still", where a rope says "go along me". */
+    else if (this.rig) this.rig.step(dt, pad, world);
     else this._updateGround(dt, pad, world, dragons, hud);
 
     /* PINNED: put her back where the arcade says, after the physics and
@@ -2973,6 +3264,13 @@ export class Player {
          behind her while she stands still. */
       if (!this.dodgePlanted && !this.parryAt) this.facing = Math.atan2(wish.x, wish.z);
     }
+    /* IN A KENDO ROUND SHE FACES HER OPPONENT, along the fighting plane
+       (housing/kendo.js `_plane`): "the two opponents face each other". The
+       stick walks her and never turns her — a cut is a vertical lane straight
+       out along her facing, and a facing the stick could swing would aim it
+       off the plane the camera is showing. Not through a parry, which faces
+       the push that raised it. */
+    if (this.kendoBout && Number.isFinite(this.kendoFace) && !this.parryAt) this.facing = this.kendoFace;
     /* PLANTED, BUT NOT POINTED. Her FEET are taken and her aim is not, and
        the order of these two lines is what does it: the facing above is set
        from the stick before the stick is thrown away here, so through a whole
@@ -3014,7 +3312,12 @@ export class Player {
       * (this.arenaBreathAt ? DBREATH.moveK : 1)
       /* HER ANIMALS (housing/petplay.js): a happy goat is SPRINT, a happy
          bunny is distance in the AIR. 1 with no pen. */
-      * (sprinting ? this.petBoost?.speed ?? 1 : 1) * (this.onGround ? 1 : this.petBoost?.air ?? 1);
+      * (sprinting ? this.petBoost?.speed ?? 1 : 1) * (this.onGround ? 1 : this.petBoost?.air ?? 1)
+      /* HER GAIT, set from outside: a crawl in Bamboo Infiltration (dream/
+         bamboo.js `SNEAK`), planted while she winds up a throw. 1 anywhere
+         else, so nothing outside the island has moved. */
+      * (this.gaitK ?? 1)
+      * (this.kendoBout ? KENDO_MOVE : 1);
     /* A grown panda is a mount, not a buff — riding one multiplies whatever
        you already had, so a Thunderpaw kitten on a panda is the fastest thing
        in the game. It is ground movement throughout: same gravity, same
@@ -3088,7 +3391,7 @@ export class Player {
        terminal for the height of a double jump and reads as an ordinary drop
        with a sound effect on it; pinning the speed is what makes it a move. */
     if (this.diving) this.velocity.y = -DIVE.speed;
-    else this.velocity.y -= GRAVITY * this._gravityK() * dt;
+    else this.velocity.y -= GRAVITY * this._gravityK() * (this.hopJump?.g ?? 1) * dt;
 
     // --- jump / double jump ---
     if (this.onGround) this.coyote = COYOTE;
@@ -3099,6 +3402,14 @@ export class Player {
     const jumpK = (buff?.jump ?? 1) * (this.pandaMount ? PANDA_JUMP : 1)
       // ...and a happy chick is JUMP HEIGHT (housing/petplay.js).
       * (this.petBoost?.jump ?? 1);
+    /* THE BUNNY'S TURN CAPS HER JUMP (housing/petplay.js `hopJump`): an apex of
+       `h` under gravity times `g`, whatever her clan, orbs and pets would
+       otherwise give her. Richard, Oct 2026: "it is hard to jump like the
+       bunny ... the player jumps higher than the bunny, but still hits the
+       ground at about the same time". Derived here, from her own GRAVITY, so
+       the apex is the number asked for and not a velocity that happens to
+       reach it. */
+    const jumpV = this.hopJump ? Math.sqrt(2 * GRAVITY * this.hopJump.g * this.hopJump.h) : JUMP_V * jumpK;
     /* Leap orbs ADD to whatever the clan gave her, so a Shadowtail kitten
        wearing three of them has six. The count is read wherever jumps are
        refilled, so landing restores all of them however many that is. */
@@ -3112,26 +3423,41 @@ export class Player {
        that fires it — once per hold — not the press: a press with no
        direction is spent on nothing and must not be a dodge a frame later
        when a thumb drifts. The immunity is `kendoDodgeT`, read by
-       `Kendo.sparStrike`; nothing here touches `invulnT`. */
+       `Kendo.sparStrike`; nothing here touches `invulnT`.
+       ...AND HELD IS ENOUGH, Oct 2026: "if jump button is held, then the
+       dodge will happen, player shouldn't need to release and press jump
+       button again to dodge." It was once per hold; now a held button dodges
+       again every `cool` while the stick is over, which is also how a clinch
+       is won (kendo.js `_clinchStep`: each dodge is a shove). */
     if (this.kendoBout) {
       if (this.kendoDodgeCool > 0) this.kendoDodgeCool -= dt;
-      if (!pad.down('jump')) this._kdHeld = false;
-      else if (!this._kdHeld && moving && !(this.kendoDodgeCool > 0) && this.onGround) {
-        this._kdHeld = true;
-        this.kendoDodgeT = KENDO_DODGE.t;
+      if (pad.down('jump') && moving && !(this.kendoDodgeCool > 0) && this.onGround) {
+        this.kendoDodgeSeq = (this.kendoDodgeSeq ?? 0) + 1;
+        this.kendoDodgeT = KENDO_DODGE.immune;
+        this._kdMoveT = KENDO_DODGE.t;
         this.kendoDodgeCool = KENDO_DODGE.cool;
         (this._kdDir ??= new THREE.Vector3()).copy(target).setY(0).normalize();
         this.squash = 1;
         hud?.sfx('dodgeout');
       }
-      if (this.kendoDodgeT > 0) {
-        this.kendoDodgeT -= dt;
-        this.velocity.x = this._kdDir.x * KENDO_DODGE.speed;
-        this.velocity.z = this._kdDir.z * KENDO_DODGE.speed;
+      if (this.kendoDodgeT > 0) this.kendoDodgeT -= dt;
+      if (this._kdMoveT > 0) {
+        // the last frame covers only what is left of `dist`, so the step is the same at any frame rate
+        const step = Math.min(dt, this._kdMoveT);
+        this._kdMoveT -= dt;
+        const v = (KENDO_DODGE.dist / KENDO_DODGE.t) * (step / dt);
+        this.velocity.x = this._kdDir.x * v;
+        this.velocity.z = this._kdDir.z * v;
+        if (this._kdMoveT <= 0) this._kdStop = true;
+      } else if (this._kdStop) {
+        // and then she STOPS: no slide carried off the step
+        this._kdStop = false;
+        this.velocity.x = 0;
+        this.velocity.z = 0;
       }
     } else if (pad.pressed('jump') && !this.busy && !this.dodgePlanted && !this.arenaBreathAt && !this.parryAt) {
       if (this.coyote > 0 || this.jumpsLeft > 1) {
-        this.velocity.y = JUMP_V * jumpK;
+        this.velocity.y = jumpV;
         this.jumpsLeft = Math.max(1, this.jumpsLeft - 1);
         this.coyote = 0;
         this.squash = 1;
@@ -3139,7 +3465,7 @@ export class Player {
       } else if (this.jumpsLeft > 0) {
         hud?.sfx('doubleJump');
         // Later jumps are a little weaker but add a forward pop.
-        this.velocity.y = JUMP_V * 0.86 * jumpK;
+        this.velocity.y = jumpV * 0.86;
         if (moving) {
           this.velocity.x += Math.sin(this.facing) * 4;
           this.velocity.z += Math.cos(this.facing) * 4;
@@ -3218,8 +3544,14 @@ export class Player {
        buys an orb. Step off the animal and the technique is hers again. */
     const deferred = !!this.power.tri && !this.pandaMount
       && !hud?.critterHold?.(this);
+    /* NO SWING IN THE BOGU WHILE SHE CANNOT (housing/kendo.js
+       `kendoNoSwing`): blocking, the wait after letting go, the clinch, and
+       the stars. The refusal is a `deny` and the stars or the bubble she is
+       already wearing — the thing that says why is on her. */
+    const kendoHeld = !!this.kendoLive && !!this.kendoNoSwing;
+    if (kendoHeld && pad.pressed('attack')) hud?.sfx?.('deny');
     if (pad.pressed('attack') && this.attackCooldown <= 0 && !this.busy
-        && !this.arenaBreathAt && !this.parryAt) {
+        && !this.arenaBreathAt && !this.parryAt && !kendoHeld) {
       if (this.pandaMount) {
         this.attackTimer = 0.26;
         this.attackCooldown = 0.45;
@@ -3370,10 +3702,57 @@ export class Player {
       this._startDive(hud);
     }
 
+    /* THE TREEHOUSE SLIDE. Housing (`_slide`) hands her the way downhill
+       while her feet are on a slide deck, after she has moved; it is spent
+       here, the frame after, so it lasts exactly as long as she is on it and
+       the run at the bottom — not a slide — is where she skids to a stop on
+       the momentum she brought. The ground snap below keeps her ON it. */
+    const sl = this.slide;
+    this.slide = null;
+    if (sl) {
+      /* THE SPEED IS CARRIED, not read back off her velocity: with the stick
+         dead the ground controller above has already braked that toward
+         zero this frame, and reading it back held her at `min` the whole way
+         down (measured: 3-7 a second on a slide built for 15). */
+      const along = this.velocity.x * sl.x + this.velocity.z * sl.z;
+      const was = this.slideT > 0 ? this.slideV : along;
+      const v = Math.min(SLIDE_RIDE.max, Math.max(SLIDE_RIDE.min, was) + SLIDE_RIDE.accel * dt);
+      this.slideV = v;
+      this.velocity.x = sl.x * v;
+      this.velocity.z = sl.z * v;
+      this.facing = Math.atan2(sl.x, sl.z);
+      this.slideT = 0.2;
+    } else if (this.autoWalk?.length) {
+      /* HER OWN FEET TAKE HER THERE. Set after the ground controller has
+         braked the dead stick, like the slide's speed above, so it is the
+         velocity she moves on and her walk cycle reads it like any other. */
+      const w = this.autoWalk[0];
+      const dx = w.x - this.position.x, dz = w.z - this.position.z, d = Math.hypot(dx, dz);
+      if (d < AUTO_WALK.reach) this.autoWalk.shift();
+      else {
+        const v = Math.min(AUTO_WALK.speed, d / Math.max(dt, 1e-3));
+        this.velocity.x = (dx / d) * v;
+        this.velocity.z = (dz / d) * v;
+        this.facing = Math.atan2(dx, dz);
+      }
+    }
+
     // --- move + collide ---
     const wasX = this.position.x;
     const wasZ = this.position.z;
+    const wasY = this.position.y;
     this.position.addScaledVector(this.velocity, dt);
+
+    /* A LIDDED deck's underside (SimWorld.lidAt — the gallery's 跳 ledges):
+       her head rising into it stops there. Asked of every world that has the
+       question, which is the simulator alone; the town has no lids. */
+    if (this.velocity.y > 0 && world.lidAt) {
+      const lid = world.lidAt(this.position.x, this.position.z, wasY + HEAD_ROOM, this.position.y + HEAD_ROOM);
+      if (lid != null) {
+        this.position.y = lid - HEAD_ROOM;
+        this.velocity.y = 0;
+      }
+    }
 
     /* Her own height goes in, so a solid she is standing ON TOP of stops
        shoving her sideways — see World.resolveSolids. Without it the spire
@@ -3396,7 +3775,17 @@ export class Player {
 
     // Own height passed in so bridge decks and terraces are one-way: you land
     // on top of them, and walk underneath from below.
-    const g = world.heightAt(this.position.x, this.position.z, this.position.y);
+    /* ...and SWEPT: the height she fell FROM this frame, not the one she
+       fell to. Richard, Oct 2026: "the player keeps constantly falling
+       through the floor when doing power dive, this is mainly happening on
+       the floating discs in the hologram". DIVE.speed is 46, 0.77 a frame at
+       60fps and 1.5 at 30: a deck's 0.4 step catches her only when a frame
+       ends inside it, so a dive straight through a thin disc found her below
+       it, where a one-way deck is a deck she is UNDER. Asking from the top of
+       the fall counts every deck the frame crossed; rising, it is the old
+       question unchanged. (Thicker colliders were the other offer; they
+       would only move the frame rate it breaks at.) */
+    const g = world.heightAt(this.position.x, this.position.z, Math.max(this.position.y, wasY), this);
     const wasGrounded = this.onGround;
 
     /* Ground snapping. Running DOWN a slope, gravity alone leaves the kitten
@@ -3439,6 +3828,10 @@ export class Player {
 
     // Time spent genuinely airborne, for the animation to threshold against.
     this.airTime = this.onGround ? 0 : (this.airTime ?? 0) + dt;
+    /* WHAT SHE LAST STOOD ON (a platform, or null for terrain). Housing's
+       `ghostFor` reads it: a visitor already on a home bridge when it locks
+       keeps her feet on it, and one who jumps onto it does not. */
+    if (this.onGround) this.footing = g?.platform ?? null;
 
     this._stepSnake(dt, pad, g);
 
@@ -3463,7 +3856,8 @@ export class Player {
        bubble or climbed onto a dragon would be one button doing two things
        in the same half second. The lock's tail is included for the same
        reason the stick is: the move is not over until she can walk. */
-    if (pad.pressed('mount') && !this.dodgePlanted && !this.parryAt) {
+    // in a live kendo round the button is the block's, and kendo.js has it (`padBlock`)
+    if (pad.pressed('mount') && !this.dodgePlanted && !this.parryAt && !this.kendoLive) {
       if (this.pandaMount) {
         const p = this.pandaMount;
         this.pandaMount = null;
@@ -3554,6 +3948,8 @@ export class Player {
              a double tap is two ordinary taps, which is what the game did
              before this existed. */
           if (!(pad.doubled?.('mount') && this._latchWard(hud))) this._popWard(hud);
+          // ...and a thumb that stays down keeps asking (see `wardWant`, in the update)
+          this.wardWant = !!this.power.ward;
         }
       }
     }
@@ -3705,6 +4101,17 @@ export class Player {
        and it happens: her sister can trade the Ward orb away from her while
        the bubble is up. */
     this.wardRegrab = Math.max(0, this.wardRegrab - dt);
+    /* STILL HOLDING IT MEANS STILL ASKING. Richard, Oct 2026: "If player is
+       holding the block button ... and the ability is depleted, then if the
+       ward ability becomes usable again, then it should automatically become
+       engaged again". `wardWant` is set by the press that reached the Ward
+       (not one a dragon or a panda took) and lives exactly as long as the
+       button stays down; the wait running out under it is a press. */
+    if (!pad.down?.('mount')) this.wardWant = false;
+    if (this.wardWant && !this.wardOn && !this.warded && this.wardCool === 0 && this.power.ward
+      && !this.mount && !this.pandaMount && !this.rideAlong && !this.busy && !this.kendoLive) {
+      this._popWard(hud);
+    }
     if (this.wardOn) {
       this.wardUsed += dt;
       const spent = this.wardUsed >= this._wardCeiling();
@@ -3901,9 +4308,14 @@ export class Player {
    * is nothing to halve once `wardOn` is false, so it goes straight to the
    * smash: the tail is already the end of the bubble.
    *
+   * `smash` IS A BLOW NO WARD SURVIVES — Shadow Lionheart's (dream/shadow.js
+   * via `simHit`). Richard, Oct 2026: "if player gets hit, their Ward should
+   * get disabled as if they were hit for the amount needed to break their
+   * shield ability." The blow is still caught; the bubble is not left up.
+   *
    * @returns {'absorbed'|'expired'|'smashed'} what the blow did
    */
-  _wardTakeHit(hud) {
+  _wardTakeHit(hud, { smash: always = false } = {}) {
     this.wardFlash = 0.25;
     this.wardHits += 1;
 
@@ -3920,7 +4332,7 @@ export class Player {
       return why;
     };
 
-    if (this.wardHits >= (WARD.hits ?? 2) || !this.wardOn) return smash('smashed');
+    if (always || this.wardHits >= (WARD.hits ?? 2) || !this.wardOn) return smash('smashed');
 
     this.wardMax = this._wardCeiling() * (WARD.hitCut ?? 0.5);
     /* THE HALVING CAN LAND BEHIND THE CLOCK, and that is the player's fourth
@@ -4558,15 +4970,31 @@ export class Player {
    * clan power, and gets it on the press exactly as she always did.
    */
   _parryArmed(pad, hud) {
-    if (!this.power.parry || !hud?.arenaLive?.(this)) return false;
+    if (!this._parryLive(hud)) return false;
     if (Math.hypot(pad?.mx ?? 0, pad?.my ?? 0) > PARRY.still) return false;
     return this._parryFree();
+  }
+
+  /**
+   * IS A PARRY POSSIBLE AT ALL HERE? The orb in a live round — or a live
+   * KENDO round, orb or none (`kendoLive`, set by housing/kendo.js `_plane`).
+   * Richard, Oct 2026: "Riposte works on the opponent's attacks, with the
+   * same timing as the default riposte." Her orbs do nothing in the dojo
+   * (`aggregate([])`), so `PARRY`'s own window and wait are the timing, which
+   * is exactly the default's. Outside the dojo this is the old test, word for
+   * word.
+   */
+  _parryLive(hud) {
+    if (this.kendoLive) return true;
+    return !!this.power.parry && !!hud?.arenaLive?.(this);
   }
 
   /** Nothing else owns her: the same list the Flash Step refuses on, plus the
    *  moves that already pin her. */
   _parryFree() {
     if (this.mount || this.rideAlong || this.pandaMount || this.heldBy) return false;
+    // stars, a clinch or a block in the bogu (housing/kendo.js `kendoNoParry`)
+    if (this.kendoLive && this.kendoNoParry) return false;
     if (this.ko || this.angel || this.busy || this.eatT > 0) return false;
     if (this.dodgePlanted || this.arenaBreathAt || this.diving || this.sweepT > 0) return false;
     return !this.parryAt;
@@ -4594,7 +5022,7 @@ export class Player {
       this.parryHeld = 0;
       return true;
     }
-    if (!this.power.parry || !hud?.arenaLive?.(this) || !this._parryFree()) {
+    if (!this._parryLive(hud) || !this._parryFree()) {
       this.parryPend = false;
       return false;
     }
@@ -4736,8 +5164,14 @@ export class Player {
     if (this.parryT > 0) {
       this.parryT = Math.max(0, this.parryT - dt);
       /* A WHIFF: the window ran out with nothing in it. Blade down, and she
-         stands there for `recover` — the cost of the wrong guess. */
-      if (this.parryT === 0) this.parryRecT = PARRY.recover;
+         stands there for `recover` — the cost of the wrong guess. In a kendo
+         match she walks, starred, instead (`KENDO_WHIFF`). */
+      if (this.parryT === 0 && this.kendoLive) {
+        this.parryCool = PARRY.cool;
+        this.kendoLockT = Math.max(this.kendoLockT ?? 0, KENDO_WHIFF);
+        this.kendoNoSwing = true;
+        this.kendoNoParry = true;
+      } else if (this.parryT === 0) this.parryRecT = PARRY.recover;
     } else if (this.parryRecT > 0) {
       this.parryRecT = Math.max(0, this.parryRecT - dt);
       if (this.parryRecT === 0) this.parryCool = PARRY.cool;
@@ -6081,7 +6515,7 @@ export class Player {
        this the eat reads as the game having frozen rather than as her eating.
        It is deliberately the same squash-and-stretch the jump and the landing
        use, one octave up: the vocabulary is already established. */
-    const chew = (this.eatT > 0 || this.homePose === 'eat') ? Math.sin(this.idlePhase * 9) * 0.09 : 0;
+    const chew = (this.eatT > 0 || this._homeAs('eat')) ? Math.sin(this.idlePhase * 9) * 0.09 : 0;
 
     /* THE CROSS SLASH'S WIND-UP, AS A CROUCH. She plants for CROSS.wind before
        the first cut and there is no drawn pose for it — and "stood perfectly
@@ -6101,6 +6535,19 @@ export class Player {
       1 - sq * 0.24 + bob + breathe - chew - wind,
       1
     );
+    /* RIDING THE SLIDE: sat down (squashed), arms up (the jump row, the one
+       drawing with her paws in the air) and rattling in the chute. Richard:
+       "can make it a slide instead that players can ride down. Can do a
+       little slide riding animation if so." No new art: the same squash and
+       stretch the jump and the chew are made of. The hit, the KO and the
+       angel below still have the last word. */
+    if (this.slideT > 0) {
+      this.slideT -= dt;
+      this.sprite.row = a.jump;
+      const rattle = Math.sin((this.idlePhase ?? 0) * 11);
+      this.sprite.mesh.scale.set(1.14 + rattle * 0.02, 0.78 - rattle * 0.02, 1);
+      this.sprite.mesh.rotation.z = rattle * 0.05;
+    }
     /* Riding: the seat is solved in _updateFlight, so the sprite sits at the
        group origin â€” but it has to RIDE THE WINGBEAT. Without this the kitten
        hangs perfectly still while the dragon heaves up and down underneath
@@ -6166,6 +6613,20 @@ export class Player {
        everybody else, unconditionally, or a kitten who was ever an angel stays
        half-there for the rest of the afternoon. */
     mat.opacity = this.angel ? ANGEL_ALPHA : 1;
+    /* AND FADED for a lens coming through her (`lookFade`, the window look).
+       `alphaTest` is 0.35 against alpha with opacity folded in, so opacity
+       alone would hold her solid to 0.35 and then drop her in one frame; the
+       test is scaled down with her, which makes it a fade. Restored to the
+       material's own value whenever she is whole. The drawing is the one
+       every pane shares, so a sister's pane sees her fade too — she is in a
+       window with her back to the room, and the alternative is a second
+       material per pane for the length of one look. */
+    this._alphaTest0 ??= mat.alphaTest;
+    /* ...and HALF THERE in Bamboo Infiltration's brush (`hideFade`, dream/bamboo.js BRUSH: "sprite goes
+       50% transparent in the brush"). The same fade, so the same alphaTest scaling; whichever is more. */
+    const lf = Math.max(this.lookFade ?? 0, this.hideFade ?? 0);
+    mat.opacity *= 1 - lf;
+    mat.alphaTest = this._alphaTest0 * Math.max(0.04, 1 - lf);
 
     if (this.angel) {
       /* WASHED OUT, NOT TINTED. `toneMapped: false` hands the colour straight
@@ -6222,7 +6683,17 @@ export class Player {
        every time the beams fired. The dragon case was there before he was, it
        was just small enough on a storm dragon to look like part of the breath. */
     const riding = this.pandaMount || this.mount || this.rideAlong;
-    if (this.attackTimer > 0 && !riding) {
+    const upright = !!this.kendoGeared && !!this.slashV;
+    if (this.slashV) this.slashV.visible = false;
+    if (this.attackTimer > 0 && !riding && upright) {
+      // in the bogu: the upright wedge, swept DOWN from overhead as it fades (see the constructor)
+      const t = 1 - this.attackTimer / 0.26;
+      this.slash.visible = false;
+      this.slashV.visible = true;
+      this.slash.material.opacity = (1 - t) * 0.9;
+      this.slashV.rotation.set(0, this.facing - Math.PI / 2, -(t * 0.6), 'YXZ');
+      this.slashV.scale.setScalar((0.7 + t * 0.5) * (this._reach() / BASE_REACH));
+    } else if (this.attackTimer > 0 && !riding) {
       const t = 1 - this.attackTimer / 0.26;
       this.slash.visible = true;
       this.slash.material.opacity = (1 - t) * 0.9;
@@ -6310,9 +6781,9 @@ export class Player {
        'hidden' under a futon. It is a name, not a timer, and the activity
        that set it is the one that clears it. PLACEHOLDER: the prayer has no
        drawing of its own yet, so it wears the star's reach. */
-    if (this.homePose === 'hidden') this.sprite.mesh.visible = false;
+    if (this._homeAs('hidden')) this.sprite.mesh.visible = false;
     if (this.eatPose) {
-      const eating = this.eatT > 0 || this.homePose === 'eat';
+      const eating = this.eatT > 0 || this._homeAs('eat');
       this.eatPose.visible = eating;
       if (eating) {
         this.sprite.mesh.visible = false;
@@ -6336,8 +6807,8 @@ export class Player {
        frame one would read as a sprite swap, which is exactly what it is and
        exactly what it must not look like. */
     if (this.blessPose) {
-      const blessed = (this.aloftT > 0 || this.homePose === 'bless') && this.eatT <= 0
-        && this.homePose !== 'eat' && this.onGround && !this.mount && !this.rideAlong && !this.ko;
+      const blessed = (this.aloftT > 0 || this._homeAs('bless')) && this.eatT <= 0
+        && !this._homeAs('eat') && this.onGround && !this.mount && !this.rideAlong && !this.ko;
       this.blessPose.visible = blessed;
       if (blessed) {
         this.sprite.mesh.visible = false;
@@ -6350,6 +6821,42 @@ export class Player {
         this.blessPose.mat.color.copy(mat.color);
         this.blessPose.mat.opacity = mat.opacity;
       }
+    }
+
+    /* --- the home poses with drawings of their own ---
+       AFTER THE MEAL AND THE BLESSING, which they replace; `_homeAs` has
+       already kept those two off when the drawing exists. The prayer sways a
+       hair, the bath bobs on the water, the futon breathes. */
+    for (const [hp, key] of [['pray', 'prayPose'], ['bath', 'bathPose'], ['futon', 'futonPose'], ['tea', 'teaPose']]) {
+      const pose = this[key];
+      if (!pose) continue;
+      const on = this.homePose === hp && !this.ko && !this.mount && !this.rideAlong;
+      pose.visible = on;
+      if (!on) continue;
+      this.sprite.mesh.visible = false;
+      const ph = this.idlePhase ?? 0;
+      if (hp === 'tea') {
+        /* NO SWAY AND NO BOB: the drawing does all the moving. Richard: "There
+           should be little or no bouncing animation while drinking tea, it
+           should be a calm and peaceful ceremony." `teaFrame` is set by the
+           ceremony's clock (activities.js `_updateTea`). */
+        pose.facing = this.facing;
+        pose.frame = this.teaFrame ?? 0;
+      } else if (hp === 'pray') {
+        pose.facing = this.facing;
+        pose.mesh.rotation.z = Math.sin(ph * 1.6) * 0.015;
+      } else if (hp === 'bath') {
+        // `homeLift`: the spring's water line over the ground she stands on (activities.js `_soak`)
+        pose.mesh.position.y = (this.homeLift ?? 0) + Math.sin(ph * 2.2) * 0.04;
+      } else {
+        pose.facing = this.facing;
+        // along the bed, not to the lens (gfx.js `alongYaw`)
+        pose.alongYaw = this.facing;
+        const b = Math.sin(ph * 1.3) * 0.025;
+        pose.mesh.scale.set(1 + b * 0.3, 1 + b, 1);
+      }
+      pose.mat.color.copy(mat.color);
+      pose.mat.opacity = mat.opacity;
     }
 
     /* --- 息 Dragon Breath: fill your lungs, then empty them ---
@@ -6425,7 +6932,8 @@ export class Player {
        asked for, on a pose that is otherwise perfectly still. BEFORE THE
        FRIGHT, like the sweep, so a Cross Slash's hold still wins. */
     if (this.ripostePose) {
-      const guarding = this.parryT > 0 && !this.ko;
+      // in the bogu the guard is the kendo drawing's (`kparryPose`, below), where there is one
+      const guarding = this.parryT > 0 && !this.ko && !(this.kendoGeared && this.kparryPose);
       this.ripostePose.visible = guarding;
       if (guarding) {
         this.sprite.mesh.visible = false;
@@ -6444,27 +6952,51 @@ export class Player {
     if (this.kendoPose || this.kiaiPose) {
       if (this.kiaiT > 0) this.kiaiT -= dt;
       const geared = !!this.kendoGeared && !this.ko && !this.mount && !this.rideAlong;
-      const kiai = geared && this.kiaiT > 0 && !!this.kiaiPose;
-      const guard = geared && !kiai && !!this.kendoPose;
-      if (this.kendoPose) this.kendoPose.visible = guard;
+      /* 返 IN THE BOGU: the riposte stance, while the window is up and her
+         answer is going out. Richard: Ember's old kiai drawing — the shinai
+         held across and up — reads as a guard, and becomes it. */
+      const kparry = geared && !!this.kparryPose && (this.parryT > 0 || (this.parryRecT > 0 && !(this.kiaiT > 0)));
+      if (this.kparryPose) this.kparryPose.visible = kparry;
+      /* THE GUARD KNOCKED ASIDE (housing/kendo.js `kendoBrokeT`): Richard,
+         "as if their shinai got batted to the side and they are only holding
+         onto it with one hand while they recover." Under the stars. */
+      const kbroke = geared && !kparry && this.kendoBrokeT > 0 && !!this.kbrokePose;
+      if (this.kbrokePose) this.kbrokePose.visible = kbroke;
+      /* THE CLINCH, shinai crossed: one drawing for each side of the cross, so
+         the kitten on the screen's left is drawn facing right and the other
+         facing left, and the two blades meet rather than both being in front.
+         Picked by which way she points ON SCREEN (`_pointsRight`), not by
+         world facing, which turns with the camera. */
+      const kclinch = geared && !kparry && !kbroke && !!this.kendoClinch && !!this.kclinchRPose;
+      const clR = kclinch && (this.kclinchRPose._pointsRight !== false || !this.kclinchLPose);
+      const kclinchPose = kclinch ? (clR ? this.kclinchRPose : this.kclinchLPose) : null;
+      if (this.kclinchRPose) this.kclinchRPose.visible = kclinch && clR;
+      if (this.kclinchLPose) this.kclinchLPose.visible = kclinch && !clR;
+      const kiai = geared && !kparry && !kbroke && !kclinch && this.kiaiT > 0 && !!this.kiaiPose;
+      const guard = geared && !kiai && !kparry && !kbroke && !kclinch && !!this.kendoPose;
+      /* THE MATCH'S CEREMONY (kendo.js `kendoStance`) - kneeling, reaching
+         for the shinai, the bow - wears its own drawing where there is one,
+         and the guard faked below where there is not. */
+      const st = guard ? this.kendoStance : null;
+      const cer = st === 'kneel' ? this.seizaPose : st === 'grab' ? this.reachPose : st === 'bow' ? this.reiPose : null;
+      for (const k of ['seizaPose', 'reachPose', 'reiPose']) if (this[k]) this[k].visible = !!cer && this[k] === cer;
+      if (this.kendoPose) this.kendoPose.visible = guard && !cer;
       if (this.kiaiPose) this.kiaiPose.visible = kiai;
-      const pose = kiai ? this.kiaiPose : guard ? this.kendoPose : null;
+      const pose = kparry ? this.kparryPose : kbroke ? this.kbrokePose : kclinchPose ?? (kiai ? this.kiaiPose : cer ?? (guard ? this.kendoPose : null));
       if (pose) {
         this.sprite.mesh.visible = false;
-        pose.facing = this.facing;
+        pose.facing = kparry ? this.parryDir : this.facing;
         const moving = Math.hypot(this.velocity.x, this.velocity.z) > 0.5;
         this._kendoBob = (this._kendoBob ?? 0) + dt * (moving ? 14 : 3);
-        pose.mesh.position.y = kiai ? 0 : Math.abs(Math.sin(this._kendoBob)) * (moving ? 0.12 : 0.03);
+        pose.mesh.position.y = (kiai ? 0 : Math.abs(Math.sin(this._kendoBob)) * (moving ? 0.12 : 0.03)) + (this.kendoLift ?? 0);
         pose.mesh.rotation.z = 0;
         pose.mesh.scale.y = 1;
-        /* THE MATCH'S CEREMONY (kendo.js `kendoStance`): kneeling, reaching
-           for the shinai, and the bow. PLACEHOLDER — the guard drawing sunk
-           and squashed for seiza, and tipped toward her opponent for the rei,
-           until each has a drawing of its own (docs/notes/housing.md). The
-           tip is in the billboard's plane, toward whichever side the drawing
-           points, which `_pointsRight` already knows. */
-        const st = !kiai ? this.kendoStance : null;
-        if (st === 'kneel' || st === 'grab') {
+        /* THE FALLBACK for a ceremony with no drawing: the guard sunk and
+           squashed for seiza, and tipped toward her opponent for the rei.
+           The tip is in the billboard's plane, toward whichever side the
+           drawing points, which `_pointsRight` already knows. */
+        if (cer) pose.mesh.position.y = this.kendoLift ?? 0;
+        else if (st === 'kneel' || st === 'grab') {
           pose.mesh.scale.y = st === 'grab' ? 0.8 : 0.66;
         } else if (st === 'bow') {
           pose.mesh.rotation.z = (pose._pointsRight ? -1 : 1) * 0.42;
@@ -6534,6 +7066,27 @@ export class Player {
        with either today — `_startDodge` refuses mid-meal, and nothing hands out
        a star during one — but this is the branch that wins if it ever does,
        because being invisible is not a pose you can lose an argument about. */
+    /* --- a CLIP takes the drawing over (dream/ninjasprite.js) ---
+       Bamboo Infiltration's crawl, rope, ladder, throw and hands-up are one
+       packed atlas of many clips, and the island says which one is playing
+       by writing `clipAs = { name, t }`; nulling it gives her back. Here,
+       with the other poses, so "which drawing is on screen" stays one place,
+       and before the Flash Step's vanish, which still wins. */
+    if (this.clipPose) {
+      const on = !!this.clipAs && !this.ko && !this.mount && !this.rideAlong
+        && this.clipPose.setClip(this.clipAs.name, this.clipAs.t ?? 0);
+      this.clipPose.visible = on;
+      if (on) {
+        this.sprite.mesh.visible = false;
+        this.clipPose.facing = this.facing;
+        this.clipPose.mat.color.copy(mat.color);
+        this.clipPose.mat.opacity = mat.opacity;
+        // ...and the fade's alphaTest with it, or the crawl in the brush is cut at the clip's own threshold.
+        this.clipPose._at0 ??= this.clipPose.mat.alphaTest;
+        this.clipPose.mat.alphaTest = this.clipPose._at0 * (mat.alphaTest / (this._alphaTest0 || 1));
+      }
+    }
+
     const gone = this.dodgeT > 0 && this.dodgePlaced;
     if (this.warpPose) {
       const winding = this.dodgeT > 0 && !this.dodgePlaced;
@@ -6579,11 +7132,13 @@ export class Player {
     }
     if (gone) {
       this.sprite.mesh.visible = false;
+      if (this.clipPose) this.clipPose.visible = false;
       if (this.warpPose) this.warpPose.visible = false;
       if (this.eatPose) this.eatPose.visible = false;
       if (this.blessPose) this.blessPose.visible = false;
       if (this.breathPose) this.breathPose.visible = false;
       this.slash.visible = false;
+      if (this.slashV) this.slashV.visible = false;
     }
 
     // Blob shadow tracks the ground below and shrinks with altitude.
@@ -6771,7 +7326,20 @@ export class Player {
    * right now, which is the one a kid would reach for.
    */
   _boardSnake(road, hit, pad) {
-    const { fwd, right } = this._viewBasis();
+    /* "IS SHE PRESSING ONWARD" IS ASKED THROUGH THE BASIS THAT WALKED HER
+       HERE — the held one (`_moveBasis`'s `_peekHold`) when there is one,
+       not the lens drawn this frame. Richard, Oct 2026: "the input is
+       reversing for the player and instead of continuing in the direction
+       they are going, they get turned around". Measured: walking onto a
+       bridge holding S with the look across 40% of the way round, the held
+       S was taking her straight up the road, but read through the HALF-SWUNG
+       lens it was 70 degrees off onward, failed the 0.2 test below, and the
+       ride locked onward to a different key — so the S still under her thumb
+       meant "back down the road" (velocity along the road +6 -> -7.8 in a
+       fifth of a second, and the off-road hold then walked her away). With
+       no hold this is `_viewBasis`, exactly as before. */
+    const H = this._peekHold;
+    const { fwd, right } = H && Number.isFinite(H.yaw) ? this._basis(H.yaw) : this._viewBasis();
     const mx = pad?.mx ?? 0;
     const my = pad?.my ?? 0;
     const wx = right.x * mx - fwd.x * my;
@@ -6782,10 +7350,9 @@ export class Player {
     let { x: sx, y: sy } = this._snakeOnward(hit.tx * dir, hit.tz * dir);
     const m = Math.hypot(mx, my);
     if (m > 0.3) {
-      const px = mx / m;
-      const py = my / m;
-      const l0 = Math.hypot(sx, sy) || 1;
-      if ((px * sx + py * sy) / l0 > 0.2) { sx = px; sy = py; }
+      // In the WORLD, so the held basis and the lens on screen need not agree.
+      const wl = (Math.hypot(wx, wz) || 1) * (Math.hypot(hit.tx, hit.tz) || 1);
+      if ((wx * hit.tx + wz * hit.tz) * dir / wl > 0.2) { sx = mx / m; sy = my / m; }
     }
     const l = Math.hypot(sx, sy) || 1;
     this.snakeRide = { road, s: hit.s, dir, t: 0, stick: { x: sx / l, y: sy / l }, rest: 0, free: null };
@@ -6805,6 +7372,60 @@ export class Player {
   }
 
   /** What the ride camera needs to frame her alone, or null off the roads. */
+  /**
+   * THE RIDE CAMERA (RIDE_CAM): over whatever the camera did above, blended
+   * in on `rideCamW`. Its own heading, smoothed — NOT a `focus`, whose yaw is
+   * lerped from CAM_YAW and would whip a full turn round her each time the
+   * spiral carried her heading across the half-turn opposite it. Kept on the
+   * way out on the last mode, so the lens eases back from where it was.
+   */
+  _applyRideCam(dt) {
+    const R = this.rideCam;
+    this.rideCamW = (this.rideCamW ?? 0) + ((R ? 1 : 0) - (this.rideCamW ?? 0)) * Math.min(1, dt * RIDE_CAM.ease);
+    if (this.rideCamW < 0.002) { this.rideCamW = 0; this._rc = null; return; }
+    if (R) this._rcFpv = !!R.fpv;
+    const sp = Math.hypot(this.velocity.x, this.velocity.z);
+    let hx = Math.sin(this.facing), hz = Math.cos(this.facing);
+    if (sp > 0.5) { hx = this.velocity.x / sp; hz = this.velocity.z / sp; }
+    const rc = this._rc ??= { hx, hz, pos: this.camera.position.clone(), look: new THREE.Vector3() };
+    const k = 1 - Math.exp(-dt * RIDE_CAM.turn);
+    rc.hx += (hx - rc.hx) * k;
+    rc.hz += (hz - rc.hz) * k;
+    const hl = Math.hypot(rc.hx, rc.hz) || 1;
+    rc.hx /= hl; rc.hz /= hl;
+    const p = this.position;
+    const C = RIDE_CAM;
+    if (this._rcFpv) {
+      rc.pos.set(p.x + rc.hx * 0.2, p.y + C.eye, p.z + rc.hz * 0.2);
+      /* Down the chute when the ride says where it goes (sliderider.js
+         SLIDE_LOOK), eased so a corner of the path is a turn of the head;
+         otherwise along her heading. What is eased is the DIRECTION from
+         her eye, not the point: an eased point trails behind a kitten doing
+         ten metres a second until it is nearly under her, and the lens
+         tipped 57 degrees down into the chute (housing check). And it is
+         where her EYES will be, `eye` over the path, not a hand over it: on
+         a helix this tight, 4m of path is a 2m chord that has dropped 2m,
+         and her whole eye height added to that drop was 55 degrees. Handing
+         back, the last direction is HELD — snapping to the heading was a
+         lurch. */
+      const L = R?.look;
+      if (L) {
+        _rcWant.set(L.x - rc.pos.x, L.y + C.eye - rc.pos.y, L.z - rc.pos.z);
+        if (!rc.fpvDir) rc.fpvDir = _rcWant.clone();
+        else rc.fpvDir.lerp(_rcWant, k);
+      }
+      if (rc.fpvDir) rc.look.copy(rc.pos).add(rc.fpvDir);
+      else rc.look.set(rc.pos.x + rc.hx * C.ahead, rc.pos.y - C.dip, rc.pos.z + rc.hz * C.ahead);
+    } else {
+      const f = 1 - Math.exp(-dt * C.follow);
+      rc.pos.lerp(_rcWant.set(p.x - rc.hx * C.back, p.y + C.up, p.z - rc.hz * C.back), f);
+      rc.look.set(p.x + rc.hx * C.lead, p.y + 1.1, p.z + rc.hz * C.lead);
+    }
+    const w = this.rideCamW;
+    this.camera.position.lerp(rc.pos, w);
+    this.camera.lookAt(_rcLook.copy(this.camTarget).lerp(rc.look, w));
+  }
+
   snakeSubject() {
     const R = this.snakeRide;
     if (!R || this.mount || this.rideAlong) return null;
@@ -6884,6 +7505,16 @@ export class Player {
     const active = this.focus && !flying;
     this.focusT += ((active ? 1 : 0) - this.focusT) * Math.min(1, dt * 2.2);
     let yaw = CAM_YAW;
+    /* THE TURN EASES BACK OUT TOO. Richard, Oct 2026: "Input switching when
+       the camera changes to the front door camera, and then when it changes
+       back is not smooth". Going IN eased on `focusT`; coming OUT, the focus
+       was already null, so the yaw was CAM_YAW on the very next frame — the
+       lens jumped a half-turn round her and the stick with it. The last
+       focus's turn is kept and eased out on the same `focusT`. */
+    if (this.focus) this._lastFocusYaw = this.focus.yaw ?? CAM_YAW;
+    else if (this.focusT > 0.001 && Number.isFinite(this._lastFocusYaw) && !flying) {
+      yaw = THREE.MathUtils.lerp(CAM_YAW, this._lastFocusYaw, this.focusT);
+    }
     if (this.focusT > 0.001 && this.focus) {
       const t = this.focusT;
       wantDist = THREE.MathUtils.lerp(wantDist, this.focus.dist, t);
@@ -6924,6 +7555,8 @@ export class Player {
       );
     }
 
+    // is the lens turning round her this frame? (`_moveBasis` holds a push through it)
+    this.camSwing = Math.abs(yaw - this.camYaw) > 1e-4;
     this.camYaw = yaw;
 
     /* AND THEN THE SHAPE OF HER PANE, WHICH EVERY DISTANCE ABOVE IGNORES.
@@ -6946,7 +7579,11 @@ export class Player {
        whole two-player game — see `paneWiden`, which refuses to answer for an
        even split precisely so that game cannot move. */
     const pw = Number.isFinite(this.paneWiden) ? Math.max(1, this.paneWiden) : 1;
-    wantDist *= pw;
+    /* ...EXCEPT a focus that puts the lens at an exact spot (a window's
+       first-person look, housing/activities.js), which the pull-back would
+       shove back through the wall behind her. Eased on `focusT` like the
+       rest, so walking into it is not a jump. */
+    wantDist *= this.focus?.exact ? THREE.MathUtils.lerp(pw, 1, this.focusT) : pw;
 
     /* Easing back down after a dismount. The flight camera sits up to 130
        units out and the ground camera at 24, so snapping between them at the
@@ -6965,12 +7602,27 @@ export class Player {
 
     this.camera.position.copy(this.camTarget).add(this._offset);
     this.camera.lookAt(this.camTarget);
+    /* SHE FADES AS THE LENS COMES THROUGH HER (a focus with `fadeHer`, the
+       window's first-person look). Richard: "have the player fade away as the
+       camera gets near to her". Measured from the lens to her chest: whole at
+       `LOOK_FADE.far`, gone by `near`. Kept on the way OUT as well, on the
+       last focus's flag, or she would pop back in front of a lens still
+       inside her for the half second it takes to back away. */
+    if (this.focus) this._lastFadeHer = !!this.focus.fadeHer;
+    if (this._lastFadeHer && this.focusT > 0.001 && !flying) {
+      const d = Math.hypot(this.camera.position.x - this.position.x,
+        this.camera.position.y - (this.position.y + 1.2), this.camera.position.z - this.position.z);
+      const u = THREE.MathUtils.clamp((LOOK_FADE.far - d) / (LOOK_FADE.far - LOOK_FADE.near), 0, 1);
+      this.lookFade = u * u * (3 - 2 * u);
+    } else this.lookFade = 0;
     /* THE LOOK ACROSS, walking up to a sim bridge, and THE RIDE ON TOP once
        she is on it. Both are layers over the pose above, in that order, so
        the ride starts from wherever the look across left the lens and there
        is no cut between them — see dream/peek.js and `SnakeCam`. */
+    this._applyRideCam(dt);
     const ride = this.snakeSubject();
     this.bridgePeek.apply(dt, this.peekAt, this.camera, this.camTarget, peekHold(this.snakeCam, ride));
-    this.snakeCam.apply(dt, ride, this.camera, this.camTarget);
+    // ...and the ride WAITS for the look across to finish (dream/peek.js `peekDefers`).
+    this.snakeCam.apply(dt, peekDefers(this.bridgePeek, this.snakeCam, ride) ? null : ride, this.camera, this.camTarget);
   }
 }

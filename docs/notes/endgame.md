@@ -831,6 +831,13 @@ themselves: **4550 across 216**. An even split is 2275 each and the brief is
 that all of it buys three or four orbs, so `orbPrice = pointsTotal / 2 / 3.5`
 = **650**, sell **488** (75%).
 
+**FIXED AT 1300 SINCE OCT 2026, and the derivation above is history.**
+Richard: a Kotodama is a flat 1300, and every piece of mischief pays 20% more
+(`MISCHIEF_BONUS` in prop.js, so the pot is 5460). `ORB_PRICE` in powerorb.js
+is the one number; `orbPrice` keeps its signature so every caller is unchanged.
+Measured: half the pot is 2730, **2.10 orbs**, which world-check pins as "a
+whole purse buys two or three". It no longer follows party size.
+
 That number does more than it looks. Eight types, **one of each lying in the
 world**, a stall whose stock is deep only on the four stat orbs, and a wallet
 that reaches three is what makes **trading** the way you build a set rather

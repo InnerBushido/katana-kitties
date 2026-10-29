@@ -2314,6 +2314,16 @@ console.log('\n--- WASD as a spare hand, in play and in a menu ---');
     String(im.players[0].mx));
   ok('...without her source becoming the keyboard',
     im.players[0].source === 'gamepad', im.players[0].source);
+  im.keys.delete('KeyD');
+  /* ENTER IS JOIN, NEVER HER PAD'S START. Folded in, it paused the game
+     instead of seating player 2 (Richard, Oct 2026). */
+  im.keys.add('Enter');
+  im.update();
+  ok("...and ENTER does not become her pad's Start (which pauses): it is the join key",
+    !im.players[0].held.start && !!im.pendingJoin?.(), JSON.stringify(im.players[0].held));
+  im.keys.delete('Enter');
+  im.update();
+  im.keys.add('KeyD');
   /* AND NOT A SECOND COPY IN THE MENU. The keys are already in her pad state,
      so handing them out again would double every press she makes. */
   ok('...and the menu is NOT offered them a second time',

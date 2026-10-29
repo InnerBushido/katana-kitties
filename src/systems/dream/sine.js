@@ -3,6 +3,9 @@ import { SIM, HOLO } from '../../world/simworld.js';
 import { HoloPanel } from './holo.js';
 import { Kiosk, idleIn, isleSpot, stars3 } from './kiosk.js';
 import { SINE_BOARD, sineBoardLines, sineFilterRows } from './sineboard.js';
+import { GhostRecorder, GhostFigure, GMODE, ghostFor, offerGhost } from './ghost.js';
+import { loadNinjaArt } from './ninjasprite.js';
+import { PLAYER_STYLE } from '../../core/palette.js';
 import {
   LEVELS, LANES, HALVES, WALLS, START, START_LINE, SECTIONS, SECTION, FINISH_B, END_B, COURSE_A,
   ARMS, MATH_ARM, LEDGES, beams, stones, groundAt, hitAt, pathS, CP_S, FINISH_S, advance, laneOf,
@@ -183,8 +186,33 @@ export const STONES_CAM = { dist: 18, pitch: 0.55, lift: 1.0, lead: 3 };
 /** How fast the lens swings between the side-on shot and that one (1/s). */
 const CAM_EASE = 2.5;
 /** The card over her head with the lens behind her (see `_fitCard`): this
- *  big, this far over her head, this opaque. Side-on it is 1, 2.3 and 1. */
+ *  big, this far over her head, this opaque. */
 export const CARD_BEHIND = { scale: 0.5, lift: 1.2, opacity: 0.6 };
+/**
+ * ...AND SIDE-ON, BIGGER THAN IT WAS. Richard, Oct 2026: "when the player is
+ * running around the course, zoomed out, in the side view, the UI above their
+ * head is too small to read, in this zoomed out side view, the UI should be
+ * bigger and when the camera is behind the player, the UI should be the
+ * current size it is which is the smaller size." It was 1 at COURSE_CAM's 25
+ * away — about the same size on screen as the behind shot's 0.5 at 14, which
+ * is the size he calls small. `lift` is the card's CENTRE over her head; the
+ * card is drill.js's 5.4×1.7, and its bottom edge stays 1.45 over her head
+ * at either size (1.45 + 0.85·scale), so growing it never puts it on her.
+ */
+export const CARD_SIDE = { scale: 1.6, lift: 1.45 + 0.85 * 1.6, opacity: 1 };
+/**
+ * THE DRAGON'S TAIL, ONCE SHE IS DOWN OFF ITS LEDGES. Richard, Oct 2026: "On
+ * the Dragons Gate course in the Sine Gauntlet, at the ending, after jumping
+ * over the platforms, the camera should rotate to the side view so that the
+ * player can better see the lazers they need to walk past. Or potentially do
+ * more of a diagonal rear corner view so they can see both obstacles better."
+ * The corner: the stretch after the ledges is walls from alternate sides
+ * (side to side — what a side-on lens loses) with a wave bar between each
+ * pair (up and down — what a lens straight behind her loses). `turn` is how
+ * far round from behind her toward side-on (0.5 is the 45° corner); `behind`
+ * is what the overhead card sizes itself by, half way between its two sizes.
+ */
+export const CORNER_CAM = { dist: 19, pitch: 0.5, lift: 1.2, lead: 3.5, turn: 0.5, behind: 0.5 };
 /** How far before a `behind` stretch's checkpoint the lens starts to turn (see `_shoulder`). */
 export const SHOT_AHEAD = 5;
 
@@ -926,8 +954,31 @@ export class SineGauntlet {
     const isle = this.isle;
     const spec = COURSE(this, S.level);
     this.dream.startDrill(p, spec, { x: isle.x, y: isle.y, z: isle.z, r: isle.r, fwd: isle.fwd });
-    this.run = { i: p.index, drill: this.dream.drills[p.index], sMax: 0, cp: 0, zaps: 0, zapT: 0 };
+    this.run = { i: p.index, drill: this.dream.drills[p.index], sMax: 0, cp: 0, zaps: 0, zapT: 0, rec: new GhostRecorder() };
+    this._ghostFor(spec.id, p);
     this.dream.game.toast?.(`${p.name} — on your mark! ${this.course.name} · ${levelName(S.level)}`, p.index);
+  }
+
+  /**
+   * 幽 THE GHOST: the fastest finish there has been at this level, run beside
+   * her (dream/ghost.js — Bamboo Infiltration's, shared: "Ghost run → Yes,
+   * also on Sine Gauntlet"). Its figure is the ninja atlas, fetched here if
+   * nothing has fetched it yet; no file, no ghost, and nothing else changes.
+   */
+  _ghostFor(id, p) {
+    this.ghost?.dispose();
+    this.ghost = null;
+    const g = ghostFor(id);
+    if (!g) return;
+    const run = this.run;
+    loadNinjaArt().then((art) => {
+      if (this.run !== run) return;
+      const fwd = this.isle.fwd;
+      // An island bearing as a Billboard's facing: the island's frame, turned into the layer's.
+      const facing = (th) => Math.atan2(fwd.x * Math.cos(th) - fwd.z * Math.sin(th), fwd.z * Math.cos(th) + fwd.x * Math.sin(th));
+      this.ghost = new GhostFigure(this.root, g, art.kittens[g.style] ?? art.kittens[0], p.height ?? 2.6, (a, b, y) => this._w(a, b, y), facing);
+      this.ghost.update(0);
+    }).catch(() => {});
   }
 
   /** A zap or a fall: back to the checkpoint she has earned — and nothing
@@ -1026,7 +1077,17 @@ export class SineGauntlet {
     const hit = hitAt(L, q.a, q.b, Math.max(0, feet), d.t, { height: p.height ?? 2.6 });
     if (hit) { this.zap(p, hit); return; }
     const last = LANES.length - 1;
-    if (r.sMax >= FINISH_S - 0.3 && Math.abs(q.a - LANES[last]) < HALVES[last]) d.progress();
+    // Her run, for the ghost: where, how high, which way, and in the air or not.
+    const f = this.isle.fwd; const sx = Math.sin(p.facing ?? 0); const sz = Math.cos(p.facing ?? 0);
+    r.rec.tick(dt, () => [q.a, q.b, Math.max(0, feet), Math.atan2(-sx * f.z + sz * f.x, sx * f.x + sz * f.z), p.onGround ? GMODE.stand : GMODE.air]);
+    if (r.sMax >= FINISH_S - 0.3 && Math.abs(q.a - LANES[last]) < HALVES[last]) {
+      d.progress();
+      if (d.state === 'won') {
+        offerGhost(d.spec.id, {
+          name: p.name, style: Math.max(0, PLAYER_STYLE.findIndex((s) => s.name === p.style?.name)), time: d.t, samples: r.rec.samples,
+        });
+      }
+    }
     if (d.state === 'live' && d.t >= COURSE_TIME) d.fail(`Time! You reached ${SECTIONS[r.cp].name}`);
   }
 
@@ -1061,6 +1122,11 @@ export class SineGauntlet {
   update(dt) {
     const inside = idleIn(this.dream);
     for (const k of this.kiosks) k.update(dt, inside);
+    // The ghost runs on her clock from GO, and goes with her run.
+    if (this.ghost) {
+      const d = this.run && this.dream.drills[this.run.i] === this.run.drill ? this.run.drill : null;
+      if (!d) { this.ghost.dispose(); this.ghost = null; } else this.ghost.update(d.state === 'live' ? d.t : 0);
+    }
     // The picker closed, however it closed: nobody is choosing.
     if (this.picking != null && this.dream.choices?.[this.picking] !== this._pickChoice) {
       this.picking = null;
@@ -1297,14 +1363,33 @@ export class SineGauntlet {
   }
 
   /** The side-on yaw (see COURSE_CAM), or, behind her, the yaw that looks
-   *  down her lane the way it runs. */
+   *  down her lane the way it runs — or, off the Dragon's Tail's ledges, the
+   *  corner between the two (CORNER_CAM). */
   _wantShot() {
     const sec = this._shoulder();
     if (!sec) return { yaw: this._yaw(), dist: COURSE_CAM.dist, pitch: COURSE_CAM.pitch, lead: 0, lift: COURSE_CAM.lift, pin: 0, behind: 0 };
     const f = this.isle.fwd;
     const sg = sec.lane % 2 ? -1 : 1;     // the way her lane runs, in b
+    const back = Math.atan2(sg * f.z, -sg * f.x);
+    if (this._pastLedges(sec)) {
+      const C = CORNER_CAM;
+      let dy = this._yaw() - back;
+      while (dy > Math.PI) dy -= Math.PI * 2;
+      while (dy < -Math.PI) dy += Math.PI * 2;
+      return { yaw: back + dy * C.turn, dist: C.dist, pitch: C.pitch, lead: C.lead, lift: C.lift, pin: 0, behind: C.behind };
+    }
     const S = sec.key === 'stones' ? STONES_CAM : SHOULDER_CAM;
-    return { yaw: Math.atan2(sg * f.z, -sg * f.x), dist: S.dist, pitch: S.pitch, lead: S.lead, lift: S.lift, pin: S === STONES_CAM ? 1 : 0, behind: 1 };
+    return { yaw: back, dist: S.dist, pitch: S.pitch, lead: S.lead, lift: S.lift, pin: S === STONES_CAM ? 1 : 0, behind: 1 };
+  }
+
+  /** A stretch with ledges AND beams after them (the Dragon's Tail), with
+   *  every ledge behind her — the same test the working card reads. */
+  _pastLedges(sec) {
+    const r = this.run;
+    if (!r || !sec?.ledges || !(sec.bars || sec.fixed)) return false;
+    if (SECTIONS.indexOf(sec) !== nextSection(r.sMax)) return false;
+    const lane = LANES[sec.lane];
+    return !sec.ledges.some((l) => pathS(lane, l.b) > r.sMax);
   }
 
   /** The shot, eased: a cut from side-on to behind her would be a quarter
@@ -1338,9 +1423,10 @@ export class SineGauntlet {
     const d = this.run?.drill;
     if (!d?.panel) return;
     const k = this._cam?.behind ?? 0;
-    d.panel.scale.setScalar(1 - (1 - CARD_BEHIND.scale) * k);
-    d.panel.position.y = (d.p.height ?? 2.6) + 2.3 - (2.3 - CARD_BEHIND.lift) * k;
-    d.panel.mat.opacity = 1 - (1 - CARD_BEHIND.opacity) * k;
+    const mix = (key) => CARD_SIDE[key] + (CARD_BEHIND[key] - CARD_SIDE[key]) * k;
+    d.panel.scale.setScalar(mix('scale'));
+    d.panel.position.y = (d.p.height ?? 2.6) + mix('lift');
+    d.panel.mat.opacity = mix('opacity');
   }
 
   /** Where the runner is — or the start, between runs — in the world: her,
@@ -1422,6 +1508,7 @@ export class SineGauntlet {
     for (const k of this.kiosks) k.faceCamera(camera);
     this.board.faceCamera(camera);
     this.standSign.faceCamera(camera);
+    this.ghost?.faceCamera(camera);
   }
 }
 

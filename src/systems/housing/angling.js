@@ -103,7 +103,15 @@ export class Angling {
       group.add(this._standMesh(sx, sy, sz, toward));
       const old = kept.get(I.site.id);
       const fish = old?.P.uid === P.uid ? old.fish : [];
+      /* A MOVED pond is the same uid somewhere else: its fish move with it,
+         and whatever each was swimming toward is forgotten. Richard, Oct
+         2026: "moving the pond should reset the fish waypoints to the new
+         location" — they were kept by uid alone and swam on to the old spot. */
+      if (fish.length && (old.P.x !== P.x || old.P.z !== P.z)) {
+        for (const f of fish) { f.x += P.x - old.P.x; f.z += P.z - old.P.z; f.to = null; }
+      }
       const v = { site: I.site.id, I, P, wr, group, stand: { x: sx, y: sy, z: sz }, fish };
+      for (const f of fish) this._place(v, f);
       while (v.fish.length < fishCount(I.site.id)) v.fish.push(this._newFish(v, false));
       for (const f of v.fish) { f.mesh.removeFromParent(); group.add(f.mesh); }
       this.ponds.set(I.site.id, v);

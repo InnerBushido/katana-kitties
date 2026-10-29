@@ -262,7 +262,8 @@ Trace's ±100 ms PERFECT.
 chord loop (which the takes do not play). Per beat: chroma plus band energies;
 every pair of beats whole bars apart (A ≥ 16, B ≤ end−8, B−A ≥ 48 and a multiple
 of 4) is scored over ±4 beats, and the longest loop within 0.01 of the best
-score wins. Requiem loops beats 40–88 (21.2 s), Darksynth 52–100 (21.2 s).
+score wins. Requiem loops beats 40–88 (21.2 s). Darksynth did too, 52–100
+(21.2 s) — see below for why it no longer does.
 
 **Except Nightmare, whose loop is chosen by its sections.** Richard, of the
 first long cut: "isn't looping very well and sound awkward, especially since it
@@ -277,6 +278,16 @@ beats, 35.1 s): to the end of the outro's last full bar, then into the song's
 own break beat — a transition the music already makes once — with the whole
 choir in every pass.
 
+**And Darksynth, the same way (Oct 2026).** Richard: "The loop on the Hard
+Shadow Lionheart music is not very good, too repetitive in the battle, also the
+splice transition of the music is not very good. We want more diversity and the
+main theme of the song repeating during the battle." 52–100 was 21 s of the drop
+alone; the theme was heard once. Band energy: the theme in 8-beat phrases from
+7 (G 15, C 23, D 31, G 39), ONE sub-less break beat at 46, the drop 47–110 at
+full mids, the closing hit at 111 and the fade from 112 (49.8 s). It loops
+**15→111** (96 beats, 42.3 s): the end of the drop back into the theme's second
+G phrase — drop into verse, the turn at 46 run the other way.
+
 **And no seam is cut on the grid.** The takes creep about 0.1% — invisible to a
 chart, but it puts beat A and beat B 30–60 ms out of step with each other, so a
 loop cut exactly on the grid stumbles at every seam. All three first loops did:
@@ -288,6 +299,12 @@ drum hit is never split — a cut a few ms after a hit plays a sliver of it and
 then the other side's hit, which is a flam. Requiem's peak is sharp (0.69
 against a 0.31 floor); Nightmare's is shallow, but the same −33 ms came out of
 two seam pairs at two window lengths and agreed with two cruder reads.
+**Darksynth's 15→111 seam is the exception** (`lagBy: 'drift'`): the four
+beats before each side are theme against drop, two different arrangements, and
+`seamLag` peaked at +97 ms on 0.278 against the edge of its search, with
+neighbouring pairs anywhere from −4 to +97; per-beat onset peaks scatter
+−101…+110 ms, because a pad-and-arp texture has no hit to lock to. The beat
+fit's own 8 s drift windows, interpolated at each end, say **+23 ms**.
 `tools/capture/.out/seam-preview.mjs` renders every seam for listening.
 
 **Playing it** (`startMusic` / `_fileStart`):

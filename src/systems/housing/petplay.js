@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { paint, toonVertexMat } from '../../core/gfx.js';
 import { mergeParts } from '../../world/build.js';
 import { ANIMALS } from './farm.js';
+import { placeModel } from './models.js';
 
 /* ---------------------------------------------------------------------------
    PLAYING WITH THE ANIMALS — more than feeding them.
@@ -42,9 +43,10 @@ import { ANIMALS } from './farm.js';
               chick: JUMP HEIGHT, bunny: JUMP DISTANCE, goat: SPRINT. A level-up
               says which one in the toast, and the pen card lists all three.
 
-   PLACEHOLDERS (docs/notes/housing.md): the stick is a stick-shaped box; the
-   chick "flying" is the pen drawing bobbing in the air, with no wing
-   animation; a pile is a few brown blobs.
+   THE PROPS ARE MODELS (Oct 2026): the stick is Polyfork's fallen twig, a
+   pile is a Tripo mess (`props/mess-pile`), each standing in for itself as
+   the old drawn box and blobs until it loads - and when it never does. The
+   chick flaps between `farm/chick_fly.png` and her pen drawing in the air.
 --------------------------------------------------------------------------- */
 
 const HOUR = 3600 * 1000;
@@ -58,6 +60,15 @@ export const PLAY = {
   chickH: [1.4, 3.2, 4.6, 5.6], // how high the chick flutters, above the ground
   chickJumps: [1, 2, 3, 4],     // ...and the jumps that height takes
   hopBeats: 4,
+  /* THE BUNNY'S HOP AND HERS. Its hop is `hopH` high over `hopT` seconds;
+     on her copy turn her jump is capped to `hopUp` times that height under
+     `hopGrav` times her gravity (Player `hopJump`). Richard, Oct 2026: "the
+     player jumps 1.25x's higher than the bunny and gravity is 1.25x's
+     stronger so that the player falls faster". */
+  hopH: 0.9,
+  hopT: 0.3,
+  hopUp: 1.25,
+  hopGrav: 1.25,
   hopTol: 0.16,                 // mean timing error (s) that still counts
   joyPerLevel: 2,
   boostPerLevel: { chick: 0.02, bunny: 0.04, goat: 0.04 },
@@ -167,7 +178,8 @@ export class PetPlay {
       paint(b, 0x6a4a2a);
       parts.push(b);
     }
-    return new THREE.Mesh(mergeParts(parts), toonVertexMat());
+    // Tripo's pile (tools/prop-bake.mjs `mess-pile`), the four blobs until it loads
+    return placeModel('props/mess-pile', new THREE.Mesh(mergeParts(parts), toonVertexMat()), { h: 0.45 });
   }
 
   /** The pile she is standing at, for `Housing._spotFor`. */
@@ -268,6 +280,12 @@ export class PetPlay {
     const S = this.s.get(i);
     if (!S) return;
     S.stick?.removeFromParent();
+    // Her own jump back, whatever turn the bunny game was on.
+    const P = this.game.players?.[i];
+    if (P) P.hopJump = null;
+    // Never leave her mid-flap: the pen drawing back, the flutter frame away.
+    const u = this._animal(S)?.userData;
+    if (u?.fly) { u.fly.visible = false; if (u.bb) u.bb.visible = true; }
     this.s.delete(i);
     if (why) this.game.toast?.(why, i);
   }
@@ -389,8 +407,17 @@ export class PetPlay {
       S.last.copy(p.position);
       if (g) {
         g.position.copy(S.pos);
-        const bb = g.userData.bb;
-        if (bb && S.vel && Math.hypot(S.vel.x, S.vel.z) > 0.2) bb.facing = Math.atan2(S.vel.x, S.vel.z);
+        const { bb, fly } = g.userData;
+        const face = S.vel && Math.hypot(S.vel.x, S.vel.z) > 0.2 ? Math.atan2(S.vel.x, S.vel.z) : null;
+        if (bb && face != null) bb.facing = face;
+        /* THE FLAP: in the air she swaps between the flutter frame and the
+           pen drawing at 8 a second, wings up and wings down. */
+        if (fly) {
+          const up = S.kind === 'catch' && Math.floor(this.t * 8) % 2 === 0;
+          fly.visible = up;
+          if (bb) bb.visible = !up;
+          if (face != null) fly.facing = face;
+        }
       }
     }
   }
@@ -421,7 +448,8 @@ export class PetPlay {
       if (!S.stick) {
         const geo = new THREE.BoxGeometry(0.9, 0.1, 0.1);
         paint(geo, 0x8a5a30);
-        S.stick = new THREE.Mesh(geo, toonVertexMat());
+        // Polyfork's twig (a 24m bug-world log, fitted down to a stick), the box until it loads
+        S.stick = placeModel('fallen-twig-4c64de', new THREE.Mesh(geo, toonVertexMat()), { w: 1.0 });
         S.v.group.add(S.stick);
       }
       S.stick.visible = true;
@@ -434,7 +462,14 @@ export class PetPlay {
       if (k >= 1) {
         S.stick.rotation.set(0, Math.random() * 3, 0);
         const onIsle = S.v.I.over(S.to.x, S.to.z, -1);
-        S.run = Math.hypot(S.to.x - S.pos.x, S.to.z - S.pos.z);
+        /* THE THROW, FROM HER HAND — not the goat's run from wherever it
+           was trotting. It trots 2.2 behind her, so measured from the goat the
+           shortest throw there is (3 + a frame of charge) was a run of 5.7
+           against a level-1 goat's 5, and EVERY throw counted; the check that
+           said a short one did not had only ever caught the goat standing
+           nearer the stick. Found when the checks' kitten grew to her real
+           radius and moved the goat. "Throw it further" is about the throw. */
+        S.run = Math.hypot(S.to.x - S.from.x, S.to.z - S.from.z);
         S.good = onIsle && S.run >= PLAY.fetchNeed[petLevel(S.A) - 1];
         S.phase = onIsle ? 'chase' : 'back';
         if (!onIsle) G.toast?.(`Whoops — over the edge! The ${def.name} fetches you another stick.`, p.index);
@@ -508,12 +543,14 @@ export class PetPlay {
     this._run(S, bx, bz, 5, dt, ground);
     const gy = ground(S.pos.x, S.pos.z);
     if (S.phase === 'show') {
-      const k = S.beats.findIndex((b) => S.t >= b && S.t < b + 0.3);
-      S.pos.y = gy + (k >= 0 ? Math.sin(((S.t - S.beats[k]) / 0.3) * Math.PI) * 0.9 : 0);
+      p.hopJump = null;
+      const k = S.beats.findIndex((b) => S.t >= b && S.t < b + PLAY.hopT);
+      S.pos.y = gy + (k >= 0 ? Math.sin(((S.t - S.beats[k]) / PLAY.hopT) * Math.PI) * PLAY.hopH : 0);
       if (S.shown < S.beats.length && S.t >= S.beats[S.shown]) { S.shown += 1; G.audio?.play?.('beat'); }
       if (S.t > S.beats[S.beats.length - 1] + 0.9) { S.phase = 'copy'; S.t = 0; S.got = []; }
     } else if (S.phase === 'copy') {
       S.pos.y = gy;
+      p.hopJump = { h: PLAY.hopH * PLAY.hopUp, g: PLAY.hopGrav };
       if (S.got.length >= S.beats.length || S.t > S.beats[S.beats.length - 1] + 3) {
         const err = rhythmError(S.beats, S.got);
         if (err <= PLAY.hopTol) {

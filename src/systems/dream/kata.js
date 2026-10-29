@@ -9,6 +9,7 @@ import * as BM from './beatmap.js';
 import { customCharts } from './chartstore.js';
 import { KataBoard } from './kataboard.js';
 import { kyoTexture } from '../crossfx.js';
+import { houseSpecs } from '../housing/catalog.js';
 
 /* ---------------------------------------------------------------------------
    KATA TRACE — 型, a dance with Lionheart.
@@ -171,6 +172,15 @@ export const MARK_NAMES = ['C', ...BM.DIRS];
 
 /* --------------------------------- the hall ------------------------------- */
 
+/** `KataHall.homesOpen`, as a function of the Dream Dojo alone (the checks call it with a stand-in). */
+export function homesOpen(dream) {
+  const P = dream?.progress;
+  for (const home of Object.values(dream?.game?.housing?.store?.homes ?? {})) {
+    for (const s of houseSpecs(home)) if (BM.HOME_SONG_TIERS[s.house]) P?.unlockHome?.(s.house);
+  }
+  return P?.homesOpen?.() ?? new Set();
+}
+
 /* ONE FLOOR EACH, IN HER COLOUR. Richard: "For the daily/weekly kata, let's
    only show the kata area for active players. Let's section each area off
    with the players color and symbolism, so they know which area is for them,
@@ -192,6 +202,10 @@ const KIOSK_D = 7.6;
  *  -0.84 under the controls strip at -0.82, with his sword at 0.75 against
  *  the HUD at ~0.82 — no room to aim up, so the lens backs off its own ray. */
 export const KATA_CAM = { dist: 33.5, pitch: 0.78, up: 1.6, y: 1.2 };
+/** "a 'Loading…' dialog for 1 - 2secs" before a session's runs all start. */
+export const SESSION_LOAD = 1.5;
+/** How long a handed-on song takes to fade up, and her metronome to fade out ("within a second or two"). */
+export const MUSIC_HANDOVER = 1.2;
 
 export class KataHall {
   constructor(dream, isle) {
@@ -223,8 +237,9 @@ export class KataHall {
         ...at('SW'), y: isle.y, r: 1.6, colour: HOLO.cyan,
         kanji: '型', title: 'KATA TRACE', near: 5,
         card: (p) => (this.ownerOf(fl) === p ? this._card(p) : this._notYours(p, fl)),
-        prompt: (p, key) => (this.ownerOf(fl) !== p ? this._yoursIs(p, fl).toUpperCase() : `[${key}]  PICK A SONG`),
-        interact: (p) => this.openPicker(p, fl),
+        prompt: (p, key) => (this.ownerOf(fl) !== p ? this._yoursIs(p, fl).toUpperCase()
+          : this._canJoin(p) ? `[${key}]  JOIN ${this._hostName().toUpperCase()}'S SONG` : `[${key}]  PICK A SONG`),
+        interact: (p) => (this.ownerOf(fl) === p && this._canJoin(p) ? this._askJoin(p, fl) : this.openPicker(p, fl)),
       });
       const edit = new Kiosk(dream, {
         ...at('SE'), y: isle.y, r: 1.6, colour: HOLO.magenta,
@@ -374,13 +389,43 @@ export class KataHall {
    * EXTRA HARD ones are not even LISTED until the secret is open to her —
    * "Beat him on 秘 EXTRA HARD" on a nine-year-old's song list would give
    * away the one thing in the game that is meant to be found. The debug
-   * panel's *unlock every Shadow song* opens them all (`game._debugSongs`).
+   * panel's *open every song in Kata Trace* opens them all (`game._debugSongs`).
+   *
+   * THE HOUSE SONGS are one locked row per house until somebody in the party
+   * owns one (`BM.homeBundle`), and then the two songs themselves — so the
+   * list carries three locked rows instead of six.
    */
   songChoices(p) {
     const all = !!this.dream.game?._debugSongs;
-    return BM.SONGS
-      .filter((s) => s.lock !== 'extra' || all || extraOpen(this.dream.progress, p))
-      .map((s) => ({ S: s, locked: BM.songLocked(s.id, p, all) }));
+    const homes = homesOpen(this.dream);
+    const out = [];
+    const bundled = new Set();
+    for (const s of BM.SONGS) {
+      if (s.lock === 'extra' && !all && !extraOpen(this.dream.progress, p)) continue;
+      const h = s.lock?.startsWith('home:') ? s.lock.slice(5) : null;
+      if (h && !all && !homes.has(h)) {
+        if (!bundled.has(h)) {
+          bundled.add(h);
+          const B = BM.homeBundle(h);
+          out.push({ S: B, locked: BM.songLocked(B.id, p, all, homes) });
+        }
+        continue;
+      }
+      out.push({ S: s, locked: BM.songLocked(s.id, p, all, homes) });
+    }
+    return out;
+  }
+
+  /**
+   * Which houses this game has bought — every house standing on every home
+   * now, written into the ledger as it is seen, so a house sold later keeps
+   * its songs open ("for everyone forever").
+   */
+  homesOpen() { return homesOpen(this.dream); }
+
+  /** A row of the picker by id — a song, or a locked house's bundle. */
+  _songRow(choices, id) {
+    return choices.find((c) => c.S.id === id)?.S ?? BM.songById(id);
   }
 
   /** What she last chose — kept on her for the visit, so a second go is one press. */
@@ -428,6 +473,7 @@ export class KataHall {
     // A song she can no longer see (a save from a debug session) is not where the picker opens.
     if (!choices.some((c) => c.S.id === k.song)) k.song = 'vr';
     const lockOf = (id) => choices.find((c) => c.S.id === id)?.locked ?? null;
+    const songOf = (id) => this._songRow(choices, id);
     const audio = this.dream.game?.audio;
     // His recordings are fetched when she LOOKS at one, so DANCE is not kept waiting on the network.
     const fetchSong = () => { if (!lockOf(k.song)) audio?.prefetchMusic?.([k.song]); };
@@ -438,7 +484,7 @@ export class KataHall {
     const rows = [
       {
         text: () => {
-          const S = BM.songById(k.song);
+          const S = songOf(k.song);
           return lockOf(k.song) ? `SONG  ◀ 🔒 ${S.name} ▶` : `SONG  ◀ ${S.name} · ${Math.round(S.bpm * k.speed)} BPM ▶`;
         },
         cycle: (s) => {
@@ -477,7 +523,7 @@ export class KataHall {
           k.custom = cyc(ids, k.custom, s);
         },
       },
-      { text: '▶ DANCE!', act: () => this.begin(p, fl) },
+      { text: '▶ DANCE!', act: () => this.danceOrAsk(p, fl) },
       { text: 'not now', dim: true, act: () => this.dream.closeChoice(p) },
     ];
     // Off the PLAY kiosk's centre, not off her: the same place however she walked onto it.
@@ -499,27 +545,268 @@ export class KataHall {
     return true;
   }
 
-  /** DANCE: the chart she picked, at the speed she picked, on her floor. */
-  begin(p, fl) {
+  /**
+   * What DANCE would start for her — `{ chart, id, custom, speed }` — or null,
+   * having said why not. Locked is locked for a custom chart of it too: a map
+   * is not a way round a trophy.
+   */
+  _pickChart(p) {
+    const k = this.pickOf(p);
+    const c = k.custom ? customCharts().find((x) => x.id === k.custom) : null;
+    const why = BM.songLocked(c ? c.chart.song : k.song, p, !!this.dream.game?._debugSongs, this.homesOpen());
+    if (why) {
+      this.dream.hint(p, why);
+      this.dream.game.sfx?.('deny');
+      return null;
+    }
+    const chart = c ? c.chart : BM.generateChart(k.song, k.diff);
+    return { chart, id: BM.chartId(chart, !!c), custom: !!c, speed: k.speed };
+  }
+
+  /** DANCE: the chart she picked (or a session's), at its speed, on her floor. */
+  begin(p, fl, pick = null, session = null) {
     if (this.ownerOf(fl) !== p) {
       this.dream.hint(p, this._yoursIs(p, fl));
       this.dream.game.sfx?.('deny');
       return false;
     }
-    const k = this.pickOf(p);
-    const c = k.custom ? customCharts().find((x) => x.id === k.custom) : null;
-    // Locked is locked for a custom chart of it too — a map is not a way round a trophy.
-    const why = BM.songLocked(c ? c.chart.song : k.song, p, !!this.dream.game?._debugSongs);
-    if (why) {
-      this.dream.hint(p, why);
-      this.dream.game.sfx?.('deny');
-      return false;
-    }
-    const chart = c ? c.chart : BM.generateChart(k.song, k.diff);
-    const id = BM.chartId(chart, !!c);
-    this.dream.startDrill(p, KATA(this, fl, chart, { speed: k.speed, id, custom: !!c }),
+    const P = pick ?? this._pickChart(p);
+    if (!P) return false;
+    this.dream.startDrill(p, KATA(this, fl, P.chart, { speed: P.speed, id: P.id, custom: P.custom, session }),
       { x: fl.x, y: fl.y, z: fl.z, r: KIOSK_D + 2.2, fwd: { x: 0, z: 1 } });
     return true;
+  }
+
+  /* ----------------------------- dancing together ----------------------------- */
+
+  /**
+   * DANCE, WITH SISTERS ABOUT. Richard, Oct 2026: "Before a player plays a
+   * song, maybe if there are other players in the Kata Trace island, then an
+   * option can appear saying 'Wait for other players to join?' If they say
+   * yes, then it will say 'Waiting for others to join' (they should be able to
+   * back out of this dialog whenever they want), then the other player will
+   * see 'Join current session' as an option and can join the session, once
+   * all players are joined, then they all get a 'Loading…' dialog for 1 - 2secs
+   * and then they all start playing the same song together. If player selects
+   * 'No.' then the song starts and players can't join."
+   *
+   * Alone on the island there is nobody to ask about, and DANCE is DANCE.
+   */
+  danceOrAsk(p, fl) {
+    const others = this._joinable(p);
+    if (!others.length || this.session) return this.begin(p, fl);
+    if (!this._pickChart(p)) return false;
+    const names = others.map((q) => this._name(q)).join(' and ');
+    const o = markOffset('SW', KIOSK_D);
+    this.dream.openChoice(p, {
+      title: 'WAIT FOR OTHERS TO JOIN?',
+      rows: [
+        { text: `yes — wait for ${names}`, act: () => this._host(p, fl) },
+        { text: 'no — start the song now, on my own', act: () => { this.dream.closeChoice(p); this.begin(p, fl); } },
+        { text: 'back to the song list', dim: true, act: () => this.openPicker(p, fl) },
+      ],
+      anchor: { x: fl.x + o.x, y: fl.y, z: fl.z + o.z },
+    });
+    return true;
+  }
+
+  /** Sisters who could join her: in the simulator, on this island, not dancing, not already in. */
+  _joinable(p) {
+    return (this.dream.game.players ?? []).filter((q) => q && q !== p
+      && this.dream.realmOf(q) === 'sim' && this.inArea(q) && !this.runOf(q) && !this.session?.ids.has(q.index));
+  }
+
+  _hostName() {
+    const h = this.dream.game.players?.[this.session?.host];
+    return h ? this._name(h) : 'her sister';
+  }
+
+  /** May she join the session waiting now? */
+  _canJoin(p) {
+    const S = this.session;
+    return !!S && S.state === 'wait' && S.host !== p.index && !S.ids.has(p.index) && !this.runOf(p);
+  }
+
+  _host(p, fl) {
+    const pick = this._pickChart(p);
+    if (!pick) return;
+    this.session = { host: p.index, ids: new Set([p.index]), pick, state: 'wait', t: 0, n: (this._sessionN = (this._sessionN ?? 0) + 1) };
+    this._waitCard(p);
+    const S = BM.songById(pick.chart.song);
+    for (const q of this._joinable(p)) {
+      const key = this.dream.key?.(q, 'interact') ?? 'E';
+      this.dream.hint(q, `${this._name(p)} is waiting for you to dance ${S?.name ?? 'her song'} — go to your 型 kiosk and press ${key} to JOIN`);
+    }
+    this.dream.game.audio?.prefetchMusic?.([pick.chart.song]);
+  }
+
+  /** "Join current session?" — at her own kiosk, for the song that is waiting. */
+  _askJoin(p, fl) {
+    const S = this.session;
+    if (!S) return this.openPicker(p, fl);
+    const host = this._hostName();
+    const c = S.pick.chart;
+    const o = markOffset('SW', KIOSK_D);
+    this.dream.openChoice(p, {
+      title: `JOIN ${host.toUpperCase()}'S SONG?`,
+      rows: [
+        { text: `yes, join — ${BM.songById(c.song)?.name ?? c.song} · ${BM.DIFFS[c.difficulty]?.name ?? ''} · ${S.pick.speed}×`, act: () => this._join(p) },
+        { text: 'no, pick my own song', act: () => this.openPicker(p, fl) },
+        { text: 'not now', dim: true, act: () => this.dream.closeChoice(p) },
+      ],
+      anchor: { x: fl.x + o.x, y: fl.y, z: fl.z + o.z },
+    });
+    return true;
+  }
+
+  _join(p) {
+    const S = this.session;
+    if (!S || S.state !== 'wait') { this.dream.hint(p, 'That song has already started — pick your own at the 型 kiosk'); this.dream.game.sfx?.('deny'); this.dream.closeChoice(p); return; }
+    // Her own locks still hold: a sister's win is not hers.
+    const why = BM.songLocked(S.pick.chart.song, p, !!this.dream.game?._debugSongs, this.homesOpen());
+    if (why) { this.dream.hint(p, why); this.dream.game.sfx?.('deny'); return; }
+    S.ids.add(p.index);
+    this.dream.game.sfx?.('menu');
+    this._waitCard(p);
+    this._checkSession();
+  }
+
+  /** The card a kitten in the session waits on: who is in, and the way out. */
+  _waitCard(p) {
+    const S = this.session;
+    const host = S.host === p.index;
+    const fl = this.floors[p.index];
+    const o = markOffset('SW', KIOSK_D);
+    const status = () => {
+      const s = this.session;
+      if (!s) return '';
+      const P = this.dream.game.players ?? [];
+      const inn = [...s.ids].map((i) => P[i]).filter(Boolean).map((q) => `${this._name(q)} ✓`);
+      const out = this._joinable(P[s.host] ?? p).map((q) => this._name(q));
+      return `${inn.join(' · ')}${out.length ? `  ·  waiting for ${out.join(', ')}` : ''}`;
+    };
+    const rows = [{ text: status, act: () => this.dream.hint(p, 'Waiting for your sisters — they join at their own 型 kiosk') }];
+    if (host) rows.push({ text: 'start now, with whoever has joined', act: () => this._load() });
+    rows.push({ text: host ? 'stop waiting' : 'leave — I will dance on my own', act: () => this._leaveSession(p) });
+    this.dream.openChoice(p, {
+      title: host ? 'WAITING FOR OTHERS TO JOIN…' : `JOINED ${this._hostName().toUpperCase()}'S SONG — WAITING…`,
+      rows, anchor: fl ? { x: fl.x + o.x, y: fl.y, z: fl.z + o.z } : null,
+    });
+    (this._waits ??= [])[p.index] = this.dream.choices?.[p.index] ?? null;
+  }
+
+  /** Out of the session. The host leaving ends it for everybody, and says so. */
+  _leaveSession(p, why = null) {
+    const S = this.session;
+    if (!S) return;
+    const P = this.dream.game.players ?? [];
+    const close = (i) => {
+      const q = P[i];
+      if (q && this._waits?.[i] && this.dream.choices?.[i] === this._waits[i]) this.dream.closeChoice(q);
+      if (this._waits) this._waits[i] = null;
+    };
+    if (p.index === S.host) {
+      for (const i of S.ids) {
+        close(i);
+        if (i !== p.index && P[i]) this.dream.hint(P[i], why ?? `${this._name(p)} stopped waiting — pick your own song at the 型 kiosk`);
+      }
+      this.session = null;
+      return;
+    }
+    S.ids.delete(p.index);
+    close(p.index);
+    this._checkSession();
+  }
+
+  /** Everybody who could join has: load. */
+  _checkSession() {
+    const S = this.session;
+    if (!S || S.state !== 'wait') return;
+    const host = this.dream.game.players?.[S.host];
+    if (S.ids.size >= 2 && host && !this._joinable(host).length) this._load();
+  }
+
+  /** "they all get a 'Loading…' dialog for 1 - 2secs and then they all start playing the same song together." */
+  _load() {
+    const S = this.session;
+    if (!S || S.state !== 'wait') return;
+    S.state = 'load';
+    S.t = 0;
+    const audio = this.dream.game.audio;
+    audio?.prefetchMusic?.([S.pick.chart.song]);
+    audio?._decodeFile?.(S.pick.chart.song);
+    const P = this.dream.game.players ?? [];
+    const name = BM.songById(S.pick.chart.song)?.name ?? S.pick.chart.song;
+    for (const i of S.ids) {
+      const q = P[i];
+      if (!q) continue;
+      const fl = this.floors[i];
+      const o = markOffset('SW', KIOSK_D);
+      this.dream.openChoice(q, {
+        title: 'LOADING…',
+        rows: [{ text: `${name} — all together! Get ready…`, act: () => {} }],
+        anchor: fl ? { x: fl.x + o.x, y: fl.y, z: fl.z + o.z } : null,
+      });
+      (this._waits ??= [])[i] = this.dream.choices?.[i] ?? null;
+    }
+  }
+
+  /** Every frame: a session's members still here, its card current, its loading timed. */
+  _tendSession(dt) {
+    const S = this.session;
+    if (!S) return;
+    const P = this.dream.game.players ?? [];
+    const host = P[S.host];
+    const gone = (q) => !q || this.dream.realmOf(q) !== 'sim' || !this.inArea(q) || !!this.runOf(q);
+    if (gone(host)) { this._leaveSession(host ?? { index: S.host }, `${host ? this._name(host) : 'She'} left — pick your own song at the 型 kiosk`); return; }
+    for (const i of [...S.ids]) if (i !== S.host && gone(P[i])) this._leaveSession(P[i] ?? { index: i });
+    if (!this.session) return;
+    S.t += dt;
+    if (S.state === 'wait') {
+      // A card the kitten closed herself (Escape, or a scene) is her leaving.
+      for (const i of [...S.ids]) if (this._waits?.[i] && this.dream.choices?.[i] !== this._waits[i]) this._leaveSession(P[i] ?? { index: i });
+      if (!this.session) return;
+      if ((S.paintT = (S.paintT ?? 0) - dt) <= 0) {
+        S.paintT = 0.25;
+        for (const i of S.ids) this._waits?.[i]?._paint?.();
+      }
+      this._checkSession();
+      return;
+    }
+    if (S.t < SESSION_LOAD) return;
+    this.session = null;
+    for (const i of S.ids) {
+      const q = P[i];
+      if (this._waits?.[i] && this.dream.choices?.[i] === this._waits[i]) this.dream.closeChoice(q);
+      if (this._waits) this._waits[i] = null;
+      if (q) this.begin(q, this.floors[i], S.pick, S.n);
+    }
+  }
+
+  /**
+   * THE MUSIC WAS HERS AND HER SONG IS OVER: hand it to the next run still
+   * dancing (`KATA`'s `release`). A run in the same session is on the same
+   * song at the same moment, so the music just carries on and is hers now; any
+   * other is brought in at HER run's own position (`Audio.joinMusic`) and fades
+   * up while her metronome fades out — "within a second or two".
+   */
+  handMusicOn(prev) {
+    const audio = this.dream.game.audio;
+    if (!audio || !(audio.musicVolume > 0)) return null;
+    const next = (this.dream.drills ?? [])
+      .filter((d) => d && d !== prev && d.spec?.kataFloor && d.state === 'live' && d.chart)
+      .sort((a, b) => b.songT - a.songT)[0];
+    if (!next) return null;
+    if (next.session != null && next.session === prev?.session && audio.mode === next.chart.song) {
+      audio.musicRate = next.speed;
+    } else {
+      if (audio.joinMusic(next.chart.song, next.speed, next.songT, MUSIC_HANDOVER) == null) return null;
+      next.metroFade = MUSIC_HANDOVER;
+    }
+    next.ownsMusic = true;
+    next.sharesMusic = false;
+    this.musicOwner = next;
+    return next;
   }
 
   /** Her run, if she has one on this hall. */
@@ -588,6 +875,7 @@ export class KataHall {
   }
 
   update(dt) {
+    this._tendSession(dt);
     this._keepLast();
     for (const fl of this.floors) this._paint(fl);
     const inside = idleIn(this.dream);
@@ -1070,7 +1358,7 @@ export function freeBlow(a, moveT, spb) {
   return a.attack !== 'sweep' && (moveT == null || moveT < a.hitT - a.tell * spb - 0.05);
 }
 
-export function KATA(hall, fl, chart, { speed = 1, id, custom = false } = {}) {
+export function KATA(hall, fl, chart, { speed = 1, id, custom = false, session = null } = {}) {
   const D = BM.DIFFS[chart.difficulty] ?? BM.DIFFS.normal;
   const S = BM.songById(chart.song) ?? BM.songById('play');
   const spb = S.spb / speed;
@@ -1092,6 +1380,9 @@ export function KATA(hall, fl, chart, { speed = 1, id, custom = false } = {}) {
       d.chart = chart;
       d.speed = speed;
       d.custom = custom;
+      d.session = session;
+      d.sharesMusic = false;
+      d.metroFade = 0;
       d.at = 'C';
       d.moveT = null;
       d.pend = null;
@@ -1144,6 +1435,14 @@ export function KATA(hall, fl, chart, { speed = 1, id, custom = false } = {}) {
       // Music turned off means off (`Game._updateMusic`): the metronome keeps her beat instead.
       const muted = !(audio?.musicVolume > 0);
       if (muted) return;
+      /* DANCING TOGETHER: the same song from the same moment, so hers is
+         already playing — no metronome, and her clock is the owner's. */
+      if (owner && owner !== d && (owner.state === 'live' || owner.state === 'ready') && d.session != null
+        && owner.session === d.session && owner.chart.song === chart.song && owner.speed === speed) {
+        d.sharesMusic = true;
+        d.songT = owner.songT;
+        return;
+      }
       if (!owner || (owner.state !== 'live' && owner.state !== 'ready') || owner === d) {
         const at = audio?.restartMusic?.(chart.song, speed);
         if (at != null) {
@@ -1225,13 +1524,16 @@ export function KATA(hall, fl, chart, { speed = 1, id, custom = false } = {}) {
     },
     tick(d, dt) {
       d.songT += dt;
+      d.metroFade = Math.max(0, (d.metroFade ?? 0) - dt);
       settle(d, d.songT - DIAG_WAIT);
       if (d.ownsMusic) keepTime(d, dream, S, spb, dt);
       const beat = Math.floor(d.songT / spb);
       if (beat > d.lastBeat) {
         d.lastBeat = beat;
-        // Without the music under her, a tick on every beat to step to.
-        if (!d.ownsMusic && d.songT < endT) sfx(beat % 4 ? 'beat' : 'beatup');
+        // Without the music under her, a tick on every beat to step to — and
+        // just handed the music, the tick fades out as the song fades in.
+        if (!d.ownsMusic && !d.sharesMusic && d.songT < endT) sfx(beat % 4 ? 'beat' : 'beatup');
+        else if (d.ownsMusic && d.metroFade > 0 && d.songT < endT) dream.game.sfx?.(beat % 4 ? 'beat' : 'beatup', d.metroFade / MUSIC_HANDOVER);
       }
       while (d.next < d.attacks.length && d.songT >= d.attacks[d.next].hitT + LATE) {
         const a = d.attacks[d.next++];
@@ -1355,6 +1657,8 @@ export function KATA(hall, fl, chart, { speed = 1, id, custom = false } = {}) {
     if (hall.musicOwner === d) hall.musicOwner = null;
     // The next piece starts at its own tempo; the same piece must slow back down too.
     if (dream.game.audio) dream.game.audio.musicRate = 1;
+    // ...unless a sister is still dancing: then it is her song now.
+    hall.handMusicOn?.(d);
   }
 }
 

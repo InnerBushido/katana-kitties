@@ -2360,7 +2360,14 @@ export class InputManager {
           if (held('right')) { mx += 1; rawx += 1; }
           if (held('up')) { my -= 1; rawy -= 1; }
           if (held('down')) { my += 1; rawy += 1; }
-          for (const a of ACTIONS) next[a] = next[a] || held(a);
+          /* EVERY ACTION BUT `start`, the touch pad's rule (`touchpad.js read`)
+             found missing from its twin. WASD's start is ENTER and Enter means
+             JOIN; folded in here it became her PAD's Start, and a pad's Start
+             pauses — so with a controller in player 1's hands (or a vJoy
+             device seated as one) Enter opened the pause menu instead of
+             seating player 2, and it took a second press to join. Richard,
+             Oct 2026: "It should just spawn the player". */
+          for (const a of ACTIONS) if (a !== 'start') next[a] = next[a] || held(a);
         }
       } else if (bnd.keyset != null && this.keysetDrives(bnd.keyset, i)) {
         st.source = 'keyboard';

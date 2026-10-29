@@ -33,15 +33,15 @@ export const MUSIC_FILES = {
     "first": 0.3804,
     "beats": 120,
     "loop": [
-      23.2318,
-      44.4584
+      6.9897,
+      49.2979
     ],
     "loopBeats": [
-      52,
-      100
+      15,
+      111
     ],
-    "lag": -0.061,
-    "mix": 0.2,
+    "lag": 0.023,
+    "mix": 0.222,
     "drift": 52.2
   },
   "shadowNight": {

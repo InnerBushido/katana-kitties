@@ -48,9 +48,9 @@ import {
   MAX_KEPT, SPARE_SLOTS, MAX_LIST, capFor, trimSaves, saveCap,
   worldSig, listSaves, putSave, dropSave, clearSaves,
   snapshot, describe, restore,
-  castRow, applyCast, meaningful, newSessionId,
+  castRow, applyCast, meaningful, newSessionId, landAt,
 } from '../src/systems/savegame.js';
-import { Prop, BAMBOO_POINTS } from '../src/entities/prop.js';
+import { Prop, BAMBOO_POINTS, MISCHIEF_BONUS } from '../src/entities/prop.js';
 import { STEAL, DBREATH, ARENA_POWERS, BreathTally, arenaPowerFor } from '../src/entities/clanpower.js';
 import {
   SHRINE_DAIS, SHRINE_STEPS, SHRINE_GATE,
@@ -116,6 +116,7 @@ import {
 } from '../src/systems/arenaquest.js';
 import { MenuNav } from '../src/systems/menunav.js';
 import { PLAYER_STYLE, MAX_PLAYERS, styleFor, styleCss, cssFor } from '../src/core/palette.js';
+import { poseFix, sheetFix, setSpriteFix, SPRITE_FIX, sheetIdOf, isOff, enabledOf, LEGACY_SHEET, flipSlots, flipImages, flipText, applySheetFix, gridFix, rowOf } from '../src/core/spritefix.js';
 import {
   splitLayout, mapWidth, mapSpot, assignMaps, nearestMap, keyMaps, fitDistance, stablePanes,
   cardRect,
@@ -302,7 +303,7 @@ console.log('\n--- bamboo ---');
 const bamboo = world.props.filter((p) => p.kind === 'bamboo');
 line('bamboo props', bamboo.length);
 ok('bamboo is katana-only and worth more',
-  bamboo.length > 20 && bamboo.every((p) => p.katanaOnly && p.points === 25));
+  bamboo.length > 20 && bamboo.every((p) => p.katanaOnly && p.points === BAMBOO_POINTS && BAMBOO_POINTS === Math.round(25 * MISCHIEF_BONUS)));
 ok('nothing else is katana-only',
   world.props.filter((p) => p.kind !== 'bamboo').every((p) => !p.katanaOnly));
 const homeGrove = bamboo.filter((p) => Math.hypot(p.home.x - 58, p.home.z - 44) < 12);
@@ -1345,7 +1346,7 @@ console.log('\n--- the snow island is no longer empty ---');
   const icicles = world.props.filter((p) => p.kind === 'icicle');
   line('icicles', icicles.length);
   ok('icicles exist and are worth more than a crate',
-    icicles.length > 15 && icicles.every((p) => p.points === 15));
+    icicles.length > 15 && icicles.every((p) => p.points === Math.round(15 * MISCHIEF_BONUS) && p.points > Math.round(10 * MISCHIEF_BONUS)));
   ok('they are all on the frost island', icicles.every(on));
   ok('the frost island has plenty to break', world.props.filter(on).length >= 20,
     `${world.props.filter(on).length} props`);
@@ -1927,6 +1928,150 @@ console.log('\n--- nothing in public/help/ is dead weight ---');
      cannot be kept alive by an unrelated `arena.jpg` elsewhere in the markup. */
   ok('every picture in public/help/ is pointed at by the panel', orphans.length === 0,
     orphans.join(', '));
+
+  /* ...AND SAYS HOW BIG IT IS. The panel lazy-loads its pictures, so the
+     width and height on the tag are the only size the layout has until the
+     file arrives; a wrong ratio is a card that jumps under the finger that is
+     scrolling it. The ratio, not the pixels: the clan symbols are drawn at
+     twice the size they are shown, for a phone's sharp screen, on purpose.
+     What is never right is a tag that is a different SHAPE from its file, or
+     one that asks for more pixels than the file has. Found when the glossary
+     reused the shrine still and its tag, copied from the Clans card, was 4px
+     out — so was the Clans card's. */
+  const dims = (b) => {
+    if (b[0] === 0x89) return [b.readUInt32BE(16), b.readUInt32BE(20)];      // PNG IHDR
+    if (b[0] === 0x47) return [b.readUInt16LE(6), b.readUInt16LE(8)];        // GIF screen
+    for (let i = 2; i < b.length;) {                                         // JPEG: the first SOF
+      if (b[i] !== 0xff) { i++; continue; }
+      if (b[i + 1] >= 0xc0 && b[i + 1] <= 0xc3) return [b.readUInt16BE(i + 7), b.readUInt16BE(i + 5)];
+      i += 2 + b.readUInt16BE(i + 2);
+    }
+    return [0, 0];
+  };
+  const wrong = [];
+  let tags = 0;
+  for (const m of html.matchAll(/<img\b[^>]*?(?:src|data-help-gif)="\/help\/([^"]+)"[^>]*>/g)) {
+    tags++;
+    const w = +(/\bwidth="(\d+)"/.exec(m[0])?.[1] ?? 0); const h = +(/\bheight="(\d+)"/.exec(m[0])?.[1] ?? 0);
+    const [rw, rh] = dims(readFileSync(new URL(m[1], help)));
+    if (!w || !h || Math.abs(w / h - rw / rh) > 0.002 * (rw / rh) || w > rw || h > rh) wrong.push(`${m[1]} says ${w}x${h}, is ${rw}x${rh}`);
+  }
+  ok('...and every picture on the panel states its own shape, and no more pixels than it has',
+    tags > 40 && wrong.length === 0, wrong.join('; ') || `${tags} pictures`);
+}
+
+console.log('\n--- 日本語 every Japanese word in the game is in the glossary ---');
+{
+  /* Richard, Oct 2026: "let's create a Japanese Dictionary/Terminology/Culture
+     page in Help ... with every Japanese term in the game". EVERY is the word a
+     page cannot keep on its own: the game grows a sign a week, and a glossary
+     written once is a glossary that is wrong by the next island. So the list
+     is taken from the code — every quoted string in src/ with a kanji in it,
+     comments stripped — and each word has to be somewhere on the page.
+     A lone kana is a SOUND, not a word, and is exempt: the Flash Step's rain
+     of letters is mostly katakana, which the "How to read it" card explains as
+     an alphabet. The dev-only pages are exempt too, because no player sees
+     them. */
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const a = html.indexOf('<!-- doc-glossary -->'); const z = html.indexOf('<!-- /doc-glossary -->');
+  const gl = a >= 0 && z > a ? html.slice(a, z) : '';
+  const topic = helpTopic(html, 'Japanese words &amp; culture');
+  ok('the Help panel has a Japanese words & culture topic, between the Dream Dojo and saving',
+    topic.length > 0 && gl.includes(topic.slice(0, 200))
+    && html.indexOf('id="help-words"') > html.indexOf('<span class="ht-title">The Dream Dojo')
+    && html.indexOf('id="help-words"') < html.indexOf('<span class="ht-title">Saving your progress</span>'));
+  const cats = [...gl.matchAll(/<details class="help-card help-sub" name="help-words">\s*<summary class="help-topic">\s*<span class="ht-ico"[^>]*>[^<]*<\/span>\s*<span class="ht-title">([^<]+)<\/span>/g)].map((m) => m[1]);
+  ok('...in sub-topics a reader can find a word by: reading, the dojo, the orbs, the signs, home, Shinto, music',
+    ['How to read it', 'The dojo and the sword', 'The Kotodama orbs', 'The Dream Dojo, sign by sign',
+      'Home and garden', 'Shinto, spirit and manners', 'Music'].every((c) => cats.includes(c)), cats.join(' | '));
+
+  const src = new URL('../src/', import.meta.url);
+  const walk = (dir) => readdirSync(new URL(dir, src), { withFileTypes: true })
+    .flatMap((e) => (e.isDirectory() ? walk(dir + e.name + '/') : [dir + e.name]));
+  const words = new Map();
+  for (const f of walk('').filter((f) => f.endsWith('.js') && !/tuning-page|sprite-editor/.test(f))) {
+    const code = stripComments(readFileSync(new URL(f, src), 'utf8'));
+    for (const m of code.matchAll(/(['"`])((?:(?!\1)[^\n])*?[\u3400-\u9fff](?:(?!\1)[^\n])*?)\1/g)) {
+      for (const w of m[2].match(/[\u3040-\u30ff\u3400-\u9fff]+/g) ?? []) {
+        if (!/[\u3400-\u9fff]/.test(w) && w.length === 1) continue;
+        if (!words.has(w)) words.set(w, f);
+      }
+    }
+  }
+  const missing = [...words].filter(([w]) => !gl.includes(w));
+  ok('...and every word the game writes in Japanese is explained on it',
+    words.size > 60 && missing.length === 0,
+    missing.length ? missing.map(([w, f]) => `${w} (${f})`).join(', ') : `${words.size} words`);
+
+  /* EVERY ENTRY HAS ALL THREE: the word, how it is written in our letters,
+     and how to say it. The respelling is the half most likely to be left off,
+     and it is the half a nine-year-old reading on her own needs. */
+  const entries = [...gl.matchAll(/<div class="jp-e">\s*<dt>([\s\S]*?)<\/dt>\s*<dd>([\s\S]*?)<\/dd>/g)];
+  const thin = entries.filter((m) => !/<b class="jp-r">[^<]+<\/b>/.test(m[1]) || !/<span class="jp-say">say <i>[^<]+<\/i><\/span>/.test(m[1])
+    || m[2].replace(/<[^>]+>/g, '').trim().length < 6);
+  ok('...each with how it is written in our letters, how to say it, and what it means',
+    entries.length > 120 && thin.length === 0, thin.map((m) => m[1].replace(/<[^>]+>/g, '').trim()).join(' | ') || `${entries.length} entries`);
+  /* THE TAP-IN for a word with a story behind it is a third accordion level,
+     and like "The rare orbs" it needs a group of its own: sharing a parent's
+     name would close the card it was opened inside (see the fold checks). */
+  const more = [...gl.matchAll(/<details class="help-card help-sub jp-more" name="([^"]+)">/g)].map((m) => m[1]);
+  ok('...and the words with a story behind them open one in their own group, which closes neither parent',
+    more.length >= 8 && more.every((n) => n === 'help-jp-more'), `${more.length} stories`);
+}
+
+console.log('\n--- © every picture the game did not make is credited, and free to ship ---');
+{
+  /* Richard, Oct 2026: "let's add these in if these are open source and able
+     to be put into the project ... in case we want to eventually launch this
+     game as an official project". The glossary's pictures of Japan came off
+     Wikimedia Commons, and the one way that goes wrong later is quietly: a
+     picture added next year with a NonCommercial licence, or with no line in
+     the credits, looks exactly like a correct one on the page. So every file
+     in public/help/japan/ must be on the page, carry an [n] that resolves,
+     and have a credit whose licence is one a commercial release may ship
+     with no further duty. CC BY would be allowed too (the credit line IS its
+     duty); nothing else is. docs/notes/credits.md. */
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const a = html.indexOf('<!-- doc-credits -->'); const z = html.indexOf('<!-- /doc-credits -->');
+  const cr = a >= 0 && z > a ? html.slice(a, z) : '';
+  /* A SUB-TOPIC, THE LAST ONE, of Japanese words & culture — Richard, Oct
+     2026: "put the picture credits at the bottom of Japanese words & culture as
+     a sub-category". It was a top-level topic after Saving your progress. Its
+     group is the glossary's, so it opens and shuts like its siblings. */
+  const ga = html.indexOf('<!-- doc-glossary -->'), gz = html.indexOf('<!-- /doc-glossary -->');
+  ok('Help has Picture credits as the last sub-topic of Japanese words & culture',
+    cr.includes('<details class="help-card help-sub" name="help-words" id="help-credits">')
+    && cr.includes('<span class="ht-title">Picture credits</span>')
+    && a > ga && z < gz && ((n) => n < 0 || n > gz)(html.indexOf('name="help-words"', z))
+    && html.indexOf('<span class="ht-title">Saving your progress</span>') > gz);
+  const credits = new Map([...cr.matchAll(/<li id="(credit-\d+)" data-licence="([^"]+)">([\s\S]*?)<\/li>/g)]
+    .map((m) => [m[1], { lic: m[2], body: m[3] }]));
+  const FREE = ['Public domain', 'CC0', 'CC BY 4.0', 'CC BY 3.0', 'CC BY 2.0'];
+  const bad = [...credits].filter(([, c]) => !FREE.includes(c.lic)
+    || !/<b>[^<]+<\/b>/.test(c.body) || !/href="https:\/\/commons\.wikimedia\.org\/wiki\/File:[^"]+"/.test(c.body)
+    || (c.lic.startsWith('CC') && !/creativecommons\.org\/(licenses|publicdomain)\//.test(c.body)));
+  ok('...each credit names the work, links its source, and is under a licence a release can ship',
+    credits.size >= 8 && bad.length === 0, bad.map(([k, c]) => `${k} (${c.lic})`).join(', ') || `${credits.size} credits`);
+  const dir = new URL('../public/help/japan/', import.meta.url);
+  const files = readdirSync(dir);
+  const figs = [...html.matchAll(/<figure class="help-shot jp-pic">\s*<img src="\/help\/japan\/([^"]+)"[\s\S]*?<\/figure>/g)];
+  const unref = files.filter((f) => {
+    const fig = figs.find((m) => m[1] === f);
+    const ref = fig && /<a class="credit-ref" href="#(credit-\d+)"/.exec(fig[0]);
+    return !ref || !credits.has(ref[1]);
+  });
+  ok('...and every picture from outside the game shows its [n], and the [n] is a real credit',
+    files.length >= 8 && unref.length === 0, unref.join(', ') || `${files.length} pictures`);
+  const used = new Set(figs.map((m) => /href="#(credit-\d+)"/.exec(m[0])?.[1]));
+  const spare = [...credits.keys()].filter((k) => !used.has(k));
+  ok('...and no credit is left over for a picture that has gone', spare.length === 0, spare.join(', '));
+  /* THE [n] IS WIRED, not a fragment. A `#credit-3` into a shut <details>
+     scrolls to nothing; `Game._showCredit` opens the card and then finds the
+     line, after the accordion's own scroll has run. */
+  const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  ok('...and the [n] opens Picture credits at its line, rather than jumping into a shut card',
+    /closest\('a\.credit-ref'\)[\s\S]{0,120}preventDefault\(\)[\s\S]{0,60}_showCredit\(/.test(main)
+    && /_showCredit\(hash\) \{[\s\S]*?closest\('details'\)[\s\S]*?up\.open = true[\s\S]*?addEventListener\('toggle'[\s\S]*?card\.open = true/.test(main));
 }
 
 console.log('\n--- a join does not wipe the scoreboard ---');
@@ -2384,6 +2529,36 @@ console.log('\n--- clan buffs actually do something ---');
   for (let i = 0; i < 10; i++) leap.update(1 / 60, pad0, world, [], null);
   line('jumps after landing: plain vs Shadowtail', `2 vs ${leap.jumpsLeft}`);
   ok('Shadowtail lands with three jumps', leap.jumpsLeft === 3);
+
+  /* THE BUNNY'S TURN CAPS HER JUMP (housing/petplay.js `hopJump`). Richard, Oct 2026: "the player jumps
+     1.25x's higher than the bunny and gravity is 1.25x's stronger". A real jump, with Shadowtail's lift on
+     her to show the cap wins over a clan: the apex is the bunny's times hopUp, and she is down faster than
+     a free jump. Airtime is printed — with the bunny's 0.3s hop, hers is longer (Richard's "about the same
+     time" asks for a lower apex or a stronger pull than 1.25 and 1.25 give). */
+  {
+    const { PLAY: PP } = await import('../src/systems/housing/petplay.js');
+    const jumpOnce = (p) => {
+      for (let i = 0; i < 10; i++) p.update(1 / 60, pad0, world, [], null);
+      const y0 = p.position.y;
+      let top = y0, t = 0;
+      // HELD to the top: a jump let go early is cut short (player.js), which is not what is being measured
+      const jp = { mx: 0, my: 0, down: (a) => a === 'jump', pressed: (a) => a === 'jump' && t === 0 };   // one press: a second is the double jump
+      for (; t < 3; t += 1 / 240) {
+        p.update(1 / 240, jp, world, [], null);
+        top = Math.max(top, p.position.y);
+        if (t > 0.05 && p.onGround) break;
+      }
+      return { apex: top - y0, air: t };
+    };
+    const capped = mk(byId('leap'));
+    capped.hopJump = { h: PP.hopH * PP.hopUp, g: PP.hopGrav };
+    const hop = jumpOnce(capped);
+    const free = jumpOnce(mk(null));
+    line('bunny-turn jump: apex / airtime (free jump)', `${hop.apex.toFixed(3)} / ${hop.air.toFixed(2)}s  (${free.apex.toFixed(2)} / ${free.air.toFixed(2)}s), the bunny ${PP.hopH} / ${PP.hopT}s`);
+    ok('on the bunny’s turn her jump tops out at 1.25x its hop, under 1.25x gravity, whatever her clan',
+      PP.hopUp === 1.25 && PP.hopGrav === 1.25 && Math.abs(hop.apex - PP.hopH * PP.hopUp) < 0.03 && hop.air < free.air,
+      `apex ${hop.apex.toFixed(3)} vs ${(PP.hopH * PP.hopUp).toFixed(3)}`);
+  }
 
   // breath — the cone reaches further
   const dr = new Dragon(new THREE.Texture(), 0, spawn.y, 40, { breed: BREEDS[1] });
@@ -3473,7 +3648,7 @@ console.log('\n--- the panda in the ring ---');
       const psrc = readFileSync(new URL('../src/entities/player.js', import.meta.url), 'utf8');
       ok('返 both stance drawings hold the blade out to the RIGHT, which is what the Billboard is told',
         reach.every((r) => r.right - r.left > 0.1)
-        && /setRiposteArt\(art\) \{[\s\S]{0,400}mirror: true,\s*artFacesRight: true,/.test(psrc),
+        && /setRiposteArt\(art\) \{[\s\S]{0,400}this\._poseBoard\('ripostePose', art, 1, \{ mirror: true, artFacesRight: true \}\);/.test(psrc),
         reach.map((r) => `${r.s} ${r.left.toFixed(2)}/${r.right.toFixed(2)}`).join(' '));
       const m = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
       const files = ['ember', 'frost'].map((s) => `kittens/${s}/riposte.png`);
@@ -3488,9 +3663,17 @@ console.log('\n--- the panda in the ring ---');
          Billboards `artFacesRight: true` and the pen tells its animals `false`,
          and neither is worth anything unless the baked drawing agrees.
          The shinai, in the top 35% of the rows: right minus left reach measured
-         0.254 / 0.199 for Ember's and Frost's guard and 0.092 / 0.116 for the
-         kiai, whose shinai is raised overhead and so reaches less. The bars
-         are 0.1 and 0.05.
+         0.254 / 0.199 for Ember's and Frost's guard, 0.092 / 0.095 for the
+         RIPOSTE guards (`kparry`, the shinai held up across her), and 0.116
+         for Frost's kiai. The bars are 0.1 and 0.05.
+         EMBER'S KIAI IS A WIND-UP, Oct 2026 — Richard: "Generate a new attack
+         sprite for Ember based on Frost's 'kiai' art", the shinai raised up
+         and BACK for a vertical cut. Its blade measures -0.044: it points
+         behind her, which is the drawing, not a mirror. So a wind-up is asked
+         where her TAIL is instead: in the middle 35-65% of the rows the ink
+         runs 0.32 left of the middle and 0.16 right, the tail behind her.
+         Bar 0.1 — and it is asked only of a drawing whose blade fails, so a
+         guard is still held to its blade.
          An animal has no blade, so it is asked where its HEAD is: the centre
          of the top 35% of its ink against the centre of all of it. Measured
          -0.086 chick, -0.024 bunny, -0.201 goat. The bunny's is thin because
@@ -3500,27 +3683,51 @@ console.log('\n--- the panda in the ring ---');
       const ink = (f) => {
         const { w, h, d } = readPNG(new URL(`../public/sprites/${f}.png`, import.meta.url));
         let lo = w; let hi = -1; let sx = 0; let n = 0; let ax = 0; let an = 0;
+        let mlo = w; let mhi = -1;
         for (let y = 0; y < h; y++) {
           for (let x = 0; x < w; x++) {
             if (d[(y * w + x) * 4 + 3] <= 128) continue;
             ax += x; an++;
             if (y < Math.floor(h * 0.35)) { lo = Math.min(lo, x); hi = Math.max(hi, x); sx += x; n++; }
+            if (y >= Math.floor(h * 0.35) && y < Math.floor(h * 0.65)) { mlo = Math.min(mlo, x); mhi = Math.max(mhi, x); }
           }
         }
-        return { f, reach: (hi / w - 0.5) - (0.5 - lo / w), head: (sx / n - ax / an) / w };
+        return { f, reach: (hi / w - 0.5) - (0.5 - lo / w), head: (sx / n - ax / an) / w, tail: (0.5 - mlo / w) - (mhi / w - 0.5) };
       };
       const psrc = readFileSync(new URL('../src/entities/player.js', import.meta.url), 'utf8');
       const guard = ['ember', 'frost'].map((s) => ink(`kittens/${s}/kendo`));
       const kiai = ['ember', 'frost'].map((s) => ink(`kittens/${s}/kiai`));
-      ok('剣 both kendo guards and both kiai hold the shinai out to the RIGHT, which is what the Billboard is told',
-        guard.every((r) => r.reach > 0.1) && kiai.every((r) => r.reach > 0.05)
-        && /setKendoArt\(art\) \{[\s\S]{0,900}mirror: true,\s*artFacesRight: true,/.test(psrc),
-        [...guard, ...kiai].map((r) => `${r.f} ${r.reach.toFixed(3)}`).join(' '));
+      const kparry = ['ember', 'frost'].map((s) => ink(`kittens/${s}/kparry`));
+      ok('剣 both kendo guards, both riposte guards and both kiai face RIGHT — by the shinai, or by the tail behind a wind-up — which is what the Billboard is told',
+        guard.every((r) => r.reach > 0.1) && kparry.every((r) => r.reach > 0.05) && kiai.every((r) => r.reach > 0.05 || r.tail > 0.1)
+        // 2800, not 900: the ceremony's sizing comment, and the sprite editor's, now sit above the Billboard
+        && /setKendoArt\(art\) \{[\s\S]{0,2800}mirror: true,[^\n]*\n[^\n]*\n\s*artFacesRight: key !== 'kclinchLPose',/.test(psrc),
+        [...guard, ...kparry, ...kiai].map((r) => `${r.f} ${r.reach.toFixed(3)}/${r.tail.toFixed(3)}`).join(' '));
+      /* THE GUARD KNOCKED ASIDE AND THE CLINCH, Oct 2026. The clinch is two
+         drawings a kitten, one for each side of the crossed shinai, and two of
+         the four came back from the generator facing the other way from the
+         prompt — so the files are named by the tip, and this is the tip.
+         Measured: kclinchR +0.285 / +0.271, kclinchL -0.194 / -0.203. The
+         broken guard's shinai trails DOWN-LEFT behind her, out of the top
+         band, so the top band's reach is the open paw flung forward: +0.052
+         Ember, +0.087 Frost. Bar 0.03, and the tail is behind on the left. */
+      const kbroke = ['ember', 'frost'].map((s) => ink(`kittens/${s}/kbroke`));
+      const kclR = ['ember', 'frost'].map((s) => ink(`kittens/${s}/kclinchR`));
+      const kclL = ['ember', 'frost'].map((s) => ink(`kittens/${s}/kclinchL`));
+      ok("...and the broken guard and the clinch's R face RIGHT, the clinch's L faces LEFT, and only L is told so",
+        kbroke.every((r) => r.reach > 0.03) && kclR.every((r) => r.reach > 0.15) && kclL.every((r) => r.reach < -0.15)
+        && /\['kbroke', 'kbroke'\], \['kclinchR', 'kclinchR'\], \['kclinchL', 'kclinchL'\]/.test(readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')),
+        [...kbroke, ...kclR, ...kclL].map((r) => `${r.f} ${r.reach.toFixed(3)}`).join(' '));
+      ok('...and the riposte drawings are loaded for both sheets and recoloured for the other two',
+        existsSync(new URL('../public/sprites/kittens/ember/kparry.png', import.meta.url)) && existsSync(new URL('../public/sprites/kittens/frost/kparry.png', import.meta.url))
+        && /\['kparry', 'kparry'\]/.test(readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')));
       /* HER FEET, which a mirror moves. Richard: "moving up/down, the players
          position is jumping left/right, based on the sprite, the feet should
          stay in the same spot." The centre of the lowest 5% of ink against
          the cell's middle, as `feetX` (core/spritesheet.js) measures it live:
-         0.006 / -0.012 for the guards, 0.173 / 0.154 for the kiai — so every
+         0.006 / -0.012 for the guards, 0.173 / 0.154 for the first kiai (0.128
+         for Ember's wind-up, Oct 2026) and 0.173 / 0.182 for the riposte
+         guards — so every
          turn in the kiai slid her a third of her width, and every swing
          (guard to kiai and back) slid her half that again. The kiai has to
          measure as off-centre, or the fix is answering nothing, and the
@@ -3535,9 +3742,9 @@ console.log('\n--- the panda in the ring ---');
         for (let y = bottom; y > bottom - band && y >= 0; y--) for (let x = 0; x < w; x++) if (at(x, y)) { sx += x; n++; }
         return (sx / n + 0.5) / w - 0.5;
       };
-      const kf = ['ember', 'frost'].map((s) => feet(`kittens/${s}/kiai`));
-      ok('...the kiai drawings stand off the middle of their cells, and the Billboard is told where their feet are',
-        kf.every((v) => v > 0.08) && /footX: \(a\.feetX \?\? feetX\(a\)\) \* quad/.test(psrc), kf.map((v) => v.toFixed(3)).join(' '));
+      const kf = ['ember', 'frost'].flatMap((s) => ['kiai', 'kparry'].map((p) => feet(`kittens/${s}/${p}`)));
+      ok('...the kiai and riposte drawings stand off the middle of their cells, and the Billboard is told where their feet are',
+        kf.every((v) => v > 0.08) && /footX: \(a\.feetX \?\? \(key === 'reachPose' \? torsoX\(a\) : feetX\(a\)\)\) \* quad/.test(psrc), kf.map((v) => v.toFixed(3)).join(' '));
       const fsrc = readFileSync(new URL('../src/systems/housing/farm.js', import.meta.url), 'utf8');
       const pen = ['chick', 'bunny', 'goat'].map((a) => ink(`farm/${a}`));
       ok('...and every animal in the pen has its head on the LEFT, which is what the pen tells its Billboards',
@@ -4354,7 +4561,8 @@ console.log('\n--- the shrine scene is a two-shot ---');
        first version threw "this.players is not iterable" on a scope object
        that had `players` on it. */
     const tick = new Function('dt', `${body}`);
-    const host = { players: [p] };
+    // `orbCentre` is the Game's (her tube while she is in the simulator); out here it is her.
+    const host = { players: [p], orbCentre: (q) => q.position };
     for (let i = 0; i < 30; i++) tick.call(host, 1 / 60);
     ok('...so theta really advances while the leader is talking',
       o.theta > before + 0.4, `${before.toFixed(3)} -> ${o.theta.toFixed(3)} rad`);
@@ -5063,7 +5271,7 @@ console.log('\n--- the simulator\'s drawings ---');
     ok('...the walk to a tube starts the load, crossing in puts it on, and every way out takes it off',
       /_begin\(p, phase\) \{ this\.game\.loadSimArt\?\.\(\);/.test(dd)
       && /if \(toSimNow\) p\.setSimLook\?\.\(true\);/.test(dd)
-      && /_leaveSim\(p, keepSuit = false\) \{ const s = this\.st\[p\.index\]; this\.sine\?\.forget\(p\); this\._hushHolo\(p\); if \(!keepSuit\) p\.setSimLook\?\.\(false\);/.test(dd)
+      && /_leaveSim\(p, keepSuit = false\) \{ const s = this\.st\[p\.index\]; this\.sine\?\.forget\(p\); this\.bamboo\?\.forget\(p\); this\._hushHolo\(p\); if \(!keepSuit\) p\.setSimLook\?\.\(false\);/.test(dd)
       && /if \(!toSimNow\) this\._leaveSim\(p, keepSuit\);/.test(dd));
     /* THE SUIT: "When exiting the VR, they should automatically walk out of
        the tube, and poof with special effects to put their regular clothes
@@ -6037,6 +6245,350 @@ console.log('\n--- the balance file, and what a typo in it may do ---');
     /configureServer\(server\)/.test(vite) && !/apply:\s*'build'/.test(vite));
 }
 
+console.log('\n--- the sprite editor: what it saves, and what the game does with it ---');
+{
+  /* /sprites.html writes src/spritefix.json and core/spritefix.js reads it
+     (Richard, Oct 2026: "let's build a sprite adjustment editor so I can
+     manually align the sprites placement and scale and we can save that").
+     A file a page writes is a file that will one day hold something odd, so
+     every field degrades to the code's own number rather than NaN-ing a quad
+     or vanishing a kitten - and these are asked of the real functions. */
+  const one = (f) => ({ poses: { 'ember/kiai': f } });
+  const bad = poseFix('ember', 'kiai', one({ s: 'big', x: NaN, y: Infinity }));
+  ok('a sprite fix that is not a finite number is the code’s number', bad.s === 1 && bad.x === 0 && bad.y === 0, JSON.stringify(bad));
+  ok('...and a scale of nothing, or of a giant, is no scale at all',
+    poseFix('ember', 'kiai', one({ s: 0 })).s === 1 && poseFix('ember', 'kiai', one({ s: 50 })).s === 1
+    && poseFix('ember', 'kiai', one({ s: 0.5 })).s === 0.5);
+  ok('...and nothing saved changes nothing', JSON.stringify(poseFix('frost', 'kiai', {})) === '{"s":1,"x":0,"y":0}');
+  const order = (o, flip) => ({ sheets: { 'ember/grid_v2': { order: o, flip } } });
+  ok('a column order naming a column the sheet has not got is no reorder at all',
+    sheetFix('ember/grid_v2', 10, order([0, 1, 10])) === null && sheetFix('ember/grid_v2', 10, order([])) === null
+    && sheetFix('ember/grid_v2', 10, order([0, 1.5])) === null && sheetFix('ember/grid_v2', 10, {}) === null);
+  // Richard's example, "[1,2,4,7,6,5,8,9]", 1-based on the page and 0-based in the file
+  const sf = sheetFix('ember/grid_v2', 10, order([0, 1, 3, 6, 5, 4, 7, 8], [2, 9, -1]));
+  ok('...and a good one comes through, with the mirrors it has no column for dropped',
+    sf?.order.join() === '0,1,3,6,5,4,7,8' && sf.flip.join() === '2', JSON.stringify(sf));
+
+  /* THE FIX REACHES THE QUAD, through a real Player's `setKendoArt`: `s`
+     scales the drawing, `y` lifts it in her heights, and `x` moves it
+     FORWARD - the way the drawing points, so the clinch's left-facing
+     drawing moves the other way on its unmirrored quad. Keyed by SHEET:
+     Storm is Ember's drawings recoloured, so she wears Ember's fix. */
+  const tex = new THREE.Texture();
+  tex.image = { width: 256, height: 256 };
+  const art = { texture: tex, contentScale: 0.8, pad: 0.05, feetX: 0.02 };
+  const build = (fix, style = PLAYER_STYLE[0]) => {
+    setSpriteFix(fix);
+    const p = new Player({ texture: new THREE.Texture(), index: 0, cols: 8, rows: 4, mirror: false, style, height: 2.9 });
+    p.setKendoArt({ guard: art, kiai: art, kclinchL: art });
+    setSpriteFix(SPRITE_FIX);
+    return p;
+  };
+  const box = (b) => { const g = b._footGeo?.[0] ?? b.mesh.geometry; g.computeBoundingBox(); return g.boundingBox; };
+  const mid = (b) => { const q = box(b); return (q.min.x + q.max.x) / 2; };
+  const fix = { s: 0.5, x: 0.1, y: 0.2 };
+  const p0 = build({});
+  const p1 = build({ poses: { 'ember/kiai': fix, 'ember/kclinchL': fix } });
+  const pS = build({ poses: { 'ember/kiai': fix } }, PLAYER_STYLE[2]);
+  const q0 = p0.kiaiPose.width;
+  const q1 = p1.kiaiPose.width;
+  // where the quad's centre would be at that size with no `x`, so only `x` is measured
+  const at = (q) => -(art.feetX * q);
+  ok('a saved scale draws the pose that much bigger or smaller', Math.abs(q1 / q0 - 0.5) < 1e-9, `${q0.toFixed(3)} -> ${q1.toFixed(3)}`);
+  ok('...a saved lift raises her feet by that many of her heights',
+    Math.abs((box(p1.kiaiPose).min.y - (-art.pad * q1)) - 0.2 * 2.9) < 1e-6, box(p1.kiaiPose).min.y.toFixed(3));
+  ok('...a saved forward moves her the way the drawing points, the clinch’s left one included',
+    Math.abs(mid(p1.kiaiPose) - at(q1) - 0.29) < 1e-6 && Math.abs(mid(p1.kclinchLPose) - at(p1.kclinchLPose.width) + 0.29) < 1e-6,
+    `${(mid(p1.kiaiPose) - at(q1)).toFixed(3)} / ${(mid(p1.kclinchLPose) - at(p1.kclinchLPose.width)).toFixed(3)}`);
+  ok('...and Storm, drawn from Ember’s sheet, wears Ember’s fix', Math.abs(pS.kiaiPose.width - q1) < 1e-9 && p1.kendoPose.width === p0.kendoPose.width);
+  ok('...and the editor’s draft is gone again once it has drawn', poseFix('ember', 'kiai').s === (SPRITE_FIX.poses?.['ember/kiai']?.s ?? 1));
+
+  /* THE FILE AS SHIPPED is what the page's cleaner would write: no key that
+     is not `sheet/file`, nothing the cleaner would drop, no scale refused. */
+  const { cleanSpriteFix } = await import('../vite.config.js');
+  const shipped = JSON.parse(readFileSync(new URL('../src/spritefix.json', import.meta.url), 'utf8'));
+  ok('src/spritefix.json is exactly what the save would write',
+    JSON.stringify(cleanSpriteFix(shipped)) === JSON.stringify({ poses: shipped.poses ?? {}, sheets: shipped.sheets ?? {}, off: shipped.off ?? {} }));
+  ok('...and no sheet in it is under a key the game no longer reads by (the first editor\u2019s `ember/grid_v2`)',
+    Object.keys(shipped.sheets ?? {}).every((k) => !Object.values(LEGACY_SHEET).includes(k)), Object.keys(shipped.sheets ?? {}).join());
+  ok('...and every scale in it is one the game will use', Object.values(shipped.poses ?? {}).every((f) => f.s === undefined || (f.s > 0.05 && f.s < 20)));
+  const dirty = cleanSpriteFix({
+    poses: { '../x': { s: 1 }, 'ember/kiai': { s: 'a', x: 0.123456789 } },
+    sheets: { 'ember/grid_v2': { order: [1, '2', -1, 3.5], flip: 'x' }, 'Bad Key': { order: [1] } },
+  });
+  ok('the save keeps numbers on sheet/file keys and drops everything else',
+    JSON.stringify(dirty) === '{"poses":{"ember/kiai":{"x":0.1235}},"sheets":{"ember/grid_v2":{"order":[1],"flip":[]}},"off":{}}', JSON.stringify(dirty));
+  /* THE SECOND PASS'S KEYS: a sheet by its path under public/sprites, a ninja clip by path and clip, and
+     the `off` lists - names or indices, each once, nothing that could not be either. */
+  const keys = cleanSpriteFix({
+    sheets: { 'kittens/ember/grid_v2': { order: [0, 2] }, 'ninja/ember:sneak': { order: [3, 2, 1, 0], flip: [1] }, 'ninja/ember:Sneak Bad': { order: [0] } },
+    off: { 'housing/doormats': ['koi', 'koi', 3, 'x y', -1, 2.5, 'risingsun'], '../etc': ['a'], 'housing/empty': [] },
+  });
+  ok('...and keeps the second editor\u2019s: sheet paths, clip keys, and the switched-off lists',
+    JSON.stringify(keys) === '{"poses":{},"sheets":{"kittens/ember/grid_v2":{"order":[0,2],"flip":[]},"ninja/ember:sneak":{"order":[3,2,1,0],"flip":[1]}},"off":{"housing/doormats":["koi",3,"risingsun"]}}', JSON.stringify(keys));
+  const { listSprites } = await import('../vite.config.js');
+  const listed = listSprites();
+  ok('the editor\u2019s sheet list is every png under public/sprites, with its size',
+    listed.length >= 100 && listed.some((s) => s.id === 'housing/doormats' && s.w === 640 && s.h === 800)
+    && listed.some((s) => s.id === 'kittens/ember/grid_v2') && listed.every((s) => s.w > 0 && s.h > 0 && !/\.png$/.test(s.id)), `${listed.length} sheets`);
+
+  /* DEV ONLY, like the balance page: not a build input, the endpoint a
+     configureServer hook, and its debug-panel row inside the same DEV guard. */
+  const vite = readFileSync(new URL('../vite.config.js', import.meta.url), 'utf8').replace(/\r/g, '');
+  ok('...and the sprite save is dev-server only too',
+    /const spriteServer = \{[\s\S]{0,120}configureServer\(server\) \{\s*server\.middlewares\.use\('\/__spritefix'/.test(vite)
+    && /plugins: \[tuningServer, spriteServer\]/.test(vite) && !/input\s*:/.test(vite));
+  const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8').replace(/\r/g, '');
+  const rowFrom = main.indexOf('const TUNING_ROW =');
+  const row = rowFrom < 0 ? '' : main.slice(rowFrom, main.indexOf('\n\n', rowFrom));
+  ok('...and the debug panel reaches the sprite editor only in a dev build',
+    row.includes('import.meta.env?.DEV') && row.includes('data-open="/sprites.html"') && /\n\s*:\s*'';$/.test(row));
+  /* EVERY SHEET THE GAME LOADS honours a saved order (Richard: "and any future sprite sheets that get
+     added to the game"): `loadSpriteAtlas` re-deals by the file's own path, so no call site has to
+     remember. `_loadSprite` asks its counts of the sheet AS DRAWN and deals it after - a saved order
+     that drops two of ten columns must not read as a broken sheet and swap her for the placeholder. */
+  ok('a sheet\u2019s key is its path under public/sprites',
+    sheetIdOf('/sprites/kittens/ember/grid_v2.png') === 'kittens/ember/grid_v2' && sheetIdOf('/sprites/hospital/cat.png?v=2') === 'hospital/cat'
+    && sheetIdOf('/elsewhere/x.png') === null && sheetIdOf(undefined) === null);
+  ok('...and the first editor\u2019s two keys are still read, so a file it saved keeps working',
+    sheetFix('kittens/ember/grid_v2', 10, { sheets: { 'ember/grid_v2': { order: [1, 0] } } })?.order.join() === '1,0'
+    && sheetFix('kittens/ember/grid_v2', 10, { sheets: { 'kittens/ember/grid_v2': { order: [2] }, 'ember/grid_v2': { order: [1, 0] } } })?.order.join() === '2');
+  const sheetSrc = readFileSync(new URL('../src/core/spritesheet.js', import.meta.url), 'utf8').replace(/\r/g, '');
+  ok('every sheet loaded through loadSpriteAtlas is re-dealt by its saved fix',
+    /export async function loadSpriteAtlas\(url, opts = \{\}\) \{\n\s*const atlas = await packAtlas\(url, opts\);\n\s*if \(opts\.sheetFix === false \|\| !atlas\) return atlas;\n\s*return applySheetFix\(atlas, gridFix\(sheetIdOf\(url\), atlas\.cols, atlas\.rows\), THREE\);/.test(sheetSrc));
+  ok('...and the kittens\u2019 loader counts the sheet as drawn, then deals it',
+    /cell: 384, maxAtlas: this\.device\.atlasMax, sheetFix: false,[\s\S]{0,700}return applySheetFix\(a, gridFix\(sheetIdOf\(url\), a\.cols, a\.rows\), THREE\);/.test(main)
+    && /this\._spawnPlayers\(ember, frost\);/.test(main) && !/fixed\(ember/.test(main));
+
+  /* A BAMBOO INFILTRATION CLIP plays the saved FRAME order (`ninja/ember:sneak`) - asked of a real
+     ClipSprite: which cell `_setCell` lands on at each step, mirrored or not, and when a one-shot ends. */
+  const { ClipSprite } = await import('../src/systems/dream/ninjasprite.js');
+  const { NINJA_ATLAS } = await import('../src/systems/dream/ninjaclips.js');
+  const ctex = new THREE.Texture();
+  ctex.image = { width: 2040, height: 1632 };
+  const clipCells = (fix, name, facing = 0) => {
+    setSpriteFix(fix);
+    const c = new ClipSprite(ctex, NINJA_ATLAS.ember, 2.9);
+    c.setClip(name);
+    c.facing = facing;
+    c.faceCamera({ position: new THREE.Vector3(0, 0, 40) }); // the facing first: it decides whose order counts
+    const out = [];
+    for (let k = 0; k < c.clipFrames; k++) {
+      c.clipT = (k + 0.5) / c.clip.fps;
+      c.faceCamera({ position: new THREE.Vector3(0, 0, 40) });
+      const rx = c.tex.repeat.x;
+      const u0 = rx < 0 ? c.tex.offset.x + rx : c.tex.offset.x;
+      out.push(`${Math.floor((u0 + Math.abs(rx) / 2) * c.cols) - c.clip.col}${rx < 0 ? 'F' : ''}`);
+    }
+    const len = c.clipFrames / c.clip.fps;
+    c.clipT = len - 0.01;
+    const before = c.clipDone;
+    c.clipT = len + 0.01;
+    const after = c.clipDone; // asked while the fix is in force: ClipSprite reads it on every call
+    setSpriteFix(SPRITE_FIX);
+    return { cells: out.join(), done: !before && after };
+  };
+  ok('a ninja clip with no saved order plays its frames as drawn',
+    clipCells({}, 'sneak').cells === '0,1,2,3', clipCells({}, 'sneak').cells);
+  const rev = clipCells({ sheets: { 'ninja/ember:sneak': { order: [3, 2, 1, 0], flip: [2] } } }, 'sneak');
+  ok('...and with one, plays it - mirrors where the order says',
+    rev.cells === '3,2,1F,0', rev.cells);
+  const cut = clipCells({ sheets: { 'ninja/ember:mount': { order: [0, 2, 4] } } }, 'mount');
+  ok('...and a one-shot ends after the frames it PLAYS, not the frames drawn',
+    cut.cells === '0,2,4' && cut.done, JSON.stringify(cut));
+  ok('...and an order naming a frame the clip has not got is no order',
+    clipCells({ sheets: { 'ninja/ember:sneak': { order: [0, 9] } } }, 'sneak').cells === '0,1,2,3');
+
+  /* ONE FACING AT A TIME (Richard, Oct 2026: "changing the order and flip values seems to be applying it
+     to all 'facing' animations in the clip, it should only apply it to each individual facing"). A
+     facing's own key wins for that facing and touches no other; one with none plays the clip's. */
+  const dirs = NINJA_ATLAS.ember.clips.mount.dirs;
+  const right = (1 / dirs) * Math.PI * 2; // facing row 1, square to a lens on +z
+  const perFacing = { sheets: { 'ninja/ember:mount': { order: [4, 3, 2, 1, 0] }, 'ninja/ember:mount@1': { order: [0, 1, 2], flip: [1] } } };
+  ok('a facing’s own frame order plays on that facing',
+    clipCells(perFacing, 'mount', right).cells === '0,1F,2', clipCells(perFacing, 'mount', right).cells);
+  ok('...and not on any other: they play the whole clip’s',
+    clipCells(perFacing, 'mount', 0).cells === '4,3,2,1,0', clipCells(perFacing, 'mount', 0).cells);
+  ok('...and a facing’s order alone leaves the others as drawn',
+    clipCells({ sheets: { 'ninja/ember:mount@1': { order: [1, 0] } } }, 'mount', 0).cells === '0,1,2,3,4');
+
+  /* A CLIP'S HEIGHT AND SIZE ("there is no way for me to edit the height of the two clips, mount and
+     rope"): `poses["ninja/ember:mount"]` = { s, y }, on the mesh. A hanging clip scales about the
+     rope, so a bigger rope clip still hangs from the rope - its paw line stays on the origin. */
+  const hung = (fix, name) => {
+    setSpriteFix(fix);
+    const c = new ClipSprite(ctex, NINJA_ATLAS.ember, 2.9);
+    c.setClip(name);
+    c.faceCamera({ position: new THREE.Vector3(0, 0, 40) });
+    setSpriteFix(SPRITE_FIX);
+    const g = c.mesh.geometry;
+    g.computeBoundingBox();
+    // where the paw line (`pad` below the quad's top) lands, and the quad's height, as drawn
+    const top = c.mesh.position.y + g.boundingBox.max.y * c.mesh.scale.y;
+    return { y: c.mesh.position.y, h: (g.boundingBox.max.y - g.boundingBox.min.y) * c.mesh.scale.y, paw: top - c.man.pad * c.S * c.mesh.scale.y };
+  };
+  const m0 = hung({}, 'mount');
+  const m1 = hung({ poses: { 'ninja/ember:mount': { s: 1.5, y: 0.25, x: 9 } } }, 'mount');
+  ok('a clip’s saved height lifts it that many of her heights, and its scale sizes it',
+    Math.abs(m1.y - m0.y - 0.25 * 2.9) < 1e-9 && Math.abs(m1.h / m0.h - 1.5) < 1e-9, `${m0.y} -> ${m1.y}, ${m0.h.toFixed(3)} -> ${m1.h.toFixed(3)}`);
+  const r0 = hung({}, 'rope');
+  const r1 = hung({ poses: { 'ninja/ember:rope': { s: 1.4 } } }, 'rope');
+  ok('...and a hanging clip scaled still hangs from the rope (its paws on the origin)',
+    Math.abs(r0.paw) < 1e-6 && Math.abs(r1.paw) < 1e-6 && Math.abs(r1.h / r0.h - 1.4) < 1e-9, `${r0.paw} ${r1.paw}`);
+  const cleaned = cleanSpriteFix({ sheets: { 'ninja/ember:mount@2': { order: [1, 0] }, 'ninja/ember:mount@x': { order: [0] } }, poses: { 'ninja/ember:rope': { s: 1.2, y: 0.1 } } });
+  ok('...and the save keeps a facing’s key and a clip’s pose fix',
+    JSON.stringify(cleaned) === '{"poses":{"ninja/ember:rope":{"s":1.2,"y":0.1}},"sheets":{"ninja/ember:mount@2":{"order":[1,0],"flip":[]}},"off":{}}', JSON.stringify(cleaned));
+  const edSrc = readFileSync(new URL('../src/sprite-editor.js', import.meta.url), 'utf8').replace(/\r/g, '');
+  ok('...and the editor edits a clip one facing at a time, and gives a clip size and height',
+    /if \(kind === 'clip' \|\| S\.byRow\) \{ S\.baseId = id; S\.fixId = clipKey\(id, S\.row\); \}/.test(edSrc)
+    && /P\.kind === 'vrsingle' \|\| P\.kind === 'clip'\) return 'sy'/.test(edSrc)
+    && /if \(P\.kind === 'clip'\) return `ninja\/\$\{this\.sheet\}:\$\{P\.clip\}`/.test(edSrc));
+  /* "When I put 6 for flip, it seems to flip both 6's in the ordering ... if we have "6" for flip, it should only
+     flip the first "6" in ordering, and if we have "6, 6" for flip, then it would flip both". His Jump row, in
+     0-based images: order 1,2,3,6,5,6,7,8. */
+  {
+    const ord = [0, 1, 2, 5, 4, 5, 6, 7];
+    const one = flipSlots(ord, [5]); const two = flipSlots(ord, [5, 5]); const three = flipSlots(ord, [5, 5, 5]);
+    ok('the flip box mirrors ONE slot per mention: "6" the first 6 alone, "6, 6" both, and a third 6 is reported, not dropped',
+      one.flip.join() === '3' && !one.extra.length && two.flip.join() === '3,5' && three.flip.join() === '3,5' && three.extra.join() === '5',
+      `${one.flip} | ${two.flip} | ${three.flip} +${three.extra}`);
+    ok('...and reads back as it was typed, repeats kept, so Enter on an unchanged box changes nothing',
+      flipImages(ord, one.flip).join() === '5' && flipImages(ord, two.flip).join() === '5,5'
+      && flipSlots(ord, flipImages(ord, two.flip)).flip.join() === two.flip.join());
+    ok('...and the editor uses it both ways, with no dedupe left in the read-back',
+      /const \{ flip, extra \} = flipSlots\(order, flipImgs\)/.test(edSrc) && /\$\('sh-flip'\)\.value = fix \? flipText\(flipImages\(fix\.order, fix\.flip\)\)/.test(edSrc)
+      && /const flipImgs = parseFlip\(/.test(edSrc));
+    /* "I want the attack row to have order 1, 4, 3, 6, 5, 6, 7, 4, but to not flip the first occurrence of 4 but to flip
+       the 2nd ... mark the first occurrence as "-4" so it gets skipped". A skip is `~c` (image 0 has no -0). */
+    const atk = [0, 3, 2, 5, 4, 5, 6, 3];
+    const skip = flipSlots(atk, [~3, 3]);
+    ok('...and "-4, 4" skips the first 4 and mirrors the second; a skip with nothing left is reported',
+      skip.flip.join() === '7' && !skip.extra.length && flipSlots(atk, [~3]).flip.length === 0
+      && flipSlots(atk, [~3, ~3, ~3]).extra.join() === '3', `${skip.flip} | ${flipSlots(atk, [~3, ~3, ~3]).extra}`);
+    ok('...and every set of mirrored slots reads back as a box that writes it again: "-4, 4", "6, -6"... never a warning',
+      flipText(flipImages(atk, [7])) === '-4, 4' && flipText(flipImages(atk, [3])) === '6' && flipText(flipImages(atk, [5])) === '-6, 6'
+      && [[7], [3], [5], [3, 5], [1, 7], [0, 5, 7]].every((f) => flipSlots(atk, flipImages(atk, f)).flip.join() === f.join())
+      && !/not the first of/.test(edSrc), flipText(flipImages(atk, [7])));
+    ok('...and the flip box’s tooltip says so', /A MINUS SKIPS one: -4 leaves the next 4 plain/.test(readFileSync(new URL('../sprites.html', import.meta.url), 'utf8')));
+    // And the game draws exactly the slots the file names: the second 6 stays as drawn.
+    const cells = [];
+    const fakeG = { save() {}, restore() {}, translate() {}, scale(x) { this.m = x < 0; }, drawImage(img, sx, sy, sw, sh, dx) { cells.push(this.m ? 'M' : '.'); this.m = false; } };
+    const docWas = globalThis.document;
+    globalThis.document = { createElement: () => ({ getContext: () => fakeG }) };
+    applySheetFix({ cols: 8, rows: 1, texture: { image: { width: 8, height: 1 } } }, { order: ord, flip: one.flip }, { CanvasTexture: function () {} });
+    globalThis.document = docWas;
+    ok('...and the game mirrors that slot and not the other 6', cells.join('') === '...M....', cells.join(''));
+  }
+  /* PER ROW: "For kittens\frost\vr and the Jump row, I want the ordering to be 1, 2, 3, 6, 5, 6, 7, 8" - the JUMP
+     row's, not every row's. `kittens/frost/vr@2` is that row (clipKey, as a clip's facing), the bare key stays every
+     other row's, and a row's own order must be as long as the rest or the sheet stops being a grid. */
+  {
+    const ord = [0, 1, 2, 5, 4, 5, 6, 7];
+    const only = gridFix('kittens/frost/vr', 8, 4, { sheets: { 'kittens/frost/vr@2': { order: ord, flip: [3] } } });
+    ok('a sheet row can have its own order: the jump row takes it, and the other rows stay as drawn',
+      only?.rows?.[2]?.order.join() === ord.join() && only.rows[2].flip.join() === '3' && only.order.join() === '0,1,2,3,4,5,6,7' && !only.flip.length
+      && rowOf(only, 0).order.join() === '0,1,2,3,4,5,6,7' && rowOf(only, 2) === only.rows[2], JSON.stringify(only));
+    const both = gridFix('kittens/frost/vr', 8, 4, { sheets: { 'kittens/frost/vr': { order: [7, 6, 5, 4, 3, 2, 1, 0] }, 'kittens/frost/vr@2': { order: ord } } });
+    ok('...and over a sheet-wide order, the other rows keep the sheet’s', rowOf(both, 1).order.join() === '7,6,5,4,3,2,1,0' && rowOf(both, 2).order.join() === ord.join());
+    const short = gridFix('kittens/frost/vr', 8, 4, { sheets: { 'kittens/frost/vr@2': { order: [0, 1, 2] } } });
+    ok('...and a row whose order is a different length is ignored rather than tearing the grid', short?.rows === undefined, JSON.stringify(short));
+    const plain = { sheets: { 'kittens/frost/vr': { order: [1, 0], flip: [1] } } };
+    ok('...and a sheet with no row keys is exactly what it always was',
+      JSON.stringify(gridFix('kittens/frost/vr', 8, 4, plain)) === JSON.stringify(sheetFix('kittens/frost/vr', 8, plain)) && gridFix('kittens/frost/vr', 8, 4, {}) === null);
+    // the game deals each row by its own: rows 0,1,3 as drawn, row 2 the jump order with its first 6 mirrored
+    const seen = [];
+    const fakeG = { save() {}, restore() {}, translate() {}, scale(x) { this.m = x < 0; }, drawImage(img, sx, sy) { seen.push(`${sx}${this.m ? 'M' : ''}`); this.m = false; } };
+    const docWas = globalThis.document;
+    globalThis.document = { createElement: () => ({ getContext: () => fakeG }) };
+    applySheetFix({ cols: 8, rows: 4, texture: { image: { width: 8, height: 4 } } }, only, { CanvasTexture: function () {} });
+    globalThis.document = docWas;
+    const rowsSeen = [0, 1, 2, 3].map((r) => seen.slice(r * 8, r * 8 + 8).join(','));
+    ok('...and the game deals each row by its own order: only the jump row changes, its first 6 mirrored',
+      rowsSeen[0] === '0,1,2,3,4,5,6,7' && rowsSeen[3] === rowsSeen[0] && rowsSeen[2] === '0,1,2,5M,4,5,6,7', rowsSeen.join(' | '));
+    ok('...and the save keeps a sheet row’s key',
+      JSON.stringify(cleanSpriteFix({ sheets: { 'kittens/frost/vr@2': { order: ord } } }).sheets) === `{"kittens/frost/vr@2":{"order":[${ord}],"flip":[]}}`);
+    ok('...and the editor edits a turnaround or a many-row sheet one row at a time, refuses a row of the wrong length, and offers "every row"',
+      /S\.byRow = \(kind === 'turn' \|\| kind === 'cells'\) && !!S\.rows;/.test(edSrc) && /if \(!bad\.length && rowLenBad\(S, order\.length\)\) return;/.test(edSrc)
+      && /if \(rowLenBad\(S, f\.order\.length\)\) return;/.test(edSrc) && /this order for every \$\{kind === 'clip' \? 'facing' : 'row'\}/.test(edSrc)
+      && /gridFix\(id, raw\[id\]\.cols, raw\[id\]\.rows, draft\)/.test(edSrc));
+  }
+  /* "is there a way to tilt and pan the camera with mouse or some keyboard commands?" - and no orbit:
+     a lens moved off its bearing would change which drawing every billboard picks. */
+  ok('...and its view pans and tilts by mouse and key, by sliding the frustum and never the lens’s bearing',
+    /e\.button === 1 \|\| e\.button === 2/.test(edSrc) && /low === 'j' \|\| low === 'l'/.test(edSrc) && /low === 't' \|\| low === 'g'/.test(edSrc)
+    && /const mid = \(sheetMode \? 0 : B\.dx \/ 2\) \+ panX;/.test(edSrc) && /cam\.position\.set\(0, /.test(edSrc));
+
+  /* THE SINGLE POSES TAKE A FIX TOO (player.js `_poseBoard`): the eat crouch, the bless, the warp and
+     the rest, as the kendo set does - and in the headset, size and height only. */
+  const simArt = { texture: tex, contentScale: 0.8, pad: 0.05 };
+  const poser = (fix) => {
+    setSpriteFix(fix);
+    const p = new Player({ texture: new THREE.Texture(), index: 0, cols: 8, rows: 4, mirror: false, style: PLAYER_STYLE[0], height: 2.9 });
+    p.setEatArt(art);
+    p.setRiposteArt(art);
+    p.setSimPoseArt({ eat: simArt });
+    setSpriteFix(SPRITE_FIX);
+    return p;
+  };
+  const s0 = poser({});
+  const s1 = poser({ poses: { 'ember/eat': { s: 0.5, y: 0.2 }, 'ember/riposte': { x: 0.1 }, 'ember/vr_eat': { s: 2, y: 0.1 } } });
+  ok('a saved fix on a single pose draws it that size and lifts it, as on the kendo set',
+    Math.abs(s1.eatPose.width / s0.eatPose.width - 0.5) < 1e-9
+    && Math.abs((box(s1.eatPose).min.y - (-art.pad * s1.eatPose.width)) - 0.2 * 2.9) < 1e-6);
+  ok('...and moves the Riposte stance forward, the way its blade points',
+    Math.abs(mid(s1.ripostePose) - mid(s0.ripostePose) - 0.29) < 1e-6, (mid(s1.ripostePose) - mid(s0.ripostePose)).toFixed(3));
+  ok('...and nothing saved is the quad it always was (no footX pair on a pose with no fix)',
+    !s0.eatPose._footGeo && !s0.ripostePose._footGeo);
+  setSpriteFix({ poses: { 'ember/vr_eat': { s: 2, y: 0.1 } } });
+  s1.setSimLook(true);
+  const v1 = s1.eatPose.width;
+  const vy = (() => { const g = s1.eatPose.mesh.geometry; g.computeBoundingBox(); return g.boundingBox.min.y; })();
+  setSpriteFix(SPRITE_FIX);
+  s0.setSimLook(true);
+  ok('...and in the headset its vr_ fix: size and height',
+    Math.abs(v1 / s0.eatPose.width - 2) < 1e-9 && Math.abs(vy - (-simArt.pad * v1 + 0.1 * 2.9)) < 1e-6, `${v1.toFixed(3)} ${vy.toFixed(3)}`);
+
+  /* THE DOOR MATS' SWITCHES: a design switched off is not offered and not dealt, a home that already
+     chose it draws the first that is on and KEEPS its choice, and a list can never switch off them all. */
+  const { DOOR_MATS } = await import('../src/systems/housing/catalog.js');
+  const offKoi = { off: { 'housing/doormats': ['koi'] } };
+  ok('a switched-off door mat is not offered',
+    isOff('housing/doormats', 'koi', offKoi) && !isOff('housing/doormats', 'sakura', offKoi)
+    && enabledOf('housing/doormats', DOOR_MATS, undefined, offKoi).length === DOOR_MATS.length - 1
+    && !enabledOf('housing/doormats', DOOR_MATS, undefined, offKoi).some((m) => m.id === 'koi'));
+  ok('...and switching off every one switches off none (a list degrades, never empties)',
+    enabledOf('housing/doormats', DOOR_MATS, undefined, { off: { 'housing/doormats': DOOR_MATS.map((m) => m.id) } }).length === DOOR_MATS.length);
+  const { matOf } = await import('../src/systems/housing/homeisle.js');
+  setSpriteFix({ off: { 'housing/doormats': ['koi', DOOR_MATS[0].id] } });
+  const drawnOff = matOf('koi');
+  const drawnOn = matOf('sakura');
+  setSpriteFix(SPRITE_FIX);
+  ok('...and a home that chose it draws the first design that is on, and the others theirs',
+    drawnOff === DOOR_MATS[1] && drawnOn.id === 'sakura' && matOf('koi').id === 'koi', `${drawnOff.id} ${drawnOn.id}`);
+  const cards = readFileSync(new URL('../src/systems/housing/cards.js', import.meta.url), 'utf8').replace(/\r/g, '');
+  const hedit = readFileSync(new URL('../src/systems/housing/editor.js', import.meta.url), 'utf8').replace(/\r/g, '');
+  ok('...and the styles list and the first mat a home is dealt both ask which are on',
+    /it\.mat \? enabledOf\('housing\/doormats', DOOR_MATS\)/.test(cards)
+    && /L\.style === \(it\.mat \? DOOR_MATS\[0\]\.id : styles\[0\]\?\.id\)/.test(cards)
+    && /const on = enabledOf\('housing\/doormats', DOOR_MATS\);\n\s*const m = on\[h % on\.length\];/.test(hedit));
+
+  /* THE EDITOR'S OWN NUMBERS are copies (importing their owners would boot half the game): pinned here
+     against the owners, and its B-on-top switch set where three sorts - on the mesh. */
+  const ed = readFileSync(new URL('../src/sprite-editor.js', import.meta.url), 'utf8').replace(/\r/g, '');
+  const DDm = await import('../src/systems/dreamdojo.js');
+  const SHm = await import('../src/systems/dream/shadow.js');
+  const shSrc = readFileSync(new URL('../src/systems/dream/shadow.js', import.meta.url), 'utf8');
+  ok('the sprite editor draws the kittens and Lionheart at the game\u2019s sizes',
+    /const EDITOR_HEIGHT = \{ ember: 2\.9, frost: 2\.85 \};/.test(ed)
+    && /ember: \{ art: ember, height: 2\.9, dirSense: 1 \},\n\s*frost: \{ art: frost, height: 2\.85, dirSense: 1 \},/.test(main)
+    && new RegExp(`const EDITOR_LION_H = ${DDm.LION_HEIGHT};`).test(ed) && DDm.LION_HEIGHT === SHm.SHADOW_H
+    && /const SHADOW_TINT = 0xc8a8ff;/.test(ed) && /this\.posed \? 0xc8a8ff/.test(shSrc));
+  ok('...and its "B on top" sets the order on the MESH, where three sorts (on the Billboard it did nothing)',
+    /this\.bb\.mesh\.renderOrder = top \? 20 : 5;/.test(ed) && !/this\.bb\.renderOrder =/.test(ed));
+  ok('...and every pose group has its "Stand vs" sequence',
+    /SEQS\[`Stand vs \$\{name\}`\] = \{ text: list\.filter\(\(p\) => p\.id !== 'stand'\)/.test(ed));
+}
+
 console.log('\n--- a full-screen scene has no split to furnish ---');
 {
   /* THE FOUR COLOURED FRAMES STAYED UP OVER THE CUTSCENE. Reported from
@@ -6327,6 +6879,19 @@ console.log('\n--- background removal keeps the drawn whites ---');
     'roshi/roshi.png',
     'kittens/ember/kendo.png', 'kittens/frost/kendo.png', 'kittens/ember/kiai.png', 'kittens/frost/kiai.png',
     'farm/chick.png', 'farm/bunny.png', 'farm/goat.png',
+    // ...and the home poses: kendo's ceremony, the prayer, the onsen, the futon; the chick's flutter.
+    ...['ember', 'frost'].flatMap((s) => ['seiza', 'reach', 'rei', 'pray', 'bath', 'futon'].map((p) => `kittens/${s}/${p}.png`)),
+    'farm/chick_fly.png',
+    // ...and 返 in the bogu, the riposte guard (`kparry`).
+    'kittens/ember/kparry.png', 'kittens/frost/kparry.png',
+    // ...and the tea ceremony's 32 frames, cut out of a video (tools/capture/tea-sheet.mjs).
+    'kittens/ember/tea.png', 'kittens/frost/tea.png',
+    // ...and kendo's broken guard and the clinch's two sides.
+    ...['ember', 'frost'].flatMap((s) => ['kbroke', 'kclinchR', 'kclinchL'].map((p) => `kittens/${s}/${p}.png`)),
+    // ...and the door mats, twenty on one sheet (catalog.js DOOR_MATS).
+    'housing/doormats.png',
+    // ...and Bamboo Infiltration's four packed atlases (tools/ninja-atlas.mjs keys them as it packs).
+    'ninja/archer.png', 'ninja/ember.png', 'ninja/frost.png', 'ninja/samurai.png',
   ];
   {
     const dir = new URL('../public/sprites/', import.meta.url);
@@ -6498,8 +7063,21 @@ console.log('\n--- background removal keeps the drawn whites ---');
        kiai strikes (arms over the helmet), the chick's wing and the goat's
        legs. Measured by this loop. Not filled: Roshi is a plain sprite, the
        kiai a single-pose billboard and the animals load without `fillHoles`. */
-    ok('turning the fill on for every sheet would repaint thirty-one of them',
-      touched.length === 31 && touched.includes('roshi/roshi.png')
+    /* THIRTY-SIX SINCE THE HOME POSES: Ember's prayer and futon (paws to her
+       chest), Frost's reach and rei (the shinai arm against the hakama), and
+       the chick's flutter frame (a wing over her back). Measured by this loop.
+       Not filled: all five come through CRITTER_ART like the kiai. */
+    /* THIRTY-SEVEN SINCE THE RIPOSTE IN THE BOGU, Oct 2026: Ember's `kparry`
+       IS her first kiai drawing, so it brings its pocket with it; her new kiai
+       (the wind-up) closes one too, over the helmet; Frost's `kparry` closes
+       none. Measured by this loop. Not filled: CRITTER_ART, like the kiai. */
+    /* THIRTY-EIGHT SINCE THE TEA CEREMONY: Ember's `tea` sheet starts on her
+       prayer drawing, paws to her chest, and brings that pocket with it;
+       Frost's closes none. Not filled: CRITTER_ART with `uniform`, no ask. */
+    /* THIRTY-NINE SINCE THE CLINCH: Ember's `kclinchR` closes a pocket
+       between her arms and the shinai; the other five close none. Measured. */
+    ok('turning the fill on for every sheet would repaint thirty-nine of them',
+      touched.length === 39 && touched.includes('kittens/ember/kclinchR.png') && touched.includes('kittens/ember/tea.png') && !touched.includes('kittens/frost/tea.png') && touched.includes('kittens/ember/kparry.png') && !touched.includes('kittens/frost/kparry.png') && touched.includes('farm/chick_fly.png') && touched.includes('kittens/ember/pray.png') && touched.includes('roshi/roshi.png')
       && touched.includes('kittens/ember/kiai.png') && touched.includes('kittens/frost/kiai.png')
       && touched.includes('lionheart/defeated.png') && touched.includes('beasts/dragon_sheet.png')
       && touched.filter((f) => /\/vr_/.test(f)).length === 8 && touched.includes('kittens/frost/vr_riposte.png')
@@ -6779,10 +7357,15 @@ console.log('\n--- the art that ships is smaller than the art that made it ---')
        the VR gear on (`vr_<pose>.png`), worn in the tube and in the sim.
        FIFTEEN SINCE 返 RIPOSTE WENT INTO THE HEADSET (`vr_riposte.png`).
        SEVENTEEN SINCE KENDO: `kendo.png`, the guard in the bogu, and
-       `kiai.png`, the men strike (systems/housing/kendo.js). */
-    ok('...with the same seventeen poses drawn for each of them',
+       `kiai.png`, the men strike (systems/housing/kendo.js).
+       TWENTY-THREE SINCE THE HOME POSES: kendo's `seiza`, `reach` and `rei`,
+       and `pray`, `bath` and `futon` (Player.setHomeArt).
+       TWENTY-FOUR SINCE THE RIPOSTE IN THE BOGU: `kparry.png`.
+       TWENTY-FIVE SINCE THE TEA CEREMONY: `tea.png`, 32 frames in one sheet.
+       TWENTY-EIGHT SINCE THE CLINCH: `kbroke`, `kclinchR`, `kclinchL`. */
+    ok('...with the same twenty-eight poses drawn for each of them',
       posesOf('ember') === posesOf('frost')
-      && posesOf('ember').split(' ').length === 17, posesOf('ember'));
+      && posesOf('ember').split(' ').length === 28, posesOf('ember'));
   }
 
   /* --- and nothing else in public/ is quietly enormous ----------------------
@@ -6795,7 +7378,11 @@ console.log('\n--- the art that ships is smaller than the art that made it ---')
      at 2048 wide. They are not part of a first load: `Game.loadSimArt` fetches
      them on the first walk to a tube. */
   const GRIDS = ['kittens/frost/grid.png', 'kittens/ember/grid_v2.png',
-    'kittens/frost/vr.png', 'kittens/ember/vr.png'];
+    'kittens/frost/vr.png', 'kittens/ember/vr.png',
+    /* ...AND BAMBOO INFILTRATION'S FOUR ATLASES, every action of a character
+       packed into one 2040 square (tools/ninja-atlas.mjs). Never at boot:
+       `loadNinjaArt` fetches them the first time a kitten nears the island. */
+    'ninja/archer.png', 'ninja/ember.png', 'ninja/frost.png', 'ninja/samurai.png'];
   const shipped = spriteFiles();
   const over = shipped
     .filter((f) => statSync(new URL(`../public/sprites/${f}`, import.meta.url)).size > HEAVY)
@@ -7092,6 +7679,30 @@ console.log('\n--- the Powerup Kotodama ---');
       ok('...but a fresh block starts from the orb again',
         q._popWard(null) === true && q.wardMax === WARD.max && q.wardHits === 0,
         `max ${q.wardMax} hits ${q.wardHits}`);
+    }
+
+    /* 5b. SHADOW LIONHEART'S BLADE BREAKS IT IN ONE, and a held button puts it
+       back up the moment the wait is paid (Richard, Oct 2026). */
+    {
+      const { q, hud, said } = rig();
+      const how = q._wardTakeHit(hud, { smash: true });
+      ok("Shadow Lionheart's blow breaks a FRESH bubble outright, as if hit enough to break it",
+        how === 'smashed' && q.wardOn === false && said.includes('wardbreak'), `${how} ${said.join(',')}`);
+      ok('...and dreamdojo.simHit asks for that only of his blade',
+        /_wardTakeHit\?\.\(this\.simHud, \{ smash: src === 'shadow' \}\)/.test(readFileSync('src/systems/dream/../dreamdojo.js', 'utf8')));
+      // the thumb never came up: wait out the cooldown and the bubble must come back by itself
+      const held = { down: (a) => a === 'mount', pressed: () => false, doubled: () => false, held: {} };
+      q.wardWant = true;
+      let back = false;
+      for (let i = 0; i < 400 && !back; i++) { q._stepSpecials(1 / 60, held, world, hud); back = q.wardOn; }
+      ok('holding the Ward button through the wait puts the bubble back up when it is ready',
+        back && q.wardCool === 0, `on=${q.wardOn} cool=${q.wardCool}`);
+      q._dropWard(hud, 'release'); q.wardCool = 0;
+      const up = { down: () => false, pressed: () => false, doubled: () => false, held: {} };
+      q._stepSpecials(1 / 60, up, world, hud);
+      q._stepSpecials(1 / 60, held, world, hud);
+      ok('...but a button let go and pressed again is a press, not a want left over',
+        q.wardWant === false && q.wardOn === false, `want=${q.wardWant} on=${q.wardOn}`);
     }
 
     /* 6. THE BLOW STILL DEALS NOTHING, which was already true and is the whole
@@ -8554,18 +9165,24 @@ console.log('\n--- half a second of not being there ---');
   /* --- the economy --- */
   const price = orbPrice(world.pointsTotal);
   const sell = orbSellPrice(world.pointsTotal);
-  const purse = world.pointsTotal / 2;
   line('points in the world', `${world.pointsTotal} across ${world.props.length} props`);
-  line('buy / sell', `${price} / ${sell}  (an even share is ${Math.round(purse)})`);
-  ok('a whole even share buys 3 orbs', Math.floor(purse / price) === 3);
-  ok('...and never 5', Math.floor(purse / price) < 5);
+  line('buy / sell', `${price} / ${sell}  (one kitten's whole pot buys ${(world.pointsTotal / price).toFixed(1)})`);
+  /* A FLAT 1300 (Richard, Oct 2026), and every prop pays 20% more than it did:
+     the pot is the props' BASE values times MISCHIEF_BONUS, summed from the
+     props themselves, so a knock and the pot cannot disagree. */
+  {
+    const { MISCHIEF_BONUS: MB } = await import('../src/entities/prop.js');
+    const base = world.props.reduce((n, p) => n + (p.kind === 'bamboo' ? 25 : p.kind === 'icicle' ? 15 : 10), 0);
+    ok('a Kotodama is 1300 at every party size, not a share of the pot',
+      [1, 2, 3, 4].every((n) => orbPrice(world.pointsTotal, n) === 1300), `${price}`);
+    ok('...and the mischief pays 20% more than its base values',
+      MB === 1.2 && Math.abs(world.pointsTotal / base - 1.2) < 0.01, `${world.pointsTotal} / ${base}`);
+  }
   ok('selling returns 75%', Math.abs(sell / price - 0.75) < 0.002);
   /* BUY-THEN-SELL MUST LOSE MONEY. At 100% or more the two girls can bounce
      one orb off the counter for ever and buy the whole shelf, which deletes
      both the scarcity and the reason to trade with each other. */
   ok('...so buying and selling back is a loss', sell < price);
-  ok('the price is derived from the world, not typed in',
-    orbPrice(world.pointsTotal * 2) === price * 2);
 
   /* --- the Awakening --- */
   const fakeGame = {
@@ -9052,7 +9669,7 @@ console.log('\n--- half a second of not being there ---');
   ok('...so buying it and selling it back is still a loss, not a profit',
     K.sellPriceOf('aegis') < K.priceOf('aegis'));
   ok('...and one purse cannot reach the pair it needs',
-    K.priceOf('ward') + 2 * K.priceOf('aegis') > purse);
+    K.priceOf('ward') + 2 * K.priceOf('aegis') > world.pointsTotal / 2);
   ok('the refusal quotes the orb its own price', (() => {
     const q = aw.players[0];
     const had = q.score;
@@ -9065,7 +9682,12 @@ console.log('\n--- half a second of not being there ---');
      shelf: four Gale orbs on the counter and a wallet that reaches three orbs
      TOTAL is what turns "I want another one" into a conversation with her
      sister rather than a walk to the market. */
-  ok('a whole purse still buys only 3', Math.floor(purse / price) === 3);
+  /* The price is a flat ORB_PRICE now (Richard, Oct 2026: "just set the price of 1 normal Kotodama at
+     1300. We will add more ways for players to get points in the world"), so this is a two-way share of
+     the mischief alone, which is what "a whole purse" was — and it now buys two or three, never a stack. */
+  const purse = world.pointsTotal / 2;
+  line('a two-way share of the mischief', `${Math.round(purse)} of ${world.pointsTotal} = ${(purse / price).toFixed(2)} orbs`);
+  ok('a whole purse buys two or three, not a stack', Math.floor(purse / price) >= 2 && Math.floor(purse / price) <= 3);
   ok('...far short of one full stack of four',
     price * STOCK_STACKABLE > purse);
   ok('the whole shelf costs more than one purse holds',
@@ -15514,42 +16136,18 @@ console.log('\n--- the three power moves ---');
   ok('...and never fewer than one of each findable kind',
     worldSpawnCount(1) >= WORLD_ORB_IDS.length);
 
-  /* THE PRICE IS A SHARE OF A FIXED POT, so it has to fall as the party grows
-     or a kitten's share silently stops buying the three orbs it is meant to. */
-  const pot = 4550;
-  ok('two players pay what they always paid', orbPrice(pot, 2) === 650);
-  ok('four players pay half that', orbPrice(pot, 4) === 325);
-  ok('a share still buys three or four orbs at any party size',
-    [2, 3, 4].every((n) => {
-      const buys = (pot / n) / orbPrice(pot, n);
-      return buys >= 3 && buys <= 4;
-    }));
-  ok('selling still loses money at every party size',
-    [2, 3, 4].every((n) => orbSellPrice(pot, n) < orbPrice(pot, n)));
-
-  /* THE DEBUG ENDGAME'S PURSE IS THAT SAME SHARE, and this is the check the
-     bug it had would have failed. `Game._debugEndgame` used to hand every
-     player `pointsTotal / 2` regardless of how many there were — so at four it
-     paid out twice the money in the world, and since the PRICE is derived from
-     the pot (`pointsTotal / players / 3.5`) it quietly made the whole shop half
-     price for everybody. It is `/ partySize` now, which is the same arithmetic
-     the price already uses, so the two cannot drift apart.
-
-     Written against `Math.floor`, which is what the key does: four shares must
-     never add up to more than the world actually contains. */
+  /* THE PRICE IS FLAT; THE DEBUG PURSE IS STILL ONE HONEST SHARE. The price
+     used to be `pointsTotal / players / 3.5`; it is 1300 now at every party
+     size (Richard, Oct 2026). `Game._debugEndgame` still hands each kitten
+     `pointsTotal / partySize`, and four shares must never add up to more than
+     the world contains — the check for the bug it once had (`/ 2` at four). */
   {
+    const pot = world.pointsTotal;
     const purse = (n) => Math.floor(pot / n);
     ok('the debug purse is one honest share each',
       [2, 3, 4].every((n) => purse(n) * n <= pot));
-    ok('...and it buys the same three or four orbs at every party size',
-      [2, 3, 4].every((n) => {
-        const buys = purse(n) / orbPrice(pot, n);
-        return buys >= 3 && buys <= 4;
-      }), [2, 3, 4].map((n) => (purse(n) / orbPrice(pot, n)).toFixed(1)).join(' '));
-    /* The bug, stated: half the pot each at four players is eight orbs apiece
-       off a shelf holding six of the stackable kinds. */
-    ok('...and half the pot each would have been wrong at four',
-      Math.floor(pot / 2) / orbPrice(pot, 4) > 4);
+    ok('selling still loses money at every party size',
+      [1, 2, 3, 4].every((n) => orbSellPrice(pot, n) < orbPrice(pot, n)));
   }
 
   /* THE SHELF GROWS WITH THE PARTY, or the third kitten to reach the market
@@ -15982,15 +16580,25 @@ console.log('\n--- the three power moves ---');
      makes one row with two wordings honest rather than a shortcut. */
   const phoneTouch = deviceProfileFor({ coarse: true, touchPoints: 5, cores: 8, override: 'auto' });
   const phoneForced = deviceProfileFor({ coarse: true, touchPoints: 5, cores: 8, override: 'mobile' });
-  ok('on a detected phone, `auto` and `mobile` are the same state',
+  ok('on a detected phone with no controller, `auto` and `mobile` are the same state',
     phoneTouch.padOn === phoneForced.padOn
     && phoneTouch.touchPrimary === phoneForced.touchPrimary
     && phoneTouch.tier === phoneForced.tier);
-  /* ...WHICH IS WHAT LETS THE `mobile` ROW BE HIDDEN THERE. It is not a state
-     being taken away; it is a duplicate wearing a label ("test touch on this
-     computer") that names a machine the player is not holding. */
-  ok('...so hiding the test-mode option on a phone removes no reachable state',
-    /data-phone-hide/.test(readFileSync(new URL('../index.html', import.meta.url), 'utf8')));
+  /* ...BUT NOT WITH ONE. Richard, Oct 2026: Automatic "will disable the
+     touchscreen joystick controls on screen and use the controller instead"
+     when one is connected. So the two differ, the `mobile` row is no longer a
+     duplicate, and it is shown on a phone as "Always the on-screen stick". */
+  {
+    const autoPad = deviceProfileFor({ coarse: true, touchPoints: 5, cores: 8, override: 'auto', pads: 1 });
+    const forcedPad = deviceProfileFor({ coarse: true, touchPoints: 5, cores: 8, override: 'mobile', pads: 1 });
+    const deskPad = deviceProfileFor({ coarse: false, touchPoints: 0, cores: 8, override: 'auto', pads: 1 });
+    ok('...but with a controller connected, Automatic hides the stick and keeps the phone UI, and Always ON does not',
+      autoPad.padOn === false && autoPad.touchPrimary === true && autoPad.tier === phoneTouch.tier
+      && forcedPad.padOn === true && deskPad.padOn === false && deskPad.touchPrimary === false);
+    ok('...so the always-on option is shown on a phone, with its own phone wording',
+      !/data-phone-hide/.test(readFileSync(new URL('../index.html', import.meta.url), 'utf8'))
+      && /value="mobile"\s*data-phone="Always the on-screen stick"/.test(readFileSync(new URL('../index.html', import.meta.url), 'utf8')));
+  }
   /* AND THE TWO WORDINGS LIVE NEXT TO EACH OTHER, in the markup, so a change to
      one is made while looking at the other. Strings for this row in main.js
      would be the version that drifts. */
@@ -16000,7 +16608,7 @@ console.log('\n--- the three power moves ---');
       html.indexOf('id="touch-note"'));
     ok('...and both spellings of the row sit together in the markup',
       /data-phone="Player 1 plays as"/.test(row)
-      && /data-phone="Mobile input/.test(row)
+      && /data-phone="Automatic/.test(row)
       && /data-phone="Gamepad/.test(row));
   }
   /* KEYED OFF `detected`, NOT `touchPrimary`, AND THIS IS THE ONE THAT WOULD
@@ -18412,6 +19020,34 @@ console.log('\n--- a rebuilt list may not slide a new answer under the cursor --
   ok('...and update remembers which element the index meant',
     /focusEl\.set\(panel\.id, items\[i\]/.test(nsrc));
   ok('...and a restart forgets it', /reset\(\)\s*\{[^}]*focusEl\.clear\(\)/.test(nsrc));
+
+  /* TEXT BOXES ARE STOPS. Richard, Oct 2026: "I can no longer select the text
+     boxes with keyboard/controller input in the Kata Trace Beat Maps, should
+     be able to highlight it and select it to start to be able to type".
+     The beat map's title and author boxes have no `type` at all. */
+  {
+    const keSrc = readFileSync(new URL('../src/systems/dream/kataeditor.js', import.meta.url), 'utf8');
+    ok('a text box is a stop for the menu cursor — typed, untyped, number and textarea alike',
+      ['input[type="text"]', 'input:not([type])', 'input[type="number"]', 'textarea'].every((s) => nsrc.includes(`.panel ${s}`))
+      && /<input id="ke-title" maxlength/.test(keSrc));
+    const log = [];
+    const box = { tagName: 'INPUT', type: 'text', focus: () => log.push('focus'), select: () => log.push('select'), click: () => log.push('click'), blur: () => log.push('blur') };
+    nav._activate(box);
+    ok('...confirm on one goes INTO it, ready to type, and clicks nothing', log.join() === 'focus,select', log.join());
+    const beats = { tagName: 'INPUT', type: 'number', step: '4', min: '4', max: '400', value: '16', dispatchEvent: () => log.push('change') };
+    nav._adjust(beats, 1);
+    const up = beats.value;
+    beats.value = '400';
+    nav._adjust(beats, 1);
+    ok('...a number box steps by its own step with left/right, and stops at its max', up === '20' && beats.value === '400', `${up} ${beats.value}`);
+    // The ring walking off a box she is typing in takes her out of it.
+    const keepDoc = globalThis.document;
+    log.length = 0;
+    globalThis.document = { activeElement: box, querySelectorAll: () => [] };
+    const next = { classList: { add() {}, remove() {} }, scrollIntoView() {} };
+    try { nav._lastPainted = box; nav._paint([next], 0, false); } finally { globalThis.document = keepDoc; }
+    ok('...and the cursor moving off a box she is typing in takes her out of it', log.includes('blur'), log.join());
+  }
 }
 
 console.log('\n--- the profile is as big as its cards have earned ---');
@@ -18640,10 +19276,13 @@ console.log('\n--- how-to-play is a picture-led accordion ---');
   /* FOURTEEN, AND A FOURTH GROUP: "Ask Payne" lives inside "Quests &
      achievements", which is a top-level `help` card, so it gets `help-quests`
      for the reason the other three have theirs. */
-  /* FIFTEEN: "Riposte expanded" joined the two in "The rare orbs". */
+  /* FIFTEEN: "Riposte expanded" joined the two in "The rare orbs".
+     TWENTY-FOUR: the glossary's nine kinds of word, in `help-words`. Its
+     tap-ins carry `jp-more` and their own `help-jp-more`, and are checked
+     with the glossary. */
   ok('...and every sub-card is in its parent\'s own accordion group',
-    subs.length === 15
-    && subs.every((n) => ['help-move', 'help-arena', 'help-rare', 'help-quests'].includes(n)),
+    subs.length === 24
+    && subs.every((n) => ['help-move', 'help-arena', 'help-rare', 'help-quests', 'help-words'].includes(n)),
     `${subs.length}: ${[...new Set(subs)].join(', ')}`);
   ok('...and the three expanders are the ones in the third group',
     subs.filter((n) => n === 'help-rare').length === 3);
@@ -21162,7 +21801,8 @@ console.log('\n--- seeing through the arena ---');
   /* FOUR CUTS, BECAUSE FOUR PLAY. This was two, written when two was the whole
      game, so kittens three and four were never cut for at all. */
   const gfx = readFileSync(new URL('../src/core/gfx.js', import.meta.url), 'utf8');
-  ok('the x-ray material cuts for four kittens', /const MAX = 4;/.test(gfx));
+  // four by default; a house asks for more (`XRAY_SLOTS`), for the doors it hides as well
+  ok('the x-ray material cuts for four kittens', /const MAX = opts\.max \?\? 4;/.test(gfx) && xrayVertexMat().userData.xray.uCutOn.value.length === 4);
 
   const mat = xrayVertexMat();
   /* Compile it by hand — there is no GL here, so drive `onBeforeCompile` with
@@ -21234,6 +21874,24 @@ console.log('\n--- seeing through the arena ---');
   ok('...and it asks that before it works out where the fragment sits',
     shader.fragmentShader.indexOf('uCutFloor[i]) continue;')
       < shader.fragmentShader.indexOf('float t = dot(vXrayWorld'));
+
+  /* --- A BIGGER HOLE, AND A CEILING, PER SUBJECT ------------------------
+     For a kitten downstairs in a pane that shows the floor above (housing.js
+     `aimView`, LOWER_XRAY): "Make the lower player's x-ray 2-3x bigger.
+     Upper-floor items must not be affected by the lower player's x-ray."
+     Unset, both are what every caller has always had. */
+  ok('a cut given no scale and no ceiling is exactly the old one',
+    [...shader.uniforms.uCutScale.value].every((v) => v === 1) && [...shader.uniforms.uCutCeil.value].every((v) => v === 1e9));
+  mat.setCuts(new THREE.Vector3(0, 0, 0), [new THREE.Vector3(1, 2, 3), new THREE.Vector3(4, 5, 6)], [0, 0], { scale: [2.5, NaN], ceil: [4.2, undefined] });
+  ok('...one that is given them carries them, and a bad number is the default, never NaN',
+    shader.uniforms.uCutScale.value[0] === 2.5 && shader.uniforms.uCutScale.value[1] === 1
+    && Math.abs(shader.uniforms.uCutCeil.value[0] - 4.2) < 1e-6 && shader.uniforms.uCutCeil.value[1] === 1e9);
+  mat.setCuts(new THREE.Vector3(0, 0, 0), [new THREE.Vector3(1, 2, 3)]);
+  ok('...and the next frame without them puts them back', shader.uniforms.uCutScale.value[0] === 1 && shader.uniforms.uCutCeil.value[0] === 1e9);
+  ok('the ceiling is asked before the segment maths too, and the scale widens the hole and its soft edge alike',
+    shader.fragmentShader.indexOf('uCutCeil[i]) continue;') > 0
+    && shader.fragmentShader.indexOf('uCutCeil[i]) continue;') < shader.fragmentShader.indexOf('float t = dot(vXrayWorld')
+    && /uCutR \* uCutScale\[i\]/.test(shader.fragmentShader) && /uCutSoft \* uCutScale\[i\]/.test(shader.fragmentShader));
 
   /* --- the arena's own see-through furniture --- */
   const built = buildArena();
@@ -21903,7 +22561,7 @@ console.log('\n--- one press is not enough, and one player drives ---');
      `findIndex` and the check went red over code that had not changed. The
      same trap the save-menu checks name, one section down. */
   {
-    const from = main.indexOf('    const asked = this.input.players.findIndex(');
+    const from = main.indexOf('    let asked = this.input.players.findIndex(');
     const to = main.indexOf('_claimMenu(asked)');
     ok('...and the pause button claims the menu for the pad that pressed it',
       from >= 0 && to > from && /findIndex/.test(main.slice(from, to)));
@@ -28265,7 +28923,7 @@ console.log('\n--- one press is not enough, and one player drives ---');
         const from = at0 + `\n  ${sig} {`.length;
         const body = gsrc.slice(from, gsrc.indexOf('\n  }\n', from));
         // eslint-disable-next-line no-new-func
-        return new Function('castRow', 'meaningful', `return function (${args}) {${body}\n};`)(castRow, meaningful);
+        return new Function('castRow', 'meaningful', 'landAt', `return function (${args}) {${body}\n};`)(castRow, meaningful, landAt);
       };
       const place = liftG('_placeFromSave(p)', 'p');
       const remember = liftG('_rememberPlayer(p, over = {})', 'p, over = {}');
@@ -29775,7 +30433,7 @@ console.log('\n--- quests: earned before the end, paid one at a time after it --
     const save = stripComments(src('../src/systems/savegame.js'));
     ok('the game runs the quests every frame, and moves the tokens',
       /this\.feats\.update\(dt\)/.test(main)
-        && /featOrbs \?\? \[\]\) o\.update\(dt, p\.position\)/.test(main));
+        && /featOrbs \?\? \[\]\) o\.update\(dt, this\.orbCentre\(p\)\)/.test(main));
     ok('BOTH ways into the Awakening settle the quests',
       (main.match(/this\._awaken\(/g) || []).length >= 2
         && !/_announceAwakening\(this\.kotodama\.awaken\(\)\)/.test(main)
@@ -30731,7 +31389,7 @@ console.log('\n=== NINE NOTES FROM A PHONE ===');
       /front\.style\.top = getComputedStyle\(under\)\.top;/.test(M));
   }
   ok('a repeat of the same news folds into the line already on screen',
-    /toast\(text, playerIndex = 0, combo = null, holdMs = 0\)/.test(M)
+    /toast\(text, playerIndex = 0, combo = null, holdMs = 0, look = null\)/.test(M)
     && /this\._combos \|\|= new Map\(\);/.test(M));
   ok('...and it counts, rather than being replaced by the newest one alone',
     /live\.n \+= 1;\s*live\.total \+= combo\.add \?\? 1;/.test(M));
@@ -31539,6 +32197,107 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
   ok('...and not one of them has a fault',
     R.every((r) => !r.faults.length),
     R.filter((r) => r.faults.length).map((r) => `${r.name}:${r.faults.join('|')}`).join(' ') || 'none');
+  /* THE LOOK ACROSS, AT THE REAL WORLD'S MOUTHS (systems/worldpeek.js).
+     Richard, Oct 2026: "we make a similar implementation to the bridges in
+     the main world as well". The trigger and the lens are the layer's own;
+     what is asked here is that every mouth is found, faces into its road and
+     looks at the island on the OTHER end, that walking up a road starts it
+     and walking past a mouth does not, and that a dragon in the way leaves
+     the shot. */
+  {
+    const WPm = await import('../src/systems/worldpeek.js');
+    const PKm = await import('../src/systems/dream/peek.js');
+    const wasOpen = W.snakeOpen;
+    W.snakeOpen = true;
+    const dragons = [];
+    const g = { world: W, housing: null, players: [], dragons, tournament: null };
+    const WP = new WPm.WorldPeek(g);
+    const ends = WP._endsNow();
+    const bad = ends.filter((E) => {
+      const r = E.road;
+      const atStart = E.mouth === r.pts[0];
+      const n = atStart ? r.pts[1] : r.pts[r.pts.length - 2];
+      const l = Math.hypot(n.x - E.mouth.x, n.z - E.mouth.z) || 1;
+      const into = ((n.x - E.mouth.x) * E.toward.x + (n.z - E.mouth.z) * E.toward.z) / l;
+      const isl = atStart ? r.to : r.from;
+      return into < 0.999 || Math.hypot(E.far.x - isl.x, E.far.z - isl.z) > 1e-6 || !Number.isFinite(E.far.y);
+    });
+    ok('every open road has a look across at BOTH mouths, into the road, at the island on the far end',
+      ends.length === R.length * 2 && bad.length === 0,
+      `${ends.length} ends for ${R.length} roads; wrong: ${bad.map((E) => E.road.name).join(' ') || 'none'}`);
+    W.snakeOpen = false;
+    WP._sig = 'x';
+    ok('...and none before the roads are open', WP._endsNow().length === 0);
+    W.snakeOpen = true;
+    WP._sig = 'x';
+    WP._endsNow();
+    /* Walk a kitten 14 out from each home mouth, at a run (10.5, measured in
+       the browser), along the road's own heading; and one along the rim,
+       square to it, passing right by the mouth. */
+    const walk = (E, vx, vz, from, n = 120) => {
+      const her = { index: 0, position: new THREE.Vector3(), velocity: new THREE.Vector3(vx, 0, vz), onGround: true };
+      her.position.set(E.mouth.x + from.x, E.mouth.y, E.mouth.z + from.z);
+      WP.trig = [];
+      for (let i = 0; i < n; i++) {
+        const r = WP.for(her, 1 / 60);
+        if (r) return { on: Math.hypot(her.position.x - E.mouth.x, her.position.z - E.mouth.z), r };
+        her.position.x += vx / 60;
+        her.position.z += vz / 60;
+        if (her.position.distanceTo(new THREE.Vector3(E.mouth.x, E.mouth.y, E.mouth.z)) < 0.3) break;
+      }
+      return null;
+    };
+    // WP.ends, not `ends`: the closed/open round trip above rebuilt them
+    const home = WP.ends.filter((E) => E.mouth === E.road.pts[0]);
+    const up = home.map((E) => walk(E, E.toward.x * 10.5, E.toward.z * 10.5, { x: -E.toward.x * 14, z: -E.toward.z * 14 }));
+    ok('walking up any road at a run turns the look across on before the mouth, and on to the far island',
+      up.every((u, i) => u && u.on > 0.3 && u.r.far === home[i].far),
+      up.map((u, i) => `${home[i].road.name}:${u ? u.on.toFixed(1) : 'never'}`).join(' '));
+    const past = home.map((E) => walk(E, -E.toward.z * 10.5, E.toward.x * 10.5, { x: E.toward.z * 10, z: -E.toward.x * 10 }));
+    ok('...and running along the rim right past a mouth never does', past.every((u) => !u),
+      past.map((u, i) => (u ? home[i].road.name : '')).filter(Boolean).join(' ') || 'none');
+    const still = (() => {
+      const E = home[0];
+      const her = { index: 0, position: new THREE.Vector3(E.mouth.x - E.toward.x * 3, E.mouth.y, E.mouth.z - E.toward.z * 3), velocity: new THREE.Vector3(), onGround: true };
+      WP.trig = [];
+      let any = false;
+      for (let i = 0; i < 120; i++) any = any || !!WP.for(her, 1 / 60);
+      return any;
+    })();
+    ok('...nor does standing still three from a mouth', !still);
+    /* A DRAGON IN THE WAY. The bamboo mouth had one perched 8.4 from it and
+       5.1 off the line to the island: a quarter of the frame was wing. */
+    const E = home[0];
+    const S = { x: E.mouth.x - E.toward.x * 3, y: E.mouth.y, z: E.mouth.z - E.toward.z * 3, far: E.far };
+    const P = PKm.peekPose(S);
+    const left = { x: P.x, y: P.y, z: P.z, r: 1.5 };
+    const c0 = WPm.clearPose(S, []);
+    const c1 = WPm.clearPose(S, [left]);
+    ok("a clear mouth keeps the layer's own lens; a thing on the lens's shoulder moves it to the other one",
+      c0.side === 1 && c0.up === PKm.PEEK.up && c0.cost === 0 && c1.side === -1 && c1.cost === 0,
+      `clear ${c0.side}/${c0.up}, blocked ${c1.side}/${c1.up} cost ${c1.cost.toFixed(2)}`);
+    const mat = { opacity: 1, alphaTest: 0.35 };
+    const mid = { x: (P.x + E.far.x) / 2, z: (P.z + E.far.z) / 2 };
+    const t = 18 / Math.hypot(E.far.x - P.x, E.far.z - P.z);
+    const dpos = { x: P.x + (E.far.x - P.x) * t, y: P.y - 6, z: P.z + (E.far.z - P.z) * t };
+    dragons.push({ position: dpos, quad: 26, sprite: { mat } }, { position: { x: mid.x + 400, y: 0, z: mid.z }, quad: 26, sprite: { mat: { opacity: 1, alphaTest: 0.35 } } });
+    g.players = [{ index: 0 }];
+    WP.fade = [1];
+    WP.far = [E.far];
+    const lens = { position: new THREE.Vector3(P.x, P.y, P.z) };
+    WP.fadeFor(lens, [0]);
+    const faded = [mat.opacity, mat.alphaTest, dragons[1].sprite.mat.opacity];
+    WP.fadeFor(lens, [1]);
+    ok('a dragon between the lens and the island fades out of THAT pane, its cut-out scaled with it, and is back in the next',
+      Math.abs(faded[0] - (1 - WPm.PEEK_FADE)) < 1e-9 && Math.abs(faded[1] - 0.35 * faded[0]) < 1e-9 && faded[2] === 1
+      && mat.opacity === 1 && mat.alphaTest === 0.35,
+      `in pane ${faded.map((x) => x.toFixed(3)).join('/')}, next pane ${mat.opacity}/${mat.alphaTest}`);
+    const ms = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    ok('...wired: after the Dream Dojo writes `peekAt`, and per pane after the billboards turn',
+      /this\.dream\?\.update\(dt\);\s*this\.housing\?\.update\(dt\);[\s\S]{0,140}this\.worldPeek\?\.update\(dt\);/.test(ms)
+      && /this\._faceAll\(camera, members\);[\s\S]{0,140}this\.worldPeek\?\.fadeFor\(camera, scene \? null : members\);/.test(ms));
+    W.snakeOpen = wasOpen;
+  }
   {
     let worst = 0;
     let where = '';
@@ -31882,7 +32641,7 @@ console.log('\n=== SIX MORE NOTES FROM A PHONE ===');
     const sat = C.find((c) => c.kind === 'satan');
     ok('...Mr Satan\'s on his road, twice the size of the rest',
       !!sat && sat.road.arena && C.every((c) => c === sat || Math.abs(sat.r - c.r * 2) < 1e-6));
-    ok('...worth five canes of bamboo', COIN_CANES * BAMBOO_POINTS === 125);
+    ok('...worth five canes of bamboo', COIN_CANES === 5 && COIN_CANES * BAMBOO_POINTS === 5 * BAMBOO_POINTS);
     ok('...and all there once the roads are', C.every((c) => c.group.visible));
     const c0 = C.find((c) => c.kind === 'snake');
     ok('...touched on the deck, where a kitten running the road is',
@@ -35129,14 +35888,14 @@ console.log('\n--- mobile, October: the skip, the start, the griffin, the talkin
      be there regardless of the input." A phone with the stick switched off
      keeps the corner button, and in that mode it does ONE thing: skip. */
   ok('a phone with the stick off still has the corner button, set before it is shown',
-    /this\.touchPad\.setCornerOnly\(phone && !pad\);\s*this\.touchPad\.onCornerSkip = \(\) => this\._skipScene\(\);\s*this\.touchPad\.setVisible\(pad \|\| phone\);/.test(M));
+    /this\.touchPad\.setCornerOnly\(phone && !pad\);\s*this\.touchPad\.onCornerSkip = \(\) => this\._skipScene\(\);[\s\S]{0,400}this\.touchPad\.onCornerMenu = \(\) => \{ this\._cornerMenuAsk = true; \};\s*this\.touchPad\.setVisible\(pad \|\| phone\);/.test(M));
   {
     const { TouchPad } = await import('../src/core/touchpad.js');
     const pause = { id: 'pause' }; const jump = { id: 'jump', dataset: { action: 'jump' } };
-    let skips = 0;
+    let skips = 0; let menus = 0;
     const fake = (mode) => ({
       visible: true, cornerOnly: true, pause, _pauseMode: mode,
-      onCornerSkip: () => { skips++; }, _active: new Map(), _held: {},
+      onCornerSkip: () => { skips++; }, onCornerMenu: () => { menus++; }, _active: new Map(), _held: {},
     });
     const tap = (pad, target) => TouchPad.prototype._down.call(pad, {
       target: { closest: () => target }, pointerId: 1, preventDefault() {},
@@ -35144,12 +35903,17 @@ console.log('\n--- mobile, October: the skip, the start, the griffin, the talkin
     const a = fake('skip'); tap(a, pause);
     const b = fake('menu'); tap(b, pause);
     const c = fake('skip'); tap(c, jump);
-    ok('...and in that mode a tap on it skips a scene, and nothing else does anything',
-      skips === 1 && !a._active.size && !b._active.size && !c._active.size && !c._held.jump, `skips ${skips}`);
+    /* "the menu button in the top-right corner is not appearing on screen when
+       mobile input is disabled, it should appear regardless" (Oct 2026): out
+       of a scene the same tap asks for the MENU, queued for the frame. */
+    ok('...and in that mode a tap on it skips a scene or asks for the menu, and nothing else does anything',
+      skips === 1 && menus === 1 && !a._active.size && !b._active.size && !c._active.size && !c._held.jump, `skips ${skips} menus ${menus}`);
+    ok('...and the frame answers that ask as player 1’s (or the open menu’s owner’s) Start',
+      /if \(this\._cornerMenuAsk\) \{\s*this\._cornerMenuAsk = false;\s*if \(asked < 0 && this\.players\.length\) asked = this\.paused \? \(this\.menuOwner \?\? 0\) : 0;/.test(M));
   }
-  ok('...with the stick, the face buttons and the out-of-scene MENU all off the screen',
-    /#touch-pad\.corner-only \.tp-zone,\s*#touch-pad\.corner-only \.tp-cluster,\s*#touch-pad\.corner-only:not\(\.scene\) \.tp-pause \{\s*display: none;/.test(C)
-      || (/#touch-pad\.corner-only \.tp-zone/.test(C) && /#touch-pad\.corner-only:not\(\.scene\) \.tp-pause \{ display: none; \}/.test(C)));
+  ok('...with the stick and the face buttons off the screen, and the corner button never hidden',
+    /#touch-pad\.corner-only \.tp-zone,\s*#touch-pad\.corner-only \.tp-cluster \{ display: none; \}/.test(C)
+      && !/corner-only[^{]*\.tp-pause/.test(C));
   ok('...and the per-frame pad work is skipped when there is no pad to do it for',
     /if \(scene \|\| this\.touchPad\.cornerOnly\) return;/.test(M)
       && /if \(!this\.touchPad\.cornerOnly\) this\._updateMathForDojo\(\);/.test(M));
@@ -36770,11 +37534,18 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const climb = (n, k = 1) => apex(V * k) * (n - 1) + apex(V * LATER * k);
     const shadow = CLANS.find((c) => c.id === 'shadow').buff;
     const two = climb(2) + LAND;
+    /* ...BUT NOT WITH THE ORB LENT. Only the LAST jump of a chain is weak,
+       so a kitten with three jumps who stops after two has made two FULL
+       ones — and that is the kitten in the Leap drill. The ledge at 5.0 was
+       measured against `two` (4.59) and stood 0.22 under her real 5.22:
+       Richard, Oct 2026, "very easy to jump on with just 2 jumps". */
+    const twoLent = apex(V) * 2 + LAND;
     const three = climb(2 + PO.aggregate(['leap']).jumps) + LAND;
     const sworn3 = climb(shadow.jumps, shadow.jump) + LAND;
     line('best ledge on two jumps / a Leap orb / Shadowtail', `${two.toFixed(2)} / ${three.toFixed(2)} / ${sworn3.toFixed(2)}`);
-    ok('跳 the Leap ledge is out of reach of two jumps', GAL.LEAP_DECK > two * 1.05, `${GAL.LEAP_DECK} vs ${two.toFixed(2)}`);
-    ok('...and comfortably inside three', GAL.LEAP_DECK < (three - LAND) * 0.85, `${GAL.LEAP_DECK} vs ${three.toFixed(2)}`);
+    ok('跳 the Leap ledge is out of reach of two jumps — two FULL ones, as the lent orb gives her', GAL.LEAP_DECK > twoLent * 1.05,
+      `${GAL.LEAP_DECK} vs ${twoLent.toFixed(2)}`);
+    ok('...and inside three with a second jump\'s top to spare', GAL.LEAP_DECK < three - 1.0, `${GAL.LEAP_DECK} vs ${three.toFixed(2)}`);
     ok('影 the Shadowtail star is out of reach of two jumps', HAL.SHADOW_DECK > two * 1.3);
     ok('...and inside the oath\'s three, with room', HAL.SHADOW_DECK < (sworn3 - LAND) * 0.85,
       `${HAL.SHADOW_DECK} vs ${sworn3.toFixed(2)}`);
@@ -36889,6 +37660,632 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         /src: 'bolt', drill: this, from,/.test(srcOf('drill.js'))
         && /src: 'blade', drill: d, from: me, foe: f/.test(srcOf('school.js'))
         && /src: 'shadow', from, foe: b/.test(srcOf('shadow.js')));
+    }
+
+    /* --- THE OCT 2026 PASS ON THE GALLERY. Richard's notes on every drill,
+       each with the check that would have caught it. --- */
+    {
+      const DRm = await import('../src/systems/dream/drill.js');
+      D.shards ??= { burst() {}, update() {} };
+      D.progress ??= new PR.DreamProgress(null);
+      const GI = ISL.islandCentre(dc, L.u, ISL.ISLANDS.gallery);
+      const at = { x: GI.x, y: GI.y, z: GI.z, r: ISL.ISLANDS.gallery.r, fwd: { x: GI.dir.x, z: GI.dir.z } };
+      const gstub = { key: () => 'X', dream: D };
+      // The top of one full jump: JUMP_V 11.2, GRAVITY 26.
+      const V_ONE = () => (11.2 * 11.2) / 52;
+      const lay = (x, y, z) => her.position.set(x + SW.SIM.dx, y, z + SW.SIM.dz);
+      const run = (id) => {
+        D.drills[0]?.dispose?.();
+        D.drills[0] = null;
+        D.st[0] = { phase: 'sim', t: 0, simHp: 100 };
+        her.velocity.set(0, 0, 0);
+        her.parryT = 0; her.triWindT = 0; her.triLeft = 0; her.triT = 0; her.triHangT = 0; her.chargeT = 0;
+        const spec = GAL.DRILLS[id](gstub, her);
+        D.startDrill(her, { kanji: '?', ...spec, id: `gallery.${id}` }, at);
+        return D.drills[0];
+      };
+      const golive = (d) => { for (let i = 0; i < 400 && d.state !== 'live'; i++) d.update(1 / 60); return d.state === 'live'; };
+
+      /* 疾 "all hoops facing in a circle towards the center". */
+      {
+        const d = run('swift');
+        const c = d.spot(0, 0);
+        const worst = Math.max(...d.gateList.map((r) => {
+          const nx = Math.sin(r.group.rotation.y); const nz = Math.cos(r.group.rotation.y);
+          const rx = r.local.x - c.x; const rz = r.local.z - c.z;
+          return Math.abs(nx * rz - nz * rx) / Math.hypot(rx, rz);
+        }));
+        ok('疾 every Gale hoop faces the middle of the floor, so the eight read as one ring', worst < 1e-6, worst.toExponential(1));
+        ok('...and three stars are a second kinder', d.spec.bands[2] === 10.5, String(d.spec.bands));
+      }
+
+      /* 剛 "the drill should not start until the player gets into the circle". */
+      {
+        const c0 = at;
+        lay(c0.x + at.fwd.x * 18, at.y, c0.z + at.fwd.z * 18);
+        const d = run('vigor');
+        for (let i = 0; i < 180; i++) d.update(1 / 60);
+        const waited = d.state === 'arrive' && d.t === 0 && d.lasers.length === 0 && D.drillFocus(her) == null;
+        lay(c0.x + 1, at.y, c0.z);
+        d.update(1 / 60);
+        const f = D.drillFocus(her);
+        ok('剛 Adamant waits at its circle: no clock, no beams, until she walks in', waited, `${d.state} t ${d.t} beams ${d.lasers.length}`);
+        ok('...then the beams appear, with a count-in of a second or two before it starts',
+          d.state === 'ready' && d.lasers.length === 2 && d.readyT >= 1.5 && d.readyT <= 2.5, `${d.state} ${d.readyT}`);
+        ok('...and her camera comes in on the circle, closer and lower than the walking one',
+          !!f && f.dist === GAL.ADAMANT_CAM.dist && f.dist < 22 && f.pitch < 0.66 && Math.abs(f.centre.x - SW.SIM.dx - c0.x) < 0.01, f ? `${f.dist} ${f.pitch}` : 'none');
+        golive(d);
+        // Drawn over the gold circle and over her: the beams are the last transparent thing.
+        const ring = d.root.children.find((o) => o.geometry?.type === 'RingGeometry');
+        const L0 = d.lasers[0];
+        /* ...but UNDER her UI. Richard, Oct 2026: "The lasers draw in front of
+           the player UI and make text hard to read." Her UI is the 20-25
+           band — her name label (20, depth-tested), her bar (20-21), her rank
+           badge (22), her team mark (24), the daze stars (25) — and her body
+           is everything under it; the beams go between the two. (Split by
+           `depthTest` first, which put the name label and the badge in her
+           body.) */
+        const UI_BAND = 20;
+        let herTop = 0, herUI = Infinity;
+        her.group.traverse((o) => {
+          if (!o.material) return;
+          const r = o.renderOrder ?? 0;
+          if (r >= UI_BAND) herUI = Math.min(herUI, r);
+          else herTop = Math.max(herTop, r);
+        });
+        ok('...and its beams are drawn after the gold circle and after her, and under her UI (Richard: "behind the yellow circle", "in front of the player UI")',
+          L0.glow.renderOrder > (ring?.renderOrder ?? 0) && L0.core.renderOrder > L0.glow.renderOrder && L0.glow.renderOrder > herTop
+          && L0.core.renderOrder < herUI,
+          `beam ${L0.glow.renderOrder}/${L0.core.renderOrder} ring ${ring?.renderOrder} her ${herTop} UI ${herUI}`);
+        ok('...and each throws a line on the floor straight under it, the length of the beam',
+          L0.shadow?.visible && Math.abs(L0.shadow.position.y - at.y) < 0.1
+          && Math.abs(L0.shadow.scale.z - Math.hypot(L0.b.x - L0.a.x, L0.b.z - L0.a.z)) < 1e-6, `${L0.shadow?.position.y} ${L0.shadow?.scale.z}`);
+        ok('...and a beam below the floor is drawn faint rather than at full strength',
+          L0.glow.material.uniforms.uFloor.value === at.y && /uFloor - 0\.02 \? 0\.22/.test(L0.glow.material.fragmentShader) && TG.UNDER_ALPHA < 0.4);
+        /* The DRAWN beam lies along a-b, in WORLD space, for every beam in the
+           drill. It was `lookAt(b + parent.position)`: right only when the
+           parent's parent is at the origin, and a drill's root sits inside
+           the sim layer, SIM.dx out — so all of them pointed at world -X and
+           Adamant's two hands were drawn as parallel bars. Measured through
+           the real matrices, not by reading the code. */
+        let worst = 0;
+        for (const Lx of d.lasers) {
+          const len = Lx.a.distanceTo(Lx.b);
+          if (len < 0.5) continue;
+          // The length is on the core's scale (the group is unit), so its ends are the core's.
+          Lx.core.updateWorldMatrix(true, false);
+          const wa = Lx.core.localToWorld(new THREE.Vector3(0, 0, -0.5));
+          const wb = Lx.core.localToWorld(new THREE.Vector3(0, 0, 0.5));
+          const pa = Lx.group.parent.localToWorld(Lx.a.clone());
+          const pb = Lx.group.parent.localToWorld(Lx.b.clone());
+          worst = Math.max(worst, Math.min(wa.distanceTo(pa) + wb.distanceTo(pb), wa.distanceTo(pb) + wb.distanceTo(pa)));
+        }
+        ok('...and every beam is DRAWN where it is judged, from a to b in the world, inside the offset sim layer',
+          // ...and asked of a root that really IS offset, or it proves nothing.
+          d.lasers.length === 2 && worst < 1e-3 && d.root.getWorldPosition(new THREE.Vector3()).length() > 100,
+          `ends off by ${worst.toFixed(4)}, root at ${d.root.getWorldPosition(new THREE.Vector3()).x.toFixed(0)}`);
+        /* 剛 PROGRESSIVE (Richard, Oct 2026): "start slow with 2 beams and end
+           with 4-6 beams at once (jumping and staying under) ... 3 stars even
+           with a few hits ... 30-75s". Run on the real drill: the beams it
+           has at each stage, the high one's height against her real body and
+           her real jump, and the bar three hits leave. */
+        {
+          const B = GAL.ADAMANT_BEAMS;
+          const T = GAL.ADAMANT_T;
+          const P0 = her.position.clone();
+          const steps = (s) => { for (let i = 0; i < s * 60 && d.state === 'live'; i++) { her.position.copy(P0); d.update(1 / 60); } };
+          D.refillSim?.(her);
+          const startN = d.lasers.length;
+          D.simHit = () => ({});   // nothing is decided by the hits here, only by the beams
+          steps(T - 2);
+          const endN = d.lasers.length;
+          const highs = d.lasers.filter((L, i) => B[i]?.high);
+          ok('剛 Adamant starts with two beams and ends with 4-6, some to jump and some to stay under, over 30-75s',
+            startN === 2 && endN >= 4 && endN <= 6 && endN === B.length && highs.length >= 1 && B.some((b) => !b.high) && T >= 30 && T <= 75 && d.spec.time === T,
+            `${startN} -> ${endN} beams (${highs.length} high) over ${T}s`);
+          ok('...and they speed up as it goes', GAL.ADAMANT_RAMP > 0 && Math.abs(GAL.adamantTurn(1, T) - T * (1 + GAL.ADAMANT_RAMP / 2)) < 1e-9);
+          const H = highs[0];
+          const pad = H.thick + TG.LASER_PAD;
+          const herAt = (lift) => { const q = { position: her.position.clone(), height: her.height }; q.position.y = at.y + lift; return q; };
+          // put the beam across her, wherever it has turned to
+          const cx = H.a.x, cz = H.a.z;
+          H.b.set(cx + (her.position.x - SW.SIM.dx - cx) * 3, H.a.y, cz + (her.position.z - SW.SIM.dz - cz) * 3);
+          const apex = (11.2 * 11.2) / (2 * 26);
+          ok('...a pink beam misses her standing and catches her jumping: STAY UNDER is a rule, not a colour',
+            H.distTo(herAt(0)) > pad && H.distTo(herAt(0.4)) < pad && H.distTo(herAt(apex)) < pad,
+            `standing ${H.distTo(herAt(0)).toFixed(2)} vs ${pad.toFixed(2)}; at 0.4 ${H.distTo(herAt(0.4)).toFixed(2)}`);
+          const L = d.lasers.find((x, i) => !B[i]?.high);
+          L.b.set(L.a.x + (her.position.x - SW.SIM.dx - L.a.x) * 3, L.a.y, L.a.z + (her.position.z - SW.SIM.dz - L.a.z) * 3);
+          ok('...and a red one catches her standing and misses her at the top of a jump',
+            L.distTo(herAt(0)) < pad && L.distTo(herAt(apex * 0.8)) > pad);
+          ok('...and three hits still leave three stars on a bare bar', 1 - 3 * GAL.ADAMANT_DMG / 100 >= GAL.ADAMANT_BANDS[2] && 1 - 6 * GAL.ADAMANT_DMG / 100 < GAL.ADAMANT_BANDS[2],
+            `${1 - 3 * GAL.ADAMANT_DMG / 100} vs ${GAL.ADAMANT_BANDS[2]}`);
+          delete D.simHit;
+        }
+        d.dispose(); D.drills[0] = null;
+      }
+
+      /* 跳 "can't jump on the platform from underneath it (they hit it with
+         their head, like a ceiling) ... force triple jump ... a dozen". */
+      {
+        const G = 26; const V = 11.2; const LAND = 0.4;
+        const one = (V * V) / (2 * G);
+        const reach1 = one + LAND;
+        const d = run('leap');
+        const C = d.climb;
+        const rises = C.map((s, i) => s.y - (i ? C[i - 1].y : at.y));
+        ok('跳 the Leap tower is a dozen lidded platforms', C.length >= 12 && C.every((s) => s.deck.ceiling), `${C.length}`);
+        ok('...three of them a triple jump up, and two that move',
+          rises.filter((r) => Math.abs(r - GAL.LEAP_DECK) < 1e-6).length === 3 && C.filter((s) => s.sway).length === 2);
+        ok('...and every other step is one jump up', rises.every((r) => Math.abs(r - GAL.LEAP_DECK) < 1e-6 || r <= reach1 - 0.5),
+          rises.map((r) => r.toFixed(1)).join(' '));
+        // A swaying deck is measured at both ends of its swing and the middle.
+        const at3 = (s) => [-1, 0, 1].map((k) => ({ x: s.x + s.rx * k * (s.sway ?? 0), z: s.z + s.rz * k * (s.sway ?? 0) }));
+        let tight = Infinity;
+        let stack = '';
+        for (let i = 0; i < C.length; i++) {
+          for (let j = i + 1; j < C.length; j++) {
+            let gap = Infinity;
+            for (const a of at3(C[i])) for (const b of at3(C[j])) gap = Math.min(gap, Math.hypot(a.x - b.x, a.z - b.z) - 2 * GAL.LEAP_R);
+            if (j === i + 1) tight = Math.min(tight, gap);
+            if (gap < 0 && Math.abs(C[i].y - C[j].y) < 8) stack += ` ${i}/${j}`;
+          }
+        }
+        ok('...with a real gap between neighbours, and no lid hung low over another platform', tight > 0.5 && !stack, `${tight.toFixed(2)}${stack}`);
+        const far = Math.max(...C.map((s) => Math.hypot(s.x - at.x, s.z - at.z) + GAL.LEAP_R + (s.sway ?? 0)));
+        ok('...all of it over the island floor', far < at.r - 1, `${far.toFixed(1)} of ${at.r}`);
+        // A kitten under a lid stops at it; the same deck without one is one-way as ever.
+        const pad0 = { mx: 0, my: 0, down: () => false, pressed: () => false };
+        const lid = C[2];
+        her.position.set(lid.deck.x + SW.SIM.dx, lid.y - 4.5, lid.deck.z + SW.SIM.dz);
+        her.velocity.set(0, 14, 0);
+        her.onGround = false;
+        let top = -Infinity;
+        for (let i = 0; i < 40; i++) { her.update(1 / 60, pad0, sim, [], null); top = Math.max(top, her.position.y); }
+        const under = lid.y - lid.deck.thick - PL.HEAD_ROOM;
+        ok('...and jumping up into one from below, her head stops at its underside',
+          top <= under + 1e-6 && top > under - 0.5, `${top.toFixed(2)} vs ${under.toFixed(2)}`);
+        // A moving platform carries whoever stands on it.
+        const mv = C.find((s) => s.sway);
+        her.position.set(mv.deck.x + SW.SIM.dx, mv.deck.y, mv.deck.z + SW.SIM.dz);
+        her.onGround = true;
+        const x0 = her.position.x;
+        sim.moveTempDisc(mv.deck, mv.deck.x + 0.5, mv.deck.y, mv.deck.z, [her]);
+        ok('...and a moving platform carries her with it', Math.abs(her.position.x - x0 - 0.5) < 1e-6, `${(her.position.x - x0).toFixed(3)}`);
+        d.dispose(); D.drills[0] = null;
+      }
+
+      /* 落 "the player keeps constantly falling through the floor when doing
+         power dive ... mainly happening on the floating discs". A dive at
+         DIVE.speed, at 30 frames a second, onto a temp disc. */
+      {
+        const pad0 = { mx: 0, my: 0, down: () => false, pressed: () => false };
+        const deck = sim.addTempDisc({ x: at.x + 30, z: at.z, r: 2.5, y: at.y + 6 });
+        her.position.set(deck.x + SW.SIM.dx, deck.y + 0.9, deck.z + SW.SIM.dz);
+        her.velocity.set(0, -PO.DIVE.speed, 0);
+        her.onGround = false;
+        let landed = false;
+        for (let i = 0; i < 6 && !landed; i++) {
+          her.update(1 / 30, pad0, sim, [], null);
+          landed = her.onGround && Math.abs(her.position.y - deck.y) < 1e-6;
+        }
+        ok('落 a dive at full speed lands on a floating disc at 30fps instead of falling through it', landed, `y ${her.position.y.toFixed(2)} vs ${deck.y}`);
+        sim.removeTempDisc(deck);
+        /* ...and a deck is still one-way: standing on the floor under one, she
+           stays on the floor. (Rising INTO one's 0.4 step lifts her onto it,
+           as it always has — the sweep asks from the top of a FALL only.) */
+        const over = sim.addTempDisc({ x: at.x + 5, z: at.z + 5, r: 2.5, y: at.y + 3 });
+        her.position.set(over.x + SW.SIM.dx, at.y, over.z + SW.SIM.dz);
+        her.velocity.set(0, 0, 0);
+        her.onGround = true;
+        for (let i = 0; i < 20; i++) her.update(1 / 60, pad0, sim, [], null);
+        ok('...and a kitten standing under a floating disc stays under it', Math.abs(her.position.y - at.y) < 1e-6, `${her.position.y.toFixed(2)} vs ${at.y}`);
+        sim.removeTempDisc(over);
+      }
+
+      /* 壁 "if the player can beat it in under 18 seconds and not get hit". */
+      {
+        const s = GAL.DRILLS.ward(gstub, her).stars;
+        ok('壁 three Ward stars: under 18s and never hit — and only then',
+          s({ hits: 0 }, 17.9) === 3 && s({ hits: 1 }, 12) < 3 && s({ hits: 0 }, 18.2) < 3 && GAL.WARD_GOLD === 18);
+      }
+
+      /* 十 six levels, each ONE Cross Slash that breaks everything on it. */
+      {
+        const d = run('tri');
+        golive(d);
+        const L1 = d.L;
+        const post = L1.posts[0];
+        const cut = (t) => t.hit({ attacker: her, kind: 'tri', dmg: 9, dist: 2.4, swing: 1, dir: { x: 0, z: 1 } });
+        her.triWindT = 0.2; d.update(1 / 60);
+        cut(post); cut(post);
+        her.triWindT = 0; d.update(1 / 60);
+        const putBack = post.live && post.hp === post.maxHits && d.count === 0;
+        her.triWindT = 0.2; d.update(1 / 60);
+        cut(post); cut(post); cut(post);
+        her.triWindT = 0; d.update(1 / 60);
+        ok('十 a Cross Slash that leaves the post standing puts it back', putBack, `${post.live} ${post.hp}`);
+        ok('...and one that breaks it clears the level', d.count === 1 && d.lvNext != null, `${d.count}`);
+        for (let i = 0; i < 90; i++) d.update(1 / 60);
+        const P2 = d.L.posts;
+        const fx = Math.sin(her.facing); const fz = Math.cos(her.facing);
+        const dots = P2.map((t) => ((t.local.x - (her.position.x - SW.SIM.dx)) * fx + (t.local.z - (her.position.z - SW.SIM.dz)) * fz) / GAL.CROSS_R);
+        ok('...the second is one in front and one behind her', d.lv === 1 && P2.length === 2 && dots.some((k) => k > 0.99) && dots.some((k) => k < -0.99),
+          dots.map((k) => k.toFixed(2)).join(' '));
+        ok('...and there are six, ending with the ones that appear as she cuts',
+          GAL.CROSS_LEVELS.length === 6 && GAL.CROSS_LEVELS[5].chain && GAL.CROSS_LEVELS[4].air && GAL.CROSS_LEVELS[3].orbit > 0);
+        // In the air: out of reach from the floor, in reach at the top of one jump.
+        const A = PL.ATTACKS.tri;
+        const lift = GAL.CROSS_AIR + 1.3;
+        const win = PL.COMBAT.strikeHeight + GAL.CROSS_AIR_UP;
+        ok('...and the posts in the air cannot be cut from the floor, and can from the top of one jump',
+          lift > win + 0.3 && lift - (V_ONE()) <= win - 0.3, `${lift.toFixed(2)} vs ${win.toFixed(2)}`);
+        // "further away from the player (although within striking distance)": 2.4 -> 3.2, against 3.4 + a post's 0.6.
+        ok('...and the posts stand further out than they did, still half a unit inside her reach',
+          GAL.CROSS_R >= 3 && A.reach + post.pad >= GAL.CROSS_R + 0.5, `${GAL.CROSS_R} of ${A.reach + post.pad}`);
+        d.dispose(); D.drills[0] = null;
+      }
+
+      /* 突 sets of three, in one charge, or the set comes back. */
+      {
+        const d = run('charge');
+        golive(d);
+        const S = d.L.sets[0];
+        her.chargeT = 0.3; d.update(1 / 60);
+        S.mats[0].breakNow(); S.mats[1].breakNow();
+        her.chargeT = 0; d.update(1 / 60);
+        const back = S.mats.every((m) => m.live) && !S.done;
+        her.chargeT = 0.3; d.update(1 / 60);
+        for (const m of S.mats) m.breakNow();
+        her.chargeT = 0; d.update(1 / 60);
+        ok('突 a charge through part of a set puts the whole set back', back);
+        ok('...and through all three, the set is done', S.done && d.count === 0);
+        ok('...five parts, the last an L of a low set and a high one, done before she lands',
+          GAL.CHARGE_PARTS.length === 5 && GAL.CHARGE_PARTS[4].combo && GAL.CHARGE_PARTS[4].sets.length === 2
+          && GAL.CHARGE_PARTS[4].sets[0].h === GAL.CHARGE_ONE && GAL.CHARGE_PARTS[4].sets[1].h === GAL.CHARGE_TWO
+          && Math.abs(GAL.CHARGE_PARTS[4].sets[1].dir - GAL.CHARGE_PARTS[4].sets[0].dir) % 180 === 90);
+        // The two heights, against the real jump: one (11.2) and one plus a last, weak (x0.86).
+        const one = V_ONE();
+        const two = one + ((11.2 * 0.86) ** 2) / 52;
+        ok('...and the sets in the air sit at the tops of one jump and of two',
+          Math.abs(GAL.CHARGE_ONE - one) < 0.1 && Math.abs(GAL.CHARGE_TWO - two) < 0.1, `${one.toFixed(2)} ${two.toFixed(2)}`);
+        // A mat in the air answers only near its own height — measured through the real gate.
+        const mat = new TG.Mat({ x: 0, y: GAL.CHARGE_ONE - 0.3, z: 0, owner: 0, colour: 0xffffff, kinds: ['charge'],
+          hitUp: (1.0 + GAL.AIR_BAND) - PL.COMBAT.strikeHeight, hitDown: -(1.0 - GAL.AIR_BAND) - PL.COMBAT.strikeHeight });
+        const gate = new TG.TrainingGate();
+        gate.add(mat);
+        const tryAt = (y) => { her.position.set(SW.SIM.dx - 2, y, SW.SIM.dz); mat.live = true; mat.hp = 1; return gate.strike(her, 'charge', PL.BASE_REACH, { x: 1, y: 0 }); };
+        const floorHit = tryAt(0);
+        const topHit = tryAt(GAL.CHARGE_ONE);
+        const twoHit = tryAt(two);
+        ok('...and a set at the top of one jump cannot be charged from the floor, or from the top of two',
+          floorHit === 0 && topHit === 1 && twoHit === 0, `${floorHit} ${topHit} ${twoHit}`);
+        d.dispose(); D.drills[0] = null;
+      }
+
+      /* --- THE SECOND OCT 2026 PASS: Leap, Cross Slash and Charge, after a
+         playthrough. Each of Richard's notes, measured. --- */
+      const said = [];
+      const realHint = D.hint;
+      D.hint = (p, t) => said.push(t);
+      const KTm = await import('../src/systems/dream/kata.js');
+      const toLevel = (d, i) => { d.lv = i - 1; d.lvNext = 1e-6; d.update(1 / 60); return d.lv === i; };
+
+      /* 跳 "xray shader on the platforms ... remind them to TRIPLE JUMP ... the
+         shadow/indicator under them is not appearing ... At the 2nd to last
+         platform ... camera ... behind the player ... spawn from up there". */
+      {
+        const d = run('leap');
+        // On the island first: the check before this one leaves her far off it, and the drill stops itself.
+        lay(at.x, at.y, at.z);
+        const leapLive = golive(d);
+        const C = d.climb;
+        const n = C.length;
+        // Every move is a LANDING: up in the air for a frame, then down where it says.
+        const drop = (x, y, z) => {
+          her.onGround = false; d.update(1 / 60);
+          her.position.set(x + SW.SIM.dx, y, z + SW.SIM.dz); her.velocity.set(0, 0, 0); her.onGround = true; d.update(1 / 60);
+        };
+        const stand = (s) => drop(s.deck.x, s.deck.y, s.deck.z);
+        const under = C.findIndex((s, i) => C[i + 1]?.up === GAL.LEAP_DECK);
+        const plain = C.findIndex((s, i) => i > under && C[i + 1] && C[i + 1].up !== GAL.LEAP_DECK && !C[i + 1].sway && !s.sway);
+        said.length = 0;
+        stand(C[plain]); drop(C[plain].deck.x, at.y, C[plain].deck.z);
+        const quietMiss = !said.includes(GAL.LEAP_MISS);
+        stand(C[under]); drop(C[under].deck.x, at.y, C[under].deck.z);
+        ok('跳 falling from under a TALL step reminds her to TRIPLE JUMP', leapLive && said.includes(GAL.LEAP_MISS), `${d.state} ${said.join(' | ')}`);
+        ok('...and falling from under an ordinary one does not', quietMiss);
+        const cp = C[n - GAL.LEAP_CHECK];
+        const top = C[n - 1];
+        stand(C[n - GAL.LEAP_CHECK - 1]);
+        const before = D.drillFocus(her);
+        stand(cp);
+        const f = D.drillFocus(her);
+        const hx = top.x - cp.x; const hz = top.z - cp.z; const hn = Math.hypot(hx, hz);
+        const back = f ? (Math.sin(f.yaw) * hx + Math.cos(f.yaw) * hz) / hn : 0;
+        ok('...her camera is her own until the second-to-last step, then behind her and above, looking up at the last',
+          !before && !!f && back < -0.99 && f.pitch > 0.66 && f.dist >= 24, f ? `behind ${back.toFixed(3)} pitch ${f.pitch} dist ${f.dist}` : 'none');
+        said.length = 0;
+        drop(cp.deck.x + 3, at.y, cp.deck.z);
+        const onCp = Math.hypot(her.position.x - SW.SIM.dx - cp.deck.x, her.position.z - SW.SIM.dz - cp.deck.z) < 0.01 && Math.abs(her.position.y - cp.deck.y - 0.05) < 0.01;
+        ok('...and once she has stood on it, hitting the ground puts her back up there, told to triple jump',
+          onCp && said.includes(GAL.LEAP_BACK) && GAL.LEAP_BACK.includes('TRIPLE JUMP'), `${onCp} ${said.join(' | ')}`);
+        const toTop = Math.atan2(top.x - cp.deck.x, top.z - cp.deck.z);
+        ok('...facing the last step', Math.abs(Math.atan2(Math.sin(her.facing - toTop), Math.cos(her.facing - toTop))) < 1e-6);
+        // The shadow: the slab is drawn before her shadow and ring, whichever half of it she stands on.
+        const slab = cp.deck._slab;
+        ok('...every step is drawn before the shadow and ring on top of it',
+          C.every((s) => s.deck._slab.renderOrder < her.shadow.renderOrder && s.deck._slab.renderOrder < her.marker.renderOrder),
+          `${slab.renderOrder} vs ${her.shadow.renderOrder}`);
+        // The x-ray: the real shader chunks, rewritten — and the cut sits on her chest, floored at her feet.
+        const sh = { uniforms: {}, vertexShader: THREE.ShaderLib.basic.vertexShader, fragmentShader: THREE.ShaderLib.basic.fragmentShader };
+        slab.material.onBeforeCompile(sh);
+        ok('...with the x-ray on the steps: a hole along the camera to her, discarded, in the real basic shader',
+          /vCutW = \(modelMatrix/.test(sh.vertexShader) && /uCutFloor\[i\]\) continue;[\s\S]*if \(cut > ign\) discard;/.test(sh.fragmentShader)
+          && sh.uniforms.uCutPos === sim._cutU.uCutPos && slab.material.customProgramCacheKey() === 'sim-deck-cut');
+        sim.setCuts(new THREE.Vector3(0, 50, 0), [her]);
+        const U = sim._cutU;
+        ok('...cut for each kitten at her chest, never below her feet, and for nobody who is not there',
+          U.uCutOn.value[0] === 1 && U.uCutOn.value[1] === 0 && U.uCutFloor.value[0] < her.position.y && U.uCutFloor.value[0] > her.position.y - 0.5
+          && Math.abs(U.uCutPos.value[0].y - her.position.y - (her.height ?? 2.6) * 0.5) < 1e-6
+          && /this\.sim\.setCuts\(camera\.position, this\.simKittens\(\)\);/.test(readFileSync(new URL('../src/systems/dreamdojo.js', import.meta.url), 'utf8')));
+        sim.setCuts(new THREE.Vector3(), []);
+        d.dispose(); D.drills[0] = null;
+      }
+
+      /* 十 "only 1 target can get hit per swing ... the player has to aim
+         where they swing". Through the real gate. */
+      {
+        const gate = new TG.TrainingGate();
+        her.position.set(SW.SIM.dx, 0, SW.SIM.dz);
+        const mk = (deg) => {
+          const a = THREE.MathUtils.degToRad(deg);
+          return gate.add(new TG.Post({ x: Math.sin(a) * GAL.CROSS_R, y: 0, z: Math.cos(a) * GAL.CROSS_R, owner: 0, kinds: ['tri'], aimArc: GAL.CROSS_AIM, onePerSwing: true }));
+        };
+        const p35 = mk(35); const p0 = mk(0); const p75 = mk(75);
+        const swing = (deg) => gate.strike(her, 'tri', PL.BASE_REACH, { x: Math.sin(THREE.MathUtils.degToRad(deg)), y: Math.cos(THREE.MathUtils.degToRad(deg)) });
+        const a = swing(0); const firstDown = !p0.live && p35.live && p75.live;
+        const b = swing(0); const secondDown = !p35.live && p75.live;
+        const c = swing(0);
+        const stillUp = p75.live;
+        const e = swing(75);
+        ok('十 one Cross Slash cut breaks ONE post — the one nearest where it was aimed, not the first built',
+          a === 1 && firstDown && b === 1 && secondDown, `${a} ${b}`);
+        ok('...and a post more than 60 degrees off the cut is not reached, until she turns to it',
+          c === 0 && stillUp && e === 1 && !p75.live && Math.cos(THREE.MathUtils.degToRad(60)) - GAL.CROSS_AIM < 1e-9, `${c} ${e}`);
+        let worst = Infinity;
+        for (let r = 0; r <= 1.0001; r += 0.05) {
+          const a2 = GAL.crossBehind(0.7, r) - 0.7;
+          worst = Math.min(worst, Math.abs(Math.atan2(Math.sin(a2), Math.cos(a2))));
+        }
+        ok('...the last level\'s posts appear behind her, anywhere in that half circle', worst >= Math.PI / 2 - 1e-9, worst.toFixed(3));
+      }
+      {
+        const d = run('tri');
+        golive(d);
+        const lvl6 = toLevel(d, 5);
+        const L = d.L;
+        const me = () => ({ x: her.position.x - SW.SIM.dx, z: her.position.z - SW.SIM.dz });
+        const turn = (t, u) => {
+          const o = me();
+          const a1 = Math.atan2(t.local.x - o.x, t.local.z - o.z); const a2 = Math.atan2(u.local.x - o.x, u.local.z - o.z);
+          return Math.abs(Math.atan2(Math.sin(a1 - a2), Math.cos(a1 - a2)));
+        };
+        const [p0, p1, p2] = L.posts;
+        const hidden = !p1.group.visible && !p1.live && !p1.ghost;
+        her._triPend = true;
+        d.update(1 / 60);
+        const ghost0 = p1.ghost && !p1.live && p1.group.visible && p1.fade < 0.1;
+        her._triPend = false; her.triWindT = 0.2;
+        for (let i = 0; i < 40; i++) d.update(1 / 60);
+        const faded = Math.abs(p1.fade - GAL.CROSS_GHOST.alpha) < 1e-6;
+        ok('十 the last level: pressing for the Cross Slash shows where the next post will be, fading in, uncuttable',
+          lvl6 && hidden && ghost0 && faded && Math.abs(Math.hypot(p1.local.x - me().x, p1.local.z - me().z) - GAL.CROSS_R) < 1e-6,
+          `${lvl6} ${hidden} ${ghost0} ${p1.fade}`);
+        ok('...behind her, against the one she is about to cut', turn(p1, p0) >= Math.PI / 2 - 1e-6, turn(p1, p0).toFixed(3));
+        p0.breakNow();
+        ok('...and it stands up the moment that one breaks, with the next one\'s ghost behind IT',
+          p1.live && !p1.ghost && p1.fade === 1 && p2.ghost && !p2.live && turn(p2, p1) >= Math.PI / 2 - 1e-6, turn(p2, p1).toFixed(3));
+        her.triWindT = 0; d.update(1 / 60);
+        ok('...and a Cross Slash that leaves one standing takes the ghosts away with the rest',
+          p0.live && !p1.live && !p1.ghost && !p1.group.visible && !p2.ghost && !p2.group.visible);
+        // "When the targets are in the air, they have no shadow": a beam, a shadow and a ring under each.
+        toLevel(d, 4);
+        const c0 = d.spot(0, 0);
+        const marks = d.L.posts.map((t) => t.airMarks);
+        ok('...and the posts in the air each have a beam down to a shadow and a ring on the floor under them',
+          d.lv === 4 && marks.every((m) => m && Math.abs(d.L.posts[0].local.y + m.ring.position.y - c0.y) < 0.1
+            && Math.abs(m.beam.geometry.parameters.height - GAL.CROSS_AIR) < 1e-6 && m.shadow.material.opacity >= 0.5),
+          `${marks.filter(Boolean).length}`);
+        d.dispose(); D.drills[0] = null;
+      }
+
+      /* 突 "rotate them so they require more cardinal movements ... half of the
+         first 2 drills be diagonal, but after that, should be cardinal", "they
+         need a shadow or some kind of indicator", and the L "can use the
+         placement of the blocks on part 4". Measured on the built mats. */
+      {
+        const d = run('charge');
+        golive(d);
+        const S = KTm.SCREEN;
+        const diag = [];
+        const signsOk = [];
+        for (let i = 0; i < GAL.CHARGE_PARTS.length; i++) {
+          if (i) toLevel(d, i);
+          let n = 0;
+          let off = 0;
+          for (const set of d.L.sets) {
+            const m0 = set.mats[0].local; const m2 = set.mats[2].local;
+            const vx = m2.x - m0.x; const vz = m2.z - m0.z;
+            const deg = (Math.atan2(vx * S.right.x + vz * S.right.z, vx * S.up.x + vz * S.up.z) * 180) / Math.PI;
+            const r = ((deg % 90) + 90) % 90;
+            if (Math.abs(r - 45) < 1e-6) n++;
+            else if (Math.min(r, 90 - r) > 1e-6) off++;
+          }
+          diag.push(off ? `${n}+${off}?` : n);
+          const signs = d.root.children.filter((o) => o.name === 'jump-sign');
+          const want = GAL.CHARGE_PARTS[i].sets.filter((s) => s.h).map((s) => (s.h === GAL.CHARGE_TWO ? 2 : 1)).sort().join();
+          signsOk.push(signs.map((o) => o.userData.jumps).sort().join() === want);
+        }
+        ok('突 every row runs along the screen: two of four diagonal in parts 1 and 2, none after',
+          diag.join() === '2,2,0,0,0', diag.join());
+        ok('...and every set in the air has its sign beside it — 1 JUMP or 2 JUMPS — and a shadow under each mat',
+          signsOk.every(Boolean) && GAL.JUMP_SIGN.off > 1.5, signsOk.join());
+        const P4 = GAL.CHARGE_PARTS[3].sets;
+        const P5 = GAL.CHARGE_PARTS[4];
+        const same = P5.sets.every((s) => P4.some((q) => q.at[0] === s.at[0] && q.at[1] === s.at[1] && q.h === s.h && q.gap === s.gap && (q.dir - s.dir) % 180 === 0));
+        // Where the first charge ENDS, against the second row's line: inside the charge's reach of a mat.
+        const v0 = [Math.cos(P5.sets[0].dir * Math.PI / 180), Math.sin(P5.sets[0].dir * Math.PI / 180)];
+        const v1 = [Math.cos(P5.sets[1].dir * Math.PI / 180), Math.sin(P5.sets[1].dir * Math.PI / 180)];
+        const end = [P5.start[0] + v0[0] * PO.CHARGE.dist, P5.start[1] + v0[1] * PO.CHARGE.dist];
+        const rel = [end[0] - P5.sets[1].at[0], end[1] - P5.sets[1].at[1]];
+        const sideOff = Math.abs(rel[0] * v1[1] - rel[1] * v1[0]);
+        const reach = PO.CHARGE.radius + 0.9;
+        // ...and from the start, the first charge passes through all three of the low set.
+        const s0 = P5.sets[0];
+        const through = [-1, 0, 1].every((k) => {
+          const m = [s0.at[0] + v0[0] * k * s0.gap - P5.start[0], s0.at[1] + v0[1] * k * s0.gap - P5.start[1]];
+          const along = m[0] * v0[0] + m[1] * v0[1];
+          return along > 0 && along < PO.CHARGE.dist && Math.abs(m[0] * v0[1] - m[1] * v0[0]) < 0.5;
+        });
+        ok('...and the L is two of part 4\'s sets, the first charge ending in reach of the second row\'s line',
+          same && through && sideOff <= reach - 1, `same ${same} through ${through} off ${sideOff.toFixed(2)} of ${reach}`);
+        d.dispose(); D.drills[0] = null;
+      }
+      D.hint = realHint;
+
+      /* The Matrix rain on Shadow Lionheart's island: "visible in the background
+         from the default camera view ... smaller ... in the distance" - and
+         then (Oct 2026) "3D rain spawned around the camera ... the rain stays
+         in place when the camera moves". A column wraps into a box centred on
+         the lens: moving the lens a little must move no column at all. */
+      {
+        const ws = readFileSync(new URL('../src/world/simworld.js', import.meta.url), 'utf8');
+        const { CODE_RAIN: CR } = await import('../src/world/simworld.js');
+        const place = (seed, cam) => [0, 2].map((k) => cam[k] + (((seed[k] - cam[k] + 0.5 * CR.box) % CR.box) + CR.box) % CR.box - 0.5 * CR.box);
+        const seed = [37, 0, 211];
+        const a0 = place(seed, [0, 0, 0]), a1 = place(seed, [6, 0, -4]);
+        ok('影 the code rain stands in the WORLD round the camera: a step of the lens moves no column',
+          Math.hypot(a0[0] - a1[0], a0[1] - a1[1]) < 1e-9 && /c\.xz = uCam\.xz \+ mod\(aSeed\.xz - uCam\.xz \+ 0\.5 \* uBox, uBox\) - 0\.5 \* uBox;/.test(ws)
+          && !/vec2 s = vView\.xy/.test(ws) && CR.far1 < CR.box / 2 && CR.near0 > 10, `${a0} vs ${a1}`);
+      }
+
+      /* 守 three turrets, a warning, a beam she sees coming, three levels. */
+      {
+        const bareUp = PO.wardFor(1, 0).max + PO.WARD.tail;
+        const lentUp = PO.wardFor(1, 2).max + PO.WARD.tail;
+        const seen = GAL.GUARD.grow + GAL.BEAM_T;
+        ok('守 the last Long Guard level: from first sight of the beam, longer than a bare Ward and shorter than the lent pair',
+          seen > bareUp + 0.15 && lentUp - seen > 0.5, `${bareUp.toFixed(2)} < ${seen.toFixed(2)} < ${lentUp.toFixed(2)}`);
+        ok('...and the first two are inside a bare one, so the lesson comes last',
+          GAL.GUARD_BEAMS.length === 3 && GAL.GUARD_BEAMS.slice(0, 2).every((b) => GAL.GUARD.grow + b < bareUp - 0.3));
+        ok('...with the 2-3 seconds between volleys he asked for, and the beam reaching her in a quarter second',
+          GAL.GUARD.pause >= 2 && GAL.GUARD.pause <= 3 && Math.abs(GAL.GUARD.grow - 0.25) < 1e-9);
+        lay(at.x, at.y, at.z);
+        const d = run('aegis');
+        golive(d);
+        const L = d.L;
+        let fired = false;
+        let reached = Infinity;
+        Object.defineProperty(her, 'warded', { value: true, configurable: true });
+        for (let i = 0; i < 60 * 12 && d.count === 0; i++) {
+          d.update(1 / 60);
+          if (L.phase === 'fire' && !fired) fired = true;
+          if (L.phase === 'fire') {
+            const b0 = d.turrets[0].beam;
+            if (b0.distTo(her) < b0.thick + TG.LASER_PAD && reached === Infinity) reached = L.t;
+          }
+        }
+        delete her.warded;
+        ok('...three turrets rise, and a volley held off from first touch to last clears a level',
+          d.turrets.length === 3 && fired && d.count === 1, `${d.count}`);
+        ok('...and the beam grows to her over GUARD.grow, not on the frame it fires',
+          reached > GAL.GUARD.grow * 0.6 && reached < GAL.GUARD.grow + 0.05, `${reached.toFixed(3)}s`);
+        ok('...and she is marked while she is targeted', d.reticle.visible);
+        d.dispose(); D.drills[0] = null;
+      }
+
+      /* 瞬 four levels; a pad clear of every beam; a wall two jumps cannot clear. */
+      {
+        const d = run('blink');
+        const twoTop = V_ONE() + ((11.2 * 0.86) ** 2) / 52;
+        const clearOf = () => d.lasers.every((Lz) => Lz.distTo(her) > Lz.thick + TG.LASER_PAD + 0.3);
+        golive(d);
+        const pads = [];
+        for (let lv = 0; lv < 4; lv++) {
+          if (lv) { d.lvNext = 0.001; d.update(1 / 60); }
+          pads.push(d.lv === lv && clearOf());
+        }
+        ok('瞬 every Flash Step level stands her on a pad clear of every beam', pads.every(Boolean), pads.join(' '));
+        ok('...a wall is too tall to jump with two jumps', Math.max(...GAL.BLINK_WALL) - 0.18 - TG.LASER_PAD > twoTop + 0.2,
+          `${Math.max(...GAL.BLINK_WALL)} vs ${twoTop.toFixed(2)}`);
+        ok('...the star in the air is out of reach from the floor and inside the top of a jump',
+          GAL.BLINK_AIR_Y >= 2.2 && Math.abs(GAL.BLINK_AIR_Y - V_ONE()) < 2.2);
+        ok('...and the shield-bearer takes 0.75s to come back round',
+          Math.abs(GAL.SHIELD_TURN.wait + Math.PI / GAL.SHIELD_TURN.rate - 0.75) < 0.01);
+        // The last level: from in front, refused; from behind, it counts.
+        golive(d);
+        const L = d.L;
+        const foe = L.foe.group.position;
+        const blow = () => L.foe.hit({ attacker: her, kind: 'stand', dmg: 10, dist: 2, swing: 1, dir: { x: 0, z: 1 } });
+        const yaw = L.yaw;
+        lay(foe.x + Math.sin(yaw) * 2, at.y, foe.z + Math.cos(yaw) * 2);
+        const front = blow();
+        lay(foe.x - Math.sin(yaw) * 2, at.y, foe.z - Math.cos(yaw) * 2);
+        const back = blow();
+        ok('...whose shield refuses a blow from in front and not from behind', !front && back);
+        d.dispose(); D.drills[0] = null;
+      }
+
+      /* 間 the pack, judged together: one side caught whole; round her, not. */
+      {
+        const d = run('longparry');
+        golive(d);
+        for (let i = 0; i < 2; i++) { d.lvNext = 0.001; d.update(1 / 60); d.update(1 / 60); }
+        const L = d.L;
+        ok('間 Long Parry\'s last level is three partners from three sides', d.lv === 2 && L.foes.length === 3);
+        const strike = (place) => {
+          d.L.foes.forEach((h, i) => { const q = place(i); h.group.position.set(q.x, at.y, q.z); });
+          lay(at.x, at.y, at.z);
+          d.L.mode = 'wind'; d.L.windT = 99; d.guardAt = 0;
+          D.st[0].iframes = 0; D.st[0].simHp = 100;
+          her.parryT = 0.3; her.parryDir = 0;
+          d.update(1 / 60);
+        };
+        const realRip = her.riposte;
+        her.riposte = () => { her.parryT = 0; };
+        strike((i) => ({ x: at.x + (i - 1) * 1.4, z: at.z + 2 }));
+        const caught = d.L.caught === 1 && !d.L.after;
+        strike((i) => ({ x: at.x + Math.sin(i * 2.1) * 2, z: at.z + Math.cos(i * 2.1) * 2 }));
+        const split = d.L.after === 'retry';
+        her.riposte = realRip;
+        ok('...three swinging together from her guard\'s side are all caught by one riposte', caught);
+        ok('...and from round her, one lands and the level starts over', split);
+        d.dispose(); D.drills[0] = null;
+      }
+
+      /* 返 "have the enemy swing a sword once they get near the player". */
+      {
+        const h = new TG.HoloKitten({ x: 0, y: 0, z: 0, parent: new THREE.Group() });
+        h.swordPose(0, 0); const rest = h.swordPivot.rotation.x;
+        h.swordPose(1, 0); const up = h.swordPivot.rotation.x;
+        h.swordPose(0, 1); const down = h.swordPivot.rotation.x;
+        ok('返 a holo-kitten raises its sword in the tell and brings it down on the blow',
+          h.swordPivot.visible && up < rest - 1 && down > up + 2, `${rest} ${up} ${down}`);
+        const src = readFileSync(new URL('../src/systems/dream/gallery.js', import.meta.url), 'utf8');
+        ok('...in the Riposte drill and in every Long Parry partner', /h\.swordPose\(Math\.min\(1, d\.windT/.test(src) && /h\.swordPose\(Math\.min\(1, L\.windT/.test(src));
+      }
+
+      /* The Flash Step's log lands on a disc in here, and a drill's camera reaches her pane. */
+      {
+        const ms = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+        const fxs = readFileSync(new URL('../src/systems/dodgefx.js', import.meta.url), 'utf8');
+        ok('瞬 the Flash Step decoy asks the floor of the world she is in (the simulator\'s, in there)',
+          /this\.dodgeFx\?\.update\(dt, this\.players, \(p\) => this\.dream\?\.worldFor\?\.\(p\) \?\? this\.world\)/.test(ms)
+          && /typeof world === 'function' \? world\(p\) : world/.test(fxs));
+        ok('...and a drill\'s own shot is in her pane\'s camera chain', /\?\? this\.dream\?\.drillFocus\?\.\(p\)/.test(ms));
+        void DRm;
+      }
     }
   }
 
@@ -37321,6 +38718,121 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     d.dispose(); D.drills[0] = null;
     delete fakeGame.audio;
     pick.speed = 1;
+
+    /* ♪♪ DANCING TOGETHER. "If two or more players are playing Kata Trace,
+       we should have one song play ... When one player finishes their song,
+       then the other players song should start playing ... fade in fairly
+       quickly" and "Wait for other players to join?" ... "Join current
+       session" ... "Loading…" ... "they all start playing the same song
+       together. If player selects 'No.' then the song starts and players
+       can't join." Richard, Oct 2026. */
+    {
+      const I = D.kata.isle;
+      const fl1 = D.kata.floors[1];
+      const into = (p) => p.position.set(I.x + SW.SIM.dx + 1, I.y + 0.5, I.z + SW.SIM.dz + 1);
+      const joins = [];
+      const A = { musicVolume: 1, musicRate: 1, ctx: { currentTime: 50 }, mode: null,
+        restartMusic(mode, rate) { this.mode = mode; this.musicRate = rate; return 50.2; }, musicGrid: () => null,
+        joinMusic(mode, rate, songT, fade) { joins.push({ mode, rate, songT, fade }); this.mode = mode; this.musicRate = rate; return 50 - songT; },
+        prefetchMusic() {}, _decodeFile() {} };
+      fakeGame.audio = A;
+      into(her); into(sis);
+      const toLive = (...ds) => {
+        for (let f = 0; f < 600 && ds.some((x) => x.state === 'ready'); f++) {
+          for (const x of ds) { x.spec.steer(x, { mx: 0, my: 0, pressed: () => false }); x.update(1 / 60); }
+        }
+      };
+      const row = (i, re) => { const c = D.choices[i]; const k = c?.rows.findIndex((r) => re.test(typeof r.text === 'function' ? r.text() : r.text)); if (c && k >= 0) { c.i = k; c.pick(); return true; } return false; };
+
+      // Alone on the island, DANCE is DANCE: nobody to ask about.
+      const sisAt = sis.position.clone();
+      sis.position.set(0, 0, 0);
+      D.t += 100;
+      D.kata.danceOrAsk(her, fl);
+      const alone = !!D.kata.runOf(her) && !D.choices[0];
+      D.kata.runOf(her)?.dispose(); D.drills[0] = null;
+      sis.position.copy(sisAt);
+      ok('♪♪ alone in the hall, DANCE starts the song without asking anything', alone);
+
+      // With a sister about, it asks; "no" starts it now and nobody can join.
+      D.t += 100;
+      D.kata.danceOrAsk(her, fl);
+      const asked = D.choices[0]?.title === 'WAIT FOR OTHERS TO JOIN?';
+      row(0, /^no — start/);
+      ok('♪♪ with a sister in the hall DANCE asks "wait for others to join?", and NO starts it at once with nobody able to join',
+        asked && !!D.kata.runOf(her) && !D.kata.session && !D.kata._canJoin(sis), `${asked} ${D.choices[0]?.title}`);
+      D.kata.runOf(her)?.dispose(); D.drills[0] = null; D.kata.musicOwner = null;
+
+      // YES: she waits, and can back out whenever she likes.
+      D.t += 100;
+      D.kata.danceOrAsk(her, fl);
+      row(0, /^yes — wait/);
+      const waiting = D.kata.session?.state === 'wait' && /WAITING FOR OTHERS/.test(D.choices[0]?.title ?? '');
+      const canJoin = D.kata._canJoin(sis);
+      const kiosk = fl1.kiosks[0]?.station;
+      const says = kiosk ? kiosk.prompt(sis, 'E') : '';
+      sis._hints = [];
+      row(0, /stop waiting/);
+      ok('♪♪ YES puts up "waiting for others to join…", her sister\'s kiosk says JOIN, and STOP WAITING backs out cleanly',
+        waiting && canJoin && /JOIN .+'S SONG/.test(says) && !D.kata.session && !D.choices[0] && !D.kata.runOf(her),
+        `${waiting} ${canJoin} "${says}" ${!!D.kata.session}`);
+
+      // YES, and she joins: LOADING… for both, then both runs start together on one song.
+      D.t += 100;
+      D.kata.danceOrAsk(her, fl);
+      row(0, /^yes — wait/);
+      D.kata._askJoin(sis, fl1);
+      const joinQ = /JOIN .+'S SONG\?/.test(D.choices[1]?.title ?? '');
+      row(1, /^yes, join/);
+      const loading = D.choices[0]?.title === 'LOADING…' && D.choices[1]?.title === 'LOADING…' && !D.kata.runOf(her) && !D.kata.runOf(sis);
+      for (let f = 0; f < 60 * 1.2; f++) D.kata.update(1 / 60);
+      const stillLoading = !D.kata.runOf(her);
+      for (let f = 0; f < 60; f++) D.kata.update(1 / 60);
+      const r0 = D.kata.runOf(her);
+      const r1 = D.kata.runOf(sis);
+      ok('♪♪ she JOINS at her own kiosk; both get LOADING… for 1-2s (not less), then both runs start on the same chart',
+        joinQ && loading && stillLoading && !!r0 && !!r1 && r0.chart === r1.chart && r0.session != null && r0.session === r1.session
+          && KT.SESSION_LOAD >= 1 && KT.SESSION_LOAD <= 2,
+        `${joinQ} ${loading} ${stillLoading} ${!!r0} ${!!r1}`);
+      if (r0 && r1) {
+        const before = fakeGame.sounds.length;
+        toLive(r0, r1);
+        const one = [r0, r1].filter((x) => x.ownsMusic).length === 1 && [r0, r1].filter((x) => x.sharesMusic).length === 1;
+        for (let f = 0; f < 240; f++) { r0.update(1 / 60); r1.update(1 / 60); }
+        const ticks = fakeGame.sounds.slice(before).filter((s) => s === 'beat' || s === 'beatup').length;
+        ok('...ONE of them owns the song and the other shares it — no metronome under a song both are hearing',
+          one && ticks === 0, `owners ${[r0, r1].map((x) => x.ownsMusic)} ticks ${ticks}`);
+        const [own, sh] = r0.ownsMusic ? [r0, r1] : [r1, r0];
+        const n0 = joins.length;
+        own.fail('test'); own.update(1 / 60);
+        ok('...and when the owner\'s song ends, the sister keeps the SAME music going, unrestarted',
+          D.kata.musicOwner === sh && sh.ownsMusic && joins.length === n0 && A.mode === sh.chart.song, `${D.kata.musicOwner === sh} joins ${joins.length - n0}`);
+        own.dispose(); sh.dispose(); D.drills[0] = null; D.drills[1] = null; D.kata.musicOwner = null;
+      }
+
+      // Two runs, no session: the second ticks a metronome under the first's
+      // song; when the first ends, hers comes in AT HER POSITION, fading up.
+      D.t += 100;
+      D.kata.begin(her, fl);
+      Object.assign(D.kata.pickOf(sis), { song: 'vr', diff: 'easy', speed: 0.75, custom: null });
+      D.kata.begin(sis, fl1);
+      const a0 = D.kata.runOf(her);
+      const a1 = D.kata.runOf(sis);
+      toLive(a0, a1);
+      const before = fakeGame.sounds.length;
+      for (let f = 0; f < 180; f++) { a0.update(1 / 60); a1.update(1 / 60); }
+      const metro = fakeGame.sounds.slice(before).some((s) => s === 'beat' || s === 'beatup') && a0.ownsMusic && !a1.ownsMusic;
+      const n0 = joins.length;
+      a0.fail('test'); a0.update(1 / 60);
+      const J = joins[n0];
+      ok('♪♪ two songs at once: her sister keeps time by the metronome, and when the first ends hers is brought in at HER position and speed, fading up in 1-2s',
+        metro && !!J && J.rate === 0.75 && Math.abs(J.songT - a1.songT) < 0.05 && J.fade >= 0.5 && J.fade <= 2
+          && D.kata.musicOwner === a1 && a1.ownsMusic && a1.metroFade > 0,
+        `${metro} ${JSON.stringify(J)} songT ${a1.songT.toFixed(2)}`);
+      a0.dispose(); a1.dispose(); D.drills[0] = null; D.drills[1] = null; D.kata.musicOwner = null;
+      Object.assign(D.kata.pickOf(sis), { song: 'vr', diff: 'normal', speed: 1, custom: null });
+      delete fakeGame.audio;
+    }
 
     // INTERACT mid-run asks, and the cursor opens on NO.
     D.t += 100;
@@ -38303,7 +39815,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const apex2 = apex + (jv * 0.86) ** 2 / (2 * gr);
     const bar = (y) => [{ sec: 'x', a0: -15, b0: 0, y0: y, a1: -9, b1: 0, y1: y, thick: CO.BAR_THICK }];
     ok('正弦 player.js\'s double jump is still a second push of 0.86 — the reach the course is built against',
-      /this\.velocity\.y = JUMP_V \* 0\.86 \* jumpK;/.test(src), `apex ${apex.toFixed(2)}, two jumps ${apex2.toFixed(2)}`);
+      /this\.velocity\.y = jumpV \* 0\.86;/.test(src) && /const jumpV = this\.hopJump \? [^:]+: JUMP_V \* jumpK;/.test(src), `apex ${apex.toFixed(2)}, two jumps ${apex2.toFixed(2)}`);
     /* "Keep in mind, player has sprint and double jump ability, so they can
        jump over most of the objects in this course with a well timed
        sprint/double jump ... need to make sure that the lasers go high enough
@@ -38659,6 +40171,29 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         const fi = CO.SECTIONS.findIndex((x) => x.key === 'final');
         ok('...filmed from behind her, because the stagger and the slalom are both side to side',
           shotAt(CO.CP_S[fi] + 1) === 'final' && shotAt(CO.CP_S[fi] + 20) === 'final');
+        /* "after jumping over the platforms, the camera should rotate to the
+           side view ... Or potentially do more of a diagonal rear corner view
+           so they can see both obstacles better." Behind her on the ledges;
+           the 45° corner once the last ledge is behind her. */
+        {
+          const lane = CO.LANES[fin.lane];
+          const lastLedge = Math.max(...fin.ledges.map((l) => CO.pathS(lane, l.b)));
+          const want = (s) => { G.run = { sMax: s, cp: CO.checkpointFor(s), drill: { state: 'live' } }; return G._wantShot(); };
+          const climb = want(lastLedge - 0.5);
+          const tail = want(lastLedge + 0.5);
+          const end = want(CO.FINISH_S - 1);
+          const side = G._yaw();
+          const diff = (a, b) => { let d = a - b; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return Math.abs(d); };
+          const quarter = diff(climb.yaw, side);
+          ok('登竜 off the Dragon\'s Tail\'s last ledge the lens turns to the rear corner — half way from behind her to side-on — and holds it to the finish',
+            climb.behind === 1 && Math.abs(quarter - Math.PI / 2) < 0.01
+            && Math.abs(diff(tail.yaw, side) - quarter * (1 - SN.CORNER_CAM.turn)) < 0.01 && tail.dist === SN.CORNER_CAM.dist
+            && tail.behind === SN.CORNER_CAM.behind && end.yaw === tail.yaw,
+            `climb ${climb.yaw.toFixed(2)} tail ${tail.yaw.toFixed(2)} side ${side.toFixed(2)} end ${end.yaw.toFixed(2)}`);
+          // ...and no other course's stretch has a corner: the High Steps are all ledges.
+          const steps = want(CO.CP_S[ti] + 8);
+          ok('...and only there: the High Steps stay straight behind her to their last ledge', steps.behind === 1, String(steps.behind));
+        }
 
         /* THE CARD OVER HER HEAD. "When the camera is pulling behind the
            player ... the text UI appearing above their heads is too big and
@@ -38675,8 +40210,19 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         const side = { s: panel.scale.x, y: panel.position.y, o: panel.mat.opacity };
         ok('...and with the lens behind her, the card over her head is half the size, lower and fainter — and itself again side-on',
           Math.abs(back.s - SN.CARD_BEHIND.scale) < 1e-3 && Math.abs(back.o - SN.CARD_BEHIND.opacity) < 1e-3 && back.y < side.y - 1
-          && Math.abs(side.s - 1) < 1e-3 && Math.abs(side.o - 1) < 1e-3 && Math.abs(side.y - (2.6 + 2.3)) < 1e-3,
+          && Math.abs(side.s - SN.CARD_SIDE.scale) < 1e-3 && Math.abs(side.o - 1) < 1e-3 && Math.abs(side.y - (2.6 + SN.CARD_SIDE.lift)) < 1e-3,
           JSON.stringify({ back, side }));
+        /* "zoomed out, in the side view, the UI above their head is too small
+           to read ... the UI should be bigger and when the camera is behind
+           the player, the UI should be the current size". On screen a card is
+           its size over the lens's distance: side-on it must read at least
+           half as big again as it does behind her, and its bottom edge (the
+           card is 1.7 tall) must not come down onto her head to do it. */
+        const apparent = (s, dist) => s / dist;
+        const bottom = (c) => c.y - 0.85 * c.s - 2.6;
+        ok('...side-on, zoomed out, the card reads at least 1.5x as big on screen as behind her, and still clears her head',
+          apparent(side.s, SN.COURSE_CAM.dist) >= 1.5 * apparent(back.s, SN.SHOULDER_CAM.dist) && bottom(side) >= 1.4 && bottom(back) >= 0.7,
+          `side ${apparent(side.s, SN.COURSE_CAM.dist).toFixed(4)} behind ${apparent(back.s, SN.SHOULDER_CAM.dist).toFixed(4)} bottoms ${bottom(side).toFixed(2)} ${bottom(back).toFixed(2)}`);
         G.run = keepRun;
       }
       // Swiping away takes its ledges out of the world with its stones.
@@ -38994,13 +40540,13 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const DS2 = readFileSync(new URL('../src/systems/dreamdojo.js', import.meta.url), 'utf8');
     ok('正弦 main.js frames a session member with the course\'s focus, anchors her on the runner, and the shared rig takes its shot',
       /this\.dream\?\.sine\?\.cameraFocus\?\.\(p\)/.test(MS2)
-      && /pts: this\.players\.map\(\(p\) => this\.dream\?\.sine\?\.paneAnchor\?\.\(p\) \?\? p\.position\)/.test(MS2)
+      && /pts: this\.players\.map\(\(p\) => this\.dream\?\.sine\?\.paneAnchor\?\.\(p\)( \?\? this\.dream\?\.bamboo\?\.paneAnchor\?\.\(p\))? \?\? p\.position\)/.test(MS2)
       && /const course = this\.dream\?\.sine\?\.groupShot\?\.\(members\)/.test(MS2)
       && /if \(rig\.courseT > 0 && rig\.courseShot\) \{/.test(MS2));
     ok('...and the Dream Dojo racks the kit in _applyKit, forgets her on the way out before the kit comes apart, and drops the session on exitAll',
       /const ids = s\?\.benched \? \[\] :/.test(DS2)
-      && /_leaveSim\(p, keepSuit = false\) \{[\s\S]{0,300}this\.sine\?\.forget\(p\);\s*this\._hushHolo\(p\);/.test(DS2)
-      && /exitAll\(\) \{\s*this\.sine\?\.reset\(\);/.test(DS2)
+      && /_leaveSim\(p, keepSuit = false\) \{[\s\S]{0,300}this\.sine\?\.forget\(p\);\s*this\.bamboo\?\.forget\(p\);\s*this\._hushHolo\(p\);/.test(DS2)
+      && /exitAll\(\) \{\s*this\.sine\?\.reset\(\);\s*this\.bamboo\?\.reset\(\);/.test(DS2)
       && /this\.sine\?\.cheerPad\?\./.test(DS2));
     /* --- CHOOSING A COURSE: the picker, the swipe, the bird's eye, the
        secret level. Richard: "These levels/courses can be cycled/appear on top
@@ -39269,146 +40815,1037 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       close > 3 && far < I.r - 2 && onPad > 3, `${close.toFixed(1)} ${far.toFixed(1)}/${I.r} ${onPad.toFixed(1)}`);
   }
 
-  /* --- 忍 bamboo: the forest leaves the route, and the route can be crossed --- */
+  /* --- 忍 Bamboo Infiltration: every course can be crossed, and the rules are the game ---
+     The v1 island (one route, watchers on a sine) became a mini-game of five
+     courses (dream/bamboo.js, bamboolevel.js, bambooguards.js). What is pinned
+     here is what would still look fine on screen while being broken: a course
+     nobody can cross, a lantern a guard can see (she would be caught again the
+     moment she is put back), three stars nobody can earn, a crawl that is not
+     silent, a capture that hurts. */
   {
     const I = D.isles.bamboo;
-    const Ly = D.bamboo.layout;
-    const route = [[-(I.r + 2), 0], ...BM.ROUTE];
-    const segD = (a, b) => {
-      let best = Infinity;
-      for (let i = 0; i < route.length - 1; i++) {
-        const [ax, az] = route[i]; const [bx, bz] = route[i + 1];
-        const ex = bx - ax; const ez = bz - az;
-        const t = Math.max(0, Math.min(1, ((a - ax) * ex + (b - az) * ez) / (ex * ex + ez * ez)));
-        best = Math.min(best, Math.hypot(a - ax - ex * t, b - az - ez * t));
-      }
-      return best;
-    };
-    const tight = Math.min(...Ly.clumps.map((c) => segD(c.a, c.b) - BM.CLUMP_R));
-    ok('忍 no bamboo stands on the route — a kitten fits down it everywhere', tight > 0.75 + 0.2, tight.toFixed(2));
-    ok('...and the forest is a forest', Ly.clumps.length > 80, String(Ly.clumps.length));
-    ok('...and every stretch has its hide', Ly.clumps.filter((c) => c.hide).length === Ly.watchers.length);
-    // Sight: blocked by a clump, bounded by the cone and the range.
-    const w = { a: 0, b: 0, base: 0, S: 0, w: 1, ph: 0 };
-    ok('忍 a watcher sees down his cone, not past it, not beyond his range, not through bamboo',
-      BM.seenBy(w, 0, 6, 0, []) && !BM.seenBy(w, 0, 6, 0, [{ a: 3, b: 0 }])
-      && !BM.seenBy(w, 0, 6, 4, []) && !BM.seenBy(w, 0, BM.WATCH.range + 0.5, 0, []) && !BM.seenBy(w, 0, -6, 0, []));
-    // The cone drawn is the cone asked.
-    let coneOff = 0;
-    for (const t of [0, 1.3, 2.9, 7.1]) {
-      D.bamboo.update(0, t);
-      for (const W of D.bamboo.watchers) {
-        W.grp.updateMatrixWorld(true);
-        const dir = new THREE.Vector3(1, 0, 0).transformDirection(W.grp.matrixWorld);
-        const f = I.fwd;
-        const ang = Math.atan2(-dir.x * f.z + dir.z * f.x, dir.x * f.x + dir.z * f.z);
-        const want = BM.lookAngle(W, t);
-        coneOff = Math.max(coneOff, Math.abs(Math.atan2(Math.sin(ang - want), Math.cos(ang - want))));
-      }
+    const B = D.bamboo;
+    const BL = await import('../src/systems/dream/bamboolevel.js');
+    const GH = await import('../src/systems/dream/ghost.js');
+    const BB = await import('../src/systems/dream/bambooboard.js');
+    const NS = await import('../src/systems/dream/ninjasprite.js');
+    // CROSSABLE: the solver crawls every course at every difficulty, and the stars are set off it.
+    const rows = [];
+    let unsolved = 0; let tight = 0;
+    for (const C of BL.COURSES) for (let n = 0; n < 3; n++) {
+      const t = BL.solve(C, n);
+      rows.push(`${C.id}/${n}:${t == null ? 'X' : t.toFixed(0)}`);
+      if (t == null) unsolved++;
+      else if (C.bands[n][2] < t * 1.5) tight++;
     }
-    ok('忍 the cone on the floor points where `seenBy` is looking, every frame', coneOff < 1e-6, coneOff.toExponential(1));
-    // ...and each of its rays stops where `seenBy` stops seeing: just short of
-    // the drawn end is seen, just past it is not (the shadow is honest).
-    let liar = 0; let rays = 0; let shadows = 0;
-    for (const t of [0, 1.3, 2.9, 7.1, 11.4]) {
-      D.bamboo.update(0, t);
-      sim.root.updateMatrixWorld(true);
-      for (const W of D.bamboo.watchers) {
-        const pos = W.cone.geometry.attributes.position;
-        const f = I.fwd;
-        for (let j = 1; j < BM.CONE_RAYS; j++) {
-          // The ray's end as DRAWN, through the mesh's own transform, in island terms.
-          const e = sim.root.worldToLocal(W.cone.localToWorld(new THREE.Vector3(pos.getX(j + 1), pos.getY(j + 1), pos.getZ(j + 1))));
-          const ex = e.x - I.x; const ez = e.z - I.z;
-          const ea = ex * f.x + ez * f.z - W.a; const eb = -ex * f.z + ez * f.x - W.b;
-          const r = Math.hypot(ea, eb);
-          const pt = (s) => [W.a + (ea / r) * s, W.b + (eb / r) * s];
-          rays++;
-          if (!BM.seenBy(W, t, ...pt(r - 0.05), Ly.clumps)) liar++;
-          if (r < BM.WATCH.range - 0.05) {
-            shadows++;
-            if (BM.seenBy(W, t, ...pt(r + 0.05), Ly.clumps)) liar++;
-          }
+    ok('忍 every course, at every difficulty, can be crawled to the scroll unseen', unsolved === 0, rows.join(' '));
+    ok('...and three stars sits at least 1.5x above that crawl, so it can be earned', tight === 0, rows.join(' '));
+    // SAFE WHERE SHE IS PUT BACK: no guard on his rounds ever sees a lantern or a start slot,
+    // standing — she is put back on her feet.
+    let seenSafe = 0; const where = new Set();
+    for (const C of BL.COURSES) {
+      const Lv = BL.levelOf(C);
+      for (let n = 0; n < 3; n++) {
+        const Dn = BL.DIFFS[n];
+        const spots = [...BL.lanternsOn(C, n), ...BM.SLOTS];
+        for (const g of BL.guardsOn(C, n)) for (let t = 0; t < 60; t += 0.25) {
+          const at = BL.guardAt(g, Dn, t);
+          for (const s of spots) if (BL.canSee(Lv, g, at, Dn, { a: s.a, b: s.b, y: BL.EYE.stand })) { seenSafe++; where.add(`${C.id}/${n}@${s.a},${s.b}`); }
         }
       }
     }
-    ok('...and every ray of it ends where his sight does, so the shadow behind the bamboo is drawn true',
-      liar === 0 && shadows > 0, `${liar} wrong of ${rays} rays, ${shadows} cut short by bamboo`);
-    // Safe spots are safe.
-    const safe = [Ly.start, ...Ly.lanterns, { a: BM.KIOSK_AT[0], b: BM.KIOSK_AT[1] }];
-    let seenSafe = 0;
-    for (let t = 0; t < 40; t += 0.02) for (const s of safe) for (const W of Ly.watchers) if (BM.seenBy(W, t, s.a, s.b, Ly.clumps)) seenSafe++;
-    ok('忍 the start, the kiosk and every lantern are never seen — she is never caught where she is sent back to',
-      seenSafe === 0, String(seenSafe));
-    // The search: (place on the route, time), stepping on, waiting or stepping back,
-    // never seen. The first layout had no way through at ANY start time.
-    const v = 7; const dt = 1 / 20; const ds = v * dt;
-    const pts = [];
-    for (let i = 0; i < BM.ROUTE.length - 1; i++) {
-      const [a0, b0] = BM.ROUTE[i]; const [a1, b1] = BM.ROUTE[i + 1];
-      const n = Math.ceil(Math.hypot(a1 - a0, b1 - b0) / ds);
-      for (let k = 0; k < n; k++) pts.push([a0 + (a1 - a0) * k / n, b0 + (b1 - b0) * k / n]);
-    }
-    pts.push(BM.ROUTE[BM.ROUTE.length - 1]);
-    const N = pts.length;
-    const solve = (t0) => {
-      let reach = new Uint8Array(N); reach[0] = 1;
-      for (let k = 1; k <= 120 / dt; k++) {
-        const t = t0 + k * dt; const nx = new Uint8Array(N);
-        for (let i = 0; i < N; i++) if (reach[i]) for (const j of [i - 1, i, i + 1]) if (j >= 0 && j < N) nx[j] = 1;
-        for (let i = 0; i < N; i++) if (nx[i] && Ly.watchers.some((W) => BM.seenBy(W, t, pts[i][0], pts[i][1], Ly.clumps))) nx[i] = 0;
-        reach = nx;
-        if (reach[N - 1]) return k * dt;
+    /* MEASURED, and why the rule below exists: this many lanterns and start
+       slots ARE in some guard's view on his rounds (21 of them when the rule
+       was made). Moving them into hiding would make every checkpoint a place
+       nobody walks; instead a lantern's ring and the start's are sanctuary. */
+    line('忍 lanterns and start slots a guard sees on his rounds (sanctuary covers them)', `${where.size}`);
+    ok("忍 every start slot is inside the start’s sanctuary ring, and every lantern is its own",
+      BM.SLOTS.every((s) => Math.hypot(s.a - BM.SAFE.start.a, s.b - BM.SAFE.start.b) < BM.SAFE.start.r - 0.3) && BM.SAFE.lantern >= 1);
+    ok('...and an easier course has at least as many lanterns as a harder one',
+      BL.COURSES.every((C) => BL.lanternsOn(C, 0).length >= BL.lanternsOn(C, 1).length && BL.lanternsOn(C, 1).length >= BL.lanternsOn(C, 2).length));
+    // THE DRAWN SIDE: the row the sprite picks, by the function the sprite uses.
+    ok('忍 a ninja sheet\'s row: facing the lens is 0, the right profile next, eight sides for the crawl',
+      NS.dirIndex(0, 4) === 0 && NS.dirIndex(Math.PI / 2, 4) === 1 && NS.dirIndex(Math.PI, 4) === 2 && NS.dirIndex(-Math.PI / 2, 4) === 3
+      && NS.dirIndex(Math.PI / 4, 8) === 1 && NS.dirIndex(-Math.PI / 4, 8) === 7 && NS.dirIndex(Math.PI + 0.1, 8) === 4);
+    // THE SONGS: every course's `music` is a recording that is there and loops inside its own file.
+    {
+      const { MUSIC_FILES: MF } = await import('../src/core/musicfiles.js');
+      const { mp3Duration: mp3B } = await import('./mp3.mjs');
+      const bad = [];
+      for (const C of BL.COURSES) {
+        const id = `bamboo${C.music[0].toUpperCase()}${C.music.slice(1)}`;
+        const F = MF[id];
+        const url = F && new URL(`../public/${F.file}`, import.meta.url);
+        if (!F || !existsSync(url)) { bad.push(`${C.id}: ${id} missing`); continue; }
+        const secs = mp3B(url).secs;
+        if (!(F.loop[1] <= secs + 0.06 && F.loop[1] - F.loop[0] > 60 && F.mix > 0.2 && F.mix < 1.5)) bad.push(`${id} ${F.loop} of ${secs.toFixed(2)}s mix ${F.mix}`);
       }
-      return null;
+      ok('忍 every course has its sneaking song, and each loops inside its own file at a sane level', bad.length === 0, bad.join('; '));
+    }
+    // THE GHOST survives being written down.
+    {
+      const s = [[1.25, -3.5, 0.4, 1.2, 1], [-17.04, 22.5, 3.2, -3.1, 2], [0, 0, 0, 0, 4]];
+      const u = GH.unpackGhost(GH.packGhost(s));
+      const err = Math.max(...s.flatMap((r, i) => r.map((v, k) => Math.abs(v - u[i][k]))));
+      ok('忍 a ghost run packs and unpacks to within a centimetre and a milliradian', u.length === 3 && err < 0.006, err.toFixed(4));
+      const sineSrc = readFileSync(new URL('../src/systems/dream/sine.js', import.meta.url), 'utf8');
+      ok('幽 the Sine Gauntlet records every run, offers a finish, and plays the best one back beside her',
+        /rec: new GhostRecorder\(\)/.test(sineSrc) && /offerGhost\(d\.spec\.id/.test(sineSrc) && /ghostFor\(id\)/.test(sineSrc)
+        && /this\.ghost\?\.faceCamera\(camera\)/.test(sineSrc));
+    }
+    // A SESSION: the picker is one kitten's, and GO takes everybody idle on the island.
+    D.drills[0] = null; D.drills[1] = null;
+    D.choices[0] = null; D.choices[1] = null;
+    const sp = (q) => { const w = isleSpot(I, q.a, q.b); return { x: w.x, z: w.z, y: I.y }; };
+    put(her, sp(BL.PLAZA.kiosk));
+    put(sis, sp(BL.PLAZA.out[1]));
+    B.diff = 0;
+    B.kiosk.station.interact(her);
+    ok('忍 the 忍 kiosk opens HER course picker', !!D.choices[0] && B.picking === 0);
+    fakeGame.sounds.length = 0;
+    ok('...and her sister pressing it is told who is choosing, not ignored',
+      B.kiosk.station.interact(sis) === false && fakeGame.sounds.includes('deny') && /CHOOSING/.test(B.kiosk.station.prompt(sis, 'E')));
+    B.begin(her);
+    const S = B.session;
+    ok('忍 GO takes everybody idle on the island, each on her own clock, kit on the rack',
+      S?.runs.size === 2 && !!D.drills[0] && !!D.drills[1] && D.drills[0] !== D.drills[1] && !!D.st[0].benched && !!D.st[1].benched,
+      `${S?.runs.size}`);
+    const d = D.drills[0]; const d2 = D.drills[1];
+    const step = (dt) => { d.update(dt); d2.update(dt); B.update(dt); };
+    for (let k = 0; k < 300 && d.state !== 'live'; k++) step(1 / 60);
+    ok('...and the guards\' clock starts at GO', d.state === 'live' && S.live);
+    const run = S.runs.get(0);
+    const pad = {
+      mx: 0, my: 0, rx: 0, ry: 0, hold: new Set(), edge: new Set(), dbl: new Set(),
+      down(a) { return this.hold.has(a); }, pressed(a) { return this.edge.has(a); }, doubled(a) { return this.dbl.has(a); }, nudge() { return 1; },
     };
-    const times = [0, 2.3, 5, 7.7, 12, 19, 33].map(solve);
-    const worstT = Math.max(...times.map((x) => x ?? Infinity));
-    ok('忍 the scroll can be reached unseen at a walk, whenever she starts', times.every((x) => x != null),
-      times.map((x) => x?.toFixed(1)).join(' '));
-    ok('...and three stars sits 1.2-1.6x above the best sneak from the worst start',
-      BM.BAMBOO_BANDS[2] >= worstT * 1.2 && BM.BAMBOO_BANDS[2] <= worstT * 1.6, `${BM.BAMBOO_BANDS[2]} vs ${worstT.toFixed(1)}`);
-    // Spotted: back to her lantern, on the deck, and told.
-    put(her, D.bamboo.kiosk);
-    D.bamboo.kiosk.station.interact(her);
-    const d = D.drills[0];
-    d.update(1.3);
-    const L1 = Ly.lanterns[0];
-    const lq = isleSpot(I, L1.a, L1.b);
-    put(her, { x: lq.x, z: lq.z, y: I.y });
-    d.update(1 / 60);
-    ok('忍 walking onto a lantern lights it', d.lit === 0, String(d.lit));
-    // Find a moment and a place in the open that watcher 1 sees.
-    let caughtAt = null;
-    for (let t = 0; t < 20 && !caughtAt; t += 0.05) {
-      for (let u = 0.1; u < 0.95 && !caughtAt; u += 0.05) {
-        const [a0, b0] = BM.ROUTE[1]; const [a1, b1] = BM.ROUTE[2];
-        const a = a0 + (a1 - a0) * u; const b = b0 + (b1 - b0) * u;
-        let ok2 = true;
-        for (let h = 0; h <= 0.5; h += 0.05) if (!BM.seenBy(Ly.watchers[1], t + h, a, b, Ly.clumps)) ok2 = false;
-        if (ok2) caughtAt = { t, a, b };
+    // THE CRAWL: the Ward button, held or latched with a double tap; never the Ward itself.
+    pad.edge = new Set(['mount']); pad.dbl = new Set(['mount']);
+    let st = d.spec.steer(d, pad);
+    pad.edge = new Set(); pad.dbl = new Set();
+    st = d.spec.steer(d, pad);
+    ok('忍 a double tap of the Ward button latches the crawl, at crawling speed, and the Ward never sees it',
+      run.latch && run.sneak && her.gaitK === BL.SNEAK.gait && !st.down('mount') && !st.pressed('mount'));
+    pad.edge = new Set(['mount']);
+    d.spec.steer(d, pad);
+    pad.edge = new Set();
+    d.spec.steer(d, pad);
+    ok('...and one more press lets it go', !run.latch && !run.sneak && her.gaitK === 1);
+    /* THE PAD HER LEGS READ is built once, on the first steer — and in the game
+       that is the COUNT-IN. Its mask once closed over that call's `frozen`, so
+       from GO onwards her legs never heard SPRINT or JUMP: "seems player is
+       walking faster than they are sprinting" (the sprint's 0.71 gait, on a
+       walk: 7.46 against 10.5). Built during the count-in here, as it is in
+       the game, then asked after GO. */
+    {
+      const pad0 = run.pad; run.pad = null;
+      d.state = 'ready';
+      d.spec.steer(d, pad);
+      d.state = 'live';
+      pad.hold = new Set(['sprint']); pad.edge = new Set(['jump']);
+      const legs = d.spec.steer(d, pad);
+      const heard = legs.down('sprint') && !legs.pressed('jump');
+      ok('忍 a pad built in the count-in still hands her legs SPRINT after GO (and never JUMP: "let\'s remove that") — so her sprint is 1.2x her walk, not 0.71x',
+        heard && her.gaitK === BL.SPRINT.gait && Math.abs((BL.SPRINT.run * her.gaitK) / BL.SPRINT.walk - 1.2) < 1e-9,
+        `sprint ${legs.down('sprint')} jump ${legs.pressed('jump')} gait ${her.gaitK}`);
+      pad.hold = new Set(); pad.edge = new Set();
+      d.spec.steer(d, pad);
+      run.pad = pad0 ?? run.pad;
+    }
+    // THE THROW: held ATTACK plants her and winds up; letting go lobs a pebble; the katana never sees it.
+    pad.hold = new Set(['attack']);
+    B._dt = 1 / 60;
+    for (let k = 0; k < 70; k++) st = d.spec.steer(d, pad);
+    const charged = run.charge;
+    ok('忍 holding ATTACK winds up a throw and plants her, and the katana never swings',
+      charged >= 0.99 && her.gaitK === 0 && !st.down('attack') && !st.pressed('attack'), String(charged));
+    pad.hold = new Set();
+    d.spec.steer(d, pad);
+    ok('...and letting go throws a pebble, since she has no shuriken', B.pebbles.length === 1 && run.charge == null);
+    /* ...AND SHE STAYS WHERE SHE THREW FROM until the stick is let go. Richard: "the player doesn't move until
+       after they reset the direction by letting go of or zero'ing out the direction buttons". The aim on a
+       keyboard is a held walking key. A short wind-up (under the 0.12 a throw needs) plants her the same way
+       without a second pebble in the air for the checks below. */
+    {
+      pad.mx = 1; pad.hold = new Set(['attack']);
+      for (let k = 0; k < 3; k++) d.spec.steer(d, pad);
+      pad.hold = new Set();
+      const legs = [];
+      for (let k = 0; k < 20; k++) { st = d.spec.steer(d, pad); legs.push(st.mx); }
+      const stillHeld = legs.every((v) => v === 0) && her.gaitK === 0;
+      pad.mx = 0; d.spec.steer(d, pad);
+      pad.mx = 1; st = d.spec.steer(d, pad);
+      const walksAgain = st.mx === 1 && her.gaitK === 1;
+      pad.mx = 0; d.spec.steer(d, pad);
+      ok('忍 after a throw a stick still held does not walk her after it — she walks again once it has been let go',
+        stillHeld && walksAgain && B.pebbles.length === 1, `held ${legs.join('')} gait ${her.gaitK}`);
+    }
+    // A NOISE is heard inside its ring and not outside it.
+    const sam = B.view.guards.find((g) => g.active && g.kind === 'samurai');
+    sam.reset(B.clock);
+    B._noise(sam.at.a + B.D.noise.walk + 1, sam.at.b, B.D.noise.walk);
+    const deaf = sam.mode;
+    B._noise(sam.at.a + 1, sam.at.b, B.D.noise.walk);
+    ok('忍 a guard hears a step inside its ring and not one outside it', deaf !== 'heard' && sam.mode === 'heard', `${deaf} ${sam.mode}`);
+    sam.reset(B.clock);
+    /* CAUGHT: hands up, no legs, the pane fades, and she is put back on her
+       feet at her start — AND SO IS HER SISTER, who was not caught and pays
+       nothing for it. Richard: "when a player gets caught, all players should
+       respawn at the checkpoint and all game states should get reset (like
+       have all the npc's start in their default spot, facing the default
+       way)". Never hurt. */
+    const hp0 = her.hp;
+    const run2 = S.runs.get(1);
+    put(sis, sp({ a: run2.slot.a + 4, b: run2.slot.b }));
+    for (const g of B.view.guards) if (g.active) g.off = 7.3;     // somewhere along his rounds that is not their start
+    B.fire('star', { a: 0, b: 0, y: 1.5 }, { a: 1, b: 0, y: 1.5 }, null);
+    B.caught(0, null);
+    pad.mx = 1;
+    st = d.spec.steer(d, pad);
+    const frozen = st.mx === 0 && run.capture;
+    pad.mx = 0;
+    let fadeMax = 0; let fadeSis = 0; let guardsAtStart = null;
+    for (let k = 0; k < 150; k++) {
+      const swapping = run.capture && run.capture.t < BM.ARREST.swap;
+      step(1 / 60);
+      fadeMax = Math.max(fadeMax, B.fadeOf(0)); fadeSis = Math.max(fadeSis, B.fadeOf(1));
+      // The frame of the swap: every guard on the first step of his rounds, facing its first way.
+      if (swapping && run.capture && run.capture.t >= BM.ARREST.swap) {
+        guardsAtStart = B.view.guards.filter((g) => g.active).every((g) => {
+          const P0 = BL.patrolAt(g.g, B.D, 0);
+          // One frame of his walk after the swap (the clock moves before he does): a few centimetres at most.
+          return g.mode === 'patrol' && Math.hypot(g.at.a - P0.a, g.at.b - P0.b) < 0.15 && Math.abs(BL.wrap((g.at.look ?? 0) - (P0.look ?? 0))) < 0.15 && Math.abs(g.off + B.clock) < 0.05;
+        }) && B.shots.list.length === 0;
       }
     }
-    D.t += 10;
-    fakeGame.toasts.length = 0;
-    const cq = isleSpot(I, caughtAt.a, caughtAt.b);
-    put(her, { x: cq.x, z: cq.z, y: I.y });
-    for (let k = 0; k < 30 && d.spotted === 0; k++) {
-      D.bamboo.update(1 / 60, caughtAt.t + k / 60);
-      d.update(1 / 60);
+    const q = B.coords(her);
+    const q2 = B.coords(sis);
+    ok('忍 caught: no legs, the pane fades to black, she is back at her start, and the run goes on',
+      frozen && fadeMax > 0.95 && !run.capture && run.caught === 1 && Math.hypot(q.a - run.slot.a, q.b - run.slot.b) < 0.01 && d.state === 'live' && B.fadeOf(0) === 0,
+      `${fadeMax.toFixed(2)} ${q.a.toFixed(2)},${q.b.toFixed(2)} ${d.state}`);
+    ok('...and the WHOLE PARTY goes back with her: her sister\'s pane fades too, she is at her own start, and pays nothing',
+      fadeSis > 0.95 && !run2.capture && run2.caught === 0 && Math.hypot(q2.a - run2.slot.a, q2.b - run2.slot.b) < 0.01 && !S.capture,
+      `${fadeSis.toFixed(2)} ${q2.a.toFixed(2)},${q2.b.toFixed(2)} caught ${run2.caught}`);
+    ok('...and every guard is back on the first step of his rounds, facing its first way, with nothing left in the air', guardsAtStart === true);
+    // The checkpoint is the PARTY's: a lantern lit by her sister is where a capture of hers puts both.
+    {
+      const L0 = B.view.lanterns.find((l) => l.on);
+      put(sis, sp(L0));
+      /* HELD, NOT WALKED PAST. Richard: "hold the action/jump button for 1 second ... Likewise, lets do
+         something similar for the checkpoints/lanterns" — blue, never the bamboo's green. */
+      const pi2 = run2.padIn;
+      const hp = { mx: 0, my: 0, hold: new Set(), down(a) { return this.hold.has(a); }, pressed() { return false; } };
+      run2.padIn = hp;
+      step(1 / 60);
+      const walkedPast = run2.lit.has(L0);
+      hp.hold = new Set(['jump']);
+      for (let k = 0; k < 30; k++) step(1 / 60);
+      const half = !run2.lit.has(L0) && run2.holdRing?.mesh.visible && Math.abs(run2.holdRing.mat.uniforms.uFill.value - 0.5) < 0.04
+        && run2.holdRing.mat.uniforms.uColor.value.getHex() === BM.HOLD.blue;
+      hp.hold = new Set();
+      step(1 / 60);
+      const reset = !run2.hold && !run2.holdRing.mesh.visible;
+      hp.hold = new Set(['interact']);
+      for (let k = 0; k < 62; k++) step(1 / 60);
+      run2.padIn = pi2;
+      const g = new THREE.Color(BM.HOLD.blue);
+      ok('忍 a lantern is lit by HOLDING interact or jump for a second beside it, a blue ring filling round her — not by walking past',
+        !walkedPast && half && reset && run2.lit.has(L0) && !run2.holdRing.mesh.visible && g.g < g.b,
+        `walked ${walkedPast} half ${half} reset ${reset} lit ${run2.lit.has(L0)}`);
+      const cpOk = S.cp && Math.hypot(S.cp.a - L0.a, S.cp.b - L0.b) < 1e-6;
+      B.caught(0, null);
+      for (let k = 0; k < 150; k++) step(1 / 60);
+      const qa = B.coords(her); const qb = B.coords(sis);
+      ok('忍 the lantern her SISTER lit is where a capture of HERS puts them both — in its ring, apart, on ground they fit on',
+        cpOk && Math.hypot(qa.a - L0.a, qa.b - L0.b) < BM.SAFE.lantern && Math.hypot(qb.a - L0.a, qb.b - L0.b) < BM.SAFE.lantern
+        && Math.hypot(qa.a - qb.a, qa.b - qb.b) > 1.2 && run.caught === 2 && run2.caught === 0,
+        `${qa.a.toFixed(1)},${qa.b.toFixed(1)} ${qb.a.toFixed(1)},${qb.b.toFixed(1)} apart ${Math.hypot(qa.a - qb.a, qa.b - qb.b).toFixed(2)}`);
+      // Back to the start for the checks below, as if nothing had been lit.
+      S.cp = null; S.lit.clear();
+      put(her, sp(run.slot)); put(sis, sp(run2.slot));
+      run.ok = { a: run.slot.a, b: run.slot.b }; run2.ok = { a: run2.slot.a, b: run2.slot.b };
+      step(1 / 60);
     }
-    const back = Math.hypot(her.position.x - SW.SIM.dx - lq.x, her.position.z - SW.SIM.dz - lq.z);
-    ok('忍 seen in the open: caught within half a second, sent back to her lantern, on the floor, and told',
-      d.spotted === 1 && back < 0.01 && !!floorAt(lq.x, lq.z, I.y) && fakeGame.toasts.some((t) => /SPOTTED/.test(t)),
-      `${d.spotted} ${back.toFixed(2)} ${fakeGame.toasts.join(' | ')}`);
-    ok('...and it costs time, not the run', d.state === 'live');
-    const sq = isleSpot(I, Ly.scroll.a, Ly.scroll.b);
-    put(her, { x: sq.x, z: sq.z, y: I.y });
-    const tNow = d.t;
-    d.update(1 / 60);
-    ok('忍 reaching the scroll wins, and the score is the clock plus ten a sighting',
-      d.state === 'won' && Math.abs(d.spec.score(d) - (tNow + 1 / 60 + BM.SPOT_COST)) < 1e-6, `${d.state} ${d.spec.score(d)}`);
-    d.dispose(); D.drills[0] = null;
+    ok('...and a capture is never a hit (non-negotiable 3)', her.hp === hp0
+      && !/\.hurt\(/.test(readFileSync(new URL('../src/systems/dream/bamboo.js', import.meta.url), 'utf8'))
+      && !/\.hurt\(/.test(readFileSync(new URL('../src/systems/dream/bambooguards.js', import.meta.url), 'utf8')));
+    /* --- the Oct 2026 pass: Richard's list, each item as the behaviour he asked for --- */
+    {
+      const bsrc = readFileSync(new URL('../src/systems/dream/bamboo.js', import.meta.url), 'utf8');
+      const { PLAYER_RADIUS } = await import('../src/entities/player.js');
+      const psrc = readFileSync(new URL('../src/entities/player.js', import.meta.url), 'utf8');
+      // Does the segment (ax,az)-(bx,bz) cross wall w? (bamboolevel.js keeps its own crossT private.)
+      const segX = (ax, az, bx, bz, w) => {
+        const rx = bx - ax; const rz = bz - az; const sx = w.b1 - w.b0; const sxa = w.a1 - w.a0;
+        const den = rx * sx - rz * sxa;
+        if (Math.abs(den) < 1e-9) return false;
+        const t = ((w.a0 - ax) * sx - (w.b0 - az) * sxa) / den;
+        const u = ((w.a0 - ax) * rz - (w.b0 - az) * rx) / den;
+        return t > 0 && t < 1 && u >= 0 && u <= 1;
+      };
+      // DOORS: "the doors are too tight ... make sure both kittens' colliders are identical regardless of split screen".
+      ok('忍 the kitten the courses are checked at is the kitten the game pushes: KITTEN_R is PLAYER_RADIUS, one constant',
+        BL.KITTEN_R === PLAYER_RADIUS && !/PLAYER_RADIUS\s*\*|radius\s*=\s*.*split/i.test(psrc.match(/PLAYER_RADIUS[^\n]*/g).join('\n')));
+      const narrow = [];
+      for (const C of BL.COURSES) for (const H of C.houses ?? []) for (const dr of H.doors ?? []) if ((dr.w ?? BL.DOOR_MIN) < BL.DOOR_MIN) narrow.push(`${C.id} ${dr.side}@${dr.at} ${dr.w}`);
+      ok('...and every door is at least DOOR_MIN wide — her 1.5 across, with room either side', narrow.length === 0 && BL.DOOR_MIN >= 2 * BL.KITTEN_R + 1.2, narrow.join(' '));
+      // EVERY PLACE SHE NEEDS, AT HER REAL SIZE: doors, ladders, lanterns, barrels, pickups, ropes, the scroll.
+      const probs = BL.COURSES.flatMap((C) => BL.courseProblems(C).map((s) => `${C.id}: ${s}`));
+      ok('忍 every course: every door walked through, every ladder foot stood at, every lantern, barrel, pickup and rope reached, at her size',
+        probs.length === 0, probs.slice(0, 4).join(' | '));
+      // GUARDS DON'T WALK THROUGH WALLS (the castle's strip samurai did).
+      const ghosts = [];
+      for (const C of BL.COURSES) {
+        const Lv = BL.levelOf(C);
+        for (let n = 0; n < 3; n++) for (const g of BL.guardsOn(C, n)) {
+          let prev = BL.patrolAt(g, BL.DIFFS[n], 0);
+          for (let t = 0.1; t < 60; t += 0.1) {
+            const P = BL.patrolAt(g, BL.DIFFS[n], t);
+            const y = (g.y ?? 0) + 1;
+            if (Math.hypot(P.a - prev.a, P.b - prev.b) > 1e-4 && Lv.walls.some((w) => w.top > y && segX(prev.a, prev.b, P.a, P.b, w))) { ghosts.push(`${C.id}/${n}@${P.a.toFixed(1)},${P.b.toFixed(1)}`); break; }
+            prev = P;
+          }
+        }
+      }
+      ok('忍 no guard\'s rounds walk him through a wall', ghosts.length === 0, ghosts.join(' '));
+      // SPRINT: 1.2x her walk (Oct 2026, up from 1.15), and twice the meter.
+      const walkV = +psrc.match(/const WALK_SPEED = ([\d.]+)/)[1]; const runV = +psrc.match(/const SPRINT_SPEED = ([\d.]+)/)[1];
+      pad.hold = new Set(['sprint']);
+      d.spec.steer(d, pad);
+      const gaitSprint = her.gaitK;
+      pad.hold = new Set();
+      d.spec.steer(d, pad);
+      ok('忍 a sprint on the course is 1.2x her walk ("barely faster", then "1.2x"), off the game\'s own two speeds',
+        BL.SPRINT.walk === walkV && BL.SPRINT.run === runV && Math.abs(runV * gaitSprint - walkV * 1.2) < 1e-9 && her.gaitK === 1,
+        `${runV}x${gaitSprint}`);
+      {
+        const G = B.view.guards.find((g) => g.active && g.kind === 'samurai');
+        G.reset(B.clock);
+        const k0 = { i: 9, a: G.at.a + Math.cos(G.at.look ?? 0) * 3, b: G.at.b + Math.sin(G.at.look ?? 0) * 3, y: BL.EYE.stand, feet: 0, hidden: false };
+        const fill = (sprint) => { G.meter = new Map(); G._look(0.05, { T: B.clock, D: B.D, live: true, kittens: [{ ...k0, sprint }], smokes: [] }); return G.meterOf(9); };
+        const mw = fill(false); const ms = fill(true);
+        G.reset(B.clock);
+        ok('...and a sprinting kitten fills a guard\'s meter twice as fast as a walking one', mw > 0 && Math.abs(ms - 2 * mw) < 1e-9, `${mw} ${ms}`);
+      }
+      // THE NINJA BUTTONS. In the open: JUMP is NOT a jump, and never asks; INTERACT asks.
+      her.onGround = true;
+      const bar = B.view.barrels[0];
+      const open = (() => {
+        // A spot on the course with nothing in NEAR_K of its reach.
+        const kit = BL.kittenRaster(B.level);
+        for (let a = -14; a < 20; a += 0.5) for (let b = -12; b < 12; b += 0.5) {
+          const c = kit.cell(a, b);
+          if (c < 0 || !kit[c]) continue;
+          put(her, sp({ a, b }));
+          if (!B._reach(run).near && !B.safeAt(B.coords(her), run)) return { a, b };
+        }
+        return null;
+      })();
+      run.carry.smoke = 0;
+      pad.edge = new Set(['jump']); pad.hold = new Set(['jump']);
+      st = d.spec.steer(d, pad);
+      const noJump = !st.pressed('jump') && !st.down('jump') && !D.choices[0];
+      pad.edge = new Set(); pad.hold = new Set();
+      d.spec.steer(d, pad);
+      ok('忍 JUMP with nothing in reach is NOT a jump ("let\'s remove that") — and never opens "leave the course"', !!open && noJump && !run.hidden);
+      d.spec.quit();
+      const asked = !!D.choices[0];
+      D.closeChoice(her);
+      ok('...and INTERACT there asks', asked && !D.choices[0]);
+      // Near a barrel but not at it: a press does nothing at all.
+      const far = { a: bar.a + BM.HIDE_R * 2, b: bar.b };
+      const kitR = BL.kittenRaster(B.level);
+      let nearSpot = null;
+      for (let k = 0; k < 16 && !nearSpot; k++) {
+        const th = (k / 16) * Math.PI * 2;
+        for (const r of [BM.HIDE_R * 1.3, BM.HIDE_R * 1.8, BM.HIDE_R * 2.4]) {
+          const s = { a: bar.a + Math.cos(th) * r, b: bar.b + Math.sin(th) * r };
+          const c = kitR.cell(s.a, s.b);
+          if (c >= 0 && kitR[c]) { nearSpot = s; break; }
+        }
+      }
+      put(her, sp(nearSpot ?? far));
+      d.spec.quit();
+      ok('忍 INTERACT NEAR a barrel but not at it does nothing — no question pops up instead (NEAR_K)',
+        !!nearSpot && !D.choices[0] && !run.hidden && B._reach(run).near && !B._reach(run).barrel);
+      /* ...UNLESS SHE CARRIES A SMOKE BOMB. Richard, Oct 2026: "with a smoke bomb in the barrel's 'get
+         closer' zone, she can use the smoke bomb. In the 'hide in a barrel' zone, the button hides her
+         instead. JUMP behaves the same way." `near` ate the press she meant for the bomb. */
+      {
+        const n0 = B.smokes.length;
+        run.carry.smoke = 1;
+        pad.edge = new Set(['jump']); d.spec.steer(d, pad); pad.edge = new Set(); d.spec.steer(d, pad);
+        const smoked = B.smokes.length === n0 + 1 && run.carry.smoke === 0 && !run.hidden && !D.choices[0];
+        for (const s of B.smokes) { s.mesh.removeFromParent(); s.ring.removeFromParent(); }
+        B.smokes = [];
+        run.carry.smoke = 1;
+        put(her, sp(B._exitSpot(bar, 0))); her.onGround = true;
+        d.spec.quit();
+        const hid = run.hidden === bar && run.carry.smoke === 1 && B.smokes.length === 0;
+        if (run.hidden) B._unhide(run);
+        run.carry.smoke = 0;
+        put(her, sp(nearSpot ?? far));
+        ok('...but with a SMOKE BOMB, JUMP there drops it — and at the barrel itself the press hides her, bomb kept',
+          !!nearSpot && smoked && hid, `smoked ${smoked} hid ${hid}`);
+      }
+      /* THE SCROLL AND A LANTERN SHE HAS NOT LIT are "near" too: Richard, Oct 2026, "near the scroll or an
+         unlit lantern, ACTION must not open the menu (same rule as barrels). After the lantern is lit, the
+         menu works as normal." A spot twice the hold distance out, where nothing else is near. */
+      {
+        const kitN = BL.kittenRaster(B.level);
+        const fitsN = (s) => { const c = kitN.cell(s.a, s.b); return c >= 0 && !!kitN[c]; };
+        const ring = (o, r) => Array.from({ length: 24 }, (_, k) => ({ a: o.a + Math.cos((k / 24) * Math.PI * 2) * r, b: o.b + Math.sin((k / 24) * Math.PI * 2) * r })).filter(fitsN);
+        let lan = null;
+        for (const l of B.view.lanterns.filter((x) => x.on && !run.lit.has(x))) {
+          for (const s of ring(l, BM.HOLD.lantern * 2)) {
+            put(her, sp(s)); her.onGround = true;
+            if (!B._reach(run).near || B._holdAt(run, B.coords(her))) continue;
+            run.lit.add(l); const clear = !B._reach(run).near; run.lit.delete(l);
+            if (clear) { lan = { l, s }; break; }
+          }
+          if (lan) break;
+        }
+        let noMenu = false; let menuAfter = false;
+        if (lan) {
+          put(her, sp(lan.s)); her.onGround = true;
+          d.spec.quit();
+          noMenu = !D.choices[0];
+          run.lit.add(lan.l);
+          d.spec.quit();
+          menuAfter = !!D.choices[0];
+          D.closeChoice(her);
+          run.lit.delete(lan.l);
+        }
+        ok('忍 walking up to a lantern she has NOT lit, INTERACT opens nothing — once she has lit it, it asks as anywhere',
+          !!lan && noMenu && menuAfter, lan ? `${lan.l.a},${lan.l.b}` : 'no lantern spot');
+        const C = B.course;
+        const sc = ring(C.scroll, BM.HOLD.scroll * 2).find((s) => { put(her, sp(s)); her.onGround = true; return !B._holdAt(run, B.coords(her)); });
+        if (sc) { put(her, sp(sc)); her.onGround = true; d.spec.quit(); }
+        const scrollQuiet = !!sc && B._reach(run).near && !D.choices[0];
+        D.closeChoice(her);
+        ok('...and so does walking up to the scroll', scrollQuiet);
+        put(her, sp(nearSpot ?? far));
+      }
+      // At the barrel: JUMP is INTERACT — in, and the jump eaten; JUMP again — out, onto ground she fits on.
+      const at = B._exitSpot(bar, 0);
+      put(her, sp(at));
+      pad.edge = new Set(['jump']);
+      st = d.spec.steer(d, pad);
+      const inBarrel = run.hidden === bar && !st.pressed('jump');
+      pad.edge = new Set();
+      d.spec.steer(d, pad);
+      pad.edge = new Set(['jump']);
+      d.spec.steer(d, pad);
+      pad.edge = new Set();
+      d.spec.steer(d, pad);
+      const out = B.coords(her);
+      const oc = kitR.cell(out.a, out.b);
+      ok('忍 JUMP at a barrel gets her into it (and she does not also jump); JUMP again gets her out onto ground she fits on',
+        inBarrel && !run.hidden && oc >= 0 && !!kitR[oc] && her.group.visible, `${out.a.toFixed(2)},${out.b.toFixed(2)}`);
+      // OUT OF A BARREL BACKING ONTO THE FENCE: never behind it.
+      {
+        let worst = 0;
+        for (const C of BL.COURSES) {
+          const Lc = BL.levelOf(C); const kc = BL.kittenRaster(Lc);
+          const fake = { level: Lc };
+          for (const b of C.barrels ?? []) for (let k = 0; k < 8; k++) {
+            const s = BM.BambooInfiltration.prototype._exitSpot.call(fake, b, (k / 8) * Math.PI * 2);
+            const c = kc.cell(s.a, s.b);
+            if (!(c >= 0 && kc[c])) worst++;
+          }
+        }
+        ok('...and out of EVERY barrel on every course, whichever way she faces, she lands on ground she fits on', worst === 0, `${worst} bad exits`);
+      }
+      // SEEN GOING IN: a samurai who saw her walks over and tips her out — caught, there and then.
+      {
+        const G = B.view.guards.find((g) => g.active && g.kind === 'samurai');
+        G.reset(B.clock);
+        put(her, sp(at));
+        her.onGround = true;
+        run.sawBy.set(G, B.clock);
+        const c0 = run.caught;
+        B._ninjaPress(run, 'interact');
+        const fetching = !!G.fetching && run.hidden === bar;
+        let k = 0;
+        for (; k < 60 * 30 && !run.capture; k++) step(1 / 30);
+        ok('忍 a samurai who SAW her get into the barrel walks to it and tips her out — caught, in the open',
+          fetching && !!run.capture && run.caught === c0 + 1 && !run.hidden && her.group.visible, `${k} frames, fetching ${fetching}`);
+        for (let j = 0; j < 150; j++) step(1 / 60);
+        // ...and one who did NOT see her walks past: no memory, no fetch.
+        put(her, sp(at));
+        run.sawBy.clear();
+        B._ninjaPress(run, 'interact');
+        ok('...and a barrel nobody saw her get into is a hiding place', run.hidden === bar && !B.view.guards.some((g) => g.fetching));
+        B._unhide(run);
+      }
+      // THE ARCHER: watches the barrel SPOTTED.wait s, then an arrow into it — a coin, caught or spooked.
+      for (const [coin, want] of [[0.1, 'caught'], [0.9, 'spooked']]) {
+        const G = B.view.guards.find((g) => g.active && g.kind === 'samurai');
+        G.reset(B.clock);
+        const kind0 = G.kind; G.kind = 'archer';         // the watch is the archer's, wherever he stands
+        put(her, sp(at)); her.onGround = true;
+        run.sawBy.clear();
+        B._ninjaPress(run, 'interact');
+        // Standing on the far side of the barrel from her, a step off it: the line is clear.
+        const st0 = B._exitSpot(bar, Math.PI);
+        G.at.a = st0.a; G.at.b = st0.b; G.at.y = 0;
+        B.rng = () => coin;
+        const c0 = run.caught;
+        G.watchBarrel(run.i, bar, BM.SPOTTED.wait);
+        let firedAt = null; let t = 0;
+        for (let k = 0; k < 30 * 8 && run.hidden; k++) {
+          G._watch(1 / 30); B.shots.update(1 / 30, { kittens: [] }, () => {}, (s) => { if (s.barrel && !s.blocked) B.arrowInBarrel(s); });
+          t += 1 / 30;
+          if (firedAt == null && !G.watching) firedAt = t;
+        }
+        G.kind = kind0; B.rng = null;
+        const got = run.capture ? 'caught' : !run.hidden ? 'spooked' : 'still hidden';
+        ok(`忍 an archer who saw her get in waits ${BM.SPOTTED.wait}s, then puts an arrow in the barrel — and on that coin she is ${want}`,
+          got === want && Math.abs(firedAt - BM.SPOTTED.wait) < 0.05 && run.caught === c0 + (want === 'caught' ? 1 : 0), `${got} at ${firedAt?.toFixed(2)}`);
+        for (let j = 0; j < 150; j++) step(1 / 60);
+        G.reset(B.clock);
+      }
+      // OUT OF BOUNDS: her middle over the fence goes back to the last ground she stood over.
+      {
+        put(her, sp(run.slot)); step(1 / 60);
+        const ok0 = { ...run.ok };
+        let off = null;
+        for (let b = 0; b < 40 && !off; b += 0.25) if (!BL.walkAt(B.level, run.slot.a, run.slot.b + b)) off = { a: run.slot.a, b: run.slot.b + b + 1 };
+        put(her, sp(off));
+        step(1 / 60);
+        const qb = B.coords(her);
+        ok('忍 a kitten whose middle gets past the fence is put back on the last walkable ground she stood over',
+          !!off && BL.walkAt(B.level, qb.a, qb.b) && Math.hypot(qb.a - ok0.a, qb.b - ok0.b) < 0.6, `${qb.a.toFixed(2)},${qb.b.toFixed(2)}`);
+        /* The canes are DRAWN, not pushed: Richard, Oct 2026, "it is teleporting
+           the player around the bamboo area because of the colliders, instead it
+           should just prevent the player from going there". Solid canes shoved
+           her one way and `_bounds` snapped her back the other. */
+        ok('...and the fence is a band of canes thicker than a jump can clear — drawn, never solid; the edge is edgeRaster',
+          BL.FENCE.thick >= 2.4 && BL.FENCE.step < 2 * BL.KITTEN_R && /L\.band/.test(bsrc)
+          && !/solid\(f\.a/.test(bsrc) && !/solid\(t\.a/.test(bsrc) && /_bounds[\s\S]{0,1200}edgeRaster\(L\)/.test(bsrc));
+        // edgeRaster: no cell it lets her middle into is within KITTEN_R of a fence or trail cane.
+        {
+          let close = 0; let cells = 0;
+          for (const C of BL.COURSES) {
+            const Lc = BL.levelOf(C); const E = BL.edgeRaster(Lc);
+            const canes = [...Lc.fence.map((f) => ({ a: f.a, b: f.b, r: BL.FENCE.r })), ...Lc.trailCanes];
+            for (let a = -30; a < 30; a += 0.5) for (let b = -30; b < 30; b += 0.5) {
+              if (!E.at(a, b)) continue;
+              cells++;
+              const ca = Math.floor(a / 0.25) * 0.25 + 0.125; const cb = Math.floor(b / 0.25) * 0.25 + 0.125;
+              if (canes.some((c) => Math.hypot(ca - c.a, cb - c.b) < c.r + BL.KITTEN_R - 1e-6)) close++;
+            }
+          }
+          ok('...and edgeRaster keeps her middle KITTEN_R off every fence and trail cane, on every course', cells > 1000 && close === 0, `${close} of ${cells}`);
+        }
+        // THE SLIDE: a slanting step into the bamboo keeps the half that fits, and does not stop her dead.
+        {
+          const E = BL.edgeRaster(B.level);
+          let spot = null;
+          for (let a = -20; a < 20 && !spot; a += 0.25) for (let b = -20; b < 20 && !spot; b += 0.25) {
+            if (E.at(a, b) && E.at(a + 0.3, b) && !E.at(a, b + 0.3) && !E.at(a + 0.3, b + 0.3) && BL.walkAt(B.level, a + 0.3, b + 0.3)) spot = { a, b };
+          }
+          put(her, sp(spot)); her.onGround = true;
+          run.ok = { a: spot.a, b: spot.b };
+          B._bounds(run, { a: spot.a + 0.3, b: spot.b + 0.3, y: 0 });
+          const q3 = B.coords(her);
+          ok('忍 a slanting step into the bamboo keeps the half that fits: she slides along the edge, and never past it',
+            !!spot && Math.abs(q3.a - (spot.a + 0.3)) < 1e-6 && Math.abs(q3.b - spot.b) < 1e-6 && E.at(q3.a, q3.b),
+            spot ? `${q3.a.toFixed(2)},${q3.b.toFixed(2)} from ${spot.a},${spot.b}` : 'no edge found');
+          put(her, sp(run.slot)); run.ok = { a: run.slot.a, b: run.slot.b };
+        }
+      }
+      /* THE ROPES. Richard, Oct 2026: "when dismounting off of the rope line, the
+         player is falling through the building below the roof line, they should
+         be landing on top of the building ... the player can dismount the rope by
+         pressing the jump/interact button while on it". And "the ninja mount
+         animation is playing above the rope rather than below it". */
+      {
+        const ropes = BL.COURSES.flatMap((C) => (C.ropes ? (Array.isArray(C.ropes) ? C.ropes : Object.values(C.ropes).flat()) : []).map((R) => ({ C, R })));
+        const tied = ropes.every(({ C, R }) => {
+          const E = BL.ropeEnds(C, R);
+          return E.H0 && E.H1 && Math.abs(E.y0 - E.H0.h - BL.ROPE_RISE) < 1e-9 && Math.abs(E.y1 - E.H1.h - BL.ROPE_RISE) < 1e-9
+            && E.y0 - BM.ROPE.ink > E.H0.h && E.y1 - BM.ROPE.ink > E.H1.h && R.y == null;
+        });
+        ok('忍 every rope is tied ROPE_RISE over the roof under EACH end, and her hang clears both roofs', ropes.length >= 3 && tied, `${ropes.length} ropes`);
+        // A rope she can be put on: the first one, on this island's grid.
+        const { C: RC, R: R0 } = ropes[0];
+        const E0 = BL.ropeEnds(RC, R0);
+        const R = { a0: R0.from[0], b0: R0.from[1], a1: R0.to[0], b1: R0.to[1], y0: E0.y0, y1: E0.y1, h0: E0.H0.h, h1: E0.H1.h };
+        const pad0 = { mx: 0, my: 0, down: () => false, pressed: () => false };
+        const onRoof = () => { put(her, sp({ a: R.a0, b: R.b0 })); her.position.y += R.h0; };
+        // THE MOUNT, from where she stands; THEN the hang.
+        onRoof();
+        const y0 = B.coords(her).y;
+        B._ropeRig(run, R, 0.02);           // _reach clamps u to [0.02, 0.98]
+        her.rig.step(BM.ROPE.mount / 2, pad0);
+        const mid = B.coords(her).y;
+        run.throwT = -9;                                 // the pebble thrown above would still be drawing
+        B._always(run, d);
+        const clipMid = her.clipAs?.name;
+        her.rig.step(BM.ROPE.mount, pad0);
+        her.rig.step(1 / 60, pad0);
+        const hung = B.coords(her).y;
+        ok('忍 grabbing a rope plays the MOUNT standing where she is, and only then hangs her from the rope',
+          Math.abs(mid - y0) < 1e-6 && Math.abs(hung - (R.y0 + (R.y1 - R.y0) * 0.02)) < 0.05 && clipMid === 'mount',
+          `stood ${y0.toFixed(2)} mid ${mid.toFixed(2)} hung ${hung.toFixed(2)} of ${R.y0.toFixed(2)} clip ${clipMid}`);
+        // OFF THE END, onto the roof it is tied to — not into the house under it.
+        her.rig.u = -0.01;
+        her.rig.step(1 / 60, pad0);
+        const land = B.coords(her).y;
+        ok('...and off the end she lands ON the roof that end is tied to, not inside the house', !her.rig && Math.abs(land - (R.h0 + 0.05)) < 0.02,
+          `${land.toFixed(2)} on a ${R.h0} roof`);
+        /* JUMP lets go mid-rope, from where the hang drew her feet — pressed on HER PAD, through the steer,
+           which is the only way it arrives in the game. This check used to hand the rig a pad that said
+           JUMP, and passed; the rig is handed the steer's proxy, which masks JUMP, so in the game JUMP
+           never let go. Richard, Oct 2026: "JUMP should drop her from a rope the way ACTION does". */
+        onRoof();
+        B._ropeRig(run, R, 0.5);
+        her.rig.step(BM.ROPE.mount + 0.01, pad0);
+        her.rig.step(1 / 60, pad0);
+        pad.edge = new Set(['jump']); d.spec.steer(d, pad); pad.edge = new Set();
+        const feet = B.coords(her).y;
+        const want = (R.y0 + R.y1) / 2 - BM.ROPE.ink;
+        ok('...and JUMP on her pad lets go mid-rope, her feet where the hang drew them, and asks nothing',
+          !her.rig && Math.abs(feet - want) < 0.05 && !D.choices[0] && !/pressed\?\.\('jump'\)\) \{ this\.letGo/.test(bsrc),
+          `${feet.toFixed(2)} want ${want.toFixed(2)}`);
+        // INTERACT too.
+        onRoof();
+        B._ropeRig(run, R, 0.5);
+        her.rig.step(BM.ROPE.mount + 0.01, pad0);
+        const took = B._ninjaPress(run, 'interact');
+        ok('...and so does INTERACT — and the press is eaten, so it opens nothing', !her.rig && took === true && !D.choices[0]);
+        put(her, sp(run.slot)); run.ok = { a: run.slot.a, b: run.slot.b }; run.ropeCd = 0;
+        her.velocity?.set(0, 0, 0);
+      }
+      /* THE OCT 2026 PASS ON THE VILLAGE — houses, ladders, an archer on his tower, ropes, a pickup. The
+         session's course (the path) has none of them, so the village is built beside it and swapped in for
+         these, the way the picker's swipe builds the next course; and taken out of the world again after. */
+      {
+        const SH = await import('../src/systems/dream/bambooguards.js');
+        const v0 = B.view; const id0 = B.courseId;
+        const VC = BL.COURSES.find((C) => C.id === 'village');
+        const V = B._buildCourse(VC);
+        B.view = V; B.courseId = VC.id;
+        her.rig = null; run.hidden = null; run.ropeCd = 0; run.charge = null; run.planted = false;
+        /* LADDERS BY A PRESS. Richard: "ladders climb on the ACTION/JUMP buttons, not automatically". At the
+           foot, pushing the stick into the wall for half a second: not on it. A press: on it. A second press
+           (a mash) does not drop her off it halfway up, and neither does JUMP. */
+        {
+          const Ld = V.ladders[0];
+          put(her, sp(Ld.foot)); her.onGround = true; run.ok = { a: Ld.foot.a, b: Ld.foot.b };
+          const want = SH.isleDir(I, Ld.foot.face);
+          const { fwd, right } = her._moveBasis(pad);
+          const det = fwd.x * right.z - right.x * fwd.z;
+          const push = { ...pad, mx: (fwd.x * want.z - fwd.z * want.x) / det, my: (right.x * want.z - right.z * want.x) / det, hold: new Set(), edge: new Set(), dbl: new Set() };
+          push.down = pad.down; push.pressed = pad.pressed; push.doubled = pad.doubled;
+          for (let k = 0; k < 30; k++) { d.spec.steer(d, push); d.spec.tick(d, 1 / 60); put(her, sp(Ld.foot)); her.onGround = true; }
+          const walkedOn = !!her.rig;
+          d.spec.steer(d, pad);
+          d.spec.quit();
+          const onIt = her.rig?.kind === 'ladder';
+          d.spec.quit();
+          pad.edge = new Set(['jump']); d.spec.steer(d, pad); pad.edge = new Set();
+          const stayed = her.rig?.kind === 'ladder' && !D.choices[0];
+          her.rig = null;
+          ok('忍 a ladder is climbed on a PRESS, never by walking into it — and a second press, or JUMP, does not drop her off it',
+            V.ladders.length > 0 && !walkedOn && onIt && stayed && !/_startLadder\(run/.test(bsrc), `walked ${walkedOn} on ${onIt} stayed ${stayed}`);
+        }
+        /* THE ROOF EDGE. Richard: "the canes beside buildings shove her off the roof and she falls. They should
+           only block her." Up there the edge was `walkAt` — the very last centimetre of roof — so a step put
+           her past the wall, she began to drop, and the wall's posts shoved her into the street. Measured,
+           every roof side on every course that meets the bamboo: how far inside the roof the edge now holds
+           her. One sprint frame at 60fps is 0.21; the old rule held her at 0.00. */
+        {
+          let worst = Infinity; let worstOld = Infinity; let sides = 0;
+          for (const C of BL.COURSES) {
+            const Lc = BL.levelOf(C); const Ec = BL.edgeRaster(Lc);
+            for (const H of C.houses ?? []) {
+              for (const [axis, sgn, edge, lo, hi] of [['a', 1, H.a1, H.b0, H.b1], ['a', -1, H.a0, H.b0, H.b1], ['b', 1, H.b1, H.a0, H.a1], ['b', -1, H.b0, H.a0, H.a1]]) {
+                for (let s = lo + 0.5; s <= hi - 0.5; s += 0.5) {
+                  const at = (u) => (axis === 'a' ? { a: u, b: s } : { a: s, b: u });
+                  const past = at(edge + 0.3 * sgn);
+                  if (BL.walkAt(Lc, past.a, past.b)) continue;       // ground past it: stepping off a roof is allowed
+                  const mid = axis === 'a' ? (H.a0 + H.a1) / 2 : (H.b0 + H.b1) / 2;
+                  const last = (fits) => { let u = mid; while (Math.abs(u - mid) < 40 && fits(at(u + 0.01 * sgn))) u += 0.01 * sgn; return (edge - u) * sgn; };
+                  worst = Math.min(worst, last((q) => Ec.at(q.a, q.b)));
+                  worstOld = Math.min(worstOld, last((q) => BL.walkAt(Lc, q.a, q.b)));
+                  sides++;
+                }
+              }
+            }
+          }
+          // ...and the very case: the last centimetre of h1's forest side is not somewhere she is left standing.
+          const H1 = VC.houses.find((H) => H.id === 'h1');
+          const roofMid = { a: (H1.a0 + H1.a1) / 2, b: -9.5 };
+          put(her, sp(roofMid)); her.position.y += H1.h; her.onGround = true;
+          run.ok = { ...roofMid };
+          const edgeQ = { a: H1.a1 - 0.02, b: -9.5, y: H1.h };
+          put(her, sp(edgeQ)); her.position.y += H1.h;
+          B._bounds(run, edgeQ);
+          const qe = B.coords(her);
+          ok('忍 where a roof meets the bamboo, the edge holds her ON the roof, clear of its wall — never on its last centimetre',
+            sides > 50 && worst >= 0.22 && worst > (BL.SPRINT.walk * BL.SPRINT.k) / 60 && worstOld < 0.05 && qe.a <= H1.a1 - 0.25
+            && !/q\.y > 0\.6 \? walkAt/.test(bsrc),
+            `${sides} sides, held ${worst.toFixed(2)} in (was ${worstOld.toFixed(2)}); h1 put back to a=${qe.a.toFixed(2)} of ${H1.a1}`);
+        }
+        /* THE ARCHER LOCK-ON (LOCK). Richard: "only from a rooftop or a rope. Hold slash and aim toward the
+           archer: within throwing radius and within 45° it locks on ... thrown straight at him, it hits unless
+           a major barrier ... only shuriken. If the throw would be a rock, play a cancel sound and show a red
+           circle." Hanging from a village rope, the archer stood 8 out on a clear line. */
+        {
+          const VR = (Array.isArray(VC.ropes) ? VC.ropes : Object.values(VC.ropes).flat())[0];
+          const VE = BL.ropeEnds(VC, VR);
+          const R = { a0: VR.from[0], b0: VR.from[1], a1: VR.to[0], b1: VR.to[1], y0: VE.y0, y1: VE.y1, h0: VE.H0.h, h1: VE.H1.h };
+          const pad0 = { mx: 0, my: 0, down: () => false, pressed: () => false };
+          put(her, sp({ a: R.a0, b: R.b0 })); her.position.y += R.h0;
+          B._ropeRig(run, R, 0.5);
+          her.rig.step(BM.ROPE.mount + 0.01, pad0);
+          her.rig.step(1 / 60, pad0);
+          const G = V.guards.find((g) => g.kind === 'archer');
+          const G0 = { ...G.at }; const act0 = G.active;
+          G.active = true; G.mode = 'walk';
+          const q = B.coords(her); const from = B._handAt(run);
+          let th = null;
+          for (let k = 0; k < 16 && th == null; k++) {
+            const t = (k / 16) * Math.PI * 2;
+            const to = { a: q.a + Math.cos(t) * 8, b: q.b + Math.sin(t) * 8, y: G0.y + 1.4 };
+            if (!BL.blocked(B.level, from, to, 'archer')) th = t;
+          }
+          const place = (r, t) => { G.at = { ...G0, a: q.a + Math.cos(t) * r, b: q.b + Math.sin(t) * r }; };
+          const face = (t) => { her.facing = SH.isleFacing(I, t); };
+          place(8, th); face(th);
+          const at0 = B._lockOn(run)?.g === G;
+          face(th + THREE.MathUtils.degToRad(40));
+          const at40 = B._lockOn(run)?.g === G;
+          face(th + THREE.MathUtils.degToRad(50));
+          const at50 = B._lockOn(run)?.g === G;
+          face(th); place(BM.THROW.max + 1, th);
+          const tooFar = B._lockOn(run)?.g === G;
+          place(8, th);
+          // With a shuriken: straight at him, an archer's line, and he sleeps.
+          run.carry.shuriken = 1; run.charge = 1;
+          B._throw(run); run.charge = null;
+          const s = B.shots.list[B.shots.list.length - 1];
+          const thrown = s?.kind === 'mine' && s.guard === G && s.who === 'archer' && run.carry.shuriken === 0;
+          let landed = null;
+          for (let k = 0; k < 120 && !landed; k++) B.shots.update(1 / 60, { kittens: [] }, () => {}, (x) => { if (x === s) landed = x; });
+          const hits = landed === s && !s.blocked && Math.hypot(G.at.a - s.a, G.at.b - s.b) < BM.THROW.mineR;
+          // With none: the cancel sound, a red ring on him, and nothing thrown.
+          fakeGame.sounds.length = 0;
+          const n0 = B.shots.list.length; const p0 = B.pebbles.length;
+          run.charge = 1; B._throw(run); run.charge = null;
+          B._always(run, d);
+          const refused = B.shots.list.length === n0 && B.pebbles.length === p0 && fakeGame.sounds.includes('deny') && !!run.flash
+            && run.aim.visible && run.aim.material.color.getHex() === 0xff3b3b;
+          // On the rope with nobody to lock on to and no shuriken: no pebble either — the same refusal.
+          place(40, th);
+          fakeGame.sounds.length = 0;
+          run.flash = null; run.charge = 1; B._throw(run); run.charge = null;
+          const ropeNoPebble = B.pebbles.length === p0 && fakeGame.sounds.includes('deny') && !!run.flash;
+          // Winding up on a rope, the stick turns her and does not carry her along it.
+          const sticks = [[1, 0], [0, 1], [-1, 0], [0, -1]].map(([mx, my]) => ({ ...pad0, mx, my }));
+          let frozen = true; let moves = false;
+          for (const P of sticks) {
+            const u0 = her.rig.u;
+            run.charge = 0.5; her.rig.step(1 / 60, P);
+            if (her.rig.u !== u0) frozen = false;
+            run.charge = null; her.rig.step(1 / 60, P);
+            if (her.rig.u !== u0) moves = true;
+            her.rig.u = u0;
+          }
+          // On the ground: no lock-on at all.
+          her.rig = null; run.flash = null;
+          put(her, sp({ a: q.a, b: q.b })); her.onGround = true;
+          place(8, th); face(th);
+          const ground = B._lockOn(run);
+          G.at = G0; G.active = act0;
+          ok('忍 on a rope or a roof, aiming within 45° of an archer in throwing range locks on — at 40° yes, at 50° and out of range no, on the ground never',
+            th != null && at0 && at40 && !at50 && !tooFar && ground === null, `clear ${th != null} 0° ${at0} 40° ${at40} 50° ${at50} far ${tooFar} ground ${ground}`);
+          ok('...a locked SHURIKEN flies straight at him on an archer\'s line and puts him to sleep',
+            thrown && hits, `thrown ${thrown} landed ${!!landed} blocked ${s?.blocked}`);
+          ok('...with no shuriken it is REFUSED: the cancel sound and a red ring on him, no pebble — and a pebble from a rope is refused too',
+            refused && ropeNoPebble, `refused ${refused} rope ${ropeNoPebble}`);
+          ok('...and winding up on a rope she stays where she hangs and the stick aims her', frozen && moves);
+          ok('...and a stopped shot is an archer\'s line for it (`s.who`), never the samurai\'s that stops at the bamboo',
+            /const who = s\.who \?\? \(/.test(readFileSync(new URL('../src/systems/dream/bambooguards.js', import.meta.url), 'utf8')));
+        }
+        /* THE PICKUP TOAST, TWICE AS LONG. Richard: "pickup messages for shuriken/smoke bomb stay on screen twice
+           as long". Asked of the game's own length rule, so a long line is twice a long hold. */
+        {
+          const k = V.pickups[0];
+          const t0 = fakeGame.toast; const h0 = fakeGame.toastHold;
+          let got = null;
+          fakeGame.toast = (t, i, c, h) => { got = { t, h }; };
+          fakeGame.toastHold = (t) => 100 + t.length;
+          k.on = true; k.gone = 0;
+          run.carry = { shuriken: 0, smoke: 0 };
+          put(her, sp(k)); her.onGround = true; run.ok = { a: k.a, b: k.b };
+          d.spec.tick(d, 1 / 60);
+          fakeGame.toast = t0; fakeGame.toastHold = h0;
+          const mainSrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+          ok('忍 a pickup\'s toast is held twice the game\'s own hold for its length',
+            !!got && got.h === 2 * (100 + got.t.length) && /holdMs > 0 \? holdMs : this\.toastHold\(text\)/.test(mainSrc) && /^  toastHold\(text\) \{/m.test(mainSrc),
+            got ? `${got.h} for ${got.t.length} chars` : 'no toast');
+          run.carry = { shuriken: 0, smoke: 0 };
+        }
+        B._unsolid(V);
+        for (const g of V.guards) g.dispose();
+        V.pivot.removeFromParent();
+        B.view = v0; B.courseId = id0;
+        her.rig = null; run.flash = null; run.charge = null;
+        put(her, sp(run.slot)); run.ok = { a: run.slot.a, b: run.slot.b }; her.onGround = true;
+      }
+      /* THE BRUSH (BRUSH), on the path's own thickets. Richard: "sprite goes 50% transparent in the brush ...
+         a subtle leaf-rustle sound while walking or running through it ... a 'whirlwind' vanish sound when she
+         crouches in it ... text on the card says she can hide there ... crawling in the brush radius: a 75%
+         chance she is not spotted, for as long as she stays there. Standing: 25%, and moving re-rolls it every
+         0.5s." The dice are B.rng, so each roll is a number this check chose. */
+      {
+        const T = B.level.cover.find((c) => c.kind === 'thicket');
+        const q = { a: T.a, b: T.b, y: 0 };
+        const fr = { p: { rig: null, onGround: true, hideFade: 0 }, sneak: true, brush: null };
+        let rolls = 0; let roll = 0.7;
+        B.rng = () => { rolls++; return roll; };
+        fakeGame.sounds.length = 0;
+        B._stepBrush(fr, q, 1 / 60, 3);
+        const crawlIn = fr.brush?.hid === true && fr.p.hideFade === BM.BRUSH.fade && fakeGame.sounds.includes('vanish');
+        roll = 0.99;
+        for (let k = 0; k < 180; k++) B._stepBrush(fr, q, 1 / 60, 3);
+        const kept = fr.brush.hid === true && rolls === 1 && !fakeGame.sounds.includes('rustle');
+        // Up on her feet, in it: a new roll at 25%, and moving re-rolls it every half second.
+        fr.sneak = false; roll = 0.2; rolls = 0;
+        B._stepBrush(fr, q, 1 / 60, 0);
+        const standIn = fr.brush.hid === true && rolls === 1;
+        roll = 0.3;
+        for (let k = 0; k < 60; k++) B._stepBrush(fr, q, 1 / 60, 0);
+        const stillKept = fr.brush.hid === true && rolls === 1;
+        fakeGame.sounds.length = 0;
+        // 125 frames, not 120: the fourth half-second lands on frame 120 or 121 by floating point.
+        for (let k = 0; k < 125; k++) B._stepBrush(fr, q, 1 / 60, 6);
+        const rerolled = fr.brush.hid === false && rolls === 5;
+        const rustles = fakeGame.sounds.filter((x) => x === 'rustle').length;
+        // Out of it: whole again, no roll.
+        B._stepBrush(fr, { a: T.a + T.r + 0.5, b: T.b, y: 0 }, 1 / 60, 6);
+        const out = fr.brush === null && fr.p.hideFade === 0;
+        // A losing crawl roll (0.8 > 0.75) does not hide her.
+        fr.sneak = true; roll = 0.8;
+        B._stepBrush(fr, q, 1 / 60, 3);
+        const lost = fr.brush.hid === false;
+        B.rng = null;
+        ok('忍 crawling into the brush rolls once at 75% — 0.7 hides her, 0.8 does not — the whirlwind plays, she is half there, and the roll holds while she stays',
+          crawlIn && kept && lost, `in ${crawlIn} kept ${kept} lost ${lost} rolls ${rolls}`);
+        ok('...standing in it is 25%, kept while she stands still and re-rolled every 0.5s while she moves (4 in 2s), with the leaves rustling as she goes',
+          standIn && stillKept && rerolled && rustles >= 6 && rustles <= 8, `stand ${standIn} still ${stillKept} reroll ${rerolled} rustles ${rustles}`);
+        ok('...and out of the brush she is whole again', out);
+        // In play: the winning roll is `hidden` to every guard, the card says so, and her drawing fades by it.
+        const c0 = { ...run.carry };
+        put(her, sp(T)); her.onGround = true; run.ok = { a: T.a, b: T.b };
+        run.latch = true; d.spec.steer(d, pad);
+        B.rng = () => 0.1;
+        d.spec.tick(d, 1 / 60);
+        const card = d.spec.paint(d)?.[0]?.text ?? '';
+        const inPlay = run.brush?.hid === true && her.hideFade === BM.BRUSH.fade && /brush/i.test(card)
+          && /\|\| !!run\.brush\?\.hid/.test(bsrc);
+        run.latch = false; d.spec.steer(d, pad);
+        d.spec.tick(d, 1 / 60);
+        const standCard = d.spec.paint(d)?.[0]?.text ?? '';
+        B.rng = null;
+        put(her, sp(run.slot)); run.ok = { a: run.slot.a, b: run.slot.b };
+        d.spec.tick(d, 1 / 60);
+        run.carry = c0;
+        ok('...in play the win is HIDDEN to every guard, the card says where she is ("crawl to hide" standing), and out of it she is whole',
+          inPlay && /crawl to hide/.test(standCard) && her.hideFade === 0 && !run.brush, `"${card}" | "${standCard}"`);
+        const audSrc = readFileSync(new URL('../src/core/audio.js', import.meta.url), 'utf8');
+        ok('...her drawing takes the fade the window look uses (alphaTest with it, the clip too), and the two sounds exist',
+          /Math\.max\(this\.lookFade \?\? 0, this\.hideFade \?\? 0\)/.test(psrc) && /clipPose\.mat\.alphaTest = /.test(psrc)
+          && /case 'rustle':/.test(audSrc) && /case 'vanish':/.test(audSrc));
+      }
+      // THE DRILL CARD faces the lens, pitch and all — the course camera looks down at 0.95 rad.
+      ok('忍 the card over her head is turned fully to the camera (fullFace), so it reads from a looking-down lens',
+        d.panel?.fullFace === true, String(d.panel?.fullFace));
+      /* ...DRAWN OVER THE ROOFS, a little bigger. Richard, Oct 2026: "make the text a bit bigger and easier to
+         read, but not overbearing. Stop the roofs from hiding the card." */
+      ok('...and no roof hides it: no depth test, drawn after the world (the hold ring\'s rule), wider than a drill\'s, the prompt line ≥ 1',
+        d.panel.mat.depthTest === false && d.panel.mesh.renderOrder >= 1000 && d.panel.w === BM.CARD.w && d.panel.h === BM.CARD.h
+        && BM.CARD.w > 5.4 && BM.CARD.w <= 7 && BM.CARD.sizes[2] >= 1
+        && Math.abs(d.panel.position.y - d.panel.h / 2 - ((her.height ?? 2.6) + 2.3 - 1.7 / 2)) < 1e-9,
+        `depth ${d.panel.mat.depthTest} order ${d.panel.mesh.renderOrder} ${d.panel.w}x${d.panel.h}`);
+      /* THE ITEMS ON THE PROMPT LINE: "show the shuriken/smoke-bomb items on the same line as the input text. If
+         it doesn't fit, drop 'leave the course' or other text until the items are spent." Measured on HER
+         card's canvas, with text 12px a character (Nunito 800 at the prompt's 22.8px is about 12.5). */
+      {
+        const fake = { panel: { cv: d.panel.cv, g: { font: '', measureText: (t) => ({ width: t.length * 12 }) } } };
+        const c0 = { ...run.carry };
+        put(her, sp(open)); her.onGround = true;
+        run.carry = { shuriken: 0, smoke: 0 };
+        const bare = B._promptLine(run, fake);
+        run.carry = { shuriken: 1, smoke: 0 };
+        const one = B._promptLine(run, fake);
+        put(her, sp(B._exitSpot(bar, 0))); her.onGround = true;
+        run.carry = { shuriken: 1, smoke: 1 };
+        const both = B._promptLine(run, fake);
+        const fitsAll = [bare, one, both].every((t) => t.length * 12 <= d.panel.cv.width * 0.9);
+        run.carry = c0;
+        put(her, sp(open));
+        ok('...and what she carries rides on the prompt line: "leave the course?" makes way for it, and the line is never shrunk to fit',
+          /leave the course/.test(bare) && !/leave/.test(one) && /SHURIKEN/.test(one) && /SHURIKEN/.test(both) && /SMOKE BOMB/.test(both)
+          && /barrel/.test(both) && fitsAll && !d.spec.paint(d).some((l, i) => i === 1 && /手裏剣|煙/.test(l.text)),
+          `"${bare}" | "${one}" | "${both}"`);
+      }
+      // NOTHING THROUGH A WALL: a shuriken at her, stopped by a wall 0.5 from her, does not catch her.
+      {
+        const SH = await import('../src/systems/dream/bambooguards.js');
+        const CV = BL.COURSES.find((C) => (C.houses ?? []).length);
+        const Lv = BL.levelOf(CV);
+        const H = CV.houses[0];
+        const fakeB = { level: Lv, isle: I, _w: () => ({ x: 0, y: 0, z: 0 }), dream: { game: {} } };
+        const shots = new SH.Shots(fakeB, new THREE.Group());
+        // A stretch of side a0 with wall and no door: fired from outside at a kitten 0.3 inside it.
+        let mid = null;
+        for (let b = H.b0 + 0.6; b < H.b1 - 0.6 && mid == null; b += 0.3) if (Lv.walls.some((w) => w.top > 2 && segX(H.a0 - 1, b, H.a0 + 1, b, w))) mid = b;
+        const kIn = { i: 0, a: H.a0 + 0.3, b: mid, y: 1.5, feet: 0, hidden: false };
+        const wallAt = mid != null;
+        let hit = 0; let landed = null;
+        // From 3.1 out, so a frame of flight ends 0.1 short of the wall, with her 0.4 from it — inside SHOT.hitR.
+        const s = shots.fire('star', { a: H.a0 - 3.1, b: mid, y: 1.5 }, { a: kIn.a, b: kIn.b, y: 1.5 }, null);
+        for (let k = 0; k < 60; k++) shots.update(1 / 60, { kittens: [kIn] }, () => hit++, (x) => { landed = x; });
+        ok('忍 a guard\'s shuriken stops at a wall — and does not catch the kitten half a step the other side of it',
+          wallAt && hit === 0 && landed === s && s.blocked === true, `wall ${wallAt} hit ${hit}`);
+        ok('...and her shuriken that hit a wall on its way puts nobody to sleep, and her ring never goes red through one',
+          /if \(!s\.blocked && g\?\.awake/.test(bsrc) && /_mineTarget[\s\S]{0,700}blocked\(L,/.test(bsrc));
+        ok('...and a pebble is stopped by what it flies into, and clatters there', /PEBBLES[\s\S]{0,600}blocked\(this\.level/.test(bsrc));
+      }
+      // THE PARTY'S CAMERA: one pane for the session, all of them in it — and past `split`, player 1's.
+      {
+        put(her, sp(run.slot)); put(sis, sp(run2.slot));
+        step(1 / 60);
+        const g1 = B.groupShot([0, 1]);
+        const same = B.paneAnchor(her) === B.paneAnchor(sis) && !!B.paneAnchor(her);
+        /* Somewhere she can STAND, this far from her: the edge is `edgeRaster`
+           now, and a straight line out from the start leaves the trail —
+           `_bounds` took her sister straight back to her last good step. */
+        const Eg = BL.edgeRaster(B.level);
+        const away = (r) => {
+          for (let k = 0; k < 720; k++) {
+            const th = (k / 720) * Math.PI * 2;
+            const s2 = { a: run.slot.a + Math.cos(th) * r, b: run.slot.b + Math.sin(th) * r };
+            if (Eg.at(s2.a, s2.b)) return s2;
+          }
+          return null;
+        };
+        put(sis, sp(away(BM.PARTY_CAM.split + 4)));
+        step(1 / 60);
+        const split = B._party.split && Math.hypot(B._party.centre.x - her.position.x, B._party.centre.z - her.position.z) < 1e-6;
+        put(sis, sp(away(BM.PARTY_CAM.split - 3)));
+        step(1 / 60);
+        const held = B._party.split;               // between rejoin and split: still hers (hysteresis)
+        put(sis, sp(away(BM.PARTY_CAM.rejoin - 4)));
+        step(1 / 60);
+        const back = !B._party.split;
+        const wide = B.groupShot([0, 1]).dist;
+        ok('忍 the party shares one pane and one shot, its camera\'s own angle (BAMBOO_CAM)',
+          same && !!g1 && g1.pitch === BM.BAMBOO_CAM.pitch && g1.dist >= BM.BAMBOO_CAM.dist && !D.wantsSolo(her) && !D.wantsSolo(sis));
+        ok('...too far apart, it follows player 1 — and takes them all in again only once they are back within `rejoin`',
+          split && held && back && wide >= BM.BAMBOO_CAM.dist && BM.partyDist(BM.PARTY_CAM.split) > BM.BAMBOO_CAM.dist && BM.partyDist(200) === BM.PARTY_CAM.maxDist,
+          `${split} ${held} ${back} ${wide.toFixed(1)} ${BM.partyDist(BM.PARTY_CAM.split).toFixed(1)}`);
+        const mainSrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+        ok('...and main.js asks the island for both', /bamboo\?\.paneAnchor\?\.\(p\)/.test(mainSrc) && /bamboo\?\.groupShot\?\.\(members\)/.test(mainSrc));
+        put(sis, sp(run2.slot)); step(1 / 60);
+      }
+    }
+    /* SANCTUARY, in play — AS RICHARD HAS IT NOW (Oct 2026): "it must not shield her before she has lit it
+       ... protection only applies after a respawn there, until she first leaves its radius. After that it
+       gives no protection." A lantern a samurai looks straight at: stood on fresh, she is caught there;
+       put back there by that capture, 20s in his eye and nobody touches her; one step out and back, and
+       it is an ordinary place again. Her sister waits in the start's ring, armed, so the capture is hers. */
+    {
+      const C0 = B.course;
+      const hot = BL.lanternsOn(C0, 0).find((l) => where.has(`${C0.id}/0@${l.a},${l.b}`));
+      const cp0 = S.cp;
+      put(sis, sp(run2.slot)); B._armSafe(run2, null);
+      put(her, sp(hot)); step(1 / 30);
+      const fresh = !run.safe && !B.safeAt(B.coords(her), run);
+      S.cp = { a: hot.a, b: hot.b, th: 0 };         // the party's lantern, so the capture puts her back HERE
+      const c0 = run.caught;
+      let k = 0;
+      for (; k < 60 * 30 && run.caught === c0; k++) step(1 / 30);
+      const caughtThere = run.caught === c0 + 1;
+      for (let j = 0; j < (BM.ARREST.end + 0.2) * 30; j++) step(1 / 30);
+      const q1 = B.coords(her);
+      const armed = !!run.safe && B.safeAt(q1, run) && Math.hypot(q1.a - hot.a, q1.b - hot.b) < BM.SAFE.lantern;
+      const c1 = run.caught;
+      for (let j = 0; j < 20 * 30; j++) step(1 / 30);
+      const held = run.caught === c1 && !run.capture && d.state === 'live';
+      put(her, sp({ a: hot.a + BM.SAFE.lantern + 0.6, b: hot.b })); step(1 / 60);
+      put(her, sp(hot)); step(1 / 60);
+      const spent = !run.safe && !B.safeAt(B.coords(her), run);
+      S.cp = cp0;
+      const bsrc = readFileSync(new URL('../src/systems/dream/bamboo.js', import.meta.url), 'utf8');
+      ok("忍 a lantern's ring is NO sanctuary before she has been put back there — stood in it fresh, the guard who looks at it catches her",
+        !!hot && fresh && caughtThere, `${hot?.a},${hot?.b} fresh ${fresh}, caught after ${(k / 30).toFixed(1)}s`);
+      ok('...put back there by a capture, nobody catches her in it for 20s — and one step out spends it',
+        armed && held && spent, `armed ${armed} held ${held} spent ${spent}`);
+      ok('...and lighting a lantern arms nothing: only a respawn does (`_armSafe` in _start and _partyReset, nowhere else)',
+        (bsrc.match(/this\._armSafe\(/g) ?? []).length === 2 && /_armSafe\(run, null\)/.test(bsrc) && /_armSafe\(r, S\.cp\)/.test(bsrc));
+    }
+    // THE SCROLL: the score is the clock plus CAUGHT_COST a capture.
+    const C0 = B.course;
+    put(her, sp(C0.scroll));
+    /* HELD. Richard: "the player needs to stand next to the scroll and hold the action/jump button for 1
+       second before they complete the level ... a circular bar appearing around them that is shown over
+       all of the environment ... billboard towards the camera properly ... scroll can be gold". */
+    {
+      pad.hold = new Set(); pad.edge = new Set(['interact']);
+      d.spec.steer(d, pad);
+      d.spec.quit();
+      const noMenu = !D.choices[0];
+      pad.edge = new Set();
+      d.spec.steer(d, pad);
+      d.update(1 / 60);
+      const standing = d.state === 'live';
+      pad.hold = new Set(['interact']);
+      d.spec.steer(d, pad);
+      for (let k = 0; k < 30; k++) d.update(1 / 60);
+      const R = run.holdRing;
+      const mid = d.state === 'live' && R?.mesh.visible && R.mat.uniforms.uColor.value.getHex() === BM.HOLD.gold
+        && Math.abs(R.mat.uniforms.uFill.value - 0.5) < 0.04;
+      // Over everything, and turned to whichever lens is drawing it — in the WORLD, whatever the island's turn.
+      const cam = new THREE.PerspectiveCamera();
+      cam.position.set(5, 9, -4); cam.lookAt(0, 0, 0); cam.updateMatrixWorld();
+      R.mesh.onBeforeRender(null, null, cam);
+      const qq = new THREE.Quaternion(); R.mesh.matrixWorld.decompose(new THREE.Vector3(), qq, new THREE.Vector3());
+      const faces = qq.angleTo(cam.quaternion) < 1e-6 && R.mat.depthTest === false && R.mesh.renderOrder >= 1000;
+      for (let k = 0; k < 31; k++) d.update(1 / 60);
+      pad.hold = new Set();
+      ok('忍 the scroll is taken by HOLDING interact or jump for a second — a press never asks to leave there, and standing at it is not enough',
+        noMenu && standing && mid && d.state === 'won', `menu ${!noMenu} standing ${standing} mid ${mid} ${d.state}`);
+      ok('...the ring round her is gold, drawn over everything, and faces the lens that draws it', mid && faces);
+    }
+    ok('忍 reaching the scroll wins, and the score is the clock plus the captures',
+      d.state === 'won' && run.caught >= 1 && Math.abs(d.spec.score(d) - (d.t + run.caught * BL.CAUGHT_COST)) < 1e-6, `${d.state} ${d.spec.score(d)}`);
+    const rowsB = BB.bambooRows(D.progress, { course: C0.id, diff: 0, who: 'all' });
+    ok('...and it is on the board for that course and difficulty', rowsB.length === 1 && Math.abs(rowsB[0].time - d.spec.score(d)) < 0.01,
+      JSON.stringify(rowsB));
+    // OUT: her sister leaves on INTERACT's question; both drills go; both are let out with their kits back.
+    ok('忍 INTERACT with nothing to hide in asks before it leaves, "no" first',
+      /'no, keep sneaking'[\s\S]{0,120}'yes, leave the course'/.test(readFileSync(new URL('../src/systems/dream/bamboo.js', import.meta.url), 'utf8')));
+    B.leaveCourse(sis);
+    d.dispose(); D.drills[0] = null; d2.dispose(); D.drills[1] = null;
+    B.update(1 / 60);
+    ok('忍 when the last run ends the session closes, both are on the plaza with their kits back, and the next course is up',
+      !B.session && !D.st[0].benched && !D.st[1].benched && B.coords(her).a < BL.GATE.a && B.coords(sis).a < BL.GATE.a
+      && B.last?.results.length === 2 && B.courseId === BL.COURSES[1].id && !her.rig && !her.clipAs && her.gaitK === 1,
+      `${B.courseId} ${B.coords(her).a.toFixed(1)}`);
+    // NOBODY ON THE COURSE BUT ITS RUNNERS.
+    put(sis, sp({ a: BL.GATE.a + 0.3, b: 0 }));
+    B.update(1 / 60);
+    const atGate = B.coords(sis).a;
+    put(sis, sp(BL.START));
+    for (let k = 0; k < 4; k++) B.update(0.5);
+    ok('忍 the barrier holds a kitten out, and one who got in anyway is walked out',
+      atGate < BL.GATE.a && B.coords(sis).a < BL.GATE.a, `${atGate.toFixed(2)} ${B.coords(sis).a.toFixed(2)}`);
+    for (let k = 0; k < 120; k++) B.update(1 / 60);
   }
   scene.remove(sim.root);
 }
@@ -40356,6 +42793,24 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         && LG.GUIDE_ORDER.length === KEYS.length && KEYS.every((k) => LG.GUIDE_ORDER.includes(k)),
         KEYS.filter((k) => !ISL.ISLE_ABOUT[k]).join());
 
+      /* 工事中: he lists the finished islands first and sends her to them
+         first, the Shadow last as ever, and marks the unfinished three on his
+         list and his map. */
+      {
+        const at = (k) => LG.GUIDE_ORDER.indexOf(k);
+        const wipK = KEYS.filter(ISL.isWip);
+        const fine = KEYS.filter((k) => !ISL.isWip(k) && k !== 'shadow');
+        ok('...工事中 he lists the unfinished islands after every finished one, and the Shadow last',
+          wipK.every((w) => fine.every((k) => at(k) < at(w))) && at('shadow') === KEYS.length - 1, LG.GUIDE_ORDER.join());
+        const svg = D.guide.mapSvg(her);
+        const list = D.guide.markup(her.index, 'lionQuests', 0, () => '');
+        ok('...and marks them on his map and on his list, three of each',
+          (svg.match(/class="wip-svg"/g) ?? []).length === wipK.length
+          && (list.match(/class="wip-mark"/g) ?? []).length === wipK.length
+          && wipK.every((k) => new RegExp(`${ISL.ISLANDS[k].name}</b> <span class="wip-mark"`).test(list)),
+          `${(svg.match(/wip-svg/g) ?? []).length} on the map, ${(list.match(/wip-mark/g) ?? []).length} on the list`);
+      }
+
       /* LEFT AND RIGHT ARE MEASURED, off where the islands actually stand, as
          she walks in off the port bridge — the side his `islands` line has
          always named them on, and now his directions name them on too. */
@@ -40900,6 +43355,22 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         drift.length === 0, drift.join());
       ok('...each headed by its own kanji and name',
         KEYS.every((k) => cardOf(k).includes(`>${ISL.ISLANDS[k].kanji}</span>`)));
+      /* 工事中: "All the 'under construction' experiences should display at
+         the bottom of the list ... in the Help screen", marked, after a line
+         that says what the mark means. */
+      const order = [...sec.matchAll(/data-isle="(\w+)"/g)].map((m) => m[1]);
+      const wipK = KEYS.filter(ISL.isWip);
+      const head = (k) => /<h4 class="clan-name">[\s\S]*?<\/h4>/.exec(cardOf(k))?.[0] ?? '';
+      const legend = /<p class="ht-note dd-wip-legend">([\s\S]*?)<\/p>/.exec(sec)?.[1] ?? '';
+      ok('...工事中 the unfinished islands\' cards are the last ones, and carry the mark in their header — and only they do',
+        order.slice(-wipK.length).sort().join() === [...wipK].sort().join()
+        && KEYS.every((k) => /class="wip-mark"/.test(head(k)) === ISL.isWip(k) && /dd-wip/.test(sec.slice(sec.lastIndexOf('<li', sec.indexOf(`data-isle="${k}"`)), sec.indexOf(`data-isle="${k}"`))) === ISL.isWip(k)),
+        order.join());
+      ok('...after a line that shows the mark and says what it means: experimental, at your own risk',
+        /class="wip-mark"/.test(legend) && /experimental/i.test(legend) && /own risk/.test(legend) && /may not work as\s+expected/.test(legend)
+        && sec.indexOf('dd-wip-legend') < sec.indexOf(`data-isle="${order[order.length - wipK.length]}"`)
+        && sec.indexOf('dd-wip-legend') > sec.indexOf(`data-isle="${order[order.length - wipK.length - 1]}"`),
+        legend.replace(/\s+/g, ' ').slice(0, 120));
       ok('...with Lionheart, the arcade and the map legend, and the 凶 explained',
         ['/help/dojo/lionheart.png', '/help/dojo/arcade.jpg', '/help/dojo/map.jpg'].every((f) => sec.includes(f))
         && /凶[\s\S]{0,200}EASY,\s*MEDIUM and HARD[\s\S]{0,200}1\.25×/.test(sec));
@@ -41357,10 +43828,20 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         /const far = !w\.out && !floor\.includes\(w\.p\)/.test(readFileSync(new URL('../src/systems/dream/shadow.js', import.meta.url), 'utf8')));
       for (const q of [...F.who.values()]) if (!q.out) F.onCatch(q.p);
       const e = F._entry();
-      ok('...and when the LAST is caught the fight is LOST, and everybody comes down at the edge as a cat',
+      /* "When all the players die from Shadow Lionheart, they are all
+         respawning in the same location, they should spawn in different
+         locations so they are not ontop of each other." Richard, Oct 2026. */
+      const landed = [...F.who.values()].map((q) => ({ x: q.p.position.x - SW.SIM.dx, z: q.p.position.z - SW.SIM.dz }));
+      const gaps = landed.flatMap((a, i) => landed.slice(i + 1).map((b) => Math.hypot(a.x - b.x, a.z - b.z)));
+      ok('...and when the LAST is caught the fight is LOST, and everybody comes down on the edge as a cat — a stride APART, not on top of each other',
         F.state === 'lost' && !her.angel && !her.angelLeash && [...F.who.values()].every((q) => !q.p.angel && !q.out)
-        && Math.hypot(her.position.x - SW.SIM.dx - e.x, her.position.z - SW.SIM.dz - e.z) < 0.01,
-        `${F.state} angel ${her.angel}`);
+        && landed.length === 3 && Math.min(...gaps) > SH.SPREAD - 0.05
+        && landed.every((a) => Math.abs(Math.hypot(a.x - F.centre.x, a.z - F.centre.z) - Math.hypot(e.x - F.centre.x, e.z - F.centre.z)) < 0.01),
+        `${F.state} angel ${her.angel} gaps ${gaps.map((g) => g.toFixed(2))}`);
+      ok('...and ONE kitten still lands exactly where she always did', (() => {
+        const [s] = F._spots(1);
+        return Math.hypot(s.x - e.x, s.z - e.z) < 1e-9;
+      })());
       const solo = new Map([[0, { p: her, catches: 0 }]]);
       F.who = solo; F.state = 'live';
       D._simCatch(her);
@@ -41523,7 +44004,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     B.hit(blow);
     const st = D.progress.stars(nameOf(her), 'shadow');
     ok('影 beaten on EASY: stars and the tick, in his EASY line — and not the quest, nor the rank\'s flag',
-      F.state === 'won' && st >= 1 && F.say === SH.SHADOW_LINES.easy.line && her.shadowBeat.easy && sis.shadowBeat.easy
+      F.state === 'won' && st >= 1 && F.say === SH.SHADOW_LINES.easy.line && her.shadowBeat.easy && !sis.shadowBeat.easy
       && !her.shadowBeat.medium && fakeGame.feats.earned.length === 0 && !D.progress.flag(nameOf(her), 'shadow'),
       `${F.state} ${st} ${F.say} ${fakeGame.feats.earned.join()}`);
     for (let f = 0; f < 60 * (SH.HANDOVER.secs + 0.2); f++) F.update(1 / 60);
@@ -41553,17 +44034,24 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     F.t = 100;
     BM.hp = 1;
     BM.hit(blow);
-    ok('影 beaten on MEDIUM: his MEDIUM line, the flag their rank needs, and the tenth quest',
-      F.say === SH.SHADOW_LINES.medium.line && D.progress.flag(nameOf(her), 'shadow') && D.progress.flag(nameOf(sis), 'shadow')
-      && [...fakeGame.feats.earned].sort().join() === '0:shadow,1:shadow'
+    /* HIS PRIZE IS THE HOST'S. Richard, Oct 2026: "When Shadow Lionheart is
+       defeated, if he has an award to give, it should only be given to the
+       player that initiated the battle. To unlock an award, each player will
+       have to initiate a battle with Shadow and win it by themselves or with
+       the help of others." She pressed the kiosk; her sister helped. */
+    ok('影 beaten on MEDIUM: his MEDIUM line, and the flag and the tenth quest go to the kitten who STARTED it — her sister keeps her stars only',
+      F.say === SH.SHADOW_LINES.medium.line && D.progress.flag(nameOf(her), 'shadow') && !D.progress.flag(nameOf(sis), 'shadow')
+      && D.progress.stars(nameOf(sis), 'shadow') >= 1
+      && [...fakeGame.feats.earned].sort().join() === '0:shadow'
       && fakeGame.feats.delays.every((dl) => dl === SH.HANDOVER.secs)
       && fakeGame.toasts.filter((t) => /beat Shadow Lionheart/.test(t)).length === 0,
       `${F.say} ${fakeGame.feats.earned.join()}`);
     ok('...and on MEDIUM he bursts and is gone, as he always did — the unmasking is HARD and EXTRA HARD\'s',
       !F.unmask && !F.boss.group.visible);
     for (let f = 0; f < 60 * (SH.HANDOVER.secs + 0.2); f++) F.update(1 / 60);
-    ok('...then the stars, the quest news and "a share of my HONOR", once his line has had its time',
-      fakeGame.toasts.filter((t) => /Powerup Kotodama/.test(t)).length === 2 && /HONOR/.test(F.say) && !her.kyo,
+    ok('...then the stars, the quest news and "a share of my HONOR", once his line has had its time — and her sister is told how to win the prize for herself',
+      fakeGame.toasts.filter((t) => /Powerup Kotodama/.test(t)).length === 1 && /HONOR/.test(F.say) && !her.kyo
+      && fakeGame.toasts.some((t) => /helped beat Shadow Lionheart on MEDIUM.*whoever STARTS the fight/.test(t)),
       fakeGame.toasts.join(' / '));
     for (let f = 0; f < 60 * 12; f++) F.update(1 / 60);
 
@@ -41583,9 +44071,11 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     /* AND 凶 TO EVERY KITTEN WHO BEAT HIM ON HARD — her sister too, on her
        first win at anything. Richard: "to unlock Lionhearts cross-slash, you
        need to just beat him on the hard difficulty". It used to be her alone. */
-    ok('影 beaten on HARD: the first thing anybody hears is his hand-over line, with nobody told their prize over it — and 凶 is both of theirs',
+    /* ...and now, HER 凶: her sister helped, so her sister has a fight of her
+       own to start (the host rule above, Oct 2026). */
+    ok('影 beaten on HARD: the first thing anybody hears is his hand-over line, with nobody told their prize over it — and 凶 is the host\'s',
       F.level === 2 && F.say === SH.HANDOVER.line && fakeGame.toasts.filter((t) => /beat Shadow Lionheart/.test(t)).length === 0
-      && her.kyo && sis.kyo && sis.shadowBeat.hard && !sis.shadowBeat.easy && !sis.shadowBeat.medium, `${F.say}`);
+      && her.kyo && !sis.kyo && !sis.shadowBeat.hard && !sis.shadowBeat.easy && !sis.shadowBeat.medium, `${F.say}`);
 
     /* LIONHEART OUT OF THE BURST. Richard: "he explodes like he currently
        does, but then we should also show an image of him falling on his knees
@@ -41625,10 +44115,11 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       `prize at ${promised?.toFixed(2)}s, kneeling then: ${kneelWhenPrize}, standing frames ${standing}, tells ${tells}`);
     ok('...and his card names LIONHEART, not his shadow', (F.panel._key ?? '').includes('"text":"LIONHEART"') && !(F.panel._key ?? '').includes('SHADOW LIONHEART'), String(F.panel._key).slice(0, 160));
     const honorFirst = /HONOR/.test(F.say);
-    const told = fakeGame.toasts.filter((t) => /inherit his 凶/.test(t)).length === 2 && !fakeGame.toasts.some((t) => /too, for his 凶/.test(t));
+    const told = fakeGame.toasts.filter((t) => /inherit his 凶/.test(t)).length === 1 && !fakeGame.toasts.some((t) => /too, for his 凶/.test(t))
+      && fakeGame.toasts.some((t) => /helped beat Shadow Lionheart on HARD/.test(t));
     let kyoAt = null;
     for (let f = 0; f < 60 * 12 && kyoAt == null; f++) { F.update(1 / 60); if (F.say === SH.SHADOW_LINES.kyo.line) kyoAt = f / 60; }
-    ok('...then "a share of my HONOR", and only AFTER it, 凶 explained — and both of them told it is theirs',
+    ok('...then "a share of my HONOR", and only AFTER it, 凶 explained — told to her, and her sister told she helped',
       honorFirst && told && kyoAt != null && kyoAt + 1.5 >= 6.95, `${honorFirst} ${told} ${kyoAt}`);
     ok('...and the fight still clears itself, however long he talked — Lionheart with it', (() => {
       for (let f = 0; f < 60 * 15; f++) F.update(1 / 60);
@@ -41636,6 +44127,184 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     })());
     D.lionArt = keepLionArt;
     delete fakeGame.lionKoArt;
+
+    /* 影 WHO IS IN IT IS DECIDED ONCE. Richard, Oct 2026: "when the battle
+       starts, all players on the Shadow Lionheart island are teleported into
+       the battle automatically. If a player leaves the battle, they are no
+       longer allowed to re-enter ... If a player arrives to the island after
+       the battle has already started, then that player is also blocked from
+       entering. If a player dies while battling, they turn into an angel ...
+       can press the action button ... 'Leave the battle' ... If all players
+       are dead, angels, or have left the battle, then the battle is over." */
+    {
+      const flat = (p) => ({ x: p.position.x - SW.SIM.dx, z: p.position.z - SW.SIM.dz });
+      const fromMid = (p) => Math.hypot(flat(p).x - F.centre.x, flat(p).z - F.centre.z);
+      her.shadowBeat = { easy: false, medium: false, hard: false };
+      put(her, F.kiosks[0]);
+      put(sis, F.kiosks[1]);
+      D.t += 10;
+      fakeGame.toasts.length = 0;
+      const sisOnIsle = F.onIsle(sis) && !F._onFloor().includes(sis);
+      F.kiosks[0].station.interact(her);
+      const a = flat(her); const b = flat(sis);
+      ok('影 starting a fight brings EVERY kitten on his island into it — set down inside his ring, a stride apart, and told',
+        sisOnIsle && F.state === 'live' && F.who.size === 2 && F.host === her.index
+        && fromMid(her) < SH.ARENA_R && fromMid(sis) < SH.ARENA_R && Math.abs(Math.hypot(a.x - b.x, a.z - b.z) - SH.SPREAD) < 0.2
+        && fakeGame.toasts.some((t) => /started the fight — you're IN IT/.test(t)),
+        `${sisOnIsle} ${F.state} ${F.who.size} ${fromMid(sis).toFixed(1)} ${Math.hypot(a.x - b.x, a.z - b.z).toFixed(2)}`);
+      F.update(1 / 60);
+      ok('...and while it is up, the ring is a RED WALL', F.barrier.visible && F.barrier.material.uniforms.uColour.value.getHex() === SH.BARRIER.colour);
+
+      /* THE LENS HIS CARD IS PLACED FOR. "When one player is fighting Shadow
+         Lionheart and the other is in a split screen, it seems the UI next to
+         Lionheart is being affected by the other players camera movements."
+         Two panes drawn in turn; only the fighter's sets `view`. */
+      {
+        const cam = (dx, dz) => { const c = new THREE.PerspectiveCamera(); c.position.set(F.centre.x + SW.SIM.dx, IH.y + 8, F.centre.z + SW.SIM.dz); c.lookAt(c.position.x + dx, c.position.y - 0.3, c.position.z + dz); c.updateMatrixWorld(); return c; };
+        F.faceCamera(cam(1, 0), [her.index]);
+        const mine = { ...F.view };
+        F.faceCamera(cam(0, 1), [5]);
+        const stranger = { ...F.view };
+        F.faceCamera(cam(0, 1), [sis.index]);
+        const helper = { ...F.view };
+        ok('影 his card and his staging follow the lens of the kitten who STARTED the fight — not a pane without a fighter, nor her helper\'s, drawn after it',
+          Math.abs(mine.x - 1) < 1e-6 && stranger.x === mine.x && stranger.z === mine.z && helper.x === mine.x && helper.z === mine.z,
+          JSON.stringify({ mine, stranger, helper }));
+        ok('...and a scene\'s camera (no pane) never stages him mid-fight', !F.lensCounts(null) && F.lensCounts([her.index]) && F.lensCounts([sis.index, her.index]));
+      }
+
+      // THE ANGELS' BLESSING: 2hp at 0.5s over her, then 1hp every 0.25s.
+      {
+        D.st[sis.index].simHp = 50;
+        F.onCatch(her);
+        const H = SH.ANGEL_HEAL;
+        const reach = (sis.radius ?? 0.75) * H.reach;
+        const over = (dx) => her.position.set(sis.position.x + dx, sis.position.y + 30, sis.position.z);
+        const hp = () => D.st[sis.index].simHp;
+        const step = (n) => { for (let f = 0; f < n; f++) F._heal(1 / 60); return hp(); };
+        over(reach * 0.9);
+        const t29 = step(29); const t31 = step(2); const t44 = step(13); const t47 = step(3); const t62 = step(15);
+        const streamed = F.streams.has(her.index) && F.streams.get(her.index).g.visible;
+        ok('影 an ANGEL hovering over a sister heals her — nothing before 0.5s, +2 at it, then +1 every 0.25s — at ANY height, in 1.5x her radius, under a green stream',
+          her.angel && t29 === 50 && t31 === 52 && t44 === 52 && t47 === 53 && t62 === 54 && streamed && H.reach === 1.5 && H.colour === 0x5dff8a,
+          `${t29} ${t31} ${t44} ${t47} ${t62} stream ${streamed}`);
+        over(reach * 1.1);
+        const wide = step(90);
+        ok('...and not from just outside that reach: no heal, and the stream is gone', wide === 54 && !F.streams.has(her.index), `${wide}`);
+        D.st[sis.index].simHp = D.simMax(sis) - 1;
+        over(0);
+        ok('...and never past her full bar', step(120) === D.simMax(sis));
+      }
+
+      // HER BUTTON AS AN ANGEL: the question opens on NO; YES lands her outside, for good.
+      {
+        D.t += 10;
+        D.closeChoice(her);
+        her.position.set(F.centre.x + SW.SIM.dx, IH.y + 5, F.centre.z + SW.SIM.dz);
+        D.interact(her);
+        const C = D.choices[her.index];
+        const asked = C?.title === 'LEAVE THE BATTLE?' && C.i === 0 && /^no/.test(C.rows[0].text) && /cannot come back/.test(C.rows[1].text);
+        C.i = 1; C.pick();
+        ok('影 as an angel her button asks "LEAVE THE BATTLE?", cursor on NO; YES sets her down OUTSIDE the ring as a cat, at full health, and the fight goes on',
+          asked && !her.angel && !F.who.has(her.index) && F.barred.has(her.index) && fromMid(her) > SH.ARENA_R + SH.BARRIER.pad
+          && D.st[her.index].simHp === D.simMax(her) && F.state === 'live', `${asked} ${her.angel} ${fromMid(her).toFixed(1)} ${F.state}`);
+        // ...and the red wall keeps her out, and says why.
+        D.t += 10;
+        fakeGame.toasts.length = 0;
+        put(her, { x: F.centre.x + 3, y: IH.y, z: F.centre.z });
+        her.velocity.set(-5, 0, 0);
+        F.update(1 / 60);
+        ok('...and the red wall will not let her back in: walked into the middle, she is held on the outside of it and told why',
+          !F.who.has(her.index) && fromMid(her) >= SH.ARENA_R + SH.BARRIER.pad - 1e-6 && her.velocity.x >= 0
+          && fakeGame.toasts.some((t) => /You left the battle — the red wall/.test(t)), `${fromMid(her).toFixed(2)} ${fakeGame.toasts.join(' / ')}`);
+        // A kitten who was never in it — she arrived after it started — is told so.
+        F.barred.delete(her.index);
+        D.t += 10;
+        fakeGame.toasts.length = 0;
+        put(her, { x: F.centre.x - 2, y: IH.y, z: F.centre.z });
+        F.update(1 / 60);
+        ok('...and a kitten who arrives after it started is held out too, told the battle already started',
+          !F.who.has(her.index) && fromMid(her) >= SH.ARENA_R + SH.BARRIER.pad - 1e-6
+          && fakeGame.toasts.some((t) => /battle already started/.test(t)), fakeGame.toasts.join(' / '));
+        ok('...and the kiosk says to wait for the next fight, rather than inviting her in', (() => {
+          D.t += 10; fakeGame.toasts.length = 0;
+          F.kiosks[0].station.interact(her);
+          return F.who.size === 1 && fakeGame.toasts.some((t) => /wait for it to end/.test(t));
+        })());
+      }
+
+      // "If all players are dead, angels, or have left the battle, then the battle is over."
+      {
+        F.who.set(her.index, { p: her, catches: 1, out: true });
+        her.angel = true;
+        put(sis, { x: F.centre.x + SH.ARENA_R + 8, y: IH.y, z: F.centre.z });
+        F.update(1 / 60);
+        ok('影 with her sister walked out of it and only an angel left in it, the battle is OVER — and the wall is down',
+          F.state === 'lost' && !her.angel && !F.barrier.visible && F.barred.size === 0, `${F.state} ${her.angel}`);
+        for (let f = 0; f < 60 * 8; f++) F.update(1 / 60);
+      }
+
+      /* 影 HIS ISLAND HAS A MOOD. Richard, Oct 2026: "When entering the
+         Shadow Lionheart island, the music should fade out and turn off...
+         when leaving ... the music fades back in to normal music again. Can
+         also have the sky darken ... need to brighten again when leaving.
+         Can even have some Matrix effects start playing in the background
+         sky". The sky is per pane; the music is one speaker. */
+      {
+        const MOOD = DD.SHADOW_MOOD;
+        const run = (s) => { for (let f = 0; f < Math.ceil(s * 60); f++) D._shadowMood(1 / 60); };
+        put(her, F.kiosks[0]);
+        put(sis, { x: IH.x + IH.r + 60, y: IH.y, z: IH.z });
+        D._shadowMood(1 / 60);
+        run(MOOD.dark * 0.5);
+        const half = D._gloom[her.index];
+        run(Math.max(MOOD.dark, MOOD.hush));
+        // What DreamDojo.faceCamera does for each pane before it draws.
+        const pane = (m) => D.sim.setGloom(D.paneGloom(m));
+        pane([her.index]);
+        const herSky = D.sim._uGloom.value;
+        const herFog = D.sim.fog.color.getHex();
+        pane([sis.index]);
+        const sisSky = D.sim._uGloom.value;
+        const sisFog = D.sim.fog.color.getHex();
+        ok('影 on his island her sky goes dark over a couple of seconds and her music fades to nothing — her sister\'s pane, elsewhere, keeps its own sky',
+          half > 0.3 && half < 0.7 && D._gloom[her.index] === 1 && D.hush === 1 && herSky === 1 && herFog !== SW.SIM_FOG
+          && D._gloom[sis.index] === 0 && sisSky === 0 && sisFog === SW.SIM_FOG,
+          `half ${half.toFixed(2)} hush ${D.hush} skies ${herSky} ${sisSky} fog ${herFog.toString(16)}`);
+        put(her, { x: IH.x + IH.r + 60, y: IH.y, z: IH.z + 8 });
+        run(Math.max(MOOD.light, MOOD.hush) + 0.1);
+        pane([her.index, sis.index]);
+        ok('...and walking off it brings both back: the sky its own blue, the music faded back up',
+          D._gloom[her.index] === 0 && D.hush === 0 && D.sim._uGloom.value === 0 && D.sim.fog.color.getHex() === SW.SIM_FOG);
+        const msrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+        const wsrc = readFileSync(new URL('../src/world/simworld.js', import.meta.url), 'utf8');
+        ok('...the island\'s quiet scales the simulator\'s music, keeping the track so it fades back rather than restarting; his fight\'s own theme is not hushed',
+          /this\._vrLevel = swell \* \(1 - \(this\.dream\?\.hush \?\? 0\)\)/.test(msrc) && /if \(swell > 0\) return 'vr'/.test(msrc)
+          /* his theme is `_simGameTrack`'s, asked before the swell is (and
+             before the house's jukebox — housing.mjs evaluates that order) */
+          && /_simGameTrack\(\) \{[\s\S]{0,200}this\.dream\?\.shadow\?\.state === 'live'/.test(msrc)
+          && msrc.indexOf('const simSong = this._simGameTrack();') < msrc.indexOf('this._vrLevel = swell'));
+        ok('...and the dark sky carries the code rain, scaled by the same gloom — set for each pane before its sky is placed',
+          /uniform float uGloom;[\s\S]*if \(uGloom > 0\.001\) col \*= 1\.0 - 0\.88 \* uGloom;/.test(wsrc) && /this\.rain\.visible = k > 0\.001/.test(wsrc)
+          && /this\.sim\.setGloom\(this\.paneGloom\(members\)\);[\s\S]{0,200}?this\.sim\.faceCamera\(camera\);/.test(readFileSync(new URL('../src/systems/dreamdojo.js', import.meta.url), 'utf8')));
+        /* HER FOUND ORBS STAY OUTSIDE. "it is bringing the worlds regular,
+           large kotodama orbs into the simulator with the player. It should
+           leave that outside" — Richard, Oct 2026. They circle her body in
+           its tube instead: moved, never dropped. */
+        {
+          const body = msrc.match(/\n  orbCentre\(p\) \{([\s\S]*?)\n  \}/)?.[1];
+          const orbCentre = body && new Function('p', body);
+          const tube = new THREE.Vector3(5, 1, 5);
+          const inSim = { realm: 'sim', dreamAnchor: tube, position: new THREE.Vector3(SW.SIM.dx + 9, 3, 9) };
+          const home = { realm: null, dreamAnchor: null, position: new THREE.Vector3(1, 2, 3) };
+          ok('影 in the simulator her found orbs and quest tokens circle her body in its tube, not her — and every place they are moved asks the same question',
+            !!orbCentre && orbCentre(inSim) === tube && orbCentre(home) === home.position
+            && (msrc.match(/p\.orbs \?\? \[\]\) o\.update\(dt, this\.orbCentre\(p\)\)/g) ?? []).length === 3
+            && (msrc.match(/p\.featOrbs \?\? \[\]\) o\.update\(dt, this\.orbCentre\(p\)\)/g) ?? []).length === 3
+            && !/p\.(orbs|featOrbs) \?\? \[\]\) o\.update\(dt, p\.position\)/.test(msrc));
+        }
+      }
+    }
 
     /* ONE CARD AT A TIME. "the text above easy/med/hard is showing up for all
        of them at the same time and they are blocking each other". Standing
@@ -42396,6 +45065,95 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       sh.userData.sign.sub);
   }
 
+  /* --- 工事中 the unfinished islands say so, wherever their names are --- */
+  {
+    /* Richard: "let's add warning/construction signs next to the names of the
+       parts/islands in the simulator that are currently 'under construction'
+       ... Tameshigiri Range, Kudamono Storm, Holo-Sentries ... also at the
+       entrances/exits of the bridges saying something like 'may not work as
+       expected' or 'experimental'". ONE FLAG, `wip`, and every place below
+       is asked whether it agrees with it — so finishing an island is deleting
+       the flag, and nothing can keep warning about it afterwards. */
+    const WM = await import('../src/core/wipmark.js');
+    const keys = Object.keys(ISL.ISLANDS);
+    const wip = keys.filter(ISL.isWip);
+    ok('工事中 the islands marked unfinished are the three Richard named, and only them',
+      wip.join() === 'range,storm,sentries', wip.join());
+    const disagree = keys.filter((k) => !!D.isles[k].sign.userData.sign.wip !== ISL.isWip(k)
+      || !!D.isles[k].gate.userData.sign.wip !== ISL.isWip(k));
+    ok('...its sign over the island and its sign on the hub both carry the mark, and no other island\'s do',
+      disagree.length === 0, disagree.join());
+    ok('...and the hub\'s says what the mark means, in words: EXPERIMENTAL, may not work as expected',
+      wip.every((k) => /EXPERIMENTAL/.test(D.isles[k].gate.userData.sign.sub) && /may not work as expected/.test(D.isles[k].gate.userData.sign.sub)),
+      wip.map((k) => D.isles[k].gate.userData.sign.sub).join(' | '));
+    // The island END of the bridge: on the island, a stride in, and beside the deck as the gate sign is.
+    const half = 13 * DD.GATE_SIGN.scale / 2;
+    const bad = [];
+    for (const k of keys) {
+      const I = D.isles[k]; const w = I.warn;
+      if (!ISL.isWip(k)) { if (w) bad.push(`${k}: warned and finished`); continue; }
+      if (!w) { bad.push(`${k}: no sign at the island end`); continue; }
+      const s = w.userData.sign;
+      const g = w.position;
+      const fromC = Math.hypot(g.x - I.x, g.z - I.z);
+      const along = (g.x - I.x) * I.fwd.x + (g.z - I.z) * I.fwd.z;
+      let clear = Infinity;
+      for (const B of sim.bridges) for (const q of B.deck.pts) clear = Math.min(clear, Math.hypot(g.x - q.x, g.z - q.z) - B.road.halfW);
+      if (s.kanji !== WM.WIP_TEXT.kanji || !s.wip || !/EXPERIMENTAL/.test(s.name) || !/may not work as expected/.test(s.sub)) bad.push(`${k}: says ${s.kanji} ${s.name} / ${s.sub}`);
+      if (fromC > I.r || along > 0) bad.push(`${k}: ${fromC.toFixed(1)} from the centre, ${along.toFixed(1)} along`);
+      if (clear <= half) bad.push(`${k}: ${clear.toFixed(2)} from a deck`);
+    }
+    ok('...and a third sign stands where she steps off its bridge: 工事中 EXPERIMENTAL, on the island\'s near half, never over a deck',
+      bad.length === 0, bad.join('; '));
+    const cards = D.highway.kiosks.map((k) => k.o.card().map((l) => l.text).join(' / '));
+    const warned = cards.filter((t) => /工事中/.test(t));
+    ok('...and the light cycle\'s card for the ride TO the Holo-Sentries says so, and no other ride\'s does',
+      warned.length === 1 && /to HOLO-SENTRIES/.test(warned[0]) && /may not work as expected/.test(warned[0])
+      && cards.filter((t) => /to HOLO-SENTRIES/.test(t)).length === 1, warned.join(' | '));
+    /* THE CORNER MINIMAP, by its source: drawing it here needs a canvas
+       this check does not have. The mark is asked by key, beside the word. */
+    const mm = read('../src/systems/minimap.js');
+    ok('...and the corner minimap draws the mark beside the name of every island the flag says',
+      /const ic = isWip\(d\.key\) \? 9 \* dpr : 0;/.test(mm) && /drawWip\(c, tx - tw \/ 2/.test(mm));
+    // The Help page draws it in CSS, which cannot import the shape: the same two paths.
+    const css = read('../src/style.css');
+    const uri = /\.wip-mark \{[\s\S]*?url\("data:image\/svg\+xml,([^"]+)"\)/.exec(css)?.[1] ?? '';
+    ok('...and the Help page\'s mark is the same triangle, path for path',
+      uri.includes(WM.WIP_PATH) && uri.includes(WM.WIP_BANG) && uri.includes(WM.WIP_ORANGE.replace('#', '%23')));
+  }
+
+  /* --- 夢道場 the Dream Dojo Tubes are named on the hub, like every island --- */
+  {
+    /* Richard: "Lets add a 3D name near the Dojo of the Turning Circle bridge
+       for the 'Your Tubes' island and let's name it 'The Dream Dojo Tubes'." */
+    const T = D._tubesSign();
+    const s = T.userData.sign;
+    const g = T.position;
+    const mouth = { x: dc.x + L.u.x * 47, z: dc.z + L.u.z * 47 };
+    const half = 13 * DD.GATE_SIGN.scale / 2;
+    let clear = Infinity; let who = '';
+    for (const B of sim.bridges) for (const q of B.deck.pts) {
+      const d = Math.hypot(g.x - q.x, g.z - q.z) - B.road.halfW;
+      if (d < clear) { clear = d; who = B.deck.name ?? '?'; }
+    }
+    // The map kiosk on the port spoke stands on the gate-sign side; this one must not be in its card.
+    const a = DD.MAP_KIOSKS[0];
+    const kx = dc.x + L.u.x * a.r - L.u.z * a.side; const kz = dc.z + L.u.z * a.r + L.u.x * a.side;
+    const fromKiosk = Math.hypot(g.x - kx, g.z - kz);
+    const fromGates = Math.min(...Object.values(D.isles).map((I) => Math.hypot(g.x - I.gate.position.x, g.z - I.gate.position.z)));
+    ok('夢道場 THE DREAM DOJO TUBES is named on the hub, by the port bridge\'s mouth, in the words Richard chose',
+      s.name === 'THE DREAM DOJO TUBES' && s.kanji === ISL.PORT_SIGN.kanji && Math.hypot(g.x - mouth.x, g.z - mouth.z) < 10
+      && Math.abs(g.y - dc.y - DD.GATE_SIGN.up) < 1e-6, `${s.kanji} ${s.name} ${Math.hypot(g.x - mouth.x, g.z - mouth.z).toFixed(1)} from the mouth`);
+    ok('...beside the deck and not over it, across the mouth from the map kiosk, clear of every gate sign',
+      clear > half && fromKiosk > 2 * half && fromGates > 2 * half,
+      `${clear.toFixed(2)} clear of ${who}, ${fromKiosk.toFixed(1)} from the kiosk, ${fromGates.toFixed(1)} from a gate sign`);
+    const WPn = await import('../src/systems/dream/waypoint.js');
+    ok('...and the map and the waypoint call it that too', WPn.destName('port') === ISL.PORT_SIGN.map
+      && /THE DREAM DOJO TUBES/.test(`THE ${ISL.PORT_SIGN.map}`) && /PORT_SIGN\.short/.test(read('../src/systems/dream/lionguide.js')) && WPn.destShort('port') === ISL.PORT_SIGN.short);
+    T.removeFromParent();
+    sim.signs.splice(sim.signs.indexOf(T), 1);
+  }
+
   /* --- 望 the look across: over her shoulder at the island, before she steps on --- */
   {
     /* Richard: "Before the player steps on a bridge in the simulation, we
@@ -42407,6 +45165,33 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const ends = D._ends = D._peekEnds();
     ok('望 every bridge in the layer has a look across from both of its mouths', ends.length === 2 * sim.bridges.length
       && ends.every((E) => Number.isFinite(E.far.x + E.far.y + E.far.z)), `${ends.length} for ${sim.bridges.length}`);
+    /* WHERE THE CAMERA CHANGES, ON THE FLOOR. Richard: "draw a half circle, holographic laser line on the
+       ground marking the boundary ... also mark at the entrance/exit of the bridge where the camera will
+       switch to the 'crossing the bridge' camera mode ... different colors". Both lines are read off the
+       rules they mark: the arc is PEEK.start on the deck side, the bar is where `heightAt` first hands back
+       the bridge's road - the only thing `_stepSnake` asks - and a step short of it does not. */
+    {
+      const PM = await import('../src/systems/dream/peekmarks.js');
+      let badRide = 0; let badArc = 0; let arcPts = 0; const past = [];
+      for (const E2 of ends) {
+        const R = PM.rideStart(sim, E2);
+        const before = R && sim.heightAt(R.x - E2.toward.x * 0.1, R.z - E2.toward.z * 0.1, E2.mouth.y + 1);
+        if (!R || before?.platform?.snake === E2.road) badRide++;
+        else past.push(R.s);
+        for (const run of PM.lookArc(sim, E2)) for (const q of run) {
+          arcPts++;
+          const dx = q.x - E2.mouth.x; const dz = q.z - E2.mouth.z;
+          if (Math.abs(Math.hypot(dx, dz) - PK.PEEK.start) > 1e-6 || dx * E2.toward.x + dz * E2.toward.z > 1e-6) badArc++;
+        }
+      }
+      D._buildPeekMarks();
+      const pm = D.peekMarks;
+      ok('望 the floor marks the look across (a half circle of PEEK.start, on the deck side) and the ride (a bar where the road begins), in two colours',
+        badRide === 0 && badArc === 0 && arcPts > ends.length * 20 && !!pm && pm.drawn.ride === ends.length && pm.drawn.look >= ends.length
+        && pm.group.parent === sim.root && PM.PEEK_MARKS.look !== PM.PEEK_MARKS.ride
+        && /this\._buildPeekMarks\(\);\s*\}/.test(readFileSync(new URL('../src/systems/dreamdojo.js', import.meta.url), 'utf8')),
+        `ride ${badRide} bad, arc ${badArc}/${arcPts} bad, drawn ${pm?.drawn.look}/${pm?.drawn.ride}, ride starts ${Math.min(...past).toFixed(2)}..${Math.max(...past).toFixed(2)} past the mouth`);
+    }
     const G = D.isles.gallery;
     const gW = W(G);
     const E = ends.find((e) => Math.hypot(e.far.x - gW.x, e.far.z - gW.z) < 1);
@@ -42456,6 +45241,29 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     D.st[0].peek = null;
     const deep = tw(2);
     ok('...on after walking into it for a moment, or at once deep inside it going toward the mouth', deep?.w === 1);
+    /* AT THE GOLD LINE, NOT HALFWAY IN. Richard: "the camera doesn't actually change to the look across
+       the bridge camera until the player is about halfway into the radius". The arc is `start` (checked
+       above); the dwell was served inside it. Walked in from outside at a walk and at a sprint, a frame
+       at a time, it now fires within one frame's stride of the line. */
+    {
+      const fireAt = (speed) => {
+        D.st[0].peek = null;
+        for (let k = S0 + PK.PEEK.lead + 1; k > 0; k -= speed * F) {
+          const q = at(k);
+          her.position.set(q.x, E.mouth.y, q.z);
+          her.velocity.set(E.toward.x * speed, 0, E.toward.z * speed);
+          if (D._peekFor(her)) return k;
+        }
+        return -1;
+      };
+      const walkAt = fireAt(10.5);
+      const sprintAt = fireAt(17);
+      D.st[0].peek = null;
+      ok('望 walking or sprinting at the mouth, the look across fires AT the gold line (within one frame\'s stride) - the dwell is served before it',
+        S0 - walkAt <= 10.5 * F + 1e-6 && S0 - sprintAt <= 17 * F + 1e-6 && walkAt <= S0 && sprintAt <= S0,
+        `line ${S0}, walk fires at ${walkAt.toFixed(2)}, sprint at ${sprintAt.toFixed(2)}`);
+      tw(2); // back ON, for the buffer checks below
+    }
     const hold6 = tw(S0 + 1, 30);
     const still = walk(S0 + 1, 0, 0, 120);
     const out8 = walk(PK.PEEK.exit + 0.5, 0, 0);
@@ -42474,6 +45282,55 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     const arrived = walk(3, 0, 0, 120);
     ok('...running round the rim past the mouth never turns it on, and nor does standing near it',
       !past && !arrived);
+    /* "should only be happening if the player is moving in the direction to
+       cross the bridge ... such as, right after crossing the bridge". Off to
+       one side of the mouth and heading straight AT it, square to the way
+       the bridge runs: that is a kitten turning along the rim, and a mouth
+       is a point she can aim at without choosing its bridge. */
+    {
+      const rx = -E.toward.z;
+      const rz = E.toward.x;
+      const side = { x: E.mouth.x + rx * 5 - E.toward.x * 0.6, z: E.mouth.z + rz * 5 - E.toward.z * 0.6 };
+      let r = null;
+      D.st[0].peek = null;
+      for (let n = 0; n < 60; n++) {
+        her.position.set(side.x, E.mouth.y, side.z);
+        her.velocity.set(-rx * run, 0, -rz * run);
+        r = D._peekFor(her);
+      }
+      ok('望 heading AT the mouth from along the rim, square to its bridge, is not crossing it: no look across', !r);
+    }
+    /* THE GAP BEFORE THE RIDE. "the camera seems to be going back to a
+       top-default camera view which shouldn't be happening at all": the
+       trigger let her go 0.5 past the mouth and the ride boards about 2 past,
+       so the look across ran home in between. ON, it holds her out to `past`
+       on the deck going onward — and lets go past that, or going back. */
+    {
+      D.st[0].peek = null;
+      tw(3, dwellN);
+      const onDeck = (k, sgn = 1, n = 1) => {
+        let r = null;
+        for (let m = 0; m < n; m++) {
+          her.position.set(E.mouth.x + E.toward.x * k, E.mouth.y, E.mouth.z + E.toward.z * k);
+          her.velocity.set(E.toward.x * run * sgn, 0, E.toward.z * run * sgn);
+          r = D._peekFor(her);
+        }
+        return r;
+      };
+      const at2 = onDeck(2.1, 1, 10);
+      const at5 = onDeck(PK.PEEK.past - 0.5);
+      const beyond = onDeck(PK.PEEK.past + 1);
+      D.st[0].peek = null;
+      const fresh = onDeck(2.1, 1, 30);
+      ok('望 ON, the look across holds her out onto the deck until the ride can take it (2.1 past, where it boards at a run) — and never STARTS out there',
+        at2?.w === 1 && at5?.w === 1 && !beyond && !fresh && PK.PEEK.past > 2.1);
+      D.st[0].peek = null;
+      tw(3, dwellN);
+      onDeck(1.5, 1, 2);
+      const turned = onDeck(1.5, -1, Math.ceil(PK.PEEK.awayT / F) + 1);
+      ok('...and turning back off the deck lets it go', !turned);
+      D.st[0].peek = null;
+    }
     // From the island end it looks back at the hub.
     const back = ends.find((e) => e.road === E.road && e !== E);
     ok('...and from the island end of the same bridge it looks back at the hub',
@@ -42576,6 +45433,39 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       const next = her._moveBasis(up).fwd.clone();
       her.bridgePeek.w = 0; // the look across ends while she holds it
       const after = her._moveBasis(up).fwd.clone();
+      /* OFF A ROAD, THEN LET GO WHILE ANOTHER LENS HAS HER: Richard's crash, "Cannot read properties of null
+         (reading 'yaw')" in _moveBasis. The road's hold was cleared but a copy read before it was not. */
+      {
+        const pk = her._peekHold; const ro = her.snakeRide; const rl = her._roadLast; const vo = her.viewOwn;
+        her._peekHold = null; her.snakeRide = { fake: true }; her._moveBasis(up);
+        her.snakeRide = null; her._moveBasis(up);
+        const wasHeld = !!her._peekHold?.offRoad;
+        her.viewOwn = false; her.viewYaw = 1.2;
+        let threw = null; let b = null;
+        try { b = her._moveBasis({ mx: 0, my: 0 }); } catch (e) { threw = e.message; }
+        ok('...and letting go after a road while a shared lens has her does not crash, and reads through that lens',
+          wasHeld && !threw && !!b && Math.abs(b.fwd.x + Math.sin(1.2)) < 1e-9, threw ?? `held ${wasHeld}`);
+        her._peekHold = pk; her.snakeRide = ro; her._roadLast = rl; her.viewOwn = vo;
+      }
+      /* STEPPING ONTO THE BRIDGE WHILE THE LOOK ACROSS IS STILL SWINGING: Richard, "the input is reversing
+         for the player ... they get turned around". The held push walked her straight up the road, but
+         boarding judged "is she pressing onward" through the half-swung lens, locked onward to another
+         key, and her held stick then meant BACK. Measured live: +6 -> -7.8 along the road in 0.2s. */
+      {
+        const pk = her._peekHold; const ro = her.snakeRide; const vy = her.viewYaw; const vel = her.velocity.clone();
+        her._peekHold = { yaw: 0.3 }; her.viewYaw = 0.3 + 2.2; // the lens is 126 degrees round from the held basis
+        const tx = -Math.sin(0.3); const tz = -Math.cos(0.3); // the road runs exactly where the held push points
+        her.velocity.set(tx * 10, 0, tz * 10);
+        her._boardSnake({ length: 100, frameAt: () => ({ tx, tz }) }, { tx, tz, s: 5 }, up);
+        const st = her.snakeRide?.stick;
+        const wsh = new THREE.Vector3();
+        her._snakeWish(up, wsh, 0);
+        const on = (wsh.x * tx + wsh.z * tz) / (wsh.length() || 1);
+        ok('...and boarding a bridge mid-swing keeps the held push as ONWARD, not the key the half-turned lens would pick',
+          !!st && Math.abs(st.x) < 1e-9 && Math.abs(st.y + 1) < 1e-9 && on > 0.99,
+          `stick ${st?.x.toFixed(2)},${st?.y.toFixed(2)}, onward ${on.toFixed(2)}`);
+        her._peekHold = pk; her.snakeRide = ro; her.viewYaw = vy; her.velocity.copy(vel);
+      }
       her._moveBasis({ mx: 0, my: 0 });
       const home = her._moveBasis(up).fwd.clone();
       const yawOf = (v) => Math.atan2(-v.x, -v.z);
@@ -42584,13 +45474,36 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         `${yawOf(a).toFixed(2)} ${yawOf(held).toFixed(2)} ${yawOf(next).toFixed(2)}`);
       ok('...and once it is down and she lets go, it is her own camYaw again, exactly',
         Math.abs(yawOf(after) - 2.9) < 1e-9 && Math.abs(yawOf(home) - 0.3) < 1e-9 && her._peekHold === null);
-      her.viewYaw = keepVY; her.camYaw = keepCY;
+      /* THE FRONT DOOR'S SHOT, the same rule. "Input switching when the
+         camera changes to the front door camera, and then when it changes
+         back is not smooth." Her own lens swinging (`camSwing`) holds a push
+         at the heading it had when the swing caught it, through the swing
+         and after, until she lets go; a still lens holds nothing. */
+      her._peekHold = null; her.bridgePeek.w = 0;
+      her.camYaw = 0.3; her.viewYaw = 0.3; her.camSwing = false;
+      const still = yawOf(her._moveBasis(up).fwd);
+      const stillHolds = her._peekHold === null;
+      her.camSwing = true; her.camYaw = her.viewYaw = 0.35;
+      const s0 = yawOf(her._moveBasis(up).fwd);
+      her.camYaw = her.viewYaw = 2.4;
+      const s1 = yawOf(her._moveBasis(up).fwd);
+      her.camSwing = false; her.camYaw = her.viewYaw = 2.9;
+      const s2 = yawOf(her._moveBasis(up).fwd);
+      her._moveBasis({ mx: 0, my: 0 });
+      const s3 = yawOf(her._moveBasis(up).fwd);
+      ok('...and a push held while her own lens swings round (the front door\'s shot) keeps its heading until she lets go',
+        Math.abs(still - 0.3) < 1e-9 && stillHolds && Math.abs(s0 - 0.35) < 1e-9 && Math.abs(s1 - 0.35) < 1e-9
+        && Math.abs(s2 - 0.35) < 1e-9 && Math.abs(s3 - 2.9) < 1e-9 && her._peekHold === null,
+        [still, s0, s1, s2, s3].map((v) => v.toFixed(2)).join(' '));
+      ok('...and the lens turns back OUT of a focus on the same ease it turned in on, never a one-frame jump',
+        /if \(this\.focus\) this\._lastFocusYaw = this\.focus\.yaw \?\? CAM_YAW;\s*else if \(this\.focusT > 0\.001 && Number\.isFinite\(this\._lastFocusYaw\) && !flying\) \{\s*yaw = THREE\.MathUtils\.lerp\(CAM_YAW, this\._lastFocusYaw, this\.focusT\);/.test(read('../src/entities/player.js')));
+      her.viewYaw = keepVY; her.camYaw = keepCY; her.camSwing = false;
     }
     const pl = read('../src/entities/player.js');
     const mn = read('../src/main.js');
     ok('...on her own camera and on a group\'s, and BEFORE the ride camera, which starts from wherever it left the lens',
-      /this\.bridgePeek\.apply\([^\n]*peekHold\(this\.snakeCam, ride\)\);\r?\n\s*this\.snakeCam\.apply\(dt, ride,/.test(pl)
-      && /rig\.bridgePeek\.apply\([^\n]*peekHold\(rig\.snakeCam, ride\)\);\r?\n\s*rig\.snakeCam\.apply\(dt, ride,/.test(mn));
+      /this\.bridgePeek\.apply\([^\n]*peekHold\(this\.snakeCam, ride\)\);\r?\n\s*\/\/[^\n]*\r?\n\s*this\.snakeCam\.apply\(dt, peekDefers\(this\.bridgePeek, this\.snakeCam, ride\) \? null : ride,/.test(pl)
+      && /rig\.bridgePeek\.apply\([^\n]*peekHold\(rig\.snakeCam, ride\)\);\r?\n\s*rig\.snakeCam\.apply\(dt, peekDefers\(rig\.bridgePeek, rig\.snakeCam, ride\) \? null : ride,/.test(mn));
     /* ONE MOVE ONTO THE BRIDGE. Richard: "the transition from looking down
        the bridge to the bridge camera seems to not translate very well as the
        easing seems a bit off. If the player just runs across the bridge ...
@@ -42613,6 +45526,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         const look = new THREE.Vector3();
         const pAt = { ...at4, x: f0.x, y: f0.y, z: f0.z };
         let step = 0; let turn = 0; let starts = 0; let was = null; let dir0 = null; let moving = false;
+        let early = 0; let rideAt = -1;
         for (let k = 0; k < peekFrames + 150; k++) {
           const on = k < peekFrames;
           const S = on ? { ...pAt, w: 1 } : null;
@@ -42623,24 +45537,32 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
           cam.position.set(look.x + 17, look.y + 14, look.z + 17);
           cam.lookAt(look);
           bp.apply(F, S, cam, look, PK.peekHold(sc, ride));
-          sc.apply(F, ride, cam, look);
+          const deferred = PK.peekDefers(bp, sc, ride);
+          sc.apply(F, deferred ? null : ride, cam, look);
+          // the ride never moves while the look across is still sweeping
+          if (ride && bp.live && bp.w < 1 && sc.w > 0) early++;
+          if (ride && !deferred && rideAt < 0) rideAt = bp.w;
           const d = new THREE.Vector3(); cam.getWorldDirection(d);
           if (was) {
             const st = was.distanceTo(cam.position);
             if (k > 1) step = Math.max(step, st);
-            if (k > peekFrames) turn = Math.max(turn, THREE.MathUtils.radToDeg(d.angleTo(dir0)));
+            if (k > peekFrames && rideAt >= 0) turn = Math.max(turn, THREE.MathUtils.radToDeg(d.angleTo(dir0)));
             if (st > 0.02 && !moving) { starts++; moving = true; } else if (st < 0.005) moving = false;
           }
           was = cam.position.clone(); dir0 = d.clone();
         }
-        return { step, turn, starts, gone: !bp.live && sc.w === 1 };
+        return { step, turn, starts, early, rideAt, gone: !bp.live && sc.w === 1 };
       };
       const full = runIn(Math.ceil(PK.PEEK.sweepIn / F) + 20);
       const quick = runIn(Math.round(0.45 / F));
-      ok('...and onto the bridge it is ONE move: the look across finishes under the ride and never goes back, and the ride turns the aim from where it was, never a snap',
+      /* ...IN ORDER. Richard, sixth pass: "the 'look across bridge' camera needs to finish transitioning
+         to behind the player before transitioning to the new [ride] camera". The ride does not move a
+         frame while the look across is short of 1, and starts the frame it gets there - so a kitten who
+         ran straight on now sees two moves one after the other (two starts), never two at once. */
+      ok('...and onto the bridge the look across FINISHES first, then the ride takes over from it: never both moving at once, never back home, never a snap',
         // The ride's own bar (the arena road's): two units and four degrees a frame at most.
-        [full, quick].every((m) => m.turn < 4 && m.step < 2 && m.gone) && full.starts <= 2 && quick.starts === 1,
-        `full: turn ${full.turn.toFixed(2)}deg/frame, ${full.starts} starts; running straight on: turn ${quick.turn.toFixed(2)}, step ${quick.step.toFixed(2)}, ${quick.starts} starts`);
+        [full, quick].every((m) => m.turn < 4 && m.step < 2 && m.gone && m.early === 0 && m.rideAt === 1) && full.starts <= 2 && quick.starts <= 2,
+        `full: turn ${full.turn.toFixed(2)}deg/frame, ${full.starts} starts, ride at ${full.rideAt}; running straight on: turn ${quick.turn.toFixed(2)}, step ${quick.step.toFixed(2)}, ${quick.starts} starts, ride at ${quick.rideAt}, ${quick.early} early frames`);
     }
     // In a drill, the drill keeps the camera.
     D.drills[0] = { state: 'live' };
@@ -42649,6 +45571,108 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     ok('...and never in the middle of a drill', !inDrill);
     her.velocity.set(0, 0, 0);
     D.st[0].peek = null;
+  }
+
+  /* --- 光 the light cycle keeps the view she boarded with --- */
+  {
+    /* Richard: "specifically for the Light Cycle circles, let's make it that the camera keeps the 'look to
+       the next island' camera angle. Also, let's make it that, if the user takes the Light Cycle to get
+       across the bridge, then we keep that camera angle until they get dropped off at the next Light Cycle
+       circle ... if they end up taking the Light Cycle again while in the normal view, then it should stay
+       in the normal view while they go across. If they step out of the circle and re-enter it, then it
+       should go back to the 'look to the next island' view". */
+    const PK = await import('../src/systems/dream/peek.js');
+    const R = D.highway.roads.find((r) => r.key === 'bamboo');
+    D._ends = D._peekEnds();
+    const st = D.st[0];
+    Object.assign(st, { peek: null, inPad: undefined, cycleView: undefined, arrived: null });
+    her.onGround = true; her.snakeRide = null; her.onCycle = false; her.pinnedAt = null; her.mount = null;
+    D.drills[0] = null;
+    const F = 1 / 60;
+    D._dt = F;
+    const l = Math.hypot(R.path[2].x - R.A.x, R.path[2].z - R.A.z);
+    const u = { x: (R.path[2].x - R.A.x) / l, z: (R.path[2].z - R.A.z) / l };
+    // `k` back from pad A, toward the hub (pad A is 3 behind its mouth)
+    const put = (k, v = 0) => {
+      her.position.set(R.A.x + SW.SIM.dx - u.x * k, R.A.y, R.A.z + SW.SIM.dz - u.z * k);
+      her.velocity.set(u.x * v, 0, u.z * v);
+      return D._peekFor(her);
+    };
+    put(8); put(8);
+    const outside = put(8);
+    const stepIn = put(0.4);
+    // Walking up the highway: the pad is square on her line, nearer than the mouth - it used to hold the
+    // look across back until she was past it (`stationFirst`).
+    Object.assign(st, { peek: null, inPad: undefined });
+    let upAt = null;
+    for (let k = 12; k > 2.3; k -= 6 * F) if (put(k, 6) && upAt == null) upAt = k;
+    const E = D._cycleEnd(R.A);
+    // Ride it with the look across up: every frame is the cycle's look across, at the same island.
+    const ride = (way) => {
+      D.highway.ride(her, R, way);
+      let n = 0; let across = 0; let far = null; let mixed = 0;
+      while (her.onCycle && n < 2000) {
+        D.highway.update(F);
+        // the frame it stops on is the drop-off, `after` below - not a ride frame
+        if (!her.onCycle) break;
+        const at = D._peekFor(her);
+        if (at?.cycle) { across++; if (far && at.far !== far) mixed++; far = at.far; }
+        n++;
+      }
+      return { n, across, far, mixed, after: D._peekFor(her) };
+    };
+    put(0.4);
+    const r1 = ride(1);
+    // Dropped off beside pad B: stepping onto it to ride back is NOT stepping in...
+    const B = D.highway.stations.find((s) => Math.hypot(s.x - R.B.x, s.z - R.B.z) < 1e-6);
+    her.position.set(B.x + SW.SIM.dx, B.y, B.z + SW.SIM.dz); her.velocity.set(0, 0, 0);
+    const ontoB = D._peekFor(her);
+    const r2 = ride(-1);
+    // ...and back at A: out of the circle, back in, and the look across is back - and rides again.
+    const out = put(7);
+    const backIn = put(0.4);
+    const r3 = ride(1);
+    ok('光 a light cycle pad turns the look across ON when she steps into it, and no longer holds it back on the way up the highway',
+      !outside && !!stepIn && stepIn.far === E?.far && upAt != null && upAt > 3,
+      `outside ${!!outside}, step in ${!!stepIn}, walking up it came on ${upAt?.toFixed(2)} back from the pad`);
+    ok('...ridden with it up, the look across rides the whole way at the same island, and lets go when she is put down',
+      r1.n > 100 && r1.across === r1.n && r1.mixed === 0 && r1.far === E.far && !r1.after,
+      `${r1.across}/${r1.n} frames across, ${r1.mixed} switched island, after ${!!r1.after}`);
+    ok('...dropped off, she keeps her own camera: onto the pad she arrived at, and the whole ride back',
+      !ontoB && r2.n > 100 && r2.across === 0 && !r2.after, `onto it ${!!ontoB}, ${r2.across}/${r2.n} frames across`);
+    ok('...and out of the circle and back in, the look across is back, and rides with her again',
+      !out && !!backIn && r3.across === r3.n && r3.n > 100, `out ${!!out}, back in ${!!backIn}, ${r3.across}/${r3.n}`);
+    /* "keep the camera close to the player from a set distance ... the separation between camera and player
+       can increase as the player goes faster, but it should not be lagging behind too much, so likely some
+       strong easing". Lag at speed v solves lag (rate + gain lag) = v: 5.8 at 55, 3.0 at 25. And off a cycle
+       the look across is the pose, to the bit - the walking one is untouched. */
+    const lens = new THREE.PerspectiveCamera(38, 16 / 9, 0.1, 2000);
+    const chase = (v, cycle = true) => {
+      const bp = new PK.BridgePeek();
+      bp.w = 1;
+      const far = { x: 0, y: 0, z: 400 };
+      let S = null; let worst = 0; let jump = 0; let prev = null;
+      for (let f = 0; f < 300; f++) {
+        const z = Math.min(v, f * v / 30) * f * F;   // up to speed over half a second, like the ramp
+        S = { x: 0, y: 0, z, far, w: 1, cycle };
+        lens.position.set(0, 12, z - 14); lens.lookAt(0, 0, z);
+        bp.apply(F, S, lens, new THREE.Vector3(0, 0, z));
+        if (prev) jump = Math.max(jump, lens.position.distanceTo(prev) - v * F);
+        prev = lens.position.clone();
+        if (f > 200) worst = Math.max(worst, lens.position.distanceTo(new THREE.Vector3().copy(PK.peekPose(S))));
+      }
+      return { lag: worst, jump };
+    };
+    const fast = chase(55); const slow = chase(25); const walkOn = chase(10, false);
+    ok('...and the lens chases her seat at a gap that grows with her speed and stays small: about 5.8 at the cycle\'s 55, 3 at 25',
+      fast.lag > 5 && fast.lag < 6.6 && slow.lag > 2.5 && slow.lag < 3.5 && walkOn.lag < 1e-9 && fast.jump < 1.5
+      && PK.CYCLE_CAM.up > PK.PEEK.up,
+      `55: ${fast.lag.toFixed(2)} behind (worst extra step ${fast.jump.toFixed(2)}), 25: ${slow.lag.toFixed(2)}, walking: ${walkOn.lag.toExponential(1)}`);
+    ok('...and a group framed together gets the cycle\'s look only when every one of them is up on one',
+      /cycle &&= !!at\.cycle/.test(read('../src/main.js')));
+    D.highway.stop(her);
+    Object.assign(st, { peek: null, inPad: undefined, cycleView: undefined, arrived: null });
+    her.velocity.set(0, 0, 0);
   }
 
   /* --- the bridges are Snake Way roads, and she is boarded onto them --- */
@@ -43286,6 +46310,44 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     D.interact(sis);
     ok('...her sister gets her own round of the racks — the gear is per kitten',
       D.st[1]?.gather?.size === 3 && !sis.simLook);
+    /* "if there is a player that needs to grab the VR equipment for the first
+       time ... the camera will change for them and ... the other player will
+       get a splitscreen until the camera goes back to normal." The gear shot
+       is HER camera's; a shared pane never drew it. */
+    ok('...and while the racks shot is up she gets a pane of her own (the shot is drawn, not just steered by)',
+      !!D._gearShot(sis) && D.wantsSolo(sis), `shot ${!!D._gearShot(sis)} solo ${D.wantsSolo(sis)}`);
+    {
+      /* AND THE STICK FOLLOWS THE LENS THAT DREW HER. "the input shouldn't
+         change unless the camera actually changes". In a shared pane (viewOwn
+         false) the rig's heading; on her own camera, camYaw exactly. */
+      const kv = sis.viewYaw, kc = sis.camYaw, ko = sis.viewOwn;
+      const up = { mx: 0, my: -1 };
+      const yawOf = (v) => Math.atan2(-v.x, -v.z);
+      sis._peekHold = null;
+      sis.camYaw = 2.4; sis.viewYaw = -0.8; sis.viewOwn = false;
+      const shared = yawOf(sis._moveBasis(up).fwd);
+      sis._moveBasis({ mx: 0, my: 0 });
+      sis.viewOwn = true;
+      sis._moveBasis({ mx: 0, my: 0 });
+      const own = yawOf(sis._moveBasis(up).fwd);
+      ok('...a stick in a shared pane is read through the rig that drew her, and on her own camera through camYaw',
+        Math.abs(shared + 0.8) < 1e-9 && Math.abs(own - 2.4) < 1e-9 && sis._peekHold === null, `${shared.toFixed(2)} ${own.toFixed(2)}`);
+      sis.viewYaw = kv; sis.camYaw = kc; sis.viewOwn = ko; sis._peekHold = null;
+      /* "When both players enter the simulator, it seems it is keeping both
+         players in separate splitscreens ... The camera splitting should use
+         the same logic as like when they are not in the simulator." */
+      const kst = D.st[1], kr = sis.realm;
+      D.st[1] = { phase: 'sim', t: 0 }; sis.realm = 'sim';
+      const inside = D.wantsSolo(sis);
+      D.st[1] = { phase: 'rise', t: 0 };
+      const crossing = D.wantsSolo(sis);
+      D.st[1] = kst; sis.realm = kr;
+      ok('...inside the simulator she shares a pane by the ordinary rule; only the crossing is hers alone',
+        !inside && crossing, `inside ${inside} crossing ${crossing}`);
+      const msrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+      ok('...and the renderer says whose lens it was, every frame, beside the heading',
+        /p\.viewOwn = !cam \|\| cam === p\.camera;[\s\S]{0,200}cam\.getWorldDirection\(_viewDir\)/.test(msrc));
+    }
     D.exitAll();
     D.st[1].gather = null;
     ok('every way out that is not the walk out takes the gear off at once', !her.simLook && !sis.simLook);
@@ -43585,7 +46647,86 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     sHer.phase = keepPhase;
     her.panda = cub;
     ok('...and the moment she is out, it heels to HER again', D.ownerFor(her) === her);
+    /* A GROWN PANDA WAITS AT THE STONES, out of the simulator too. Richard,
+       Oct 2026: "the panda should just wait for the player on the Dojo of the
+       Turning Circle island or whichever island it is last on, but should not
+       try to follow the player into the Dream Dojo island." */
+    {
+      const keepAt = her.position.clone();
+      const isle = world.dojoIsland;
+      const big = { position: new THREE.Vector3(L.launch.x + 5, world.dojoCentre.y, L.launch.z), group: new THREE.Group(), rideable: true };
+      her.panda = big;
+      her.pandaMount = false;
+      her.position.set(isle.x, world.dojoCentre.y, isle.z);
+      const onDojo = D.ownerFor(her);
+      her.position.set(L.stones[1].x, L.stones[1].y, L.stones[1].z);
+      const onStone = D.ownerFor(her);
+      her.position.set(A.x, A.y, A.z);
+      const onPad = D.ownerFor(her);
+      ok('a grown panda heels to her on the Dojo of the Turning Circle', onDojo === her);
+      ok('...and waits at the launch the moment she is out on the stones, and on the pad',
+        onStone !== her && hyp(onStone.position, L.launch) < 1e-6 && hyp(onPad.position, L.launch) < 1e-6,
+        `${hyp(onStone.position, L.launch).toFixed(2)} / ${hyp(onPad.position, L.launch).toFixed(2)}`);
+      her.position.set(isle.x, world.dojoCentre.y, isle.z);
+      ok('...and heels again once she is back on the Dojo', D.ownerFor(her) === her);
+      // Left on another island: it waits there, rather than walking off a rim toward the launch.
+      const far = world.islands.find((i) => i.kind !== 'dojo' && Math.hypot(i.x - isle.x, i.z - isle.z) > isle.radius + i.radius + 20);
+      big.position.set(far.x, far.baseY ?? 30, far.z);
+      her.position.set(L.stones[1].x, L.stones[1].y, L.stones[1].z);
+      const away = D.ownerFor(her).position;
+      ok('...and one left on another island waits there instead', hyp(away, big.position) < 1e-6, `${hyp(away, big.position).toFixed(2)}`);
+      her.pandaMount = true;
+      ok('...and a ridden one is hers to steer: the dome turns that away', D.ownerFor(her) === her);
+      her.pandaMount = false;
+      her.position.copy(keepAt);
+      D._pandaFree(her);
+    }
     her.panda = keepPanda;
+
+    /* A GAME SAVED IN THE SIMULATOR LOADS ON THE MIDDLE OF THE PAD. Richard,
+       Oct 2026: "if the player was saved in the simulator, they are spawning
+       outside of the simulator and falling to the ground ... we should have
+       them spawn in the center of the Dream Dojo island". She was saved at
+       her tube's anchor, and stood back inside the tube its wall threw her
+       ten units out of the back and off the pad (measured in the browser:
+       z -7.5 to -17.1 in one frame, then y 34.6 to 24 and falling). */
+    {
+      const t0 = L.tubes[0];
+      const g = { dream: D };
+      const mid = landAt(g, { at: [t0.x, A.y + DD.FLOAT_H, t0.z], sim: true });
+      const old = landAt(g, { at: [t0.x, A.y + DD.FLOAT_H, t0.z] });
+      const town = landAt(g, { at: [10, 5, 20] });
+      const ground = world.heightAt(mid[0], mid[2], A.y + 3);
+      ok('a game saved in the simulator loads her standing on the middle of the Dream Dojo pad',
+        hyp({ x: mid[0], z: mid[2] }, A) < 1e-6 && ground != null && Math.abs(mid[1] - (ground.y ?? ground)) < 1e-6,
+        `${mid.map((v) => v.toFixed(1))}`);
+      ok('...and so does an older save, known by its anchor inside a tube', old[0] === mid[0] && old[2] === mid[2]);
+      ok('...and a save anywhere else loads exactly where it was taken', town.join() === '10,5,20');
+      const geared = { dreamAnchor: new THREE.Vector3(t0.x, A.y + DD.FLOAT_H, t0.z), position: new THREE.Vector3(12000, 0, 0), style: { name: 'x' } };
+      ok('...and a row taken in the simulator says so', castRow(geared).sim === true && castRow({ position: new THREE.Vector3(), style: { name: 'x' } }).sim === false);
+    }
+
+    /* A PANDA RIDDEN NOWHERE NEAR THE GLASS DOES NOT MOVE HER. Richard: "the
+       player is moving at a very high speed when moving left/right on the
+       panda ... framerate dependent". The dome copied the panda's position
+       onto her every frame, and `carry` hangs the panda a seat offset away
+       along its broadside facing, so she was stepped sideways once a frame. */
+    {
+      const keepP = gD.players;
+      const keepPet = [her.panda, her.pandaMount];
+      gD.players = [her];
+      const artP = { cub: { texture: new THREE.Texture() }, adult: { texture: new THREE.Texture() } };
+      const pet = new Panda(artP, { owner: her, tier: 1 });
+      her.panda = pet; her.pandaMount = pet; pet.rider = her;
+      her.position.set(A.x + 400, A.y, A.z + 400);
+      her.velocity.set(0, 0, 0);
+      const at = her.position.clone();
+      for (let f = 0; f < 120; f++) { pet.carry(her); pet.facing = Math.PI / 2; D._updateDome(1 / 60); }
+      ok('a kitten riding her panda far from the dome is not moved by it — no sideways creep a frame at a time',
+        her.position.distanceTo(at) < 1e-6, `moved ${her.position.distanceTo(at).toFixed(2)} in 120 frames`);
+      [her.panda, her.pandaMount] = keepPet; pet.rider = null;
+      gD.players = keepP;
+    }
   }
 
   /* --- the fall: two seconds of air, then back to the start --- */
@@ -43780,7 +46921,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
     ok('...and a kitten on a dragon does not count — the flight theme has her', at(5) === 0);
     her.mount = null;
     ok('...and the piece is the Dream Dojo\'s own synthwave, wired into the router',
-      MUSd.vr?.tune === 'vr' && /this\._vrLevel = this\.dream\?\.musicLevel\?\.\(this\.players\) \?\? 0;[\s\S]{0,400}?if \(this\._vrLevel > 0\) return 'vr';/.test(readD('../src/main.js')));
+      MUSd.vr?.tune === 'vr' && /const swell = this\.dream\?\.musicLevel\?\.\(this\.players\) \?\? 0;[\s\S]{0,900}?if \(swell > 0\) return 'vr';/.test(readD('../src/main.js')));
     park(her);
   }
 
@@ -43923,7 +47064,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       PNd.DOJO_ACTS.map(([k]) => k).join() === 'view,ddmark,back'
       && /VIEW THE DREAM DOJO/.test(PNd.DOJO_ACTS[0][1]) && /MARK IT ON MY MAP/.test(PNd.DOJO_ACTS[1][1])
       && /key: 'dojo', title: 'THE DREAM DOJO'/.test(readD('../src/systems/payne.js')));
-    ok('...and her new lines are pending her approval like all of them, and are hers (Pixie)',
+    ok('...and her new lines are in her table like all of them, and are hers (Pixie)',
       ['payne_dd_intro', 'payne_dd_mark', 'payne_dd_busy', 'payne_q_shadow'].every((id) => PNd.PAYNE_LINES[id])
       && ST.TOUR.filter((x) => x.who === 'payne').every((x) => PNd.PAYNE_LINES[x.voice] === x.text));
     /* HER VIEW BUTTON, THROUGH HER OWN `choose`, against the real Dream Dojo:
@@ -44022,7 +47163,12 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         const row = sc.rows[sc.i];
         if (row) {
           if (!sc.musicTrack) unscored++;
-          if (SS.shotFor(row.shot, sc.ctx, 0).loc === 'sim' && sc.musicTrack !== 'vr') simNotVr++;
+          /* ...but his CREED carries through "and every reality, real AND
+             virtual": the line before crossed into the sim under it on
+             "galaxy" (SKY_CUT), and cutting the piece for the second half of
+             one sentence would be a seam in the middle of his speech. */
+          const carried = row.shot === 'skyPull2' && sc.musicTrack === SS.TOUR_MUSIC.lionHero;
+          if (SS.shotFor(row.shot, sc.ctx, 0).loc === 'sim' && sc.musicTrack !== 'vr' && !carried) simNotVr++;
           if (heard.at(-1) !== sc.musicTrack) heard.push(sc.musicTrack);
         }
         sc.update(0.25);
@@ -44051,7 +47197,7 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       const wt = mainSrc.slice(mainSrc.indexOf('  _wantedTrack(dt = 0) {'));
       const iTour = wt.indexOf('const tour = this.storyScene?.musicTrack;');
       ok('...and `_wantedTrack` asks the scene before anything about where the kittens stand, the simulator piece at full level',
-        iTour > 0 && iTour < wt.indexOf('if (this.travel)') && iTour < wt.indexOf('this._vrLevel = this.dream?.musicLevel')
+        iTour > 0 && iTour < wt.indexOf('if (this.travel)') && iTour < wt.indexOf('const swell = this.dream?.musicLevel')
         && /if \(tour\) \{ this\._vrLevel = 1; return tour; \}/.test(wt));
       const mine = ['tourPayne', 'tourLion', 'tourCreed'];
       const sig = (m) => [MUSIC[m].scale.join(','), MUSIC[m].root ?? 146.83, MUSIC[m].beat].join('|');
@@ -44082,7 +47228,10 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
        Infiltration island and instead stay on Kudamono Storm longer"; and
        on the Kata, "the Sine Gauntlet or Turning Circle island is in the
        background of the camera, but main camera focus should be on the Kata
-       Trace". So the visit list is six, not nine, ON PURPOSE. */
+       Trace". So the visit list was six, not nine, ON PURPOSE — and is seven
+       since Oct 2026, when the Sine Gauntlet came back for one reason: "when
+       Lionheart says 'Every island is a lesson' we can have the camera looking
+       at the Sine Gauntlet instead of panning between the islands". */
     {
       const { mp3Duration: mp3D } = await import('./mp3.mjs');
       const clipT = (id) => mp3D(new URL(`../public/voice/lionheart/${id}.mp3`, import.meta.url)).secs;
@@ -44121,11 +47270,11 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       }
       ok('the tour\'s simulator lines cut on the words that name a place: every word is said, inside its clip, and held longer than the move into it',
         cueBad.length === 0, cueBad.join(' · ') || `${Object.values(SS.TOUR_PANS).flat().length} stops`);
-      const TOUR_ISLES = ['gallery', 'hall', 'range', 'school', 'storm', 'kata'];
-      const DROPPED = ['sine', 'sentries', 'bamboo'];
+      const TOUR_ISLES = ['gallery', 'hall', 'range', 'school', 'storm', 'kata', 'sine'];
+      const DROPPED = ['sentries', 'bamboo'];
       const allIsles = Object.keys(ctxT.isles).filter((k) => k !== 'shadow');
       const visited = [...isleStops].sort().join(' ');
-      ok('...and between them they visit the six islands the lines name, and not the three Richard asked to lose — which are all the others but the Shadow\'s',
+      ok('...and between them they visit the seven islands the lines name (the Sine Gauntlet back for "every island is a lesson"), and not the two Richard asked to lose — which are all the others but the Shadow\'s',
         visited === [...TOUR_ISLES].sort().join(' ')
           && allIsles.every((k) => TOUR_ISLES.includes(k) || DROPPED.includes(k))
           && DROPPED.every((k) => allIsles.includes(k) && !isleStops.has(k)),
@@ -44165,6 +47314,11 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         kata: kataPts,
         gallery: [at('gallery', 0, 0, SS.ISLE_FRAME.lookY)],
         hall: [at('hall', 0, 0, SS.ISLE_FRAME.lookY)],
+        // The Gauntlet's course runs along `fwd` through the middle: both ends and the middle.
+        sine: [-0.6, 0, 0.6].map((f) => {
+          const I = ctxT.isles.sine;
+          return simP({ x: I.x + I.fwd.x * I.r * f, y: I.y + 2, z: I.z + I.fwd.z * I.r * f });
+        }),
       };
       const frameOf = (stops, t) => {
         let i = 0;
@@ -44186,7 +47340,9 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
             continue;
           }
           const fs = frameOf(stops, t);
-          if (!fs.isle || t - fs.at < (fs.cut ?? fs.swing ?? SS.PAN_T) || sh.black > 0.5) continue;
+          // The first stop has no move into it; a fade-in's move is under the black.
+          const into = fs === stops[0] ? 0 : (fs.cut ?? fs.fadeIn ?? fs.swing ?? SS.PAN_T);
+          if (!fs.isle || t - fs.at < into || sh.black > 0.5) continue;
           aim(sh);
           isleN[fs.isle] = (isleN[fs.isle] ?? 0) + 1;
           const pts = subjects[fs.isle].map((p) => p.clone().project(camT));
@@ -44205,9 +47361,10 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       /* NO 180. The map used to look at the Turning Circle from the far side
          of the islands it was about to dive to, so the swing onto the Gallery
          turned the lens round about the vertical. The map now stands behind
-         the hub FROM the island it is heading for, and the outskirts pan ends
-         facing the Storm, so both moves are a push along the heading. Every
-         50th of a second of each swing, against its first frame. */
+         the hub FROM the island it is heading for, so the move is a push
+         along the heading. Every 50th of a second of the swing, against its
+         first frame. (The Storm used to be the second swing, off the outskirts
+         pan; it comes up out of black now, below.) */
       const head = (sh) => Math.atan2(sh.look.z - sh.pos.z, sh.look.x - sh.pos.x);
       const swingTurn = (name, st) => {
         const h0 = head(SS.shotFor(name, ctxT, 0, st.at - 0.05));
@@ -44219,19 +47376,14 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         return (w * 180) / Math.PI;
       };
       const toGallery = swingTurn('simHub', SS.TOUR_PANS.simHub.find((s) => s.isle === 'gallery'));
-      const toStorm = swingTurn('simIsles', SS.TOUR_PANS.simIsles.find((s) => s.isle === 'storm'));
-      ok('...and the whole map pushes ONTO the Kotodama Gallery, and the outskirts onto the Kudamono Storm, without turning round — under 30° each',
-        toGallery < 30 && toStorm < 30, `map → gallery ${toGallery.toFixed(0)}°, pan → storm ${toStorm.toFixed(0)}°`);
+      ok('...and the whole map pushes ONTO the Kotodama Gallery without turning round — under 30°',
+        toGallery < 30, `map → gallery ${toGallery.toFixed(0)}°`);
 
       /* The map: the Turning Circle in the middle, every island round it, and
          turning fairly quickly. The pan: from out past the Dojo's rim, the
          Turning Circle behind it, islands big in the frame. */
       let mapF = 0;
       let mapSeen = Infinity;
-      let panF = 0;
-      let panBad = 0;
-      let panSeen = Infinity;
-      const panSeq = [];
       for (let t = 0; t < SS.TOUR_PANS.simHub[1].at; t += 0.1) {
         const sh = SS.shotFor('simHub', ctxT, 0, t);
         aim(sh);
@@ -44244,25 +47396,31 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
         return Math.atan2(p.z - SIMo.dz - hub.z, p.x - SIMo.dx - hub.x);
       };
       const spin = Math.abs(eyeA(0.9) - eyeA(0)) / 0.9;
-      for (let t = 0; t < SS.TOUR_PANS.simIsles[1].at; t += 0.1) {
-        const sh = SS.shotFor('simIsles', ctxT, 0, t);
-        aim(sh);
-        panF++;
-        const out = Math.hypot(sh.pos.x - SIMo.dx - hub.x, sh.pos.z - SIMo.dz - hub.z);
-        if (inF(simP(hub).project(camT)) || out < 66) panBad++;
-        // Close enough that an island's middle can be out of the frame with
-        // half of it in: one counts if its middle or any point of its rim is.
-        const seen = allIsles.filter((k) => {
-          const I = ctxT.isles[k];
-          return [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => inF(simP(TC.isleAt(I, a * I.r, b * I.r, 0)).project(camT), 0.95));
-        });
-        panSeen = Math.min(panSeen, seen.length);
-        panSeq.push(seen.length);
-      }
       ok('...and the Turning Circle is only the middle of the whole map, turning fairly quickly, with the islands round it in frame',
         mapF > 5 && mapSeen >= 8 && spin > 0.25, `${mapF} map frames, ≥${mapSeen} of ${allIsles.length} islands, ${(spin * 180 / Math.PI).toFixed(0)}°/s`);
-      ok('...and "every island is a lesson" pans the outskirts, from past the Dojo\'s rim with the Turning Circle behind the lens and islands always in the frame',
-        panF > 5 && panBad === 0 && panSeen >= 1, `${panF} frames, ${panBad} on the Dojo, ≥${panSeen} islands in each (${panSeq.join('')})`);
+      /* "EVERY ISLAND IS A LESSON" IS THE SINE GAUNTLET. Richard, Oct 2026:
+         "we can have the camera looking at the Sine Gauntlet instead of
+         panning between the islands, we can have it fade in and fade out
+         quickly, it fades out on the word 'lesson' and can fade in at the
+         Kudamono Storm at the part where the camera is zooming in on it". So:
+         the first stop IS the Gauntlet (its course in the frame, by the lens
+         check above), clear on "Every island", black by the end of "lesson",
+         and the Storm comes up out of that black inside half a second while
+         its push is still pushing — the cut is the black, so nothing swings. */
+      const PB = (t) => SS.panBlack('simIsles', t);
+      const lesson = SS.TOUR_PANS.simIsles.find((s) => /lesson/.test(s.word));
+      const stormS = SS.TOUR_PANS.simIsles.find((s) => s.isle === 'storm');
+      const dStorm = (t) => {
+        const p = SS.shotFor('simIsles', ctxT, 0, t).pos;
+        const c = at('storm', ...TC.STAGE.storm.centre, 0);
+        return Math.hypot(p.x - c.x, p.y - c.y, p.z - c.z);
+      };
+      ok('...and "every island is a lesson" is the Sine Gauntlet: out quickly on "lesson", and up on the Kudamono Storm while the lens is still pushing in on it',
+        SS.TOUR_PANS.simIsles[0].isle === 'sine' && lesson?.hold && PB(0.2) < 0.01 && PB(lesson.at) < 0.01
+          && lesson.fadeOut - lesson.at <= 0.6 && PB(lesson.fadeOut) > 0.99 && stormS.at === lesson.fadeOut
+          && stormS.fadeIn <= 0.5 && PB(stormS.at + stormS.fadeIn + 0.01) < 0.01
+          && !stormS.swing && dStorm(stormS.at + stormS.fadeIn + 0.3) < dStorm(stormS.at + stormS.fadeIn) - 0.5,
+        `lesson ${lesson?.at}→${lesson?.fadeOut}, storm in by ${(stormS.at + stormS.fadeIn).toFixed(2)}, pushing ${dStorm(stormS.at + stormS.fadeIn).toFixed(1)}→${dStorm(stormS.at + stormS.fadeIn + 0.3).toFixed(1)}`);
 
       /* THE KATA, HELD. "stay on the Kata Trace longer so that we can
          actually show Lionheart doing a kata routine on there. When it says
@@ -44281,10 +47439,82 @@ console.log('\n=== PAYNE LETS GO, A STRIP OF SUBTITLE, THE WAY OUT YOU CAME IN, 
       const sineV = simP(ctxT.isles.sine).project(camT);
       const floorV = subjects.kata[0].clone().project(camT);
       const kTurn = Math.abs(Math.atan2(Math.sin(head(kEnd) - kHead0), Math.cos(head(kEnd) - kHead0))) * 180 / Math.PI;
-      ok('...and on "the maths of the circle" the lens walks round the Kata floor until the Sine Gauntlet is behind it on "Earn stars", the floor still the middle',
-        kataStop && maths && stars && kTurn > 60 && inF(sineV, 0.9) && Math.abs(floorV.x) < 0.4 && floorV.y > SUBS
+      /* ...AND LOWER. Richard, Oct 2026: "the Sine Gauntlet is in the
+         background but the angle is not too good, maybe the camera can go
+         lower so that it is more in the center of the screen towards the
+         end." Through this 42° lens it stood at NDC y 0.69 on "Earn stars"
+         (0.67 at 9.0), against the top edge; KATA_ORBIT_UP 0.42 -> 0.12 with
+         the aim on the floor puts it at 0.28 (0.16). Aiming higher (lookY 3)
+         put it at 0.15 but dropped a floor under the subtitles mid-walk
+         (-0.40 against -0.38); at 0 the floor's lowest is -0.34, as before. */
+      ok('...and on "the maths of the circle" the lens walks round the Kata floor, low, until the Sine Gauntlet is behind it and near the middle on "Earn stars", the floor still the middle',
+        kataStop && maths && stars && kTurn > 60 && inF(sineV, 0.9) && sineV.y < 0.45 && Math.abs(floorV.x) < 0.4 && floorV.y > SUBS
           && stars.at - kataStop.at > 3.5,
         `held ${(stars.at - kataStop.at).toFixed(2)}s before the fade, walked ${kTurn.toFixed(0)}°, sine at (${sineV.x.toFixed(2)}, ${sineV.y.toFixed(2)}), floor at ${floorV.x.toFixed(2)}`);
+
+      /* "EVERY WORLD, EVERY GALAXY ... AND EVERY REALITY". Richard, Oct 2026:
+         "it should start to fade out and be faded to black when he says
+         'galaxy'. This can be a faster fade out to black. When he starts
+         saying 'And every reality' it should already be completely faded in
+         ... We want the transition fade out/fade in to be quick so that
+         players can see that the alignment is the same between the two
+         realities." Measured off the clip: "every galaxy" 8.03-9.09, "galaxy"
+         from ~8.45. Clear before "every", black by 8.5, crossed under the
+         black, up again before the line ends; mission4 opens in the sim with
+         nothing black; and the lens either side of the cross is the SAME lens
+         (only the layer moves), which is the alignment he wants seen. */
+      const m3 = rowOf('skyPull');
+      const m3Len = clipT(m3.voice) + 0.5;
+      const SK = SS.SKY_CUT;
+      const skyB = (t) => SS.shotFor('skyPull', ctxT, t / SK.len, t);
+      // A millisecond either side: the pull itself moves ~12 units/s.
+      const pre = skyB(SK.cross - 0.0005);
+      const post = skyB(SK.cross + 0.0005);
+      const m4a = SS.shotFor('skyPull2', ctxT, 0, 0);
+      const same = Math.hypot(post.pos.x - SIMo.dx - pre.pos.x, post.pos.y - pre.pos.y, post.pos.z - SIMo.dz - pre.pos.z);
+      ok('...and the sky pull crosses into the simulator on "every GALAXY", quickly: clear before "every", black by "galaxy", the same lens either side, and up before "and every reality"',
+        /every galaxy/.test(m3.text) && skyB(8.0).black < 0.01 && skyB(8.0).loc === 'real' && SK.out[0] >= 8.0 && SK.out[1] <= 8.55
+          && SK.out[1] - SK.out[0] <= 0.6 && skyB(SK.out[1]).black > 0.99 && pre.loc === 'real' && post.loc === 'sim'
+          && skyB(SK.in[0]).black > 0.99 && SK.in[1] - SK.in[0] <= 0.6 && skyB(SK.in[1]).black < 0.01 && SK.in[1] <= SK.len && SK.len <= m3Len
+          && same < 0.05 && m4a.loc === 'sim' && !(m4a.black > 0.01),
+        `out ${SK.out.join('→')}, cross ${SK.cross}, in ${SK.in.join('→')} of ${m3Len.toFixed(2)}s, lens moved ${same.toFixed(3)} across the cross, mission4 opens ${m4a.loc}`);
+
+      /* THE LAST SECONDS GO ROUND THE TURNING CIRCLE. "let's have the camera
+         pan around in a circular arc with the focus being the center of the
+         Dojo of the Turning Circle so that the Kata Trace and Sine Gauntlet
+         are visible for the last few seconds before fading out." Every 20th
+         of a second of mission4: from SKY_ARC.from on, the eye's distance
+         from the hub never jumps (an arc, not a chord through it), it turns
+         round the hub by a real angle, ends aimed at the hub, and both islands
+         are in the frame continuously for the last 1.5s+ before the fade is
+         half black. Measured: in from 7.90, half black at 9.85. */
+      const m4Len = SS.REALITY_CUT.len;
+      let both0 = null;
+      let rJump = 0;
+      let lastR = null;
+      let halfB = null;
+      const eyeOf = (sh) => ({ a: Math.atan2(sh.pos.z - SIMo.dz - hub.z, sh.pos.x - SIMo.dx - hub.x), r: Math.hypot(sh.pos.x - SIMo.dx - hub.x, sh.pos.z - SIMo.dz - hub.z) });
+      const arcA0 = eyeOf(SS.shotFor('skyPull2', ctxT, SS.SKY_ARC.from / m4Len, SS.SKY_ARC.from)).a;
+      for (let t = SS.SKY_ARC.from; t <= m4Len; t += 0.05) {
+        const sh = SS.shotFor('skyPull2', ctxT, t / m4Len, t);
+        const e = eyeOf(sh);
+        if (lastR != null) rJump = Math.max(rJump, Math.abs(e.r - lastR));
+        lastR = e.r;
+        if (halfB == null && sh.black > 0.5) halfB = t;
+        if (halfB != null) continue;
+        aim(sh);
+        const both = ['kata', 'sine'].every((k) => inF(simP(ctxT.isles[k]).project(camT), 0.9));
+        if (both && both0 == null) both0 = t;
+        if (!both) both0 = null;
+      }
+      const arcEnd = SS.shotFor('skyPull2', ctxT, SS.SKY_ARC.to / m4Len, SS.SKY_ARC.to);
+      aim(arcEnd);
+      const hubV = simP(hub).project(camT);
+      const arcTurn = Math.abs(Math.atan2(Math.sin(eyeOf(arcEnd).a - arcA0), Math.cos(eyeOf(arcEnd).a - arcA0))) * 180 / Math.PI;
+      ok('...and the last seconds arc round the Turning Circle, aimed at it, with the Kata Trace and the Sine Gauntlet both in the frame for the last 1.5s before the fade',
+        both0 != null && halfB != null && halfB - both0 >= 1.5 && arcTurn > 45 && rJump < 3 && Math.hypot(hubV.x, hubV.y) < 0.15
+          && SS.SKY_ARC.to > SS.REALITY_CUT.end[0],
+        `both in from ${both0?.toFixed(2)}, half black at ${halfB?.toFixed(2)}, turned ${arcTurn.toFixed(0)}° round the hub, worst radius step ${rJump.toFixed(2)}/0.05s, hub at (${hubV.x.toFixed(2)}, ${hubV.y.toFixed(2)})`);
 
       /* THE FADES. "When saying 'earn stars' we can keep showing the kata and
          then slowly fade out and when saying 'climb the ranks of kenshi' we
@@ -44866,7 +48096,8 @@ console.log('\n--- his recordings: one song per level, looped on the beat, won i
   const { MUSIC_FILES } = await import('../src/core/musicfiles.js');
   const { DreamProgress } = await import('../src/systems/dream/progress.js');
   const { KataHall } = await import('../src/systems/dream/kata.js');
-  const ids = Object.keys(MUSIC_FILES);
+  // His recordings: the house songs share the table now (beatmap.js `HOME_SONG_TIERS`) and are checked below.
+  const ids = Object.keys(MUSIC_FILES).filter((id) => ['medium', 'hard', 'extra'].includes(MUSIC_FILES[id].level));
   const bad = [];
   for (const id of ids) {
     const f = MUSIC_FILES[id];
@@ -44885,7 +48116,8 @@ console.log('\n--- his recordings: one song per level, looped on the beat, won i
          cut in the gap before the beat (shadow-music.mjs `seamLag`, `seamCut`).
          Exactly on the grid was the first way, and every one of the three
          stumbled at its seam — the takes creep 0.1%, so beat A and beat B are
-         30-60ms out of step with each other (Requiem -43ms, Darksynth -61ms).
+         30-60ms out of step with each other (Requiem -43ms; Darksynth's old
+         52-100 loop -61ms, its 15-111 one +23ms off the grid's drift).
          So: within 80ms of the beat on each side, and the length is the
          beats less the lag to the millisecond — the music's own A-to-B. */
       const lag = f.lag ?? NaN;
@@ -44924,13 +48156,31 @@ console.log('\n--- his recordings: one song per level, looped on the beat, won i
     ok('...and the long cut\'s chart covers all of it: the original, plus one more loop than it has extra passes',
       L.beats === N.beats + (L.passes + 1) * (B - A), `${L.beats} beats for ${L.passes} passes`);
   }
+  /* DARKSYNTH, THE SAME WAY. Richard, Oct 2026: "The loop on the Hard Shadow
+     Lionheart music is not very good, too repetitive in the battle, also the
+     splice transition of the music is not very good. We want more diversity
+     and the main theme of the song repeating during the battle." It looped
+     52-100, 21s of the drop alone, so the theme (beats 7-46) was heard once.
+     Every pass is the theme from its second G phrase (15) and the whole drop
+     (47-110), ending before the closing hit (111) and the fade (49.8s); and
+     its seam is timed off the grid's drift, which the tool prints beside the
+     onset match it overrules. */
+  {
+    const S = MUSIC_FILES.shadowSynth;
+    const src = readFileSync(new URL('../tools/capture/shadow-music.mjs', import.meta.url), 'utf8');
+    ok('...and Darksynth loops its THEME and its whole drop every pass — 15 to 111, before the closing hit — twice as long as it was, its seam timed by the grid',
+      S.loopBeats[0] <= 15 && S.loopBeats[0] >= 8 && S.loopBeats[1] === 111 && S.loop[1] < 49.8 && S.loop[1] - S.loop[0] > 40
+      && Math.abs(S.lag) < 0.04 && /id: 'shadowSynth'[^\n]*loopBeats: \[15, 111\], lagBy: 'drift'/.test(src),
+      `${S.loopBeats.join('-')} -> ${S.loop.map((s) => s.toFixed(2)).join('-')}s lag ${S.lag}`);
+  }
 
   /* THE LOCKS. A kitten who has won nothing; then one fight at a time. */
   const kit = (beat = {}) => ({ name: 'Mittens', style: { name: 'Mittens' }, shadowBeat: beat });
   const none = kit();
   const openNow = BM.SONGS.filter((s) => !BM.songLocked(s.id, none)).map((s) => s.id);
   ok('a kitten who has never fought him can dance to his theme and every other song, and to none of his recordings',
-    openNow.includes('shadow') && ids.every((id) => !openNow.includes(id)) && openNow.length === BM.SONGS.length - ids.length,
+    openNow.includes('shadow') && ids.every((id) => !openNow.includes(id))
+    && openNow.length === BM.SONGS.length - ids.length - BM.SONGS.filter((s) => s.lock?.startsWith('home:')).length,
     openNow.join(' '));
   const perWin = ['medium', 'hard', 'extra'].map((lv) => ids.filter((id) => !BM.songLocked(id, kit({ [lv]: true }))).sort().join('+'));
   ok('...each win opens exactly its own level\'s song (and EXTRA HARD its long cut with it)',
@@ -44995,6 +48245,45 @@ console.log('\n--- his recordings: one song per level, looped on the beat, won i
     KataHall.prototype.songChoices.call({ dream: { game: { _debugSongs: true }, progress: new DreamProgress(null) } }, none)
       .filter((c) => ids.includes(c.S.id) && !c.locked).length === ids.length);
 
+  /* THE HOUSE SONGS. "add the 'Purchased Housing' songs as locked songs to the
+     Kata Trace ... 2 of each of the songs are locked under the 3 different
+     price tiers ... Once at least one of the players buys one of the house
+     types, then those 2 songs get unlocked in the Kata Trace for everyone
+     forever ... only show 3 locked songs in the menu". */
+  {
+    const { homesOpen } = await import('../src/systems/dream/kata.js');
+    const homeIds = BM.SONGS.filter((s) => s.lock?.startsWith('home:')).map((s) => s.id);
+    ok('the six house songs are Kata Trace songs, two to a house, each a whole number of bars inside 30-90s',
+      homeIds.length === 6 && Object.values(BM.HOME_SONG_TIERS).every((t) => t.length === 2)
+      && homeIds.every((id) => { const S = BM.songById(id); return S.beats % 4 === 0 && S.beats * S.spb <= 90.01 && S.beats * S.spb >= 30; }),
+      homeIds.map((id) => `${id} ${(BM.songById(id).beats * BM.songById(id).spb).toFixed(0)}s`).join(' '));
+    const PH = new DreamProgress(null);
+    const store = { homes: {} };
+    const stub = (debug = false) => ({ dream: { game: { _debugSongs: debug, housing: { store } }, progress: PH } });
+    const rows = (debug = false) => KataHall.prototype.songChoices.call(stub(debug), none);
+    const r0 = rows();
+    const bundles = r0.filter((c) => c.S.bundle);
+    ok('...locked, they are THREE rows, one per house, each saying which house to buy — and none of the six songs is listed',
+      bundles.length === 3 && bundles.every((c) => /^Buy a .+ from Roshi to unlock these 2 songs/.test(c.locked ?? ''))
+      && !r0.some((c) => homeIds.includes(c.S.id)), bundles.map((c) => c.locked).join(' | '));
+    store.homes.sunrise = { site: 'sunrise', house: 'minka', at: { x: 0, z: 0, rot: 0 } };
+    const r1 = rows();
+    ok('...a small house bought by anybody opens its two songs, unlocked, in place of its bundle',
+      !r1.some((c) => c.S.id === 'bundle:minka') && BM.HOME_SONG_TIERS.minka.every((id) => r1.find((c) => c.S.id === id && !c.locked))
+      && r1.filter((c) => c.S.bundle).length === 2, r1.filter((c) => c.S.bundle || homeIds.includes(c.S.id)).map((c) => c.S.id).join(' '));
+    delete store.homes.sunrise;
+    ok('...and they STAY open after the house is sold — "for everyone forever" — carried in the game ledger',
+      homesOpen(stub().dream).has('minka') && PH.toSave().homes?.includes('minka')
+      && BM.songLocked('homeLofi', none, false, homesOpen(stub().dream)) === null);
+    const r2 = rows(true);
+    ok('...the debug "open every song in Kata Trace" lists all six, open, and no bundle',
+      homeIds.every((id) => r2.find((c) => c.S.id === id && !c.locked)) && !r2.some((c) => c.S.bundle));
+    const msrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+    ok('...the debug row is called "open every song in Kata Trace", and DANCE on a bundle is refused in words',
+      /row\('DreamSongs', 'open every song in Kata Trace'/.test(msrc) && !/'open every Shadow song/.test(msrc)
+      && /^Buy a SKY CASTLE from Roshi/.test(BM.songLocked('bundle:castle', none, false, new Set())));
+  }
+
   /* HIS CHART, FITTED. One hand-written chart, opening / march / finale; the
      finale is pinned to each song's END and the march fills the middle. At
      the procedural theme's 128 beats `fitShadow` must hand the chart back
@@ -45021,6 +48310,8 @@ console.log('\n--- his recordings: one song per level, looped on the beat, won i
   const asrc = readFileSync(new URL('../src/core/audio.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
   ok('a Kata Trace run plays the recording through once, never round its boss loop',
     /restartMusic\(mode, rate = 1\) \{[\s\S]{0,120}this\.startMusic\(mode, rate, \{ loop: false \}\)/.test(asrc));
+  ok('♪♪ Audio.joinMusic places a song already under way from the run\'s own beat 0 and ramps the bus up from silence',
+    /joinMusic\(mode, rate = 1, songT = 0, fade = [\d.]+\) \{[\s\S]{0,700}const beat0 = now - songT;[\s\S]{0,500}this\._beat0 = beat0;[\s\S]{0,400}linearRampToValueAtTime\(this\.musicVolume \* this\.musicLevel, now \+ fade\)/.test(asrc));
   ok('...the boss loop is crossfaded on a COPY, so a straight play-through never hears the seam',
     /_loopBuffer\(id, buf\) \{[\s\S]*?createBuffer\(buf\.numberOfChannels[\s\S]*?Math\.cos\(w\)[\s\S]*?Math\.sin\(w\)/.test(asrc)
     && /src\.buffer = this\._fileLoop \? this\._loopBuffer\(id, buf\) : buf;/.test(asrc));
@@ -45152,6 +48443,12 @@ console.log('\n--- the beat-map grid is one stop, then its lines, then a line\'s
 {
   const { housingChecks } = await import('./checks/housing.mjs');
   await housingChecks({ ok, world });
+}
+
+/* PAYNE'S INTRODUCTION TO THE WORLD — its own file, against this World. */
+{
+  const { payneIntroChecks } = await import('./checks/payneintro.mjs');
+  await payneIntroChecks({ ok, world });
 }
 
 console.log(fails

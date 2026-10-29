@@ -10,6 +10,12 @@ import { TrainingGate, Shards } from './dream/targets.js';
 import { makeSimHud } from './dream/simhud.js';
 import { DreamProgress, forgetLegacy } from './dream/progress.js';
 import { Drill } from './dream/drill.js';
+
+/** Is she inside a drill, including the gallery's 'arrive' wait, when a drill
+ *  stands open for her to step into its circle? This asks the STATE rather
+ *  than a getter on Drill, because a station has to answer the same for any
+ *  object that carries one (world-check hands it plain `{ state }` objects). */
+const drilling = (d) => !!d && (d.state === 'arrive' || d.state === 'ready' || d.state === 'live');
 import { Gallery } from './dream/gallery.js';
 import { TrialHall } from './dream/hall.js';
 import { TameshigiriRange } from './dream/range.js';
@@ -24,7 +30,7 @@ import { Ranks, SECRET_LINE } from './dream/rank.js';
 import { ShadowFight, SHADOW_LINES, HANDOVER } from './dream/shadow.js';
 import { LionVoice, VOICE_TAIL } from './dream/lionvoice.js';
 import { Rundown } from './dream/rundown.js';
-import { ISLANDS, islandCentre } from './dream/islands.js';
+import { ISLANDS, islandCentre, PORT_SIGN } from './dream/islands.js';
 import { SimBar, holoFlicker } from './dream/holo.js';
 import { Approach } from './dream/approach.js';
 import { Lecture } from './dream/lecture.js';
@@ -35,12 +41,20 @@ import { TourShadow } from './dream/tourshadow.js';
 import { TourCast } from './dream/tourcast.js';
 import { holoDojo } from './dream/holodojo.js';
 import { PeekTrigger, stationFirst } from './dream/peek.js';
+import { buildPeekMarks } from './dream/peekmarks.js';
 import { NAV, navGrid, navPath, padObstacles } from './dream/padnav.js';
 import { tickKeptPandas, dropKept } from './dream/pandatrial.js';
 import { enterHolo, leaveHolo, grantHolo, holoLeft, HoloChoice, HOLO_MAX_EACH } from './dream/holokit.js';
 import { LionGuide, LOST_AFTER, LOST_AGAIN, LOST_MAX } from './dream/lionguide.js';
 import { Kiosk, idleIn, isleSpot } from './dream/kiosk.js';
 import { Waypoints } from './dream/waypoint.js';
+import { WIP_TEXT, WIP_ORANGE } from '../core/wipmark.js';
+
+/** How far past a light cycle pad's rim the kitten it dropped off must go
+ *  before stepping onto it counts as stepping in (`_peekFor`): its lane is
+ *  2.5 off the pad's middle, so 2.0 + 3 takes in where she lands, and a
+ *  deliberate walk away. */
+export const CYCLE_LEFT = 3;
 
 /** Her single-cell pose billboards, which the tube puppet mirrors. */
 const PUPPET_POSES = ['eatPose', 'blessPose', 'warpPose', 'breathPose', 'scaredPose', 'sweepPose'];
@@ -135,6 +149,9 @@ export const ROCK = { r: ARCADE.r * 0.95, top: 1.4, h: 16, rim: 2 };
 /** Where her cub waits while she is in the simulator: this far from her
  *  tube toward the pad's middle, the end of the walk out (`ownerFor`). */
 export const CUB_WAIT = 3.2;
+/** How much nearer the pad than the launch she has to be before a grown
+ *  panda stops and waits (`pastLaunch`): the Dojo's rim runs a few units on. */
+export const PANDA_WAIT_MARGIN = 4;
 /** How tall Lionheart stands — Payne's height, he is a grown-up too. */
 export const LION_HEIGHT = 6.2;
 export const LION_TALK_R = 5.6;
@@ -217,6 +234,10 @@ const wrapA = (a) => Math.atan2(Math.sin(a), Math.cos(a));
  * of hysteresis, so a kitten stood on the line does not restart the piece.
  */
 export const MUSIC_SWELL = { beyond: 10, floor: 0.08, near: 0.5, out: 6 };
+/** Shadow Lionheart's island mood (`_shadowMood`): seconds for the sky to go
+ *  dark on the way in and come back on the way out, and for the music to fade
+ *  either way ("fade out and turn off ... fades back in"). */
+export const SHADOW_MOOD = { dark: 2.5, light: 2, hush: 2 };
 
 /** The phases spent in (or crossing out of) the tube, framed by her own
  *  follow camera rather than the dome's (`cameraFocus`). */
@@ -1217,8 +1238,30 @@ export class DreamDojo {
        "split screen and shared camera can focus on the player in the
        obstacle course" (dream/sine.js `paneAnchor`). */
     if (this.sine?.inSession?.(p)) return false;
+    // ...and Bamboo Infiltration's, for the same reason (dream/bamboo.js `groupShot`).
+    if (this.bamboo?.inSession?.(p)) return false;
     const s = this.st[p?.index];
-    return !!(s && s.phase) || this.realmOf(p) === 'sim';
+    /* ...AND A FIRST-TIMER ROUND THE RACKS. Richard: "if there is a player
+       that needs to grab the VR equipment for the first time from the Dream
+       Dojo island, that the camera will change for them and that maybe the
+       other player will get a splitscreen until the camera goes back to
+       normal." The gear shot (`_gearShot`) is HER camera's; in a shared pane
+       it was never drawn, and her stick turned with it anyway. */
+    if (s && !s.phase && s.gather?.size && this._gearShot(p)) {
+      const h = Math.hypot(p.position.x - ARCADE.x, p.position.z - ARCADE.z);
+      if (h < DOME_R && p.position.y > ARCADE.y - 3) return true;
+    }
+    /* ...BUT NOT FOR BEING IN THE SIMULATOR. Richard, Oct 2026: "When both
+       players enter the simulator, it seems it is keeping both players in
+       separate splitscreens instead of combining their split screen, even
+       though they are both near each other ... The camera splitting should use
+       the same logic as like when they are not in the simulator." Being inside
+       (phase 'sim') was counted as a tube phase, so two sisters side by side
+       in the sim each had a pane forever. Only the crossing itself — the rise,
+       the rain, the rez and the way back — is laid over her own pane. Two
+       realities still never share one: the sim is twelve thousand units east,
+       which `clusterPlayers` cannot merge across. */
+    return !!(s && s.phase && s.phase !== 'sim');
   }
 
   /**
@@ -1233,7 +1276,19 @@ export class DreamDojo {
    * `position` is answered differently; everything else is her.
    */
   ownerFor(p) {
-    if (this.realmOf(p) !== 'sim' || !this.layout) return p;
+    if (!this.layout) return p;
+    const inSim = this.realmOf(p) === 'sim';
+    /* A GROWN PANDA STOPS AT THE STONES, not at the glass. Richard, Oct 2026:
+       "If player has a big panda and is near the Dream Dojo island or jumping
+       platforms to get to the island, the panda should just wait for the
+       player on the Dojo of the Turning Circle island or whichever island it
+       is last on, but should not try to follow the player into the Dream Dojo
+       island." It used to heel her right up to the launch, then walk off the
+       rim after her onto the stones, and the dome was the only thing that
+       stopped it. Now it waits the moment she is past the launch. A ridden
+       one is hers to steer, and the dome still turns that away. */
+    const big = !!p.panda?.rideable && !p.pandaMount;
+    if (!inSim) return big && this.pastLaunch(p) ? this._pandaWait(p) : this._pandaFree(p);
     const s = this.st[p.index];
     if (!s) return p;
     /* A CUB WAITS ON THE PAD, AT HER TUBE. Richard: "the baby panda can go
@@ -1254,18 +1309,75 @@ export class DreamDojo {
       }
       return s.cubProxy;
     }
-    if (!s.proxy) {
-      /* At the take-off for the first stone since the way across curved:
-         the old spot, 61 out along the straight line, is no longer "the foot
-         of the stones". */
-      const dc = this.game.world.dojoCentre;
-      const at = this.layout.launch;
-      const wait = new THREE.Vector3(at.x, dc.y, at.z);
-      s.proxy = new Proxy(p, {
-        get: (t, k) => (k === 'position' ? wait : Reflect.get(t, k)),
-      });
+    return this._pandaWait(p);
+  }
+
+  /**
+   * Is she past the take-off for the first stone, on the stones or the pad?
+   * Measured toward the pad: nearer to it than the launch spot is, by a
+   * margin, since the Dojo's own rim runs a few units past the launch.
+   */
+  pastLaunch(p) {
+    const L = this.layout;
+    if (!L || !p?.position) return false;
+    const her = Math.hypot(p.position.x - ARCADE.x, p.position.z - ARCADE.z);
+    return her < Math.hypot(L.launch.x - ARCADE.x, L.launch.z - ARCADE.z) - PANDA_WAIT_MARGIN;
+  }
+
+  /**
+   * Her panda's stand-in owner while it waits: a `Proxy` of her, for the
+   * reason `ownerFor` gives, whose `position` is the spot it waits on. The
+   * spot is picked once per wait. If the panda is on the Dojo of the Turning
+   * Circle (or out past it toward the pad) it is the launch, the last ground before the jump and where she
+   * comes back to. If it is anywhere else ("whichever island it is last on")
+   * it is where the panda stands: walked to the launch from another island,
+   * it would go over the first rim between them.
+   */
+  _pandaWait(p) {
+    this._waits ??= new WeakMap();
+    let w = this._waits.get(p);
+    if (!w) {
+      const at = new THREE.Vector3();
+      w = { at, set: false, proxy: new Proxy(p, { get: (t, k) => (k === 'position' ? at : Reflect.get(t, k)) }) };
+      this._waits.set(p, w);
     }
-    return s.proxy;
+    if (!w.set) {
+      const isle = this.game.world.dojoIsland;
+      const pp = p.panda?.position;
+      // On the Dojo, or already out toward the pad (the dome pushes a grown one off it).
+      const near = !pp || !isle || Math.hypot(pp.x - isle.x, pp.z - isle.z) < (isle.radius ?? 66)
+        || this.pastLaunch({ position: pp });
+      if (near) w.at.set(this.layout.launch.x, this.game.world.dojoCentre.y, this.layout.launch.z);
+      else w.at.copy(pp);
+      w.set = true;
+    }
+    return w.proxy;
+  }
+
+  /** She is back on this side of the launch: the next wait picks its spot afresh. */
+  _pandaFree(p) {
+    const w = this._waits?.get(p);
+    if (w) w.set = false;
+    return p;
+  }
+
+  /**
+   * The middle of the pad, standing: where a game saved in the simulator is
+   * loaded (savegame.js `landAt`).
+   */
+  landingSpot() {
+    const w = this.game.world;
+    const h = w?.heightAt?.(ARCADE.x, ARCADE.z, ARCADE.y + 3);
+    const y = typeof h === 'number' ? h : h?.y;
+    return { x: ARCADE.x, y: Number.isFinite(y) ? y : ARCADE.y, z: ARCADE.z };
+  }
+
+  /** Is [x, y, z] one of the arcade's tube anchors, raised off the pad? An
+   *  older save row says it was the simulator only by being there. */
+  inTube(at) {
+    const T = this.layout?.tubes;
+    if (!T || !Array.isArray(at)) return false;
+    return at[1] > ARCADE.y + 0.5 && T.some((t) => Math.hypot(at[0] - t.x, at[2] - t.z) < 1);
   }
 
   /** The pad she is driven by: her own, a dead one, or the walk to her tube. */
@@ -1400,6 +1512,8 @@ export class DreamDojo {
       if (this.highway?.riding(p.index)) return true;
       const ch = this.choices[p.index];
       if (ch) { ch.pick(); return true; }
+      // An angel over Shadow Lionheart's floor: "Leave the battle" (dream/shadow.js `angelAsk`).
+      if (this.shadow?.angelAsk?.(p)) return true;
       if (this.onPort(p)) { this._begin(p, 'derez'); return true; }
       /* MID-KATA, INTERACT IS "STOP?" — and only that: on the south-west mark
          she is close enough to the song kiosk that the press would otherwise
@@ -1679,6 +1793,7 @@ export class DreamDojo {
       ...this.school.stations, ...this.ranks.stations, ...this.shadow.stations,
       ...this.highway.stations];
     this._buildMapKiosk();
+    this.tubesSign = this._tubesSign();
     g.world.simSite = this.simSite();
     /* 道標 WAYPOINTS, set on the Map of the Simulator (dream/waypoint.js),
        drawn on the corner minimap through `simWaypoints`. */
@@ -1686,6 +1801,26 @@ export class DreamDojo {
     this.waypoints = new Waypoints(this);
     this.sim.tickers.push((dt) => this.waypoints?.update(dt));
     g.world.simWaypoints = () => this.waypoints?.forMap(SIM.dx, SIM.dz) ?? [];
+    this._buildPeekMarks();
+  }
+
+  /**
+   * WHERE THE CAMERA CHANGES, ON THE FLOOR (dream/peekmarks.js): gold where
+   * the look across starts, orange where the ride does. The mouths are in
+   * the world; the layer's root is moved by SIM, so the group is moved back
+   * by it. Built again, it replaces the last set.
+   */
+  _buildPeekMarks() {
+    // The SAME ends `_peekFor` reads, never a second set: its `far` is compared by identity (`_peekGroup`).
+    this._ends ??= this._peekEnds();
+    this.peekMarks?.dispose();
+    this.peekMarks = buildPeekMarks(this.sim, this._ends);
+    this.peekMarks.group.position.set(-SIM.dx, 0, -SIM.dz);
+    this.sim.root.add(this.peekMarks.group);
+    if (!this._peekMarksTick) {
+      this._peekMarksTick = (dt) => this.peekMarks?.tick(dt);
+      this.sim.tickers.push(this._peekMarksTick);
+    }
   }
 
   /**
@@ -1800,9 +1935,11 @@ export class DreamDojo {
     // with a light cycle at each end (highway.js).
     if (spec.cycle) this.highway.add(key, spec.name, from, to, prev ? ISLANDS[spec.from].name : undefined);
     else this.sim.addBridge(from, to, { wobble: 3, waves: 1, name: `${key} bridge` });
-    const sign = this.sim.addSign(c.x + c.dir.x * (spec.r - 2), c.y + 12, c.z + c.dir.z * (spec.r - 2), spec.kanji, spec.name);
+    const sign = this.sim.addSign(c.x + c.dir.x * (spec.r - 2), c.y + 12, c.z + c.dir.z * (spec.r - 2), spec.kanji, spec.name,
+      HOLO.cyan, { wip: !!spec.wip });
     const gate = this._gateSign(key);
-    return { key, x: c.x, y: c.y, z: c.z, r: spec.r, fwd: c.dir, sign, gate };
+    const warn = spec.wip ? this._wipSign(to, c.dir, spec.cycle ? HIGHWAY.halfW : 2.2) : null;
+    return { key, x: c.x, y: c.y, z: c.z, r: spec.r, fwd: c.dir, sign, gate, warn };
   }
 
   /**
@@ -1833,8 +1970,45 @@ export class DreamDojo {
     const dc = this.game.world.dojoCentre;
     const c = islandCentre(dc, this.layout.u, ISLANDS[via]);
     const at = gateSignSpot(dc, c.dir, ISLANDS[via].cycle ? HIGHWAY.halfW : 2.2);
-    return this.sim.addSign(at.x, at.y + hops * GATE_SIGN.stack, at.z, spec.kanji, spec.name, HOLO.cyan,
-      { scale: GATE_SIGN.scale, sub: hops ? `past the ${ISLANDS[via].name}` : '' });
+    return this.sim.addSign(at.x, at.y + hops * GATE_SIGN.stack, at.z, spec.kanji, spec.name, HOLO.cyan, {
+      scale: GATE_SIGN.scale,
+      sub: hops ? `past the ${ISLANDS[via].name}` : spec.wip ? `${WIP_TEXT.word} — ${WIP_TEXT.line}` : '',
+      wip: !!spec.wip,
+    });
+  }
+
+  /**
+   * 夢道場 THE DREAM DOJO TUBES, on the hub beside the port bridge's mouth:
+   * every island's bridge has its name there, and the one bridge every
+   * kitten walks first had none. A gate sign in all but where — on the
+   * OTHER side of the mouth, because the map kiosk (MAP_KIOSKS[0], side 7)
+   * already stands on the gate-sign side of this one and its card hangs at
+   * the sign's height.
+   */
+  _tubesSign() {
+    const dc = this.game.world.dojoCentre;
+    const r = 47 - GATE_SIGN.back;
+    const side = -(2.2 + GATE_SIGN.side);
+    const u = this.layout.u;
+    return this.sim.addSign(dc.x + u.x * r - u.z * side, dc.y + GATE_SIGN.up, dc.z + u.z * r + u.x * side,
+      PORT_SIGN.kanji, PORT_SIGN.name, HOLO.cyan, { scale: GATE_SIGN.scale, sub: 'Lionheart · your tubes · the way out' });
+  }
+
+  /**
+   * 工事中 AT THE OTHER END. Richard: "also at the entrances/exits of the
+   * bridges saying something like 'may not work as expected' or
+   * 'experimental'". The hub end is the gate sign's own line; this is the
+   * island end, where she steps off: beside the deck the way the gate sign
+   * is (the bridge camera looks along the deck, so a sign over it is in her
+   * face), and a stride onto the island, so the light cycle's pad at a
+   * highway's end is not under it.
+   */
+  _wipSign(to, dir, halfW) {
+    const side = halfW + GATE_SIGN.side;
+    const x = to.x + dir.x * 3 - dir.z * side;
+    const z = to.z + dir.z * 3 + dir.x * side;
+    return this.sim.addSign(x, to.y + GATE_SIGN.up, z, WIP_TEXT.kanji, WIP_TEXT.word, WIP_ORANGE,
+      { scale: GATE_SIGN.scale, sub: WIP_TEXT.line, wip: true });
   }
 
   /**
@@ -1869,26 +2043,89 @@ export class DreamDojo {
    */
   _peekFor(p) {
     const s = this.st[p.index];
+    /* THE LIGHT CYCLE (dream/peek.js, the seventh pass). The view she boarded
+       with is the view she rides with: the look across if it was up, her own
+       camera if it was not, decided on the first frame she is on the cycle
+       and kept to the frame she is put down. */
+    if (s?.phase === 'sim' && p.onCycle) {
+      if (s.cycleView === undefined) {
+        const end = this._cycleEnd(this.highway?.rides[p.index]?.path?.[0]);
+        s.cycleView = s.peek?.end && end ? end : null;
+      }
+      s.peek?.reset();
+      return s.cycleView
+        ? { x: p.position.x, y: p.position.y, z: p.position.z, far: s.cycleView.far, w: 1, cycle: true }
+        : null;
+    }
+    if (s && s.cycleView !== undefined) {
+      /* Put down: by a pad she ARRIVED at, which is not stepping into it. A
+         ride ends in its lane, 2.5 to the side of the pad's middle and so
+         outside its 2.0 circle (highway.js), so the pad is HERS until she is
+         `CYCLE_LEFT` clear of it, not just until she is out of the circle —
+         otherwise her first step onto it to ride back was "stepping in". */
+      s.cycleView = undefined;
+      s.arrived = this._cyclePadAt(p, CYCLE_LEFT);
+      s.inPad = this._cyclePadAt(p);
+      s.peek?.reset();
+      return null;
+    }
     if (s?.phase !== 'sim' || !p.onGround || p.snakeRide || p.onCycle || p.mount || p.rideAlong
       || p.pandaMount || p.pinnedAt) {
       s?.peek?.reset();
       return null;
     }
     const dr = this.drills[p.index];
-    if (dr && (dr.state === 'ready' || dr.state === 'live')) { s.peek?.reset(); return null; }
+    if (drilling(dr)) { s.peek?.reset(); return null; }
     this._ends ??= this._peekEnds();
     /* A KIOSK'S CIRCLE OUTRANKS A BRIDGE (dream/peek.js `stationFirst`):
        standing in one, or walking at one nearer than the mouth, there is no
        look across — "The interaction circle should have camera priority". */
     const vel = p.velocity ?? { x: 0, z: 0 };
-    this._stationsW = (this.stations ?? []).map((st) => ({ x: st.x + SIM.dx, y: st.y, z: st.z + SIM.dz, r: st.r }));
+    // ...but a light cycle's pad is not a kiosk here: it stands in front of
+    // its mouth, on her line, and "it has no effect on the camera".
+    const pads = new Set(this.highway?.stations ?? []);
+    this._stationsW = (this.stations ?? []).filter((st) => !pads.has(st))
+      .map((st) => ({ x: st.x + SIM.dx, y: st.y, z: st.z + SIM.dz, r: st.r }));
     if (stationFirst(p.position, vel, this._stationsW, this._ends)) { s.peek?.reset(); return null; }
     /* ON OR OFF, with a buffer (dream/peek.js `PeekTrigger`). The lens's own
        clock does the easing; this only says whether she is "definitely" there. */
     s.peek ??= new PeekTrigger();
+    // Stepping INTO a light cycle's pad: the look across, at once, from its mouth.
+    const pad = this._cyclePadAt(p);
+    if (s.arrived && s.arrived !== this._cyclePadAt(p, CYCLE_LEFT)) s.arrived = null;
+    if (pad && s.inPad !== undefined && pad !== s.inPad && pad !== s.arrived) {
+      const E = this._cycleEnd(pad);
+      if (E) s.peek.force(E);
+    }
+    s.inPad = pad;
     const E = s.peek.step(this._dt ?? 1 / 60, p.position, vel, this._ends);
     if (!E) return null;
     return { x: p.position.x, y: p.position.y, z: p.position.z, far: E.far, w: 1 };
+  }
+
+  /** The light cycle pad she is standing in (or within `pad` of its rim), as
+   *  the station it is (sim coordinates), or null. */
+  _cyclePadAt(p, pad = 0) {
+    for (const st of this.highway?.stations ?? []) {
+      if (Math.abs(p.position.y - st.y) > 2) continue;
+      if (Math.hypot(p.position.x - SIM.dx - st.x, p.position.z - SIM.dz - st.z) < st.r + pad) return st;
+    }
+    return null;
+  }
+
+  /** The bridge end a light cycle pad (or a ride's first point — both are
+   *  in sim coordinates) looks across from: the mouth nearest it, which is
+   *  three units off (highway.js). */
+  _cycleEnd(at) {
+    if (!at) return null;
+    this._ends ??= this._peekEnds();
+    let best = null;
+    let bd = 6;
+    for (const E of this._ends) {
+      const d = Math.hypot(E.mouth.x - SIM.dx - at.x, E.mouth.z - SIM.dz - at.z);
+      if (d < bd) { bd = d; best = E; }
+    }
+    return best;
   }
 
   /** Lionheart, in light, at his own spot on the port. */
@@ -2014,7 +2251,6 @@ export class DreamDojo {
        before `position`, so nobody ever loads a game standing in the void. */
     const s = this.st[p.index];
     p.dreamAnchor = toSimNow ? s.anchor.clone() : null;
-    s.proxy = null;
     if (toSimNow) {
       /* HER HOLO KIT: a copy of what she wears, and no clan (dream/holokit.js).
          Before `refillSim`, which sizes her bar off the kit she has in here. */
@@ -2043,6 +2279,7 @@ export class DreamDojo {
   /** Pull everybody out at once — a scene, the tournament, the ending. */
   exitAll() {
     this.sine?.reset();
+    this.bamboo?.reset();
     for (const p of this.game.players ?? []) {
       if (!p) continue;
       const s = this.st[p.index];
@@ -2104,6 +2341,7 @@ export class DreamDojo {
 
     this._dt = dt;
     for (const p of g.players ?? []) if (p) p.peekAt = this._peekFor(p);
+    this._shadowMood(dt);
 
     /* FIRST: is anything taking the whole screen? Then nobody stays inside —
        a scene that frames "the kittens" must find them in the real world,
@@ -2427,7 +2665,7 @@ export class DreamDojo {
   stationAt(p) {
     if (this.realmOf(p) !== 'sim') return null;
     const dr = this.drills[p.index];
-    if (dr && (dr.state === 'ready' || dr.state === 'live')) return null;
+    if (drilling(dr)) return null;
     const q = this._flatPos(p);
     for (const st of this.stations) {
       if (Math.hypot(q.x - st.x, q.z - st.z) < st.r && Math.abs(p.position.y - st.y) < 2) return st;
@@ -2554,6 +2792,7 @@ export class DreamDojo {
     /* FIRST: off the course and the rack, so the holo clan the rack was
        holding is back on her for the lines below to undo with the rest. */
     this.sine?.forget(p);
+    this.bamboo?.forget(p);
     this._hushHolo(p);
     if (!keepSuit) p.setSimLook?.(false);
     this.highway?.stop(p);
@@ -2684,12 +2923,12 @@ export class DreamDojo {
       break;
     }
     const d = this.drills[p.index];
-    const busy = (d && (d.state === 'ready' || d.state === 'live')) || this.highway?.riding(p.index)
+    const busy = drilling(d) || this.highway?.riding(p.index)
       || this.choices[p.index] || this.rundowns[p.index] || this.game.inspector?.busy?.(p.index)
       /* Waiting her turn in the Sine Gauntlet's stands is not being lost —
          a four-kitten queue is minutes, and she cannot leave it to follow
          his suggestion without giving up her place. */
-      || this.sine?.inSession?.(p);
+      || this.sine?.inSession?.(p) || this.bamboo?.inSession?.(p);
     if (busy) { s.lostT = 0; return; }
     s.lostT = (s.lostT ?? 0) + dt;
     if (s.lostT < LOST_AFTER || (s.lostN ?? 0) >= LOST_MAX) return;
@@ -2773,7 +3012,8 @@ export class DreamDojo {
     if (p.warded) {
       // A held beam is blocked by the bubble being UP; it does not break it.
       if (hold) p.wardFlash = 0.25;
-      else p._wardTakeHit?.(this.simHud);
+      // Shadow Lionheart's blade breaks it outright (see `Player._wardTakeHit`).
+      else p._wardTakeHit?.(this.simHud, { smash: src === 'shadow' });
       return 'blocked';
     }
     if ((s.iframes ?? 0) > 0) return 'immune';
@@ -3020,6 +3260,11 @@ export class DreamDojo {
    * the door would snap the tilt. Both weights ease, and the result is mixed
    * with the walking camera by them.
    */
+  /** A running drill's own shot for her pane (Drill.cameraFocus), or null. */
+  drillFocus(p) {
+    return p ? this.drills[p.index]?.cameraFocus?.() ?? null : null;
+  }
+
   cameraFocus(p) {
     const L = this.layout;
     if (!L || !p) return null;
@@ -3502,9 +3747,17 @@ export class DreamDojo {
          the rest, it was kept outside the glass while she went in. It still
          never goes into the simulator: `ownerFor`. */
       if (!p.panda.rideable && !p.pandaMount) continue;
+      /* ...and a kitten riding it is carried BY WHAT THE GLASS MOVED IT, and
+         by nothing else. This used to copy the panda's position onto her
+         every frame — but `Panda.carry` puts the panda one SEAT OFFSET from
+         her, along its facing, and a panda's facing is broadside. So every
+         frame she was stepped a seat sideways, the panda was hung off that
+         next frame, and so on: Richard, "the player is moving at a very high
+         speed when moving left/right on the panda ... framerate dependent".
+         Only the push's own shift is hers, and only off her own panda. */
+      const was = p.pandaMount === p.panda ? p.panda.position.clone() : null;
       push(p.panda, p.pandaMount ? p : null);
-      // ...and a kitten riding it is carried with it.
-      if (p.pandaMount) { p.position.x = p.panda.position.x; p.position.z = p.panda.position.z; }
+      if (was) { p.position.x += p.panda.position.x - was.x; p.position.z += p.panda.position.z - was.z; }
     }
     this.domeU.uHit.value = this._domeHit;
   }
@@ -3629,6 +3882,45 @@ export class DreamDojo {
 
   /** Every billboard the arcade owns, turned to this lens. `members` is the
    *  kittens the lens is for, when it has any (a scene's camera has none). */
+  /**
+   * SHADOW LIONHEART'S ISLAND HAS A MOOD. Richard, Oct 2026: "When entering
+   * the Shadow Lionheart island, the music should fade out and turn off...
+   * when leaving the Shadow Lionheart island, the music fades back in to
+   * normal music again. Can also have the sky darken to set the mood of the
+   * island, if so, need to brighten again when leaving. Can even have some
+   * Matrix effects start playing in the background sky if we make the sky go
+   * dark."
+   *   · The SKY is per kitten (`_gloom[i]`) and so per pane: her sister on
+   *     the Kata Trace island keeps her own blue sky.
+   *   · The MUSIC is one speaker for everybody, so it follows the latest
+   *     thing anybody did: a kitten arriving hushes it, a kitten leaving
+   *     brings it back (`hush`, read by main.js `_wantedTrack`). His fight's
+   *     own theme is not the island's music and is not hushed by this.
+   */
+  _shadowMood(dt) {
+    const F = this.shadow;
+    this._gloom ??= [];
+    this._onShadow ??= [];
+    for (const p of this.game.players ?? []) {
+      if (!p) continue;
+      const i = p.index;
+      const on = !!F?.onIsle?.(p);
+      if (on !== !!this._onShadow[i]) this._moodLast = { i, on };
+      this._onShadow[i] = on;
+      const g = this._gloom[i] ?? 0;
+      this._gloom[i] = on ? Math.min(1, g + dt / SHADOW_MOOD.dark) : Math.max(0, g - dt / SHADOW_MOOD.light);
+    }
+    const L = this._moodLast;
+    const want = L?.on && this._onShadow[L.i] && (this.game.players ?? []).some((p) => p?.index === L.i) ? 1 : 0;
+    this.hush ??= 0;
+    this.hush = want ? Math.min(1, this.hush + dt / SHADOW_MOOD.hush) : Math.max(0, this.hush - dt / SHADOW_MOOD.hush);
+  }
+
+  /** A pane's gloom: the deepest of its kittens'. A scene's lens (no members) has none. */
+  paneGloom(members) {
+    return members?.length ? Math.max(0, ...members.map((i) => this._gloom?.[i] ?? 0)) : 0;
+  }
+
   faceCamera(camera, members = null) {
     if (!this.built) return;
     this.lionSprite?.faceCamera(camera);
@@ -3659,6 +3951,10 @@ export class DreamDojo {
       for (const k of this.simPandas) k?.panda.faceCamera(camera);
       for (const c of this.choices) c?.faceCamera(camera, members);
       for (const k of this.mapKiosks ?? []) k.faceCamera(camera);
+      // Shadow Lionheart's gloom, as deep as the deepest kitten in this pane is in it.
+      this.sim.setGloom(this.paneGloom(members));
+      // The floating steps' x-ray: a hole in any that is in front of a kitten in here.
+      this.sim.setCuts(camera.position, this.simKittens());
       this.sim.faceCamera(camera);
       this.gallery?.faceCamera(camera);
       this.hall?.faceCamera(camera);
@@ -3670,7 +3966,7 @@ export class DreamDojo {
       this.bamboo?.faceCamera(camera);
       this.school?.faceCamera(camera);
       this.ranks?.faceCamera(camera);
-      this.shadow?.faceCamera(camera);
+      this.shadow?.faceCamera(camera, members);
       this.highway?.faceCamera(camera);
       for (const d of this.drills) d?.faceCamera(camera);
       for (const r of this.rundowns) r?.faceCamera(camera);
@@ -3703,6 +3999,7 @@ export class DreamDojo {
 
   /** Lay the phase over a pane that has just been drawn. */
   drawPaneFx(renderer, members, w, h) {
+    this._drawFade(renderer, members);
     const f = this.fxFor(members);
     if (f <= 0.001) return;
     if (!this._fx) {
@@ -3725,6 +4022,30 @@ export class DreamDojo {
     renderer.autoClear = ac;
   }
 }
+
+/**
+ * BLACK OVER A PANE, as far as its darkest kitten's capture has faded it
+ * (dream/bamboo.js `fadeOf`): "the enemy walks over while the camera fades".
+ * Its own quad, not the rain's — the rain is a phase, this is a curtain.
+ */
+DreamDojo.prototype._drawFade = function _drawFade(renderer, members) {
+  let f = 0;
+  for (const i of members ?? []) f = Math.max(f, this.bamboo?.fadeOf?.(i) ?? 0);
+  if (f <= 0.001) return;
+  if (!this._fade) {
+    this._fadeM = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, depthTest: false, depthWrite: false });
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this._fadeM);
+    quad.frustumCulled = false;
+    this._fade = new THREE.Scene();
+    this._fade.add(quad);
+    this._fadeCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  }
+  this._fadeM.opacity = Math.min(1, f);
+  const ac = renderer.autoClear;
+  renderer.autoClear = false;
+  renderer.render(this._fade, this._fadeCam);
+  renderer.autoClear = ac;
+};
 
 const _right = new THREE.Vector3();
 const _v = new THREE.Vector3();

@@ -29,10 +29,10 @@ export const JUKEBOX_FILES = {
     "first": 0,
     "loop": [
       0,
-      60
+      143.9591
     ],
-    "length": 60,
-    "arranged": "whole",
+    "length": 143.959,
+    "arranged": "segs 6",
     "mix": 0.269
   },
   "homeFestival": {
@@ -94,5 +94,65 @@ export const JUKEBOX_FILES = {
     "length": 109.363,
     "arranged": "x3 fade",
     "mix": 0.465
+  },
+  "homeKendo": {
+    "file": "music/homeKendo.mp3",
+    "name": "KENDO MATCH",
+    "level": "home",
+    "gen": "J5r22NZyzczhW77ZLqNW",
+    "spb": 0.47622,
+    "first": 0,
+    "loop": [
+      0,
+      90
+    ],
+    "length": 90,
+    "arranged": "whole",
+    "mix": 0.327
+  },
+  "homeOnsen": {
+    "file": "music/homeOnsen.mp3",
+    "name": "ONSEN STEAM",
+    "level": "home",
+    "gen": "vf4bxm73itYPsByTA6tH",
+    "spb": 0.85716,
+    "first": 0,
+    "loop": [
+      0,
+      90
+    ],
+    "length": 90,
+    "arranged": "whole",
+    "mix": 0.348
+  },
+  "homeFishing": {
+    "file": "music/homeFishing.mp3",
+    "name": "GONE FISHING",
+    "level": "home",
+    "gen": "y6TXGbPdG1zulGn4xBwG",
+    "spb": 0.71426,
+    "first": 0,
+    "loop": [
+      0,
+      90
+    ],
+    "length": 90,
+    "arranged": "whole",
+    "mix": 0.377
+  },
+  "homePets": {
+    "file": "music/homePets.mp3",
+    "name": "PET PLAYTIME",
+    "level": "home",
+    "gen": "e27mbXoxXD8CKWnL9MUh",
+    "spb": 0.53577,
+    "first": 0,
+    "loop": [
+      0,
+      90
+    ],
+    "length": 90,
+    "arranged": "whole",
+    "mix": 0.337
   }
 };

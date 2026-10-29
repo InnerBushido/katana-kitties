@@ -68,6 +68,8 @@ import { mkdirSync, writeFileSync, statSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { dirname } from 'node:path';
 import { readPNG, writePNG } from './png.mjs';
+import { resample } from './premul.mjs';
+import { TEA_SHEET } from '../src/systems/housing/teahouse.js';
 import {
   floodBackground, clearSealedPockets, chromaKey, CHROMA_MAGENTA,
 } from '../src/core/spritesheet.js';
@@ -100,6 +102,12 @@ const PROOF = 'out/bake';
    it keeps a master free to be named after the drawing while the shipped copy
    is named after where it is used. */
 const WORK = [
+  /* DOOR MATS, ONE SHEET OF TWENTY (Richard, Oct 2026: "put them on 1
+     sprite sheet to save on usage credits and texture memory" — 0.25
+     credits, not 5). 4x5 on magenta; each mat's rectangle is MEASURED off
+     the baked sheet into `DOOR_MATS` (homeisle.js), never assumed from the
+     grid. 640 wide: a mat is drawn at most ~2.4 units on the lawn. */
+  { file: 'doormats.png', out: 'housing/doormats.png', to: [640, 800], chroma: true },
   { file: 'dragon_sheet.png', out: 'beasts/dragon_sheet.png', to: [1376, 768], key: true, deep: true },
   { file: 'dragon_fly.png', out: 'beasts/dragon_fly.png', to: [1376, 768], key: true, deep: true },
   { file: 'title_art.png', webp: 92 },
@@ -234,70 +242,53 @@ const WORK = [
      she shouts the kiai on (`kiai`). One per SHEET, off her own `bless.png`;
      Storm and Blossom are these recoloured, like every single pose. The men
      hides the face, so the ears, the tail and the paws are what say who she
-     is. 768, drawn at her full height. */
-  ...['ember', 'frost'].flatMap((s) => ['kendo', 'kiai'].map((p) => (
+     is. 768, drawn at her full height.
+     `kparry` is 返 in the bogu, the riposte guard. Richard, Oct 2026: "Ember's
+     'kiai' art becomes the riposte stance. Generate a new attack sprite for
+     Ember based on Frost's 'kiai' art. Frost gets Ember's 'kiai' art for her
+     riposte." So `ember_kparry` IS the first `ember_kiai` master, kept; the
+     new `ember_kiai` (shinai raised up and back, the wind-up of a vertical
+     cut) and `frost_kparry` (Ember's old guard, drawn as Frost) are
+     gpt_image_2_5 on magenta, each prompted with both old kiai drawings as
+     references - 0.25 credits each.
+     `kbroke` is the guard knocked aside — shinai trailing in one paw, the
+     other flung out — and `kclinchR`/`kclinchL` are the clinch (tsubazeriai),
+     shinai crossed high. Richard, Oct 2026: "generate a clench sprite ...
+     two per character, one from each side of the crisscross." R FACES RIGHT
+     and L faces LEFT, MEASURED BY THE SHINAI'S TIP and not by the prompt:
+     two of the four came back the other way round from what they were asked
+     for, so the files were renamed by what they show. 6 x 0.25 credits. */
+  ...['ember', 'frost'].flatMap((s) => ['kendo', 'kiai', 'kparry', 'kbroke', 'kclinchR', 'kclinchL'].map((p) => (
     { file: `${s}_${p}.png`, out: `kittens/${s}/${p}.png`, to: [768, 768], chroma: true }))),
   /* THE PEN'S THREE ANIMALS (housing/farm.js), side-on facing LEFT like the
      critters, prompted off `critters/rabbit.png` for the style. 512: they are
      a metre tall at most. */
   ...['chick', 'bunny', 'goat'].map((a) => ({ file: `${a}.png`, out: `farm/${a}.png`, to: [512, 512], chroma: true })),
+  /* THE HOME POSES, Oct 2026 - the placeholders the housing notes listed as
+     "faked by squashing the guard pose". The kendo three (`seiza` kneeling,
+     `reach` for the shinai, `rei` the bow) are off her own `kendo.png`; the
+     three home ones (`pray` at the shrine, `bath` in the onsen, `futon` asleep)
+     off her `bless.png`. The bath is a HEAD and a towel above a flat cut, on
+     purpose: the first take was a swimsuit and was rejected - the game is for
+     girls of nine and under, and the water hides the rest anyway. */
+  ...['ember', 'frost'].flatMap((s) => ['seiza', 'reach', 'rei', 'pray', 'bath', 'futon'].map((p) => (
+    { file: `${s}_${p}.png`, out: `kittens/${s}/${p}.png`, to: [768, 768], chroma: true }))),
+  /* THE TEA CEREMONY, 32 frames 8 x 4 (tools/capture/tea-sheet.mjs, which
+     cuts them out of a video of her). Shipped at TEA_SHEET.ship a cell, 192:
+     at 256 each sheet was 1.6MB, over world-check's 1.5MB line for a first
+     load, and she is ~150px tall on screen at the tea shot, so 192 draws the
+     same. Read from TEA_SHEET so the check and the bake cannot disagree. */
+  ...['ember', 'frost'].filter((s) => existsSync(`${MASTERS}/${s}_tea.png`)).map((s) => (
+    { file: `${s}_tea.png`, out: `kittens/${s}/tea.png`, to: [TEA_SHEET.cols * TEA_SHEET.ship, TEA_SHEET.rows * TEA_SHEET.ship], chroma: true })),
+  /* The chick's flutter frame, off `chick.png`; drawn facing right and
+     MIRRORED in the master so it faces left like the rest of the pen. */
+  { file: 'chick_fly.png', out: 'farm/chick_fly.png', to: [512, 512], chroma: true },
 ];
 
 /* ========================================================================== */
 
-/**
- * Area-average downsample in PREMULTIPLIED alpha.
- *
- * Straight per-channel averaging is the bug that makes a keyed sprite grow a
- * pale halo: a pixel half on the wing and half on the (now transparent, still
- * WHITE) background averages to something halfway to white, and then gets 50%
- * alpha, so the fringe is drawn. Weighting colour by alpha means a cleared
- * pixel contributes nothing but its emptiness, which is the whole point of it.
- */
-function resample(d, w, h, nw, nh) {
-  const o = new Uint8ClampedArray(nw * nh * 4);
-  const sx = w / nw;
-  const sy = h / nh;
-  for (let y = 0; y < nh; y++) {
-    const y0 = Math.floor(y * sy);
-    const y1 = Math.min(h, Math.ceil((y + 1) * sy));
-    for (let x = 0; x < nw; x++) {
-      const x0 = Math.floor(x * sx);
-      const x1 = Math.min(w, Math.ceil((x + 1) * sx));
-      let r = 0;
-      let g = 0;
-      let b = 0;
-      let a = 0;
-      let n = 0;
-      for (let yy = y0; yy < y1; yy++) {
-        for (let xx = x0; xx < x1; xx++) {
-          const p = (yy * w + xx) * 4;
-          const al = d[p + 3] / 255;
-          r += d[p] * al;
-          g += d[p + 1] * al;
-          b += d[p + 2] * al;
-          a += al;
-          n++;
-        }
-      }
-      const q = (y * nw + x) * 4;
-      if (a > 0) {
-        o[q] = Math.round(r / a);
-        o[q + 1] = Math.round(g / a);
-        o[q + 2] = Math.round(b / a);
-      } else {
-        /* WHITE, NOT BLACK, under a fully cleared pixel. The runtime keyer
-           runs again on the shipped file and floods from the border by
-           COLOUR — `isBackgroundish` never looks at alpha — so a black
-           border would stop the flood dead on its first pixel. Nothing is
-           drawn from it either way; it just has to stay walkable. */
-        o[q] = 255; o[q + 1] = 255; o[q + 2] = 255;
-      }
-      o[q + 3] = Math.round((a / n) * 255);
-    }
-  }
-  return o;
-}
+/* `resample` (the premultiplied downsample) lives in tools/premul.mjs, shared
+   with tools/capture/payne-sheet.mjs. */
 
 /** Composite over a loud checker so a human can see the alpha. Magenta because
  *  nothing in this game's palette is magenta — a grey checker under a grey

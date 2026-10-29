@@ -80,7 +80,9 @@ export function xrayVertexMat(opts = {}) {
      around visible. The two-player answer is bit-identical either way: the
      extra slots arrive with `uCutOn` at zero and `continue` out of the loop on
      the first line of it, which is the fifth non-negotiable holding. */
-  const MAX = 4;
+  /* ...and MORE, opted into: the houses take 8, four kittens and the doors
+     the building hides (housing.js `aimView`). Every other caller keeps 4. */
+  const MAX = opts.max ?? 4;
   /* PER-MATERIAL CUT SHAPE, for the housing walls (housing/homeisle.js). The
      defaults are the numbers every existing caller has always had, so nothing
      else moves. `cutNear` is new: a fragment must be at least this much
@@ -90,7 +92,19 @@ export function xrayVertexMat(opts = {}) {
      between the player and the camera". A side wall she is standing beside
      is the same distance from the camera as she is, and inside the cone; a
      wall that is actually in the way is a room's width nearer. 0 = off. */
-  const { cutR = 2.1, cutSoft = 1.0, cutNear = 0, ...rest } = opts;
+  /* `limSoft`: the hole's three LIMITS — nothing under her knee, nothing not
+     `cutNear` nearer than her, nothing farther than she is — fade over this
+     much instead of stopping dead. Richard, Oct 2026, on the houses: "There
+     is a slash in the walls or geometry in front of players with the xray
+     shader ... maybe we can just use the dithering effect". The rim of the
+     hole was dithered and those three were not, so wherever one crossed a
+     wall it drew a crisp diagonal line through the stipple. 0 = hard, which
+     every other caller keeps, bit-identical. */
+  /* `clips`: how many CLIP BOXES this material takes — turned boxes in the
+     world, open upward from a height, inside which it is not drawn at all.
+     Only the houses' bridges ask (housing/homeisle.js `clipBridges`); 0 adds
+     nothing to the shader, so every other caller compiles what it always did. */
+  const { cutR = 2.1, cutSoft = 1.0, cutNear = 0, limSoft = 0, clips = 0, max: _max, ...rest } = opts;
   const mat = new THREE.MeshToonMaterial({
     gradientMap: RAMP,
     vertexColors: true,
@@ -114,6 +128,7 @@ export function xrayVertexMat(opts = {}) {
     uCutFlare: { value: 0.5 },
     uCutSoft: { value: cutSoft },
     uCutNear: { value: cutNear },
+    uCutLimSoft: { value: limSoft },
     /* THE FLOOR EACH SUBJECT IS STANDING ON, and nothing below it is ever cut.
        Reported from play: "fix the x-ray issue where we can see through the
        ground (ceiling of the platform) that Mr. Satan is standing on in the
@@ -130,7 +145,27 @@ export function xrayVertexMat(opts = {}) {
        every existing caller gets until it says otherwise — the two-player
        answer, and every other one, is bit-identical. */
     uCutFloor: { value: new Float32Array(MAX).fill(-1e9) },
+    /* PER SUBJECT: how much bigger her hole is, and a CEILING over which she
+       cuts nothing. For a kitten downstairs in a pane that shows the floor
+       above (housing.js `aimView`). Richard, Oct 2026: "Show the upper floor
+       for the player who is upstairs. Make the lower player's x-ray 2-3x
+       bigger. Upper-floor items must not be affected by the lower player's
+       x-ray." So her hole is wider, it opens the slab over her head, and
+       stops at its top surface. 1 and +1e9 are the defaults: every other
+       caller is bit-identical. */
+    uCutScale: { value: new Float32Array(MAX).fill(1) },
+    uCutCeil: { value: new Float32Array(MAX).fill(1e9) },
+    /* PER SUBJECT, HOW STRONG: 1 is a hole, below 1 a THINNING (the dither
+       threshold, as `xrayK` already does for a lantern). A door the house
+       hides gets a quarter: Richard, Oct 2026, "an x-ray highlight, about 25%
+       strength and no bigger than the door path". */
+    uCutK: { value: new Float32Array(MAX).fill(1) },
   };
+  if (clips > 0) {
+    u.uClipOn = { value: new Float32Array(clips) };
+    u.uClipA = { value: Array.from({ length: clips }, () => new THREE.Vector4()) };
+    u.uClipB = { value: Array.from({ length: clips }, () => new THREE.Vector4()) };
+  }
 
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, u);
@@ -160,7 +195,14 @@ export function xrayVertexMat(opts = {}) {
         uniform float uCutFlare;
         uniform float uCutSoft;
         uniform float uCutNear;
+        uniform float uCutLimSoft;
         uniform float uCutFloor[${MAX}];
+        uniform float uCutScale[${MAX}];
+        uniform float uCutCeil[${MAX}];
+        uniform float uCutK[${MAX}];
+        ${clips > 0 ? `uniform float uClipOn[${clips}];
+        uniform vec4 uClipA[${clips}];
+        uniform vec4 uClipB[${clips}];` : ''}
 
         // 4x4 Bayer, so the cut edge dissolves instead of stair-stepping.
         float xrayDither(vec2 p) {
@@ -176,6 +218,21 @@ export function xrayVertexMat(opts = {}) {
           return 0.5;
         }`)
       .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+        ${clips > 0 ? `for (int i = 0; i < ${clips}; i++) {
+          if (uClipOn[i] < 0.5) continue;
+          vec2 dq = vXrayWorld.xz - uClipA[i].xy;
+          vec2 lq = vec2(dq.x * uClipA[i].z - dq.y * uClipA[i].w, dq.x * uClipA[i].w + dq.y * uClipA[i].z);
+          /* A FADE, NOT A KNIFE. Richard, Oct 2026: "When a bridge is being cut off because of the floor
+             below it, let's use a fading xray shader at the area where it should be cut off, so that rather
+             than being sharp cutoff, it is more of a fade away." Over w (uClipB.w) into the box, and half
+             that above its line, dithered like the x-ray's own rim; w = 0 is the hard cut it always was. */
+          float ex = min(uClipB[i].x - abs(lq.x), uClipB[i].y - abs(lq.y));
+          float ey = vXrayWorld.y - uClipB[i].z;
+          if (ex <= 0.0 || ey <= 0.0) continue;
+          float fw = uClipB[i].w;
+          float gone = fw > 0.0 ? min(smoothstep(0.0, fw, ex), smoothstep(0.0, fw * 0.5, ey)) : 1.0;
+          if (gone > 0.999 || gone > xrayDither(gl_FragCoord.xy)) discard;
+        }` : ''}
         if (vXrayK > 0.004) {
           float cut = 0.0;
           for (int i = 0; i < ${MAX}; i++) {
@@ -186,6 +243,8 @@ export function xrayVertexMat(opts = {}) {
                standing on air. (No backticks in here — this is inside a JS
                template literal and one would end the shader.) */
             if (vXrayWorld.y < uCutFloor[i]) continue;
+            // ...and nothing above her ceiling: the floor upstairs keeps its things
+            if (vXrayWorld.y > uCutCeil[i]) continue;
             vec3 a = uCamPos;
             vec3 b = uCutPos[i];
             vec3 ab = b - a;
@@ -206,7 +265,13 @@ export function xrayVertexMat(opts = {}) {
                beyond her can occlude her — and it is the same two vectors. */
             vec3 av = vXrayWorld - a;
             if (dot(av, av) >= len2) continue;
-            if (uCutNear > 0.0 && length(av) > sqrt(len2) - uCutNear) continue;
+            // the limits, faded over uCutLimSoft where the material asks (1 = no fade)
+            float lim = 1.0;
+            if (uCutLimSoft > 0.0) {
+              float la = length(av);
+              float far = sqrt(len2) - max(uCutNear, 0.0);
+              lim = (1.0 - smoothstep(far - uCutLimSoft, far, la)) * smoothstep(uCutFloor[i], uCutFloor[i] + uCutLimSoft, vXrayWorld.y);
+            } else if (uCutNear > 0.0 && length(av) > sqrt(len2) - uCutNear) continue;
             float d = length(vXrayWorld - (a + ab * clamp(t, 0.0, 1.0)));
             /* Widen toward the camera so the hole is a steady size on screen,
                and SCALE THE WHOLE THING BY WHAT THIS VERTEX AGREED TO. "It is
@@ -217,8 +282,8 @@ export function xrayVertexMat(opts = {}) {
                its soft edge with it, or a 0.5-unit hole would be all edge);
                weaker is the dither threshold, which at k below 1 leaves a
                thinning rather than a hole. */
-            float rad = uCutR * vXrayK * mix(uCutFlare, 1.0, t);
-            cut = max(cut, (1.0 - smoothstep(rad, rad + uCutSoft * vXrayK, d)) * vXrayK);
+            float rad = uCutR * uCutScale[i] * vXrayK * mix(uCutFlare, 1.0, t);
+            cut = max(cut, (1.0 - smoothstep(rad, rad + uCutSoft * uCutScale[i] * vXrayK, d)) * vXrayK * uCutK[i] * lim);
           }
           if (cut > 0.001 && cut > xrayDither(gl_FragCoord.xy)) discard;
         }`);
@@ -226,7 +291,7 @@ export function xrayVertexMat(opts = {}) {
   };
   // three keys its program cache on this; without it every material sharing
   // the same source would collide with the plain toon one.
-  mat.customProgramCacheKey = () => 'xray-toon';
+  mat.customProgramCacheKey = () => (MAX === 4 && !clips ? 'xray-toon' : `xray-toon-${MAX}${clips ? `-clip${clips}` : ''}`);
 
   /**
    * Point the cut at whoever is on screen. Call once per view, before drawing.
@@ -237,8 +302,11 @@ export function xrayVertexMat(opts = {}) {
    *        subject is standing on — nothing below it is cut. Omit it and
    *        nothing is protected, which is what every caller did before the
    *        announcer's box needed its own lid back.
+   * @param {{scale?: number[], ceil?: number[], k?: number[]}} [more] per
+   *        point, the hole's size (1), the height above which it cuts nothing
+   *        (none), and how strong it is (1, a hole).
    */
-  mat.setCuts = (camPos, points, floors = null) => {
+  mat.setCuts = (camPos, points, floors = null, more = null) => {
     u.uCamPos.value.copy(camPos);
     for (let i = 0; i < MAX; i++) {
       const p = points[i];
@@ -250,8 +318,31 @@ export function xrayVertexMat(opts = {}) {
          worst of the three possible outcomes. */
       const f = floors?.[i];
       u.uCutFloor.value[i] = Number.isFinite(f) ? f : -1e9;
+      const s = more?.scale?.[i];
+      u.uCutScale.value[i] = Number.isFinite(s) && s > 0 ? s : 1;
+      const c = more?.ceil?.[i];
+      u.uCutCeil.value[i] = Number.isFinite(c) ? c : 1e9;
+      const k = more?.k?.[i];
+      u.uCutK.value[i] = Number.isFinite(k) && k >= 0 ? k : 1;
     }
   };
+  /**
+   * The clip boxes, for a material made with `clips` (none otherwise):
+   * `[{ x, z, cos, sin, hw, hd, y, fade }]` — a box centred at (x, z) turned like a
+   * house's `toLocal`, half-sizes hw and hd, open upward from y. Not drawn in it,
+   * past `fade` in from its sides (0, or missing: not drawn in it at all).
+   */
+  mat.setClips = (boxes = []) => {
+    for (let i = 0; i < clips; i++) {
+      const b = boxes[i];
+      u.uClipOn.value[i] = b ? 1 : 0;
+      if (!b) continue;
+      u.uClipA.value[i].set(b.x, b.z, b.cos, b.sin);
+      u.uClipB.value[i].set(b.hw, b.hd, b.y, Number.isFinite(b.fade) && b.fade > 0 ? b.fade : 0);
+    }
+  };
+  // read-only, for world-check: two materials' cuts compared (the teahouse's is smaller)
+  mat.userData.xray = u;
   return mat;
 }
 
@@ -266,6 +357,56 @@ const OUTLINE_MAT = new THREE.MeshBasicMaterial({
  * Inverted-hull outline. Cheap, and the thickness is in *world* units so it
  * stays consistent as the camera pulls back during dragon flight.
  */
+/** Is (x, z) inside a clip box (`mat.setClips`)? The same test the shader makes, for things hidden whole. */
+export function inClip(b, x, z) {
+  const dx = x - b.x, dz = z - b.z;
+  return Math.abs(dx * b.cos - dz * b.sin) < b.hw && Math.abs(dx * b.sin + dz * b.cos) < b.hd;
+}
+
+/**
+ * The clip boxes of `xrayVertexMat({ clips })`, for any other material — the
+ * bridges' unlit glow strip, which has to go where its deck goes or a lit rail
+ * is left floating over the room. Gives it the same `setClips`.
+ */
+export function clipBoxes(mat, clips) {
+  const u = {
+    uClipOn: { value: new Float32Array(clips) },
+    uClipA: { value: Array.from({ length: clips }, () => new THREE.Vector4()) },
+    uClipB: { value: Array.from({ length: clips }, () => new THREE.Vector4()) },
+  };
+  mat.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, u);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>
+        varying vec3 vClipWorld;`)
+      .replace('#include <project_vertex>', `#include <project_vertex>
+        vClipWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>
+        varying vec3 vClipWorld;
+        uniform float uClipOn[${clips}];
+        uniform vec4 uClipA[${clips}];
+        uniform vec4 uClipB[${clips}];`)
+      .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+        for (int i = 0; i < ${clips}; i++) {
+          if (uClipOn[i] < 0.5) continue;
+          vec2 dq = vClipWorld.xz - uClipA[i].xy;
+          vec2 lq = vec2(dq.x * uClipA[i].z - dq.y * uClipA[i].w, dq.x * uClipA[i].w + dq.y * uClipA[i].z);
+          // the glow strip has no dither: it goes half way through the deck's fade (uClipB.w), so a lit rail never outlasts its deck
+          if (abs(lq.x) < uClipB[i].x - uClipB[i].w * 0.5 && abs(lq.y) < uClipB[i].y - uClipB[i].w * 0.5 && vClipWorld.y > uClipB[i].z) discard;
+        }`);
+  };
+  mat.customProgramCacheKey = () => `clipbox-${clips}`;
+  mat.setClips = (boxes = []) => {
+    for (let i = 0; i < clips; i++) {
+      const b = boxes[i];
+      u.uClipOn.value[i] = b ? 1 : 0;
+      if (b) { u.uClipA.value[i].set(b.x, b.z, b.cos, b.sin); u.uClipB.value[i].set(b.hw, b.hd, b.y, Number.isFinite(b.fade) && b.fade > 0 ? b.fade : 0); }
+    }
+  };
+  return mat;
+}
+
 export function addOutline(mesh, thickness = 0.045) {
   const shell = new THREE.Mesh(mesh.geometry, OUTLINE_MAT);
   shell.userData.isOutline = true;
@@ -411,7 +552,12 @@ export class Billboard extends THREE.Object3D {
       cols = 4, rows = 1, width = 1.6, height = 1.6,
       artFacesRight = true, mirror = true, footOffset = 0, footX = 0,
       dirSense = DIR_SENSE, rowSense = null,
+      /* FRAMES, not views: every cell is one moment of an animation drawn
+         from one side (the tea ceremony). `this.frame` picks the cell and
+         facing only decides the mirror, held once per turn like any sheet. */
+      anim = false,
     } = opts;
+    this.anim = anim;
 
     /** Per-sheet override for the cell ordering — see DIR_SENSE. */
     this.dirSense = dirSense;
@@ -526,6 +672,25 @@ export class Billboard extends THREE.Object3D {
 
   /** Called once per camera, before that viewport renders. */
   faceCamera(camera) {
+    /* LAID ALONG A HEADING, NOT TURNED TO THE LENS: `alongYaw` is the way
+       her HEAD points, and the quad's width runs that way. Only the futon asks
+       (player.js). Richard, Oct 2026: "When player is sleeping on the futon, we
+       should have their sprite drawn in the direction of the bed ... No need
+       for camera billboarding ... seems to be needed to rotate along the
+       y-axis about 45 degrees" — 45 being the default camera's yaw against a
+       bed laid square to the house. Of the two faces, the one toward this
+       camera; mirrored so the head is at the pillow end whichever it is. */
+    if (Number.isFinite(this.alongYaw)) {
+      this.getWorldPosition(_wp);
+      const a = this.alongYaw;
+      let th = a - Math.PI / 2;
+      if (Math.sin(th) * (camera.position.x - _wp.x) + Math.cos(th) * (camera.position.z - _wp.z) < 0) th += Math.PI;
+      this.mesh.rotation.y = th;
+      // the quad's right is (cos th, -sin th): does it point the way her head does?
+      const headRight = Math.cos(th) * Math.sin(a) - Math.sin(th) * Math.cos(a) > 0;
+      this._setCell(0, this.row, this.artFacesRight ? !headRight : headRight);
+      return;
+    }
     // Must be the sprite's WORLD position. A Billboard is parented to its
     // entity's group, so `this.position` is a local offset — usually (0,0,0) —
     // and using it measures the camera angle from the world origin instead of
@@ -543,6 +708,16 @@ export class Billboard extends THREE.Object3D {
 
     let idx;
     let flip = false;
+
+    if (this.anim) {
+      const s = Math.sin(rel);
+      if (Math.abs(s) > 0.12 || this._pointsRight === undefined) this._pointsRight = s > 0;
+      flip = this.mirror && (this.artFacesRight ? !this._pointsRight : this._pointsRight);
+      const n = this.cols * this.rows;
+      const f = Math.max(0, Math.min(n - 1, Math.floor(this.frame)));
+      this._setCell(f % this.cols, Math.floor(f / this.cols), flip);
+      return;
+    }
 
     if (this.mirror) {
       /* Half-turn atlas: cells cover facing-toward-camera round to

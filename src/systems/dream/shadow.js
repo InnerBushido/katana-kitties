@@ -20,9 +20,34 @@ import { kyoTexture } from '../crossfx.js';
 
    CO-OP, NOT FOUR COPIES. Every other island gives each kitten her own drill;
    this one is ONE fight, a shared hologram (`owner: null`) that any sister's
-   blade reaches. Whoever is on the island floor when it starts is in it; a
-   sister who walks on later joins, and he grows a little to meet her. His bar
-   is sized to the party, so two kittens are not a shortcut.
+   blade reaches. His bar is sized to the party, so two kittens are not a
+   shortcut.
+
+   WHO IS IN IT IS DECIDED ONCE. Richard, Oct 2026: "When multiple people are
+   fighting Shadow Lionheart, if a player leaves the battle, they are healed
+   back to full health and can re-enter the battle. Let's instead do it, that
+   when the battle starts, all players on the Shadow Lionheart island are
+   teleported into the battle automatically. If a player leaves the battle,
+   they are no longer allowed to re-enter the battle and are blocked by an
+   invisible force field ... or can be like a red barrier repelling them ...
+   If a player arrives to the island after the battle has already started,
+   then that player is also blocked from entering." So `begin` brings in
+   everybody on the island (`_gather`), and from then on the ring is a RED
+   WALL (`_barrier`) to anybody not in `who` — a leaver, or a latecomer — and
+   says so in words (non-negotiable 6). Walking on mid-fight used to `_join`
+   her, which is the full bar Richard found: `_join` refills.
+     · "If a player dies while battling, they turn into an angel and are stuck
+       in the battle bubble ... can press the action button when they are
+       angels and can select 'Leave the battle'" — `angelAsk`, a question
+       whose cursor opens on NO (non-negotiable 7: leaving is for good).
+     · "If all players are dead, angels, or have left the battle, then the
+       battle is over" — `_standing`.
+     · "When all the players die ... they should spawn in different locations
+       so they are not ontop of each other" — `_spots`.
+     · "if he has an award to give, it should only be given to the player
+       that initiated the battle" — `host`. Her sisters keep their STARS (a
+       score, not a prize) and are told how to win the prize for themselves.
+     · An angel over a sister HEALS her (`ANGEL_HEAL`, `_heal`).
 
    EVERY BLOW IS TOLD, AND TOLD WHERE IT LANDS. Three attacks, and each one
    paints its shape on the floor in red before it comes down — and the shape is
@@ -79,6 +104,25 @@ export const BOSS_SPEED = 3.2;
 export const BOSS_CLOSE = 4;
 /** Below this fraction of his bar, phase two: the Cross Slash. */
 export const PHASE2 = 0.5;
+/**
+ * THE RED WALL round a live fight (see the head of this file): this tall, and
+ * a kitten not in the fight is held this far outside the ring line. `pad` is
+ * more than her own 0.75 radius, so she is never drawn half through it.
+ */
+export const BARRIER = { h: 9, pad: 1.0, colour: 0xff2a4a };
+/** How far apart the kittens he sets down are, along the ring's edge. Her
+ *  body is 1.5 across; 2.6 is a stride between two of them. */
+export const SPREAD = 2.6;
+/**
+ * AN ANGEL HEALS WHOEVER SHE HOVERS OVER. Richard, Oct 2026: "If player is
+ * dead as an angel in the Shadow battle, they can heal their teammate by
+ * flying directly above the player (doesn't matter how high they are) and if
+ * they are above them for 0.5s, then they heal the player for 2hp. If they
+ * stay above them, then they keep healing them every 0.25s for 1hp ... The
+ * radius for this healing ability below the angle can be 1.5x's the players
+ * normal hitbox radius." `reach` multiplies the sister's own `radius`.
+ */
+export const ANGEL_HEAL = { first: 0.5, firstHp: 2, every: 0.25, hp: 1, reach: 1.5, colour: 0x5dff8a };
 
 export const SLAM = { tell: 1.0, len: 11, half: 1.4, dmg: 18, recover: 0.8 };
 export const SWEEP = { tell: 1.1, r: 6.5, dmg: 14, clear: 0.6, recover: 0.7 };
@@ -862,6 +906,28 @@ export class ShadowFight {
     this.emblem.visible = false;
     dream.sim.root.add(this.emblem);
 
+    /* THE RED WALL — up only while a fight is live (`_barrier`). An open
+       cylinder on the ring line, brightest at its foot and gone at its top,
+       its bands rising: a field, not a fence. */
+    this.barrierU = { uTime: { value: 0 }, uFlash: { value: 0 }, uColour: { value: new THREE.Color(BARRIER.colour) } };
+    this.barrier = new THREE.Mesh(
+      new THREE.CylinderGeometry(ARENA_R, ARENA_R, BARRIER.h, 96, 1, true),
+      new THREE.ShaderMaterial({
+        vertexShader: BARRIER_VERT, fragmentShader: BARRIER_FRAG, uniforms: this.barrierU,
+        transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, toneMapped: false,
+      })
+    );
+    this.barrier.position.set(this.centre.x, isle.y + BARRIER.h / 2, this.centre.z);
+    this.barrier.visible = false;
+    this.barrier.renderOrder = 6;
+    dream.sim.root.add(this.barrier);
+    /** index -> the green stream under that angel (`_heal`). */
+    this.streams = new Map();
+    /** The kittens who may not come in until the fight is over. */
+    this.barred = new Set();
+    /** Who pressed the kiosk: the only kitten his award can go to. */
+    this.host = null;
+
     // What he says, over his head, while he is up.
     this.panel = new HoloPanel({ w: 8, h: 2.4, px: 90, edge: 0x9b4dff });
     // Read from the fight's shot, 34 back: at 1x his lines were too small to read.
@@ -932,7 +998,8 @@ export class ShadowFight {
   /** The kiosk's button. Refused in words, or the fight begins. */
   begin(p, k = 0) {
     if (this.state === 'live') {
-      this.dream.hint(p, 'the fight is ON — step into the purple ring to join!');
+      this.dream.hint(p, 'the fight is ON — wait for it to end, then press here to start the next one!');
+      this.dream.game.sfx?.('deny');
       return;
     }
     if (this.state !== 'waiting') return;
@@ -943,7 +1010,11 @@ export class ShadowFight {
     }
     this.level = Math.max(0, Math.min(FIGHT_LEVELS.length - 1, k | 0));
     this._spawn();
+    this.host = p.index;
+    this.barred.clear();
     for (const q of this._onFloor()) this._join(q, true);
+    // EVERYBODY ON HIS ISLAND IS IN IT: "teleported into the battle automatically".
+    this._gather(p);
     /* SHE IS STEPPED IN. The kiosk is outside the ring — 24.04 from its middle
        against a walk-off line of ARENA_R + 4 = 24 — so the kitten who pressed
        the button was the first to "leave", and the fight was lost to
@@ -989,6 +1060,209 @@ export class ShadowFight {
       const z = q.position.z - SIM.dz - this.centre.z;
       return Math.hypot(x, z) <= ARENA_R && Math.abs(q.position.y - this.isle.y) < 6;
     });
+  }
+
+  /** Is she on his island at all (in the sim, on its disc, near its floor)? */
+  onIsle(q) {
+    if (!q || this.dream.realmOf(q) !== 'sim') return false;
+    const x = q.position.x - SIM.dx - this.isle.x;
+    const z = q.position.z - SIM.dz - this.isle.z;
+    return Math.hypot(x, z) <= this.isle.r + 2 && Math.abs(q.position.y - this.isle.y) < 14;
+  }
+
+  /**
+   * `n` spots `SPREAD` apart along an arc `r` from the ring's middle (by
+   * default `_entry`'s own distance), centred on `_entry`'s direction, in the
+   * layer. One kitten is exactly `_entry` — so a solo fight lands where it
+   * always did.
+   */
+  _spots(n, r = null) {
+    const e = this._entry();
+    r ??= Math.hypot(e.x - this.centre.x, e.z - this.centre.z);
+    const a0 = Math.atan2(e.z - this.centre.z, e.x - this.centre.x);
+    const step = SPREAD / r;
+    const out = [];
+    for (let k = 0; k < n; k++) {
+      const a = a0 + (k - (n - 1) / 2) * step;
+      out.push({ x: this.centre.x + Math.cos(a) * r, y: e.y, z: this.centre.z + Math.sin(a) * r });
+    }
+    return out;
+  }
+
+  /** "all players on the Shadow Lionheart island are teleported into the
+   *  battle automatically" — everybody on his island not already on his
+   *  floor, set down on the downstage edge, a stride apart. */
+  _gather(presser) {
+    const floor = new Set(this._onFloor());
+    const come = this.dream.simKittens().filter((q) => (q === presser || this.onIsle(q)) && !floor.has(q) && !q.angel);
+    const at = this._spots(come.length);
+    come.forEach((q, k) => {
+      q.position.set(at[k].x + SIM.dx, at[k].y + 0.1, at[k].z + SIM.dz);
+      q.velocity?.set?.(0, 0, 0);
+      this._join(q, true);
+      if (q !== presser) this.dream.hint(q, `${presser.name} started the fight — you're IN IT!`);
+    });
+  }
+
+  /** Is anybody in it still on her feet? */
+  _standing() {
+    for (const w of this.who.values()) if (!w.out) return true;
+    return false;
+  }
+
+  /**
+   * HER BUTTON AS AN ANGEL: leave the battle, or not. Returns true when it
+   * answered. Opens on NO — leaving is for good (non-negotiable 7), and the
+   * buttons say what they do (6).
+   */
+  angelAsk(p) {
+    const w = this.who.get(p?.index);
+    if (this.state !== 'live' || !w?.out || !p.angel) return false;
+    this.dream.openChoice(p, {
+      title: 'LEAVE THE BATTLE?',
+      rows: [
+        { text: 'no, stay — and fly over a sister to HEAL her', act: () => this.dream.closeChoice(p) },
+        { text: 'yes, leave the battle (you cannot come back in)', act: () => { this.dream.closeChoice(p); this.leaveAngel(p); } },
+      ],
+      start: 0,
+      anchor: { x: p.position.x - SIM.dx, y: p.position.y, z: p.position.z - SIM.dz },
+    });
+    return true;
+  }
+
+  /** "which will spawn them outside of the battle bubble as normal, no longer an angel". */
+  leaveAngel(p) {
+    const w = this.who.get(p.index);
+    if (!w || this.state !== 'live') return false;
+    this.who.delete(p.index);
+    this.barred.add(p.index);
+    this._dropStream(p.index);
+    if (p.angel) p.landAngel?.();
+    const [s] = this._spots(1, ARENA_R + BARRIER.pad + 2);
+    p.position.set(s.x + SIM.dx, s.y + 0.1, s.z + SIM.dz);
+    p.velocity?.set?.(0, 0, 0);
+    this.dream.refillSim(p);
+    this.dream.game.toast?.(`${p.name} left the battle`, p.index);
+    if (!this._standing()) this._lost(this.who.size ? 'Nobody is left standing!' : 'Everybody left the battle!');
+    return true;
+  }
+
+  /**
+   * THE RED WALL. Anybody in the simulator who is not in this fight — she
+   * left it, or she arrived after it started — is held outside the ring line
+   * and told why. Angels in the fight are leashed inside it by `angelLeash`;
+   * fighters cross it freely, which is how one leaves.
+   */
+  _barrier(dt) {
+    this.barrierU.uTime.value += dt;
+    this.barrierU.uFlash.value = Math.max(0, this.barrierU.uFlash.value - dt * 2.5);
+    const keep = ARENA_R + BARRIER.pad;
+    for (const q of this.dream.simKittens()) {
+      if (this.who.has(q.index)) continue;
+      const x = q.position.x - SIM.dx - this.centre.x;
+      const z = q.position.z - SIM.dz - this.centre.z;
+      const d = Math.hypot(x, z);
+      if (d >= keep || Math.abs(q.position.y - this.isle.y) > BARRIER.h + 6) continue;
+      const nx = d > 1e-4 ? x / d : 1;
+      const nz = d > 1e-4 ? z / d : 0;
+      q.position.x = this.centre.x + nx * keep + SIM.dx;
+      q.position.z = this.centre.z + nz * keep + SIM.dz;
+      const v = q.velocity;
+      if (v) {
+        const vin = v.x * nx + v.z * nz;
+        if (vin < 0) { v.x -= nx * vin * 1.6; v.z -= nz * vin * 1.6; }
+      }
+      this.barrierU.uFlash.value = 1;
+      if (this.dream.t - (this._zapAt?.[q.index] ?? -9) > 1.2) {
+        (this._zapAt ??= [])[q.index] = this.dream.t;
+        this.dream.game.sfx?.('zap');
+        this.dream.shards?.burst(this.centre.x + nx * ARENA_R, this.isle.y + 1.5, this.centre.z + nz * ARENA_R, BARRIER.colour, 18, 3, 4);
+      }
+      this.dream.hint(q, this.barred.has(q.index)
+        ? 'You left the battle — the red wall keeps you out until it is over!'
+        : 'The battle already started — the red wall keeps you out until it is over!');
+    }
+  }
+
+  /**
+   * THE ANGELS' BLESSING (ANGEL_HEAL). An angel over a sister who is still
+   * fighting — within `reach` of her radius across, at any height above her
+   * — heals her: `firstHp` after `first` seconds, then `hp` every `every`
+   * while she stays. A green stream pours from under the angel's feet onto
+   * her the whole time ("as if it is the lifestream is coming out from under
+   * them").
+   */
+  _heal(dt) {
+    const t = this.dream.t ?? 0;
+    for (const [i, w] of this.who) {
+      const a = w.p;
+      if (!w.out || !a.angel) { w.bless = null; this._dropStream(i); continue; }
+      let best = null;
+      let bd = Infinity;
+      for (const f of this.who.values()) {
+        if (f.out || f.p === a || f.p.position.y >= a.position.y) continue;
+        const d = Math.hypot(f.p.position.x - a.position.x, f.p.position.z - a.position.z);
+        if (d <= (f.p.radius ?? 0.75) * ANGEL_HEAL.reach && d < bd) { bd = d; best = f.p; }
+      }
+      if (!best) { w.bless = null; this._dropStream(i); continue; }
+      if (w.bless?.i !== best.index) w.bless = { i: best.index, t: 0, n: 0 };
+      w.bless.t += dt;
+      const due = ANGEL_HEAL.first + ANGEL_HEAL.every * w.bless.n;
+      if (w.bless.t >= due) {
+        const s = this.dream.st[best.index];
+        if (s) {
+          const max = this.dream.simMax(best);
+          s.simHp = Math.min(max, (s.simHp ?? max) + (w.bless.n === 0 ? ANGEL_HEAL.firstHp : ANGEL_HEAL.hp));
+        }
+        w.bless.n += 1;
+        this.dream.shards?.burst(best.position.x - SIM.dx, best.position.y + 1.2, best.position.z - SIM.dz, ANGEL_HEAL.colour, 8, 1.6, 2.5);
+        if (w.bless.n === 1) this.dream.game.sfx?.('angel', 0.5);
+      }
+      this._stream(i, a, best, t);
+    }
+  }
+
+  _stream(i, a, f, t) {
+    let S = this.streams.get(i);
+    if (!S) {
+      const u = { uTime: { value: 0 }, uColour: { value: new THREE.Color(ANGEL_HEAL.colour) } };
+      const cone = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 1, 1, 20, 1, true).translate(0, -0.5, 0), new THREE.ShaderMaterial({
+        vertexShader: BARRIER_VERT, fragmentShader: STREAM_FRAG, uniforms: u,
+        transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, toneMapped: false,
+      }));
+      const disc = new THREE.Mesh(new THREE.RingGeometry(0.35, 0.75, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({
+        color: ANGEL_HEAL.colour, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false,
+      }));
+      const g = new THREE.Group();
+      g.add(cone, disc);
+      g.renderOrder = 7;
+      this.dream.sim.root.add(g);
+      S = { g, cone, disc, u };
+      this.streams.set(i, S);
+    }
+    const top = a.position.y - 0.2;
+    const h = Math.max(0.5, top - f.position.y);
+    S.g.position.set(a.position.x - SIM.dx, top, a.position.z - SIM.dz);
+    S.cone.scale.set((f.radius ?? 0.75) * ANGEL_HEAL.reach, h, (f.radius ?? 0.75) * ANGEL_HEAL.reach);
+    // Leaning to her if she is a little off the vertical: the stream ends ON her.
+    S.cone.rotation.set(0, 0, 0);
+    S.cone.position.set(0, 0, 0);
+    const ox = f.position.x - a.position.x;
+    const oz = f.position.z - a.position.z;
+    S.cone.rotation.x = Math.atan2(oz, h);
+    S.cone.rotation.z = -Math.atan2(ox, h);
+    S.disc.scale.setScalar(1 + 0.15 * Math.sin(t * 9));
+    S.u.uTime.value = t;
+    S.g.visible = true;
+  }
+
+  _dropStream(i) {
+    const S = this.streams.get(i);
+    if (!S) return;
+    S.g.removeFromParent();
+    S.cone.geometry.dispose(); S.cone.material.dispose();
+    S.disc.geometry.dispose(); S.disc.material.dispose();
+    this.streams.delete(i);
   }
 
   _spawn() {
@@ -1069,22 +1343,25 @@ export class ShadowFight {
       x: this.centre.x + SIM.dx, z: this.centre.z + SIM.dz, y: this.isle.y, r: ARENA_R, ceil: ANGEL_SHADOW_CEIL,
     };
     this.dream.game.toast?.(`${p.name} was caught — an angel until the fight is over!`, p.index);
-    this.dream.hint?.(p, 'CAUGHT! Fly about until your side wins it — or loses it.');
+    this.dream.hint?.(p, `CAUGHT! Fly right over a sister to HEAL her — or press ${this.dream.key?.(p, 'interact') ?? 'E'} to leave the battle.`);
     return true;
   }
 
   /** The fight is over: everybody who was caught comes down at the edge, on
    *  a full bar, as a cat again. The only place an angel of his lands. */
   _landOut() {
-    const e = this._entry();
-    for (const w of this.who.values()) {
-      if (!w.out) continue;
+    const out = [...this.who.values()].filter((w) => w.out);
+    // A stride apart along the edge — "different locations so they are not ontop of each other".
+    const at = this._spots(out.length);
+    out.forEach((w, k) => {
       w.out = false;
+      w.bless = null;
       if (w.p.angel) w.p.landAngel?.();
-      w.p.position.set(e.x + SIM.dx, e.y + 0.1, e.z + SIM.dz);
+      w.p.position.set(at[k].x + SIM.dx, at[k].y + 0.1, at[k].z + SIM.dz);
       w.p.velocity?.set?.(0, 0, 0);
       this.dream.refillSim(w.p);
-    }
+    });
+    for (const i of [...this.streams.keys()]) this._dropStream(i);
   }
 
   /** Show a line over him, and say it if it is one of the recorded ones. The
@@ -1100,6 +1377,7 @@ export class ShadowFight {
   _won() {
     if (this.state !== 'live') return;
     this.state = 'won';
+    this._wallDown();
     this._landOut();
     this.endT = HANDOVER.secs + 7;
     this._clearTells();
@@ -1119,7 +1397,17 @@ export class ShadowFight {
       const n = p.style?.name ?? p.name;
       const score = this.t + CATCH_COST * catches;
       const stars = starsFor(score, SHADOW_BANDS, true);
+      // STARS ARE EVERYBODY'S: a score on the board, not a prize.
       this.dream.award(p, 'shadow', stars, score, true);
+      /* HIS PRIZE IS THE HOST'S. "To unlock an award, each player will have
+         to initiate a battle with Shadow and win it by themselves or with the
+         help of others." The tick (which is what 凶 and his songs are read
+         off), the rank's flag, the quest and the secret are hers alone. */
+      if (p.index !== this.host) {
+        this.paid.push({ p, text: `${p.name} helped beat Shadow Lionheart on ${L.name}! ${'★'.repeat(stars)}`
+          + (lv >= 1 ? ' His prize goes to whoever STARTS the fight — press a 影 kiosk yourself and win one to earn yours!' : '') });
+        continue;
+      }
       if (pay.rank) this.dream.progress.setFlag(n, 'shadow');
       const had = inherited(p);
       p.shadowBeat = { easy: false, medium: false, hard: false, ...p.shadowBeat, [L.id]: true };
@@ -1163,9 +1451,16 @@ export class ShadowFight {
     if (this.kyo) { this.kyoT = Math.max(7, this.sayT); this.endT = Math.max(this.endT, this.kyoT + 6); }
   }
 
+  /** The fight is over: the wall comes down, and nobody is barred any more. */
+  _wallDown() {
+    this.barrier.visible = false;
+    this.barred.clear();
+  }
+
   _lost(why) {
     if (this.state !== 'live') return;
     this.state = 'lost';
+    this._wallDown();
     this._landOut();
     this.endT = 5;
     this._clearTells();
@@ -1178,6 +1473,8 @@ export class ShadowFight {
   _reset() {
     this._landOut();
     this._clearTells();
+    this._wallDown();
+    this.host = null;
     this.kyo = false;
     this.kyoT = 0;
     this.unmask?.dispose();
@@ -1233,9 +1530,9 @@ export class ShadowFight {
     }
     this.t += dt;
 
-    // Who is in it: joiners walk on, leavers walk off, the gone are dropped.
+    /* Who is in it was decided at `begin` — nobody JOINS a live fight (the red
+       wall, `_barrier`). Leavers walk off, and are barred; the gone are dropped. */
     const floor = this._onFloor();
-    for (const q of floor) this._join(q);
     for (const [i, w] of [...this.who]) {
       const gone = !this.dream.game.players?.includes(w.p) || this.dream.realmOf(w.p) !== 'sim';
       const far = !w.out && !floor.includes(w.p) && Math.hypot(w.p.position.x - SIM.dx - this.centre.x, w.p.position.z - SIM.dz - this.centre.z) > ARENA_R + 4;
@@ -1243,10 +1540,19 @@ export class ShadowFight {
         // Wings off on the way out, whichever way she went.
         if (w.p.angel) w.p.landAngel?.();
         this.who.delete(i);
-        if (!gone) this.dream.game.toast?.(`${w.p.name} left the fight`, w.p.index);
+        this._dropStream(i);
+        if (!gone) {
+          this.barred.add(i);
+          this.dream.game.toast?.(`${w.p.name} left the battle`, w.p.index);
+        }
       }
     }
-    if (!this.who.size) { this._lost('Everybody left the arena!'); return; }
+    // "If all players are dead, angels, or have left the battle, then the battle is over."
+    if (!this.who.size) { this._lost('Everybody left the battle!'); return; }
+    if (!this._standing()) { this._lost(this.who.size > 1 ? 'Every kitten was caught!' : 'You were caught!'); return; }
+    this.barrier.visible = true;
+    this._barrier(dt);
+    this._heal(dt);
     if (this.t >= SHADOW_T) { this._lost('Time!'); return; }
     if (this.phase === 1 && b.hp / b.maxHits <= this.L.phase2) {
       this.phase = 2;
@@ -1667,17 +1973,40 @@ export class ShadowFight {
     return f;
   }
 
-  faceCamera(camera) {
+  /**
+   * WHOSE LENS HE IS STAGED FOR. `view` places his card at his side and every
+   * spot he fights from — and every pane's camera came through here, so the
+   * last pane drawn won. Richard, Oct 2026: "When one player is fighting
+   * Shadow Lionheart and the other is in a split screen, it seems the UI next
+   * to Lionheart is being affected by the other players camera movements. The
+   * UI next to Shadow Lionheart should display its position based on the
+   * players camera that is fighting him." While a fight is up, only the lens
+   * of a pane holding a FIGHTER sets it — the host's first, else any kitten
+   * still standing in it, else anybody in it. `members` is the pane's kittens
+   * (null for a scene's camera, which never stages him).
+   */
+  lensCounts(members) {
+    if (this.state === 'waiting' || !this.who.size) return members == null || members.length > 0;
+    if (!members?.length) return false;
+    const pick = this.who.has(this.host) ? [this.host]
+      : [...this.who].filter(([, w]) => !w.out).map(([i]) => i);
+    const rank = pick.length ? pick : [...this.who.keys()];
+    return members.some((i) => rank.includes(i));
+  }
+
+  faceCamera(camera, members = null) {
     for (const k of this.kiosks) k.faceCamera(camera);
     if (this.emblem?.visible) this.emblem.quaternion.copy(camera.quaternion);
     camera.getWorldDirection(_v);
     const n = Math.hypot(_v.x, _v.z);
-    if (n > 1e-6) this.view = { x: _v.x / n, z: _v.z / n };
+    // This pane's own heading, for its own veil; `view` only from a fighter's lens.
+    const own = n > 1e-6 ? { x: _v.x / n, z: _v.z / n } : this.view;
+    if (n > 1e-6 && this.lensCounts(members)) this.view = own;
     let veil = 1;
-    if (this.boss && this.view) {
+    if (this.boss && own) {
       const cam = { x: camera.position.x - SIM.dx, z: camera.position.z - SIM.dz };
       for (const { p } of this.who.values()) {
-        if (blocks(cam, this.view, this.boss.local, { x: p.position.x - SIM.dx, z: p.position.z - SIM.dz })) veil = VEIL;
+        if (blocks(cam, own, this.boss.local, { x: p.position.x - SIM.dx, z: p.position.z - SIM.dz })) veil = VEIL;
       }
     }
     if (this.panel.visible) {
@@ -1691,6 +2020,40 @@ export class ShadowFight {
   /** Everybody out (a reset, the last one disconnecting): no fight left half-run. */
   dispose() { this._reset(); }
 }
+
+/* The red wall and the angels' stream: bands that rise (or pour), bright at
+   one end and gone at the other, so neither reads as a solid. */
+const BARRIER_VERT = /* glsl */`
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+const BARRIER_FRAG = /* glsl */`
+  uniform float uTime;
+  uniform float uFlash;
+  uniform vec3 uColour;
+  varying vec2 vUv;
+  void main() {
+    float band = 0.55 + 0.45 * sin(vUv.y * 22.0 - uTime * 3.0);
+    float hex = 0.6 + 0.4 * step(0.5, fract(vUv.x * 96.0 + step(0.5, fract(vUv.y * 6.0)) * 0.5));
+    float fade = pow(1.0 - vUv.y, 1.6);
+    float a = (0.16 + 0.22 * band * hex + 0.5 * uFlash) * fade;
+    gl_FragColor = vec4(uColour * (1.0 + uFlash), a);
+  }
+`;
+const STREAM_FRAG = /* glsl */`
+  uniform float uTime;
+  uniform vec3 uColour;
+  varying vec2 vUv;
+  void main() {
+    float pour = 0.5 + 0.5 * sin(vUv.y * 18.0 + uTime * 12.0);
+    float strand = 0.6 + 0.4 * sin(vUv.x * 6.2831853 * 5.0 + uTime * 2.0);
+    float a = (0.25 + 0.45 * pour * strand) * (0.35 + 0.65 * vUv.y);
+    gl_FragColor = vec4(uColour * 1.2, a);
+  }
+`;
 
 const _e = new THREE.Euler();
 const _v = new THREE.Vector3();

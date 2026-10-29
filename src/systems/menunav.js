@@ -1,3 +1,5 @@
+import { typingIn } from '../core/input.js';
+
 /* ---------------------------------------------------------------------------
    Driving the menus with a controller.
 
@@ -172,8 +174,16 @@ export class MenuNav {
        <summary>, so this widens the net for one panel only. */
     /* `[data-nav-group]` is ONE stop for everything inside it — see `_dive`.
        What is inside it is not a stop at this level at all. */
+    /* TEXT BOXES ARE STOPS. Richard, Oct 2026, in the beat maps: "I can no
+       longer select the text boxes with keyboard/controller input ... should
+       be able to highlight it and select it to start to be able to type in
+       the text box ... pressing escape backs out of the text box." They were
+       never in this list, so only a mouse could get into one. Confirm on one
+       focuses it (`_activate`); from then on every key is the box's
+       (`typingIn` in input.js), and Escape hands the keys back. */
     const sel = 'button.menu-btn, summary.help-topic, .panel select,'
-      + ' .panel input[type="range"], .map-cell, button.map-reset, [data-nav-group]';
+      + ' .panel input[type="range"], .map-cell, button.map-reset, [data-nav-group],'
+      + ' .panel input[type="text"], .panel input[type="number"], .panel input:not([type]), .panel textarea';
     /* A `<summary>` IS THE ONE THING A SHUT `<details>` STILL SHOWS, so the walk
        starts ABOVE its own card — otherwise every topic header would filter
        itself out and the accordion would have no cursor at all. Everything else
@@ -780,6 +790,16 @@ export class MenuNav {
       el.selectedIndex = (el.selectedIndex + dir + n) % n;
       el.dispatchEvent(new Event('change', { bubbles: true }));
       this.game.audio?.play('menu');
+    } else if (el.tagName === 'INPUT' && el.type === 'number') {
+      // A number box steps like a slider, by its own step, without typing.
+      const step = +el.step || 1;
+      const lo = el.min === '' ? -Infinity : +el.min;
+      const hi = el.max === '' ? Infinity : +el.max;
+      const v = Math.min(hi, Math.max(lo, (+el.value || 0) + dir * step));
+      if (v === +el.value) return;
+      el.value = String(v);
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      this.game.audio?.play('menu');
     } else if (el.tagName === 'INPUT' && el.type === 'range') {
       const step = (+el.step || 1) * 5;
       const v = Math.min(+el.max, Math.max(+el.min, +el.value + dir * step));
@@ -795,6 +815,12 @@ export class MenuNav {
     if (el.tagName === 'SELECT') {
       // Confirm advances rather than opening the OS dropdown. See the header.
       this._adjust(el, 1);
+      return;
+    }
+    // A text box: into it, with what is there selected, ready to type over.
+    if (typingIn(el)) {
+      el.focus();
+      el.select?.();
       return;
     }
     if (el.tagName === 'INPUT') return;
@@ -828,6 +854,11 @@ export class MenuNav {
   _paint(items, i, follow = true) {
     const want = items[i] ?? null;
     if (want === this._lastPainted) return;
+    /* The ring leaving a box she is typing in takes her out of it: a pad's
+       d-pad walks on while the box still has the keyboard, and the next letter
+       would be typed into a box the ring is no longer on. */
+    const typing = typeof document !== 'undefined' ? document.activeElement : null;
+    if (typing && typing !== want && typingIn(typing)) typing.blur();
     this._clear();
     if (!want) return;
     want.classList.add('nav-focus');

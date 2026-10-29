@@ -244,6 +244,8 @@ export class TouchPad {
     this.cornerOnly = false;
     /** Called when the corner button is tapped in `cornerOnly`. See there. */
     this.onCornerSkip = null;
+    /** ...and when it is tapped as a MENU in `cornerOnly`. See `setCornerOnly`. */
+    this.onCornerMenu = null;
     /** Settings ▸ Buttons — see `CLUSTER_SHIFT`. */
     this.shift = { ...CLUSTER_SHIFT };
 
@@ -341,7 +343,7 @@ export class TouchPad {
        to get rid of. It says what it does instead, and the only thing it does
        is skip. */
     if (this.cornerOnly) {
-      if (btn === this.pause && this._pauseMode === 'skip') this.onCornerSkip?.();
+      if (btn === this.pause) (this._pauseMode === 'skip' ? this.onCornerSkip : this.onCornerMenu)?.();
       return;
     }
     if (btn) {
@@ -588,9 +590,13 @@ export class TouchPad {
    * names keys — so a phone on a gamepad had no way to see that a scene can
    * be skipped at all.
    *
-   * ONLY THE SKIP, NOT THE MENU. Out of a scene the button would be a second
-   * Start for a seat it does not hold, and the pad in her hand already has
-   * one; so outside a scene it is not drawn (`.corner-only:not(.scene)`).
+   * THE MENU TOO, NOW. It used to be the skip alone — "out of a scene the
+   * button would be a second Start for a seat it does not hold". Richard, Oct
+   * 2026: "the menu button in the top-right corner is not appearing on screen
+   * when mobile input is disabled, it should appear regardless so that the
+   * menu can be navigated without a controller." The pad has no seat to report
+   * a `start` to, so the tap goes to `onCornerMenu`, and the game opens the
+   * pause menu as player 1's (`Game._cornerMenu`) — whose rows answer a tap.
    */
   setCornerOnly(on) {
     this.cornerOnly = on;

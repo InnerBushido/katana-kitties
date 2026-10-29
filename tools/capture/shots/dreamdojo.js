@@ -208,11 +208,26 @@ window.__ddStills = async function (opts = {}) {
        across the island — over her shoulder it was three bars and a wall. */
     sine: { join: 'sine', secs: 5, wide: true },
     school: { on: /FEAST/, secs: 6 }, sentries: { on: /SENTRIES/, secs: 6 },
-    bamboo: { on: /INFILTRATION/, secs: 4 }, shadow: { on: /EASY/, secs: 6 },
+    /* A LIVE RUN, not the kiosk: the kiosk opens a course board now, and the
+       card's job is the game as it plays (Richard, Oct 2026: "update the
+       images of ... Bamboo Infiltration"). So she is put on the village's h4
+       roof with a shuriken wound up at the archer, the red lock-on ring on
+       him — the newest and least guessable thing the island does. */
+    bamboo: { bamboo: 'village', house: 'h4', at: [10, 9] }, shadow: { on: /EASY/, secs: 6 },
   };
+  /* ON THE GAME'S CLOCK, NOT THE WALL'S: a hidden pane throttles its
+     timers to about one a second, and every frame's step is clamped, so
+     seven wall seconds there were half a second of drill — Lionheart had not
+     thrown his first blow. `secs` of game at 30 a second, whatever the pane. */
   const until = async (secs) => {
-    const t0 = performance.now();
-    while (performance.now() - t0 < secs * 1000) await step(5);
+    const gd = g.clock.getDelta;
+    g.clock.getDelta = () => 1 / 30;
+    try {
+      for (let k = 0; k < secs * 30; k++) {
+        g._tick(performance.now());
+        if (k % 10 === 0) await new Promise((r) => setTimeout(r, 0));
+      }
+    } finally { g.clock.getDelta = gd; }
   };
   /* The list is islands.js's, not `D.isles`: that only exists once a kitten
      is in the simulator, so asking for one island before going in filmed
@@ -227,7 +242,66 @@ window.__ddStills = async function (opts = {}) {
       if (!I) continue;
       const live = LIVE[key];
       const st = live?.on && D.stations.find((x) => Math.hypot(x.x - I.x, x.z - I.z) < I.r + 2 && live.on.test(x.prompt(p, 'E')));
-      if (live?.join) {
+      let bambooCam = null;
+      if (live?.bamboo) {
+        const B = D.bamboo;
+        const keep = { lock: B.courseLock, caught: B.caught };
+        B.courseLock = () => null;
+        B.caught = () => {};
+        B.diff = 0;
+        /* The picker's own way (`setCourse`, which swipes the island), waited
+           out: setting `courseId` alone left the first course standing with
+           the village's name over it. */
+        if (B.view?.id !== live.bamboo) {
+          B.courseId = B.view?.id ?? B.courseId;   // what is BUILT, which setCourse compares against
+          B.setCourse(live.bamboo, 1);
+        }
+        // The swipe, not the view: `view` is the new course from its first frame.
+        for (let i = 0; i < 200 && B.swipe; i++) await step(10);
+        const ks = B.kiosk.station;
+        p.position.set(ks.x + SIM.dx, ks.y + 0.5, ks.z + SIM.dz);
+        p.velocity?.set(0, 0, 0);
+        await step(6);
+        ks.interact(p);
+        await step(6);
+        B.begin(p);
+        /* On the run's own clock, not the wall's: in a hidden pane 4.5 s of
+           wall time was 0.4 s of run, and the frame was the countdown. */
+        const archer = () => B.view?.guards?.find((x) => x.active && x.kind === 'archer');
+        for (let i = 0; i < 200 && !(B.runOf(p)?.drill?.state === 'live' && archer()); i++) await step(10);
+        const run = B.runOf(p);
+        const A = archer();
+        const H = B.course.houses.find((h) => h.id === live.house);
+        if (run && A && H) {
+          const [a, b] = live.at;
+          B._place(p, a, b, H.h + 0.05, Math.atan2(A.at.b - b, A.at.a - a));
+          run.ok = { a, b };
+          run.last = B.coords(p);
+          run.carry.shuriken = 1;
+          run.carry.smoke = 1;
+          window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyF', key: 'f', bubbles: true }));
+          await step(24);
+          // Over her shoulder, the archer and his red ring across the street from her.
+          const her = p.position;
+          const him = A.group.getWorldPosition(new V3());
+          const ux = him.x - her.x; const uz = him.z - her.z; const ul = Math.hypot(ux, uz) || 1;
+          /* 7 back and 5.5 up was tried first: her card filled the top of the
+             frame and his ring was under it. 11 back and 8.5 up put her card
+             square over HIM. From her left, low: the card over her, him
+             clear on the right with his ring. */
+          const back = opts.bambooBack ?? 10; const up = opts.bambooUp ?? 5; const side = opts.bambooSide ?? -7;
+          const k = opts.bambooAim ?? 0.62;
+          bambooCam = camAt(
+            { x: her.x - (ux / ul) * back + (uz / ul) * side, y: her.y + up, z: her.z - (uz / ul) * back - (ux / ul) * side },
+            { x: her.x + (him.x - her.x) * k, y: her.y + (him.y - her.y) * k, z: her.z + (him.z - her.z) * k }, 50);
+        }
+        live.done = () => {
+          window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyF', key: 'f', bubbles: true }));
+          B.reset?.();
+          B.courseLock = keep.lock;
+          B.caught = keep.caught;
+        };
+      } else if (live?.join) {
         D[live.join].join(p);
         await until(live.secs);
       } else if (st) {
@@ -260,8 +334,10 @@ window.__ddStills = async function (opts = {}) {
          edge. So that one looks at her, from out past her on the line from the
          middle. */
       const herShot = live?.her && at;
-      let cam;
-      if (live?.wide) {
+      let cam = bambooCam;
+      if (cam) {
+        // set up above
+      } else if (live?.wide) {
         const yaw = D[live.join]._yaw();
         // 1.25 r back and 1.05 up was tried first: the whole course, under a
         // third of a frame of empty sky.
@@ -269,6 +345,20 @@ window.__ddStills = async function (opts = {}) {
         cam = camAt(
           { x: I.x + Math.sin(yaw) * back + SIM.dx, y: I.y + I.r * (opts.wideUp ?? 0.95), z: I.z + Math.cos(yaw) * back + SIM.dz },
           { x: I.x + SIM.dx, y: I.y, z: I.z + SIM.dz }, 50);
+      } else if (key === 'shadow' && (D.shadow?.boss?.group ?? D.shadow?.boss)?.position) {
+        /* THE SHADOW, OVER HER SHOULDER AT HIM. The fight stands her at the
+           ring's entry (shadow.js `_entry`) and he walks in on her, so the
+           island-wide lens — from the hub side at the middle — framed an empty
+           floor with the two of them off its left edge. Behind her, on the
+           line to him, aimed past her toward him. */
+        const B = (D.shadow.boss.group ?? D.shadow.boss).position;
+        const hx = p.position.x - SIM.dx; const hz = p.position.z - SIM.dz;
+        const dx = B.x - hx; const dz = B.z - hz; const dl = Math.hypot(dx, dz) || 1;
+        const back = opts.shadowBack ?? 9; const up = opts.shadowUp ?? 6; const side = opts.shadowSide ?? 4;
+        const k = opts.shadowAim ?? 0.55;
+        cam = camAt(
+          { x: hx - (dx / dl) * back + (dz / dl) * side + SIM.dx, y: I.y + up, z: hz - (dz / dl) * back - (dx / dl) * side + SIM.dz },
+          { x: hx + dx * k + SIM.dx, y: I.y + 2, z: hz + dz * k + SIM.dz }, 50);
       } else if (key === 'kata' && D.kata?.cameraFocus?.(p)) {
         /* THE KATA, as she sees it: up her floor at him, from her run's own
            yaw and pitch (kata.js KATA_CAM), only nearer for a 480px card.
@@ -298,6 +388,7 @@ window.__ddStills = async function (opts = {}) {
       const cv = frame(cam, 480, 300);
       done[`isle-${key}`] = await put(`${out}isle-${key}.jpg`, await jpeg(cv, 0.82));
       if (live?.join) D[live.join].reset?.();
+      live?.done?.();
       const d = D.drills[0];
       if (d) { d.dispose(); D.drills[0] = null; }
       D.closeChoice?.(p);

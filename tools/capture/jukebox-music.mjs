@@ -4,6 +4,9 @@
  *
  *   node tools/capture/jukebox-music.mjs           measure, arrange, write it all
  *   node tools/capture/jukebox-music.mjs --dry     measure and print; write nothing
+ *   node tools/capture/jukebox-music.mjs --only homeLofi
+ *                                    re-render that one; the others' mp3s and
+ *                                    rows in jukeboxfiles.js stay as they are
  *
  * The takes are ElevenLabs Music v2.5, one per track in housing/jukebox.js
  * (whose `prompt` is what each was asked for — pre-authorised for Custom
@@ -49,7 +52,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { measure } from './music-beats.mjs';
 import { SR, decodeStereo, beatFeatures, findLoop, bandOnsets, seamLag, seamCut, rmsOf, sim, encoderDelay, encode } from './music-loop.mjs';
-import { JUKEBOX } from '../../src/systems/housing/jukebox.js';
+import { JUKEBOX, ACTIVITY_MUSIC } from '../../src/systems/housing/jukebox.js';
 
 const ROOT = new URL('../../', import.meta.url);
 const P = (rel) => fileURLToPath(new URL(rel, ROOT));
@@ -64,6 +67,10 @@ const GEN = {
   homeGarden: 'g8RoUUalOEMy5JyMHp4h',
   homeChiptune: 'U4TriowQSrbwFULdbQuA',
   homeSunset: '9Vq5ndYiki2lSoDDWkzs',
+  homeOnsen: 'vf4bxm73itYPsByTA6tH',
+  homeKendo: 'J5r22NZyzczhW77ZLqNW',
+  homeFishing: 'y6TXGbPdG1zulGn4xBwG',
+  homePets: 'e27mbXoxXD8CKWnL9MUh',
 };
 
 /**
@@ -78,9 +85,20 @@ const GEN = {
  *             'fade': fade the last pass out over `fade` seconds instead —
  *             for a take that was cut off while still playing.
  *   gap     — silence before the whole file starts again.
+ *   segs    — the whole arrangement spelled out, as [from, to] pairs in
+ *             seconds of the take (null = its end). Each from is snapped to
+ *             the nearest beat and seam-refined against the end it follows;
+ *             no fade and no gap, for a take whose end already runs into its
+ *             start.
  */
 export const ARRANGE = {
-  homeLofi: { whole: true },
+  /* Richard, Oct 2026: "the 1min repeat makes the song too short and misses
+     the cool Lo-fi part ... It builds up nicely, and then suddenly ends and
+     restarts. I'd suggest looping between 48s and the ending 2 times, then
+     looping to the 24s mark and to the end and again then looping between
+     48s and the ending again 2 times ... 60 + 24 + 36 + 24 seconds". The
+     take's beat is 0.75s from 0, so 24 / 48 / 60 are beats 32 / 64 / 80. */
+  homeLofi: { segs: [[0, null], [48, null], [48, null], [24, null], [48, null], [48, null]] },
   // "between the 27s and 55s mark (before the final pluck)", then the pluck
   homeGarden: { at: [27, 55], passes: 2, ending: 'own', gap: 1.2 },
   // "between the 17s mark and the ending ... fading out ... 1-2s of silence"
@@ -88,6 +106,16 @@ export const ARRANGE = {
   homeSurf: { passes: 2, ending: 'fade', fade: 5, gap: 1.5 },
   homeChiptune: { passes: 2, ending: 'fade', fade: 4, gap: 1.2 },
   homeSunset: { passes: 2, ending: 'fade', fade: 5, gap: 1.5 },
+  /* THE ACTIVITIES' SONGS were asked for at 90s WITH "a clear, complete
+     ending", as the note above says a new take should be, and all four
+     have one: measured (ffmpeg silencedetect, -45dB) each ends in 1.4-2.2s
+     of real silence — onsen 1.71, kendo 2.16, fishing 1.68, pets 1.38. So
+     the whole take is the loop, its own silence the breath before it starts
+     again. */
+  homeOnsen: { whole: true },
+  homeKendo: { whole: true },
+  homeFishing: { whole: true },
+  homePets: { whole: true },
 };
 const XF = 0.040; // the crossfade at every join, seconds
 
@@ -151,9 +179,14 @@ function fadeAndGap(out, sec, gap) {
 }
 
 const dry = process.argv.includes('--dry');
-const meta = {};
+const oi = process.argv.indexOf('--only');
+const only = oi >= 0 ? process.argv[oi + 1] : null;
+// with --only, every other track's row is carried over from the file as it is
+const meta = only ? { ...(await import('../../src/systems/housing/jukeboxfiles.js')).JUKEBOX_FILES } : {};
 mkdirSync(P('public/music'), { recursive: true });
-for (const T of JUKEBOX) {
+// the boombox's list, and the activities' songs (jukebox.js ACTIVITY_MUSIC) the same way
+for (const T of [...JUKEBOX, ...ACTIVITY_MUSIC]) {
+  if (only && T.id !== only) continue;
   const src = P(`${RAW}${T.id}.mp3`);
   if (!existsSync(src)) { console.log(`${T.id}: no take in ${RAW} — stays procedural (${T.fallback})`); continue; }
   const A = ARRANGE[T.id] ?? { passes: 2, ending: 'fade', fade: 4, gap: 1.2 };
@@ -169,6 +202,21 @@ for (const T of JUKEBOX) {
   if (A.whole) {
     out = joinSegments(st, [[0, dur]]);
     plan = 'the whole take, as it came — it already loops end to start';
+  } else if (A.segs) {
+    const segs = [];
+    const notes = [];
+    for (const [a0, b0] of A.segs) {
+      const b = b0 ?? dur;
+      let a = a0 === 0 ? 0 : m.firstBeat + beatNear(a0) * m.spb;
+      if (segs.length) {
+        const r = refineSeam(mono, a, segs[segs.length - 1][1]);
+        a += r.shift;
+        notes.push(`${a0}s ${(r.shift * 1000).toFixed(1)}ms corr ${r.corr.toFixed(3)}`);
+      }
+      segs.push([a, b]);
+    }
+    out = joinSegments(st, segs);
+    plan = `spelled out: ${A.segs.map(([a, b]) => `${a}-${b ?? 'end'}`).join(', ')} (joins ${notes.join('; ')})`;
   } else {
     const beatsEnd = Math.floor((m.soundEnd - m.firstBeat) / m.spb);
     const f = beatFeatures(mono, m.firstBeat, m.spb, beatsEnd);
@@ -237,7 +285,7 @@ for (const T of JUKEBOX) {
     file, name: T.name, level: 'home', gen: GEN[T.id] ?? null,
     spb: m.spb, first: +lead.toFixed(4),
     loop: [+lead.toFixed(4), +(lead + len).toFixed(4)],
-    length: +len.toFixed(3), arranged: A.whole ? 'whole' : `x${A.passes + 1} ${A.ending}`,
+    length: +len.toFixed(3), arranged: A.whole ? 'whole' : A.segs ? `segs ${A.segs.length}` : `x${A.passes + 1} ${A.ending}`,
     mix: +(TARGET_RMS / rms).toFixed(3),
   };
 }

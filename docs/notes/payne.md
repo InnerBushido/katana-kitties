@@ -4,8 +4,11 @@
 Society, drawn here as a green cat-goblin. Richard asked her permission to put
 her in the game and sent her the finished result for her final approval.
 **She has approved her lines and her voice** (2026-10-04). Richard:
-"Payne approved the lines and her voice, so we are good there." ~~Until she has approved it, a public release
-that includes her waits for that answer.~~ Her photos went to Higgsfield as
+"Payne approved the lines and her voice, so we are good there." **New lines,
+cutscenes and footage of her no longer go to her first** (Richard, 2026-10-28):
+"We don't need Payne's approval for current or future cutscenes or voices
+anymore ... She has already approved being in the game and looking forward
+to seeing what we make." Her photos went to Higgsfield as
 image references with Richard's OK, and to nowhere else.
 
 The brief, verbatim where it decides something:
@@ -339,7 +342,7 @@ preset, and ~~are as pending her approval as~~ were approved with the first 39.
 
 ## What is saved
 
-`p.payne` = `{met, hints, sweep, rounds, told, teased, lastAsks, iceTold, mad}`, in the cast row like
+`p.payne` = `{met, hints, sweep, rounds, told, teased, intro, lastAsks, iceTold, mad}`, in the cast row like
 everything else a kitten owns, so a girl who leaves and comes back still knows
 the Sweep. `cleanPayne` gives a blank ledger rather than a NaN for anything
 malformed. The timers are deliberately **not** saved: a load is a fresh two
@@ -384,6 +387,112 @@ that into a refusal. The check calls `choose(her, 'view')` both ways: a start
 returns 'scene' with no toast, and a refusal returns 'payneDojo' with one.
 
 All nine new lines are ~~pending Payne's approval~~ approved by her, like the rest.
+
+## The introduction to the world
+
+Richard, Oct 2026: a cutscene the first time a player talks to Payne,
+replayable from her card. It explains the mischief, the entropy that sets the
+kotodama free, the islands coming back together, bad karma, and caring for
+nature in the Shinto way, and then lists the objectives, "similar in feel to
+the ending". Payne starts masked, unmasks, and puts the mask back on for her
+"space mission" to worlds with "too much order and boredom".
+
+- **Thirteen lines, `payne_intro_1..13`** (`PAYNE_INTRO`, in
+  systems/payneintro.js), all Pixie, about 75 seconds of speech. They are
+  spread into `PAYNE_LINES` like the tour's, so the card and the scene cannot
+  disagree.
+- **It is a StoryScene script** (`kind: 'intro'`), not a new player. The Dream
+  Dojo's scene already skips on Escape or Start alone, times each line off its
+  recording, and falls back to a reading time. The intro adds two things
+  through the scene's `ctx`:
+  - `shot`: its own camera table, `introShot`, cut on words (`INTRO_CUTS`):
+    her, the kitten, the archipelago, a heap of props still standing, a
+    shrine, the grotto, a clan hall, a dragon, the pandas, a farm pen, a
+    dragon star, the arena, a furnished sky island, the Dojo, and a blast-off
+    into space.
+  - `stage`: Payne herself, `PayneActor`.
+
+  The music is `tourPayne` throughout.
+- **She stands in the world** (`PayneActor`): a quad on her own market spot,
+  feet on the ground, turned to the lens about the vertical, with a shadow.
+  Her market billboard is hidden for the length of the scene, so there are
+  never two of her. The first cut had her as a canvas in the cutscene's DOM
+  (`#cs-actor`), pinned on the right with every shot leaning left to clear
+  her. Richard: "we don't have to have her on screen the whole time ... Let's
+  put her standing where she should be standing in the world, in 3D world
+  space rather than having her attached to the screen. Let's make sure she is
+  facing towards the player". So the kitten who opened her turns to face her
+  (`startIntro`), and the shots about Payne are over that kitten's shoulder.
+- **She acts the words.** Each line's `act` is a list of clips cued on the
+  word they land on (measured, and named in a comment beside each cue). Each
+  clip plays ONCE and holds its last frame; a frame held past 0.3s bobs and
+  breathes. Richard: "We shouldn't repeat the animations in a loop or
+  ping-pong as it looks strange. It is okay if she holds some still frames
+  when needed after an animation or can add some slight bobbing animations
+  during dull moments".
+- **Cut on words, back to her often.** `INTRO_CUTS` has 46 cuts over 13
+  lines, each on a word. Richard: "We show the islands zoomed out for too
+  long ... consider cutting back to Payne while she is talking ... cycle
+  between other parts of the world, can show the grotto area and other
+  islands". So the archipelago is held for 3.3s, not a whole line, and
+  "every river, every living thing" is the grotto and a clan hall, "the
+  dragons, the pandas, the little critters" is a dragon, the Pandapaw hall and
+  a farm pen.
+- **Nothing in the way.** Every cut is tried at up to eleven turns about its
+  own subject and keeps the first whose whole move is clear. The occluders are
+  cylinders built from `world.solids`, `world.landmarks` and the standing
+  props, with two sight lines, one to the aim point and one lower, to her
+  knees. world-check measures 3 of 129 frames still blocked.
+- **The set is the scene's own** (systems/payneset.js `IntroSet`), and all
+  of it goes in `stop`, which the skip runs too:
+  - **A furnished island.** "if we want to show the castles you can build ...
+    temporarily spawn one of the islands and furnish it with a castle and a
+    few buildings with bridges connecting on 2nd or 3rd floor and some outdoor
+    Japanese themed decorations". The first of Roshi's islands nobody owns
+    gets a castle, a dojo house and a minka, a rope bridge between upper
+    floors, and a yard of pen, onsen, zen garden, shrine, tea house, bamboo
+    farm, koi pond, cherries, lanterns and a bell tower. It is all laid by the
+    editor's own rules, so it is a home a player could build. It never touches
+    the store, and `Housing.showcase` keeps it up while every other island
+    stays hidden until the ending.
+  - **The arena, drawn and not opened.** It rises at 80%, and "Win the arena"
+    was said over empty sky. Only its meshes go on; `arenaOpen`, the ground
+    out there and its road are untouched.
+  - **Space.** "instead of looking up at an empty sky, we can have the camera
+    "blast off" focusing on the player and Payne and starting slowly, but
+    accelerating quickly". The lens rises exponentially from 5 to 2600 units
+    above them, held back by 0.45 of its height so it is never straight
+    overhead (she is a picture: from above she is edge-on and gone, which the
+    first try did a second off the pad). It tilts to the horizon for the last
+    third, a dome and a seeded field of stars fade in above 250, the fog is
+    pushed out with the height, and the line ends in a fade to black.
+- **The first hello IS the scene.** `greet` starts it when this kitten has
+  never met her and nobody has seen the intro yet; her card closes
+  (`Inspector.openPayne`). **It counts as seen the moment it starts**
+  (non-negotiable 7): `intro` is set on every seated kitten then, so a sister
+  who watched over her shoulder gets a plain hello on her own first talk.
+- **If it cannot play** (a sister is in the simulator, or another scene is
+  up), the first hello is just a hello and `intro` stays false.
+- **INTRODUCTION TO THE WORLD**, second on her card, plays it again. It
+  refuses in words, for the same two reasons the Dream Dojo's VIEW does.
+- **The animation comes from six Kling takes**; see art.md, *Payne's
+  introduction*. With no sheets and no voice it still plays: a missing page
+  draws her `town`/`held` still, and a missing clip becomes a reading time.
+
+**Nothing here waits on Payne.** The thirteen lines and the unmasked moving
+footage were first held for her sign-off; since 2026-10-28 new work with her in
+it no longer is (see the top of this file).
+
+**Her face is shown earlier than planned.** "I plan to reveal her face at the
+end of the game" — the intro shows it in the first minute and then puts the
+helmet back on. After the Awakening the market billboard still swaps to `held`
+(helmet under her arm). Richard to decide whether the ending's reveal changes
+meaning ("the helmet comes off for good") or stays as it is.
+
+**"Bad karma" is a value, not a mechanic.** Nothing tracks it, and no blow can
+reach a dragon or a panda (non-negotiable 3). So line 7 says how to behave,
+and the game has nothing to count. Richard to decide whether it should point
+at something real.
 
 ## Open
 

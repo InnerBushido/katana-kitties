@@ -9,6 +9,7 @@ import { bubbleTexture } from '../entities/leader.js';
 import { toNextTier } from '../entities/panda.js';
 import { DOJO_NEED, RIDER_NEED, FEAT_BY_ID } from './feats.js';
 import { TOUR } from './dream/stories.js';
+import { PAYNE_INTRO, PayneActor, introCtx, introShot } from './payneintro.js';
 
 /* ---------------------------------------------------------------------------
    PAYNE — the quest giver.
@@ -296,6 +297,10 @@ export const PAYNE_LINES = {
   payne_dd_mark: "Marked it! It's past the Dojo of the Turning Circle. Jump the stones — and don't look down!",
   payne_dd_busy: "Somebody's in the simulator right now! Wait till they disconnect, then I'll show you.",
   ...Object.fromEntries(TOUR.filter((r) => r.who === 'payne').map((r) => [r.voice, r.text])),
+  /* ...and her INTRODUCTION TO THE WORLD, the same way and for the same
+     reason (systems/payneintro.js). New lines no longer go to Payne first
+     (Richard, Oct 28 2026; payne.md). */
+  ...Object.fromEntries(PAYNE_INTRO.map((r) => [r.voice, r.text])),
 };
 
 /** Every clip she can play, id -> url, for `Announcer.load`. */
@@ -340,6 +345,10 @@ export function ddMarkReached(D, q) {
 
 export const blankPayne = () => ({
   met: false, hints: false, sweep: false, rounds: 0, told: false, teased: false,
+  /* Has she watched the INTRODUCTION TO THE WORLD? Set for every seated
+     kitten when it starts, so a sister who watched it over her shoulder is
+     not shown it again on her own first hello. */
+  intro: false,
   /* The Very Last One's conversation, which has a memory — `askLast`. How many
      times she has pressed MARK IT on that quest, whether she has been sent to
      Icewhisker, and how many times Payne has lost her temper since. Saved, so
@@ -352,7 +361,7 @@ const count = (n) => (Number.isFinite(n) && n > 0 ? Math.floor(n) : 0);
 export function cleanPayne(r) {
   const b = blankPayne();
   if (!r || typeof r !== 'object') return b;
-  for (const k of ['met', 'hints', 'sweep', 'told', 'teased', 'iceTold']) b[k] = !!r[k];
+  for (const k of ['met', 'hints', 'sweep', 'told', 'teased', 'iceTold', 'intro']) b[k] = !!r[k];
   for (const k of ['rounds', 'lastAsks', 'mad']) b[k] = count(r[k]);
   return b;
 }
@@ -1505,6 +1514,10 @@ export class Payne {
     return [
       { key: 'quests', title: "WHAT'S MY NEXT QUEST?", blurb: 'Your quest list, and where to go next.' },
       {
+        key: 'intro', title: 'INTRODUCTION TO THE WORLD',
+        blurb: 'Payne tells it again: why you knock things over, and everything there is to do.',
+      },
+      {
         key: 'dojo', title: 'THE DREAM DOJO',
         blurb: "Lionheart's floating VR dojo — what it is, how to get there, and a tour.",
       },
@@ -1523,7 +1536,11 @@ export class Payne {
     ];
   }
 
-  /** She has just been opened by this kitten: say hello. */
+  /**
+   * She has just been opened by this kitten: say hello — or, the first time
+   * anybody in the party meets her, tell them the whole world. Returns
+   * 'scene' when the introduction took the screen, so the card comes down.
+   */
   greet(p) {
     const L = this.ledger(p);
     const first = !L.met;
@@ -1532,7 +1549,43 @@ export class Payne {
        its full minute however soon the kitten arrived — "Once a player talks
        to her, we should remove the waypoint." */
     this._s(p).inviteT = 0;
+    /* THE FIRST TALK IS THE INTRODUCTION. Not if it cannot play — a sister
+       in the simulator, another scene up — and then it is simply her hello,
+       with the row on her card for later: the introduction is a picture of
+       the world, and nothing in the game waits on it having been seen. */
+    if (first && !L.intro && this.startIntro(p) === null) return 'scene';
     this.say(p, [first ? 'payne_hello' : 'payne_back'], 'hey', { card: false, now: true });
+    return null;
+  }
+
+  /**
+   * PAYNE'S INTRODUCTION TO THE WORLD (systems/payneintro.js). Null when it
+   * started, else why not: 'busy' (a sister is in the simulator, and a scene
+   * takes everybody's screen), 'scene' (one is already up), 'not ready'.
+   *
+   * SEEN BY EVERYBODY THE MOMENT IT STARTS — seventh non-negotiable. It is
+   * a minute and a quarter long and skippable on its first frame, so "has
+   * she watched it" is answered by it starting, never by it finishing.
+   *
+   * `p` is the kitten who asked: the shots about Payne are over HER
+   * shoulder, and Payne stands turned to her and the lens.
+   */
+  startIntro(p = null) {
+    const g = this.game;
+    if (!g.storyScene) return 'not ready';
+    if (g.dream?.busy) return 'busy';
+    if (g.storyScene.active || g._sceneActive?.()) return 'scene';
+    /* SHE TURNS TO WHOEVER IS TALKING TO HER: the shots are over her
+       shoulder, so the lens sees her back and Payne's face. */
+    if (p?.position && this.position) p.facing = Math.atan2(this.position.x - p.position.x, this.position.z - p.position.z);
+    this.actor ??= new PayneActor(g, PAYNE_HEIGHT);
+    const ctx = { ...introCtx(g, p?.position ?? null), shot: introShot, stage: this.actor, set: this.actor.set };
+    // Her own voice stops: she is in the scene, speaking from the card.
+    this.queue.length = 0;
+    this._end(true);
+    if (!g.storyScene.start('intro', PAYNE_INTRO, ctx)) return 'scene';
+    for (const q of g.players ?? []) if (q) this.ledger(q).intro = true;
+    return null;
   }
 
   /**
@@ -1568,6 +1621,23 @@ export class Payne {
             : 'All my quests are done — nothing left to mark!', p.index);
         }
         return 'payneQuests';
+      }
+      case 'intro': {
+        /* INTRODUCTION TO THE WORLD, again. Refused IN WORDS — the Dream
+           Dojo's VIEW row's two refusals, for the same two reasons. */
+        const why = this.startIntro(p);
+        if (why === 'busy') {
+          g.sfx?.('deny');
+          g.toast?.("Somebody's in the simulator — wait till they disconnect, then ask again", p.index);
+          this.say(p, ['payne_dd_busy'], null, { card: false, now: true });
+          return 'payne';
+        }
+        if (why) {
+          g.sfx?.('deny');
+          g.toast?.("Can't show you right now — try again in a moment", p.index);
+          return 'payne';
+        }
+        return 'scene';
       }
       case 'dojo':
         this.say(p, ['payne_dd_intro'], null, { card: false, now: true });

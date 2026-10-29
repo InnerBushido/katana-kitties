@@ -61,8 +61,10 @@ pushed back by the cloudy-glass bubble (radius 57), **including on a dragon or a
 griffin** — a passenger never runs `Player.wall`, so `_mounts` pushes the animal.
 Every refusal toasts *with the owner's name and an instruction* (non-negotiable 6).
 **A castle is open if ANY owner has opened it** — one front door, four keys.
-**Castle rooms are claimed by walking in first**, and each owner opens or shuts
-her own (`_roomWall`).
+**Castle rooms are claimed on the CASTLE ROOMS card** (below), and each owner
+opens or shuts her own (`_roomWall`) — except a room everybody walks through
+(`through`: the castle's two floors with the door and the stairs, the dojo
+house's hall), which is never a wall.
 
 **The music: the newest kitten onto a bridge picks it**, and it beats everything,
 dragon music included (`_wantedTrack` asks housing first). What plays is **that
@@ -74,6 +76,64 @@ procedural stand-in each** (non-negotiable 9) — see *Music* below.
 inside (`aimView` → `xrayVertexMat.setCuts`). Furniture sits on a **tatami grid**;
 a room's kind decides what may go in it, and a preset furnishes the whole house
 in one go (`autoLayout`).
+
+**The yard is solid, and its trees take the x-ray** (Oct 2026: "Bamboo fence has
+no collider ... ensure that all objects built on the players island have
+collider if they should"). Round things are circles in `SOLID`; long thin ones
+(fence, bench) are four walls AND a lid in `SOLID_BOX`, because walls alone
+dropped a kitten who jumped on top inside the box for good; the torii walk is
+six posts. All of it scales with the item's BIGGER/SMALLER. Every number was
+measured off the fitted model. `world-check` builds every yard item in a
+sandbox and fails any that adds no collider and is not on its WALK_ON list
+with a reason. The yard's trees and bushes are on `plantMat` via
+`xrayModel`, which has to WRITE `xrayK` onto a loaded model's geometry: a
+missing attribute reads as zero in the shader, which means "never cut", so a
+material swap alone does nothing.
+
+**The treehouse** (`treehouse.js`) had its x-ray on the cabin only, and that cut
+still worked. What hid her was the trunk through the room and the crowns over
+the roof, so trunks, platforms, crowns and the slide are now on `treeMat` too.
+The straight ramp off A ran underneath the A→B rope bridge ("intersecting with
+the bridges"). It is now two things:
+- a **spiral stair** round a post south of A (under one turn, so it never
+  passes under itself), with sagging rope rails on posts;
+- a **slide** from D's east edge into the open middle.
+
+On the slide, housing (`_slide`) hands Player the downhill direction while her
+feet are on a `slide` deck. Player takes the stick, carries the ride speed
+(`SLIDE_RIDE`) and sits her down arms-up in the jump row. The speed is carried
+because reading it back off her velocity found it already braked, which held
+her at the minimum the whole way down. The flat run at the bottom is not a
+slide, so she skids out on her own feet. The crates have walls now.
+`world-check` checks five things:
+- no rope deck lies over the stair or slide lower than her head;
+- a walker climbs the stair onto A;
+- `_slide` carries one from D to the run, never uphill;
+- the crates stop her;
+- every treehouse mesh is on an x-ray material.
+
+**The slide is asked for** (`sliderider.js`, Oct 2026). Richard: "a menu
+appears and the player can choose 'Ride down in normal view' and 'Ride down in
+First Person View'". Standing on the roof by the gap in the rail opens a card,
+NO first, once per visit. Either ride sets `Player.autoWalk` — a point lined up
+behind the mouth on the chute's axis, the mouth, then down it — so she walks in
+on her own, and `_slide` takes her from there exactly as it takes somebody who
+walks in by hand (which still works, and closes the card).
+- **What blocked her** was the chute's lip colliders, `S.w/2 + 0.06` off the
+  centre line: inside her own radius (0.75, `PLAYER_RADIUS`, plus `_segPush`'s
+  0.18), so both lips pushed her out and the mouth was a wall. They stand at
+  `LIP_WALL` now; the drawn lips did not move.
+- **Normal view** is a chase lens (`RIDE_CAM`, `Player._applyRideCam`) behind
+  her on the line she is travelling, with its OWN smoothed heading — a
+  `focus` yaw lerps from `CAM_YAW` and whipped a full turn each time the spiral
+  crossed the half-turn opposite it.
+- **First person** puts the lens at her eyes and looks `SLIDE_LOOK` (4m) down
+  the path (`aheadOnPath`, forward-only, because the helix lies over itself),
+  at eye height over it. Along her heading it stared out over the rail at the
+  tangent; easing the look POINT trailed it under her (57°); aiming a hand
+  over the path was 55°; at eye height the steepest is 42°. Past the end it
+  runs on level. She is hidden from HER pane only (`hiddenFrom`, per pane in
+  `_faceAll`) and stays hidden until the lens has eased out of her head.
 
 **The holodeck** is the Dream Dojo's own way in, not a copy:
 `DreamDojo.enterFrom(p, spot)` stands her at her tube, suits her up if she is
@@ -140,28 +200,43 @@ measured 73.5, drift 83ms — it is ambient and has almost no onsets to measure)
 **TATAMI LO-FI's best loop scored 0.55** where the others score 0.75–0.98 — a
 seam that may be heard; **listen to it before deciding it is fine.**
 
+Two pieces play ONCE rather than loop, and outrank the jukebox while they do
+(`prayerTrack`): the shrine's (45s) and the **tea ceremony's** (30s, 2 takes,
+900 credits, Oct 2026 — take 2 kept because it rises out of silence under the
+whisking and has faded by the time the kittens stand; `jukebox.js` has the
+measurements). Both are levelled in `mix`, not in the file.
+
+**What she is doing has its own song** (`ACTIVITY_MUSIC` in `jukebox.js`,
+`Housing.activityNow`). Richard: "Add music for the onsen, for fishing, and for
+any other activity the player can do for 15s or more." Measured against the
+15s bar: a kendo match (up to three 60s rounds), pet play (walk, fetch, catch),
+fishing and the onsen qualify; the nap (4s), the meal (5.6s), raking (2.5s) and
+the koi do not. The hop-along pet game is left out on purpose, because she copies
+the animal's rhythm there and a song would be the wrong beat. The order is the
+prayer and the tea first, then kendo, onsen, fishing, pets, then the boombox.
+A sister auditioning a boombox song still hears it. Four new 90s takes,
+1350 credits each (5,400, ~$1.08), all asked for "a clear, complete ending".
+Each ends in 1.4–2.2s of measured silence, so each loops as a whole file
+(`whole: true`). Tea take 1 could not be reused: its audio is not on disk and
+could not be fetched again without its session id. Delete the mp3s and each
+plays its procedural fallback.
+
 ## Placeholders — the work that is left
 
 Each one degrades: delete the file and the game draws the stand-in.
 
 | what | the stand-in | to finish it |
 | --- | --- | --- |
-| **Kendo: kneeling, reaching for the shinai, the bow** | the guard drawing squashed to 66% (seiza) or 80% (reaching), and tipped 0.42 rad toward her opponent for the rei (`Player`, the `kendoStance` block) | three drawings per kitten sheet — seiza, the reach, the rei |
 | **Each kitten's kiai** | one synthesised shout (`audio.js 'kiai'`), pitched per kitten by `KIAI_PITCH` | four recorded kiai, a voice each ([voices.md](voices.md)) |
-| **The kendo scoreboard** | ONE `#kendo-board` at the top of the whole screen, for the first match on | per pane, if two matches in two houses ever run at once |
+| **The kendo scoreboard** | ONE `#kendo-board` across the whole screen, UNDER the names (its top is the measured bottom of `#hud .scoreboard`, and it pushes `#toasts` below itself), for the first match on | per pane, if two matches in two houses ever run at once |
 | **Polyfork knobs** | ITEM CUSTOMIZATION offers size and the model's colourways only | its geometry knobs (`remixable`), with the same "never through the roof" cap |
 | **Set plates** | plates on a kotatsu are not saved: a reload clears the table | a field on the room row, if it matters to anyone |
 | **The storage chest** | a card that says so | a real inventory |
-| **The prayer's drawing** | the star's reach pose (`homePose = 'bless'`) at the shrine AND for ITADAKIMASU | a prayer sheet: four directions × 3–4 frames, all four kittens |
-| **Bathing suits** | a puff of steam, and the eating crouch in the water | an onsen pose per kitten |
-| **Lying down** | the nap HIDES her (`homePose = 'hidden'`) and fades the pane if everyone in it is asleep | a futon pose |
-| **The angel wings** | two white fans drawn in `boons.js`, flapping | a wing sprite or model |
 | **Taiko, the cups game, volleyball** | a line and a sound | the mini-games |
 | **The Bushido Blade forest** | shown, locked, "later" | Richard's later feature |
-| **The fetch stick** | a brown box, spinning | a stick (or frisbee, or carrot) model |
-| **The chick in flight** | the pen drawing, bobbing in the air — no wings move | a flying frame, or a flap on the billboard |
-| **A mess** | four brown blobs (`PetPlay._pile`) | a drawn pile |
 | **Boosts for kotodama abilities** | not done: the animals boost JUMP HEIGHT, JUMP DISTANCE and SPRINT only | Richard also floated boosting the panda or her kotodama powers; it is a `petBoost` field plus the one line that reads it |
+| **Door mats** | DONE (Oct 2026): nineteen designs on ONE generated sheet (0.25 credits for the lot), a free `path_mat` at every front door, CUSTOMIZE ▸ LOOK picks the design | the leaders or the kittens on a mat would be a second sheet — not the kids' own drawings, so ask first |
+| **Windows open onto a gap, not glass** | the opening and two sliding panels | nothing needed unless a pane of glass is wanted |
 
 ## Boons — what home is worth in the ring
 
@@ -199,12 +274,33 @@ has her second statue and a second jukebox that plays her island's music. The is
 hidden until the bridge has grown all the way (`setGrow` k ≥ 1), so a
 half-built bridge does not end in a gate floating in the sky.
 
-The lock is the doors. The owner presses ACTION at either end to open or
-close them. The leaves SWING over `DOOR_SWING` (1.6s) rather than snap,
-except on load (`setLocked(locked, true)`), and a pulsing force field fills
-both doorways while they are shut. `doorSegments()` is what the push-back reads,
-so a shut door blocks at both ends. A visitor who presses ACTION is told whose
-gates they are (non-negotiable 6), and nothing happens.
+**The lock is the hologram, not the doors (Oct 2026).** Richard: "When an
+owner gets near the entrance of the bridge, the doors animate open for them
+... the force field barrier should still be applied to prevent non-owners from
+getting in when the doors are closed." So the leaves SWING (`DOOR_SWING`,
+1.6s) open for any owner within `GATE.near` of a gate (`_ownersNear`), and
+shut behind her when she walks on. They are visual only. The button now reads
+"CLOSE THE GATES FOR VISITORS" and turns the hologram barrier on: across both
+doorways AND along the entrance's edges (`barrierSegments()`). "OPEN THE GATES"
+only takes the barrier away, because the doors are already open for her.
+
+A visitor who **jumps onto a locked deck falls through it** (`ghostFor`). The
+deck draws as a hologram round her (`holoDeckMat`, `_holoPoints`) and
+`heightAt(..., who)` leaves it out of her ground. It stays solid for the
+owners. A visitor already ON the deck when it locked keeps her feet
+(`player.footing`), so she can walk off rather than drop mid-crossing. A
+visitor who presses ACTION is told whose gates they are (non-negotiable 6).
+
+**Facing.** At the town end the statues, the boombox and the banners face the
+town, which is where she walks in from. At her end they face the bridge if that
+faces the camera, else are turned round (`faceCamera`), then turned toward the
+camera until no more than 60° off (`bannerYaw`). On the first island the road
+was 85° off the camera, so both banners showed edge-on. **Every owner has a
+statue** in her colour at both ends (`STATUE_SLOTS`: one each side, a third and
+fourth outside those), and the boombox steps back when there are three or more.
+**Everything there is solid** (`HomeBridge.solids`: statues, boombox, lanterns,
+banner poles, torii posts). The snake's head that stood on her island is gone,
+and each end has Snake Way's own landing apron (rocks, grass, a ramp).
 
 ## Fishing, in the world
 
@@ -229,8 +325,14 @@ power, so the lure landed half a unit past the ring.
 ## The holodeck
 
 `holodeck.js` handles the room. A holodeck room has three racks (the arcade's
-own `gearModel`s, at 0.7 scale) and her tube, which `holoLayout` places along
-the room's long axis. She walks into a rack to pick up its piece. With all three
+own `gearModel`s, at 0.7 scale) and her tube. **The kit is furniture**: rows in
+the room's `items` (catalog `holo`, free, on a shelf no shop lists), moved in
+the ordinary build mode from the room card's MOVE THE TUBES AND THE GEAR.
+`holoKit` stands a new one where `holoLayout` always did; one tube and the
+three racks refuse to be taken out (`holoWhyRemove`, which says MOVE instead);
+ADD ANOTHER TUBE allows up to four, each its own way in. A tube's way out
+points at the room's middle. The room costs 3 orbs and the kendo dojo 2.5
+(half, Oct 2026). She walks into a rack to pick up its piece. With all three
 she poofs into the suit using the arcade's own poof (`DreamDojo.suitAt`).
 ACTION at the tube calls `enterFrom` with `s.home`. The rise, the puppet, the
 descent and the walk out all happen in HER tube. Only the crossing goes through
@@ -249,12 +351,24 @@ skips her while `s.homeSuit` is set.
 
 ## A kendo match
 
-Two GEARED kittens on one taped square for `BOUT.gather` (1.2s) start a match.
-Richard's spec is quoted over `BOUT` in `kendo.js`, and the beats are all
-there in seconds:
+**Where.** A kendo room's fighting floor is `kendoArea(room)` (catalog.js): the
+room's own `kendoArea` where it has one, else the room less 1.4 all round. The
+castle's ground floor fights on the EAST side, its second floor between the
+staircases, the dojo house's hall on the square beside its stairs — Richard:
+"never under them". world-check holds every one inside its room and clear of
+every stairwell. The tape, the two seiza marks (`kendoMarks`: a white cross
+and a gold square) and the rule that says she is on the square are the same
+function, so they cannot disagree. Off the area is JOGAI.
 
-- **The ceremony.** Both kneel on marks along the room's long axis, facing.
-  Then, one at a time: reach for the shinai, stand, KIAI (her own pitch,
+**Starting.** A geared kitten standing STILL on a free white cross for
+`SEIZA.t` (2s) kneels in seiza, facing the other cross, and is held there; a
+push of the stick stands her up (`padStick`, recorded before a pin freezes
+her pad). Both crosses knelt on: the match begins. It replaced "two geared
+kittens anywhere on the square for 1.2s", which started a match on two
+kittens who had only come to look at the rack. Richard's spec is quoted over
+`BOUT`, `SEIZA`, `KENDO_HIT` and `KENDO_TURN` in `kendo.js`:
+
+- **The ceremony.** Both on their marks, facing. Then, one at a time: reach for the shinai, stand, KIAI (her own pitch,
   her spirit animal's hex). Then both bow. HAJIME. Through all of it her pad
   is DEAD (`Housing.kendoHolds` in the pad gate) and `pinnedAt` holds her on
   her mark. A swing in the ceremony is answered and does nothing.
@@ -271,20 +385,89 @@ there in seconds:
 - **JUMP is a dodge** (`KENDO_DODGE` in player.js, which is why it is there
   and not here: the two files would import each other). It fires on HELD jump
   plus a direction, once per hold. A press with no direction is nothing, and
-  a thumb drifting a frame later is not a dodge either. `kendoDodgeT` is the
-  immunity, read by `sparStrike`.
+  a thumb drifting a frame later is not a dodge either. Richard: "too strong;
+  1-2 steps and briefly immune" — it is `dist` 2.2 over `t` 0.14s (the last
+  frame clipped, so 2.2 at any frame rate), then she STOPS; `kendoDodgeT` is
+  the immunity (0.36s), read by `sparStrike`.
+- **A cut is vertical** (`KENDO_HIT`): it lands on a kitten up to 3.2 ahead
+  along her facing and no more than 0.9 either side of that line. Both face
+  each other along the fighting plane (`kendoFace`) whatever the stick says.
+- **返 Riposte works in the bogu**, with the ring's own timing (`_parryLive`
+  is true in a live round): a guard up on the cut's side catches it, no
+  ippon, and she answers through `Game.strikePlayers` → `sparStrike`. The
+  pose is `kparry.png`.
+- **The plane turns.** One above the other — across the plane by more than
+  `KENDO_TURN.gap` (1.3) and more than along it — for `KENDO_TURN.t` (1s),
+  and the plane becomes the room's other axis; the lens eases a quarter round
+  to look across it (`yawAcross`, the one of the two nearest the game's -45°).
+  YAME puts it back along the marks. **The stick follows the camera like on
+  the bridge**: a push held from before the turn keeps its meaning until
+  released, and a fresh one is read on the lens it is turning TO
+  (`kendoLandYaw`). Left/right is toward or away; up/down changes layer.
 - **The camera** (`shotFor`) is per PANE, through the same `groupShot` the
   front door uses, so the shared rig and every stick in it turn together. It
-  is closer than the house's shot and square to the line between the marks.
+  is closer than the house's shot, centred on the area, and looks across the
+  plane (`B.camYaw`).
   **The walls** of that house are cut to `HALF_WALL` (2.1) for any pane
   watching (`halfWallFor` → `HomeIsle.halfWalls`, a clipping plane on the wall
   material). That is why the renderer has `localClippingEnabled`.
-- **The drawings are 25% bigger** (`KENDO_SCALE`), and `footX` keeps her feet
-  still through a mirror. The kiai drawing's feet measure 0.17 of its width
-  right of centre, so every turn, and every swing (guard to kiai and back),
-  slid her sideways. The guard's are centred (0.006).
+- **The drawings are her own size** (`KENDO_SCALE` 1 — it was 1.25, and
+  Richard asked for about 20% smaller), and `footX` keeps her feet still
+  through a mirror. The kiai drawing's feet measure 0.17 of its width right of
+  centre, so every turn, and every swing (guard to kiai and back), slid her
+  sideways. The guard's are centred (0.006).
+
+## Seeing it, Oct 2026
+
+- **Yard work sees over the houses.** Placing or customising something
+  outside takes every floor above the first off, not only the roofs
+  (`Builder.outdoorCuts`), and the thing itself takes an x-ray bite of the
+  ground floor's walls like a kitten does (`Builder.xrayAt`). Richard: "The
+  house, especially a castle, can block the camera."
+- **Two sisters in one pane on two floors**: the pane is cut to the HIGHER
+  floor (it was the lower, so the girl upstairs walked on nothing). The girl
+  below gets an x-ray `LOWER_XRAY` (2.5x) the size, which stops at the TOP of
+  the slab over her head (`uCutCeil` in `xrayVertexMat`), so it opens the
+  floor and nothing standing on it.
+- **No blink on a change.** Every change rebuilds the island, and a model
+  swapped in on a `.then` lands after the frame is drawn — one frame of every
+  stand-in on the island per slider step. A model loaded once is now placed at
+  once (`modelNow`). Richard: "All the 3D models blink as if respawning."
+- **The boombox's barrel** is FITTED to `BARREL_H` (2.2), model or stand-in,
+  and each end builds its own jukebox. The island end was a `clone` taken
+  while the barrel model loaded, so it kept a squat stand-in for good.
+- **The purchase scene's statue shot** frames every owner's statue: it backs
+  off along its own ray until the top half of each measured box is in frame
+  (1 owner at 8 — the liked shot, unchanged — 2 at 17.5, 3 at 23.5, 4 at 24).
+- **Looking out of a window** puts her in a pane of her own (`lookingOut`,
+  main.js `solo`): the shot is first person, and it took a sister sharing the
+  pane through the glass with her.
 
 ## The house, Oct 2026
+
+- **Castle rooms are claimed on the CASTLE ROOMS card**, a fair share each: the
+  claimable rooms over the owners, rounded down (`claimShare`), so a room left
+  over is nobody's and everybody's. LET GO frees one to pick another. Every
+  refusal says why (`claimWhy`). **Four rooms, Oct 2026**: the castle's ground
+  and second floors (one room each — `ground` and `middle`) and the FREE dojo
+  house's two (a bought one is everybody's). Richard: "If there are 2
+  co-owners, each person can get 1 room in each building ... If a player
+  claims a 1st floor of the castle or the dojo house, they can not claim the
+  1st floor of the other house." An old save's four castle rooms (east, west,
+  north, south) are folded into the two by `migrate.js` on load: the first
+  room type kept, a second one refunded in full to whoever claimed it, the
+  furniture moved by its own cell or to the chest.
+- **Plates** go back to the kitchen on INTERACT there; a full table refuses a
+  fifth; a kotatsu sold or moved takes its plates back to the kitchen and ends
+  its meal (`_pruneTables`).
+- **Spare VR gear at home** (`rackStock`): any tube on her island has a
+  headset for every kitten; in the simulator, only her own coloured tube.
+- **The simulator's music beats the house's** while she is in a mini-game,
+  and the house's comes back when it ends.
+- **The stairs land on 2.2 of floor**, and the stair's own rail stops under the
+  floor above. It used to stand 2 over it, 1.2 from the back wall: a kitten 1.2
+  wide could not get off the top. The housing checks now WALK every staircase
+  through `Housing.wall`, up and down.
 
 - **Box stairs** (hako-kaidan) with a stairwell cut out of the floor above,
   railed on three sides. Before this, a kitten upstairs could not get down: the
@@ -351,8 +534,359 @@ in the code, and deleting the file brings it back.
 | **Roshi's sprite** | `sprites/roshi/roshi.png`, one 768 pose. Sized by `ROSHI_INK` (0.961) and stood on `ROSHI_FOOT` (0.0195), both measured off the baked sheet | `drawRoshi`'s canvas |
 | **Her statue** | `models/statues/{ember,frost}.glb` — Tripo image-to-3D off her champion drawing (`tools/statue-bake.mjs`), then `tools/capture/statue-shrink.mjs`: 460k → 24k triangles (meshoptimizer, UV seams held), turned by a MEASURED yaw (both takes faced +x), texture baked to warm stone, 14MB → 0.8MB. The raw takes are in `out/statues-raw/` (gitignored; they cost Tripo credits — keep them). Storm and Blossom wear Ember's and Frost's, washed 30% toward their colour, on their own plinth with a band in her colour | the drawn stone cat |
 | **Roshi's voice** | five clips in `voice/roshi/`, Arthur ([voices.md](voices.md)) | the toast alone |
-| **Kendo** | `kittens/<sheet>/kendo.png` (the guard) and `kiai.png` (the men strike, held for `KIAI_T` after every swing in the bogu), recoloured by STYLE for Storm and Blossom. `kendo.js` only sets `kendoGeared` and `kiaiT`; `Player` draws them. They MIRROR like the Riposte stance, and world-check measures the shinai reaching right | the drawn men and shinai |
+| **Kendo** | `kittens/<sheet>/kendo.png` (the guard), `kiai.png` (the strike, held for `KIAI_T` after every swing in the bogu) and `kparry.png` (返 in the bogu, the riposte guard), recoloured by STYLE for Storm and Blossom. Oct 2026: Ember's first kiai became her `kparry`, her new kiai is Frost's wind-up drawn as Ember, and Frost's `kparry` is Ember's old guard drawn as Frost (0.5 credits). `kendo.js` only sets `kendoGeared` and `kiaiT`; `Player` draws them. They MIRROR like the Riposte stance; world-check measures the shinai reaching right, or for a wind-up whose blade points back (Ember's kiai, -0.044), the tail behind her | the drawn men and shinai |
 | **The animals** | `farm/{chick,bunny,goat}.png`, side-on, head LEFT (measured), turned along the circle they walk | the primitive bodies |
+| **Kendo's ceremony** | `kittens/<sheet>/{seiza,reach,rei}.png`, off her own `kendo.png`, recoloured by style. Sized as a FRACTION of the standing guard (`KENDO_CEREMONY_H`: 0.72 / 0.8 / 0.92) — sizing by ink area made seiza a head taller than the guard, because the generator fills the frame whatever the pose | the guard squashed (seiza, reach) or tipped (rei) |
+| **The prayer, the onsen, the futon** | `kittens/<sheet>/{pray,bath,futon}.png` and `homePose` `'pray'` / `'bath'` / `'futon'` (`Player.setHomeArt`). The prayer is sized by ink area against her bless drawing; the bath is a HEAD and a towel on the water — the first take was a swimsuit and was rejected for a game for girls of nine and under; the futon is drawn whole, bedding and all. Still one still each, not the four-direction prayer sheet Richard once asked for | `Player._homeAs`: the star's reach, the eating crouch, hiding her |
+| **The chick in flight** | `farm/chick_fly.png`, mirrored in the master to face LEFT like the pen; flaps against the pen drawing at 8/s while CATCH has her up | the pen drawing bobbing |
+| **Door and window panels** | `models/props/shoji-door.glb` (Tripo text-to-model, `tools/prop-bake.mjs`), stretched into each panel's box by `fitBox` in models.js | the drawn paper boxes |
+| **The angel wings** | `models/props/angel-wings.glb` (Tripo), squeezed on the flap | the two drawn fans |
+| **A mess, the fetch stick** | `models/props/mess-pile.glb` (Tripo) and Polyfork's `fallen-twig-4c64de` | the brown blobs, the box |
+| **Bridge decoration** | `linkModels` in links.js: Polyfork lantern posts on plank and rope, stone lanterns at the stone bridge's corners, a torii over each end of the vermilion, flower planters down the blossom bridge (whose drawn boxes become the stand-in) | nothing — the bridge underneath is whole on its own |
+
+Tripo props cost 30 credits each (three: shoji, wings, pile); the raw takes are
+in `out/props-raw/` (gitignored — keep them). The poses were 13 more
+`gpt_image_2_5` images off each kitten's own `kendo.png` / `bless.png`.
+
+## More houses, bridges, paths, windows — Oct 2026
+
+- **An island holds many houses.** `H.at` places the first (the one with the
+  name board and the front-door camera, `I.main`); `H.annex` holds the rest,
+  each `{uid, house, x, z, rot}` in the island's frame. `houseSpecs(H)` lists
+  them, first first. A house's rooms are `a<uid>_<room>` in the one `H.rooms`
+  (`homeRooms`), so every room-reading thing reads them all.
+- **The first of the one-size-down house is free** (`FREE_ANNEX`: castle →
+  dojo house → small house → TINY HOUSE). `annexPrice` says 0 until one is
+  built for free. TINY is built here only, never sold at Roshi's.
+- **Moving a house moves its rooms**: room positions are in the HOUSE's frame
+  (`I.roomLocal`, `I.floorY`, `I.houseOf(room).ry`), so nothing inside is
+  rewritten. A bridge that can no longer reach is sold back, and she is told.
+- **Bridges** (`links.js`, pure): door to door on any floor, `{a, b, style}`
+  with each end `{hk, floor, side, at}`. `linkWhy` refuses doors that do not
+  face, too long, too steep, or through a third house. Steps or a ramp take
+  the rise. Each end cuts a hole in the wall (`buildHouseShell(id, openings)`)
+  with a door; a wall thing in the hole is sold back. A ground-floor bridge
+  refuses yard things too tall to fit under it (`linkBlockers`), and the card
+  offers to sell them. Supports have no colliders.
+- **Doors** slide open when someone is near and shut when nobody is; INTERACT
+  pins one open (`H.doors`). The lock still holds the front door.
+- **Windows** are wall things that cut a real hole, closed by default,
+  INTERACT opens them. Each new house gets one per outside wall, `free` (sells
+  for 0). An old home is given them once (`H.winV`).
+- **The path strip in front of the house is gone**, and the gap round a house
+  is a box 0.3 off its footprint, not a circle. Paths are yard things that
+  may cross each other.
+
+## Paths, the zen garden and the teahouse — Oct 2026
+
+- **Paths are stood on**: each is a deck at the top of what is drawn, a few
+  thousandths apart by uid so crossing paths never z-fight. A flat path goes
+  under any yard thing that is not itself a floor (`YARD_FLOORS`); a torch or
+  lantern path is only in the way at its posts (`pathPosts`, read by the
+  drawing, the colliders and `yardWhy` alike). `pathfx.js` is everything a
+  path does when she walks it.
+- **RIDE sets the turn step** on the lawn, 15 → 30 → 45°; paths start at 15.
+- **The zen garden** (`zengarden.js`) keeps a grid of footprints painted
+  onto its sand, which outlives the yard being rebuilt round it, and its rake
+  sweeps it smooth.
+- **The teahouse is walked into** (`teahouse.js`): it was a SOLID disc, and
+  is now the model's own walls, step and tatami, measured off the GLB, plus
+  risers on the platform's open edges — a deck too high to step onto is one
+  she walks UNDER, so without them she stood in the floor up to her chest.
+  It is a third bigger (h 8), has its own smaller x-ray (`teaMat`), and a
+  camera (`teaShotFor`, in `groupShot` beside the door's) that frames the
+  room from the street at `TEA_SHOT` — 14 back, aimed 1.8 over the tatami,
+  same angle. It was 10 and 1.0, and "the user can't read the text above the
+  players head": the check projects the callout over all four seats through
+  her real lens in a tall half pane. KNEEL FOR TEA: whoever kneels first starts
+  it and the music; the others have six seconds to kneel too; then the bowls
+  go round and everybody bows. 26 seconds, one kitten or four.
+- **The ceremony is animated** (Oct 2026: "little or no bouncing ... stays in
+  seiza ... drinking from the cup 5 - 10x's ... 32 would be good"). Each
+  kitten has a 32-frame sheet (`TEA_SHEET`, 8x4, cut from a video —
+  [art.md](art.md)): turn to face you, lift the bowl, sip, set it down, pray.
+  `teaFrameAt` is the pure clock; the sip segment plays forward and back
+  `teaSips()` times (6), staggered 0.35s a seat, and turns back side-on for
+  the bow. While her drawing holds the bowl the 3D one is hidden; a kitten
+  with no sheet stays in her prayer and the bowl rises to her. No sway, no
+  bob. Sounds: whisking while they kneel, a sip on each mouth, a clink as
+  the bowl is lifted and set down, a rin at the bow (`audio.js`).
+
+## Bridges with turns — Oct 2026
+
+Richard: "she sets the number of turns or parts, and places each turn's start
+and end ... each additional turn adds 25% to the price ... smooth 90 degree
+turns, each also +25% ... flat and level at the junction ... segments take up
+the height difference".
+
+- **A turned bridge is the same row plus `via`**: island-frame corners
+  `{x, z, smooth}`. A straight bridge has none and `linkGeom` returns exactly
+  what it always did, so every bridge already saved is untouched.
+- **The card**: once both doors are picked, LEFT/RIGHT set 0–`LINK_TURNS_MAX` (12) turns (the
+  TURNS button on a phone), with a refusal said out loud at either end — it
+  was RIDE while she picked the doors, which nobody found — and the ghost
+  bends round default corners at once
+  (`defaultVia`: an L where the two doors' lines cross, otherwise a step
+  straight out of each door). JUMP on the second door hands her each corner to
+  slide with the stick; ATTACK makes it a curve; SPRINT steps back a turn.
+- **The rise is shared out by length**, so every run has the same grade and
+  every junction is level. A sharp corner is a round landing of radius
+  w·√2 with the runs cut back half a width; a smooth one is a level arc
+  of radius w. **Tried and failed:** a landing the bridge's own width — the
+  floor a step off the middle of the turn was 0.05 off level, enough for her
+  feet to catch.
+- **Price** `linkPriceK` = 1 + ¼ per turn + ¼ per smooth one; the BUILD row
+  shows it. Torii and end gates stand at the two doors only.
+- `linkWhy` refuses a turned bridge whose runs leave a door at an angle, a
+  corner off the island or too tight to turn in, or a middle run through a
+  house.
+
+Item 21 of the same playthrough — "when building a bridge on the 2nd or 3rd
+floor, show that floor" — was already done by `outdoorCuts` with `hard`, and
+has a check that quotes it.
+
+## Smaller fixes — Oct 2026
+
+- **The boombox was inside its barrel.** It sat at 0.47 of the barrel's scale,
+  and the barrel measures 2.20 tall at 2.2×, so its lid is at 1.0 of the
+  scale (`BARREL_TOP`). The boombox Richard reported "facing the wrong way"
+  could not be seen at all.
+- **The walk to the door.** Richard: "there was a Cherry Tree in front of the
+  door ... include some walking paths from the bridge gate to the front of the
+  door". `layDoorPath` lays free path pieces from the foot of the front steps
+  to the landing, in one of the house's two styles (`DOOR_PATHS`, chosen by the
+  island so a home always gets the same one). A preset's yard keeps off it
+  (`doorWalkBox`), and nothing may be built on the statues and boombox at the
+  gate (`E.entrance` in `yardWhy`).
+- **The window asks** (`_v_window`): no, look out, or open/shut. Looking out is
+  first person (`lookShot`): the lens stands 0.9 inside the frame at 1.8 up,
+  which is the middle of the opening, and she is 0.3 behind it. She fades as it
+  comes through her (`LOOK_FADE`), by alpha AND by scaling `alphaTest`. Opacity
+  alone holds her solid to 0.35 and then drops her in one frame. The split
+  screen's pull-back does not apply to that shot (`focus.exact`), or it would
+  push the lens back through the wall. **Tried and dropped:** the old shot,
+  4.5 behind her at 2.2 up, which put her sprite across the middle of the window.
+- **Every furnishing is solid.** `_furnWalls` skipped anything under 0.05
+  after its 0.555 inset, which meant anything under 1.2 across: the andon
+  (1.2), the yoroi (1.05 deep) and the katana stand (0.76). They now keep
+  `FURN_MIN_HALF`.
+- **The selection ring fits the thing** (`ringR`): the drawn footprint's
+  longer half plus 0.45, never under the old 1.4. Measured: a table 2.25, a
+  futon 3.15, a katana stand 1.40.
+
+## Some fixes — Oct 2026
+
+Twenty-four notes from one playthrough. The ones a future session would undo
+without the reason:
+
+- **Low furniture is a floor** (`FURN_STAND`): anything whose measured top is
+  0.3–1.8 gets a deck on it, and its walls stop just under that deck. The step
+  is 0.15, so she jumps on and never walks on. Measured: a futon is 0.71, a
+  kotatsu 1.02.
+- **A futon bounces her** (`Housing._bed`, `BED`). Each launch is sized to put
+  her head 0.25 past the ceiling, so the bonk comes from the ceiling clamp
+  itself. The seventh launch in a row is aimed a metre over the next slab or
+  the roof, and the clamp stands aside while she rises. **The bug that nearly
+  shipped:** `_bed` runs after this frame's gravity step and before Player's
+  ground test. That test found her 0.007 under the deck and landed her again,
+  so the bounce zeroed itself on the frame it began (measured: 701 boings and
+  no height). She is lifted `BED.lift` off the deck as she is launched. The
+  check drops a REAL Player onto a real futon.
+- **Roofs and eaves are solid** (`roofY`, `roofDecks`, `ceilingAt`). The
+  eaves are a ceiling from underneath and a floor from on top, and `houseAt`
+  now stops at each storey's lid. A head more than a metre into the tiles is
+  let through rather than bonked, because that bonk would be a 2 m teleport
+  down through whatever she was standing on.
+- **A bridge notches the eave it passes** (`EAVE_GAP`) and the notch closes
+  when the bridge goes. The roof decks are split round the notch too.
+- **Knocking** (`opensFor`, `knock`, `answerKnock`, `KNOCK`). A door opens on
+  its own only when it is pinned open, for an owner, for a guest, or for
+  somebody already inside it. To everybody else a shut door is a wall
+  (`doorSeg`) that says KNOCK. The third knock within 6 s puts a card in front
+  of a free owner: NO is first, and closing the card is a NO. A NO makes that
+  visitor wait 30 s. Guests last for this game only.
+- **Sliding doors** are a wall item on the ground floor that cuts a doorway
+  (`SLIDE_W`) and hangs a door in it keyed `S<room>:<side>:<k>`. The knock
+  rules cover them like any other door. A castle's ground room stops short
+  of its outer walls, and until the next pass that meant it had no wall
+  slots at all (see "More improvements": `wallSlots` now looks past the gap).
+- **A door the house hides** gets an x-ray bite at `DOOR_XRAY.k` (0.25), sized
+  to the doorway and capped at its lintel. That needed per-slot strength
+  (`uCutK`) and more slots (`XRAY_SLOTS` = 8) in `xrayVertexMat`.
+- **Behind a castle on the ground** (within `BEHIND_HOP` of it), the castle
+  is cut to its ground floor with its roofs off. Jumping up, or walking round
+  to the front, puts it back.
+- **A new house is watched going up** (`_v_raising`). The menu takes no input
+  until it is finished, and BACK says so.
+- **A bridge asks before it is built** (`_v_linkconfirm`: "NO, KEEP CHANGING
+  IT" first). The next yard placement starts where the last one went
+  (`lastPut`, per opening of the menu); backing out forgets it.
+- **A moved koi pond** carries its fish by the move and drops their
+  waypoints.
+- **The Flash Step drill's lasers** are drawn at order 16, under her UI
+  (20–25). They are red (`LASER_COLOUR`) over a dim red core where the core
+  used to be white, so where two beams cross they no longer burn to white.
+  Stars cast a floor shadow and play `starfound` when she takes one.
+
+## More improvements — Oct 2026
+
+Fifteen notes. What a future session would undo without the reason:
+
+- **The islands rise after the ending, not before.** `Housing.update` hid
+  them, but it does not run during a scene, so they stood there all through
+  it. Now `World.setBridges(p)` calls `rise(p)`, which takes them up through
+  the clouds over `RISE` (0.4 to 0.95 of the bridges' build, 70 below, eased).
+  Once up they are on the minimap (`homesMap`), including fully zoomed out.
+- **The castle's ramp is a solid wedge** to the grass, with walls along its
+  sides where it is higher than a step. The slab had air under its top end,
+  and she walked into it.
+- **Indoors is dithered, not cut** by the x-ray.
+- **Room walls count from 3 m away** (`WALL_GAP`) when no other room of that
+  floor is in between. The castle's rooms sit 1.5 to 2.5 m in from their
+  walls, and the old 1.2 rule gave its ground floor 0 slots ("Hang
+  something: no outside wall"). Now it has 34, and the middle floor went
+  from 14 to 30. `winV` 2 adds the new windows to old saves, away from
+  bridge doorways.
+- **Beside a ramp is yard** (`houseFoots`, a box for the plinth and one for
+  the ramp).
+- **Paths go up the ramp** (`rampOf`, `rampWalk`, `onRamp`, `rampLift`).
+  - The walk is two legs: door to the foot of the ramp, then foot to the
+    landing. One straight line would leave the ramp at an angle into its
+    side wall whenever the landing is not straight ahead.
+  - Pieces are laid end to end exactly, from the door outward. They used to
+    be centred on equal steps, which put the first piece's end into the
+    front wall, so it was refused.
+  - She may lay one herself if every corner is within the ramp's width and
+    in front of the door.
+  - Drawn on it by `bendGeo`, which cuts each triangle at the slope's two
+    kinks and lifts every vertex by the ramp's height under it. Subdividing
+    by edge length was rejected: neighbours split a shared edge differently,
+    and the bend opens a crack. The check measures the middle of every top
+    triangle against the ramp: 0.00000 off.
+  - `rampV` gives an old save's walk the ramp leg once, and only if she kept
+    the walk she was given.
+- **A castle owned alone hides room claims.** Others join by buying a share
+  (`sharePrice`: 1/n, split among the owners). A share brings colours, a
+  statue and the key. Selling it back pays 75% and removes her. Every owner
+  must be present and say yes (consent kind `join`).
+- **A house on an island she already owns is half price.**
+- **A third-floor bridge was stopped by a wall collider.** Fixed.
+- **Bridges are masked above the floor she is looking at** (`clipBridges`,
+  `xrayVertexMat({clips})`, `clipBoxes` for the glow). The line is
+  `BRIDGE_CLIP_UNDER` 3.2 above the floor. It was 3.9, and a third-floor
+  bridge was measured 0.26 into the second-floor room.
+- **Ember's kendo poses are measured**: `KENDO_POSE_H`, so her helmet
+  matches her standing one (seiza 1.01, reach 1.00). In gear the slash arc is
+  upright (`slashV`). Frost keeps the shared fractions, because her white fur
+  makes the grill unmeasurable.
+- **FURNISH ROOM lists the room she is standing in first.**
+- **The castle's ground floor is a tatami room with a dojo zone and a
+  holodeck zone** (`mixed`, `R.feats`, `roomHas`, `roomWith`, `mixedZone`).
+  - Dojo: 8×10. Holodeck: 6×18, which holds 4 tubes and 3 racks.
+  - Buying either moves furniture off its zone. Selling the holodeck pays
+    75%.
+  - An old whole-room dojo or holodeck becomes the feature, at what she paid
+    (`migrateMixedRooms`).
+- **A sister upstairs in a shared pane**: her x-ray shrinks while she stands
+  still and grows back twice as fast when she moves.
+
+## Kendo: the block, the clinch, the shinai, the floor — Oct 2026
+
+Richard's six notes, each quoted over its constant in `kendo.js`.
+
+- **The floor says whether a cut will land.** Each fighter has a shadow on
+  the dojo mat, and her cut is drawn in front of her as a strip in her colour.
+  The strip LIGHTS and pulses when the opponent's body is in it. A fainter
+  strip beyond it lights when the opponent's SHINAI is in reach.
+  - Both come from `Kendo.reads`. world-check sweeps 459 spots and holds the
+    floor to exactly what `sparStrike` does.
+  - A fighter who cannot swing shows no strips.
+  - The first build drew them at floor + 0.03, which is UNDER the mat (top
+    0.14) and its tape (top 0.22), so nothing was ever seen. They now sit at
+    `KENDO_DECAL_Y` 0.25, pinned against homeisle.js's boxes.
+- **The block** (`KENDO_BLOCK`) is the Ward button, HELD. Player hands the
+  button to kendo.js as `padBlock`, and the Ward itself is off in a live round.
+  - A bubble shows round her.
+  - She cannot swing or riposte under it, and a refused swing `deny`s.
+  - Letting go costs 0.25s of neither block nor swing. A swing costs 0.25s
+    of no block.
+  - A cut into it holds 75% (`kendo.rng`). The other 25% is
+    `BLOCK BROKEN! IPPON`.
+  - A kitten within 1.7 of a block is slid 1.4 off it, and a blocker cannot
+    be clinched.
+- **The clinch** (`KENDO_CLINCH`) starts when two fighters close inside 1.35
+  at more than 1 m/s, neither blocking, starred or parrying.
+  - They are held 1.2 apart. Each one's momentum is her velocity INTO the
+    other, eased, and the pair moves by the difference.
+  - Driven back 2.6 and she LOSES: she is slid 2.4 sideways (`_slide` tries
+    each side, then straight back) and starred for 1s in `kbroke`.
+  - Level for 3s and they come APART: both step back 2.2 and cannot cut for
+    the step plus 0.5s.
+  - Any forced step that would leave the square tries sideways instead, and
+    stays put if nothing fits, rather than handing her a JOGAI she did not
+    earn.
+  - Steps are MOVED over `KENDO_SLIDE`, not pushed, because her own ground
+    controller undoes a velocity on the next frame.
+  - Drawn as `kclinchR` / `kclinchL`, picked by which way she points on
+    screen, so the two shinai cross.
+- **The shinai** (`KENDO_SHINAI`): a cut that falls short of her body but on
+  her shinai knocks it aside. She gets 0.5s of no swing and no riposte, the
+  `kbroke` drawing and stars, but never while she blocks or dodges.
+- **One toast for both**: `_say` makes ONE toast in both colours (`look.colours`
+  → `.toast.shared`, left border hers and right border her opponent's), where
+  there used to be one per kitten in the same global strip.
+- **A riposte that catches nothing in the bogu** (`KENDO_WHIFF`, player.js)
+  no longer plants her for `PARRY.recover`. She walks at once with 0.6s of
+  stars, `kendoLockT`, in which she cannot swing or riposte.
+- **Stars** are `dazeStars`, on `stunT > 0` or a fighter's `kendoLockT > 0`.
+
+## Door mats, the walk, the purchase scene, kendo again — Oct 2026
+
+- **Door mats, one sheet.** "put them on 1 sprite sheet to save on usage
+  credits and texture memory". `docs/art-masters/doormats.png` is a single
+  `gpt_image_2_5` take on magenta: 20 mats, 0.25 credits, where twenty
+  separate generations would have cost 5. sprite-bake keys it to
+  `public/sprites/housing/doormats.png` at 640x800, and every mat on every
+  island shares that ONE texture and material (`matMaterial`).
+  - Each design's rectangle in `DOOR_MATS` (catalog.js) was measured off the
+    baked sheet by its ink. The rows run 99 to 106 tall, so a grid would have
+    been wrong. world-check re-measures every one.
+  - The rising sun was left out at first, as a flag with a history. Richard
+    put it back: "We can include it in the game." It sits last in the list.
+  - A mat is a PATH one mat long (`path_mat`). It crosses paths, goes on a
+    porch and bends over a ramp by rules that already exist. It lies on the
+    highest path under it (`_matLift`), because a boardwalk's top is 0.17.
+  - Every new home gets one free at its front door (`layDoorMat`), picked by
+    the island. An old home gets one once (`matV`). CUSTOMIZE ▸ LOOK cycles
+    the designs.
+- **No lawn in the walk.** "Paths in front of a bought building must connect
+  or overlap, with no gaps." Measured over four landings per house, the bare
+  points along the walk were:
+
+  | house | before |
+  | --- | --- |
+  | castle | 335 of 2320 |
+  | Dojo House | 192 |
+  | minka | 5 |
+
+  It is 0 for all three now. There were three causes:
+  - The castle's ramp footprint ran 1.35 past where its slope meets the grass
+    (`houseFoots` forgot the ramp starts three courses into the plinth). It
+    now ends at `rampOf(...).z1`.
+  - A refused piece was DROPPED; now it slides along its leg.
+  - The corner where the walk turns for the bridge was open. The walk now
+    leaves the door straight (`frontWalk`), runs a path's width past the
+    turn, gets a KNEE piece on the corner, and may lap the last
+    `PATH_RAMP_FOOT` of a ramp's side.
+- **The walk is laid after the house rises** (`_layWalk`). It goes piece by
+  piece from the door outward over the last `WALK_LAY` (45%) of the rise.
+  Before, it stood full-size on the lawn while the castle grew beside it.
+- **Petals and gold steps play on the ramp** and on the porch. A path site
+  has a `yAt` that follows the ramp under her. Before, it was silent from the
+  first step up, because `onStrip` wanted her within 0.6 of the lawn.
+- **The purchase scene's entrance appears together.** The torii, the doors,
+  the hologram and the ramp's start reveal over `GATE_REVEAL` (2.2s), then
+  hold for `GATE_HOLD` (1.5s), and only then does the bridge grow.
 
 ## Known rough edges
 

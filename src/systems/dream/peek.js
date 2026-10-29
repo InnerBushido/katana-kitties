@@ -90,11 +90,85 @@ import * as THREE from 'three';
        kiosk's circle, or is walking at one that is nearer than the mouth.
        A look already up lets go the moment she steps into a circle.
 
+   THREE MOVES WERE STILL TWO TOO MANY — RICHARD'S FIFTH PASS. "it looks like
+   it is transitioning between 3 camera states: first is when the player
+   starts approaching the bridge, it zooms in ... second the camera seems to
+   be going back to a top-default camera view which shouldn't be happening at
+   all, third the camera is transitioning to the bridge 'over the shoulders'
+   camera view." Measured, walking on at a run: the look across was 0.28 of
+   the way in at the mouth; `peekZone` let go of her 0.5 past it, and the ride
+   did not board until 2.07 past — so for those frames the look across ran
+   HOME (0.28 → 0.17, the lens 22 → 25.6 out), and then the ride came in over
+   that. An ON trigger now keeps her out to `past` onto the deck, which is
+   further than the ride ever takes to board, and `hold` takes it from there.
+   "Also, the camera to 'look across the bridge' should only be happening if
+   the player is moving in the direction to cross the bridge, if they are
+   moving away from crossing the bridge, it should not show this camera
+   view, such as, right after crossing the bridge". Heading at the MOUTH was
+   the whole test, and a mouth is a point: off a bridge onto the hub's rim, a
+   kitten turning along it heads straight at the neighbouring mouth while
+   going square to the way that bridge runs. So `toward` also asks for her
+   heading to agree with the BRIDGE's (`along`), and going against it is
+   `away`.
+
    A LAYER, like `SnakeCam`: laid over whichever pose is already drawing.
    THE LENS IS BLENDED ROUND HER and the aim is blended separately, out to
    the island. Blending both as one orbit round the aim (SnakeCam's way) was
    tried first and measured: its aim slides 130 units out to the island, so
    the orbit's centre went with it and the lens moved 7.7 units in a frame.
+
+   THE LINE ON THE FLOOR WAS HONEST, THE TRIGGER WAS LATE — RICHARD'S SIXTH
+   PASS. "The yellow half circle radius ... seems to be too big in the game
+   as the camera doesn't actually change ... until the player is about
+   halfway into the radius. Is this an issue of using the diameter instead of
+   radius". It was neither: the gold arc IS `start` (peekmarks.js draws
+   `PEEK.start` round the mouth, and world-check measures every point of it).
+   The lag was the `dwell` — 0.35 s of walking at the mouth INSIDE the line
+   before it fired, 3.7 units at a walk (10.5) and 6 at a sprint — plus the
+   first few frames of the lens's ease. So the dwell is now served OUTSIDE
+   the line, in a `lead` band before it: a kitten who has been heading for
+   the mouth that long fires the moment she crosses the gold, and the
+   "definitely in the zone" buffer Richard asked for in the second pass is
+   kept, only moved to where it costs nothing.
+
+   AND IN ORDER, NOT ON TOP — THE SAME PASS. "the 'look across bridge' camera
+   needs to finish transitioning to behind the player before transitioning
+   to the new [ride] camera". The fifth pass let the ride blend in over a
+   look across still sweeping (`hold`), so a kitten who triggered it and ran
+   straight on watched two moves at once. Now `peekDefers` holds the ride
+   back until the look across has finished its whole sweep, and the held look
+   across FOLLOWS her meanwhile (`apply` carries her offset from the aim), so
+   the lens trails her onto the deck instead of standing where she boarded.
+
+   THE LIGHT CYCLE KEEPS THE LOOK — RICHARD'S SEVENTH PASS. "specifically for
+   the Light Cycle circles, let's make it that the camera keeps the 'look to
+   the next island' camera angle ... if the user takes the Light Cycle to get
+   across the bridge, then we keep that camera angle until they get dropped
+   off at the next Light Cycle circle ... if they end up taking the Light
+   Cycle again while in the normal view, then it should stay in the normal
+   view ... If they step out of the circle and re-enter it, then it should go
+   back to the 'look to the next island' view".
+     · A cycle pad is not a kiosk for `stationFirst`: walking up a highway the
+       pad stands three units in front of the mouth, square on her line, so it
+       used to hold the look across back until she was past it.
+     · Stepping INTO a pad (an edge, outside to inside) turns the look across
+       on at once for that pad's own mouth (`PeekTrigger.force`). Arriving on
+       one is not stepping into it, so a kitten dropped off gets her ordinary
+       camera back and keeps it if she rides straight back.
+     · Ridden with the look across up, the look across rides with her
+       (`subject.cycle`), higher and further back (`CYCLE_CAM`), until the
+       cycle stops; then it eases home like any other.
+     · "keep the camera close to the player from a set distance ... the
+       separation between camera and player can increase as the player goes
+       faster, but it should not be lagging behind too much, so likely some
+       strong easing for catching the camera up to the player the further the
+       distance separates". The lens CHASES the pose rather than standing on
+       it, at a rate that grows with how far behind it is: lag = speed / rate,
+       and rate = `rate` + `gain` x lag, so at the cycle's 55 the lens settles
+       about 5.8 behind its spot and it can never fall much further than that.
+       A plain exponential follow (a fixed rate) was the obvious one, and at
+       55 it trails by 55 / rate — 9 units at a rate of 6, and pulling it in by
+       raising the rate makes the hop on a snap.
 --------------------------------------------------------------------------- */
 
 export const PEEK = {
@@ -103,7 +177,12 @@ export const PEEK = {
    *  that ("1.5x's - 2x's the radius")~~, and 12.5% smaller again: "too big
    *  now, so lets make it 10 - 15% smaller". */
   start: 8.4,
-  dwell: 0.35,
+  /** ~~0.35, inside `start`~~ — served in the `lead` band OUTSIDE it, so the
+   *  gold line is where it fires (see the head of this file). 4.5 / 0.25 is
+   *  0.43 s of band at a walk (10.5) and 0.26 s at a sprint (17): both arm
+   *  before the line. */
+  dwell: 0.25,
+  lead: 4.5,
   /** Inside this, going toward it, turns it on at once. */
   inner: 4.2,
   /** The buffer: once on, it stays on out to here... */
@@ -134,7 +213,19 @@ export const PEEK = {
    *  much toward the mouth (a cosine) for it to count as walking up to it. */
   moving: 1.5,
   toward: 0.35,
+  /** ...and her heading must agree with the bridge's own direction by at
+   *  least this much (a cosine): crossing it, not passing its mouth. */
+  along: 0.35,
+  /** Once ON, how far out onto the deck past the mouth it keeps her — the
+   *  ride boards about 2 past it at a run, so the look across is never
+   *  dropped in the gap before `hold` takes over. */
+  past: 6,
 };
+
+/** The look across with her on a light cycle (the head of this file): the pose
+ *  it chases, and the chase. Lag at a steady speed v solves
+ *  lag x (rate + gain x lag) = v: 5.8 at the cycle's 55, 3.0 at 25. */
+export const CYCLE_CAM = { back: 9, up: 4.4, shoulder: 1.2, aimUp: 3, rate: 6, gain: 0.6 };
 
 const ss = (x) => x * x * (3 - 2 * x);
 
@@ -144,12 +235,23 @@ export function peekHold(snake, riding) {
   if (!riding) return null;
   return snake && snake.w >= 1 ? 'gone' : 'hold';
 }
+
+/** Whether the ride camera `snake` must wait for the look across `peek` to
+ *  finish its sweep before it starts: "the 'look across bridge' camera needs
+ *  to finish transitioning to behind the player before transitioning to the
+ *  new [ride] camera". Never once the ride has begun — it is not stopped. */
+export function peekDefers(peek, snake, riding) {
+  return !!riding && !!peek?.live && peek.w < 1 && !(snake?.w > 0.002);
+}
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 
 /**
  * The look across, as a lens and an aim. Pure.
- * @param S { x, y, z, far: {x, y, z}, spread? } — where she is, and the far
- *   island's centre (its floor height in `y`).
+ * @param S { x, y, z, far: {x, y, z}, spread?, side?, up? } — where she is,
+ *   and the far island's centre (its floor height in `y`). `side` -1 puts the
+ *   lens over her RIGHT shoulder and `up` raises it: the real world has
+ *   things standing at a mouth that the layer does not (worldpeek.js
+ *   `clearPose`), and the layer never passes either.
  */
 export function peekPose(S) {
   let ux = S.far.x - S.x;
@@ -160,13 +262,16 @@ export function peekPose(S) {
   // gate sign (on the right of every mouth) is not between her and the lens.
   const rx = -uz;
   const rz = ux;
-  const back = PEEK.back + (S.spread ?? 0) * 0.7;
+  // On a light cycle: higher, for the seat she is up on (`CYCLE_CAM`).
+  const C = S.cycle ? CYCLE_CAM : null;
+  const back = (C ? C.back : PEEK.back) + (S.spread ?? 0) * 0.7;
+  const sh = (C ? C.shoulder : PEEK.shoulder) * (S.side ?? 1);
   return {
-    x: S.x - ux * back - rx * PEEK.shoulder,
-    y: S.y + PEEK.up,
-    z: S.z - uz * back - rz * PEEK.shoulder,
+    x: S.x - ux * back - rx * sh,
+    y: S.y + (C ? C.up : S.up ?? PEEK.up),
+    z: S.z - uz * back - rz * sh,
     lx: S.far.x,
-    ly: S.far.y + PEEK.aimUp,
+    ly: S.far.y + (C ? C.aimUp : PEEK.aimUp),
     lz: S.far.z,
   };
 }
@@ -174,21 +279,31 @@ export function peekPose(S) {
 /**
  * Where a kitten at `pos` going at `vel` stands to one bridge end `E` =
  * { mouth, toward, far }: null when she is out of its reach (past `exit`, off
- * its deck's height, or already past the mouth onto the bridge), else her
- * distance and whether she is heading for it, away from it, or neither. Pure.
+ * its deck's height, or already past the mouth onto the bridge — unless `on`,
+ * when out to `past` onto it), else her distance and whether she is heading
+ * for it, away from it, or neither. Pure.
  */
-export function peekZone(pos, vel, E) {
+export function peekZone(pos, vel, E, on = false, reach = PEEK.exit) {
   const dx = pos.x - E.mouth.x;
   const dz = pos.z - E.mouth.z;
   if (Math.abs(pos.y - E.mouth.y) > 3) return null;
   // Behind the mouth: on the deck it opens from, not already on the bridge.
-  if (dx * E.toward.x + dz * E.toward.z > 0.5) return null;
+  const out = dx * E.toward.x + dz * E.toward.z;
+  if (out > (on ? PEEK.past : 0.5)) return null;
   const d = Math.hypot(dx, dz);
-  if (d > PEEK.exit) return null;
+  if (d > reach) return null;
   const sp = Math.hypot(vel.x, vel.z);
   const moving = sp >= PEEK.moving;
+  // The way she goes against the way the bridge goes: crossing it, or not.
+  const along = moving ? (vel.x * E.toward.x + vel.z * E.toward.z) / sp : 0;
+  // Out on the deck already (an ON trigger only): onward is toward.
+  if (out > 0.5) return { d, moving, toward: along >= PEEK.along, away: along <= -PEEK.toward };
   const cos = !moving ? 0 : d > 0.3 ? -(dx * vel.x + dz * vel.z) / (d * sp) : 1;
-  return { d, moving, toward: moving && cos >= PEEK.toward, away: moving && cos <= -PEEK.toward };
+  return {
+    d, moving,
+    toward: moving && cos >= PEEK.toward && along >= PEEK.along,
+    away: moving && (cos <= -PEEK.toward || along <= -PEEK.toward),
+  };
 }
 
 /** How a kiosk's circle outranks a mouth: inside it (plus `pad`), or walking
@@ -231,24 +346,35 @@ export class PeekTrigger {
     this.away = 0;
   }
 
+  /** ON at once, for `E`: she stepped into a light cycle's pad (the head of this file). */
+  force(E) {
+    this.end = E;
+    this.cand = null;
+    this.dwell = 0;
+    this.away = 0;
+  }
+
   step(dt, pos, vel, ends) {
     if (this.end) {
-      const z = peekZone(pos, vel, this.end);
+      const z = peekZone(pos, vel, this.end, true);
       if (!z) { this.reset(); return null; }
       this.away = z.away ? this.away + dt : 0;
       if (this.away >= PEEK.awayT) { this.reset(); return null; }
       return this.end;
     }
+    // Armed in the `lead` band outside the line, fired ON it (the head of this file).
+    const reach = PEEK.start + PEEK.lead;
     let best = null;
     let bz = null;
     for (const E of ends) {
-      const z = peekZone(pos, vel, E);
-      if (!z || z.d > PEEK.start || !z.toward) continue;
+      const z = peekZone(pos, vel, E, false, reach);
+      if (!z || !z.toward) continue;
       if (!bz || z.d < bz.d) { best = E; bz = z; }
     }
     if (!best) { this.cand = null; this.dwell = 0; return null; }
     if (best !== this.cand) { this.cand = best; this.dwell = 0; }
     this.dwell += dt;
+    if (bz.d > PEEK.start) return null;
     if (bz.d <= PEEK.inner || this.dwell >= PEEK.dwell) {
       this.end = best;
       this.cand = null;
@@ -284,12 +410,23 @@ export class BridgePeek {
     else if (hold === 'hold' && !subject && this.w > 0.002) this.w = Math.min(1, this.w + dt / PEEK.sweepIn);
     else if (want > this.w) this.w = Math.min(want, this.w + dt / PEEK.sweepIn);
     else this.w = Math.max(want, this.w - dt / PEEK.sweepOut);
-    if (subject) this.last = subject;
+    if (subject) {
+      this.last = subject;
+      // where she stands against the aim, so a HELD look across can follow her
+      this._off = { x: subject.x - look.x, y: subject.y - look.y, z: subject.z - look.z };
+    }
     if (!subject && this.w < 0.002) {
       this.w = 0;
       return false;
     }
-    const P = peekPose(subject ?? this.last);
+    /* HELD, IT FOLLOWS HER. It used to stand where she boarded, which was
+       fine while the ride blended in over it at once; now the ride waits for
+       it to finish (`peekDefers`), and a lens left standing at the mouth for
+       that second would watch her run off down the bridge. */
+    const S = subject ?? (hold === 'hold' && this._off
+      ? { ...this.last, x: look.x + this._off.x, y: look.y + this._off.y, z: look.z + this._off.z }
+      : this.last);
+    const P = this._chase(dt, peekPose(S), !!S.cycle);
     // Both lenses as bearing / pitch / distance round HER (the ordinary aim)...
     const polar = (x, y, z) => {
       const d = Math.hypot(x, y, z) || 1;
@@ -311,5 +448,21 @@ export class BridgePeek {
     // ...and the aim on its own, from her out to the island.
     camera.lookAt(this._L.copy(look).lerp(this._aim.set(P.lx, P.ly, P.lz), wa));
     return true;
+  }
+
+  /** On a light cycle the pose is CHASED, at a rate that grows with how far
+   *  behind it is (`CYCLE_CAM`, the head of this file); off one it is the pose,
+   *  and the chase only remembers where the lens is, so the hop on starts from
+   *  there. Pure in everything but `this._P`. */
+  _chase(dt, P, cycle) {
+    const C = this._P;
+    if (!cycle || !C) {
+      this._P = { ...P };
+      return P;
+    }
+    const lag = Math.hypot(P.x - C.x, P.y - C.y, P.z - C.z);
+    const k = 1 - Math.exp(-(CYCLE_CAM.rate + CYCLE_CAM.gain * lag) * dt);
+    for (const key of ['x', 'y', 'z', 'lx', 'ly', 'lz']) C[key] += (P[key] - C[key]) * k;
+    return { ...C };
   }
 }

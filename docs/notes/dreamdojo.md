@@ -226,7 +226,7 @@ reach and the real jump:
 | --- | --- | --- | --- |
 | 斬 Long Cut | ring 4.3 | cuts from 4.00 | 5.02 |
 | 河 Riverclaw | ring 5.4 | the Long Cut orb 5.02 | sworn 6.72 |
-| 跳 Leap | ledge 5.0 | two jumps land 4.60 | three 7.01 |
+| 跳 Leap | tall step 5.7 | two FULL jumps (the orb lent) 5.22 | three 7.01 |
 | 影 Shadowtail | star 6.8 | two jumps 4.60 | sworn 9.14 |
 | 守 Long Guard | beam 2.44s | a Ward is up 2.20s | two lent, 3.40s |
 
@@ -667,35 +667,173 @@ shield until the last sentry is down, then fires fans of three. Stars at 80s /
 
 ### 忍 Bamboo Infiltration (`dream/bamboo.js`)
 
-Through a seeded holo-bamboo forest to the scroll 巻, past four watchers whose
-sight sweeps **θ(t) = θ₀ + S·sin(ωt + φ)** (a sine again, on purpose). Seen for
-0.35s and she is caught. That sends her back to her last lit lantern for +10s,
-and it says so. A catch costs time, never the run. The score is the clock
-plus 10 for each sighting, with stars at 90s / 55s / 36s. There is no time
-limit: leaving the island is the way out.
+**Now a mini-game of five courses** (Oct 2026). Richard: "Let's implement this
+all as a fully functional mini-game, so no need for stand-ins, free, or
+placeholders ... We can replace cones with actual opponents the player must
+avoid." The v1 island (one route, four watchers sweeping on a sine) is
+described at the bottom of this section for its lessons.
 
-- **The forest is generated from a seed and a route**, never by hand. Clumps
-  fill the island except a corridor round the route. `world-check` measures
-  1.2 units of clearance either side of a kitten.
-- **The first layout could not be crossed, and a search proved it.** The path
-  runs *along* each watcher's sweep. His cone is therefore always somewhere
-  between her and the far side, and passing through it takes about 2.2s
-  against a 0.35s catch. A greedy bot got stuck; a time-expanded search over
-  (place, time) found no way through at **any** start time. **The fix is one
-  hide per stretch**, a clump between each watcher and the middle of his path.
-  Its shadow is the stepping stone: in while he looks away, wait, then out
-  while he looks the other way. The search now finds the scroll unseen in
-  16–25s at a walk from every start time, and 3★ (36s) is 1.4× the worst.
-- **The lanterns were inside the cones** about 20% of the time in the first
-  layout. The checkpoint she was sent back to could catch her again. Each
-  sweep now stops `WATCH.margin` short of its stretch's corners. `world-check`
-  asserts the start, the kiosk and every lantern are **never** seen.
-- **The cone on the floor is clipped by the bamboo.** Each of its 28 rays is
-  `sightReach` long: the first clump `seenBy` would call in the way. So the
-  shadow behind a clump is drawn exactly where she is safe. `world-check`
-  reads every ray's end back through the mesh's transform: just inside is
-  seen, just past is not. That is 0 wrong of 540 rays, 274 of them cut short
-  by bamboo.
+- **Five courses, three difficulties**, in `dream/bamboocourses.js`: the
+  Bamboo Path, the Village, the Shrine Circle, the Castle, and the Shadow Maze
+  (the last is meant to be near impossible). They are picked at the 忍 kiosk
+  with the Sine Gauntlet's picker and swipe. EASY has more lanterns
+  (checkpoints) than NORMAL, and NORMAL more than HARD; `world-check` pins
+  that.
+- **Guards, not cones.** Samurai walk their rounds and archers stand on
+  towers (`dream/bambooguards.js`). A guard who hears a noise ring goes to
+  look. Walking and sprinting make noise rings; the crawl (Ward button, held
+  or double-tapped to latch, at 0.4 of a walk) is silent. Holding ATTACK winds
+  up a throw cast like the fishing line. It lobs a pebble that draws a guard
+  away, or a shuriken she has found, which knocks a guard out. Smoke bombs are
+  pickups, and the HUD says what they do and draws their radius. A barrel
+  hides her (INTERACT).
+- **SPOTTED IS CAUGHT, AND CAUGHT IS NEVER HURT** (non-negotiable 3). She
+  puts her hands up, the guard walks over, the pane fades, and she is back at
+  her last lantern on her feet. A capture adds `CAUGHT_COST` (15s) to her
+  time; the score is the time. `world-check` greps both files for `.hurt(`.
+- **THE SANCTUARY RULE.** Measured: guards on their rounds could see 21
+  lantern and start-slot spots across the courses, and a crawl does not help
+  at a spot she is put back on standing. So inside a lantern's ring (r 1.15)
+  or the start ring, guards neither see her nor touch her. The card says
+  "SAFE in the ring". The alternative was to move every lantern, and that
+  would have changed the courses Richard designed. `world-check` reports the
+  21 as information and checks that she is untouched in the rings for 20s of
+  live play.
+- **Every course is crossable, and three stars can be earned.**
+  `bamboolevel.js solve` crawls every course at every difficulty, and
+  `world-check` requires the 3★ time to be at least 1.5× that crawl.
+  `tools/bamboo-map.mjs` draws what the solver found.
+- **A session is everybody on the island.** GO takes every kitten idle on the
+  island, each on her own clock with her kit on the rack. Anyone outside the
+  session is held behind a red barrier, and a kitten who got in anyway is
+  walked out. When the last run ends, the session closes and the next course
+  is up.
+- **Ghost runs.** Her best run is recorded (`dream/ghost.js`, packed to about
+  1cm), and the Sine Gauntlet records them too. The leaderboard row is per
+  course and difficulty (`bambooboard.js`).
+- **Art.** Every action is one sheet, and `tools/ninja-atlas.mjs` packs them
+  into one atlas per character (see [art.md](art.md) and PROJECT.md). The
+  atlases are fetched when a kitten nears the island. They total about 10MB
+  (the archer alone is 3.9MB); quantizing them or moving to WebP is the open
+  follow-up.
+- **Music.** There are four ElevenLabs takes, one per kind of course (forest,
+  village, castle, shadow; 900 credits each). They are processed by
+  `tools/capture/bamboo-music.mjs` into `dream/bamboomusic.js`. Three end in
+  their own silence and loop whole. The castle take was still playing at 90s,
+  so it is arranged as intro, its loop three times, a fade and a breath.
+  Scribe heard no words in any of them. A missing file leaves the course on
+  the simulator's music.
+
+**The Oct 2026 pass (Richard's list).** Each fix below has a world-check.
+- **Doors fit her, and so does everything else.** A door was 1.8 wide for a
+  kitten 1.5 across (`PLAYER_RADIUS` 0.75), with a post at each edge. The old
+  tight gaps were only passable because `resolveSolids` pushed her in a
+  lucky order. Doors are now at least `DOOR_MIN` (2.8). `courseProblems`
+  floods a 0.25 raster at her real size (`kittenRaster`). The half-unit guard
+  raster found no cell centres in a 3-wide diagonal corridor, so it made
+  courses look uncrossable. The flood checks every door, ladder foot,
+  lantern, barrel (`HIDE_REACH` 1.9; at 1.4 there was a 5cm sliver), pickup
+  and rope. It found four real layout bugs: the castle's front door opening
+  onto its fence, stacks blocking the keep, the shrine's last barrel across
+  its path, and a castle samurai patrolling through walls.
+  `tools/bamboo-probe.mjs` prints them.
+- **The edge is held, not pushed** (Oct 2026). The fence is a band of canes
+  `FENCE.thick` deep, and since Richard's "it is teleporting the player
+  around the bamboo area because of the colliders, instead it should just
+  prevent the player from going there" neither they nor the trail canes are
+  solid: three hundred point colliders each shoved her out along their own
+  radius while `_bounds` snapped her back, and the two fought. The edge is
+  `edgeRaster` (walkable, and `KITTEN_R` off every cane), held in `_bounds`,
+  which keeps whichever half of a slanting step fits, so she slides along
+  it. Not `kittenRaster`, whose wall margin would stop her short of every
+  door. A barrel's exit (`_exitSpot`) only lands on ground she fits on, which
+  is how she used to come out behind the fence.
+- **Ropes are tied to the roofs** (Oct 2026). "When dismounting off of the
+  rope line, the player is falling through the building below the roof
+  line." The end asked `_floorAt(R.y - HANG.hi)`, which answered the GROUND
+  under a 4.4 roof, and one hand-set `y` per rope hung her through h3's roof
+  and 1.8 below the keep's. Each end is now `ROPE_RISE` (1.26 of her height,
+  measured off the rope clip's ink: she hangs 1.21 below it) over the roof
+  under it (`ropeEnds`), so a rope slopes. Off an end she lands on that
+  roof, and JUMP or INTERACT lets go mid-rope with her feet where the hang
+  drew them. The MOUNT plays standing where she grabbed and only then does
+  she hang. It is drawn feet-aligned and the hang paw-aligned, so playing it
+  at the rope stood her on top of the rope.
+- **One press, one meaning.** INTERACT or JUMP gets into a barrel, onto a rope
+  (a press now; it used to grab her as she jumped under one) or onto a
+  ladder. JUMP never asks to leave. Within `NEAR_K` times the reach of any
+  of them, an INTERACT that reaches nothing does nothing at all, so the
+  question only comes up in the open.
+- **JUMP is never a jump on a course** (Oct 2026). His note: "we are now
+  allowing the player to jump, let's remove that as I believe it is not
+  necessary ... we just want the action and jump button to do the same
+  thing". With nothing in reach JUMP used to fall through to a real jump.
+  That only began when the count-in mask stopped swallowing it (the sprint
+  fix below). Now `'jump'` is masked from her legs outright, and JUMP does
+  everything INTERACT does except ask to leave, smoke bomb included. A rope's
+  "JUMP lets go" still hears it, because the rig reads the raw pad
+  (`run.padIn`).
+- **The scroll and the lanterns are held, not walked past** (Oct 2026). His
+  note: "stand next to the scroll and hold the action/jump button for 1
+  second ... a circular bar appearing around them that is shown over all of
+  the environment ... billboard towards the camera properly ... scroll can
+  be gold color and checkpoints can be blue ... (avoid any green that looks
+  like the holographic bamboo)".
+  - `HOLD`: 1 s of INTERACT or JUMP, within the old walk-past distances
+    (1.6 for the scroll, 1.4 for a lantern), so where they are reached has
+    not moved.
+  - Letting go, stepping away, a capture or a barrel empties it.
+  - A press there is spent: it never asks to leave and never drops smoke.
+  - The ring is `dream/holdring.js`. It has no depth test and a render
+    order of 1000. It is billboarded in `onBeforeRender`, so in split
+    screen it faces every lens that draws it in the frame, and it is
+    composed in the WORLD, because the island it hangs off is turned.
+  - Gold `0xffd56a` for the scroll; sky blue `0x4aa3ff` for a lantern.
+- **After a throw she stays put until the stick is let go** (Oct 2026). His
+  note: "It's hard to throw stone in bamboo infiltration on keyboard ...
+  the player doesn't move until after they reset the direction". On a
+  keyboard the aim is a held walking key, so the frame the throw left she
+  walked off after it. `run.planted` zeroes her walking stick (not the
+  camera stick) and her gait until the stick reads zero once.
+- **The party is one party.** One capture fades every pane, puts everybody at
+  the lantern lit last by anybody, and puts every guard at `patrolAt(…, 0)`.
+  Only the kitten caught pays. The party shares one camera (`groupShot`),
+  which follows player 1 past `PARTY_CAM.split` until they are back within
+  `rejoin`.
+- **Seen going in is caught.** A samurai who saw her climb into a barrel in
+  the last 0.6s walks over and tips her out. An archer waits 3s, then shoots
+  the barrel: half the time she is caught, otherwise she is spooked out.
+- **Nothing flies through walls.** A shot stopped 0.6 short of a wall still
+  had a kitten just the other side inside `SHOT.hitR`, so the hit now asks
+  `blocked` too. Her shuriken's ring never goes red through a wall, a blocked
+  shuriken knocks nobody out, and pebbles stop where they hit.
+- **Sprint** is `SPRINT.k` (1.15×) her walk, set as a gait under the game's
+  own sprint, and it fills a guard's meter twice as fast. For a while it was
+  0.71× ("walking faster than they are sprinting"; 7.46 against 10.5,
+  measured in the game). The pad her legs read is built once, in the
+  count-in, and its mask had closed over the count-in's `frozen`, so after
+  GO her legs never heard SPRINT, or JUMP, while the gait still applied the
+  sprint's 0.71. The mask reads `run` and `d` live now. The check builds the
+  pad in the count-in, as the game does. The old one built it after GO,
+  which is why it passed.
+- **The card over her head faces the lens** (`fullFace`, pitch and all), as
+  the Kata card does. The course camera looks down at 0.95 rad, and a card
+  turned about Y only was read edge-on.
+- **Stacks** of boxes, firewood or rice replace the crates. They never stand
+  in a door's mouth or at a ladder's foot, because `courseProblems` would
+  fail.
+- **The Village was redesigned** from his marked-up maps, with four routes.
+  `tools/bamboo-plan.mjs village --before <ref>` draws them beside the old
+  plan, for sign-off.
+
+**v1, for its lessons.** It was a seeded forest with one route, and four
+watchers whose sight swept θ(t) = θ₀ + S·sin(ωt + φ). The first layout could
+not be crossed. A time-expanded search over (place, time) proved it, and one
+hide per stretch fixed it. The first lanterns were inside the cones about 20%
+of the time, which is the same failure the sanctuary rule now answers for
+guards who walk. The cone was clipped by the bamboo ray by ray, 0 wrong of 540
+rays. Each of those was a search or a measurement, not a reason, and v2 keeps
+both habits: `solve` and the sightings count.
 
 ### Stage 4 verified in the browser
 
@@ -1589,8 +1727,9 @@ lens every tenth of a second:
 - **Each island's vignette** (the canes, both bouts and the pen, her spot, the
   Kata floor) is in the frame and above the subtitles, its middle within 0.19
   NDC of the frame's, and the Turning Circle is out of the frame.
-- **The visit list is exactly six islands.** The three he dropped (sine,
-  sentries and bamboo) are checked absent.
+- **The visit list is exactly seven islands** (six until the Oct 2026 pass
+  brought the Sine Gauntlet back, below). The two he dropped (sentries and
+  bamboo) are checked absent.
 - **No swing turns more than 30°.**
 - **The Sine Gauntlet** is behind the Kata on "Earn stars".
 - **Every fade** lands where its word is, and the card is in frame above the
@@ -1611,6 +1750,63 @@ lens every tenth of a second:
   Range → School at ~6.5 s.
 - The swing onto the range peaks near 280°/s. If it reads as a whip, lengthen
   its `swing` to 0.75 and push `RANGE_CUTS` back ~0.2 s to match.
+
+### The Oct 2026 pass: the Sine Gauntlet, the galaxy cut, the last arc
+
+All in `storyscene.js`. Each change is pinned by a world-check that asks what
+the shot is for.
+
+- **"when Lionheart says 'Every island is a lesson' we can have the camera
+  looking at the Sine Gauntlet instead of panning between the islands ... it
+  fades out on the word 'lesson' and can fade in at the Kudamono Storm at the
+  part where the camera is zooming in on it."**
+  - The outskirts pan above is no longer used by this line (`pan` and
+    `PAN_FRAME` are kept for any line that asks for it).
+  - The first stop is the Sine Gauntlet, side-on from the hub's side, drifting.
+  - It fades out from "lesson" (1.25) to black at 1.75.
+  - The Storm comes up over 0.4 s with its own push: distance 26.3 → 23.7 in
+    the first 0.3 s after it is clear.
+  - The visit list is SEVEN islands again; only the sentries and bamboo are
+    dropped.
+- **"When Lionheart says 'maths of the circle', the Sine Gauntlet is in the
+  background but the angle is not too good, maybe the camera can go lower."**
+  - The orbit's end is now `KATA_ORBIT_UP` 0.12 (was 0.42), aimed at 0 (was
+    −1.5).
+  - Through the 42° lens, the Gauntlet on "Earn stars" moves from NDC y 0.69
+    to 0.28, and at 9.0 s from 0.67 to 0.16.
+  - **Tried and dropped:** aiming higher (lookY 3) got it to 0.15, but floor 1
+    went under the subtitles mid-walk (−0.40 against −0.38). At 0 the floor's
+    lowest point is −0.34, the same as before.
+- **"when Lionheart says 'every world, every galaxy' it should start to fade
+  out and be faded to black when he says 'galaxy' ... When he starts saying
+  'And every reality' it should already be completely faded in ... so that
+  players can see that the alignment is the same between the two
+  realities."**
+  - The crossing moved one line earlier, into `lion_tour_mission3`
+    (`SKY_CUT`).
+  - Measured phrases: "every world" 6.57–7.55 and "every galaxy" 8.03–9.09.
+  - The cut runs out 8.03 → 8.50, crosses at 8.6, and comes back in
+    9.3 → 9.8. The line is 9.9 s long.
+  - The lens is the same lens either side of the cross (0.013 apart at ±0.5
+    ms); only the layer changes.
+  - mission4 opens in the sim with nothing black. `REALITY_CUT` keeps only its
+    end fade.
+  - The tour's music check exempts this one row: his Creed carries through
+    "and every reality". Cutting the piece mid-sentence would put a seam in
+    his speech.
+- **"When zooming out at the end in the simulator, let's have the camera pan
+  around in a circular arc with the focus being the center of the Dojo of the
+  Turning Circle so that the Kata Trace and Sine Gauntlet are visible for the
+  last few seconds before fading out."**
+  - `SKY_ARC`: from 4.4 s to 9.4 s, the pull is bent round the hub in polar
+    coordinates, so it moves as an arc and never as a chord. It ends on the
+    bearing opposite the two islands' mean, 165 out and 72 up, aimed at the
+    hub.
+  - It turns 135°, and its worst radius step is 1.85 per 0.05 s.
+  - Both islands are in frame continuously from 7.75 s, and the fade is half
+    black at 9.85 s. It is still moving when the fade starts.
+  - **Tried and dropped:** the window 5.4–9.8 only had both islands in frame
+    from 8.45 s.
 
 ## The holo kit, Lionheart's quests, the levels and the course
 
@@ -1763,6 +1959,68 @@ quoted in the code, beside the change it caused.
 - While it is up, the stick is read through the lens she sees. It uses Snake
   Way's rule: a push held through the swing keeps its heading until she lets
   go.
+
+**The look across, in the real world** (`systems/worldpeek.js`, Oct 2026):
+- His note: "we make a similar implementation to the bridges in the main
+  world as well, so that when a player approaches near the bridge, it zooms
+  in on the next island to go to".
+- Nothing new is drawn. The trigger, the lens and the hand-over to the ride
+  are this one's. `WorldPeek` only lists the mouths: both ends of every open
+  Snake Way road (14 for 7 with the arena) and every solid home bridge. A
+  locked home bridge is left out for a kitten it would drop through.
+- **What was in the way.** At the bamboo road a perched dragon stands 8.4
+  from the mouth and 5.1 off the line to the island. It filled two-thirds of
+  the frame with wing.
+  - A choice of shoulder and height (`clearPose`) fixes a thing near the
+    lens. It could not fix this dragon: all six tries measured the same,
+    because it stands between HER and the island.
+  - So a dragon between the lens and the island fades to 15% in that pane
+    only (`fadeFor`, per pane in `_renderView`). `alphaTest` is scaled with
+    the opacity, or the cut-out would hold every texel until 0.35 and then
+    drop the whole dragon.
+- Walking up at a run, it turns on 4.7-4.9 from each of the seven home
+  mouths. That is the layer's own trigger (start 8.4, dwell 0.35s).
+
+**A held push reversed on the step onto a bridge** (`Player._boardSnake`,
+Oct 2026):
+- His note: "when the camera is changing from normal camera to the look
+  across the bridge camera, the input is reversing for the player and
+  instead of continuing in the direction they are going, they get turned
+  around".
+- **Measured in the game, not reasoned.** The look-across hold did its job:
+  S held kept walking her straight up the road. The reversal was the
+  BOARDING. She reached the deck with the lens 40% of the way round, and
+  `_boardSnake` asked "is she pressing onward?" through that half-swung lens.
+  There her S was 70° off onward, so it failed the 0.2 test and the ride
+  locked onward to a different key. The S still under her thumb then meant
+  "back down the road": +6 to -7.8 along it in 0.2 s, and the off-road
+  hold walked her away.
+- Boarding now judges the push through the basis that walked her there (the
+  held one, when there is one), in world space. With no hold it is
+  `_viewBasis`, as before. A check boards mid-swing: old code onward -0.90,
+  new 1.00. Live, the same walk holds +10.5 along the bridge onto and
+  across it.
+
+**Where the camera changes, on the floor** (`dream/peekmarks.js`, Oct 2026):
+- His note: "a half circle, holographic laser line on the ground marking the
+  boundary ... for the camera to switch to the 'look across the bridge'
+  camera mode ... also mark at the entrance/exit of the bridge where the
+  camera will switch to the 'crossing the bridge' camera mode ... different
+  colors".
+- **Gold half circle:** `PEEK.start` (8.4) round each mouth, on the deck
+  side, the `peekZone` rule itself. It is drawn only where there is floor at
+  the mouth's height, so it stops at a disc's rim instead of hanging in the
+  void.
+- **Orange bar:** across the deck where the RIDE begins. It is found by
+  walking the centre line until `heightAt` hands back the bridge's road,
+  which is all `_stepSnake` asks. That is 0 to 3.05 past the mouth across
+  the 22 mouths, because the walked deck runs into each island. A bar at the
+  mouth would have promised the change early.
+- **What failed:** magenta was the first colour for the bar. The hub's rim
+  and every bridge's edges are magenta, and the bar disappeared into both in
+  the first screenshot.
+- Ground strips with a bright core, soft glow and slow pulse, drawn additive
+  (not `THREE.Line`, which is a pixel wide).
 
 **The sim's Turning Circle as a video game** (`holodojo.js`, `main.js`
 `simDojoC`, `DreamDojo.simDojoAt`):
@@ -2607,6 +2865,152 @@ seductive**, so his lines are loud, practical and arcade-owner, and nobody
 "jacks out": she **connects** and **disconnects**. The whole casting, the
 cutter and the gating are in
 [voices.md](voices.md#lionheart-is-barrett-and-the-wording-is-half-the-casting).
+
+## The Kotodama Gallery pass, Oct 2026 (`dream/gallery.js`)
+
+Richard's list, "Improvements for Kotodama Gallery in the Simulator", drill by
+drill. Every number below is exported from `gallery.js` and measured by
+`world-check` against the real jump, reach, ward and shield.
+
+- **疾 Gale.** "make the hoops face the centre so they form a circle". Each
+  gate's yaw is `GALE_FACE`. Three stars are a second kinder: 9.5s became 10.5s.
+- **剛 Adamant.** "don't start until she is inside the circle". A drill can now
+  open on `'arrive'`: the gold circle is drawn, the beams are built only when
+  she steps in, and then `ADAMANT_GRACE` (2s) counts in before the trial. The
+  camera closes to `ADAMANT_CAM` (16 out, pitch 0.5) while she is in it, through
+  `drillFocus` in the camera chain. "Is this meant to work like a jump rope?"
+  No. The beams are two sweeping clock hands at shin height, and she hops them.
+- **Every laser** (Adamant, Long Guard, Flash Step) was drawn behind the yellow
+  circle and the kitten. It now draws in its own band (`LASER_ORDER` 30, glow 30,
+  core 31, above everything at 24-25), and it has a floor footprint: a dark
+  shadow and a coloured trace. Below the floor, a shader fades it to 0.22. The
+  hit pad shrank 0.45 → 0.3, because Flash Step damage "happens before she
+  reaches the lasers".
+  **And every beam in a drill had been DRAWN pointing the wrong way.** This was
+  found in the browser. `Laser._place` aimed with `lookAt(b + parent.position)`.
+  A drill's root sits at the origin inside the sim layer, and the layer is 12000
+  out, so every beam pointed at world −X. Long Guard's three beams were
+  parallel, and Adamant's two clock hands were two parallel bars. The hits were
+  judged on the true a–b segment the whole time. The fix turns the beam in its
+  parent's own frame. `world-check` measures the drawn ends through the real
+  matrices: 0.0000 off with the fix, 9.4 off with the old `lookAt`.
+- **跳 Leap.** "she can't land on a platform from underneath, she hits her
+  head". Two separate fixes:
+  - **Landing.** The real cause was a fast fall skipping a thin deck between
+    frames. The landing is now swept from the frame's start height, which also
+    fixes **Power Dive** "falls through the floating hologram discs" (pinned at
+    30fps).
+  - **Head-bump.** The tower's decks are `ceiling` decks with a thickness.
+    Rising into one bumps her head (`HEAD_ROOM` 2.2, `lidAt`), and that is the
+    rule Richard described for these decks. A plain disc still lifts her
+    through, as it always has.
+
+  The tower is `LEAP_CLIMB`: 12 rows spiralling up. Three are `LEAP_DECK` (5.7)
+  and need all three jumps, two sway in and out, and the rest are one-jump
+  steps. The old 5.0 ledge was measured against bare jumps, but she has the orb
+  LENT, and two FULL jumps land at 5.22.
+- **壁 Ward.** Three stars means under `WARD_GOLD` (18s) and not hit once.
+- **十 Cross Slash** and **突 Charge** have the levels Richard listed
+  (`CROSS_LEVELS`, `CHARGE_PARTS`). A set that is only partly cut stands back
+  up. Targets in the air answer only inside a band around the apex: one jump
+  is 2.4 and two jumps are 4.2 without the orb. `AIR_BAND` is ±0.9, so a
+  kitten on the floor cannot reach them.
+- **守 Long Guard.** Three turrets rise and turn, then put a reticle on her.
+  Each volley charges for 1s, holds for 1s, then the beam grows to her in 0.25s,
+  homing on her. There is a 2.5s pause between volleys. The beam lengths are
+  `GUARD_BEAMS` 1.0 / 1.5 / the old 2.44.
+- **瞬 Flash Step.** It has four levels:
+  - a single wall, with the prize further from it;
+  - a grid of walls with four prizes;
+  - a prize in the air over ground lasers, where a hit puts her back on a clear
+    pad;
+  - a shield-bearer. "takes 0.75s before they face the player again" is
+    `SHIELD_TURN`: a 0.35s wait, then half a turn in 0.4s.
+
+  The decoy now drops onto the sim's own decks, because dodgefx asks for her
+  world, not the town's.
+- **返 Riposte** swings a real 3-D sword. The holo-kitten is a billboard and
+  cannot turn, so the blade sits on its own shoulder pivot (`swordPose`), with a
+  rise as the tell and a 0.3s swing as the blow.
+- **間 Long Parry** is a pack (`PACK_LEVELS`). The levels are one partner
+  three times, then two from one side, then three round her. The last level is
+  passed only by leading all three to ONE side, so a single riposte covers
+  them. A blow from a pack is judged as one: one hit and the round restarts with
+  the pack respawned. After a catch they step back 4.5 and wait 1.8s, which is
+  past her guard's own cool-down.
+- **Stations** treat the `'arrive'` wait as being in a drill. `dreamdojo.js`
+  asks the state (`drilling`), not a getter on Drill, because world-check hands
+  stations plain `{ state }` objects. A getter broke three checks.
+
+### The second gallery pass, after a playthrough (Oct 2026)
+
+- **影 The Matrix rain** on Shadow Lionheart's island. "should be visible in
+  the background from the default camera view ... smaller so it looks like
+  matrix rain ... in the distance ... it just mainly needs to look good from
+  that point of view". The rain was a band round the horizon, by angle, fading
+  out below it. The default camera looks DOWN at 0.66, so the back of its pane
+  is the void under the islands, where there was no rain at all. It is now
+  laid out in the pane's own screen space (`vView`, `vP11` in the sky's
+  shader), so it falls straight down behind everything whatever the lens sees.
+  It is two sheets, 84 and 52 rows a pane, dim. The old cells were 42 rows per
+  unit of sky height.
+- **跳 Leap.**
+  - **The x-ray.** "xray shader on the platforms so player can see where they
+    are and where the platform is". It is `cutDeckMat` in `simworld.js`, the
+    town walls' cut (`xrayVertexMat`) on a basic material: a discarded hole
+    along camera → her chest, floored at her feet, set once per pane by
+    `SimWorld.setCuts`.
+  - **The shadow.** "sometimes the players shadow/indicator under them is not
+    appearing, usually if they are above the center point". Her shadow and
+    ring are transparent and sit 0.05 over the deck, and the slab is
+    transparent too. They were sorted by distance, slab middle against her
+    feet, so on the half of the deck away from the camera the slab drew last,
+    right over her shadow. The slab is now `renderOrder -1`.
+  - **Missing a tall step.** A landing lower than the step under a tall one
+    says `LEAP_MISS` ("TRIPLE JUMP — press jump THREE times").
+  - **The checkpoint.** Once she has stood on the second-to-last step
+    (`LEAP_CHECK`), any landing below it puts her back on it, facing the star,
+    with `LEAP_BACK`. Her camera turns to `LEAP_CAM`: behind her on the line
+    from that step to the last, 26 out, pitch 0.78, above the walking camera's
+    0.66.
+- **十 Cross Slash.**
+  - **Further out.** "further away ... (although within striking distance) ...
+    the player has to aim". `CROSS_R` went 2.4 → 3.2, against a reach of 4.0.
+    Distance alone changes nothing, because the gate tests an ANGLE: a
+    150-degree fan at any range. So each post also asks to be aimed at within
+    `CROSS_AIM` (60 degrees either side), which is wide enough for a
+    keyboard's eight directions.
+  - **One per cut.** "only 1 target can get hit per swing". Targets that ask
+    (`onePerSwing`) compete, and the cut lands on the best-aimed one, not on
+    whichever was built first (`TrainingGate.strike`).
+  - **In the air.** Each post has a beam down to a shadow and a ring on the
+    floor (`airMarks`).
+  - **The last level.** Each next post appears "always behind the player in a
+    randomized 180 degree area". That means behind the post she is about to
+    cut (`crossBehind`). It fades in as an uncuttable ghost from the moment she
+    PRESSES (`_triPend`, the 0.5s hold before the first cut), and stands up when
+    the one before it breaks. Then the next one's ghost appears behind it. It
+    used to be a quarter or half turn off whatever way she was facing.
+- **突 Charge.**
+  - **Keyboard.** "rotate them so they require more cardinal movements ... half
+    of the first 2 drills be diagonal, but after that, should be cardinal".
+    The parts were laid out on the island's `fwd`, a spoke off the hub with
+    nothing to do with the camera. So every row came out at some angle to the
+    screen, and a keyboard needs two keys for a diagonal. `at` and `dir` are
+    now on the screen's own axes (`chargeSpot`, `chargeDir`, kata.js
+    `SCREEN`). Parts 1 and 2 have two diagonal rows out of four; parts 3–5 are
+    all one key.
+  - **Height.** "need a shadow or some kind of indicator to show they are
+    double jump". Each mat in the air has a floor shadow and a brighter stalk,
+    and each set has a flat sign beside it reading ▲ 1 JUMP or ▲▲ 2 JUMPS
+    (`jumpSign`).
+  - **The L.** "too difficult and the blocks are not in the correct placement,
+    we can use the placement of the blocks on part 4". The L is now two of
+    part 4's sets exactly: the top row (one jump), charged left, then the left
+    column (two jumps), charged down. The old high row sat 13 out, against a
+    charge that ended wherever she started it. From the new start, the first
+    charge ends 2 off the column's line, against a reach of 3.3. world-check
+    measures this from the table.
 
 ## Still to build (stages 2–5)
 

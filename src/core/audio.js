@@ -806,6 +806,53 @@ export class Audio {
 
     const v = vol;
     switch (name) {
+      case 'boing':
+        // a futon's spring: a wobbling rise, the wobble is what says "bed"
+        this._tone({ type: 'sine', from: 180, to: 520, dur: 0.22, gain: 0.24 * v });
+        this._tone({ type: 'triangle', from: 260, to: 700, dur: 0.16, gain: 0.1 * v, delay: 0.05 });
+        break;
+      case 'bonk':
+        // a head on a ceiling: a dull wooden thud, a little higher than a landing
+        this._tone({ type: 'square', from: 340, to: 120, dur: 0.09, gain: 0.14 * v });
+        this._noise({ from: 1800, to: 600, dur: 0.07, gain: 0.14 * v, q: 1.4 });
+        break;
+      /* THE TEA CEREMONY (housing/activities.js `_updateTea`). Richard: "We
+         can add some sound effects to go with the ceremony and the animation
+         of player drinking tea." Quiet ones, all four — it is the calmest
+         minute in the game and nothing here may be louder than the music. */
+      case 'teawhisk':
+        // the chasen: a quick bristly stroke through froth, two of them a hair apart
+        this._noise({ type: 'bandpass', from: 5200, to: 3400, dur: 0.07, gain: 0.07 * v, q: 2.5 });
+        this._noise({ type: 'bandpass', from: 4200, to: 6000, dur: 0.06, gain: 0.05 * v, q: 2.5, delay: 0.09 });
+        break;
+      case 'teasip':
+        // a small, polite slurp: air drawn over hot tea, falling, then a soft swallow
+        this._noise({ type: 'bandpass', from: 2600, to: 900, dur: 0.32, gain: 0.08 * v, q: 3 });
+        this._tone({ type: 'sine', from: 220, to: 150, dur: 0.12, gain: 0.06 * v, delay: 0.36 });
+        break;
+      case 'teaclink':
+        // a ceramic bowl set on wood: a bright short tick and a damped ring
+        this._tone({ type: 'sine', from: 2350, dur: 0.18, gain: 0.07 * v });
+        this._tone({ type: 'sine', from: 3410, dur: 0.12, gain: 0.04 * v });
+        this._noise({ from: 1800, to: 900, dur: 0.03, gain: 0.08 * v, q: 1.5 });
+        break;
+      case 'rin':
+        /* the bow: a rin, the temple bowl-bell. Inharmonic partials (1, 2.76,
+           5.4 — a bowl's, not a string's) with a slow beat between two close
+           fundamentals, which is the shimmer a real one has. */
+        this._tone({ type: 'sine', from: 880, dur: 4.5, gain: 0.10 * v });
+        this._tone({ type: 'sine', from: 883.5, dur: 4.2, gain: 0.07 * v });
+        this._tone({ type: 'sine', from: 880 * 2.76, dur: 2.2, gain: 0.04 * v });
+        this._tone({ type: 'sine', from: 880 * 5.4, dur: 0.9, gain: 0.02 * v });
+        this._noise({ from: 6000, to: 3000, dur: 0.02, gain: 0.05 * v, q: 1 });
+        break;
+      case 'knock':
+        // knuckles on a wooden door: two short raps
+        for (const d of [0, 0.16]) {
+          this._tone({ type: 'triangle', from: 210, to: 140, dur: 0.06, gain: 0.3 * v, delay: d });
+          this._noise({ from: 1200, to: 500, dur: 0.05, gain: 0.18 * v, q: 2, delay: d });
+        }
+        break;
       case 'jump':
         this._tone({ type: 'triangle', from: 300, to: 660, dur: 0.13, gain: 0.22 * v });
         break;
@@ -1561,6 +1608,23 @@ export class Audio {
         this._tone({ type: 'square', from: semi(3), to: semi(-4), dur: 0.16, gain: 0.13 * v });
         break;
 
+      /* ---- Bamboo Infiltration's brush (dream/bamboo.js BRUSH) -------------
+         Richard, Oct 2026: "a subtle leaf-rustle sound while walking or
+         running through it" and "a 'whirlwind' vanish sound when she crouches
+         in it". The rustle is two short high bands a beat apart, quiet,
+         because it plays every BRUSH.rustle s for as long as she walks; the
+         vanish is a band of noise swept UP and away with a falling sine
+         under it — the opposite shape to a landing. */
+      case 'rustle':
+        this._noise({ type: 'bandpass', from: 3600, to: 2200, dur: 0.09, gain: 0.035 * v, q: 0.9 });
+        this._noise({ type: 'bandpass', from: 2800, to: 4200, dur: 0.07, gain: 0.025 * v, q: 0.9, delay: 0.06 });
+        break;
+      case 'vanish':
+        this._noise({ type: 'bandpass', from: 320, to: 3400, dur: 0.42, gain: 0.11 * v, q: 1.6 });
+        this._noise({ type: 'bandpass', from: 900, to: 5200, dur: 0.3, gain: 0.05 * v, q: 3, delay: 0.08 });
+        this._tone({ type: 'sine', from: 740, to: 180, dur: 0.34, gain: 0.05 * v, delay: 0.04 });
+        break;
+
       /* ---- the Cross Slash's four verdicts, synthesised ------------------
          THE STAND-INS FOR cross0..cross3, and a case must exist for each key
          in SAMPLES — `sample` falls through to here whenever the mp3 is
@@ -1673,6 +1737,45 @@ export class Audio {
     this.stopMusic();
     this.startMusic(mode, rate, { loop: false });
     return this._nextNote;
+  }
+
+  /**
+   * A SONG ALREADY UNDER WAY, BROUGHT IN. Richard, Oct 2026: "If two or more
+   * players are playing Kata Trace, we should have one song play, but also
+   * have the other playing in the background with the sound muted and instead
+   * we can play the 'metronome' sounds ... When one player finishes their
+   * song, then the other players song should start playing ... fade in fairly
+   * quickly, within a second or two."
+   *
+   * One pair of speakers plays one piece, and a second piece decoded and
+   * running at zero gain would be twenty megabytes and a second scheduler for
+   * nobody. So the "muted" song is a POSITION — her run's own clock — and
+   * this starts `mode` as though it had been playing for `songT` seconds, on
+   * the grid her run is judged on (`songT` 0 is its first step, as
+   * `restartMusic` returns it), with the bus lifted from silence over `fade`.
+   * Returns the run's beat 0 on the audio clock, or null.
+   */
+  joinMusic(mode, rate = 1, songT = 0, fade = 1.2) {
+    if (!this.ready) return null;
+    this.stopMusic();
+    this.startMusic(mode, rate, { loop: false });
+    const now = this.ctx.currentTime;
+    const len = this._stepLen();
+    const beat0 = now - songT;
+    const k = Math.max(0, Math.ceil((now + 0.05 - beat0) / len));
+    this._step = k;
+    this._nextNote = beat0 + k * len;
+    if (MUSIC_FILES[mode]) {
+      // Placed again from the run's beat 0, not from "now": mid-file, on the beat.
+      this._beat0 = beat0;
+      this._fileStop(0.01);
+      this._fileStart();
+    }
+    const g = this.musicBus.gain;
+    g.cancelScheduledValues(now);
+    g.setValueAtTime(0.0001, now);
+    g.linearRampToValueAtTime(this.musicVolume * this.musicLevel, now + fade);
+    return beat0;
   }
 
   /** The next step's time on the audio clock, its index, and the step length. */

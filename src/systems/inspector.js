@@ -202,7 +202,10 @@ export class Inspector {
     c.i = 0;
     c._sig = '';
     this.game.audio?.play('menu');
-    this.game.payne.greet(p);
+    /* HER FIRST HELLO MAY BE A SCENE (the introduction to the world), and
+       then the card comes down the way it does for every scene — a card
+       left open under a cutscene is a cursor nobody can see. */
+    if (this.game.payne.greet(p) === 'scene') this.closeAll();
   }
 
   /**

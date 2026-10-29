@@ -1,6 +1,6 @@
 # Katana Kitties — the whole project on one page
 
-**Last updated: 12 October 2026.** Anything below with a cost or an account
+**Last updated: 17 October 2026.** Anything below with a cost or an account
 attached was true on that date; check the dashboard before quoting a number.
 
 This is the **one-stop sheet**: what the project is, how to run it, how to test
@@ -151,7 +151,7 @@ anywhere): **no `--host`** (Vite binds `127.0.0.1` only), **Windows Firewall
 blocking inbound Node** (verified allowed on this machine, on the Public
 profile, which is what the house Wi-Fi is classified as), and **router client
 isolation** (usually only on a guest network). Note that `--host` also exposes
-`/tuning.html`, whose save endpoint writes a file into the source tree with no
+`/tuning.html` and `/sprites.html`, whose save endpoints write files into the source tree with no
 authentication — fine at home, not fine in a café. Stop the server after.
 
 On the phone: **landscape** (portrait is gated with a message), the on-screen
@@ -181,26 +181,52 @@ beta — a tester opens the URL, or installs it to their phone's home screen and
 plays it fullscreen. **`main` is what the girls play and is not for testing.**
 
 ```bash
-git checkout alpha && git merge main --ff-only    # alpha only ever follows main
-git push origin alpha
+git push -u origin mixed/some-pass        # a work branch is published, every commit pushed: a BACKUP
+git switch alpha && git merge --no-ff mixed/some-pass   # into the LOCAL alpha, and played there
+git switch mixed/some-pass                # ...and back to work
+git -c kk.release=true push origin alpha  # only when Richard says so: this is the release
 ```
 
-**Alpha follows `main`, it does not lead it.** Work lands on a typed branch, is
-merged into local `main`, and `alpha` fast-forwards to it — so `alpha` is always
-a commit that exists on `main` and there is never a fix on the testing channel
-that the real game has not had. **`origin/main` is still not pushed until
-Richard has played it**; `alpha` is the step before that, not a way around it.
+**Branches go to `alpha` first, and `main` follows `alpha`.** Richard, Oct 2026:
+"with commits on branches, we should be pushing the branch and the commits to
+Github and not just leaving them as local commits ... We will then merge the
+branches to Alpha branch but keep the branches around until they are merged
+from Alpha to origin main, then we can clean up and remove the branches." So a
+work branch lives on GitHub as well as locally, **and is not deleted, here or
+there, until its work is on `origin/main`**. Reaching `alpha` is not enough.
+**Keep branches separate**: a branch merged into another goes to `alpha` with
+it, which is how the kendo pass reached `alpha` on the bamboo branch's back.
+**`origin/main` is still not pushed until Richard has played it**; `alpha` is
+the step before that, not a way around it.
 
-**Every other branch gets the same treatment**, at the same shape of alias — so
-a single risky change can be handed to somebody without going near `alpha`:
+**The local `alpha` is merged into in the ONE project folder.** Richard, Oct
+2026, wanted each branch's commits merged into `alpha` locally before `alpha`
+itself is pushed. So every branch in flight is merged into the local `alpha` as
+it gets commits, and the combination is played by switching to `alpha` and
+running `npm run dev`. It is a real merge and not a fast-forward: once two
+branches are in flight, `alpha` has commits neither of them has. Merging the
+same branch again later only brings in its new commits.
 
-```
-https://katana-kitties-git-<branch>-dream-dojo.vercel.app
-```
+**One folder, no worktrees.** A separate `alpha` checkout was tried for an
+afternoon, with two more for side sessions, and Richard: "Go all the way to
+single folder." A worktree is made only when he asks for two sessions to work
+at the same time, because two sessions in one folder overwrite each other's
+files. The price of one folder: switching to a branch without the newest assets
+deletes them from the folder and brings them back on the way back, and OneDrive
+syncs both. That is a nuisance, not a loss.
 
-No laptop has to be awake, it is real HTTPS, and **it never takes the production
-alias** — so the game the girls play is untouched by any amount of branch
-pushing. **Preview URLs are public**: SSO protection was deliberately turned off
+**Pushing `alpha` or `main` needs `-c kk.release=true`.** `.githooks/pre-push`
+refuses both otherwise (a delete too), because the local `alpha` is now ahead of
+`origin/alpha` most of the time, and a bare `git push` from that checkout would
+release it. Like the other hooks, it only exists on a branch that carries it.
+
+**Only `main` and `alpha` build on Vercel.** Every branch used to get its own
+preview at `katana-kitties-git-<branch>-dream-dojo.vercel.app`. Richard, Oct
+2026: "I don't want to be deploying Vercel every time we push a branch, I expect only pushing to the main or alpha branch will publish to Vercel... all the other branch pushes are to backup the work". So `vercel.json`'s `ignoreCommand` skips every other
+branch, and the old branch aliases stay on whatever they last built. **A branch
+cut before `vercel.json` existed does not carry it** and still builds when
+pushed; the project's own *Settings ▸ Git ▸ Ignored Build Step*, set to the same
+command, covers those. **Preview URLs are public**: SSO protection was deliberately turned off
 on 29 Aug 2026 so a branch build can be **installed to a phone's home screen and
 played fullscreen**, which needs the manifest and the icons fetchable and not
 merely the page. `vercel project protection` shows it and puts it back.
@@ -345,6 +371,33 @@ finite number on a key the defaults already have. **Neither the page nor the
 save endpoint exists in a build** — the endpoint is a `configureServer` hook in
 `vite.config.js`, which the production build never calls.
 → [endgame.md](docs/notes/endgame.md)
+
+### Fix a sprite's size and place — `/sprites.html`
+
+The same arrangement for the drawings. `npm run dev`, then **`/sprites.html`**
+(or the debug panel's *SPRITE EDITOR* row).
+
+- **Poses**: every kitten pose in groups — Everyday, Arena, Kendo, Home,
+  Simulator, Bamboo Infiltration — plus Lionheart, laid over another with
+  transparency or slid beside it, with her front foot, body centre and ink top
+  measured and snappable. Each group has a **Stand vs …** sequence; sequences
+  play at 0.05×–4×.
+- **Sheets**: every png under `public/sprites` (asked of the dev server, so a
+  new sheet is listed the day it lands), the ninja atlases broken into their
+  clips. Order and mirror a turnaround's columns, a sheet's cells or a clip's
+  frames; switch door-mat designs off in the game. Play it as a turntable,
+  loop, ping-pong, once, or hold N seconds on each.
+- **Undo/redo** (Ctrl+Z / Ctrl+Y) with the last changes listed, a badge per tab
+  for what is unsaved, and a Save that says how many changes it writes — it
+  writes both tabs at once.
+
+Save writes **`src/spritefix.json`** — overrides only: `poses` keyed by sheet
+(`ember/kiai`, so Storm and Blossom wear Ember's and Frost's fixes), `sheets`
+by the file's path (`kittens/ember/grid_v2`, `ninja/ember:sneak`), and `off`
+for switched-off cells. **Every sheet loaded through `loadSpriteAtlas` honours
+its saved order**, so a sheet added later needs no wiring. The page draws with
+the game's own code, so what lines up there lines up in the game. Dev only,
+twice over, like the balance page. → [art.md](docs/notes/art.md)
 
 ### The numbers, at a glance
 
@@ -520,13 +573,22 @@ to lock it on.** → [mobile.md](docs/notes/mobile.md)
 | **PNG, with no dependencies** | `tools/png.mjs` — the codec everything else encodes through, same rule as `gif.mjs`. | |
 | **How long an MP3 is, with no dependencies** | `tools/mp3.mjs` walks the frames, so `world-check` can ask whether a card outlasts its real recording without a DOM or ffprobe. Reads 50-65ms long against ffprobe (it counts the encoder's padding) — the safe side. | |
 | **Making the shipped art smaller than the art that made it** | `tools/sprite-bake.mjs` builds `public/sprites/` out of [`docs/art-masters/`](docs/art-masters/README.md). It bakes the background key into the file with the depth bound **off** — which the loader can never do, because depth is the only thing separating a sealed pocket from Mr. Satan's eye, and what this has that the loader has not is a human looking at `--proof`. It also resizes the dragons to where they pack at scale **1.000** instead of 0.698 (14MB → 2.1MB, and half the VRAM, drawing identically), and re-encodes the kids' painting as **q92 WebP at full resolution** — 5.5MB → 0.46MB, the only lossy image in the game. **It is also where new art comes in**: a master generated on flat magenta gets `{ chroma: true }` and is keyed per pixel, with no flood, no depth bound and no judgement call, and the tool hard-fails if the key clears under 5% of the sheet. | `node tools/sprite-bake.mjs --proof` |
+| **An animation cut from a video** | The tea ceremony's 32-frame sheets: each kitten's prayer master to Higgsfield `grok_video` as the start frame (9 credits, 6s, on magenta, Oct 2026), the mp4 kept in `docs/art-masters/video/` (never shipped), then 32 frames picked by hand per kitten and cut through ONE crop, so the loader takes the cells whole (`uniform`). A video keeps one cat the same cat for 32 frames; an image model does not. | `node tools/capture/tea-sheet.mjs` then `sprite-bake --proof` → [art.md](docs/notes/art.md) |
+| **A cutscene actor cut from video, at 4× the tea ceremony** | Payne's introduction: six Kling 3.0 takes at 960×960 (about 85 credits over two passes, Oct 2026), cut into 243 cells at 760px to a unit of her height, plus a 380 set for the cautious tier; each take starts from one of her two approved drawings, which is what sets its scale. The cells are keyed by the tool's own magenta un-mix (a video's edges are blends, which `chromaKey` calls paint) and written as WebP pages with alpha, which the scene fetches when it starts and drops when it ends. `src/systems/payneclips.js` is the clip table both the tool and the game read, and the tool writes where each clip's cells sit into `src/systems/payneframes.js`. The downsample is `tools/premul.mjs`, shared with sprite-bake. Its checks are in `tools/checks/payneintro.mjs`. | `node tools/capture/payne-sheet.mjs` → [art.md](docs/notes/art.md), [payne.md](docs/notes/payne.md) |
+| **Every action of a character, one atlas** | Bamboo Infiltration's ninjas: each ACTION generated as its own `gpt_image_2_5` sheet on magenta (rows are directions, columns frames; **1 credit a sheet** at 2k, about 25 sheets, Oct 2026), then `tools/ninja-atlas.mjs` keys, **measures** and packs a character's sheets into ONE 2040-square texture in `public/sprites/ninja/`, writing `src/systems/dream/ninjaclips.js` (where each clip sits). Guards: 4 directions × 6 frames per action. Kittens: the crawl in 8 directions × 4, the longer actions (rope, ladder, throw, hands up) in 4 × 6. Figures are scaled by **ink area**, not height, so a crawl is not drawn half again as long as she is. Fetched the first time a kitten nears the island, never at boot. | `node tools/ninja-atlas.mjs --proof` → [art.md](docs/notes/art.md) |
+| **Designing an infiltration course** | `tools/bamboo-map.mjs` draws every Bamboo Infiltration course flat at each difficulty: forest, walls, cover, lanterns, patrols, the ground each cone covers over a minute, and the crawl the solver (`solve` in bamboolevel.js) found to the scroll. world-check asks the same solver that every course is crossable and sets the 3-star bar at least 1.5x above it. | `node tools/bamboo-map.mjs [course] [--diff n]` → `out/bamboo/` |
+| **Does a kitten fit the course?** | `tools/bamboo-probe.mjs` prints, per course, everything `courseProblems` (bamboolevel.js) finds at a kitten's real size (a door she cannot get through, a box at a ladder's foot, a barrel or rope out of reach) and the solver's times against the 3-star bars. world-check fails on any problem; this says which. | `node tools/bamboo-probe.mjs [course]` |
+| **A course plan to approve** | `tools/bamboo-plan.mjs` writes a labelled plan of a course (houses, doors, ladders, ropes, lanterns, guards) with its routes in colour, and with `--before <ref>` the course at that commit beside it. The routes and callouts are hand-written per course (`PLANS`); the ground is the game's own. Sent to Richard as an artifact for sign-off. | `node tools/bamboo-plan.mjs village --before <ref>` → `out/bamboo/plan_village.html` |
+| **Many small pictures, one sheet** | The door mats: ONE `gpt_image_2_5` take of a 4x5 grid on magenta (0.25 credits for twenty, Oct 2026) instead of twenty generations, so every mat in the game is one texture. Each picture's rectangle is measured off the baked sheet and kept as data (`DOOR_MATS` in catalog.js), and world-check re-measures every one. | `sprite-bake` → [housing.md](docs/notes/housing.md) |
 | **Steam shelf art & icons** | `tools/steam-art.mjs` crops and composites `docs/art-masters/title_art.png` — the **master**, because every crop is a pixel coordinate measured on that 2752x1536 file and the shipped copy is WebP. **Nothing here is a new drawing** — a prompt to an image model would put art on the box that is nowhere inside the game. | `node tools/steam-art.mjs` → `out/steam/` |
 | **Steam store capsules** | `tools/steam-capsules.sh` | → [trailer.md](docs/notes/trailer.md) |
 | **Clan leader portraits (Help)** | `tools/help-portraits.mjs` | |
 | **The Dream Dojo's Help stills** | `tools/capture/shots/dreamdojo.js` (`__ddStills`) — the arcade, the simulator's map legend, Lionheart and a card per island, each the engine's own frame through its own camera at the still's exact size. The legend's names are projected through the camera that took it, so a label cannot drift off its island. **Re-film there, never by hand.** | in the browser, with the capture bridge up → [help.md](docs/notes/help.md) |
 | **A Help picture that isn't filmed yet** | `tools/help-blink-placeholder.mjs` and `tools/help-riposte-placeholder.mjs` draw the stills that hold 瞬 Flash Step's and 返 Riposte's cells in the abilities grid until their clips are shot. They read the orb's colour out of the roster and the kittens out of `PLAYER_STYLE`, so they cannot drift from the game, and each stamps **PLACEHOLDER** in its own corner — everything else on that page is an engine capture and a drawing must not pass for one. Both draw with `tools/placeholder-raster.mjs` (a dependency-free rasteriser, a pixel font and a kitten silhouette); lifting it out left `blink.png` byte-identical. Swapping in a clip is one attribute in `index.html`. | `node tools/help-blink-placeholder.mjs`, `node tools/help-riposte-placeholder.mjs` |
-| **Roshi's jukebox recordings** | Six ElevenLabs Music takes (one a minute, ~900 credits each, Oct 2026), the prompts kept in `src/systems/housing/jukebox.js`. `tools/capture/jukebox-music.mjs` loops them with **the same code as the boss music** — it lives in `tools/capture/music-loop.mjs` now, shared — and writes `src/systems/housing/jukeboxfiles.js`. Each falls back to a procedural piece. Raw takes in `tools/capture/music-takes/jukebox/`. | `node tools/capture/jukebox-music.mjs` → [housing.md](docs/notes/housing.md#music) |
-| **Her statue at the bridge** | Tripo image-to-3D off `docs/art-masters/<sheet>_champion.png`, magenta keyed out first; scaled by its own bounding box and tinted to her colour in the game, so two runs make four statues. **Not yet run** — the drawn statue stands until it is. Without `--go` it only prints the plan and the price. Needs `TRIPO_API_KEY` in the environment, never in a file. | `node tools/statue-bake.mjs` → [housing.md](docs/notes/housing.md) |
+| **Bamboo Infiltration's sneaking songs** | Four ElevenLabs Music takes, one per kind of course (forest, village, castle, shadow: 90s each, **900 credits each**, Oct 2026). Generated with Instrumental off, so each was checked with Scribe for vocals; it heard none (495 credits each). `tools/capture/bamboo-music.mjs` loops them with the shared `music-loop.mjs`: three end in their own silence and loop whole, and the castle (still playing at 90s) gets a measured loop played three times and a fade. Writes `src/systems/dream/bamboomusic.js`. A missing file leaves the course on the simulator's music. Raw takes in `tools/capture/music-takes/bamboo/`. | `node tools/capture/bamboo-music.mjs` → [dreamdojo.md](docs/notes/dreamdojo.md) |
+| **Roshi's jukebox recordings** | Six ElevenLabs Music takes (one a minute, ~900 credits each, Oct 2026), the prompts kept in `src/systems/housing/jukebox.js`. **Plus four activity songs** (`ACTIVITY_MUSIC`: kendo, onsen, fishing, pet play — 90s each, 1350 credits, whole-file loops) that outrank the boombox while somebody is doing that thing on the island. `tools/capture/jukebox-music.mjs` loops them with **the same code as the boss music** — it lives in `tools/capture/music-loop.mjs` now, shared — and writes `src/systems/housing/jukeboxfiles.js`. Each falls back to a procedural piece. Raw takes in `tools/capture/music-takes/jukebox/`. | `node tools/capture/jukebox-music.mjs` → [housing.md](docs/notes/housing.md#music) |
+| **Her statue at the bridge** | Tripo image-to-3D off `docs/art-masters/<sheet>_champion.png`, magenta keyed out first; scaled by its own bounding box and tinted to her colour in the game, so two runs make four statues. Run Oct 2026; the raw takes are in `out/statues-raw/` (gitignored, paid for — keep them). Without `--go` it only prints the plan and the price. Needs `TRIPO_API_KEY` in the environment, never in a file. | `node tools/statue-bake.mjs` → [housing.md](docs/notes/housing.md) |
+| **Housing's props** | Tripo text-to-model for the props Polyfork has no match for — the shoji door panel, the angel wings, a pet's mess — into `public/models/props/`, raw takes kept in `out/props-raw/`. ~30 credits each; without `--go` it prints the plan and the price, and `--go <id>` re-bakes one. Same `TRIPO_API_KEY` rule | `node tools/prop-bake.mjs` → [housing.md](docs/notes/housing.md) |
 | **The furniture's colourways** | Each vendored Polyfork model's colour presets (its `-params.json`, public and key-free), turned into palette swaps over the vertex colours the file already has — so ITEM CUSTOMIZATION's LOOK rows repaint a katana or a lantern with no second file and no network at runtime. Geometry knobs (a sword's length) are not baked. Re-run after vendoring a new model. | `node tools/polyfork-styles.mjs` → `src/systems/housing/modelstyles.js` (GENERATED) |
 | **The houses' furniture** | **Vendored Polyfork models** (`public/models/polyfork/`, 25 GLBs, 3.3MB) under Richard's Lifetime plan — never hotlinked. Each has a drawn stand-in that shows first and stays if the file is missing; materials are replaced with the toon ones. | → [housing.md](docs/notes/housing.md) |
 | **README screenshots** | Rendered to a canvas and POSTed to a throwaway local HTTP server — browser downloads don't reach disk from a preview pane. | → [hosting.md](docs/notes/hosting.md) |
@@ -569,7 +631,7 @@ other.
 | **GitHub** | the private repo | `InnerBushido` — **pinned repo-locally** so a global config change cannot attribute commits here to a work account. Pushes go through the `gh` CLI credential helper (a headless `git push` fails without it). **`gh` may be signed in as a work account — run `gh auth status` before pushing.** | Free for private repos |
 | **Higgsfield** | all generated art, video and voice | **No unlim allowance** — every generation spends credits, so `use_unlim` stays false unless asked for by name. `get_cost: true` preflights free. **Failed jobs are refunded.** `grok_video` is the reliable model (7.5 credits, ~5s); several others fail or rate-limit. | per-credit |
 | **ElevenLabs** | the voice cast | **Reached two ways.** The cast is generated *through* Higgsfield, from ElevenLabs' presets. **Preflight it (`get_cost: true`) rather than trusting a figure here** — long quoted at ~0.15 credits a line, measured at **0.30** on 13 Sep 2026. Batches hit a 429 — at four lines on 13 Sep, at **three** on 3 Oct, so submit two at a time; nothing is charged for a submission that failed. **Richard also has his own ElevenLabs account** (Starter, ~$6/month, since Oct 2026) with its MCP connected, made to clone his voice for Lionheart: it works through the MCP and **not** through Higgsfield (which takes only its own presets, or an "element" on its $59/month Pro plan). He rejected the clone as not sounding like him, so Lionheart is the Barrett preset. **That account DOES make the music**: ElevenLabs Music (`eleven_music_v2_5`, a flow node in its connector), **~900 credits (~$0.18) a minute-long take**; Shadow Lionheart's three recordings came from it (Oct 2026). Higgsfield cannot make standalone music. | via Higgsfield; own account ~$6/mo |
-| **Tripo** | image-to-3D, for the statues at the foot of each home bridge (`tools/statue-bake.mjs`) | Richard's; the key is the user environment variable `TRIPO_API_KEY` and lives nowhere else | per-credit — ~30 a textured model; the tool says the total before it spends |
+| **Tripo** | image-to-3D, for the statues at the foot of each home bridge (`tools/statue-bake.mjs`), and text-to-model for housing's props (`tools/prop-bake.mjs`) | Richard's; the key is the user environment variable `TRIPO_API_KEY` and lives nowhere else | per-credit — ~30 a textured model; the tool says the total before it spends |
 | **Polyfork** | low-poly 3D models for the houses and gardens, vendored into `public/models/polyfork/` | Richard's, **Lifetime plan** — downloads stay licensed. Its MCP is installed at **user** scope only, never in a project `.mcp.json`, because the key was once pasted in chat | one-off |
 | **Steam** | a non-Steam shortcut on Richard's own machine, for controller support and Steam Link | no Steamworks account | **$0** — a non-Steam shortcut is free. A real store page needs the Steam Direct fee (~$100 USD per title) and a review |
 
@@ -587,9 +649,19 @@ synthesised stand-ins after that. Three levels of degradation, on purpose.
 **Payne is a real person, and she has approved her lines and her voice.** The
 quest-giver in the market is a fighter from Belegarth Medieval Combat Society,
 drawn as a goblin cat with her permission. Richard sent her the finished result
-for her final approval, and on 2026-10-04: "Payne approved the lines and her voice, so we are good there." Her
+for her final approval, and on 2026-10-04: "Payne approved the lines and her voice, so we are good there." Since
+2026-10-28 new lines, cutscenes and footage of her no longer go to her first. Her
 photos went to Higgsfield as image references and nowhere else. →
 [payne.md](docs/notes/payne.md)
+
+**Eight pictures in Help are not ours, and all eight may ship.** The photos and
+woodblock prints in the Japanese glossary (`public/help/japan/`) came off
+Wikimedia Commons, and every one is **public domain or CC0** — no legal duty to
+credit. Each is credited anyway: an **[n]** on the picture opens **Picture
+credits**, the last sub-topic of the glossary. A picture comes in only under PD, CC0 or CC BY;
+**never NC, ND or ShareAlike, and never a photo of a recognisable stranger**.
+`world-check` fails on a licence outside that list or a picture without its
+credit. → [credits.md](docs/notes/credits.md)
 
 **`out/` is a local-only repo with no remote, deliberately.** It holds generated
 artwork and trailer working files, 9MB+ of PNG that Vite would never ship. The
@@ -642,6 +714,16 @@ every sentence was true, most were pinned against the code by a check that
 wanted them kept, and nothing ever asked what they added up to. A card gets
 long one correct paragraph at a time.
 
+**Two flags a new island or a new word has to follow.** An unfinished simulator
+island carries `wip: true` in `src/systems/dream/islands.js`. That one flag
+puts the orange 工事中 mark (`src/core/wipmark.js`, one shape for the canvas,
+the SVG and the Help page's CSS) on its signs, its bridge end, the light cycle's
+card, both maps, Lionheart's list and its Help card, which sorts to the bottom.
+Finishing an island is deleting the flag. And **every Japanese word the game
+writes has an entry in Help's *Japanese words & culture* glossary**, with its
+meaning and how to say it. `world-check` reads every quoted string in `src/`
+and fails on a word the page does not explain.
+
 **Every new screen is designed for a phone at the same time as for a desktop**,
 and two rules come out of that. **A `body.touch-ui` rule is part of the work,
 not a follow-up** — the award card at the ending shipped with none at all, so a
@@ -662,10 +744,11 @@ are handled by machine instead of by memory. → [docs.md](docs/notes/docs.md)
 
 **Git:** typed branches (`feature/`, `bugfix/`, `mixed/`), a `commit-msg` hook
 that stamps `[branch]` on non-main commits, a `pre-commit` hook that regenerates
-this file's tables, merged locally, and **never pushed to `origin/main` until
-Richard has played it**. Branches are kept until pushed, then `git branch -d`
-(never `-D`). **`alpha` is the testing channel** and only ever fast-forwards to
-`main` — §3.
+this file's tables, every work branch **published to GitHub with each commit pushed**, merged into
+`alpha` to test, and **never pushed to `origin/main` until Richard has played
+it**. A branch is kept, locally and on GitHub, until its work is on
+`origin/main`, then `git branch -d` (never `-D`). **`alpha` is the testing
+channel** — §3.
 
 ---
 
@@ -691,6 +774,7 @@ you are about to change that area, and not before.
 | [four-players.md](docs/notes/four-players.md) | seating, the split screen, panes, leagues |
 | [input.md](docs/notes/input.md) | controllers, the vJoy/Joy-Con route, the Chrome stick bug, keyboard sets |
 | [help.md](docs/notes/help.md) | the Help panel and the rig that films it |
+| [credits.md](docs/notes/credits.md) | the pictures the game did not make: which licences may ship, the Picture credits page, adding one |
 | [tournament.md](docs/notes/tournament.md) | the ring, rounds, attacks, ring-outs, the feast |
 | [dragon-hunt.md](docs/notes/dragon-hunt.md) | the seven stars, the grottos, the spire, Ryuuseki |
 | [endgame.md](docs/notes/endgame.md) | the 100% ending, the eight Kotodama, the economy, **the quests that pay an orb at the ending**, **the last five and the hunt for them**, **the balance page** |
@@ -702,7 +786,7 @@ you are about to change that area, and not before.
 | [audio.md](docs/notes/audio.md) | the synthesised sound set and a piece of music per island |
 | [voices.md](docs/notes/voices.md) | **the voice registry** — which preset is which character, with ids |
 | [payne.md](docs/notes/payne.md) | **Payne, the quest-giver**: her quest chain, the opt-in hints and teases, the hint card, the helmet and her face, the Goblin Sweep, and her whole script. **A real person's likeness; her lines and voice approved** |
-| [dreamdojo.md](docs/notes/dreamdojo.md) | **the Dream Dojo, Lionheart's VR arcade** — the simulator as a second reality in the same place, the tubes, the training gate that lets a blade in there find holograms only, the Gallery and Trial Hall, the **holo kit** (she goes in with a copy of her ring and no clan, earns orbs in there, and her real kit is never touched) and its **(HOLO) PLAYER PROFILE**, **Lionheart as the simulator's quest-giver** (WHERE NEXT, five map kiosks, the sim on the minimap, and **waypoints** marked on his map and followed by markers in her colour), **its progress carried in the save row** (`snapshot.dream`), the **unit-circle overlays** in its Dojo (the right triangle and its three angles, the lit quadrant — no vector text), the Tameshigiri Range and **Kata Trace** (Lionheart attacks from the top of her floor with Shadow's cut, cross and sweep, on the beat of ANY song in the game, at three levels and four speeds; its **beat maps are human-readable JSON** (`kata-beatmap/1`), with an **in-game beat-map editor** and custom charts kept in `localStorage`; **optional slashes** she may land on him for combo, a **finishing attack** that knocks him flat, and **Shadow Lionheart's own song** with its 凶 triple crosses and a finale in the air; and **the Kata Board**, a ring on its island's north-east corner ranking every finished song by score, filtered by level, speed and kitten, with her last score kept on her floor's plate until she leaves), the far islands (light-cycle highways, Kudamono Storm, **the Sine Gauntlet** (four courses — **the Ripple**, the Gauntlet, **the Riptide**, whose stones slide across the lane and carry her, and **the Dragon Gate**, the skill one, with ledges at four heights over floors that zap and lasers that never move — chosen at its kiosk under a bird's-eye lens, the old course swiped away round the hub as the new one turns in, each run one kitten at a time against the clock — five snaking lanes, no grace after a zap and no line that can be skipped, an over-the-shoulder lens through the Sliding Gaps and the sliding stones — with a **secret 秘 EXTRA HARD** on each, opened by three stars on its HARD or the debug panel, where a zap is back to the start; the queue in cheering stands, one shared pane, a way out that asks first, and **the Sine Board**, the plaza board ranking every kitten's best time by course and level whenever nobody is running), Holo-Sentries and Bamboo Infiltration, every star band measured by a search), **the Arena School** (a practice round per tournament mode, under the tournament's own `decideOnTime` and `purseSplit`), **KENSHI ranks**, the foil **Fighter Card**, the daily and weekly training, and **Shadow Lionheart** on three levels, quicker and harder with more kittens on the island — the co-op boss whose MEDIUM or HARD win is the **tenth quest**, the only one that counts after the Awakening, and a HARD win her 凶 — plus a **secret EXTRA HARD** opened at KENSHI 1st Class, whose win is the veiled **eleventh** — and what is still to build. Lionheart is Richard, likeness approved |
+| [dreamdojo.md](docs/notes/dreamdojo.md) | **the Dream Dojo, Lionheart's VR arcade** — the simulator as a second reality in the same place, the tubes, the training gate that lets a blade in there find holograms only, the Gallery and Trial Hall, the **holo kit** (she goes in with a copy of her ring and no clan, earns orbs in there, and her real kit is never touched) and its **(HOLO) PLAYER PROFILE**, **Lionheart as the simulator's quest-giver** (WHERE NEXT, five map kiosks, the sim on the minimap, and **waypoints** marked on his map and followed by markers in her colour), **its progress carried in the save row** (`snapshot.dream`), the **unit-circle overlays** in its Dojo (the right triangle and its three angles, the lit quadrant — no vector text), the Tameshigiri Range and **Kata Trace** (Lionheart attacks from the top of her floor with Shadow's cut, cross and sweep, on the beat of ANY song in the game, at three levels and four speeds; its **beat maps are human-readable JSON** (`kata-beatmap/1`), with an **in-game beat-map editor** and custom charts kept in `localStorage`; **optional slashes** she may land on him for combo, a **finishing attack** that knocks him flat, and **Shadow Lionheart's own song** with its 凶 triple crosses and a finale in the air; and **the Kata Board**, a ring on its island's north-east corner ranking every finished song by score, filtered by level, speed and kitten, with her last score kept on her floor's plate until she leaves), the far islands (light-cycle highways, Kudamono Storm, **the Sine Gauntlet** (four courses — **the Ripple**, the Gauntlet, **the Riptide**, whose stones slide across the lane and carry her, and **the Dragon Gate**, the skill one, with ledges at four heights over floors that zap and lasers that never move — chosen at its kiosk under a bird's-eye lens, the old course swiped away round the hub as the new one turns in, each run one kitten at a time against the clock — five snaking lanes, no grace after a zap and no line that can be skipped, an over-the-shoulder lens through the Sliding Gaps and the sliding stones — with a **secret 秘 EXTRA HARD** on each, opened by three stars on its HARD or the debug panel, where a zap is back to the start; the queue in cheering stands, one shared pane, a way out that asks first, and **the Sine Board**, the plaza board ranking every kitten's best time by course and level whenever nobody is running), Holo-Sentries and **Bamboo Infiltration** (five courses, three difficulties, everybody on the island at once behind a red barrier: crawl on the Ward button and nobody hears you, a pebble thrown to pull a samurai off his round, a found shuriken to put one to sleep and a smoke bomb nobody sees through, barrels to hide in, ropes and ladders, archers on towers; spotted is caught — hands up, the screen fades, back to her lantern, +15s, never hurt; a lantern's ring is sanctuary; a ghost of the best run; the Bamboo Board), every star band measured by a search), **the Arena School** (a practice round per tournament mode, under the tournament's own `decideOnTime` and `purseSplit`), **KENSHI ranks**, the foil **Fighter Card**, the daily and weekly training, and **Shadow Lionheart** on three levels, quicker and harder with more kittens on the island — the co-op boss whose MEDIUM or HARD win is the **tenth quest**, the only one that counts after the Awakening, and a HARD win her 凶 — plus a **secret EXTRA HARD** opened at KENSHI 1st Class, whose win is the veiled **eleventh** — and what is still to build. Lionheart is Richard, likeness approved |
 | [housing.md](docs/notes/housing.md) | **Custom Housing — Roshi's islands**: the four sky sites and how they were measured, the bridges and the 2× strip, prices as multiples of an orb, locks and the bubble, the castle's co-owners, the jukebox and its recordings, interiors and the tatami grid, the farm, the koi, fishing, the holodeck, **the one place non-negotiable 3 is relaxed (kendo)**, and **the placeholders still to finish** |
 | [consent.md](docs/notes/consent.md) | why nothing irreversible happens on one press |
 | [rules.md](docs/notes/rules.md) | the gameplay invariants in full, with the measurements behind them |

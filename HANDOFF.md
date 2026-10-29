@@ -806,7 +806,7 @@ quoted.
     "to next" now say so, and world-check asks it of the pay table.
   - **Open:**
     - **Payne's voiced `payne_q_shadow` still says the old words.** Changing
-      it means a new take she approves, so it is left for Richard to ask her.
+      it is one new take, and since Oct 28 it no longer needs her sign-off.
     - Nobody has played any of this.
     - The Feast's and Pandapaw's bands, and MEDIUM's and HARD's knobs, are
       first numbers.
@@ -3843,14 +3843,19 @@ that is not fully merged, so it cannot lose work; the upper-case one is for
 throwing an experiment away on purpose and should be typed deliberately, never
 in a loop.
 
-**Work branches stay local.** `feature/`, `bugfix/` and `mixed/` branches are
-never pushed, so deleting one touches nothing on GitHub and there is no
-`origin/feature-x` to tidy up afterwards. **`origin` has exactly two branches**
-and both are long-lived: `main` and `alpha`.
+**Work branches are published.** *Superseded Oct 2026* — they used to stay
+local. Richard: "with commits on branches, we should be pushing the branch and
+the commits to Github and not just leaving them as local commits ... keep the
+branches around until they are merged from Alpha to origin main, then we can
+clean up and remove the branches." So `git push -u origin <branch>` once it has
+a commit, push every commit after, merge it into `alpha`, and delete it — here
+AND on GitHub — only once its work is on `origin/main`. Keep branches separate:
+a branch merged into another reaches `alpha` with it.
 
 **`alpha` is the testing channel**, and it is the reason this section no longer
-says "nothing but `main` is ever pushed". It is a plain branch that only ever
-**fast-forwards to local `main`**:
+says "nothing but `main` is ever pushed". *Superseded Oct 2026: branches are now
+merged into `alpha` first and `main` follows it.* What it used to say, kept for
+the history — it only ever **fast-forwarded to local `main`**:
 
 ```bash
 git checkout alpha && git merge main --ff-only

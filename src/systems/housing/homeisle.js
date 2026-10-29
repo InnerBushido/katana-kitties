@@ -1,13 +1,18 @@
 import * as THREE from 'three';
-import { toonVertexMat, xrayVertexMat, paint } from '../../core/gfx.js';
+import { toonVertexMat, xrayVertexMat, paint, clipBoxes, inClip } from '../../core/gfx.js';
 import { Island, mergeParts, PALETTE } from '../../world/build.js';
 import { makeLabelTexture } from '../../core/label.js';
-import { buildHouseShell, houseHeight, houseRadius, FLOOR_H, SLAB_T } from './homehouse.js';
-import { HOUSE_BY_ID, ITEM_BY_ID } from './catalog.js';
-import { placeModel, drawItem } from './models.js';
-import { wallSlots, yardR } from './editor.js';
-import { buildTreehouse } from './treehouse.js';
-import { holoLayout, HOLO_GEAR_SCALE, HOLO_TUBE } from './holodeck.js';
+import { buildHouseShell, roofY, houseHeight, houseRadius, floorOf, FLOOR_H, SLAB_T, WINDOW, PORT_H, rampOf } from './homehouse.js';
+import { ITEMS, ITEM_BY_ID, LINK_BY_ID, houseSpecs, homeRooms, pathPosts, kendoArea, kendoMarks, roomHas, mixedZone, DOOR_MATS, DOOR_MAT_SHEET } from './catalog.js';
+import { enabledOf } from '../../core/spritefix.js';
+import { PathFX, makeFlame, makeLamp } from './pathfx.js';
+import { TEA, teaK, teaSet } from './teahouse.js';
+import { ZenGarden, zenParts, ZEN, ZEN_ROCKS, ZEN_STONES, ZEN_STONE_R, ZEN_RAKE } from './zengarden.js';
+import { linkGeom, linkAll, linkColliders, supportGround, toHouse } from './links.js';
+import { placeModel, drawItem, clampMul, SHOJI, shojiPair, PANEL_GAP, STONES } from './models.js';
+import { wallSlots, yardR, rampLift } from './editor.js';
+import { buildTreehouse, slidePath } from './treehouse.js';
+import { HOLO_GEAR_SCALE, HOLO_TUBE, ensureHoloKit, holoCell, holoOut } from './holodeck.js';
 import { GEAR_ITEMS, GEAR_SCALE, GEAR_LIFT, gearModel, TUBE_VERT, TUBE_FRAG } from '../dream/gear.js';
 
 /* ---------------------------------------------------------------------------
@@ -43,7 +48,69 @@ export const WALL_Y = { window: 1.0, scroll: 0.5, picture: 1.2, trophy: 1.9 };
 
 /** The outdoor things that stand in the way, as a radius off their centre.
  *  The rest (a pond, a court, a paddy) are walked on or over. */
-const SOLID = { teahouse: 2.4, belltower: 1.8, well: 1.1, shrine: 2.2, maple: 0.5, cherry: 0.5, pine: 0.5, waterwheel: 1.2, lantern: 0.5, firebasket: 0.3, sake: 0.8, drum: 1.0 };
+const SOLID = {
+  belltower: 1.8, well: 1.1, shrine: 2.2, maple: 0.5, cherry: 0.5, pine: 0.5, waterwheel: 1.2, lantern: 0.5, firebasket: 0.3, sake: 0.8, drum: 1.0,
+  /* Measured off the loaded models (fitted to their catalogue size), not
+     guessed: the basin is 1.52 across, the azalea's stems 0.9, the bucket
+     0.92 by 0.72, and the banner stands on a weighted foot 1.72 across. */
+  basin: 0.75, azalea: 0.6, bucket: 0.4, banner: 0.6,
+};
+/* THE LONG THIN THINGS ARE BOXES OF WALL, not circles. Richard, Oct 2026:
+   "Bamboo fence has no collider built in the yard of players island. Let's
+   ensure that all objects built on the players island have collider if they
+   should have a collider." A circle round a fence is either a pinprick in
+   the middle of it or a disc four wide that blocks the path beside it.
+   [half-length along its own x, half-depth along z, height], all measured:
+   the fence model is 4.40 x 0.66 x 3.52 and runs along x, the bench
+   3.20 x 1.06 x 0.98. */
+const SOLID_BOX = { fence: [2.2, 0.33, 3.52], bench: [1.6, 0.53, 0.98] };
+/* Things that are solid in more than one place: the torii walk's six posts
+   (models.js `drawItem`, which draws it, puts them at x ±0.9, z -2.4/0/2.4)
+   and nothing between them, since walking UNDER the gates is the point. */
+const SOLID_POSTS = { toriigarden: { r: 0.22, at: [[-0.9, -2.4], [0.9, -2.4], [-0.9, 0], [0.9, 0], [-0.9, 2.4], [0.9, 2.4]] } };
+/* The yard's trees and bushes take the x-ray, weaker than a wall: Richard on
+   the town's, "the shader effect should be smaller and weaker, so as not to
+   make them disappear when player is near it". */
+/** How many cuts the houses' x-ray takes: four kittens, and the doors the building hides (`aimView`). */
+export const XRAY_SLOTS = 8;
+/** The houses' x-ray: how far its limits fade (gfx.js `limSoft`), and how strong it is for a kitten INSIDE (a screen of stipple, not a hole). */
+export const XRAY_LIM_SOFT = 0.6;
+export const XRAY_INDOOR = 0.8;
+/** How many houses' floors can take the bridges off above them at once (`clipBridges`): a castle and three more. */
+export const BRIDGE_CLIPS = 4;
+/** How far past a yard thing's collider its INTERACT spot reaches: her radius (0.6) and a step. */
+export const SPOT_PAST = 1.6;
+/**
+ * THE ONSEN'S HEIGHTS, over the ground: its rock rim and its water. Shared
+ * with the bath pose (activities.js `_soak`): Richard, Oct 2026, "the
+ * player's head is too deep in the water, it should mainly be the neck area
+ * that is in the water." Her feet are on the ground, under `water`, and the
+ * drawing is a head cut flat at the neck — so the cut was 0.64 under the
+ * surface. It is lifted to `water - neck` now.
+ */
+export const ONSEN = { rim: 0.6, water: 0.64, neck: 0.12 };
+/** A sliding door's doorway: a wall slot is 2 across, and the posts either side keep 0.1 each. */
+export const SLIDE_W = 1.8;
+const XRAY_PLANT = { maple: 0.8, cherry: 0.8, pine: 0.8, azalea: 0.6 };
+
+/**
+ * Put a placed model's vertex-coloured meshes on an x-ray material at
+ * strength `k`. A loaded model's geometry has no `xrayK` (only mergeParts
+ * writes it) and a missing attribute reads as ZERO in the shader — "never
+ * cut" — so the material swap alone would do nothing at all. Geometry is
+ * shared between clones of one cached model, which is fine: every clone of a
+ * yard tree wants the same answer. A mesh with a texture instead of colours
+ * is left as it is.
+ */
+export function xrayModel(root, mat, k) {
+  root?.traverse?.((o) => {
+    const g = o.isMesh ? o.geometry : null;
+    if (!g?.attributes?.color) return;
+    if (!g.attributes.xrayK) g.setAttribute('xrayK', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count).fill(k), 1));
+    o.material = mat;
+  });
+  return root;
+}
 
 /** How far out the bubble stands past the island's rim. */
 const BUBBLE_PAD = 7;
@@ -79,12 +146,35 @@ export class HomeIsle {
        plain toon. The cut is narrower than the town's (1.6 against 2.1) and
        only bites what is a good step NEARER the camera than she is
        (`cutNear`), so the side walls of the room she is in are left alone. */
-    const XR = { cutR: 1.6, cutSoft: 0.7, cutNear: 1.4 };
+    const XR = { cutR: 1.6, cutSoft: 0.7, cutNear: 1.4, limSoft: XRAY_LIM_SOFT, max: XRAY_SLOTS };
+    /** The houses' cut radius, for a hole sized to a doorway (housing.js `aimView`). */
+    this.xrayR = XR.cutR;
     this.accentMats = [0, 1, 2, 3].map(() => xrayVertexMat({ color: NEUTRAL_ACCENT, ...XR }));
     this.roofMat = xrayVertexMat({ color: NEUTRAL_ROOF, ...XR });
     this.soffitMat = xrayVertexMat(XR);
     this.wallMat = xrayVertexMat(XR);
-    this.xrayMats = [this.wallMat, this.roofMat, this.soffitMat, ...this.accentMats];
+    /* The treehouse's trunks, platforms and crowns, and the yard's trees and
+       bushes — their own two, since the walls' carries the kendo clip. */
+    this.treeMat = xrayVertexMat(XR);
+    this.plantMat = xrayVertexMat(XR);
+    /* THE TEAHOUSE'S, smaller and gentler than a house's: "a smaller, less
+       aggressive x-ray". Its roof is one mesh with its posts, so a house's
+       1.6 cone took the whole front of it off. */
+    this.teaMat = xrayVertexMat({ cutR: 1.0, cutSoft: 0.5, cutNear: 1.4 });
+    /* HER BRIDGES, x-ray like the house. Richard, Oct 2026: "The xray shader
+       should work on custom built bridges in the players island if the player
+       is below the bridge." They were plain toon, so a kitten walking under
+       one to the front door went out of sight under a deck. */
+    this.bridgeMat = xrayVertexMat({ ...XR, clips: BRIDGE_CLIPS });
+    // the rails' glow strip, clipped the same way (`clipBridges`)
+    this.bridgeGlowMat = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false });
+    clipBoxes(this.bridgeGlowMat, BRIDGE_CLIPS);
+    /* ...AND THE SAME TWO WITH NO CLIPS, for a bridge somebody in the pane is standing on (`clipBridges`).
+       Richard, Oct 2026: "If a player is on a bridge, then the entire bridge should be shown, regardless of
+       whether it is above 1st, 2nd, or 3rd floor ... so player can see where to go." */
+    this.bridgeWholeMat = xrayVertexMat(XR);
+    this.bridgeGlowWholeMat = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false });
+    this.xrayMats = [this.wallMat, this.roofMat, this.soffitMat, ...this.accentMats, this.treeMat, this.plantMat, this.teaMat, this.bridgeMat, this.bridgeWholeMat];
     /** Floor groups and the roof, for the per-pane cutaway. */
     this.floorMeshes = [];
     this.roofMeshes = [];
@@ -97,6 +187,8 @@ export class HomeIsle {
     this.holoRooms = [];
     /** Outdoor things by place id ('o' + uid): world centre, ground, radius. */
     this.places = new Map();
+    /** The torches, lamps and strips pathfx.js animates — rebuilt with the yard. */
+    this.fxSites = [];
     /** Who has won how many arena battles — Housing hands this in, for the
      *  trophy shelf. Null draws an empty shelf. */
     this.cupsFor = null;
@@ -108,6 +200,7 @@ export class HomeIsle {
     const geo = this.island.buildMesh(20, 48);
     this.islandMesh = new THREE.Mesh(geo, toonVertexMat());
     this.group.add(this.islandMesh);
+    this.pathFx = new PathFX(this);
     this._buildSaleSign();
     this._buildBubble();
     scene.add(this.group);
@@ -210,28 +303,109 @@ export class HomeIsle {
    */
   setHome(home, colours = null) {
     this.home = home;
-    this.houseGroup.clear();
-    this.floorMeshes = [];
-    this.roofMeshes = [];
-    this.houseWalls = [];
-    this.houseDecks = [];
-    this.shell = null;
+    this._colours = colours;
+    for (const hs of this.houses ?? []) this.houseGroup.remove(hs.group);
+    this.houses = [];
     this.saleSign.visible = !home;
-    if (home) {
-      const S = buildHouseShell(home.house);
-      this.shell = S;
+    this.setColours(colours, 1);
+    this.rebuildItems();
+  }
+
+  /**
+   * EVERY HOUSE ON THE ISLAND, each in its own frame (Oct 2026: "buy and
+   * place more houses on the island ... move around all the houses on their
+   * property (including all the furniture inside if they do), including the
+   * main house"). `this.local` is the ISLAND's frame and the yard is in it; a
+   * house is `{ hk, x, z, rot }` in that frame and its own `local` maps its
+   * rooms out of it, so moving a house moves what is in it and nothing else.
+   * A house is rebuilt only when what it is made of changed — where it stands,
+   * or a hole in its walls (a window, a bridge door).
+   */
+  _syncHouses() {
+    const H = this.home;
+    const next = [];
+    for (const s of H ? houseSpecs(H) : []) {
+      const op = this._openings(H, s.hk);
+      const sig = JSON.stringify([s.house, s.x, s.z, s.rot, op, s.hk === 'main' ? H.owners : 0]);
+      const hs = (this.houses ?? []).find((h) => h.hk === s.hk);
+      if (hs && hs.sig === sig) { next.push(hs); continue; }
+      if (hs) this.houseGroup.remove(hs.group);
+      next.push(this._makeHouse(s, op, sig));
+    }
+    for (const h of this.houses ?? []) if (!next.includes(h)) this.houseGroup.remove(h.group);
+    this.houses = next;
+    this.main = next[0] ?? null;
+    this.shell = this.main?.shell ?? null;
+    this.floorMeshes = next.flatMap((h) => h.floorMeshes);
+    this.roofMeshes = next.flatMap((h) => h.roofMeshes);
+    this.houseWalls = next.flatMap((h) => h.walls);
+    this.houseDecks = next.flatMap((h) => h.decks);
+    this.doorWorld = this.main ? this.main.local(0, this.shell.door.z) : null;
+    this.doorLocal = this.shell?.door ?? null;
+  }
+
+  /** The holes house `hk` needs: its windows, and a door for each bridge. */
+  _openings(H, hk) {
+    const out = [];
+    for (const room of homeRooms(H)) {
+      if (room.hk !== hk) continue;
+      const R = H.rooms?.[room.id];
+      if (!R?.wall?.some((q) => q.id === 'window' || q.id === 'slidedoor')) continue;
+      const slots = wallSlots(room.house, room);
+      for (const q of R.wall) {
+        if (q.id !== 'window' && q.id !== 'slidedoor') continue;
+        const S = slots.find((x) => x.side === q.side && x.k === q.k);
+        if (!S) continue;
+        const at = S.side % 2 ? S.z : S.x;
+        // a sliding door is a doorway with a door in it, keyed like a bridge's (`_door`, `H.doors`)
+        if (q.id === 'slidedoor') out.push({ floor: room.floor, side: S.side, at, w: SLIDE_W, sill: 0, h: PORT_H, key: `S${room.id}:${q.side}:${q.k}` });
+        else out.push({ floor: room.floor, side: S.side, at, ...WINDOW });
+      }
+    }
+    for (const L of H.links ?? []) {
+      for (const [e, end] of [[L.a, 'a'], [L.b, 'b']]) {
+        if (e.hk !== hk) continue;
+        const w = (LINK_BY_ID[L.style] ?? LINK_BY_ID.plank).w + 0.4;
+        out.push({ floor: e.floor, side: e.side, at: e.at, w, sill: 0, h: PORT_H, key: `L${L.uid}${end}` });
+      }
+    }
+    return out;
+  }
+
+  /** A house's frame: where it stands in the world, and its ground. */
+  _frame(hs) {
+    const w = this.local(hs.x, hs.z);
+    hs.wx = w.x;
+    hs.wz = w.z;
+    hs.ry = this.ry + hs.rot;
+    hs.cos = Math.cos(hs.ry);
+    hs.sin = Math.sin(hs.ry);
+    hs.gy = this.island.heightAt(w.x, w.z) ?? this.groundY;
+    hs.local = (lx, lz) => ({ x: hs.wx + lx * hs.cos + lz * hs.sin, z: hs.wz - lx * hs.sin + lz * hs.cos });
+    hs.toLocal = (x, z) => {
+      const dx = x - hs.wx, dz = z - hs.wz;
+      return { x: dx * hs.cos - dz * hs.sin, z: dx * hs.sin + dz * hs.cos };
+    };
+    return hs;
+  }
+
+  _makeHouse(s, openings, sig) {
+    const S = buildHouseShell(s.house, openings);
+    const hs = this._frame({ hk: s.hk, house: s.house, x: s.x, z: s.z, rot: s.rot, sig, shell: S, floorMeshes: [], roofMeshes: [], doors: [] });
+    {
       const hg = new THREE.Group();
-      hg.position.set(this.x, this.groundY, this.z);
-      hg.rotation.y = this.ry;
+      hg.position.set(hs.wx, hs.gy, hs.wz);
+      hg.rotation.y = hs.ry;
+      hs.group = hg;
       for (const parts of S.floors) {
         const m = new THREE.Mesh(mergeParts(parts), this.wallMat);
         hg.add(m);
-        this.floorMeshes.push(m);
+        hs.floorMeshes.push(m);
       }
       if (S.roof.length) {
         const m = new THREE.Mesh(mergeParts(S.roof), this.soffitMat);
         hg.add(m);
-        this.roofMeshes.push(m);
+        hs.roofMeshes.push(m);
       }
       if (S.tint.length) {
         /* The roof is the last floor's tint and the skirts belong to the
@@ -240,7 +414,7 @@ export class HomeIsle {
            the whole tinted set goes with the roof. */
         const m = new THREE.Mesh(mergeParts(S.tint), this.roofMat);
         hg.add(m);
-        this.roofMeshes.push(m);
+        hs.roofMeshes.push(m);
       }
       S.accent.forEach((parts, k) => {
         if (!parts.length) return;
@@ -254,22 +428,71 @@ export class HomeIsle {
         if (!parts.length) return;
         const m = new THREE.Mesh(mergeParts(parts), this.accentMats[k]);
         hg.add(m);
-        this.roofMeshes.push(m);
+        hs.roofMeshes.push(m);
       });
-      if (S.sign) hg.add(this._nameBoard(S.sign, home, colours));
+      /* THE NAME BOARD IS THE FIRST HOUSE'S ONLY — and so is the camera that
+         comes round to read it (`Housing.doorShotFor` asks `this.main`).
+         Richard: "Only this original first house with the name plate will
+         have this camera zooming function". */
+      if (S.sign && s.hk === 'main') hg.add(this._nameBoard(S.sign, this.home, this._colours));
       this.houseGroup.add(hg);
-      // colliders and decks into the world frame
-      for (const w of S.walls) {
-        const a = this.local(w.ax, w.az);
-        const b = this.local(w.bx, w.bz);
-        this.houseWalls.push({ ...w, ax: a.x, az: a.z, bx: b.x, bz: b.z, y0: w.y0 + this.groundY, y1: w.y1 + this.groundY });
-      }
-      this.houseDecks = S.decks.map((d) => ({ ...d }));
-      this.doorWorld = this.local(0, S.door.z);
-      this.doorLocal = S.door;
     }
-    this.setColours(colours, 1);
-    this.rebuildItems();
+    // colliders and decks into the world frame
+    hs.walls = S.walls.map((w) => {
+      const a = hs.local(w.ax, w.az);
+      const b = hs.local(w.bx, w.bz);
+      return { ...w, ax: a.x, az: a.z, bx: b.x, bz: b.z, y0: w.y0 + hs.gy, y1: w.y1 + hs.gy, hk: s.hk };
+    });
+    // a deck reads (x, z) in its own frame — the house's, turned on the island
+    hs.decks = S.decks.map((d) => ({ ...d, frame: { x: s.x, z: s.z, a: s.rot }, dy: hs.gy - this.groundY, hk: s.hk }));
+    // the doors: the front one, and one in every bridge's doorway
+    this._door(hs, `${s.hk}:front`, 0, 0, 0, S.door.w, true);
+    for (const o of openings) if (o.key) this._door(hs, o.key, o.floor, o.side, o.at, o.w - 0.4, false);
+    return hs;
+  }
+
+  /**
+   * A SLIDING DOOR in a doorway: two panels that part into the wall. Richard:
+   * "The front doors can be closed by default, but if so, should open up if a
+   * player comes close to it. Player can open/close the door with interact, if
+   * open, it always stays open, if closed, then stays closed when no one is
+   * near the door." So a door is `pinned` open (saved, `H.doors[key]`) or not,
+   * and a door that is not opens for whoever walks up and shuts behind her.
+   * NO COLLIDER: a closed door opens before she reaches it, and a LOCKED house
+   * is still the lock's job (`Housing.wall`), as it always was.
+   */
+  _door(hs, key, floor, side, at, w, front) {
+    const F = floorOf(hs.house, floor);
+    if (!F) return;
+    const [lx, lz] = [[at, F.hd], [F.hw, at], [at, -F.hd], [-F.hw, at]][side];
+    const g = new THREE.Group();
+    g.position.set(lx, F.y, lz);
+    g.rotation.y = side % 2 ? Math.PI / 2 : 0;
+    const pw = w / 2 + 0.06;
+    const geo = () => {
+      const parts = [];
+      const b = (bw, bh, bd, c, x, y) => { const q = new THREE.BoxGeometry(bw, bh, bd); paint(q, c); q.translate(x, y, 0); parts.push(q); };
+      b(pw, PORT_H - 0.06, 0.05, PALETTE.paper, 0, (PORT_H - 0.06) / 2);
+      for (const x of [-pw / 2 + 0.05, pw / 2 - 0.05]) b(0.1, PORT_H - 0.06, 0.09, PALETTE.woodDark, x, (PORT_H - 0.06) / 2);
+      for (const y of [0.05, 0.9, 1.7, 2.5, PORT_H - 0.11]) b(pw, 0.08, 0.09, PALETTE.woodDark, 0, y);
+      b(0.05, PORT_H - 0.9, 0.08, PALETTE.woodDark, 0, (PORT_H + 0.8) / 2);
+      return mergeParts(parts);
+    };
+    // Tripo's shoji leaf (tools/prop-bake.mjs) stretched to the hole; the drawn panel until it loads, or for good
+    /* ONE PANEL BEHIND THE OTHER, the way shoji run in two grooves. They
+       overlap by 0.12 where they meet, and at one depth that strip
+       flickered between the two (Richard: "avoid z-fighting at all costs").
+       PANEL_GAP apart, both inside the wall's thickness. */
+    const panels = [-1, 1].map((sgn) => {
+      const m = placeModel(SHOJI, new THREE.Mesh(geo(), this.wallMat), { box: { x: pw, y: PORT_H - 0.06, z: 0.08 }, ry: Math.PI / 2 });
+      m.position.x = sgn * w / 4;
+      m.position.z = sgn * PANEL_GAP;
+      g.add(m);
+      return m;
+    });
+    (hs.floorMeshes[floor] ?? hs.group).add(g);
+    const c = hs.local(lx, lz);
+    hs.doors.push({ key, hs, floor, w, panels, k: 0, front, wx: c.x, wz: c.z, y: hs.gy + F.y, side, at });
   }
 
   /**
@@ -334,76 +557,344 @@ export class HomeIsle {
     this.spots = [];
     this.holoRooms = [];
     this.places = new Map();
+    this.fxSites = [];
+    this.teahouses = [];
     /* The house's colliders and decks, then whatever the yard adds (the
        treehouse is a level of its own). Two lists joined, so moving a tree
        never has to rebuild the house. */
+    this.windows = [];
+    this._syncHouses();
     this.walls = [...(this.houseWalls ?? [])];
     this.decks = [...(this.houseDecks ?? [])];
+    /** Every treehouse slide's line, in world space (sliderider.js asks it). */
+    this.slides = [];
     this.itemMeshes = new Map();
     const H = this.home;
     if (!H) return;
+    for (const hs of this.houses) for (const d of hs.doors) d.pinned = !!H.doors?.[d.key];
+    this._buildLinks(H);
     // ---- outdoors
     for (const q of H.outdoor ?? []) {
       const it = ITEM_BY_ID[q.id];
       if (!it || it.later) continue;
       const g = this._yardItem(it, q);
+      // the walk the house came with (editor.js `layDoorPath`) is laid as it rises (`rise`)
+      if (it.path && q.free) g.userData.walk = true;
       this.itemGroup.add(g);
       this.itemMeshes.set('o' + q.uid, g);
     }
-    // ---- the rooms, and their walls
-    const def = HOUSE_BY_ID[H.house];
-    for (const room of def?.rooms ?? []) {
+    // ---- the rooms, and their walls, in whichever house each one is
+    for (const room of homeRooms(H)) {
+      const hs = this.houseOf(room);
+      if (!hs) continue;
       const R = H.rooms?.[room.id];
-      if (R?.type === 'kendo' || R?.type === 'holodeck') {
-        const dz = this._roomDressing(room, R.type);
+      // an old save's holodeck kept no rows for its kit: give it one, where it always stood
+      if (roomHas(R, 'holodeck')) ensureHoloKit(room, R);
+      // a dojo and a holodeck, both, in a mixed room (catalog `mixed`)
+      for (const t of ['kendo', 'holodeck']) {
+        if (!roomHas(R, t)) continue;
+        const dz = this._roomDressing(room, t, R);
         dz.userData.floor = room.floor;
+        dz.userData.hk = room.hk;
         this.itemGroup.add(dz);
       }
-      const y = this.groundY + (this.shell?.floorY[room.floor] ?? 0);
+      const y = hs.gy + (hs.shell.floorY[room.floor] ?? 0);
       for (const [k, placed] of (R?.items ?? []).entries()) {
         const it = ITEM_BY_ID[placed.id];
-        if (!it) continue;
+        // the holodeck's kit is drawn, and its meshes registered, by `_roomDressing`
+        if (!it || it.holo) continue;
         const L = this.cellCentre(room, placed.gx, placed.gz, it, placed.rot);
-        const w = this.local(L.x, L.z);
+        const w = hs.local(L.x, L.z);
         const g = placeModel(it.model, drawItem(it.id, 2), it.size, roomLook(it, placed));
+        // measured while it is still at the origin, unturned (`_furnWalls`)
+        const box = new THREE.Box3().setFromObject(g);
         g.position.set(w.x, y, w.z);
-        g.rotation.y = this.ry + (placed.rot ?? 0) * (Math.PI / 2);
+        g.rotation.y = hs.ry + (placed.rot ?? 0) * (Math.PI / 2);
+        this._furnWalls(g, box, placed, y, room.hk ?? 'main');
         g.userData.floor = room.floor;
+        g.userData.hk = room.hk;
         this.itemGroup.add(g);
         this.itemMeshes.set(`r:${room.id}:${k}`, g);
-        if (it.act) this.spots.push({ x: w.x, z: w.z, y, r: 2.6, act: it.act, item: it.id, room: room.id, k });
+        if (it.act) this.spots.push({ x: w.x, z: w.z, y, r: 2.6, act: it.act, item: it.id, room: room.id, k, ry: g.rotation.y, body: g });
       }
-      const slots = (R?.wall?.length) ? wallSlots(H.house, room) : [];
+      const slots = (R?.wall?.length) ? wallSlots(room.house, room) : [];
       for (const [k, q] of (R?.wall ?? []).entries()) {
         const it = ITEM_BY_ID[q.id];
         const S = slots.find((s) => s.side === q.side && s.k === q.k);
         if (!it || !S) continue;
-        const cups = q.id === 'trophy' ? (this.cupsFor?.(H) ?? 0) : 0;
-        const g = placeModel(null, drawItem(it.id, 2, { cups }), it.size);
-        const w = this.local(S.x, S.z);
-        g.position.set(w.x, y + (WALL_Y[q.id] ?? 1), w.z);
-        g.rotation.y = this.ry + S.ry;
+        const w = hs.local(S.x, S.z);
+        let g;
+        if (q.id === 'slidedoor') {
+          continue;   // the shell's doorway and `_door`'s panels ARE the thing
+        } else if (q.id === 'window') {
+          g = this._windowPanels(q);
+          g.position.set(w.x, y + WINDOW.sill, w.z);
+        } else {
+          const cups = q.id === 'trophy' ? (this.cupsFor?.(H) ?? 0) : 0;
+          g = placeModel(null, drawItem(it.id, 2, { cups }), it.size);
+          g.position.set(w.x, y + (WALL_Y[q.id] ?? 1), w.z);
+        }
+        g.rotation.y = hs.ry + S.ry;
         g.userData.floor = room.floor;
+        g.userData.hk = room.hk;
         this.itemGroup.add(g);
         this.itemMeshes.set(`w:${room.id}:${k}`, g);
         if (it.act) {
           // the spot is a step into the room from the wall, where she stands
-          const f = this.local(S.x - Math.sin(S.ry) * -1.4, S.z - Math.cos(S.ry) * -1.4);
-          this.spots.push({ x: f.x, z: f.z, y, r: 1.8, act: it.act, item: it.id, room: room.id, side: q.side, slot: S });
+          const f = hs.local(S.x - Math.sin(S.ry) * -1.4, S.z - Math.cos(S.ry) * -1.4);
+          const act = q.id === 'window' ? 'window' : it.act;
+          // `face`: the world turn of the wall thing, whose own +z points into the room
+          this.spots.push({ x: f.x, z: f.z, y, r: 1.8, act, item: it.id, room: room.id, side: q.side, slot: S, wk: k, face: hs.ry + S.ry, wx: w.x, wz: w.z });
         }
       }
     }
-    // the front door's own spot: owner's lock, everybody's knock
-    if (this.doorWorld) {
-      const d = this.local(0, (this.shell?.door.z ?? 6) + 1.6);
-      this.spots.push({ x: d.x, z: d.z, y: this.groundY + (this.shell?.base ?? 0), r: 2.6, act: 'door' });
+    /* THE DOORS' SPOTS. Outside a front door, INTERACT opens or shuts it
+       (and a visitor to a locked house knocks); a step INSIDE it is "MY HOME",
+       the card — every house has one, and they all open the island's card.
+       A bridge's door is opened and shut from inside its room. */
+    for (const hs of this.houses) {
+      const S = hs.shell;
+      const y = hs.gy + S.base;
+      const o = hs.local(0, S.door.z + 1.4);
+      this.spots.push({ x: o.x, z: o.z, y, r: 2.0, act: 'frontdoor', door: hs.doors.find((d) => d.front), hk: hs.hk });
+      const i = hs.local(0, S.door.z - 1.6);
+      this.spots.push({ x: i.x, z: i.z, y, r: 1.7, act: 'door', hk: hs.hk });
+      for (const d of hs.doors) {
+        if (d.front) continue;
+        const F = floorOf(hs.house, d.floor);
+        const [lx, lz] = [[d.at, F.hd - 1.3], [F.hw - 1.3, d.at], [d.at, -F.hd + 1.3], [-F.hw + 1.3, d.at]][d.side];
+        const p = hs.local(lx, lz);
+        this.spots.push({ x: p.x, z: p.z, y: hs.gy + F.y, r: 1.6, act: 'portdoor', door: d, hk: hs.hk });
+        // ...and OUTSIDE it, on the bridge, where a visitor knocks (`Housing.knock`)
+        const [ox, oz] = [[d.at, F.hd + 1.4], [F.hw + 1.4, d.at], [d.at, -F.hd - 1.4], [-F.hw - 1.4, d.at]][d.side];
+        const q = hs.local(ox, oz);
+        this.spots.push({ x: q.x, z: q.z, y: hs.gy + F.y, r: 1.6, act: 'portknock', door: d, hk: hs.hk });
+      }
     }
+  }
+
+  /**
+   * A WINDOW IS A HOLE WITH SHOJI IN IT. Richard: windows "should be the same
+   * as the shoji window furniture, except that there needs to be a hole in the
+   * wall where the window is, and when opened can show the outside through
+   * the window. By default windows are closed". The hole is the shell's
+   * (`_openings`); these are the two paper panels in it, which slide apart
+   * into the wall when it is open (`q.open`, saved with the room).
+   */
+  _windowPanels(q) {
+    const g = new THREE.Group();
+    /* IN THE WALL, NOT IN FRONT OF IT, and one panel behind the other. The
+       window's slot is the wall's inner line less 0.22 (`wallSlots`), so the
+       wall's middle is WINDOW_IN behind this group; the panels sit there, in
+       the hole, and slide into the plaster either side when it opens. They
+       were 0.02 into the room, both at one depth — the overlap flickered,
+       and an open window was two paper panels standing in the room. */
+    const P = shojiPair(WINDOW.w, WINDOW.h, this.wallMat);
+    P.group.position.z = -WINDOW_IN;
+    g.add(P.group);
+    const panels = P.panels;
+    this.windows.push({ q, panels, k: q.open ? 1 : 0 });
+    return g;
+  }
+
+  /**
+   * THE BRIDGES BETWEEN HOUSES (links.js decides; this draws and makes them
+   * walkable). The deck is one more deck in the island's list, read in the
+   * bridge's own frame; the rails are walls; the supports are drawn and
+   * nothing else, so a lantern can stand under one.
+   */
+  _buildLinks(H) {
+    this.linkMeshes = new Map();
+    const gyAt = (x, z) => {
+      const w = this.local(x, z);
+      return (this.island.heightAt(w.x, w.z) ?? this.groundY) - this.groundY;
+    };
+    for (const L of H.links ?? []) {
+      const G = linkGeom(H, L, gyAt);
+      if (!G) continue;
+      // every run and turn, in the first run's frame (links.js `linkAll`); no post into a house or a bridge below
+      const P = linkAll(G, supportGround(H, L, gyAt), true);
+      const g = new THREE.Group();
+      const w0 = this.local(G.A.x, G.A.z);
+      g.position.set(w0.x, this.groundY + G.A.y, w0.z);
+      g.rotation.y = this.ry + G.a;
+      if (P.solid.length) g.add(Object.assign(new THREE.Mesh(mergeParts(P.solid), this.bridgeMat), { userData: { clipMats: [this.bridgeMat, this.bridgeWholeMat] } }));
+      if (P.glow.length) g.add(Object.assign(new THREE.Mesh(mergeParts(P.glow), this.bridgeGlowMat), { userData: { clipMats: [this.bridgeGlowMat, this.bridgeGlowWholeMat] } }));
+      for (const m of P.models) {
+        const mg = placeModel(m.id, m.stand ? planterStandIn() : null, { h: m.h });
+        mg.position.set(m.x, m.y, m.z);
+        mg.rotation.y = m.ry;
+        g.add(mg);
+        // where it stands, in the world: `clipBridges` hides it whole, since its materials are its own
+        g.updateMatrixWorld(true);
+        mg.userData.clipAt = mg.getWorldPosition(new THREE.Vector3());
+      }
+      g.userData.link = L.uid;
+      this.itemGroup.add(g);
+      this.linkMeshes.set(L.uid, g);
+      // a deck per run and per turn, the rails as walls: links.js `linkColliders`, which world-check walks
+      const C = linkColliders(G);
+      for (const d of C.decks) this.decks.push({ ...d, link: L.uid });
+      for (const w of C.walls) {
+        const a = this.local(w.ax, w.az), b = this.local(w.bx, w.bz);
+        this.walls.push({ ax: a.x, az: a.z, bx: b.x, bz: b.z, y0: this.groundY + w.y0, y1: this.groundY + w.y1, rail: true, link: L.uid });
+      }
+    }
+  }
+
+  /** The house a room (or a key) is in, or null. */
+  houseOf(roomOrKey) {
+    const hk = typeof roomOrKey === 'string' ? roomOrKey : roomOrKey?.hk ?? 'main';
+    return (this.houses ?? []).find((h) => h.hk === hk) ?? null;
+  }
+
+  /** World height of a room's floor. */
+  floorY(room) {
+    const hs = this.houseOf(room);
+    return hs ? hs.gy + (hs.shell.floorY[room.floor] ?? 0) : this.groundY;
+  }
+
+  /** A room's house-local (lx, lz) to world. */
+  roomLocal(room, lx, lz) {
+    return (this.houseOf(room) ?? this.main)?.local(lx, lz) ?? this.local(lx, lz);
   }
 
   /** The first outdoor place holding item `id`, or null — the koi and the farm ask. */
   placeOf(id) {
     for (const P of this.places.values()) if (P.item === id) return P;
     return null;
+  }
+
+  /** An outdoor row's own (fx, fz) to house-local [x, z]: the turn the
+   *  group is drawn with (`rotation.y` = its rot) — the treehouse's too. */
+  _itemToHouse(q, fx, fz) {
+    const a = q.rot ?? 0;
+    return [q.x + fx * Math.cos(a) + fz * Math.sin(a), q.z - fx * Math.sin(a) + fz * Math.cos(a)];
+  }
+
+  /**
+   * A path piece that lies on a house's ramp (editor.js `onRamp`) is drawn ON
+   * it: up the slope, over the porch, flat again on the grass past the foot.
+   * Every vertex is lifted by the ramp's height under it (`rampLift`), and
+   * that height is piecewise straight — level on the porch, a slope, level on
+   * the grass — so cutting each triangle where the pieces meet (the top
+   * course's edge `z0` and the foot `z1`) makes the lift exact. Subdividing
+   * by edge length was the first idea and was dropped: two triangles sharing
+   * an edge split it differently and the bend opens a crack along it, where a
+   * cut on a line splits a shared edge at one point from both sides. The
+   * posts, torches and lamps go up whole, by the height under their own foot.
+   */
+  _rampPath(q, it, gy, P) {
+    const H = this.home;
+    if (!H) return;
+    const isle = (x, z) => this._itemToHouse(q, x, z);
+    const dy = this.groundY - gy;
+    const up = (x, z) => { const h = rampLift(H, ...isle(x, z)); return h > 0 ? h + dy : 0; };
+    const hw = it.pw / 2, hl = it.len / 2;
+    let on = false;
+    for (let i = -2; i <= 2 && !on; i++) for (let j = -6; j <= 6 && !on; j++) on = up((i / 2) * hw, (j / 6) * hl) > 0;
+    if (!on) return;
+    const planes = [];
+    for (const s of houseSpecs(H)) {
+      const R = rampOf(s.house);
+      if (!R) continue;
+      for (const c of [R.z0, R.z1]) planes.push((x, z) => toHouse(s, ...isle(x, z)).z - c);
+    }
+    const bend = (geo) => bendGeo(geo, planes, up);
+    P.solid = P.solid.map(bend);
+    P.glow = P.glow.map(bend);
+    if (P.tex) P.tex = P.tex.map(bend);
+    P.lamps = P.lamps.map((geo) => {
+      geo.computeBoundingBox();
+      const c = geo.boundingBox.getCenter(new THREE.Vector3());
+      return geo.translate(0, up(c.x, c.z), 0);
+    });
+    P.torches = P.torches.map(([x, y, z]) => [x, y + up(x, z), z]);
+  }
+
+  /**
+   * A MAT LIES ON WHATEVER IT IS ON. Every path's top is a few hundredths over
+   * the lawn and a boardwalk's is 0.17, so a mat at a path's own lift would be
+   * inside the walk it was put down on. It goes on the highest path piece
+   * under its middle, a hair up; on bare lawn, at a path's height.
+   */
+  _matLift(q) {
+    let y = 0.006;
+    for (const r of this.home?.outdoor ?? []) {
+      const it = ITEM_BY_ID[r.id];
+      if (!it?.path || it.mat || r === q) continue;
+      const dx = q.x - r.x, dz = q.z - r.z, a = r.rot ?? 0;
+      if (Math.abs(dx * Math.sin(a) + dz * Math.cos(a)) > it.len / 2 || Math.abs(dx * Math.cos(a) - dz * Math.sin(a)) > it.pw / 2) continue;
+      y = Math.max(y, pathLift(r) + pathTop(it) + 0.006);
+    }
+    return y;
+  }
+
+  /** Four walls round a rectangle in an outdoor row's own frame, world heights. */
+  _boxWalls(q, hx, hz, y0, y1) {
+    const c = [[-hx, -hz], [hx, -hz], [hx, hz], [-hx, hz]].map(([fx, fz]) => this.local(...this._itemToHouse(q, fx, fz)));
+    for (let k = 0; k < 4; k++) {
+      const a = c[k], b = c[(k + 1) % 4];
+      this.walls.push({ ax: a.x, az: a.z, bx: b.x, bz: b.z, y0, y1, item: q.uid });
+    }
+  }
+
+  /**
+   * FURNITURE IS SOLID — NEARLY TO ITS EDGE. Richard, Oct 2026: "Players
+   * should not be able to walk through furniture like the table, futon,
+   * kitchen ... but can get close to it (collision at half the radius of the
+   * player) ... Players should always be able to walk around the edges of
+   * the room, and through gaps in between objects. The collider should scale
+   * with the object, but scaling above 100% should only count half the extra
+   * size: an object at 150% gets a 125% collider, at 50% a 50% one."
+   *
+   * The rectangle is the thing's MEASURED box (`box`, taken at the origin
+   * before it was turned), never its grid cells: a cell is 2 units and most
+   * furniture fills less of it, so cells would wall off the gaps she is meant
+   * to walk through. Shrunk by FURN_INSET, so her middle stops FURN_REACH
+   * from the edge — half her radius — instead of a whole radius plus the
+   * wall pad. A holodeck's tube is stepped INTO and has none.
+   */
+  _furnWalls(g, box, placed, y, hk) {
+    const it = ITEM_BY_ID[placed.id];
+    if (!it || it.holo || box.isEmpty()) return;
+    const s = placed.look?.s ?? 1;
+    const k = furnScale(s) / s;   // the box already has `s` in it
+    /* A FLOOR, NOT A SKIP. This returned for anything under 0.05 after the
+       inset, as "too slight to stand in her way" — and the inset is 0.555, so
+       that was everything under 1.2 across: Richard, Oct 2026, "the player
+       does not collide with the paper floor lamp, samurai armor, katana
+       stand etc." (measured: andon 1.2, yoroi 1.05 deep, katana 0.76). A
+       slight thing keeps FURN_MIN_HALF, so she stops a little further from
+       its edge than from a big one's, and never inside it. */
+    const hx = Math.max(FURN_MIN_HALF, ((box.max.x - box.min.x) / 2) * k - FURN_INSET);
+    const hz = Math.max(FURN_MIN_HALF, ((box.max.z - box.min.z) / 2) * k - FURN_INSET);
+    const cx = (box.min.x + box.max.x) / 2, cz = (box.min.z + box.max.z) / 2;
+    const c = Math.cos(g.rotation.y), sn = Math.sin(g.rotation.y);
+    const at = (lx, lz) => ({ x: g.position.x + lx * c + lz * sn, z: g.position.z - lx * sn + lz * c });
+    const P = [[-hx, -hz], [hx, -hz], [hx, hz], [-hx, hz]].map(([fx, fz]) => at(cx + fx, cz + fz));
+    /* LOW FURNITURE IS STOOD ON. Richard, Oct 2026: "Furniture that isn't
+       too tall (bed, table) should be jumpable onto". Anything whose measured
+       top is between FURN_STAND.min and .max gets a deck on that top — the
+       measured box, a little in from its edge so she is not caught by a
+       corner in mid-air — and its walls stop just under it, so a kitten on
+       top is above them. The step is small: she JUMPS up, she never walks up.
+       A futon is a `bed`, which `Housing._bed` bounces her on. */
+    const top = box.max.y;
+    const stand = top >= FURN_STAND.min && top <= FURN_STAND.max;
+    if (stand) {
+      const ex = Math.max(0.2, ((box.max.x - box.min.x) / 2) * k - FURN_STAND.inset);
+      const ez = Math.max(0.2, ((box.max.z - box.min.z) / 2) * k - FURN_STAND.inset);
+      const o = this.toLocal(g.position.x, g.position.z);
+      this.decks.push({
+        x0: cx - ex, x1: cx + ex, z0: cz - ez, z1: cz + ez, y: y - this.groundY + top, step: FURN_STAND.step,
+        frame: { x: o.x, z: o.z, a: g.rotation.y - this.ry }, furn: placed.id, bed: it.act === 'nap',
+      });
+    }
+    for (let q = 0; q < 4; q++) {
+      const a = P[q], b = P[(q + 1) % 4];
+      this.walls.push({ ax: a.x, az: a.z, bx: b.x, bz: b.z, y0: y, y1: y + (stand ? top - 0.05 : Math.max(1, top)), furn: placed.id, hk });
+    }
   }
 
   /** Centre of a grid placement in house-local units. 1 cell = 2 units. */
@@ -439,7 +930,137 @@ export class HomeIsle {
       return d;
     };
     const spot = (act, rr = r) => this.spots.push({ x: w.x, z: w.z, y: gy, r: rr, act, item: it.id, place: P.id });
-    switch (it.id) {
+    switch (it.path ? 'path' : it.id) {
+      case 'path': {
+        /* Two paths may cross, and two of one kind have their tops at one
+           height: each piece sits its own few thousandths up (by uid), so
+           where they cross one is simply on top. */
+        const lift = it.mat ? this._matLift(q) : pathLift(q);
+        g.position.y += lift;
+        const P = pathParts(it);
+        if (it.mat) P.tex = [matGeo(it, q.look?.style)];
+        this._rampPath(q, it, gy, P);
+        flat(P.solid);
+        if (P.tex) add(new THREE.Mesh(P.tex[0], matMaterial()));
+        if (P.glow.length) add(new THREE.Mesh(mergeParts(P.glow), new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false })));
+        P.torches.forEach(([x, y, z], k) => this.fxSites.push(makeFlame(g, x, y, z, (q.uid ?? 0) * 4 + k)));
+        for (const geo of P.lamps) this.fxSites.push(makeLamp(g, geo));
+        const frame = { x: q.x, z: q.z, a: q.rot ?? 0 };
+        for (const d of P.decks) this.decks.push({ ...d, y: gy - this.groundY + lift + d.y, step: 0.3, frame, path: it.id });
+        const posts = pathPosts(it);
+        for (const [px, pz] of posts?.at ?? []) {
+          const o = this.local(...this._itemToHouse(q, px, pz));
+          this.obstacles.push({ x: o.x, z: o.z, r: posts.r });
+        }
+        // the two that answer her feet (pathfx.js): where the strip is, in the world
+        if (it.id === 'path_petal' || it.id === 'path_carpet') {
+          const y = gy + lift + P.decks[0].y;
+          /* UP THE RAMP TOO. Richard, Oct 2026: "ramp paths should play their
+             emitters when walking up the ramp or in front of the door". The
+             site's height was the lawn's, and `onStrip` wants her within 0.6
+             of it — so the piece the house came with, bent up its ramp by
+             `_rampPath`, was silent from its second step. `yAt` is the strip's
+             top where she is: the ramp's or the porch's, else the lawn's. */
+          const H = this.home;
+          const yAt = (x, z) => {
+            const o = this.toLocal(x, z);
+            const h = rampLift(H, o.x, o.z);
+            return h > 0 ? this.groundY + h + lift + P.decks[0].y : y;
+          };
+          this.fxSites.push({ kind: it.id === 'path_petal' ? 'petal' : 'carpet', x: w.x, z: w.z, a: this.ry + (q.rot ?? 0), hw: it.pw / 2, hl: it.len / 2, y, yAt });
+        }
+        break;
+      }
+      case 'zengarden': {
+        add(new THREE.Mesh(zenParts(), mat));
+        const frame = { x: q.x, z: q.z, a: q.rot ?? 0 };
+        const base = gy - this.groundY;
+        /* The sand is kept by uid across a rebuild (zengarden.js), but never
+           for the build ghost, which is uid -1 and must not walk on hers. */
+        this.zenGrids ??= new Map();
+        const Z = new ZenGarden(q.uid, { x: w.x, z: w.z, a: this.ry + (q.rot ?? 0), y: gy + ZEN.sandY }, q.uid >= 0 ? this.zenGrids.get(q.uid) : null);
+        if (q.uid >= 0) this.zenGrids.set(q.uid, Z.grid);
+        add(Z.mesh);
+        this.fxSites.push(Z);
+        g.userData.zen = Z;
+        const k = ZEN.kerb;
+        this.decks.push({ x0: -ZEN.w / 2 - k, x1: ZEN.w / 2 + k, z0: -ZEN.d / 2 - k, z1: ZEN.d / 2 + k, y: base + ZEN.sandY, step: 0.3, frame });
+        ZEN_STONES.forEach(([x, z], i) => {
+          const h = ZEN_STONE_R * 0.75;
+          this.decks.push({ x0: x - h, x1: x + h, z0: z - h, z1: z + h, y: base + ZEN.stoneY + i * 0.004, step: 0.3, frame, stone: true });
+        });
+        for (const [x, z, r] of ZEN_ROCKS) {
+          const o = this.local(...this._itemToHouse(q, x, z));
+          this.obstacles.push({ x: o.x, z: o.z, r: r * 0.9 });
+        }
+        const rk = this.local(...this._itemToHouse(q, ZEN_RAKE.x, ZEN_RAKE.z));
+        this.spots.push({ x: rk.x, z: rk.z, y: gy, r: 1.8, act: 'rake', item: it.id, place: P.id, zen: Z });
+        break;
+      }
+      case 'teahouse': {
+        /* teahouse.js has the measurements and the why. Its look's size
+           scales the colliders with the model, like a fence's. */
+        const mul = clampMul(q.look?.s);
+        const k = teaK(mul);
+        const body = add(placeModel(it.model, drawItem(it.id, 2), it.size, q.look ? { s: q.look.s, style: q.look.style } : null));
+        xrayModel(body, this.teaMat, 0.7);
+        body.userData.onReal = (gm) => xrayModel(gm, this.teaMat, 0.7);
+        const frame = { x: q.x, z: q.z, a: q.rot ?? 0 };
+        const base = gy - this.groundY;
+        const F = TEA.floor, S = TEA.step;
+        // the step, then the tatami: each a step up from the one before, and the sides a JUMP
+        this.decks.push({ x0: S.x0 * k, x1: S.x1 * k, z0: S.z0 * k, z1: S.z1 * k, y: base + S.y * k, step: 0.5, frame, tea: 'step' });
+        this.decks.push({ x0: F.x0 * k, x1: F.x1 * k, z0: F.z0 * k, z1: F.z1 * k, y: base + F.y * k, step: 0.5, frame, tea: 'floor' });
+        const W = (fx, fz) => this.local(...this._itemToHouse(q, fx * k, fz * k));
+        const seg = (a, b, y0, y1, extra = {}) => this.walls.push({ ax: a.x, az: a.z, bx: b.x, bz: b.z, y0, y1, item: q.uid, ...extra });
+        for (const [a, b] of TEA.walls) seg(W(...a), W(...b), gy, gy + TEA.wallTop * k, { tea: 'wall' });
+        /* THE PLATFORM'S OPEN EDGES. Its 0.8 is more than a deck's step, and a
+           deck too high to step onto is one she walks UNDER (heightAt's
+           one-way rule, which the hologram's discs need) — so from the open
+           side she was in the tatami up to her chest. A riser on the right
+           edge and either side of the step, topped just under the floor so
+           a kitten standing on it is never pushed by her own floor. */
+        const rise = gy + F.y * k - 0.05;
+        for (const [a, b] of [[[F.x1, F.z0], [F.x1, F.z1]], [[F.x0, F.z1], [S.x0, F.z1]], [[S.x1, F.z1], [F.x1, F.z1]]]) {
+          seg(W(...a), W(...b), gy, rise, { tea: 'riser' });
+        }
+        const C = TEA.counter;
+        const cc = [[C.x0, C.z0], [C.x1, C.z0], [C.x1, C.z1], [C.x0, C.z1]].map(([x, z]) => W(x, z));
+        for (let n = 0; n < 4; n++) seg(cc[n], cc[(n + 1) % 4], gy + F.y * k, gy + C.y1 * k, { tea: 'counter' });
+        const ir = W(TEA.irori.x, TEA.irori.z);
+        this.obstacles.push({ x: ir.x, z: ir.z, r: TEA.irori.r * k, y0: gy + F.y * k - 0.1 });
+        for (const [px, pz] of TEA.posts) { const o = W(px, pz); this.obstacles.push({ x: o.x, z: o.z, r: 0.22 * k }); }
+        const T = teaSet(k);
+        add(T.set);
+        for (const b of T.bowls) add(b);
+        const rec = {
+          uid: q.uid, k, gy, x: w.x, z: w.z, a: this.ry + (q.rot ?? 0), floorY: gy + F.y * k, bowls: T.bowls, group: g,
+          seat: (i) => W(...TEA.seats[i]), tray: W(...TEA.tray),
+        };
+        this.teahouses.push(rec);
+        const front = W(0, S.z1 + 0.6);
+        this.spots.push({ x: front.x, z: front.z, y: gy, r: 2.6, act: 'tea', item: it.id, place: P.id, tea: rec });
+        // and from inside on the tatami too: she may have walked in first
+        const mid = W(0, 0.4);
+        this.spots.push({ x: mid.x, z: mid.z, y: gy + F.y * k, r: 3.4, act: 'tea', item: it.id, place: P.id, tea: rec });
+        break;
+      }
+      case 'tiki': {
+        const parts = [];
+        const [x, y, z] = torchParts(parts, 0, 0);
+        flat(parts);
+        this.fxSites.push(makeFlame(g, x, y, z, q.uid ?? 0));
+        this.obstacles.push({ x: w.x, z: w.z, r: 0.3 });
+        break;
+      }
+      case 'pathlamp': {
+        const parts = [];
+        const paper = lampParts(parts, 0, 0);
+        flat(parts);
+        this.fxSites.push(makeLamp(g, paper));
+        this.obstacles.push({ x: w.x, z: w.z, r: 0.35 });
+        break;
+      }
       case 'koipond': {
         /* "Pond is way too small, can make it bigger" — r 10, against 7; and
            12 once it was fished in the world ("We can also make the pond bigger").
@@ -462,7 +1083,7 @@ export class HomeIsle {
         break;
       }
       case 'onsen': {
-        flat([disc(r - 0.5, 0.6, 0x7d7870), disc(r - 1.2, 0.62, 0x8fd0d8, 0.02)]);
+        flat([disc(r - 0.5, ONSEN.rim, 0x7d7870), disc(r - 1.2, ONSEN.water - 0.02, 0x8fd0d8, 0.02)]);
         const rocks = [];
         for (let k = 0; k < 14; k++) {
           const s = new THREE.DodecahedronGeometry(0.8 + (k % 3) * 0.2, 0);
@@ -522,13 +1143,20 @@ export class HomeIsle {
         /* A LEVEL, not a prop (treehouse.js). Its geometry is in its own frame
            and goes in this group; its decks, walls and trunks come back in
            the house's frame and join the island's. */
-        const T = buildTreehouse(
-          (fx, fz) => ({
-            x: q.x + fx * Math.cos(q.rot ?? 0) + fz * Math.sin(q.rot ?? 0),
-            z: q.z - fx * Math.sin(q.rot ?? 0) + fz * Math.cos(q.rot ?? 0),
-          }),
-          q.rot ?? 0, gy - this.groundY, this.wallMat,
-        );
+        const toHouse = (fx, fz) => ({
+          x: q.x + fx * Math.cos(q.rot ?? 0) + fz * Math.sin(q.rot ?? 0),
+          z: q.z - fx * Math.sin(q.rot ?? 0) + fz * Math.cos(q.rot ?? 0),
+        });
+        const T = buildTreehouse(toHouse, q.rot ?? 0, gy - this.groundY, { wall: this.wallMat, tree: this.treeMat });
+        {
+          const SP = slidePath();
+          const marks = SP.marks.map((m) => {
+            const h = toHouse(m.x, m.z);
+            const w = this.local(h.x, h.z);
+            return { x: w.x, z: w.z, y: gy + m.y };
+          });
+          this.slides.push({ uid: q.uid, marks, top: gy + SP.top });
+        }
         add(T.group);
         this.decks.push(...T.decks);
         for (const wl of T.walls) {
@@ -538,17 +1166,63 @@ export class HomeIsle {
         }
         for (const t of T.trunks) {
           const o = this.local(t.x, t.z);
-          this.obstacles.push({ x: o.x, z: o.z, r: t.r });
+          // a trunk with a height range keeps it (the cabin's tree thins to a mast)
+          this.obstacles.push({
+            x: o.x, z: o.z, r: t.r,
+            ...(t.y0 != null ? { y0: t.y0 + this.groundY } : {}), ...(t.y1 != null ? { y1: t.y1 + this.groundY } : {}),
+          });
         }
         g.userData.treehouse = T;
         break;
       }
+      case 'stones': {
+        /* Each stone is a deck — a square inside its circle, so her feet
+           never hang in the air off a corner — and she can step up from the
+           grass (step 0.9 clears the tallest, 0.85). STONES has the why. */
+        add(drawItem('stones'));
+        for (const s of STONES) {
+          const h = s.r * 0.8;
+          this.decks.push({ x0: s.x - h, x1: s.x + h, z0: s.z - h, z1: s.z + h, y: gy - this.groundY + s.h, step: 0.9, frame: { x: q.x, z: q.z, a: q.rot ?? 0 }, stone: true });
+        }
+        break;
+      }
       case 'bladeforest': break;
       default: {
-        add(placeModel(it.model, drawItem(it.id, 2), it.size, q.look ? { s: q.look.s, style: q.look.style } : null));
-        if (it.act) spot(it.act, Math.max(2.4, r + 0.8));
+        const body = add(placeModel(it.model, drawItem(it.id, 2), it.size, q.look ? { s: q.look.s, style: q.look.style } : null));
+        /* Her BIGGER/SMALLER (`look.s`) scales the collider with the thing:
+           a fence made twice as long was solid along its old length. Only
+           where there is a size for it to multiply — fitTo ignores it
+           otherwise. */
+        const mul = it.size ? clampMul(q.look?.s) : 1;
         const solid = SOLID[it.id];
-        if (solid) this.obstacles.push({ x: w.x, z: w.z, r: solid * Math.max(1, r / 2.5) });
+        const solidR = solid ? solid * Math.max(1, r / 2.5) * mul : 0;
+        if (solid) this.obstacles.push({ x: w.x, z: w.z, r: solidR });
+        /* ...AND ITS SPOT WITH IT. Richard, Oct 2026: "Can't bow at the
+           shrine when its scale is above 100%, its collider around it is too
+           big." The spot stayed r + 0.8 (5.3 for the shrine) while the
+           collider grew past it (5.94 at 150%), so she was held outside the
+           only circle that answered INTERACT. It always reaches SPOT_PAST
+           beyond the collider now, whatever the size. */
+        if (it.act) spot(it.act, Math.max(2.4, r + 0.8, solidR + SPOT_PAST));
+        const B = SOLID_BOX[it.id];
+        if (B) {
+          this._boxWalls(q, B[0] * mul, B[1] * mul, gy, gy + B[2] * mul);
+          /* ...WITH A LID. The walls stop at the top, so a kitten who jumps
+             on was dropped INSIDE the box and the four walls shoved her back
+             and forth between them for good (measured: she never left). Now
+             she stands on it — and walking along the top of a fence is a
+             thing a kid will want to do anyway. */
+          this.decks.push({ x0: -B[0] * mul, x1: B[0] * mul, z0: -B[1] * mul, z1: B[1] * mul, y: gy - this.groundY + B[2] * mul, step: 0.3, frame: { x: q.x, z: q.z, a: q.rot ?? 0 } });
+        }
+        for (const [px, pz] of SOLID_POSTS[it.id]?.at ?? []) {
+          const o = this.local(...this._itemToHouse(q, px * mul, pz * mul));
+          this.obstacles.push({ x: o.x, z: o.z, r: SOLID_POSTS[it.id].r * mul });
+        }
+        const k = XRAY_PLANT[it.id];
+        if (k) {
+          xrayModel(body, this.plantMat, k);
+          body.userData.onReal = (gm) => xrayModel(gm, this.plantMat, k);
+        }
       }
     }
     g.userData.place = P.id;
@@ -557,100 +1231,148 @@ export class HomeIsle {
   }
 
   /** What a kendo dojo or a holodeck adds to a room: the floor and the kit. */
-  _roomDressing(room, type) {
+  _roomDressing(room, type, Rrow = null) {
     const g = new THREE.Group();
-    const y = this.groundY + (this.shell?.floorY[room.floor] ?? 0);
-    const c = this.local(room.cx, room.cz);
+    const hs = this.houseOf(room);
+    const y = this.floorY(room);
+    const c = hs.local(room.cx, room.cz);
     g.position.set(c.x, y, c.z);
-    g.rotation.y = this.ry;
+    g.rotation.y = hs.ry;
     if (type === 'kendo') {
-      const floor = new THREE.BoxGeometry(room.w - 1, 0.08, room.d - 1);
+      /* THE DOJO IS ITS `kendoArea`, not the room (catalog.js): the floor,
+         the tape and the rack all stand inside that rect, which is measured
+         clear of every stairwell. It was the whole room, and on the castle's
+         ground floor the room's stairs ran up through the middle of the
+         square — "a kendo dojo there collides with the stairs". */
+      const A = kendoArea(room);
+      const ax = A.cx - room.cx;
+      const az = A.cz - room.cz;
+      const floor = new THREE.BoxGeometry(A.w, 0.08, A.d);
       paint(floor, 0xc89a5a);
-      floor.translate(0, 0.1, 0);
-      // the sparring square, in red tape — the ONLY floor outside the ring where a blow lands
+      floor.translate(ax, 0.1, az);
+      // the sparring square, in red tape round the edge of the area — the ONLY floor outside the ring where a blow lands
       const tape = [];
-      const hw = room.w / 2 - 1.6;
-      const hd = room.d / 2 - 1.6;
+      const hw = A.w / 2 - 0.15;
+      const hd = A.d / 2 - 0.15;
       for (const [w, d, x, z] of [[hw * 2, 0.18, 0, hd], [hw * 2, 0.18, 0, -hd], [0.18, hd * 2, hw, 0], [0.18, hd * 2, -hw, 0]]) {
         const b = new THREE.BoxGeometry(w, 0.1, d);
         paint(b, 0xc0302a);
-        b.translate(x, 0.16, z);
+        b.translate(ax + x, 0.16, az + z);
         tape.push(b);
       }
+      /* THE TWO SEIZA MARKS (kendo.js `marksOf`): where the two kneel to start.
+         Richard: "Show players where to stand to start." A white tape cross
+         each, with a square round it in her colour-neutral gold. */
+      for (const m of kendoMarks(room)) {
+        for (const [w, d] of [[1.1, 0.14], [0.14, 1.1]]) {
+          const b = new THREE.BoxGeometry(w, 0.1, d);
+          paint(b, 0xfff6de);
+          b.translate(m.x - room.cx, 0.17, m.z - room.cz);
+          tape.push(b);
+        }
+        for (const [w, d, x, z] of [[1.6, 0.1, 0, 0.8], [1.6, 0.1, 0, -0.8], [0.1, 1.6, 0.8, 0], [0.1, 1.6, -0.8, 0]]) {
+          const b = new THREE.BoxGeometry(w, 0.1, d);
+          paint(b, 0xe9c46a);
+          b.translate(m.x - room.cx + x, 0.17, m.z - room.cz + z);
+          tape.push(b);
+        }
+      }
+      // the bogu rack, against the area's back edge, at its west corner
+      const rackL = { x: A.cx - A.w / 2 + 1.6, z: A.cz - A.d / 2 + 0.5 };
       const rack = new THREE.BoxGeometry(2.4, 1.6, 0.3);
       paint(rack, PALETTE.woodDark);
-      rack.translate(-room.w / 2 + 1.6, 0.8, -room.d / 2 + 0.5);
+      rack.translate(rackL.x - room.cx, 0.8, rackL.z - room.cz);
       g.add(new THREE.Mesh(mergeParts([floor, ...tape, rack]), toonVertexMat()));
-      const rackW = this.local(room.cx - room.w / 2 + 1.6, room.cz - room.d / 2 + 1.4);
+      const rackW = hs.local(rackL.x, rackL.z + 0.9);
       this.spots.push({ x: rackW.x, z: rackW.z, y, r: 2.4, act: 'kendo', room: room.id });
     } else if (type === 'holodeck') {
-      /* HER TUBE AND THE THREE RACKS (holodeck.js): the arcade's, smaller.
-         The floor is a dark plate the size of the room; the tube is the
+      /* HER TUBES AND THE THREE RACKS (holodeck.js): the arcade's, smaller.
+         The floor is a dark plate the size of the room; a tube is the
          arcade's glass, with a base and a cap; each rack is a plinth with
-         its piece floating over it and a ring on the floor while it is there. */
-      const L = holoLayout(room);
-      const floor = new THREE.BoxGeometry(room.w - 1, 0.08, room.d - 1);
+         its piece floating over it and a ring on the floor while it is there.
+         WHERE they stand is the room's rows (catalog `holo`), and each piece
+         is its own group under `itemMeshes`, so build mode can hide the one
+         she is carrying exactly as it hides a futon. */
+      const rows = (Rrow?.items ?? []).map((q, k) => ({ q, k, it: ITEM_BY_ID[q.id] })).filter((x) => x.it?.holo);
+      // the dark plate: the room, or a mixed room's strip of it
+      const Z = mixedZone(room, 'holodeck');
+      const floor = Z ? new THREE.BoxGeometry(Z.w - 0.3, 0.08, Z.d - 0.3) : new THREE.BoxGeometry(room.w - 1, 0.08, room.d - 1);
       paint(floor, 0x1a2a3a);
-      floor.translate(0, 0.1, 0);
-      const hard = [floor];
-      const base = new THREE.CylinderGeometry(1.45, 1.55, 0.3, 16);
-      paint(base, 0x2f3446);
-      base.translate(L.tube.x, 0.25, L.tube.z);
-      /* The cap is a RING, open in the middle: a house is seen from above,
-         and the arcade's solid cap, from up here, was a lid over her. */
-      const cap = new THREE.TorusGeometry(HOLO_TUBE.r + 0.05, 0.17, 8, 28);
-      cap.rotateX(Math.PI / 2);
-      paint(cap, 0x2f3446);
-      cap.translate(L.tube.x, HOLO_TUBE.top + 0.1, L.tube.z);
-      hard.push(base, cap);
-      /* THE ARCADE'S GLASS, not a tinted cylinder. Richard: "the sprite's
-         head is sticking out of the tube and she is drawn in front of it ...
-         make it work like the Dream Dojo". Two bugs: the pod was 3.3 tall and
-         she floated the arcade's 1.6 in it, so her ears cleared the cap (she
-         floats HOME_FLOAT_H here, and HOLO_TUBE is sized off her 2.5); and
-         the pod's geometry was translated into the ROOM's frame, so three.js
-         sorted it by the room's centre and drew it before her. Now it is the
-         arcade's additive shader, POSITIONED at the tube, drawn after her
-         (renderOrder 5, as the arcade's) — she is seen through it. */
-      const u = { uTime: { value: 0 }, uGlow: { value: 0 }, uColor: { value: new THREE.Color(0x35d7f0) } };
-      const glassH = HOLO_TUBE.top - HOLO_TUBE.bottom;
-      const pod = new THREE.Mesh(new THREE.CylinderGeometry(HOLO_TUBE.r, HOLO_TUBE.r, glassH, 32, 1, true),
-        new THREE.ShaderMaterial({
-          vertexShader: TUBE_VERT, fragmentShader: TUBE_FRAG, uniforms: u,
-          transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
-        }));
-      pod.position.set(L.tube.x, HOLO_TUBE.bottom + glassH / 2, L.tube.z);
-      pod.renderOrder = 5;
-      const R = { room: room.id, racks: [], tube: { u, mesh: pod } };
-      for (const r of L.racks) {
+      if (Z) floor.translate(Z.cx - room.cx, 0.1, Z.cz - room.cz);
+      else floor.translate(0, 0.1, 0);
+      g.add(new THREE.Mesh(floor, toonVertexMat()));
+      const R = { room: room.id, racks: [], tubes: [] };
+      const piece = (k, at) => {
+        const pg = new THREE.Group();
+        pg.position.set(at.x, 0, at.z);
+        pg.userData.floor = room.floor;
+        pg.userData.hk = room.hk;
+        g.add(pg);
+        this.itemMeshes.set(`r:${room.id}:${k}`, pg);
+        return pg;
+      };
+      for (const { q, k } of rows.filter((x) => x.it.holo === 'tube')) {
+        const at = holoCell(room, q);
+        const pg = piece(k, at);
+        const base = new THREE.CylinderGeometry(1.45, 1.55, 0.3, 16);
+        paint(base, 0x2f3446);
+        base.translate(0, 0.25, 0);
+        /* The cap is a RING, open in the middle: a house is seen from above,
+           and the arcade's solid cap, from up here, was a lid over her. */
+        const cap = new THREE.TorusGeometry(HOLO_TUBE.r + 0.05, 0.17, 8, 28);
+        cap.rotateX(Math.PI / 2);
+        paint(cap, 0x2f3446);
+        cap.translate(0, HOLO_TUBE.top + 0.1, 0);
+        pg.add(new THREE.Mesh(mergeParts([base, cap]), toonVertexMat()));
+        /* THE ARCADE'S GLASS, not a tinted cylinder. Richard: "the sprite's
+           head is sticking out of the tube and she is drawn in front of it ...
+           make it work like the Dream Dojo". Two bugs: the pod was 3.3 tall and
+           she floated the arcade's 1.6 in it, so her ears cleared the cap (she
+           floats HOME_FLOAT_H here, and HOLO_TUBE is sized off her 2.5); and
+           the pod's geometry was translated into the ROOM's frame, so three.js
+           sorted it by the room's centre and drew it before her. Now it is the
+           arcade's additive shader, POSITIONED at the tube, drawn after her
+           (renderOrder 5, as the arcade's) — she is seen through it. */
+        const u = { uTime: { value: 0 }, uGlow: { value: 0 }, uColor: { value: new THREE.Color(0x35d7f0) } };
+        const glassH = HOLO_TUBE.top - HOLO_TUBE.bottom;
+        const pod = new THREE.Mesh(new THREE.CylinderGeometry(HOLO_TUBE.r, HOLO_TUBE.r, glassH, 32, 1, true),
+          new THREE.ShaderMaterial({
+            vertexShader: TUBE_VERT, fragmentShader: TUBE_FRAG, uniforms: u,
+            transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+          }));
+        pod.position.set(0, HOLO_TUBE.bottom + glassH / 2, 0);
+        pod.renderOrder = 5;
+        pg.add(pod);
+        R.tubes.push({ u, mesh: pod });
+        const t = hs.local(room.cx + at.x, room.cz + at.z);
+        // The way out of the tube, in the world: toward the room's middle, turned like the house.
+        const out = holoOut(room, at);
+        const o = hs.local(room.cx + at.x + out.x, room.cz + at.z + out.z);
+        this.spots.push({ x: t.x, z: t.z, y, r: 2.2, act: 'holodeck', room: room.id, out: { x: o.x - t.x, z: o.z - t.z } });
+      }
+      for (const [n, { q, k, it }] of rows.filter((x) => x.it.holo === 'rack').entries()) {
+        const at = holoCell(room, q);
+        const pg = piece(k, at);
         const pl = new THREE.CylinderGeometry(0.7, 0.8, 0.45, 14);
         paint(pl, 0x2f3446);
-        pl.translate(r.x, 0.32, r.z);
-        hard.push(pl);
-      }
-      g.add(new THREE.Mesh(mergeParts(hard), toonVertexMat()));
-      g.add(pod);
-      for (const [k, r] of L.racks.entries()) {
-        const item = GEAR_ITEMS.find((x) => x.id === r.id);
-        const m = gearModel(r.id, item.colour);
-        m.scale.setScalar((GEAR_SCALE[r.id] ?? 1) * HOLO_GEAR_SCALE);
-        const lift = 0.55 + 0.6 * (GEAR_LIFT[r.id] ?? 1.6) * HOLO_GEAR_SCALE;
-        m.position.set(r.x, lift, r.z);
-        g.add(m);
+        pl.translate(0, 0.32, 0);
+        pg.add(new THREE.Mesh(pl, toonVertexMat()));
+        const item = GEAR_ITEMS.find((x) => x.id === it.gear);
+        const m = gearModel(it.gear, item.colour);
+        m.scale.setScalar((GEAR_SCALE[it.gear] ?? 1) * HOLO_GEAR_SCALE);
+        const lift = 0.55 + 0.6 * (GEAR_LIFT[it.gear] ?? 1.6) * HOLO_GEAR_SCALE;
+        m.position.set(0, lift, 0);
+        pg.add(m);
         const ring = new THREE.Mesh(new THREE.RingGeometry(0.85, 1.0, 32),
           new THREE.MeshBasicMaterial({ color: item.colour, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
         ring.rotation.x = -Math.PI / 2;
-        ring.position.set(r.x, 0.16, r.z);
-        g.add(ring);
-        const w = this.local(room.cx + r.x, room.cz + r.z);
+        ring.position.set(0, 0.16, 0);
+        pg.add(ring);
+        const w = hs.local(room.cx + at.x, room.cz + at.z);
         // No collider: walking INTO the rack is how she picks the piece up.
-        R.racks.push({ id: r.id, x: w.x, z: w.z, y, mesh: m, ring, baseY: lift, yaw: 0, phase: k * 2.1 });
+        R.racks.push({ id: it.gear, x: w.x, z: w.z, y, mesh: m, ring, baseY: lift, yaw: 0, phase: n * 2.1 });
       }
       this.holoRooms.push(R);
-      const t = this.local(room.cx + L.tube.x, room.cz + L.tube.z);
-      // The way out of the tube, in the world: the room's own axis, turned like the house.
-      const o = this.local(room.cx + L.tube.x + L.out.x, room.cz + L.tube.z + L.out.z);
-      this.spots.push({ x: t.x, z: t.z, y, r: 2.2, act: 'holodeck', room: room.id, out: { x: o.x - t.x, z: o.z - t.z } });
     }
     return g;
   }
@@ -694,7 +1416,7 @@ export class HomeIsle {
           lz = dx * s + dz * c;
         }
         if (lx < d.x0 || lx > d.x1 || lz < d.z0 || lz > d.z1) continue;
-        const py = this.groundY + (d.yAt ? d.yAt(lx, lz) : d.y);
+        const py = this.groundY + (d.dy ?? 0) + (d.yAt ? d.yAt(lx, lz) : d.y);
         if (fromY + (d.step ?? 0.4) < py) continue;
         if (!best || py > best.y) best = { y: py, island: this.island, home: this, deck: d };
       }
@@ -712,43 +1434,73 @@ export class HomeIsle {
    * (somebody on the roof) are not under it.
    */
   ceilingAt(x, y, z) {
-    const S = this.shell;
-    if (!S) return null;
-    const L = this.toLocal(x, z);
-    const ly = y - this.groundY;
-    const n = S.floorY.length;
-    for (let k = 0; k < n; k++) {
-      const [hw, hd] = S.half[k];
-      if (Math.abs(L.x) > hw || Math.abs(L.z) > hd) continue;
-      const lid = S.floorY[k] + FLOOR_H - (k + 1 < n ? SLAB_T : 0.12);
-      if (ly < S.floorY[k] - 0.6 || ly >= lid) continue;
-      const W = k + 1 < n ? S.wells?.[k] : null;
-      if (W && L.x > W.x0 && L.x < W.x1 && L.z > W.z0 && L.z < W.z1) return null;
-      return this.groundY + lid;
+    for (const hs of this.houses ?? []) {
+      const S = hs.shell;
+      const L = hs.toLocal(x, z);
+      const ly = y - hs.gy;
+      const n = S.floorY.length;
+      for (let k = 0; k < n; k++) {
+        const [hw, hd] = S.half[k];
+        if (Math.abs(L.x) > hw || Math.abs(L.z) > hd) continue;
+        const lid = S.floorY[k] + FLOOR_H - (k + 1 < n ? SLAB_T : 0.12);
+        if (ly < S.floorY[k] - 0.6 || ly >= lid) continue;
+        const W = k + 1 < n ? S.wells?.[k] : null;
+        if (W && L.x > W.x0 && L.x < W.x1 && L.z > W.z0 && L.z < W.z1) return null;
+        return hs.gy + lid;
+      }
+      /* Outside the walls: the underside of an eave or the roof. Richard:
+         "Her head should bonk on the eaves instead of passing through." The
+         tiles are about 0.3 thick, and only a kitten whose feet are under
+         them is under them — one standing ON the band is not. */
+      let lo = null;
+      for (const E of S.eaves ?? []) {
+        const k = E.band ? E.f : n - 1;
+        const [hw, hd] = S.half[k];
+        if (Math.abs(L.x) <= hw && Math.abs(L.z) <= hd) continue;
+        const sy = roofY(E, L.x, L.z);
+        /* a head more than a metre into the tiles came from somewhere a bonk
+           would turn into a 2m teleport down (off the edge of a bridge, say):
+           let that one through rather than drop her through a deck */
+        if (sy == null || ly >= sy - 0.3 || ly + 2.4 > sy + 0.7) continue;
+        if (lo == null || sy - 0.3 < lo) lo = sy - 0.3;
+      }
+      if (lo != null) return hs.gy + lo;
     }
     return null;
   }
 
-  /** Which floor of the house a point is on, or -1 if not inside it. */
-  floorAt(x, y, z) {
-    if (!this.shell) return -1;
-    const L = this.toLocal(x, z);
-    let f = -1;
-    for (let k = 0; k < this.shell.floorY.length; k++) {
-      const [hw, hd] = this.shell.half[k];
-      if (Math.abs(L.x) > hw + 0.2 || Math.abs(L.z) > hd + 0.2) continue;
-      if (y >= this.groundY + this.shell.floorY[k] - 0.6) f = k;
+  /** Which house a point is inside, and on which floor: `{ hs, f }` or null. */
+  houseAt(x, y, z) {
+    for (const hs of this.houses ?? []) {
+      const S = hs.shell;
+      const L = hs.toLocal(x, z);
+      let f = -1;
+      for (let k = 0; k < S.floorY.length; k++) {
+        const [hw, hd] = S.half[k];
+        if (Math.abs(L.x) > hw + 0.2 || Math.abs(L.z) > hd + 0.2) continue;
+        /* ...and UNDER that storey's lid. Without this a kitten on a roof, or
+           on a bridge passing over the eaves, counted as inside the storey
+           below and the pane took the roof off. Richard: "a player on a
+           bridge shouldn't see into a house until near or passing through
+           the door". */
+        if (y >= hs.gy + S.floorY[k] - 0.6 && y < hs.gy + S.floorY[k] + FLOOR_H - 0.2) f = k;
+      }
+      if (f >= 0) return { hs, f };
     }
-    return f;
+    return null;
+  }
+
+  /** Which floor of a house a point is on, or -1 if not inside one. */
+  floorAt(x, y, z) {
+    return this.houseAt(x, y, z)?.f ?? -1;
   }
 
   /** The room a point is in, or null. */
   roomAt(x, y, z) {
-    const f = this.floorAt(x, y, z);
-    if (f < 0 || !this.home) return null;
-    const L = this.toLocal(x, z);
-    const def = HOUSE_BY_ID[this.home.house];
-    return def?.rooms.find((r) => r.floor === f
+    const at = this.houseAt(x, y, z);
+    if (!at || !this.home) return null;
+    const L = at.hs.toLocal(x, z);
+    return homeRooms(this.home).find((r) => r.hk === at.hs.hk && r.floor === at.f
       && Math.abs(L.x - r.cx) <= r.w / 2 && Math.abs(L.z - r.cz) <= r.d / 2) ?? null;
   }
 
@@ -759,10 +1511,91 @@ export class HomeIsle {
 
   bubbleRadius() { return this.radius + BUBBLE_PAD; }
 
-  update(dt, t) {
+  update(dt, t, players = []) {
     const U = this.bubble.material.uniforms;
     U.uTime.value = t;
     U.uHitT.value += dt;
+    /* the doors: pinned open, or open while somebody it OPENS FOR stands at
+       them (`Housing.opensFor`: an owner, a guest let in, anybody leaving) */
+    for (const hs of this.houses ?? []) {
+      for (const d of hs.doors) {
+        const near = players.some((p) => p && Math.hypot(p.position.x - d.wx, p.position.z - d.wz) < 3.6
+          && Math.abs(p.position.y - d.y) < 3 && (this.opensFor?.(p, hs, d) ?? true));
+        const want = d.pinned || near ? 1 : 0;
+        d.k += Math.sign(want - d.k) * Math.min(Math.abs(want - d.k), dt * 3.5);
+        d.panels.forEach((m, i) => { m.position.x = (i ? 1 : -1) * (d.w / 4 + d.k * (d.w / 2 + 0.05)); });
+      }
+    }
+    for (const [hk, R] of this.raising ?? []) {
+      R.t += dt;
+      const u = Math.min(1, R.t / R.dur);
+      // the purchase scene's ease, and a little overshoot so it lands
+      const e = u >= 1 ? 1 : u * u * (3 - 2 * u) * (1 + Math.sin(u * Math.PI) * 0.08);
+      this.rise(hk, e);
+      if (u >= 1) this.raising.delete(hk);
+    }
+    this.pathFx?.update(dt, t, players);
+    for (const W of this.windows ?? []) {
+      const want = W.q.open ? 1 : 0;
+      W.k += Math.sign(want - W.k) * Math.min(Math.abs(want - W.k), dt * 3);
+      W.panels.forEach((m, i) => { m.position.x = (i ? 1 : -1) * (WINDOW.w / 4 + W.k * (WINDOW.w / 2 + 0.06)); });
+    }
+  }
+
+  /**
+   * A HOUSE RISING OUT OF ITS GROUND, and everything in it with it: `e` 0..1.
+   * Richard, Oct 2026: "Furniture and windows aren't scaled with the build
+   * animation. Can we parent them to the house". They are not children of the
+   * house group (the cutaway and the build ghost each need them on their own),
+   * so this scales them about the same ground the house group stands on,
+   * which is the same thing a parent would do. `e` at 1 puts back exactly
+   * what was there, so a skipped scene leaves no half-risen chair.
+   */
+  rise(hk, e) {
+    const hs = this.houseOf(hk);
+    if (!hs) return;
+    const k = Math.max(0.02, Math.min(1, e));
+    hs.group.scale.set(1, k, 1);
+    for (const g of this.itemGroup.children) {
+      if (g.userData.floor == null || (g.userData.hk ?? 'main') !== hs.hk) continue;
+      const r = (g.userData.rise ??= { y: g.position.y, s: g.scale.y });
+      g.position.y = hs.gy + (r.y - hs.gy) * k;
+      g.scale.y = r.s * k;
+      if (e >= 1) delete g.userData.rise;
+    }
+    if (hs.hk === 'main') this._layWalk(hs, e);
+  }
+
+  /**
+   * THE WALK IS LAID AFTER THE HOUSE IS UP. Richard, Oct 2026: "the castle/
+   * dojo grow animation should include the paths (or lay them after the
+   * building is placed)". The pieces stood full-size on the lawn while the
+   * house grew out of it beside them. Now each comes down in turn from the
+   * door outward over the last WALK_LAY of the rise — nearest the house
+   * first, so it reads as the builders working away from the door — and at
+   * `e` 1 every one is back exactly as it was, so a skipped scene leaves no
+   * half-laid carpet.
+   */
+  _layWalk(hs, e) {
+    const pieces = this.itemGroup.children.filter((g) => g.userData.walk);
+    const c = hs.group.position;
+    pieces.sort((a, b) => Math.hypot(a.position.x - c.x, a.position.z - c.z) - Math.hypot(b.position.x - c.x, b.position.z - c.z));
+    const n = pieces.length, t0 = 1 - WALK_LAY;
+    pieces.forEach((g, i) => {
+      const r = (g.userData.lay ??= { s: g.scale.clone() });
+      const a = t0 + (WALK_LAY * i) / n, b = t0 + (WALK_LAY * (i + 1.6)) / n;
+      const u = e >= 1 ? 1 : Math.max(0, Math.min(1, (e - a) / (b - a)));
+      const k = u * u * (3 - 2 * u);
+      g.visible = k > 0.001;
+      g.scale.set(r.s.x * Math.max(0.001, k), r.s.y * Math.max(0.001, k), r.s.z * Math.max(0.001, k));
+      if (e >= 1) delete g.userData.lay;
+    });
+  }
+
+  /** Raise house `hk` over `dur` seconds from now (`update` drives it). */
+  raise(hk, dur = RAISE_T) {
+    (this.raising ??= new Map()).set(hk, { t: 0, dur });
+    this.rise(hk, 0);
   }
 
   bump(x, y, z) {
@@ -771,14 +1604,55 @@ export class HomeIsle {
     U.uHitT.value = 0;
   }
 
-  /** Cutaway: hide every floor above `floor` and the roof, or show all. */
+  /**
+   * Cutaway: hide every floor above `floor` and the roof, or show all. One
+   * number cuts every house; a Map (hk → floor) cuts each house to its own,
+   * and a house not in it stands whole — "she is inside the dojo" says
+   * nothing about the tiny house across the lawn.
+   */
+  /**
+   * THE BRIDGES OVER A FLOOR THAT IS SHOWN, taken off above its walls.
+   * Richard, Oct 2026: "When on a floor below where the bridges are built, the
+   * bridges are displaying into the building from above, we should mask out
+   * the parts of the bridges ... So if bridge is built on 3rd floor, then on
+   * 1st floor, it will mask out more of the bridge above than the 2nd floor
+   * ... and if on the 3rd floor, no masking is needed." A bridge leaves an
+   * upper storey, which is narrower, and crosses the lower one's room on its
+   * way out — so with the storeys above cut away it hung over her room.
+   * `boxes` is one per house cut below its top floor: that floor's footprint,
+   * open upward from the top of its walls (housing.js `aimView`). A deck AT
+   * that floor is below the line and stays; a deck from higher up is cut where
+   * it is over the room and nowhere else, which is what makes the 1st floor
+   * mask more of a 3rd-floor bridge than the 2nd floor does.
+   */
+  clipBridges(boxes = [], whole = null) {
+    this.bridgeMat.setClips?.(boxes);
+    this.bridgeGlowMat.setClips?.(boxes);
+    // `whole`: the links somebody in this pane is standing on, drawn whole on the unclipped pair
+    for (const [uid, g] of this.linkMeshes?.entries() ?? []) {
+      const all = !!whole?.has(uid);
+      for (const c of g.children) {
+        const m = c.userData.clipMats;
+        if (m) { c.material = m[all ? 1 : 0]; continue; }
+        const w = c.userData.clipAt;
+        if (!w) continue;
+        c.visible = all || !boxes.some((b) => w.y > b.y - 0.5 && inClip(b, w.x, w.z));
+      }
+    }
+  }
+
   cutaway(floor) {
-    const n = this.floorMeshes.length;
-    for (let k = 0; k < n; k++) this.floorMeshes[k].visible = floor < 0 || k <= floor;
-    for (const m of this.roofMeshes) m.visible = floor < 0;
+    const fOf = (hk) => (floor instanceof Map ? (floor.get(hk) ?? -1) : floor);
+    for (const hs of this.houses ?? []) {
+      const f = fOf(hs.hk);
+      hs.floorMeshes.forEach((m, k) => { m.visible = f < 0 || k <= f; });
+      for (const m of hs.roofMeshes) m.visible = f < 0;
+    }
     // ...and the things standing on a floor that is cut away go with it
     for (const g of this.itemGroup.children) {
-      if (g.userData.floor != null) g.visible = !g.userData.held && (floor < 0 || g.userData.floor <= floor);
+      if (g.userData.floor == null) continue;
+      const f = fOf(g.userData.hk ?? 'main');
+      g.visible = !g.userData.held && (f < 0 || g.userData.floor <= f);
     }
   }
 
@@ -794,11 +1668,319 @@ export class HomeIsle {
 
 export { FLOOR_H };
 
+export { PANEL_GAP };
+/** From a window's slot back to the middle of its wall (`wallSlots`: hw - 0.22). */
+export const WINDOW_IN = 0.22;
+
+/** Furniture with a top in this band is stood on (`_furnWalls`). A rug is not furniture to jump on, a wardrobe is too tall. */
+export const FURN_STAND = { min: 0.3, max: 1.8, inset: 0.15, step: 0.15 };
+
+/** A furnishing's collider at scale `s`: as big as it, but past 100% only half the extra counts. */
+export const furnScale = (s) => (s <= 1 ? s : 1 + (s - 1) * 0.5);
+/** How close her middle comes to a furnishing's edge: half her radius (Player 0.75). */
+export const FURN_REACH = 0.375;
+/** The least half-size of a furnishing's collider after the inset (`_furnWalls`). */
+export const FURN_MIN_HALF = 0.12;
+/** ...so the rectangle is drawn in from the edge by her push distance (radius + `_segPush`'s 0.18) less that. */
+export const FURN_INSET = 0.75 + 0.18 - FURN_REACH;
+
+/** How much of a house's rise the walk to its door is laid over, at its end (`_layWalk`). */
+export const WALK_LAY = 0.45;
+/** How long a newly built house takes to rise out of the lawn. */
+export const RAISE_T = 2.4;
+
+
+/** The drawn flower box a blossom bridge's planter stands in as (links.js `linkModels`). */
+function planterStandIn() {
+  const parts = [];
+  const b = new THREE.BoxGeometry(1.2, 0.3, 0.4);
+  paint(b, 0x7a5236);
+  b.translate(0, 0.15, 0);
+  parts.push(b);
+  for (let k = 0; k < 3; k++) {
+    const f = new THREE.DodecahedronGeometry(0.16, 0);
+    paint(f, [0xff8fb8, 0xffd0e0, 0xffffff][k]);
+    f.translate(-0.4 + k * 0.4, 0.38, 0);
+    parts.push(f);
+  }
+  return new THREE.Mesh(mergeParts(parts), toonVertexMat());
+}
+
+/**
+ * A PATH PIECE, flat on the grass, `pw` wide and `len` long along its own z.
+ * Richard: "walking paths in the yard on the ground, these can be narrow or
+ * wide. Some of it should be fancy like 'red carpet' paths ... tiki torches".
+ * Thin (a tenth of a unit or so), so a kitten walks over it without a step.
+ *
+ *   solid   — the toon parts, one merged mesh
+ *   glow    — unlit parts that never change
+ *   torches — [x, y, z] of each flame (pathfx.js `makeFlame` draws it, alive)
+ *   lamps   — each lantern's paper, its own geometry (pathfx.js `makeLamp`)
+ *   decks   — what she STANDS on: "she stands on top of path meshes". It was
+ *             walked through at grass level, so her feet sank into a boardwalk
+ *             0.17 tall. Rectangles in the piece's own frame, at their tops.
+ */
+/**
+ * `geo` cut along each of `planes` (functions of its own (x, z) that are
+ * straight lines there, zero on the cut) and every vertex lifted by
+ * `up(x, z)`; a new, unindexed geometry with the same attributes, each
+ * interpolated where a cut crosses an edge. `_rampPath` has the why.
+ */
+export function bendGeo(geo, planes, up) {
+  const g = geo.index ? geo.toNonIndexed() : geo;
+  const names = Object.keys(g.attributes);
+  const sz = names.map((n) => g.attributes[n].itemSize);
+  const po = sz.slice(0, names.indexOf('position')).reduce((a, b) => a + b, 0);
+  const W = sz.reduce((a, b) => a + b, 0);
+  const n = g.attributes.position.count;
+  const verts = [];
+  for (let i = 0; i < n; i++) {
+    const v = [];
+    names.forEach((nm, a) => { const A = g.attributes[nm]; for (let k = 0; k < sz[a]; k++) v.push(A.array[i * sz[a] + k]); });
+    verts.push(v);
+  }
+  let tris = [];
+  for (let i = 0; i + 2 < n; i += 3) tris.push([verts[i], verts[i + 1], verts[i + 2]]);
+  const lerp = (p, q, t) => p.map((x, k) => x + (q[k] - x) * t);
+  for (const f of planes) {
+    const next = [];
+    for (const t of tris) {
+      const d = t.map((v) => f(v[po], v[po + 2]));
+      if (d.every((x) => x >= -1e-6) || d.every((x) => x <= 1e-6)) { next.push(t); continue; }
+      for (const side of [1, -1]) {
+        const out = [];
+        for (let k = 0; k < 3; k++) {
+          const P = t[k], Q = t[(k + 1) % 3], dp = side * d[k], dq = side * d[(k + 1) % 3];
+          if (dp >= 0) out.push(P);
+          if ((dp > 0 && dq < 0) || (dp < 0 && dq > 0)) out.push(lerp(P, Q, dp / (dp - dq)));
+        }
+        for (let k = 1; k + 1 < out.length; k++) next.push([out[0], out[k], out[k + 1]]);
+      }
+    }
+    tris = next;
+  }
+  const flat = new Float32Array(tris.length * 3 * W);
+  let o = 0;
+  for (const t of tris) for (const v of t) { flat.set(v, o); flat[o + po + 1] += up(v[po], v[po + 2]); o += W; }
+  const out = new THREE.BufferGeometry();
+  let off = 0;
+  names.forEach((nm, a) => {
+    const arr = new Float32Array(tris.length * 3 * sz[a]);
+    for (let i = 0; i < tris.length * 3; i++) for (let k = 0; k < sz[a]; k++) arr[i * sz[a] + k] = flat[i * W + off + k];
+    out.setAttribute(nm, new THREE.BufferAttribute(arr, sz[a]));
+    off += sz[a];
+  });
+  return out;
+}
+
+export function pathParts(it) {
+  const solid = [];
+  const glow = [];
+  const torches = [];
+  const lamps = [];
+  const decks = [];
+  const hw = it.pw / 2, hl = it.len / 2;
+  const B = (w, h, d, c, x, y, z, list = solid) => { const g = new THREE.BoxGeometry(w, h, d); paint(g, c); g.translate(x, y, z); list.push(g); return g; };
+  const flat = (y) => decks.push({ x0: -hw, x1: hw, z0: -hl, z1: hl, y });
+  let seed = it.id.length * 7.13;
+  const rnd = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
+  switch (it.id) {
+    case 'path_stone': {
+      for (const s of steppingStones(it, rnd)) {
+        const sh = new THREE.Shape(s.poly.map(([x, z]) => new THREE.Vector2(x, -z)));
+        const geo = new THREE.ExtrudeGeometry(sh, { depth: s.h, bevelEnabled: false });
+        geo.rotateX(-Math.PI / 2);
+        paint(geo, s.c);
+        solid.push(geo);
+        decks.push({ ...s.deck, y: s.h });
+      }
+      break;
+    }
+    case 'path_wood':
+      for (const x of [-hw + 0.25, hw - 0.25]) B(0.18, 0.1, it.len, 0x5a3e26, x, 0.05, 0);
+      for (let z = -hl + 0.3; z < hl; z += 0.6) B(it.pw, 0.08, 0.5, rnd() < 0.5 ? PALETTE.wood : 0xb98a52, 0, 0.13, z);
+      flat(0.17);
+      break;
+    case 'path_gravel':
+      B(it.pw, 0.06, it.len, 0xd8d2c4, 0, 0.03, 0);
+      for (let x = -hw + 0.35; x < hw - 0.2; x += 0.45) B(0.05, 0.02, it.len - 0.1, 0xb8b2a4, x, 0.065, 0);
+      // the kerbs run a hair past the gravel's ends, so the ends never share a plane
+      for (const x of [-hw, hw]) B(0.16, 0.1, it.len + 0.02, 0x7a756e, x, 0.05, 0);
+      flat(0.06);
+      break;
+    case 'path_flag':
+      for (let z = -hl + 0.55; z < hl; z += 1.1) {
+        for (let x = -hw + 0.55; x < hw - 0.1; x += 1.1) B(1.0, 0.1 + rnd() * 0.03, 1.0, [0xa8a39b, 0x9a958e, 0xb4afa6][Math.floor(rnd() * 3)], x, 0.05, z);
+      }
+      flat(0.1);
+      break;
+    case 'path_petal':
+      B(it.pw, 0.06, it.len, 0xc9a77a, 0, 0.03, 0);
+      for (let k = 0; k < 40; k++) {
+        const p = new THREE.CylinderGeometry(0.09, 0.09, 0.02, 5);
+        paint(p, rnd() < 0.6 ? 0xffb7cf : 0xffe0ea);
+        // each its own height, so two that overlap never share a plane
+        p.translate((rnd() - 0.5) * it.pw * 0.9, 0.07 + k * 0.0012, (rnd() - 0.5) * it.len * 0.95);
+        solid.push(p);
+      }
+      flat(0.06);
+      break;
+    case 'path_lantern':
+      B(it.pw - 1.0, 0.06, it.len, 0xd8d2c4, 0, 0.03, 0);
+      for (const [x, z] of pathPosts(it).at) lamps.push(lampParts(solid, x, z));
+      decks.push({ x0: -hw + 0.5, x1: hw - 0.5, z0: -hl, z1: hl, y: 0.06 });
+      break;
+    case 'path_carpet':
+      B(it.pw - 0.5, 0.05, it.len, 0xc0202a, 0, 0.025, 0);
+      for (const x of [-hw + 0.3, hw - 0.3]) B(0.12, 0.06, it.len + 0.02, 0xe8b84a, x, 0.03, 0);
+      for (let z = -hl + 1; z < hl; z += 2) B(0.5, 0.055, 0.5, 0xe8b84a, 0, 0.03, z);
+      decks.push({ x0: -hw + 0.25, x1: hw - 0.25, z0: -hl, z1: hl, y: 0.05 });
+      break;
+    case 'path_tiki': {
+      B(it.pw - 1.0, 0.06, it.len, 0xe2cf9a, 0, 0.03, 0);
+      for (const [x, z] of pathPosts(it).at) torches.push(torchParts(solid, x, z));
+      decks.push({ x0: -hw + 0.5, x1: hw - 0.5, z0: -hl, z1: hl, y: 0.06 });
+      break;
+    }
+    case 'path_mat':
+      // the coir under the picture, a hair proud of it all round (`matGeo` is the picture)
+      B(it.pw, 0.03, it.len, 0x5a3e26, 0, 0.015, 0);
+      flat(0.036);
+      break;
+    default:
+      B(it.pw, 0.06, it.len, 0xc9a77a, 0, 0.03, 0);
+      flat(0.06);
+  }
+  return { solid, glow, torches, lamps, decks };
+}
+
+/** Two paths of one kind have their tops at one height: each piece sits its own few thousandths up, by uid. */
+export const pathLift = (q) => 0.004 + ((q.uid ?? 0) % 6) * 0.006;
+
+const PATH_TOP = new Map();
+/** The top of a path piece over its own floor: its highest deck. */
+export function pathTop(it) {
+  if (!PATH_TOP.has(it.id)) PATH_TOP.set(it.id, Math.max(0, ...pathParts(it).decks.map((d) => d.y)));
+  return PATH_TOP.get(it.id);
+}
+
+/** Which door mat a row is: its LOOK, or the first. A design the sprite editor switched off draws as
+ *  the first that is on - and the row KEEPS its look, so switching it back on puts it back. */
+export const matOf = (style) => {
+  const on = enabledOf('housing/doormats', DOOR_MATS);
+  return on.find((m) => m.id === style) ?? on.find((m) => m === DOOR_MATS[0]) ?? on[0];
+};
+
+/**
+ * The mat's picture: one quad over the coir, its UVs on its own measured
+ * rectangle of the sheet, 1.5 px in so a neighbour's edge never bleeds in
+ * under mipmapping. The top of the drawing is at -z, the house's end of the
+ * piece, so it reads the right way up to a kitten walking in to the door.
+ */
+export function matGeo(it, style) {
+  const [x, y, w, h] = matOf(style).rect;
+  const S = DOOR_MAT_SHEET, e = 1.5;
+  const u0 = (x + e) / S.w, u1 = (x + w - e) / S.w;
+  const v0 = 1 - (y + h - e) / S.h, v1 = 1 - (y + e) / S.h;
+  const geo = new THREE.PlaneGeometry(it.pw - 0.06, it.len - 0.06);
+  geo.rotateX(-Math.PI / 2);
+  const uv = geo.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) ? u1 : u0, uv.getY(i) ? v1 : v0);
+  geo.translate(0, 0.036, 0);
+  return geo;
+}
+
+/**
+ * ONE material for every mat on every island, so the sheet is one texture
+ * however many mats there are. It is a plain brown mat until the sheet loads
+ * and stays one if it never does — every file degrades (non-negotiable 9).
+ */
+let MAT_MATERIAL = null;
+export function matMaterial() {
+  if (MAT_MATERIAL) return MAT_MATERIAL;
+  MAT_MATERIAL = new THREE.MeshLambertMaterial({ color: 0x9a6a42 });
+  if (globalThis.location) {
+    new THREE.TextureLoader().load(DOOR_MAT_SHEET.url, (t) => {
+      t.colorSpace = THREE.SRGBColorSpace;
+      t.anisotropy = 4;
+      MAT_MATERIAL.map = t;
+      MAT_MATERIAL.color.set(0xffffff);
+      MAT_MATERIAL.needsUpdate = true;
+    }, undefined, () => {});
+  }
+  return MAT_MATERIAL;
+}
+
+/** A bamboo tiki torch's pole and cup at (x, z); returns where its flame sits. */
+export function torchParts(solid, x, z) {
+  const pole = new THREE.CylinderGeometry(0.08, 0.1, 2.4, 6);
+  paint(pole, 0xb08a4a);
+  pole.translate(x, 1.2, z);
+  const wrap = new THREE.CylinderGeometry(0.11, 0.11, 0.3, 6);
+  paint(wrap, 0x6a4a2a);
+  wrap.translate(x, 1.9, z);
+  const cup = new THREE.CylinderGeometry(0.22, 0.13, 0.38, 7);
+  paint(cup, 0x6a4a2a);
+  cup.translate(x, 2.55, z);
+  solid.push(pole, wrap, cup);
+  return [x, 2.72, z];
+}
+
+/** A little stone path lantern at (x, z): post and cap into `solid`; returns its paper. */
+export function lampParts(solid, x, z) {
+  const b = (w, h, d, c, y) => { const g = new THREE.BoxGeometry(w, h, d); paint(g, c); g.translate(x, y, z); solid.push(g); };
+  b(0.35, 0.5, 0.35, 0x8a857c, 0.25);
+  b(0.5, 0.1, 0.5, 0x7a756e, 0.87);
+  const paper = new THREE.BoxGeometry(0.3, 0.32, 0.3);
+  paper.translate(x, 0.66, z);
+  return paper;
+}
+
+/**
+ * STEPPING STONES THAT FIT. Richard, Oct 2026: "stepping-stone paths get
+ * varied heights (no z-fighting) and shapes that fit tightly without
+ * intersecting." They were heptagons r 0.62-0.77 every 1.2, so neighbours
+ * overlapped by up to 0.34 and their tops, all at 0.12, fought. Now the strip
+ * is CUT: slanted lines across it, a stone between each two, drawn in from
+ * both lines by GAP so the seam between them is a thin even line of grass;
+ * corners clipped so they read as stone, not tiles; each its own height.
+ * Every stone is convex by construction (two lines that never cross inside
+ * the strip, since |slope| * width < the narrowest spacing).
+ */
+export const STONE_GAP = 0.06;
+export function steppingStones(it, rnd) {
+  const hw = it.pw / 2, hl = it.len / 2;
+  const cuts = [{ c: -hl, s: 0 }];
+  for (let z = -hl + 1.1 + rnd() * 0.3; z < hl - 0.9; z += 1.0 + rnd() * 0.4) cuts.push({ c: z, s: (rnd() - 0.5) * 0.3 });
+  cuts.push({ c: hl, s: 0 });
+  const out = [];
+  for (let k = 0; k + 1 < cuts.length; k++) {
+    const A = cuts[k], C = cuts[k + 1];
+    const x0 = -hw + 0.05 + rnd() * 0.2, x1 = hw - 0.05 - rnd() * 0.2;
+    const zA = (x) => A.c + A.s * x + STONE_GAP, zC = (x) => C.c + C.s * x - STONE_GAP;
+    const q = [[x0, zA(x0)], [x1, zA(x1)], [x1, zC(x1)], [x0, zC(x0)]];
+    // clip each corner 0.14 along both its edges
+    const poly = [];
+    for (let i = 0; i < 4; i++) {
+      const P0 = q[(i + 3) % 4], P1 = q[i], P2 = q[(i + 1) % 4];
+      const toward = (Q, d) => { const L = Math.hypot(Q[0] - P1[0], Q[1] - P1[1]); return [P1[0] + ((Q[0] - P1[0]) / L) * d, P1[1] + ((Q[1] - P1[1]) / L) * d]; };
+      poly.push(toward(P0, 0.14), toward(P2, 0.14));
+    }
+    out.push({
+      poly,
+      h: 0.08 + ((k * 5) % 4) * 0.025 + rnd() * 0.01,
+      c: rnd() < 0.5 ? 0x9a958e : 0x8a857c,
+      deck: { x0: x0 + 0.1, x1: x1 - 0.1, z0: Math.max(zA(x0), zA(x1)), z1: Math.min(zC(x0), zC(x1)) },
+    });
+  }
+  return out;
+}
+
 /** Under this much of the ceiling, at the least, every room thing stays. */
 export const CEILING_GAP = 0.3;
 
 /** Yard things the build draws itself, rather than as one model: no look. */
-export const YARD_BUILT = new Set(['koipond', 'onsen', 'volleyball', 'bamboofarm', 'pen', 'treehouse', 'bladeforest']);
+export const YARD_BUILT = new Set(['koipond', 'onsen', 'volleyball', 'bamboofarm', 'pen', 'treehouse', 'bladeforest', 'tiki', 'pathlamp', 'zengarden', ...ITEMS.filter((i) => i.path).map((i) => i.id)]);
 
 /**
  * A room thing's look, with the box it must stay in: under the ceiling (the

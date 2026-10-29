@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { paint } from '../core/gfx.js';
 import { mergeParts } from './build.js';
 import { SnakeRoad, resample } from './snakeway.js';
+import { drawWip, WIP_ORANGE } from '../core/wipmark.js';
 
 /* ---------------------------------------------------------------------------
    THE DREAM DOJO'S OTHER LAYER OF EXISTENCE.
@@ -72,7 +73,8 @@ const VOID_VERT = /* glsl */`
   varying vec3 vDir;
   void main() {
     vDir = normalize(position);
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    gl_Position = projectionMatrix * mv;
   }
 `;
 /* The void: deep navy over a green lifestream glow that drifts in bands
@@ -81,6 +83,7 @@ const VOID_VERT = /* glsl */`
    sphere can ride on the camera and never show a seam or a parallax. */
 const VOID_FRAG = /* glsl */`
   uniform float uTime;
+  uniform float uGloom;
   varying vec3 vDir;
   float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
   float noise(vec2 p) {
@@ -107,6 +110,120 @@ const VOID_FRAG = /* glsl */`
     vec2 sp = vec2(a * 60.0, y * 60.0);
     float st = step(0.985, hash(floor(sp))) * smoothstep(0.05, 0.4, y);
     col += vec3(0.7, 0.95, 1.0) * st * (0.5 + 0.5 * sin(uTime * 2.0 + hash(floor(sp)) * 40.0));
+    /* SHADOW LIONHEART'S GLOOM (SimWorld.setGloom): the sky goes dark and the
+       code rains down it.
+       ON THE SCREEN, NOT ROUND THE HORIZON. Richard, Oct 2026: "The Matrix
+       effect ... should be visible in the background from the default camera
+       view. The matrix text should be smaller so it looks like matrix rain
+       effects and be in the distance ... it just mainly needs to look good
+       from that point of view and not necessarily from any 3D camera angle."
+       The first rain was a band of columns by ANGLE round the horizon, from
+       just under it to near the zenith — and the default camera looks DOWN at
+       0.66, so what fills the back of its pane is the void beneath the
+       islands, where the rain had faded to nothing. It also had 42 rows per
+       unit of height: big blocks, close. Now it is laid out in the pane's own
+       screen space (vView, vP11), so it falls straight down whatever the lens
+       is looking at, behind everything because it IS the sky: two sheets, a
+       far fine one (84 rows a pane) and a sparser nearer one (52), both dim
+       and fogged toward the void so they sit in the distance. */
+    /* ...AND NOW IN THE WORLD, NOT ON THE SCREEN. Richard, Oct 2026: "can
+       we move it from 2D screen space into 3D rain spawned around the
+       camera? Keep the look; the rain stays in place when the camera moves."
+       A rain painted on the pane slid with every turn of the lens, which is
+       what gave it away as a sticker. The rain is CODE_RAIN below: columns
+       standing in the world round the camera. The sky only goes dark. */
+    if (uGloom > 0.001) col *= 1.0 - 0.88 * uGloom;
+    gl_FragColor = vec4(col, 1.0);
+  }
+`;
+
+/* THE CODE RAIN, IN THE WORLD. Columns of glyph cells standing round the
+   lens: each is one vertical quad, turned about Y to face it, and placed by
+   wrapping its seed point into a box CODE_RAIN.box wide CENTRED ON THE CAMERA
+   - so a column is fixed in the world while the lens is anywhere near it, and
+   the one that falls off the back of the box comes round in front, never
+   seen to move because the far edge is faded out. The cells are the
+   column's own, so they fall past the islands rather than with the lens (a
+   first cut indexed them by WORLD height, rows 120-290, while the falling
+   head runs over -rows/2..rows/2 as it did on the pane: 0.2% of the screen
+   lit). The glyph
+   is the sky's old one (a 3x5 block of bits that re-rolls), at the sizes it
+   had: a far fine sheet and a nearer sparse one, by column. */
+export const CODE_RAIN = {
+  /** How many columns, and the box round the camera they wrap in (x, z, y).
+   *  DENSE AND CLOSE: the default lens is ~25 from her and sees out to ~60,
+   *  so 1600 columns in a 280 box (fading out at 95-138) put a column every
+   *  hundred square metres where nothing could see most of them. */
+  n: 3200, box: 130, boxY: 110,
+  /** A cell's height in world units, and a column's length in cells. 0.45 is
+   *  the old sheets' 84-rows-a-pane glyph at the default lens's 30 or so. */
+  cell: 0.45, rows: 110,
+  /** Faded in over [near0, near1] (no glyph in her face) and out over [far0, far1] (no edge). */
+  near0: 10.5, near1: 18, far0: 48, far1: 64,
+};
+const RAIN_VERT = /* glsl */`
+  attribute vec3 aSeed;
+  attribute vec2 aCorner;
+  attribute float aId;
+  uniform vec3 uCam;
+  uniform float uBox;
+  uniform float uBoxY;
+  uniform float uW;
+  uniform float uH;
+  varying vec2 vCell;
+  varying float vId;
+  varying float vFade;
+  void main() {
+    vec3 c;
+    c.xz = uCam.xz + mod(aSeed.xz - uCam.xz + 0.5 * uBox, uBox) - 0.5 * uBox;
+    c.y = uCam.y + mod(aSeed.y - uCam.y + 0.5 * uBoxY, uBoxY) - 0.5 * uBoxY;
+    vec2 to = uCam.xz - c.xz;
+    float L = length(to);
+    vec2 r = L > 1e-4 ? vec2(to.y, -to.x) / L : vec2(1.0, 0.0);
+    vec3 p = c + vec3(r.x, 0.0, r.y) * aCorner.x * uW + vec3(0.0, aCorner.y * uH, 0.0);
+    // up the column in cells, centred like the old pane sheet's (-rows/2..rows/2)
+    vCell = vec2(aCorner.x + 0.5, aCorner.y);
+    vId = aId;
+    float d = length(uCam - c);
+    vFade = smoothstep(${CODE_RAIN.near0.toFixed(1)}, ${CODE_RAIN.near1.toFixed(1)}, d)
+      * (1.0 - smoothstep(${CODE_RAIN.far0.toFixed(1)}, ${CODE_RAIN.far1.toFixed(1)}, d));
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+  }
+`;
+const RAIN_FRAG = /* glsl */`
+  uniform float uTime;
+  uniform float uGloom;
+  uniform float uRows;
+  varying vec2 vCell;
+  varying float vId;
+  varying float vFade;
+  float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  void main() {
+    float cid = vId;
+    bool nearSheet = hash(vec2(cid, 7.0)) < 0.3;
+    float seed = nearSheet ? 11.0 : 3.0;
+    float rows = uRows;
+    float g = vCell.y * rows;
+    float rid = floor(g);
+    vec2 f = vec2(vCell.x, fract(g));
+    float sp = (nearSheet ? 13.0 : 9.0) * (0.6 + 0.8 * hash(vec2(cid, seed + 1.0)));
+    float len = rows * (0.25 + 0.45 * hash(vec2(cid, seed + 4.0)));
+    float span = rows * 1.3 + len;
+    float headRow = rows * 0.6 - fract(uTime * sp / span + hash(vec2(cid, seed + 2.0))) * span;
+    float dh = rid - floor(headRow);
+    float trail = (dh >= 0.0 && dh < len) ? 1.0 - dh / len : 0.0;
+    float head = (dh >= 0.0 && dh < 1.0) ? 1.0 : 0.0;
+    vec2 sub = floor(vec2(f.x * 3.0, f.y * 5.0));
+    float roll = floor(uTime * (0.7 + 4.0 * hash(vec2(rid, cid + seed))));
+    float bit = step(0.45, hash(vec2(cid * 7.0 + sub.x + roll * 3.1, rid * 13.0 + sub.y + seed)));
+    float on = step(0.12, f.x) * step(f.x, 0.88) * step(0.08, f.y) * step(f.y, 0.92);
+    float glyph = bit * on;
+    vec3 col = nearSheet
+      ? vec3(0.14, 0.95, 0.42) * pow(trail, 1.4) * 0.5 + vec3(0.75, 1.0, 0.85) * head * 0.65
+      : vec3(0.10, 0.75, 0.32) * pow(trail, 1.6) * 0.32 + vec3(0.55, 1.0, 0.7) * head * 0.4;
+    // the column's two ends fade out HERE: per vertex, every corner IS an end, and it was all dark
+    col *= glyph * vFade * uGloom * 1.6 * (1.0 - smoothstep(0.38, 0.5, abs(vCell.y)));
+    if (max(col.r, max(col.g, col.b)) < 0.004) discard;
     gl_FragColor = vec4(col, 1.0);
   }
 `;
@@ -545,6 +662,57 @@ function rimGeometry(r, mouths) {
 
 /* ------------------------------ the layer -------------------------------- */
 
+/* THE X-RAY ON A FLOATING STEP. Richard, Oct 2026, on the Leap Drill: "we
+   need the xray shader on the platforms so player can see where they are and
+   where the platform is." A lidded deck is 0.92 opaque and a kitten under or
+   behind one — which on a spiral climbing toward the camera is half the
+   tower — vanished behind it. The town's walls have the same problem and the
+   same answer (gfx.js `xrayVertexMat`): a hole along the camera->kitten
+   segment, discarded rather than faded so it never has to be sorted, and
+   never below her own feet, so the step she is standing on stays solid. This
+   is that cut on a MeshBasicMaterial, sharing one set of uniforms
+   (`SimWorld.setCuts`, once per pane). */
+export const DECK_CUT = { r: 1.9, flare: 0.6, soft: 0.7, max: 4 };
+function cutDeckMat(mat, U) {
+  mat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, U);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vCutW;')
+      /* ...THROUGH ITS INSTANCE TOO, for an InstancedMesh (Bamboo
+         Infiltration's forest): without it every cane was measured at the
+         mesh's origin and the whole forest cut, or none of it. */
+      .replace('#include <project_vertex>', `#include <project_vertex>
+        vec4 cutP = vec4(transformed, 1.0);
+        #ifdef USE_INSTANCING
+          cutP = instanceMatrix * cutP;
+        #endif
+        vCutW = (modelMatrix * cutP).xyz;`);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+        varying vec3 vCutW;
+        uniform vec3 uCamPos;
+        uniform vec3 uCutPos[${DECK_CUT.max}];
+        uniform float uCutOn[${DECK_CUT.max}];
+        uniform float uCutFloor[${DECK_CUT.max}];`)
+      .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+        float cut = 0.0;
+        for (int i = 0; i < ${DECK_CUT.max}; i++) {
+          if (uCutOn[i] < 0.5) continue;
+          if (vCutW.y < uCutFloor[i]) continue;
+          vec3 ab = uCutPos[i] - uCamPos;
+          float t = dot(vCutW - uCamPos, ab) / max(dot(ab, ab), 1e-4);
+          if (t <= 0.0 || t >= 1.0) continue;
+          float r = ${DECK_CUT.r.toFixed(2)} * (1.0 + ${DECK_CUT.flare.toFixed(2)} * (1.0 - t));
+          float d = length(vCutW - (uCamPos + ab * t));
+          cut = max(cut, 1.0 - smoothstep(r - ${DECK_CUT.soft.toFixed(2)}, r, d));
+        }
+        float ign = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+        if (cut > ign) discard;`);
+  };
+  mat.customProgramCacheKey = () => 'sim-deck-cut';
+  return mat;
+}
+
 export class SimWorld {
   /**
    * @param {THREE.Scene} scene  the game's one scene — see the header for why
@@ -575,8 +743,15 @@ export class SimWorld {
     this.root.position.set(SIM.dx, 0, SIM.dz);
     scene.add(this.root);
 
-    this.fog = new THREE.Fog(0x071c28, 150, 1050);
+    this.fog = new THREE.Fog(SIM_FOG, 150, 1050);
     this._uniforms = [];
+    /** The floating steps' x-ray (`cutDeckMat`), shared by every one of them. */
+    this._cutU = {
+      uCamPos: { value: new THREE.Vector3() },
+      uCutPos: { value: Array.from({ length: DECK_CUT.max }, () => new THREE.Vector3()) },
+      uCutOn: { value: new Float32Array(DECK_CUT.max) },
+      uCutFloor: { value: new Float32Array(DECK_CUT.max).fill(-1e9) },
+    };
     this._buildVoid();
     this._buildHub();
   }
@@ -592,6 +767,30 @@ export class SimWorld {
       if (y == null) continue;
       if (fromY + (d.step ?? 0.4) < y) continue;
       if (!best || y > best.y) best = { y, island: d, platform: d, sim: true };
+    }
+    return best;
+  }
+
+  /**
+   * THE UNDERSIDE OF A LIDDED DECK. Richard, Oct 2026, on the gallery's 跳
+   * ledge: "make it that the player can't jump on the platform from
+   * underneath it (they hit it with their head, like a ceiling) and have to
+   * jump from further away from it to land on top". A deck made with
+   * `ceiling: true` answers here: her head rising from `y0` to `y1` (world
+   * heights) under its disc meets its bottom face, and the lowest such face
+   * is returned — null for none. Every other deck is still one-way, so the
+   * hub, the islands and every drill floor are walked under exactly as they
+   * were. Not `ceilingAt`: HomeIsle has one of those with another shape.
+   */
+  lidAt(x, z, y0, y1) {
+    const lx = x - SIM.dx;
+    const lz = z - SIM.dz;
+    let best = null;
+    for (const d of this.decks) {
+      if (!d.ceiling) continue;
+      if (d.yAt(lx, lz) == null) continue;
+      const under = d.y - d.thick;
+      if (y0 <= under + 0.05 && y1 > under && (best == null || under < best)) best = under;
     }
     return best;
   }
@@ -635,12 +834,13 @@ export class SimWorld {
   _buildVoid() {
     const uTime = { value: 0 };
     this._uTime = uTime;
+    this._uGloom = { value: 0 };
     const sky = new THREE.Mesh(
       new THREE.SphereGeometry(2200, 32, 20),
       new THREE.ShaderMaterial({
         vertexShader: VOID_VERT, fragmentShader: VOID_FRAG,
         side: THREE.BackSide, depthWrite: false, fog: false,
-        uniforms: { uTime },
+        uniforms: { uTime, uGloom: this._uGloom },
       })
     );
     sky.frustumCulled = false;
@@ -650,6 +850,7 @@ export class SimWorld {
        sky with an edge somewhere, and a kitten who runs far enough finds it. */
     this.sky = sky;
     this.root.add(sky);
+    this._buildRain(uTime);
 
     // The Tron floor, far below, fading out before its edge can be seen.
     const floorU = { uTime, uRadius: { value: 1400 } };
@@ -829,16 +1030,43 @@ export class SimWorld {
    * that it is temporary; `removeTempDisc` takes the deck AND its drawing
    * away together, so a kitten can never stand on something she cannot see.
    */
-  addTempDisc({ x, z, r, y, colour = HOLO.cyan, name = 'step' }) {
+  addTempDisc({ x, z, r, y, colour = HOLO.cyan, name = 'step', ceiling = false, thick = 0.5 }) {
     const deck = new DiscDeck({ x, z, r, y, name });
     deck.temp = true;
+    /* A lid (`lidAt`) is drawn as thick as it stops her, so the slab she
+       bonks on is the slab she sees — and its underside gets a rim of its
+       own, because from below the top rim is the one thing hidden. */
+    deck.ceiling = ceiling;
+    deck.thick = thick;
+    deck.home = { x, y, z };
     this.decks.push(deck);
     const grp = new THREE.Group();
     const slab = new THREE.Mesh(
-      new THREE.CylinderGeometry(r, r * 0.9, 0.5, 32),
-      new THREE.MeshBasicMaterial({ color: 0x0a2230, transparent: true, opacity: 0.8 })
+      new THREE.CylinderGeometry(r, r * 0.9, thick, 32),
+      cutDeckMat(new THREE.MeshBasicMaterial({ color: 0x0a2230, transparent: true, opacity: ceiling ? 0.92 : 0.8 }), this._cutU)
     );
-    slab.position.set(x, y - 0.25, z);
+    slab.position.set(x, y - thick / 2, z);
+    /* DRAWN BEFORE THE KITTENS' SHADOWS, ALWAYS. Richard, Oct 2026: "sometimes
+       the players shadow/indicator under them is not appearing, usually if
+       they are above the center point of the platform". Her blob shadow and
+       ring are transparent, sit 0.05 over the deck's top and write no depth;
+       the slab is transparent too, so the two were sorted by distance — the
+       slab's middle against her feet. With her on the half of the deck AWAY
+       from the camera (up the screen), her shadow was the farther of the two,
+       went first, and the 0.92 slab was painted straight over it. Drawn
+       first, the slab is under whatever stands on it whichever half she is
+       on. */
+    slab.renderOrder = -1;
+    deck._slab = slab;
+    if (ceiling) {
+      const lip = new THREE.Mesh(
+        new THREE.TorusGeometry(r * 0.9 - 0.08, 0.06, 6, 48),
+        new THREE.MeshBasicMaterial({ color: colour, transparent: true, opacity: 0.6, toneMapped: false })
+      );
+      lip.rotation.x = Math.PI / 2;
+      lip.position.set(x, y - thick, z);
+      grp.add(lip);
+    }
     const rim = new THREE.Mesh(
       new THREE.TorusGeometry(r - 0.08, 0.08, 6, 48),
       new THREE.MeshBasicMaterial({ color: colour, toneMapped: false })
@@ -857,6 +1085,34 @@ export class SimWorld {
     return deck;
   }
 
+  /**
+   * Move a temp deck — a drifting step. Its drawing goes with it, and the
+   * kittens standing ON it (grounded, and it is the deck under them) are
+   * carried by the same amount, so a moving platform is not a treadmill she
+   * is wiped off. Returns nothing; `players` may be empty.
+   */
+  moveTempDisc(deck, x, y, z, players = []) {
+    const dx = x - deck.x;
+    const dy = y - deck.y;
+    const dz = z - deck.z;
+    if (!dx && !dy && !dz) return;
+    const riders = players.filter((p) => p.onGround && this.heightAt(p.position.x, p.position.z, p.position.y + 0.1)?.platform === deck);
+    deck.x = x; deck.y = y; deck.z = z;
+    deck._grp?.position.set(x - deck.home.x, y - deck.home.y, z - deck.home.z);
+    for (const p of riders) { p.position.x += dx; p.position.y += dy; p.position.z += dz; }
+  }
+
+  /**
+   * THE SAME X-RAY ON SOMEBODY ELSE'S MATERIAL — Bamboo Infiltration's
+   * hologram houses and roofs (dream/bamboo.js). "x-ray on buildings": a
+   * kitten indoors must be seen through the wall between her and the lens,
+   * and that is exactly the hole the floating steps already cut. Returns
+   * `mat`, compiled to share this layer's cut uniforms.
+   */
+  xray(mat) {
+    return cutDeckMat(mat, this._cutU);
+  }
+
   removeTempDisc(deck) {
     const i = this.decks.indexOf(deck);
     if (i >= 0) this.decks.splice(i, 1);
@@ -869,7 +1125,7 @@ export class SimWorld {
    * Every island has one, because in a void every island looks like every
    * other until something says which this is.
    */
-  addSign(x, y, z, kanji, name, colour = HOLO.cyan, { scale = 1, sub = '' } = {}) {
+  addSign(x, y, z, kanji, name, colour = HOLO.cyan, { scale = 1, sub = '', wip = false } = {}) {
     const cv = document.createElement('canvas');
     cv.width = 1024;
     cv.height = sub ? 400 : 320;
@@ -884,11 +1140,17 @@ export class SimWorld {
     g.font = '900 72px Nunito, sans-serif';
     g.shadowColor = `#${new THREE.Color(colour).getHexString()}`;
     g.fillStyle = '#d6feff';
-    g.fillText(name, 512, 258);
+    /* 工事中: the mark LEFT of the name, and the name shifted right by half
+       of it so the pair stays centred — measured, because a name is any
+       width (HOLO-SENTRIES and TAMESHIGIRI RANGE are 300px apart). */
+    const mark = wip ? 84 : 0;
+    const nw = Math.min(g.measureText(name).width, 1024 - mark - 40);
+    g.fillText(name, 512 + mark / 2, 258, 1024 - mark - 40);
+    if (wip) drawWip(g, 512 - nw / 2 - 10, 252, 76);
     if (sub) {
       g.font = '800 46px Nunito, sans-serif';
-      g.fillStyle = '#9fefff';
-      g.fillText(sub, 512, 350);
+      g.fillStyle = wip ? WIP_ORANGE : '#9fefff';
+      g.fillText(sub, 512, 350, 1000);
     }
     const tex = new THREE.CanvasTexture(cv);
     tex.colorSpace = THREE.SRGBColorSpace;
@@ -898,7 +1160,7 @@ export class SimWorld {
     }));
     m.position.set(x, y, z);
     m.renderOrder = 8;
-    m.userData.sign = { kanji, name, sub };
+    m.userData.sign = { kanji, name, sub, wip };
     this.root.add(m);
     (this.signs ??= []).push(m);
     return m;
@@ -1049,6 +1311,52 @@ export class SimWorld {
     this.addBridge(from, to, { wobble: 2.5, waves: 1, name: 'port bridge' });
   }
 
+  /** The code rain (`CODE_RAIN`): one mesh, every column a quad, placed on the GPU. */
+  _buildRain(uTime) {
+    const R = CODE_RAIN;
+    const seed = new Float32Array(R.n * 4 * 3);
+    const corner = new Float32Array(R.n * 4 * 2);
+    const id = new Float32Array(R.n * 4);
+    const index = [];
+    // seeded, so the rain is the same rain every time (and in every pane)
+    let s = 0x5eed;
+    const rnd = () => ((s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+    for (let i = 0; i < R.n; i++) {
+      const x = rnd() * R.box, y = rnd() * R.boxY, z = rnd() * R.box;
+      [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]].forEach(([cx, cy], k) => {
+        const v = i * 4 + k;
+        seed.set([x, y, z], v * 3);
+        corner.set([cx, cy], v * 2);
+        id[v] = i;
+      });
+      const b = i * 4;
+      index.push(b, b + 1, b + 2, b, b + 2, b + 3);
+    }
+    const geo = new THREE.BufferGeometry();
+    // `position` is unused by the shader but three needs one to count vertices
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(R.n * 4 * 3), 3));
+    geo.setAttribute('aSeed', new THREE.BufferAttribute(seed, 3));
+    geo.setAttribute('aCorner', new THREE.BufferAttribute(corner, 2));
+    geo.setAttribute('aId', new THREE.BufferAttribute(id, 1));
+    geo.setIndex(index);
+    this._rainU = {
+      uTime, uGloom: this._uGloom,
+      uCam: { value: new THREE.Vector3() },
+      uBox: { value: R.box }, uBoxY: { value: R.boxY },
+      uW: { value: R.cell * 0.62 }, uH: { value: R.cell * R.rows },
+      uRows: { value: R.rows },
+    };
+    const rain = new THREE.Mesh(geo, new THREE.ShaderMaterial({
+      vertexShader: RAIN_VERT, fragmentShader: RAIN_FRAG, uniforms: this._rainU,
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, side: THREE.DoubleSide,
+    }));
+    rain.frustumCulled = false;
+    rain.renderOrder = -50;
+    rain.visible = false;
+    this.rain = rain;
+    this.root.add(rain);
+  }
+
   /* ------------------------------ per frame ------------------------------- */
 
   update(dt) {
@@ -1065,9 +1373,42 @@ export class SimWorld {
     for (const f of this.tickers) f(dt, this.t);
   }
 
+  /**
+   * How far into Shadow Lionheart's gloom THIS pane's sky is, 0..1 — set per
+   * pane before it draws, like the sky's position (DreamDojo.faceCamera reads
+   * it off the kittens in the pane). Dark sky, the code rain, and the fog
+   * pulled toward the same dark so the islands sink into it.
+   */
+  setGloom(g) {
+    const k = Math.max(0, Math.min(1, Number.isFinite(g) ? g : 0));
+    this._uGloom.value = k;
+    if (this.rain) this.rain.visible = k > 0.001;
+    this.fog.color.setHex(SIM_FOG).lerp(_gloomFog, k);
+  }
+
+  /**
+   * The floating steps' x-ray, for the lens about to draw: a hole from the
+   * camera to each kitten's chest, never below her feet (`cutDeckMat`).
+   * @param {THREE.Vector3} camPos  the lens, in the world
+   * @param {object[]} kittens      who to cut for (up to DECK_CUT.max)
+   */
+  setCuts(camPos, kittens = []) {
+    const U = this._cutU;
+    U.uCamPos.value.copy(camPos);
+    for (let i = 0; i < DECK_CUT.max; i++) {
+      const p = kittens[i];
+      U.uCutOn.value[i] = p ? 1 : 0;
+      if (!p) continue;
+      U.uCutPos.value[i].set(p.position.x, p.position.y + (p.height ?? 2.6) * 0.5, p.position.z);
+      U.uCutFloor.value[i] = p.position.y - 0.1;
+    }
+  }
+
   /** Before a sim pane draws: put the sky on this lens. */
   faceCamera(camera) {
     this.sky.position.set(camera.position.x - SIM.dx, camera.position.y, camera.position.z - SIM.dz);
+    // the rain's box is centred on this lens; its columns stay where they are in the world
+    this._rainU?.uCam.value.set(camera.position.x - SIM.dx, camera.position.y, camera.position.z - SIM.dz);
     // Signs turn about Y only — one that tips back is a sign on a hinge.
     _se.setFromQuaternion(camera.quaternion, 'YXZ');
     for (const s of this.signs ?? []) s.rotation.set(0, _se.y, 0);
@@ -1075,3 +1416,6 @@ export class SimWorld {
 }
 
 const _se = new THREE.Euler();
+/** The simulator's fog, and what Shadow Lionheart's gloom pulls it to. */
+export const SIM_FOG = 0x071c28;
+const _gloomFog = new THREE.Color(0x010805);

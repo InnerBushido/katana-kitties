@@ -481,12 +481,34 @@ replaced.
 - `roshi.png` → `roshi/roshi.png`, 768. One pose, facing camera, so it does
   not mirror. His height and foot are read off the baked sheet as constants
   in `roshi.js` (ink rows 14–752 of 768).
-- `ember_kendo.png` / `frost_kendo.png` → `kittens/<sheet>/kendo.png`, and
-  `ember_kiai.png` / `frost_kiai.png` → `kiai.png`, all 768. Bogu with the men
+- `ember_kendo.png` / `frost_kendo.png` → `kittens/<sheet>/kendo.png`,
+  `ember_kiai.png` / `frost_kiai.png` → `kiai.png`, and `ember_kparry.png` /
+  `frost_kparry.png` → `kparry.png` (返 in the bogu), all 768. Bogu with the men
   hiding the face, and a shinai. **These MIRROR**, like the Riposte stance
   and for the same reason. world-check measures the shinai reaching right:
-  0.254 / 0.199 for the guards, and 0.092 / 0.116 for the kiai, whose blade
-  is overhead. Both kiai close a sealed pocket and are in the fill inventory.
+  0.254 / 0.199 for the guards, 0.092 / 0.095 for the riposte guards and
+  0.116 for Frost's kiai. **Oct 2026, Richard**: "Ember's 'kiai' art becomes
+  the riposte stance. Generate a new attack sprite for Ember based on Frost's
+  'kiai' art. Frost gets Ember's 'kiai' art for her riposte." So
+  `ember_kparry` IS the first Ember kiai master, kept; the new `ember_kiai`
+  and `frost_kparry` were each prompted with both old kiai drawings as
+  references (gpt_image_2_5, 0.25 credits each). Ember's new kiai is a
+  wind-up with the blade pointing BACK, so its reach measures -0.044 — the
+  drawing, not a mirror — and it is asked where its tail is instead (0.160 of
+  the width further left than right in the middle band). Ember's kiai and her
+  kparry close a sealed pocket; Frost's kparry does not.
+- `<sheet>_kbroke.png` → `kbroke.png`, the guard knocked aside (shinai
+  trailing in one paw, the other flung out), and `<sheet>_kclinchR.png` /
+  `<sheet>_kclinchL.png` → the clinch, shinai crossed high, ONE DRAWING FOR
+  EACH SIDE OF THE CROSS. Richard, Oct 2026: "generate a clench sprite ...
+  two per character, one from each side of the crisscross." gpt_image_2_5 on
+  magenta off each sheet's `kendo` master, 6 × 0.25 = 1.5 credits. **Named
+  by what they show, not what was asked**: two of the four clinches came back
+  facing the other way from their prompt. R faces right, L faces LEFT and is
+  the only kendo drawing built `artFacesRight: false`. Measured reach: R
+  +0.285 / +0.271, L −0.194 / −0.203; kbroke's top band reaches +0.052 /
+  +0.087 (the flung paw — the shinai is below the band). Ember's kclinchR
+  closes a pocket.
 - `chick.png` `bunny.png` `goat.png` → `farm/<id>.png`, 512, side-on facing
   LEFT. Measured by where the head is rather than a reach, since an animal
   has no blade. The chick and the goat close pockets.
@@ -564,3 +586,302 @@ as well while in the tube." There are twelve masters
   that its blade sticks out to the RIGHT (ember 0.22/0.45, frost 0.26/0.44),
   because the billboard mirrors on `artFacesRight`. Frost's closes a pocket,
   so the fill count is twenty-five, and the kitten-pose count is fifteen.
+
+## An animation cut from a video — the tea ceremony, Oct 2026
+
+Richard: "a new animated sprite sheet that shows the player drinking the tea
+... 24 or more sprites, 32 would be good. Get creative, show me what can be
+done with animated sprites." An image model cannot draw 32 frames of one cat
+that agree with each other; a video model can, because they are one
+performance.
+
+- **The take.** Each kitten's PRAYER master (already her seiza, side-on) went
+  to Higgsfield `grok_video` as the start frame: 9 credits, 6 seconds, flat
+  magenta, locked-off camera. The mp4s are kept in
+  `docs/art-masters/video/` (not shipped) — they are the real masters.
+- **The cut** (`tools/capture/tea-sheet.mjs`). 32 of 145 frames, picked BY
+  HAND per kitten off a contact sheet (the two takes keep different time) into
+  the five segments `TEA_SHEET.seg` names. Ember's 22–32 are skipped: the bowl
+  fades in out of nothing there, and the game covers it with the 3D bowl
+  arriving at her knees.
+- **One crop for all 32.** The union of her ink over every pick, squared, feet
+  on the bottom. The loader is told `uniform: true` and takes each cell WHOLE
+  (`uniformBoxes`); its usual per-cell centring on the ink would slide her
+  sideways every time she leans for the bowl.
+- **Sized off the prayer**, since frame 0 IS that drawing animated: the
+  billboard's quad is the prayer's ink height over the cell's ink fraction
+  (`TEA_INK`, 0.973, measured). The cut between the two does not change her.
+- **Played by `Billboard`'s `anim` mode**, which picks the cell from `frame`
+  and mirrors on facing like any one-cell pose. 512 a cell in the master, 192
+  shipped (1536×768, ~1MB each): at 256 they were 1.6MB, over world-check's
+  1.5MB first-load line, for a kitten ~150px tall on screen. Storm and
+  Blossom are recoloured.
+
+## Payne's introduction — six takes, 243 cells, Oct 2026
+
+Richard: make it the tea ceremony's way, "at least 3 or 4x's higher quality ...
+as that looked low resolution". The tea ceremony ships 192px a cell. These
+ship at **760px to a unit of her standing height**, with a **380** set for the
+cautious tier.
+
+- **Six Kling 3.0 takes**, 960×960 at 24fps, on flat magenta, locked off. The
+  first three cost about 50 credits; the second pass's four cost 35 (8.75 a
+  take), and one of the first three was then dropped:
+  - MASK starts from her approved `held` drawing and puts the helmet ON.
+    **The unmask is MASK played backwards**, so her face is always the
+    approved one.
+  - TALK starts from `held` too: unmasked, pointing, counting, waving,
+    laughing.
+  - HALT and SHRUG start from her masked `town` drawing: "Halt, traveller!",
+    the laugh and the beckon; then "Stuck?" and the salute.
+  - POINT and WAG start from `held`: the "Ta-daa!", the point at the sky, the
+    peace sign and the thumb at herself.
+  - **MASKED (`payne_masked_289ff712.mp4`) is not used.** It started from
+    MASK's last frame, and Kling drew her face through the helmet's visor
+    ("it shows her with the helmet on but you can see her face"). HALT and
+    SHRUG replace it, and they start from the masked DRAWING, not from a frame
+    of another video.
+  - **POINT was prompted with headroom**: the first point at the sky had her
+    fingertip off the top of the frame, so the new take was asked for zoomed
+    out, and the cut keeps all of the hand (world-check asks that the stage
+    is as tall as the pointing cells, 1.33 of her height).
+
+  The masters are in `docs/art-masters/video/` and never ship.
+- **The cut** (`tools/capture/payne-sheet.mjs`) reads `INTRO_CLIPS` in
+  `src/systems/payneclips.js`, the same table the game plays from: sixteen
+  clips at every third frame, eight a second, "on threes". **No clip loops or
+  pingpongs** (Richard: "it looks strange"); each plays once and holds.
+- **One scale per take, one crop per clip.** Each take's first frame is the
+  approved drawing it started from, so its ink height is one unit of her
+  height and its feet are the origin. Every clip is then cropped to its own
+  ink in those units and written to `src/systems/payneframes.js`. The first
+  cut used one crop for the union of every frame of every take, which was
+  right for three takes of her standing; with a hand above her head and an arm
+  flung out, the union was mostly air, and every cell paid for it.
+- **It has its own key, not `chromaKey`**, because of two problems:
+  - A video's edges are blends. A black line half over magenta is about
+    (110,10,105), which the distance key calls paint, so every outline came
+    out with a purple rim.
+  - Kling drew a darker-magenta ground shadow under her in the masked takes.
+
+  How the key works:
+  - It measures `min(r,b) - g`: how much magenta is in the pixel.
+  - Across the ramp from paint to background, it un-mixes the frame's own
+    background colour out of the pixel.
+  - It clears anything magenta in the bottom 9% of the frame (her sneakers are
+    black and white).
+  - It adds a penalty when blue is more than 12 above red, because her belt is
+    violet (100,37,134) and the first cut turned it blue. The penalty is
+    one-sided: an olive sleeve's edge has red over blue, and the two-sided
+    version left those edges a pink fringe.
+- **WebP pages with alpha**, up to 4 cells across and no page past 4096px:
+  19 pages a set, about 16MB full size and 6MB half size for all 243 cells.
+  - The cleared pixels are black underneath, because yuv420 bleeds that colour
+    a pixel into her edge, and her edge is a black line.
+  - Pages are fetched when the scene starts and released when it ends.
+- **They are played by `PayneActor`** into one small STAGE canvas, the
+  texture of a quad standing on her market spot (payne.md, *She stands in the
+  world*). The cell size is measured off each page. A change of clip is a
+  0.22s crossfade, since two takes never meet on the same pose, unless it is
+  one performance carried on within 6 source frames of the same take (the halt
+  into its laugh), which cuts straight.
+
+## Bamboo Infiltration's ninjas — every action, one atlas, Oct 2026
+
+Richard asked for sprite sheets and atlasing "to the fullest". The scheme is
+4 directions with more frames for the NPCs, 8 directions where it makes
+sense for the player, and 4 directions for longer animations. It became:
+
+- **Guards** (samurai, archer): 4 directions × 6 frames per action.
+- **Kittens**: the crawl in 8 directions × 4 frames. The rope, ladder,
+  throw and hands-up are 4 directions × 6 frames. Ember's and Frost's sheets
+  only; Storm and Blossom are the usual recolour (`PLAYER_STYLE`).
+- **One `gpt_image_2_5` sheet per action**, on magenta, at 2k medium. That
+  cost **1 credit a sheet**, not the 0.25 that was quoted, for about 25
+  sheets. One action per page is what the model holds to a grid; a page of
+  six actions was not.
+- **`tools/ninja-atlas.mjs` measures and packs.** It keys the magenta,
+  takes the `rows × cols` largest blobs as the figures, and refuses a sheet
+  that does not come out as the grid it asked for. It hands stray ink
+  (shuriken, sweat drops) to the nearest figure and scales by **ink area**,
+  not height, so a crawl is not drawn half again as long as a stand. It
+  writes one 2040-square atlas per character, plus `ninjaclips.js`. Check the
+  proof in `out/bake/ninja_*.png` by eye: the row order is front, right,
+  back, left, and for 8 directions clockwise from the front.
+- **Nothing is mirrored at draw time.** A mirror swaps Ember's tail and the
+  archer's bow hand. The single exception is baked into the atlas: the model
+  drew the archer's left shooting row standing still twice, so that row is
+  his right row mirrored, and the tool's header says so.
+- **Facing is measured, not reasoned** (non-negotiable 8). `dirIndex` in
+  `ninjasprite.js` is the function the sprite uses, and `world-check` asks it
+  directly.
+- **Size.** The four atlases total about 10MB (the archer alone is 3.9MB).
+  They are lazy-loaded, so `world-check`'s 1.5MB grid limit exempts them.
+  Quantizing them or moving to WebP is the follow-up.
+
+## The sprite editor — `/sprites.html`, Oct 2026
+
+Richard: "Since we have so much trouble with getting the correct scale of the
+sprites, let's build a sprite adjustment editor so I can manually align the
+sprites placement and scale and we can save that ... we will re-use this sprite
+scale alignment tool later." Three passes of measured fractions in
+`KENDO_POSE_H` had each been right by its own measure and wrong on screen.
+
+**What it is.** `sprites.html` + `src/sprite-editor.js`, dev only (not a build
+input; the save is `/__spritefix`, a `configureServer` hook). It saves
+`src/spritefix.json`, read by `src/core/spritefix.js`:
+
+- `poses["ember/kiai"] = { s, x, y }`. `s` multiplies the size the code already
+  gives the pose (`KENDO_POSE_H`, `KENDO_CEREMONY_H`, the home sizes). `x` moves
+  the pose FORWARD, the way the drawing points, so it follows the mirror. `y`
+  moves it up. Both are in her heights. These are overrides only; the code's
+  numbers stay the defaults.
+- `sheets["kittens/ember/grid_v2"] = { order, flip }` re-deals a turnaround's
+  columns (keyed by the file's path since the second pass, below). The values
+  are 0-based in the file and 1-based on the page. Every row is treated the
+  same.
+
+**Keyed by sheet, not kitten.** Storm and Blossom are recolours, so they wear
+Ember's and Frost's fixes. Building the editor exposed the same bug in
+`KENDO_POSE_H`, which was keyed by name: Storm had been drawing every kendo pose
+at the shared fractions, with a kiai two-thirds the size of Ember's. It now
+looks the table up by the sheet's kitten.
+
+**It draws with the game's code.** Every pose on the stage is the billboard a
+real `Player` builds in `setKendoArt` / `setHomeArt` with the draft in force
+(`setSpriteFix`). The turntable is a real Player wearing `applySheetFix`'s
+output. The guides (front foot, body centre, ink top) are read off the
+drawing's pixels, mapped through the quad the billboard is wearing that frame.
+The snaps solve numerically (nudge, re-measure, step) instead of inverting
+`footX`'s sign conventions, which differ for the clinch's left-facing drawing
+and the home poses.
+
+**The first values, set with it.** Each was snapped, then checked by eye:
+
+- Ember seiza: body over the cross, `x -0.0055`.
+- Ember riposte (`kparry`): front foot on the guard's front foot, `x 0.1756`.
+- Frost riposte: front foot on the guard's, `x 0.1371`.
+- Frost strike (`kiai`): front foot on the guard's, `x 0.1184`. That also put
+  her torso over the shadow.
+
+The scales are Richard's percentages from the same message.
+
+**A trap it already sprang.** The snap first read B's position off the last
+*rendered* frame. A hidden browser pane renders nothing, so a snap made right
+after changing B's kitten aimed at the previous kitten's foot: Frost's riposte
+went to Ember's foot, 0.778 against 0.638. Snaps now measure on the spot.
+
+**Not applied: the grid_v2 column order in the request.** Richard's example was
+`[1,2,4,7,6,5,8,9]`, dropping columns 3 and 10. Column 3 (0-based 2) is the
+sheet's RIGHT profile, measured in gfx.js `faceCamera`'s tie-breaking comment;
+dropping it leaves the most-used facing on a three-quarter view. The Sheets tab
+previews it on the turntable, so that is his call to make, looking at it.
+**He made it.** His saved `spritefix.json` carries exactly that order,
+`[0,1,3,6,5,4,7,8]`, so the right profile is gone from the in-game turnaround and
+a kitten walking right shows the nearest three-quarter view. It is his file and
+stays as he saved it; the Sheets tab puts it back with *as drawn*.
+
+### The second pass
+
+Richard: "let's add more Sheets to it ... and any future sprite sheets that get
+added to the game", plus undo, a history, unsaved marks, Lionheart, and every
+kitten pose grouped by activity with a "Stand vs ..." each.
+
+- **Sheets are keyed by path** under `public/sprites` (`kittens/ember/grid_v2`,
+  `hospital/cat`), and a clip by `ninja/<id>:<clip>`. The dev server lists every
+  png by reading its IHDR (`listSprites` in vite.config.js), so a new sheet is on
+  the page the day it lands. `LEGACY_SHEET` still reads the two old keys
+  (`ember/grid_v2`, `frost/grid`) and the page renames them on load; world-check
+  fails if the shipped file still uses one.
+- **The fix is applied where sheets load, not per caller.** `loadSpriteAtlas`
+  applies `sheetFix(sheetIdOf(url))` itself, so a future sheet honours its saved
+  order with no wiring. `main.js`'s `_loadSprite` opts out and applies it after
+  its column-count checks, because those count the columns AS DRAWN.
+- **Clips.** `ClipSprite` reads `ninja/<id>:<clip>`: `order` re-deals the
+  frames, `flip` mirrors a step, and a one-shot ends after the frames it PLAYS.
+- **Single-file poses** (eat, bless, warp, breath, scared, sweep, riposte) go
+  through `Player._poseBoard`, which reads `poses[...]` like the kendo ones, and
+  the simulator's `vr_*` poses take `s` and `y`.
+- **`off`** switches cells off in the game. Today only the door mats read it
+  (`enabledOf('housing/doormats', DOOR_MATS)`), and it can never empty a set: the
+  last one on stays on. A mat already laid in a switched-off design draws the
+  default instead; nothing is deleted from a save.
+- **Flip takes IMAGE numbers.** Order lists images; flip used to list SLOTS, so
+  "1,2,4,7" with flip "3" mirrored image 4. The page now takes the image number
+  and stores the slot, with a tooltip on both fields.
+- **"B in front" did nothing** because `renderOrder` was set on the Billboard's
+  Object3D, which three.js does not sort by; it has to be on `bb.mesh`. It is now
+  an "A on top / B on top" toggle, and world-check pins the mesh line.
+- **The turntable button did work**, but only to stop the preview following the
+  slot she was clicking, which is invisible. It is now one of five preview
+  modes: turntable, loop, ping-pong, once, and hold N seconds on each.
+- **Undo/redo** keeps the whole draft per step (Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z),
+  coalescing drags within 700 ms. The last changes are listed and clickable,
+  each tab carries a count of what is unsaved, *revert* buttons are disabled
+  when there is nothing to revert, Save says how many changes on which tab it
+  writes, and switching tabs with changes on the one being left says that Save
+  writes both.
+- **Lionheart** is drawn off his own sheet at `EDITOR_LION_H`, and the page
+  zooms out for him; world-check pins the editor's sizes to the game's.
+
+### Third pass: one facing at a time, a clip's height, and a camera that moves
+
+Richard, Oct 2026: "changing the order and flip values seems to be applying it
+to all 'facing' animations in the clip, it should only apply it to each
+individual facing animations"; "there is no way for me to edit the height of
+the two clips, mount and rope"; "is there a way to tilt and pan the camera with
+mouse or some keyboard commands?"
+
+- **A clip's order is per FACING.** The Sheets tab now writes
+  `ninja/ember:mount@2` (`clipKey`) for the facing picked. `sheetFix(id, n,
+  fix, row)` tries that key first, then the bare `ninja/ember:mount`, so the
+  file saved before keeps meaning what it meant for every facing that has none
+  of its own. *As drawn* on a facing that would fall back writes an explicit
+  1..n; deleting the key would bring the clip's order straight back. *This order
+  for every facing* writes the bare key and removes the per-facing ones.
+  `ClipSprite.faceCamera` picks the facing row FIRST, because the facing decides
+  whose order counts the steps. The vite cleaner's `KEY` takes the `@n`, or the
+  save would have silently dropped every one.
+- **A clip takes `{ s, y }`** under `poses["ninja/ember:mount"]` (`clipPoseFix`),
+  on the Poses tab like any pose: scale and height, never forward (it is drawn
+  from four or eight sides). It is applied to the MESH in `ClipSprite._hang`,
+  every draw: `y` in her heights, `s` about the origin. The origin is her feet
+  for a standing clip and the rope for a hanging one, so a bigger rope clip still
+  hangs from the rope. world-check measures the paw line staying on 0.
+- **The view pans and tilts.** Right- or middle-drag pans (so does a left drag
+  wherever there is nothing of hers to drag), Shift+right-drag or Shift+wheel
+  tilts, `I J K L` pan, `T G` tilt, `R` resets. Pan slides the FRUSTUM. **There
+  is no orbit, on purpose:** every billboard picks its drawing from the lens's
+  bearing, so a lens moved round her would change which drawing is on show.
+  Turning her is the facing button and the Sheets tab's turntable.
+
+### Fourth pass: a flip names one slot, and a sheet's rows have their own order
+
+Richard, Oct 2026, on `kittens/frost/vr`'s Jump row: "I want the ordering to be
+1, 2, 3, 6, 5, 6, 7, 8 ... flip the first occurrence of 6 but not the 2nd ...
+if we have "6, 6" for flip, then it would flip both".
+
+- **Each image number in the flip box is ONE slot**: the first slot showing it
+  that is not already mirrored (`flipSlots`). "6" mirrors the first 6, "6, 6"
+  both, and a third 6 is reported rather than dropped. The box reads back with
+  the repeats (`flipImages`), so Enter on an unchanged box changes nothing.
+- **A minus SKIPS one.** Richard, on the attack row 1,4,3,6,5,6,7,4: "not flip
+  the first occurrence of 4 but ... flip the 2nd ... mark the first occurrence
+  as "-4" so it gets skipped". `-4` claims the next 4 and leaves it plain, so
+  `-4, 4` mirrors the second 4 alone. Internally a skip is `~c` (image 0 has no
+  `-0`). The read-back writes a skip for every plain slot before an image's last
+  mirrored one, so any set of mirrored slots can be shown and re-entered; the
+  old "Enter would move it" warning is gone with the case. The tooltip says it.
+- **A sheet's rows each take their own order**, the way a clip's facings do:
+  `kittens/frost/vr@2` is the jump row (`clipKey`), and the bare key stays every
+  other row's. `gridFix(id, cols, rows)` gathers them and `applySheetFix` deals
+  each row by its own. Before this, a turnaround's order re-dealt all four rows.
+- **Every row must have as many slots** as the sheet's order (or its columns as
+  drawn): the atlas is a grid. `gridFix` ignores a row that does not, and the
+  editor refuses it with a status saying how many it needs. To change the count
+  for the whole sheet, set it on one row and press *this order for every row*,
+  which writes the bare key and removes every row's own.
+
+**Trap: the hidden pane.** A hidden browser pane renders no rAF frames, so the
+readout stayed `undefined` and an `img.decode()` never resolved. The page has
+`spriteEditor.frame()` for a synchronous frame when it is being driven.

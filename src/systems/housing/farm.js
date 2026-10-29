@@ -153,7 +153,21 @@ export class Farm {
         });
         const g = new THREE.Group();
         g.add(bb);
-        g.userData = { a: k * 2.1, r: 1 + k * 0.9, P, A, bb };
+        /* THE CHICK'S FLUTTER FRAME (`farm/chick_fly.png`), sized by the same
+           rule and hidden until PetPlay's CATCH has her in the air. No file,
+           no `fly`, and she bobs about in her pen drawing as before. */
+        const fa = def.id === 'chick' ? this.H.game.farmArt?.chickFly : null;
+        let fly = null;
+        if (fa?.texture) {
+          const fq = (def.size * 2.2 * (0.88 + 0.12 * petLevel(A))) / (fa.contentScale || 1);
+          fly = new Billboard(fa.texture, {
+            cols: 1, rows: 1, mirror: true, artFacesRight: false,
+            width: fq, height: fq, footOffset: (fa.pad ?? 0) * fq,
+          });
+          fly.visible = false;
+          g.add(fly);
+        }
+        g.userData = { a: k * 2.1, r: 1 + k * 0.9, P, A, bb, fly };
         view.group.add(g);
         view.animals.push(g);
         continue;
