@@ -179,6 +179,10 @@ src/
                    measured by tools/capture/voice-words.py. docs/notes/review.md
   sprite-editor.js /sprites.html's brain — dev only, never built; draws with real
                    Players, so it cannot disagree with the game. docs/notes/art.md
+  sprite-editor-payne.js  its PAYNE tab: her intro clips, cut out of her takes by
+                   name, previewed line by line through the scene's own actFrame
+  payneclips.json  those clips: { take, from, to, step, back?, apex? } by name —
+                   what a line's act list, the review page and payne-sheet read
   world/     build (all the geometry)  world (assembly, height queries)
   systems/   tournament  menagerie  arenaquest  leaderboard
              announce (ONE #announce card, one queue, and a speaker per line.

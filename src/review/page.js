@@ -12,6 +12,21 @@
    nothing once line 12 is 1.5s longer; "line 12, on 'Somebody', the blast
    cut" still does. The voice's sha1 is saved with the review, so a later
    session can tell which lines changed under it.
+
+   A NOTE IS OPEN OR PROCESSED. Richard, Oct 2026: "mark the Notes ... as
+   'processed' once they are processed and fixed. We can still keep them on
+   the timeline for viewing and verifying, but should be in their own
+   category ... they can get brought back to unprocessed if I review it and
+   realize it still needs fixing." So `done: { at, what }` is set by whoever
+   fixed it (a session writes `what` — the change, in a sentence), drawn
+   hollow on its own lane, and Reopen moves it into `reopened` rather than
+   deleting it, so a note fixed twice says so.
+
+   NOTES CROSS TO A NEW RECORDING BY WHERE THEY ARE, NOT WHEN. "Bring notes
+   from..." reads another review of the same scene and puts each note on the
+   same line, the same word, the same distance past it (`carry`). A line whose
+   voice is unchanged maps exactly; a re-recorded one maps by word, which is
+   what a note about "Fine." still means after "Fine." moved.
 --------------------------------------------------------------------------- */
 import { SR, syncLines } from './sync.js';
 import { SCENES, lineWords } from './scenes.js';
@@ -40,6 +55,7 @@ const S = {
   anchors: [],          // per line: { id, t, score, found, placed, manual }
   notes: [],
   sel: null,            // selected note id
+  filter: 'all',        // which notes the list shows: open, done or all
   inT: null, outT: null,
   view: { t0: 0, t1: 10 },
   drawBox: false,
@@ -77,6 +93,7 @@ async function init() {
     if (f) openFile(f);
   });
   $('resync').onclick = () => sync(true);
+  $('bring').onchange = () => { const v = $('bring').value; $('bring').value = ''; if (v) bring(v); };
   wireTransport();
   wireTimeline();
   wireEditor();
@@ -123,6 +140,95 @@ async function afterVideo() {
   }
   renderNotes();
   await sync(false);
+  await listOthers();
+}
+
+/* ---------------------------------------------------------------- carrying */
+
+/** The other saved reviews of this scene: what "Bring notes from..." offers. */
+async function listOthers() {
+  const sel = $('bring');
+  sel.hidden = true;
+  if (!S.server || !S.scene) return;
+  try {
+    const r = await fetch(`/__review/reviews?scene=${encodeURIComponent(S.sceneId)}`);
+    const list = (await r.json()).filter((x) => x.video && x.video !== S.video?.name && x.notes);
+    sel.innerHTML = '<option value="">Bring notes from…</option>' + list.map((x) =>
+      `<option value="${esc(x.video)}">${esc(x.video)} — ${x.notes} notes${x.done ? `, ${x.done} processed` : ''}</option>`).join('');
+    sel.hidden = !list.length;
+  } catch { /* no list: nothing to offer */ }
+}
+
+/**
+ * Where a note made on another recording belongs on THIS one. Returns
+ * [t, how] or null. `at` is where it was made; `old` that review's anchors
+ * and voices. In order of how sure it is:
+ *   same    the line's voice is unchanged: its anchor here plus the same lt
+ *   word    re-recorded: the same word (by index, checked by its letters, else
+ *           the nearest one spelt the same) plus how far past its start
+ *   end     after the line finished: the same distance past this line's end
+ *   before  before line 1: the same distance before it
+ */
+function carry(at, old) {
+  if (!at || !S.anchors.length) return null;
+  if (at.before) return S.anchors[0].t != null ? [S.anchors[0].t + at.lt, 'before'] : null;
+  const i = at.line - 1;
+  const A = S.anchors[i];
+  const L = S.scene.lines[i];
+  if (A?.t == null || !L || L.id !== at.id) return null;
+  const dur = A.dur ?? L.len;
+  if (at.after) {
+    const was = old.anchors.find((x) => x.id === at.id)?.dur ?? at.ld ?? dur;
+    return [A.t + dur + (at.lt - was), 'end'];
+  }
+  if (old.voices?.[at.id] && old.voices[at.id] === S.voices[at.id]) return [A.t + at.lt, 'same'];
+  const words = lineWords(L.text, WORDS[L.id]);
+  if (at.word && words.length) {
+    const key = letters(at.word);
+    let k = at.wi >= 0 && at.wi < words.length && letters(words[at.wi].w) === key ? at.wi : -1;
+    if (k < 0) {
+      let best = Infinity;
+      words.forEach((w, j) => { if (letters(w.w) === key && Math.abs(j - at.wi) < best) { best = Math.abs(j - at.wi); k = j; } });
+    }
+    // `wa` is the word's start where the note was made; reviews saved before it existed land on the word itself
+    if (k >= 0) return [A.t + words[k].a + (at.wa != null ? Math.max(0, at.lt - at.wa) : 0), 'word'];
+  }
+  return [A.t + Math.min(at.lt, dur), 'line'];   // the word is gone from the line: the same time into it, clamped
+}
+
+async function bring(name) {
+  // every carry rides an anchor: with none, all of them would come back "lost"
+  if (!S.anchors.some((a) => a.t != null)) { status('saveStatus', 'sync this recording first (Re-sync), then bring the notes over', 'warn'); return; }
+  let old;
+  try {
+    const r = await fetch(`/__review/notes?scene=${encodeURIComponent(S.sceneId)}&video=${encodeURIComponent(name)}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    old = await r.json();
+  } catch (e) { status('saveStatus', `could not read ${name} (${e.message})`, 'warn'); return; }
+  const have = new Set(S.notes.map((n) => n.id));
+  const tally = {};
+  let lost = 0, dup = 0;
+  for (const src of old.notes ?? []) {
+    if (have.has(src.id)) { dup++; continue; }
+    const a = carry(src.at, old);
+    if (!a) { lost++; continue; }
+    const n = { ...src, t: +a[0].toFixed(3), carried: { from: name, how: a[1], t: src.t } };
+    if (src.t2 != null) {
+      const b = carry(src.at2, old);
+      n.t2 = +(b ? b[0] : n.t + (src.t2 - src.t)).toFixed(3);
+    }
+    // what it was made on stays with it; where it is HERE is worked out afresh
+    n.madeAt = src.at;
+    n.at = whereAt(n.t);
+    if (n.t2 != null) n.at2 = whereAt(n.t2);
+    S.notes.push(n);
+    tally[a[1]] = (tally[a[1]] ?? 0) + 1;
+  }
+  const bits = Object.entries(tally).map(([k, v]) => `${v} by ${{ same: 'unchanged voice', word: 'word', end: 'line end', before: 'line 1', line: 'line only' }[k]}`);
+  $('banner').textContent = `Brought ${Object.values(tally).reduce((s, v) => s + v, 0)} notes from ${name}: ${bits.join(', ') || 'none'}` +
+    `${dup ? `; ${dup} already here` : ''}${lost ? `; ${lost} could not be placed (their line is not synced in this recording)` : ''}. Carried notes say so in the editor; check one or two against the picture.`;
+  $('banner').hidden = false;
+  renderNotes(); drawTimeline(); touch();
 }
 
 /* The repo's file is the review. The browser's copy is only for when there
@@ -227,14 +333,18 @@ function whereAt(t) {
   for (let k = 0; k < L.cuts.length; k++) if (lt >= L.cuts[k].t) ci = k;
   let act = null;
   for (const a of L.acts) if (lt >= a.t) act = a.name;
-  const after = lt > (S.anchors[i].dur ?? L.len) + 0.1;
+  const ld = S.anchors[i].dur ?? L.len;
+  const after = lt > ld + 0.1;
   return {
-    line: i + 1, id: L.id, lt: +lt.toFixed(2),
-    word: wi >= 0 ? words[wi].w : null, wi, inWord: inWord && !after, after,
+    line: i + 1, id: L.id, lt: +lt.toFixed(2), ld: +ld.toFixed(2),
+    // the word's own start, so a note can be carried to a re-recording as "this far past the word"
+    word: wi >= 0 ? words[wi].w : null, wi, wa: wi >= 0 ? words[wi].a : null, inWord: inWord && !after, after,
     cut: ci, shot: L.cuts[ci]?.name ?? null, act,
     voice: S.voices[L.id] ?? null,
   };
 }
+
+const letters = (w) => String(w).toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
 
 const fmt = (t) => {
   if (t == null || !Number.isFinite(t)) return '--:--.--';
@@ -286,15 +396,26 @@ function select(id, focus = false) {
 
 const selNote = () => S.notes.find((n) => n.id === S.sel);
 
+const noteHtml = (n) => `
+    <div class="note ${n.id === S.sel ? 'sel' : ''} ${n.done ? 'done' : ''}" data-id="${n.id}">
+      <div class="when"><span class="tag" style="background:${TAG_COLOR[n.tag]}">${n.tag}</span>
+        ${n.done ? '<span class="tick" title="processed">✓</span>' : ''}
+        ${fmt(n.t)}${n.t2 != null ? `–${fmt(n.t2)}` : ''} ${n.box ? '▭' : ''} ${n.carried ? `<span title="brought from ${esc(n.carried.from)} by ${n.carried.how}">⇢</span>` : ''}<br>${esc(whereText(n.at, true))}</div>
+      <div class="txt ${n.text ? '' : 'empty'}">${esc(n.text || 'no words yet')}</div>
+      ${n.done?.what ? `<div class="fix">✓ ${esc(n.done.what)}</div>` : ''}
+    </div>`;
+
 function renderNotes() {
   S.notes.sort((a, b) => a.t - b.t);
-  $('count').textContent = S.notes.length ? `${S.notes.length}` : '';
-  $('notes').innerHTML = S.notes.map((n) => `
-    <div class="note ${n.id === S.sel ? 'sel' : ''}" data-id="${n.id}">
-      <div class="when"><span class="tag" style="background:${TAG_COLOR[n.tag]}">${n.tag}</span>
-        ${fmt(n.t)}${n.t2 != null ? `–${fmt(n.t2)}` : ''} ${n.box ? '▭' : ''}<br>${esc(whereText(n.at, true))}</div>
-      <div class="txt ${n.text ? '' : 'empty'}">${esc(n.text || 'no words yet')}</div>
-    </div>`).join('') || '<p class="status" style="padding:8px">No notes yet. Pause where something should change and press M.</p>';
+  const open = S.notes.filter((n) => !n.done), done = S.notes.filter((n) => n.done);
+  $('count').textContent = S.notes.length ? `${open.length} open · ${done.length} processed` : '';
+  document.querySelectorAll('#filters button').forEach((b) => b.classList.toggle('on', b.dataset.f === S.filter));
+  /* Open notes first: they are the work. Processed ones under their own
+     heading, still there to check the fix against. */
+  const parts = [];
+  if (S.filter !== 'done') parts.push(open.map(noteHtml).join('') || (S.notes.length ? '<p class="status" style="padding:8px">Nothing open.</p>' : ''));
+  if (S.filter !== 'open' && done.length) parts.push(`<h3>Processed (${done.length})</h3>` + done.map(noteHtml).join(''));
+  $('notes').innerHTML = parts.join('') || '<p class="status" style="padding:8px">No notes yet. Pause where something should change and press M.</p>';
 }
 
 function renderEditor() {
@@ -305,6 +426,20 @@ function renderEditor() {
   $('edTags').innerHTML = TAGS.map(([t, c], i) => `<button type="button" data-tag="${t}" class="${n.tag === t ? 'on' : ''}" style="${n.tag === t ? `background:${c};border-color:${c};color:#10131a` : ''}" title="${i + 1}">${i + 1} ${t}</button>`).join('');
   if (document.activeElement !== $('edText')) $('edText').value = n.text;
   $('edBox').textContent = n.box ? '▭ Redraw the box' : '▭ Draw a box';
+  $('edDone').textContent = n.done ? '↺ Reopen — still needs fixing' : '✓ Mark processed';
+  $('edDoneRow').hidden = !n.done;
+  if (n.done && document.activeElement !== $('edWhat')) $('edWhat').value = n.done.what ?? '';
+  $('edDoneAt').textContent = n.done ? `processed ${n.done.at?.slice(0, 10) ?? ''}${n.reopened?.length ? ` · reopened ${n.reopened.length}×` : ''}` : '';
+  const c = n.carried;
+  $('edCarried').hidden = !c;
+  if (c) $('edCarried').textContent = `Brought from ${c.from} (was ${fmt(c.t)}${n.madeAt ? `, ${whereText(n.madeAt, true)}` : ''}), placed by ${c.how === 'same' ? 'the unchanged voice' : c.how === 'word' ? 'its word in the new take' : c.how === 'end' ? 'the end of its line' : c.how === 'before' ? 'line 1' : 'its line only: the word is gone'}.`;
+}
+
+/** Processed, or back to open. Reopening keeps what was tried, in `reopened`. */
+function toggleDone(n) {
+  if (n.done) { n.reopened = [...(n.reopened ?? []), { ...n.done, reopened: new Date().toISOString() }]; delete n.done; }
+  else n.done = { at: new Date().toISOString(), what: '' };
+  touch(); renderNotes(); renderEditor(); drawTimeline(); drawOverlay();
 }
 
 function wireEditor() {
@@ -336,6 +471,10 @@ function wireEditor() {
     S.sel = null; touch(); renderNotes(); renderEditor(); drawTimeline(); drawOverlay();
   };
   $('edBox').onclick = () => startBox();
+  $('edDone').onclick = () => { const n = selNote(); if (n) toggleDone(n); };
+  $('edWhat').addEventListener('input', () => { const n = selNote(); if (n?.done) { n.done.what = $('edWhat').value; touch(); renderNotes(); } });
+  $('edWhat').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); $('edWhat').blur(); } e.stopPropagation(); });
+  $('filters').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) { S.filter = b.dataset.f; renderNotes(); } });
   $('edRange').onclick = () => {
     const n = selNote();
     if (!n) return;
@@ -439,6 +578,7 @@ function onKey(e) {
   else if (k === 'i') { S.inT = video.currentTime; S.outT = null; drawTimeline(); }
   else if (k === 'o') { S.outT = video.currentTime; if (S.inT == null) S.inT = 0; drawTimeline(); }
   else if (k === 'b' && n) startBox();
+  else if (k === 'x' && n) toggleDone(n);
   else if (k === 'Enter' && n) { e.preventDefault(); $('edText').focus(); }
   else if (/^[1-7]$/.test(k) && n) { n.tag = TAGS[Number(k) - 1][0]; touch(); renderNotes(); renderEditor(); drawTimeline(); }
   else if (k === 'Escape') { S.inT = S.outT = null; if (S.drawBox) { S.drawBox = false; overlay.classList.remove('draw'); } else select(null); }
@@ -455,7 +595,9 @@ function tick() {
       r.push(`<span>line</span> <b>${w.line}</b> <b>+${w.lt.toFixed(2)}s</b>`);
       if (w.word) r.push(`<span>${w.inWord ? 'on' : 'after'}</span> <b>"${esc(w.word)}"</b>`);
       r.push(`<span>cut</span> <b>${w.cut + 1} ${esc(w.shot)}</b>`);
-      if (w.act) r.push(`<span>Payne</span> <b>${esc(w.act)}</b>`);
+      // the clip by its name, its frames, and a way into the sprite editor to change them
+      const A = w.line && S.scene.lines[w.line - 1].acts.filter((a) => w.lt >= a.t).at(-1);
+      if (w.act) r.push(`<span>Payne</span> <b>${A?.edit ? `<a href="${esc(A.edit)}" target="sprites" title="open this clip in the sprite editor">${esc(w.act)}</a>` : esc(w.act)}</b>${A?.what ? ` <span>${esc(A.what)}</span>` : ''}`);
     } else if (w?.before) r.push('<span>before line 1</span>');
     if (S.inT != null) r.push(`<span>range</span> <b>${fmt(S.inT)} → ${S.outT != null ? fmt(S.outT) : 'playhead'}</b> <span>(M makes it a note)</span>`);
     const html = r.join('');
@@ -482,7 +624,10 @@ function subtitle(w) {
 
 /* ---------------------------------------------------------------- timeline */
 
-const ROWS = { ruler: [0, 18], lines: [20, 28], cuts: [50, 22], acts: [74, 18], words: [94, 18], wave: [114, 50], notes: [168, 34] };
+/* Open notes and processed ones on separate lanes: a processed pin sitting on
+   top of a new note at the same moment would hide the one that is work. */
+const ROWS = { ruler: [0, 18], lines: [20, 28], cuts: [50, 22], acts: [74, 18], words: [94, 18], wave: [114, 50], notes: [168, 32], done: [202, 26] };
+const laneOf = (n) => (n.done ? ROWS.done : ROWS.notes);
 
 function tx(t) { return (t - S.view.t0) / (S.view.t1 - S.view.t0) * tl.clientWidth; }
 function xt(x) { return S.view.t0 + x / tl.clientWidth * (S.view.t1 - S.view.t0); }
@@ -570,15 +715,18 @@ function drawTimeline() {
   } else {
     g.fillStyle = muted; g.fillText(S.scene ? 'soundtrack loading…' : '', 8, ROWS.wave[0] + ROWS.wave[1] / 2);
   }
-  // notes
-  const [ny, nh] = ROWS.notes;
+  // notes: open ones solid, processed ones hollow on the lane under them
+  g.fillStyle = muted; g.fillText('✓', 3, ROWS.done[0] + ROWS.done[1] / 2);
   for (const n of S.notes) {
+    const [ny, nh] = laneOf(n);
     const x = tx(n.t);
     const c = TAG_COLOR[n.tag];
-    if (n.t2 != null) { g.fillStyle = c + '55'; g.fillRect(x, ny + 6, tx(n.t2) - x, nh - 12); }
-    g.fillStyle = c;
-    g.beginPath(); g.moveTo(x, ny + nh); g.lineTo(x - 6, ny + 8); g.lineTo(x + 6, ny + 8); g.fill();
+    if (n.t2 != null) { g.fillStyle = c + (n.done ? '22' : '55'); g.fillRect(x, ny + 6, tx(n.t2) - x, nh - 12); }
+    g.beginPath(); g.moveTo(x, ny + nh); g.lineTo(x - 6, ny + 8); g.lineTo(x + 6, ny + 8); g.closePath();
+    if (n.done) { g.strokeStyle = c; g.lineWidth = 1.5; g.stroke(); g.lineWidth = 1; }
+    else { g.fillStyle = c; g.fill(); }
     if (n.id === S.sel) { g.strokeStyle = '#fff'; g.lineWidth = 2; g.stroke(); g.lineWidth = 1; }
+    g.fillStyle = n.done ? c + '55' : c;
     g.fillRect(x - 0.5, ROWS.lines[0], 1, ny + 8 - ROWS.lines[0]);
   }
   // playhead
@@ -616,7 +764,8 @@ function wireTimeline() {
     }
     // a note's pin
     if (y >= ROWS.notes[0]) {
-      const n = S.notes.find((q) => Math.abs(tx(q.t) - x) < 7);
+      const lane = y >= ROWS.done[0];
+      const n = S.notes.find((q) => !!q.done === lane && Math.abs(tx(q.t) - x) < 7);
       if (n) { video.pause(); seek(n.t); select(n.id); return; }
     }
     drag = { kind: 'scrub', wasPlaying: !video.paused };
@@ -707,7 +856,9 @@ function drawOverlay() {
     if (!near) continue;
     const [a, b, c, d] = n.box;
     g.strokeStyle = TAG_COLOR[n.tag]; g.lineWidth = n.id === S.sel ? 3 : 2;
+    if (n.done) g.setLineDash([5, 4]);
     g.strokeRect(r.x + a * r.w, r.y + b * r.h, (c - a) * r.w, (d - b) * r.h);
+    g.setLineDash([]);
     if (n.text) {
       g.font = '13px system-ui, sans-serif';
       const label = n.text.split('\n')[0].slice(0, 60);

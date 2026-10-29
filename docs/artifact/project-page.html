@@ -815,6 +815,12 @@ git -c kk.release=true push origin alpha  <span class="c"># only when Richard sa
       off in the game. Preview as a turntable, loop, ping-pong, once, or hold N seconds on each.</li>
     <li><b>Undo/redo</b> (Ctrl+Z / Ctrl+Y) with the last changes listed, a badge per tab for what
       is unsaved, and a Save that says how many changes it writes. It writes both tabs at once.</li>
+    <li><b>Payne</b>: every one of her animation clips, and new ones made out of her video takes.
+      Pick a take, set <b>from</b>/<b>to</b> on its frames, name it, and a line's act list can use it
+      by that name. Preview a clip alone, or a whole intro line with its voice the way the scene
+      plays it. Its own Save writes <code>src/payneclips.json</code>, and <b>Cut pages</b> runs
+      <code>payne-sheet.mjs --only=&lt;the new clips&gt;</code> for you; until then a new clip is
+      drawn off the take in orange.</li>
   </ul>
   <p>Save writes <code>src/spritefix.json</code>. Like <code>tuning.json</code>, it holds overrides
     only: <code>poses</code> keyed by sheet (<code>ember/kiai</code>, so Storm and Blossom wear
@@ -832,7 +838,10 @@ git -c kk.release=true push origin alpha  <span class="c"># only when Richard sa
     cues</b>, to the frame. <kbd>M</kbd> drops a note there (<kbd>I</kbd>/<kbd>O</kbd> a range,
     <kbd>B</kbd> a box on the picture). Notes save to <code>docs/reviews/&lt;scene&gt;/&lt;video&gt;.json</code>,
     each with its place in the scene as well as the video's time, which is what a session reads to
-    act on them.</p>
+    act on them. A fixed note is marked <b>processed</b> (<kbd>X</kbd>) and filed apart, still on the
+    timeline; <kbd>X</kbd> again reopens it. <b>Bring notes from…</b> carries an older recording's
+    notes onto a new one by line and word, so a re-recording after a pass opens with the old notes
+    already in place to check.</p>
   <p>The words come from <code>src/voicewords.json</code>, measured off the shipped mp3s by
     <code>python tools/capture/voice-words.py payne_intro</code> (faster-whisper, local and free).
     <b>Re-record a line and run it again</b>: <code>world-check</code> fails until you do, and an old

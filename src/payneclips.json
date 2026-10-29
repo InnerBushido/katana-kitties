@@ -1,0 +1,21 @@
+{
+  "restMasked": { "take": "halt", "from": 0, "to": 0, "step": 1, "note": "Her masked pose, standing: the first frame of the halt take, which is the drawing." },
+  "restHeld": { "take": "wag", "from": 0, "to": 0, "step": 1, "note": "Her unmasked pose, standing: the first frame of the wag take." },
+  "halt": { "take": "halt", "from": 4, "to": 40, "step": 3, "note": "\"Halt, traveller!\" — palm out, held." },
+  "haha": { "take": "halt", "from": 46, "to": 67, "step": 3, "note": "\"...Ha, kidding.\" — the palm drops into ONE bounce of a laugh. Was 46-82, three bounces (head lows at frames 64, 70, 76); Richard: \"we should only play the bouncing laugh once\"." },
+  "kidding": { "take": "shrug", "from": 24, "to": 72, "step": 3, "back": true, "apex": 0.25, "note": "\"kidding.\" — the shrug take's 1s-3s, palms up, held a beat, and BACK to her pose. Richard: \"ping-pong the shrug animation at the end so that it ends at RestMasked like we started\"." },
+  "beckon": { "take": "halt", "from": 84, "to": 120, "step": 3, "note": "\"Come closer\" — a beckon, and back to her pose." },
+  "shrug": { "take": "shrug", "from": 28, "to": 82, "step": 3, "note": "\"Stuck?\" — palms up." },
+  "salute": { "take": "shrug", "from": 84, "to": 120, "step": 3, "note": "\"Payne, out!\" — and held." },
+  "mask": { "take": "mask", "from": 0, "to": 120, "step": 3, "note": "The helmet going on, peace sign to fist on hip. Played backwards it is the helmet coming OFF." },
+  "tadaa": { "take": "point", "from": 22, "to": 46, "step": 3, "note": "\"Ta-daa!\" — the free arm flung out." },
+  "pointUp": { "take": "point", "from": 46, "to": 120, "step": 3, "note": "\"Look up.\" — from her pose, up, and HELD with the fingertip in frame." },
+  "pointPose": { "take": "point", "from": 24, "to": 120, "step": 3, "note": "Strikes a pose, then points straight up and holds — the point take from its 1s mark. Richard: \"starting at about the 1s mark so that she strikes a pose before smoothly transitioning to the pointUp animation\"." },
+  "wag": { "take": "wag", "from": 4, "to": 61, "step": 3, "note": "A peace sign, waggled." },
+  "wagTalk": { "take": "wag", "from": 0, "to": 48, "step": 3, "note": "Talking — the wag take's first two seconds. Richard: \"a talking animation like payne_wag_999697c0.mp4 has at the first 2 seconds\"." },
+  "thumb": { "take": "wag", "from": 64, "to": 118, "step": 3, "note": "\"Payne.\" / \"Me?\" — a thumb at herself, and back." },
+  "talk": { "take": "talk", "from": 14, "to": 64, "step": 3, "note": "Talking." },
+  "count": { "take": "talk", "from": 116, "to": 160, "step": 3, "note": "One finger, then two: counting the job off." },
+  "wave": { "take": "talk", "from": 166, "to": 196, "step": 3, "note": "A wave, saying hello." },
+  "laugh": { "take": "talk", "from": 204, "to": 240, "step": 3, "note": "A laugh." }
+}

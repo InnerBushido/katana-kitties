@@ -19,6 +19,8 @@ import { voicePath } from '../core/audio.js';
 export const SCENES = {
   'payne-intro': async () => {
     const { PAYNE_INTRO, INTRO_CUTS } = await import('../systems/payneintro.js');
+    // the clips by the names the act lists use: the sprite editor's PAYNE tab edits the same table
+    const { INTRO_CLIPS } = await import('../systems/payneclips.js');
     return {
       id: 'payne-intro',
       title: "Payne's introduction to the world",
@@ -29,7 +31,10 @@ export const SCENES = {
         voice: voicePath(r.voice),
         len: INTRO_CUTS[r.shot].len,
         cuts: INTRO_CUTS[r.shot].cuts.map(([name, t]) => ({ t, name })),
-        acts: r.act.map(([name, t]) => ({ t, name })),
+        acts: r.act.map(([name, t]) => {
+          const c = INTRO_CLIPS[name];
+          return { t, name, what: c ? `${c.take} ${c.from}–${c.to}${c.back ? ' ⇄' : ''}` : '?', edit: `/sprites.html?payne=${name}` };
+        }),
       })),
     };
   },
@@ -70,7 +75,7 @@ export function lineWords(text, measured) {
   /* ...and an edge within two letters of one of whisper's word edges takes
      that edge. Without this, "they're" (6 letters) against "they are" (7)
      put line 6's "run" one letter early, at the END of "yours" (6.04s), when
-     whisper's "Run" starts after a pause at 6.69: a word edge is where the
+     "Run" starts after a pause (at 7.06, measured): a word edge is where the
      time jumps, and a fraction just short of it lands before the jump. */
   const starts = [], ends = [];
   let cw = 0;

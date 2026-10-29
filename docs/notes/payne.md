@@ -395,7 +395,9 @@ replayable from her card. It explains the mischief, the entropy that sets the
 kotodama free, the islands coming back together, bad karma, and caring for
 nature in the Shinto way, and then lists the objectives, "similar in feel to
 the ending". Payne starts masked, unmasks, and puts the mask back on for her
-"space mission" to worlds with "too much order and boredom".
+"space mission" to worlds with "too much order and boredom" (line 12, since
+re-worded by Richard: "...the same old, boring problems — too much order, too
+much monotony. Somebody has to go out there and shake things up!").
 
 - **Thirteen lines, `payne_intro_1..13`** (`PAYNE_INTRO`, in
   systems/payneintro.js), all Pixie, about 75 seconds of speech. They are
