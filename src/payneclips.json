@@ -1,9 +1,9 @@
 {
   "restMasked": { "take": "halt", "from": 0, "to": 0, "step": 1, "note": "Her masked pose, standing: the first frame of the halt take, which is the drawing." },
   "restHeld": { "take": "wag", "from": 0, "to": 0, "step": 1, "note": "Her unmasked pose, standing: the first frame of the wag take." },
-  "halt": { "take": "halt", "from": 4, "to": 40, "step": 3, "note": "\"Halt, traveller!\" — palm out, held." },
+  "halt": { "take": "halt", "from": 10, "to": 40, "step": 3, "note": "\"Halt, traveller!\" — palm out, held." },
   "haha": { "take": "halt", "from": 46, "to": 67, "step": 3, "note": "\"...Ha, kidding.\" — the palm drops into ONE bounce of a laugh. Was 46-82, three bounces (head lows at frames 64, 70, 76); Richard: \"we should only play the bouncing laugh once\"." },
-  "kidding": { "take": "shrug", "from": 24, "to": 72, "step": 3, "back": true, "apex": 0.25, "note": "\"kidding.\" — the shrug take's 1s-3s, palms up, held a beat, and BACK to her pose. Richard: \"ping-pong the shrug animation at the end so that it ends at RestMasked like we started\"." },
+  "kidding": { "take": "shrug", "from": 31, "to": 81, "step": 3, "note": "\"kidding.\" — the shrug take's 1s-3s, palms up, held a beat, and BACK to her pose. Richard: \"ping-pong the shrug animation at the end so that it ends at RestMasked like we started\"." },
   "beckon": { "take": "halt", "from": 84, "to": 120, "step": 3, "note": "\"Come closer\" — a beckon, and back to her pose." },
   "shrug": { "take": "shrug", "from": 28, "to": 82, "step": 3, "note": "\"Stuck?\" — palms up." },
   "salute": { "take": "shrug", "from": 84, "to": 120, "step": 3, "note": "\"Payne, out!\" — and held." },

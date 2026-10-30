@@ -29,7 +29,7 @@ export const INTRO_GEO = {
     "src": "wag/0/0/1"
   },
   "halt": {
-    "n": 13,
+    "n": 11,
     "cols": 4,
     "perPage": 20,
     "pages": 1,
@@ -37,7 +37,7 @@ export const INTRO_GEO = {
     "x1": 0.2578,
     "y0": -0.0104,
     "y1": 1.0104,
-    "src": "halt/4/40/3"
+    "src": "halt/10/40/3"
   },
   "haha": {
     "n": 8,
@@ -59,7 +59,7 @@ export const INTRO_GEO = {
     "x1": 0.3464,
     "y0": -0.0104,
     "y1": 1.0443,
-    "src": "shrug/24/72/3"
+    "src": "shrug/31/81/3"
   },
   "beckon": {
     "n": 13,
