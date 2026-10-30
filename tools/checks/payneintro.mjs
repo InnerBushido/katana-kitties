@@ -28,8 +28,10 @@ import {
 } from '../../src/systems/payneclips.js';
 import { INTRO_GEO, INTRO_STAGE } from '../../src/systems/payneframes.js';
 import {
-  PAYNE_INTRO, INTRO_CUTS, BLAST, actFrame, maskedIn, introShot, introCtx, PayneActor,
+  PAYNE_INTRO, PAYNE_INTRO_CODE, INTRO_CUTS, BLAST, actFrame, maskedIn, introShot, introCtx, PayneActor,
 } from '../../src/systems/payneintro.js';
+import { cleanActs, applyActs } from '../../src/systems/payneacts.js';
+import ACTS from '../../src/payneacts.json' with { type: 'json' };
 import { IntroSet, SPACE } from '../../src/systems/payneset.js';
 import { Housing } from '../../src/systems/housing/housing.js';
 import * as PN from '../../src/systems/payne.js';
@@ -154,20 +156,31 @@ export async function payneIntroChecks({ ok, world }) {
   {
     /* RICHARD'S FIRST REVIEW (Oct 2026, docs/reviews/payne-intro/), one check
        a note, against the WORDS as measured (src/voicewords.json), so a
-       re-recorded line that moves a word fails here rather than on screen. */
-    const L = PAYNE_INTRO;
+       re-recorded line that moves a word fails here rather than on screen.
+       AGAINST THE CODE'S CUES, not what plays: these pin what a session did
+       with his notes. Once he edits a line himself in the sprite editor
+       (src/payneacts.json) his edit IS the note, and a check that failed on
+       it would be a check arguing with the director. What must hold whatever
+       he does — masked/unmasked/masked, real cells, every move once — is
+       checked above, on what plays. */
+    const L = PAYNE_INTRO_CODE;
     const word = (n, re) => WORDS[`payne_intro_${n}`]?.words.find(([w]) => re.test(w))?.[1];
     const C = (c) => INTRO_CLIPS[c];
     // "we should only play the bouncing laugh once" — the head's three lows are at frames 64, 70, 76
     ok('his notes: the laugh bounces ONCE (the halt take ends before its second low, frame 70)',
       C('haha').take === 'halt' && C('haha').to < 70, `haha ${C('haha').from}-${C('haha').to}`);
-    // "After Haha animation, immediately go to RestMasked and hold" / "...so that it ends at RestMasked"
+    // "After Haha animation, immediately go to RestMasked and hold"
+    /* The kidding shrug WAS there and back ("ping-pong the shrug animation ...
+       so that it ends at RestMasked"), and this checked that it came home.
+       Richard then re-made it himself in the sprite editor (Oct 30: shrug
+       31-81, one way, no `back`), which is his call and not a regression; so
+       what is pinned is the part that is still the note: the shrug take, on
+       the word. */
     const l1 = L[0].act.map(([c]) => c);
     const k = L[0].act.find(([c]) => c === 'kidding');
-    const kEnd = k && at(L[0], L[0].act[l1.indexOf('kidding') + 1][1] - 0.01);
-    ok('...on line 1: haha, then her masked pose, then the kidding shrug on "kidding" that comes home before the beckon',
-      l1.join() === 'halt,haha,restMasked,kidding,restMasked,beckon' && C('kidding').take === 'shrug' && C('kidding').back
-      && Math.abs(k[1] - word(1, /^kidding/i)) < 0.05 && kEnd.cell === 0, `kidding back to cell ${kEnd?.cell}`);
+    ok('...on line 1: haha, then her masked pose, then the kidding shrug on "kidding", then the beckon',
+      l1.join() === 'halt,haha,restMasked,kidding,restMasked,beckon' && C('kidding').take === 'shrug'
+      && Math.abs(k[1] - word(1, /^kidding/i)) < 0.05, `kidding ${C('kidding').from}-${C('kidding').to}${C('kidding').back ? ' and back' : ''}`);
     // "This is where we should start the face reveal, after she says fine"
     let off = null;
     for (const [t, f] of walk(L[1], 0.01)) if (off == null && !maskedIn(f.clip, f.cell)) off = t;
@@ -203,6 +216,56 @@ export async function payneIntroChecks({ ok, world }) {
       `len ${INTRO_CUTS.l12.len}, voice ${WORDS.payne_intro_12.dur}`);
   }
   {
+    /* RICHARD'S OWN CUES (src/payneacts.json, the sprite editor's PAYNE tab).
+       "Is there a way to modify the lines in the Sprite Editor to add or
+       delete clips?" The file is overrides only, and the game takes it line
+       by line, keeping the code's cues where a line is bad. */
+    const names = Object.keys(INTRO_CLIPS);
+    const { acts, bad } = cleanActs(ACTS, names);
+    const key = (r) => JSON.stringify({ act: r.act, hold: r.hold ?? 0 });
+    const code = Object.fromEntries(PAYNE_INTRO_CODE.map((r) => [r.voice, key(r)]));
+    ok('src/payneacts.json is clean, names only lines that exist, and holds only lines that differ from the code (overrides only)',
+      bad.length === 0 && Object.keys(acts).every((id) => code[id] && key(acts[id]) !== code[id]),
+      bad.join(' · ') || `${Object.keys(acts).length} line(s) edited in the sprite editor`);
+    ok('...and what plays is the code\'s cues with exactly those lines swapped in, the rest untouched',
+      PAYNE_INTRO.every((r, i) => key(r) === (acts[r.voice] ? key(acts[r.voice]) : key(PAYNE_INTRO_CODE[i]))));
+    // the cleaner refuses each way a hand edit goes wrong, and says which line
+    const one = (act, hold) => cleanActs({ payne_intro_1: { act, hold } }, names);
+    const refusals = {
+      'no cues': one([]),
+      'a clip that does not exist': one([['nobodysClip', 0]]),
+      'a time that is not a number': one([['halt', 'soon']]),
+      'two cues at one moment': one([['halt', 1], ['haha', 1]]),
+      'a speed of 0': one([['halt', 0, null, null, 0]]),
+      'a cell that is not a whole number': one([['halt', 0, 1.5, 3]]),
+      'a hold of an hour': one([['halt', 0]], 3600),
+      'a line that is not one of hers': cleanActs({ payne_tour_1: { act: [['halt', 0]] } }, names),
+    };
+    const let_through = Object.entries(refusals).filter(([, v]) => !v.bad.length || Object.keys(v.acts).length).map(([k]) => k);
+    ok('...and a bad cue is refused with its reason — no cues, an unknown clip, a time that is no number, two at once, speed 0, half a cell, an hour\'s hold, not her line',
+      let_through.length === 0 && /payne_intro_1: .*nobodysClip/.test(refusals['a clip that does not exist'].bad[0]), let_through.join(', ') || 'all refused');
+    const good = one([['haha', 2], ['halt', 0, null, null, 1], ['kidding', 1, 3, null, null]]);
+    ok('...and a good one comes back in time order, written the way payneintro.js writes a cue (trailing blanks dropped)',
+      JSON.stringify(good.acts.payne_intro_1?.act) === JSON.stringify([['halt', 0, null, null, 1], ['kidding', 1, 3], ['haha', 2]]));
+    // the editor edits what plays IN PLACE: if that wrote on the code's rows, "back to the code's cues" would go back to the edit
+    const rows = applyActs(PAYNE_INTRO_CODE, {}, names).rows;
+    rows[0].act[0][1] = 99; rows[0].act.push(['halt', 98]);
+    ok('...and the rows that play are copies: editing them in the sprite editor never writes on the code\'s cues',
+      PAYNE_INTRO_CODE[0].act[0][1] !== 99 && !PAYNE_INTRO_CODE[0].act.some((e) => e[1] === 98) && rows[0].act !== PAYNE_INTRO_CODE[0].act);
+    // a line whose saved cues went bad still plays: the code's cues, not a thrown scene
+    const fallback = applyActs(PAYNE_INTRO_CODE, { payne_intro_2: { act: [['gone', 0]] } }, names);
+    ok('...and a line whose saved cues name a clip that has gone plays the code\'s cues instead, and says so',
+      key(fallback.rows[1]) === code.payne_intro_2 && fallback.bad.length === 1 && /payne_intro_2/.test(fallback.bad[0]));
+    ok('...and a cue whose clip is missing from the table draws her standing, not a throw',
+      actFrame([['gone', 0]], 1).clip === 'restHeld');
+    // the save is ONE request for clips and lines (writing either file reloads the page)
+    const vite = read('vite.config.js');
+    const ed = read('src/sprite-editor-payne.js');
+    ok('...and the sprite editor saves clips and lines in one request, checked whole against the clips in that same request',
+      /url\.pathname === '\/save'/.test(vite) && /cleanActs\(parsed\.acts, Object\.keys\(clips\)\)/.test(vite) && !/pathname === '\/clips'/.test(vite)
+      && /\/__payne\/save/.test(ed) && /acts: overrides\(\)/.test(ed));
+  }
+  {
     const t = INTRO_CUTS.l9.len - 0.1;
     ok('...and a frame held is counted as held, so she breathes in the long still lines (line 9 is one pose)',
       at(PAYNE_INTRO[8], t).held > 1 && at(PAYNE_INTRO[8], 0.01).held >= 0, `held ${at(PAYNE_INTRO[8], t).held.toFixed(2)}s`);
@@ -213,9 +276,13 @@ export async function payneIntroChecks({ ok, world }) {
        the cue is (a re-recorded line is re-cued by ear off these). Read off
        the source, for both her moves and the cuts. */
     const src = read('src/systems/payneintro.js');
-    const script = src.slice(src.indexOf('export const PAYNE_INTRO = ['), src.indexOf('/** Clips she is wearing'));
-    const cuts = src.slice(src.indexOf('export const INTRO_CUTS = {'), src.indexOf('/** Which cut of a line'));
-    const bad = [];
+    // the script's array is PAYNE_INTRO_CODE now (the code's cues; payneacts.js). A marker that is not
+    // found slices from -1 and reads the wrong text without a word, so each one is asked for out loud
+    const marks = ['export const PAYNE_INTRO_CODE = [', '/** Clips she is wearing', 'export const INTRO_CUTS = {', '/** Which cut of a line'];
+    const lost = marks.filter((m) => !src.includes(m));
+    const script = src.slice(src.indexOf(marks[0]), src.indexOf(marks[1]));
+    const cuts = src.slice(src.indexOf(marks[2]), src.indexOf(marks[3]));
+    const bad = lost.map((m) => `no "${m}" in payneintro.js`);
     let n = 0;
     const word = (c) => (c.match(/[A-Za-z][A-Za-z'-]*/) ?? [''])[0].toLowerCase();
     for (const blk of script.split(/\n\s*P\(/).slice(1)) {

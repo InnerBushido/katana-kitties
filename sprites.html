@@ -76,6 +76,17 @@ kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-
 .pn-st.cut { color: #3a7a3a; } .pn-st.stale, .pn-st.new { color: var(--warn); font-weight: 700; }
 #pn-list { max-height: 34vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 6px; background: #fffaf0; }
 #pn-status.warn { color: var(--warn); font-weight: 600; }
+.pn-cue { border: 1px solid var(--line); border-left: 6px solid #ccc; border-radius: 5px; padding: 3px 6px; margin: 4px 0; background: #fffaf0; }
+.pn-cue.sel { outline: 2px solid var(--accent); }
+.pn-cue.now { background: #fff2d4; }
+.pn-cue .row { margin: 0; gap: 4px; flex-wrap: nowrap; }
+.pn-cue select { flex: 1; min-width: 0; }
+.pn-cue input[data-k=at] { width: 62px; }
+.pn-cue > .tiny { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pn-cue .tiny input { width: 38px; font-size: 12px; padding: 0 2px; }
+.pn-cue button { padding: 1px 6px; }
+.pn-cue .warn { color: var(--warn); }
+#pn-cues { max-height: 40vh; overflow-y: auto; }
 #readout { position: absolute; left: 10px; top: 10px; color: #fff6de; font: 12px/1.4 ui-monospace, monospace; background: rgba(20,16,26,.7); padding: 6px 8px; border-radius: 6px; pointer-events: none; white-space: pre; }
 #cells { display: flex; flex-wrap: wrap; gap: 3px; padding: 6px; background: #f3e6c8; border-top: 2px solid var(--line); max-height: 34vh; overflow: auto; }
 .cell { position: relative; width: 78px; height: 92px; background: repeating-conic-gradient(#ddd 0 25%, #fff 0 50%) 0 0/12px 12px; border: 2px solid transparent; cursor: pointer; display: flex; flex-direction: column; }
@@ -183,6 +194,14 @@ kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-
     <h2>Preview</h2>
     <div class="row"><select id="pn-what" title="A clip on its own, or a whole line of the intro the way the game plays it, with its voice"></select></div>
     <div class="row"><button id="pn-play">▶ play</button><label class="inl">speed</label><select id="pn-rate"><option>0.25</option><option>0.5</option><option selected>1</option></select><label class="inl"><input id="pn-loop" type="checkbox" checked> loop</label></div>
+    <section id="pn-line" hidden>
+      <h2>Line <span id="pn-line-n"></span> <span id="pn-line-src" class="tiny"></span></h2>
+      <div class="tiny">Each cue starts a clip, which plays once and holds until the next. On the track under her: drag a cue's edge (<kbd>Shift</kbd> snaps to a word), click to move the playhead. Click a cue here to show its clip above; <kbd>Delete</kbd> takes the selected one out.</div>
+      <div id="pn-cues"></div>
+      <div class="row"><button id="pn-cue-add" title="A cue of the clip picked above, at the preview's playhead">＋ at the playhead</button></div>
+      <div class="row"><label>hold</label><input id="pn-hold" type="number" min="0" max="10" step="0.05" title="Extra seconds the line stays up after its voice and the half second every line gets"><span class="tiny">s past the voice, so a clip can finish</span></div>
+      <div class="row"><button id="pn-line-revert" title="This line as it was last saved">revert line</button><button id="pn-line-code" title="The cues payneintro.js writes for this line; saving takes it out of src/payneacts.json">back to the code's cues</button></div>
+    </section>
     <div class="tiny">Left: the take at the playhead. Right: what plays, drawn the game's way — off the cut pages, or off the take (in orange) until it is cut. Strip: click a frame; <kbd>Shift</kbd>-click sets <b>from</b>, <kbd>Ctrl</kbd>-click sets <b>to</b>. Keys: <kbd>,</kbd> <kbd>.</kbd> a frame (<kbd>Shift</kbd>: a step), <kbd>[</kbd> <kbd>]</kbd> from / to, <kbd>Space</kbd> play.</div>
     <button class="save" id="pn-save" disabled>Nothing to save</button>
     <div class="row"><button id="pn-cut" disabled>✂ Every clip is cut</button></div>

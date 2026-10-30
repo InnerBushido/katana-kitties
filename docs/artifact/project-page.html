@@ -809,7 +809,9 @@ git push origin alpha</code></pre>
       by that name. Preview a clip alone, or a whole intro line with its voice the way the scene
       plays it. Its own Save writes <code>src/payneclips.json</code>, and <b>Cut pages</b> runs
       <code>payne-sheet.mjs --only=&lt;the new clips&gt;</code> for you; until then a new clip is
-      drawn off the take in orange.</li>
+      drawn off the take in orange. Previewing a line also lists <b>its cues</b>, to add, retime
+      (drag on the track; Shift snaps to a word) or take out. Saved lines go to
+      <code>src/payneacts.json</code>, overrides only: the code's cues stay the defaults.</li>
   </ul>
   <p>Save writes <code>src/spritefix.json</code>. Like <code>tuning.json</code>, it holds overrides
     only: <code>poses</code> keyed by sheet (<code>ember/kiai</code>, so Storm and Blossom wear

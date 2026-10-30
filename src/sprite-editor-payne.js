@@ -26,10 +26,20 @@
  *
  * A CLIP A LINE USES CANNOT BE DELETED OR RENAMED HERE — the line would name
  * nothing. The refusal says which line (non-negotiable 6).
+ *
+ * A LINE'S CUES ARE EDITED HERE TOO. Richard, Oct 2026: "Is there a way to
+ * modify the lines in the Sprite Editor to add or delete clips? ... I lack the
+ * ability to delete clips from it." Preview a line and its cues are listed
+ * under it, and drawn on a track over its words: add one at the playhead,
+ * change its clip, drag it along the track (Shift snaps to a word), or take it
+ * out. Taking a clip out of every line that uses it is what then lets the clip
+ * itself be deleted. Saved lines go to src/payneacts.json, OVERRIDES ONLY
+ * (systems/payneacts.js says why): a line put back to the code's cues leaves
+ * the file.
  */
 import { INTRO_CLIPS, INTRO_TAKES, INTRO_FPS, clipFrames, clipRun, pagePath, blitCell } from './systems/payneclips.js';
 import { INTRO_GEO, INTRO_STAGE } from './systems/payneframes.js';
-import { PAYNE_INTRO, INTRO_CUTS, actFrame } from './systems/payneintro.js';
+import { PAYNE_INTRO, PAYNE_INTRO_CODE, INTRO_CUTS, actFrame } from './systems/payneintro.js';
 import { voicePath } from './core/audio.js';
 
 const $ = (id) => document.getElementById(id);
@@ -55,6 +65,91 @@ let audio = null;
 
 /** Which lines name a clip: `[3, 4]`. */
 const usedBy = (name) => PAYNE_INTRO.map((r, i) => (r.act.some(([c]) => c === name) ? i + 1 : 0)).filter(Boolean);
+
+/* ------------------------------------------------------------ the lines' cues */
+
+/* EDITED IN PLACE, LIKE THE CLIPS: `PAYNE_INTRO` is the game's script with
+   src/payneacts.json in force, in rows of its own (payneacts.js), so
+   `actFrame` plays the draft, and `usedBy` sees a clip leave a line the
+   moment its cue is taken out. `PAYNE_INTRO_CODE` is never written on: it is
+   what "back to the code's cues" goes back to, and what decides which lines
+   the file has to hold. */
+const lineKey = (r) => JSON.stringify({ act: r.act, hold: r.hold ?? 0 });
+const CODE = Object.fromEntries(PAYNE_INTRO_CODE.map((r) => [r.voice, lineKey(r)]));
+const snapLines = () => Object.fromEntries(PAYNE_INTRO.map((r) => [r.voice, lineKey(r)]));
+let savedLines = snapLines();
+const dirtyLines = () => PAYNE_INTRO.filter((r) => lineKey(r) !== savedLines[r.voice]).map((r) => PAYNE_INTRO.indexOf(r) + 1);
+const isOverride = (r) => lineKey(r) !== CODE[r.voice];
+/** What src/payneacts.json holds: every line that is not the code's, whole. */
+const overrides = () => Object.fromEntries(PAYNE_INTRO.filter(isOverride).map((r) => [r.voice, { act: r.act, hold: r.hold ?? 0 }]));
+const lineNo = () => (play.what.startsWith('line:') ? Number(play.what.slice(5)) : 0);
+const curLine = () => PAYNE_INTRO[lineNo() - 1] ?? null;
+let selCue = -1;
+
+/** A cue as payneintro.js writes one: trailing empties dropped, so an untouched cue compares equal. */
+function norm(e) {
+  const o = [...e];
+  while (o.length > 2 && o.at(-1) == null) o.pop();
+  return o;
+}
+/** `t`, or the next hundredth no other cue of the line starts on (two at one moment would hide one). */
+function freeAt(r, t, self) {
+  let at = Math.round(t * 100) / 100;
+  while (r.act.some((x) => x !== self && x[1] === at)) at = Math.round((at + 0.01) * 100) / 100;
+  return at;
+}
+function sortCues(r, keep = r.act[selCue]) {
+  r.act.sort((a, b) => a[1] - b[1]);
+  selCue = keep ? r.act.indexOf(keep) : -1;
+}
+function editCue(i, patch) {
+  const r = curLine();
+  const e = r?.act[i];
+  if (!e) return;
+  const [clip, at, from = null, to = null, rate = null] = e;
+  const v = { clip, at, from, to, rate, ...patch };
+  // another clip's cell numbers mean nothing on this one
+  if (patch.clip && patch.clip !== clip) { v.from = null; v.to = null; }
+  const n = norm([v.clip, v.at, v.from, v.to, v.rate]);
+  n[1] = freeAt(r, n[1], e);
+  r.act[i] = n;
+  sortCues(r, n);
+  render();
+}
+function addCue() {
+  const r = curLine();
+  if (!r) return;
+  const e = [sel, freeAt(r, play.t)];
+  r.act.push(e);
+  sortCues(r, e);
+  render();
+  const w = wordAt(r, e[1] + 0.001);
+  status(`Added ${sel} at ${e[1].toFixed(2)}s on line ${lineNo()}${w ? `, on "${w}"` : ''}. Save to keep it.`);
+}
+function delCue(i) {
+  const r = curLine();
+  if (!r?.act[i]) return;
+  if (r.act.length === 1) { status(`Line ${lineNo()} has one cue left, and she has to be doing something: change its clip instead, or add another first.`, true); return; }
+  const [gone] = r.act.splice(i, 1);
+  selCue = Math.min(i, r.act.length - 1);
+  render();
+  status(`Took ${gone[0]} at ${gone[1]}s out of line ${lineNo()}.${usedBy(gone[0]).length ? '' : ` No line uses "${gone[0]}" now.`} Save to keep it; "revert line" puts it back.`);
+}
+/** Put a line's cues back to `key` (a lineKey), refusing if they name a clip that has since gone. */
+function restoreLine(r, key, what) {
+  const s = JSON.parse(key);
+  const gone = s.act.map(([c]) => c).filter((c) => !draft[c]);
+  if (gone.length) { status(`Can't go back to ${what}: it plays ${[...new Set(gone)].join(', ')}, which ${gone.length === 1 ? 'is' : 'are'} not a clip any more.`, true); return; }
+  r.act = s.act;
+  r.hold = s.hold;
+  selCue = -1;
+  render();
+  status(`Line ${PAYNE_INTRO.indexOf(r) + 1} is back to ${what}.`);
+}
+function seek(t) {
+  play.t = t;
+  if (audio) audio.currentTime = Math.max(0, t);
+}
 
 /** cut (its pages are of this definition), stale (cut, but from other frames), or new. */
 function cutState(name) {
@@ -222,15 +317,56 @@ function draw() {
     ({ cell, held } = clipRun(C, play.t));
   } else {
     const r = PAYNE_INTRO[Number(play.what.slice(5)) - 1];
-    ({ clip: name, cell, held } = actFrame(r.act, play.t));
+    let entry;
+    ({ clip: name, cell, held, entry } = actFrame(r.act, play.t));
     const w = wordAt(r, play.t);
     line = `line ${PAYNE_INTRO.indexOf(r) + 1}  +${play.t.toFixed(2)}s${w ? `  "${w}"` : ''}`;
+    drawTrack(r, box);
+    box.h -= TRACK_H + 12;              // she stands above the track, not behind it
+    document.querySelectorAll('#pn-cues .pn-cue').forEach((el, i) => el.classList.toggle('now', i === entry));
   }
+  if (!lineNo()) trackR = null;
   const from = drawCell(name, cell, box);
   shown = { name, cell, held: +held.toFixed(3), from };
   label(`${name}  cell ${cell}/${clipFrames(draft[name]).length - 1}${held > 0 ? '  (held)' : ''}  ${from === 'take' ? '· NOT CUT: off the take' : from === 'loading' ? '· loading…' : ''}`, box.x + 8, box.y + 20, from === 'take' ? '#ffb347' : '#fff6de');
   if (line) label(line, box.x + 8, box.y + 42);
   drawStrip(C, top, W);
+}
+
+/* THE LINE'S TRACK, under her when a line is previewed: its words along the
+   top, each cue a block from where it starts to where the next one does, the
+   half second after the voice (and the line's hold) shaded. A cue's left edge
+   drags; a click anywhere else puts the playhead there. */
+const TRACK_H = 54;
+let trackR = null;                    // where the track was last drawn, in CSS px, for the pointer
+let drag = null;
+const trackX = (t) => trackR.x + (t - trackR.t0) / (trackR.t1 - trackR.t0) * trackR.w;
+const trackT = (x) => trackR.t0 + (x - trackR.x) / trackR.w * (trackR.t1 - trackR.t0);
+const hue = (s, a) => { let k = 0; for (const ch of s) k = (k * 31 + ch.charCodeAt(0)) % 360; return `hsla(${k},60%,62%,${a})`; };
+function drawTrack(r, box) {
+  const end = lineLen(PAYNE_INTRO.indexOf(r) + 1);
+  const voice = INTRO_CUTS[r.shot].len;
+  trackR = { x: box.x + 8, y: box.y + box.h - TRACK_H - 6, w: box.w - 16, h: TRACK_H, t0: Math.min(0, ...r.act.map((e) => e[1])) - 0.1, t1: end + 0.1 };
+  const { x, y, w, h } = trackR;
+  g.fillStyle = 'rgba(20,16,26,.85)'; g.fillRect(x, y, w, h);
+  g.fillStyle = 'rgba(255,255,255,.07)'; g.fillRect(trackX(voice), y, trackX(end) - trackX(voice), h);
+  g.font = '10px ui-monospace, Consolas, monospace';
+  let lastX = -1e9;
+  for (const [s, a] of WORDS?.[r.voice]?.words ?? []) {
+    const X = trackX(a);
+    g.fillStyle = 'rgba(255,246,222,.35)'; g.fillRect(X, y, 1, 13);
+    if (X - lastX > g.measureText(s).width + 4) { g.fillStyle = '#c9b8a0'; g.fillText(s, X + 2, y + 10); lastX = X + g.measureText(s).width; }
+  }
+  r.act.forEach((e, i) => {
+    const X = trackX(e[1]);
+    const X2 = trackX(r.act[i + 1]?.[1] ?? end);
+    g.fillStyle = hue(e[0], i === selCue ? 0.95 : 0.6); g.fillRect(X, y + 16, Math.max(2, X2 - X - 1), h - 20);
+    g.fillStyle = i === selCue ? '#fff' : 'rgba(255,255,255,.7)'; g.fillRect(X - 1, y + 13, 3, h - 13);
+    g.save(); g.beginPath(); g.rect(X + 3, y + 16, Math.max(0, X2 - X - 5), h - 20); g.clip();
+    g.fillStyle = '#16121a'; g.font = '11px ui-monospace, Consolas, monospace'; g.fillText(e[0], X + 5, y + 33);
+    g.restore();
+  });
+  g.fillStyle = '#ff5d5d'; g.fillRect(trackX(play.t) - 1, y, 2, h);
 }
 
 /* THE STRIP: every frame of the take, the clip's span lit, the frames it picks
@@ -294,8 +430,33 @@ function renderList() {
   $('pn-cut').disabled = !toCut.length;
   $('pn-cut').textContent = toCut.length ? `✂ Cut pages for ${toCut.join(', ')}` : '✂ Every clip is cut';
   const d = dirtyNames();
-  $('pn-save').disabled = !d.length;
-  $('pn-save').textContent = d.length ? `Save ${d.length} clip change${d.length === 1 ? '' : 's'} to src/payneclips.json` : 'Nothing to save';
+  const L = dirtyLines();
+  $('pn-save').disabled = !d.length && !L.length;
+  $('pn-save').textContent = !d.length && !L.length ? 'Nothing to save'
+    : `Save ${[d.length && `${d.length} clip${d.length === 1 ? '' : 's'}`, L.length && `line ${L.join(', ')}`].filter(Boolean).join(' and ')}`;
+  $('pn-save').title = 'Clips to src/payneclips.json, lines to src/payneacts.json';
+}
+
+function renderLine() {
+  const r = curLine();
+  $('pn-line').hidden = !r;
+  if (!r) return;
+  const n = lineNo();
+  $('pn-line-n').textContent = n;
+  const dirty = dirtyLines().includes(n);
+  $('pn-line-src').textContent = `${isOverride(r) ? 'edited here (src/payneacts.json)' : 'the code\'s cues (payneintro.js)'}${dirty ? ' · unsaved' : ''}`;
+  $('pn-cue-add').textContent = `＋ ${sel} at the playhead`;
+  const end = lineLen(n);
+  const names = Object.keys(draft);
+  $('pn-cues').innerHTML = r.act.map(([c, at, from, to, rate], i) => {
+    const w = wordAt(r, at + 0.001);
+    const where = at >= end ? '<b class="warn">after the line ends</b>' : w ? `on “${esc(w)}”` : 'before the first word';
+    return `<div class="pn-cue ${i === selCue ? 'sel' : ''}" data-i="${i}" style="border-left-color:${hue(c, 1)}">
+      <div class="row"><select data-k="clip">${names.map((x) => `<option value="${x}"${x === c ? ' selected' : ''}>${x}</option>`).join('')}${draft[c] ? '' : `<option value="${esc(c)}" selected>${esc(c)} (gone)</option>`}</select><input data-k="at" type="number" step="0.01" value="${at}" title="seconds into the line's voice"><span class="tiny">s</span><button data-do="here" title="move this cue to the playhead">⌖</button><button data-do="seek" title="put the playhead on this cue">▶</button><button data-do="del" title="take this cue out of the line (Delete)">✕</button></div>
+      <div class="tiny">${where} · cells <input data-k="from" type="number" min="0" placeholder="all" value="${from ?? ''}">→<input data-k="to" type="number" min="0" value="${to ?? ''}"> ×<input data-k="rate" type="number" step="0.05" min="0.05" max="4" placeholder="1" value="${rate ?? ''}" title="speed: 1 is as cut, 1.7 is 70% faster"></div>
+    </div>`;
+  }).join('');
+  if (document.activeElement !== $('pn-hold')) $('pn-hold').value = r.hold ?? 0;
 }
 
 function renderClip() {
@@ -315,19 +476,19 @@ function renderClip() {
   const st = cutState(sel);
   $('pn-info').textContent = [
     `${clipFrames(C).length} cells, ${(clipFrames(C).length / INTRO_FPS).toFixed(2)}s${C.back ? ` out, ${C.apex ?? 0}s held, and back` : ''}`,
-    used.length ? `used by line ${used.join(', ')} (src/systems/payneintro.js)` : 'no line uses it yet: name it in a line\'s act list in src/systems/payneintro.js',
+    used.length ? `used by line ${used.join(', ')}` : 'no line uses it yet: preview a line and ＋ it in at the playhead',
     st === 'cut' ? 'its pages are cut' : st === 'stale' ? 'its pages are of OLD frames: cut it again' : 'not cut yet: the preview is off the take',
   ].join(' · ');
   $('pn-what').value = play.what;
 }
 
-function render() { renderList(); renderClip(); }
+function render() { renderList(); renderClip(); renderLine(); }
 
-function pick(n) {
+function pick(n, keepT = false) {
   if (!draft[n]) return;
   sel = n; ui.sel = n; keep();
   head = draft[n].from;
-  play.t = 0;
+  if (!keepT) play.t = 0;
   render();
   for (const f of clipFrames(draft[n])) grab(draft[n].take, f, Math.round(Math.min(720, ($('payne-stage').clientHeight - STRIP_H) * 1.5)));
 }
@@ -336,7 +497,7 @@ function edit(patch) {
   const C = draft[sel];
   Object.assign(C, patch);
   if (!C.back) { delete C.back; delete C.apex; }
-  play.t = 0;
+  if (!lineNo()) play.t = 0;            // a line being watched keeps its place while its clip is changed
   render();
 }
 
@@ -344,7 +505,7 @@ function edit(patch) {
 function refuseUsed(n, doing) {
   const used = usedBy(n);
   if (!used.length) return false;
-  status(`Can't ${doing} "${n}": line ${used.join(', ')} plays it. Take it out of the act list in src/systems/payneintro.js first, or make a new clip and use that.`, true);
+  status(`Can't ${doing} "${n}": line ${used.join(', ')} plays it. Preview ${used.length === 1 ? 'that line' : 'each of those lines'} and take its ${n} cue out (✕) first, or make a new clip and use that.`, true);
   return true;
 }
 
@@ -413,13 +574,71 @@ function wire() {
     pick(Object.keys(draft)[0]);
     status(`Deleted "${gone}" from the draft. Save to write it; its pages go at the next cut.`);
   };
-  $('pn-what').onchange = () => { play.what = $('pn-what').value; play.t = 0; stopAudio(); if (play.on) startAudio(); };
+  $('pn-what').onchange = () => {
+    play.what = $('pn-what').value; play.t = 0; selCue = -1;
+    ui.what = play.what; keep();          // a save reloads the page: come back to the same line
+    stopAudio(); if (play.on) startAudio();
+    render();
+  };
+  $('pn-cue-add').onclick = addCue;
+  $('pn-hold').onchange = () => {
+    const r = curLine();
+    const v = Number($('pn-hold').value);
+    if (!r || !Number.isFinite(v)) return;
+    r.hold = Math.max(0, Math.min(10, Math.round(v * 100) / 100));
+    render();
+  };
+  $('pn-line-revert').onclick = () => { const r = curLine(); if (r) restoreLine(r, savedLines[r.voice], 'what was saved'); };
+  $('pn-line-code').onclick = () => { const r = curLine(); if (r) restoreLine(r, CODE[r.voice], 'the code\'s cues'); };
+  $('pn-cues').addEventListener('change', (e) => {
+    const k = e.target.dataset.k;
+    const i = Number(e.target.closest('.pn-cue')?.dataset.i);
+    if (!k || !Number.isInteger(i)) return;
+    const raw = e.target.value.trim();
+    if (k === 'clip') return editCue(i, { clip: raw });
+    if (k === 'at') {
+      const v = Number(raw);
+      if (raw === '' || !Number.isFinite(v) || v < -2 || v > 60) { status('A cue\'s time is seconds into the voice, from -2 to 60.', true); return render(); }
+      return editCue(i, { at: v });
+    }
+    if (k === 'rate') {
+      const v = Number(raw);
+      if (raw !== '' && !(v > 0 && v <= 4)) { status('Speed is above 0 and up to 4 (1 is as cut; blank is 1).', true); return render(); }
+      return editCue(i, { rate: raw === '' || v === 1 ? null : v });
+    }
+    const v = Math.round(Number(raw));
+    const cells = clipFrames(draft[curLine().act[i][0]] ?? { from: 0, to: 0, step: 1 }).length;
+    if (raw !== '' && !(v >= 0 && v < cells)) { status(`Cells are 0 to ${cells - 1} on this clip (blank is the whole clip).`, true); return render(); }
+    editCue(i, { [k]: raw === '' ? null : v });
+  });
+  $('pn-cues').addEventListener('click', (e) => {
+    const row = e.target.closest('.pn-cue');
+    if (!row) return;
+    const i = Number(row.dataset.i);
+    const r = curLine();
+    const act = e.target.dataset.do;
+    if (act === 'del') return delCue(i);
+    if (act === 'here') return editCue(i, { at: play.t });
+    if (act === 'seek') { selCue = i; seek(r.act[i][1]); return render(); }
+    if (e.target.matches('input, select')) { selCue = i; return; }
+    // the row itself: select the cue and show its clip above, without losing the line's place
+    selCue = i;
+    if (draft[r.act[i][0]]) pick(r.act[i][0], true); else render();
+  });
   $('pn-play').onclick = togglePlay;
   $('pn-save').onclick = saveClips;
   $('pn-cut').onclick = cutPages;
   cv.addEventListener('pointerdown', (e) => {
     const r = cv.getBoundingClientRect();
     const y = e.clientY - r.top;
+    const x = e.clientX - r.left;
+    if (trackR && lineNo() && y >= trackR.y - 4 && y <= trackR.y + trackR.h + 4 && x >= trackR.x - 6 && x <= trackR.x + trackR.w + 6) {
+      const L = curLine();
+      const i = L.act.findIndex((c) => Math.abs(trackX(c[1]) - x) <= 6);
+      if (i >= 0) { drag = L.act[i]; selCue = i; cv.setPointerCapture(e.pointerId); render(); }
+      else seek(trackT(x));
+      return;
+    }
     if (y < r.height - STRIP_H) return;
     const n = takeLen(draft[sel].take);
     const i = Math.max(0, Math.min(n - 1, Math.floor((e.clientX - r.left) / r.width * n)));
@@ -427,6 +646,23 @@ function wire() {
     else if (e.ctrlKey || e.metaKey) edit({ to: i, from: Math.min(i, draft[sel].from) });
     head = i;
   });
+  cv.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const L = curLine();
+    let t = trackT(e.clientX - cv.getBoundingClientRect().left);
+    if (e.shiftKey) {
+      // snap to the nearest word's start
+      let best = null;
+      for (const [, a] of WORDS?.[L.voice]?.words ?? []) if (best == null || Math.abs(a - t) < Math.abs(best - t)) best = a;
+      if (best != null) t = best;
+    }
+    drag[1] = freeAt(L, Math.max(-2, Math.min(60, t)), drag);
+    sortCues(L, drag);
+    seek(drag[1]);                      // show the frame she starts the cue on
+  });
+  const drop = () => { if (drag) { drag = null; render(); } };
+  cv.addEventListener('pointerup', drop);
+  cv.addEventListener('pointercancel', drop);
   addEventListener('keydown', onKey);
   addEventListener('resize', draw);
 }
@@ -436,6 +672,7 @@ function onKey(e) {
   const typing = e.target.matches?.('input[type=text], input[type=number], select');
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); saveClips(); return; }
   if (typing) { if (e.key === 'Escape') e.target.blur(); return; }
+  if (e.key === 'Delete' && lineNo() && selCue >= 0) { delCue(selCue); return; }
   const n = takeLen(draft[sel].take);
   if (e.key === ' ') { e.preventDefault(); togglePlay(); }
   else if (e.key === ',' || e.key === '.') head = Math.max(0, Math.min(n - 1, head + (e.key === '.' ? 1 : -1) * (e.shiftKey ? draft[sel].step : 1)));
@@ -490,13 +727,16 @@ function tick(now) {
 
 async function saveClips() {
   const d = dirtyNames();
-  if (!d.length) { status('Nothing has changed since the last save.'); return; }
+  const L = dirtyLines();
+  if (!d.length && !L.length) { status('Nothing has changed since the last save.'); return; }
   try {
-    const r = await fetch('/__payne/clips', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(draft) });
+    // clips and lines in ONE request: either file written reloads the page (vite.config.js says more)
+    const r = await fetch('/__payne/save', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ clips: draft, acts: overrides() }) });
     const j = await r.json();
     if (!r.ok) throw new Error(j.error);
     saved = clone(draft);
-    const msg = `Saved ${d.join(', ')} to src/payneclips.json.${Object.keys(draft).some((n) => cutState(n) !== 'cut') ? ' Cut their pages next, or the game draws her still.' : ''}`;
+    savedLines = snapLines();
+    const msg = `Saved ${[d.length && `${d.join(', ')} to src/payneclips.json`, L.length && `line ${L.join(', ')} to src/payneacts.json`].filter(Boolean).join(', and ')}.${Object.keys(draft).some((n) => cutState(n) !== 'cut') ? ' Cut the new clips\' pages next, or the game draws her still.' : ''}`;
     try { sessionStorage.setItem(FLASH, msg); } catch { /* */ }   // the save reloads the page: say it after
     status(msg);
     render();
@@ -534,17 +774,21 @@ export function showPayne(show) {
 }
 
 /** Anything unsaved, for the page's own "you are leaving with changes" guard. */
-export const payneDirty = () => dirtyNames().length;
+export const payneDirty = () => dirtyNames().length + dirtyLines().length;
 
 /** For a console or a check: draw `what` ('clip' or 'line:N') at `t` seconds, synchronously, and say
  *  what was drawn — a hidden tab draws no frames of its own. */
 export function payneAt(what, t) {
-  play.what = what; play.t = t;
+  if (what !== play.what) { play.what = what; render(); }
+  play.t = t;
   draw();
   return shown;
 }
+/** The line editor, for a check: the cue list as it is drawn, and its actions. */
+export const payneLines = { addCue, delCue, editCue, seek, overrides, dirtyLines, cues: () => curLine()?.act.map((e) => [...e]) ?? null };
 
 wire();
+if (/^line:\d+$/.test(ui.what ?? '') && PAYNE_INTRO[Number(ui.what.slice(5)) - 1]) play.what = ui.what;
 const q = new URLSearchParams(location.search).get('payne');
 if (q && draft[q]) { sel = q; ui.sel = q; keep(); }
 try { const f = sessionStorage.getItem(FLASH); if (f) { status(f); sessionStorage.removeItem(FLASH); } } catch { /* */ }

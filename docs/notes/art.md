@@ -667,6 +667,23 @@ cautious tier.
   `src` (`take/from/to/step`), which is how the tab tells a cut clip from a
   stale one. A clip a line uses cannot be renamed or deleted, and the save
   refuses the whole file if any clip is bad, saying why.
+- **A line's cues are edited there too.** Richard: "Is there a way to modify
+  the lines in the Sprite Editor to add or delete clips?" Preview a line and
+  its cues are listed under it and drawn on a track over its words: add the
+  picked clip at the playhead, change a cue's clip, cells or speed, drag it
+  along the track (Shift snaps to a word), take it out, or set the line's
+  hold. Taking a clip out of every line that uses it is what lets the clip be
+  deleted. Saved lines go to **`src/payneacts.json`, overrides only**, like
+  tuning.json: payneintro.js keeps the defaults (`PAYNE_INTRO_CODE`), with
+  the comment beside each cue saying which word it is on and whose note put
+  it there, and `PAYNE_INTRO` is those with the file in force. Clips and lines
+  save in ONE request (`POST /__payne/save`), since writing either file
+  reloads the page. `systems/payneacts.js` is the one cleaner the game, the
+  save and world-check share; the game keeps the code's cues for a line whose
+  saved cues are bad. world-check's checks of Richard's review notes run
+  against the code's cues, so his own edit is never argued with; what must
+  hold whatever he does (masked, unmasked, masked; real cells; every move
+  once) runs on what plays.
 - **One scale per take, one crop per clip.** Each take's first frame is the
   approved drawing it started from, so its ink height is one unit of her
   height and its feet are the origin. Every clip is then cropped to its own

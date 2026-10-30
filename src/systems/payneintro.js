@@ -43,6 +43,8 @@ import * as THREE from 'three';
 import { INTRO_CLIPS, TAKE_FROM, clipRun, pagePath, blitCell } from './payneclips.js';
 import { INTRO_GEO, INTRO_REST, INTRO_STAGE } from './payneframes.js';
 import { IntroSet } from './payneset.js';
+import { applyActs } from './payneacts.js';
+import ACTS from '../payneacts.json' with { type: 'json' };
 
 /**
  * THE SCRIPT. The card and the recording are one string (docs/notes/voices.md):
@@ -64,10 +66,15 @@ import { IntroSet } from './payneset.js';
  *
  * RICHARD'S FIRST REVIEW, Oct 2026 (docs/reviews/payne-intro/): lines 1-4 are
  * re-cued off his notes on the recording, which are quoted beside them.
+ *
+ * THESE ARE THE DEFAULTS. Richard edits a line's cues in the sprite editor's
+ * PAYNE tab, and a line he has changed is played from src/payneacts.json
+ * instead (payneacts.js says why it is overrides only). The comments here
+ * describe the code's cues; the tab shows which word a saved cue is on.
  */
 const P = (n, text, act, extra = {}) => ({ who: 'payne', voice: `payne_intro_${n}`, text, shot: `l${n}`, act, ...extra });
 
-export const PAYNE_INTRO = [
+export const PAYNE_INTRO_CODE = [
   /* "The Haha animation should start about 0.4s earlier" (1.34 -> 0.94), one
      bounce and not three (payneclips.json `haha`); "After Haha immediately go
      to RestMasked and hold"; "for the kidding voice ... the Shrug animation,
@@ -133,6 +140,13 @@ export const PAYNE_INTRO = [
     [['shrug', 0], ['salute', 2.36 /* Payne, */]], { hold: 0.9 }),
 ];
 
+/** What plays: the code's cues, with every line Richard saved in the sprite
+ *  editor in force. New rows, so the editor edits these in place and the
+ *  defaults above stay what "back to the code's cues" means. */
+const _acts = applyActs(PAYNE_INTRO_CODE, ACTS, Object.keys(INTRO_CLIPS));
+if (_acts.bad.length) console.warn(`[payne] src/payneacts.json: kept the code's cues for ${_acts.bad.join(' | ')}`);
+export const PAYNE_INTRO = _acts.rows;
+
 /** Clips she is wearing the helmet in. */
 const MASKED = new Set(Object.keys(INTRO_CLIPS).filter((c) => TAKE_FROM[INTRO_CLIPS[c].take] === 'town'));
 /** The `mask` clip's cell from which the helmet is on (read off its proof). */
@@ -156,8 +170,13 @@ const IDLE_AFTER = 0.3;
 export function actFrame(act, t) {
   let j = 0;
   for (let i = 0; i < act.length; i++) if (t >= act[i][1]) j = i;
-  const [clip, at, from, to, rate = 1] = act[j];
-  const { cell, held } = clipRun(INTRO_CLIPS[clip], t - at, { from: from ?? undefined, to: to ?? undefined, rate });
+  const [named, at, from, to, rate = 1] = act[j];
+  /* a clip deleted from under a line (the code's cues, once a line that used
+     to override them is put back) degrades to her standing pose, not a throw
+     that stops the scene */
+  const clip = INTRO_CLIPS[named] ? named : INTRO_CLIPS.restHeld ? 'restHeld' : Object.keys(INTRO_CLIPS)[0];
+  const cut = clip === named;
+  const { cell, held } = clipRun(INTRO_CLIPS[clip], t - at, cut ? { from: from ?? undefined, to: to ?? undefined, rate } : {});
   return { clip, cell, entry: j, held };
 }
 
