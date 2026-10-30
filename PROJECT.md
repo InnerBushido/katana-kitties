@@ -396,7 +396,10 @@ The same arrangement for the drawings. `npm run dev`, then **`/sprites.html`**
   intro line with its voice the way the scene plays it. It has its own Save,
   which writes **`src/payneclips.json`**, and **Cut pages**, which runs
   `payne-sheet.mjs --only=<the new clips>` for you; until then a new clip is
-  drawn off the take in orange. → [art.md](docs/notes/art.md)
+  drawn off the take in orange. Previewing a line also lists **its cues**, to
+  add, retime (drag on the track; Shift snaps to a word) or take out; saved
+  lines go to **`src/payneacts.json`**, overrides only — the code's cues stay
+  the defaults. → [art.md](docs/notes/art.md)
 
 Save writes **`src/spritefix.json`** — overrides only: `poses` keyed by sheet
 (`ember/kiai`, so Storm and Blossom wear Ember's and Frost's fixes), `sheets`

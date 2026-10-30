@@ -3,6 +3,7 @@ import { writeFileSync, readFileSync, readdirSync, openSync, readSync, closeSync
 import { resolve as resolvePath, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
+import { cleanActs } from './src/systems/payneacts.js';
 
 /* ---------------------------------------------------------------------------
    Vite config — one job: let the dev server be told which port to use.
@@ -335,14 +336,25 @@ const reviewServer = {
    GET  /__payne/take?p=     a take (docs/art-masters/video/payne_*.mp4),
                              with range requests, for scrubbing. Nothing else
                              in docs/ is served by this.
-   POST /__payne/clips       rewrites src/payneclips.json. CHECKED WHOLE AND
-                             REFUSED WHOLE: one bad clip and nothing is
+   POST /__payne/save        { clips, acts }: rewrites src/payneclips.json
+                             and src/payneacts.json (the lines whose cues
+                             Richard changed). CHECKED WHOLE AND REFUSED
+                             WHOLE: one bad clip or cue and nothing is
                              written, with the reason — a save that quietly
                              dropped a clip would break a scene that names it.
+                             ONE ROUTE FOR BOTH, because writing either file
+                             reloads the page: a second request sent after
+                             the first one's answer can be cut off by it, and
+                             a line naming a new clip would then be saved
+                             without the clip, or the clip without the line.
+                             The cues are checked against the clips in the
+                             SAME request, which is what lets a new clip and
+                             the line that uses it go in one save.
    POST /__payne/cut?only=   runs tools/capture/payne-sheet.mjs --only=...,
                              one at a time, and answers with its log.
 --------------------------------------------------------------------------- */
 const PAYNE_FILE = new URL('./src/payneclips.json', import.meta.url);
+const ACTS_FILE = new URL('./src/payneacts.json', import.meta.url);
 const TAKES_DIR = fileURLToPath(new URL('./docs/art-masters/video/', import.meta.url));
 const takeNames = () => readdirSync(TAKES_DIR).map((f) => /^payne_([a-z]+)_[0-9a-f]+\.mp4$/.exec(f)?.[1]).filter(Boolean);
 
@@ -380,19 +392,27 @@ const payneServer = {
         if (!f || !existsSync(f)) return json({ error: 'not one of Payne\'s takes' }, 404);
         return serveVideo(req, res, f);
       }
-      if (req.method === 'POST' && url.pathname === '/clips') {
+      if (req.method === 'POST' && url.pathname === '/save') {
         let body = '';
         req.on('data', (c) => { body += c; });
         req.on('end', () => {
           let parsed;
           try { parsed = JSON.parse(body); } catch { return json({ error: 'not JSON — nothing written' }, 400); }
-          const { clips, bad } = cleanPayneClips(parsed);
-          if (bad.length) return json({ error: `nothing written: ${bad.join('; ')}` }, 400);
+          const { clips, bad } = cleanPayneClips(parsed?.clips);
+          const A = parsed?.acts ? cleanActs(parsed.acts, Object.keys(clips)) : null;
+          const why = [...bad, ...(A?.bad ?? [])];
+          if (!Object.keys(clips).length) why.push('there are no clips at all');
+          if (why.length) return json({ error: `nothing written: ${why.join('; ')}` }, 400);
           // one clip per line, so a diff of one clip is one line
           // key by key, not a regex over the JSON, which would also space out a `":` inside a note
           const one = (v) => `{ ${Object.entries(v).map(([k, x]) => `${JSON.stringify(k)}: ${JSON.stringify(x)}`).join(', ')} }`;
           writeFileSync(PAYNE_FILE, `{\n${Object.entries(clips).map(([k, v]) => `  ${JSON.stringify(k)}: ${one(v)}`).join(',\n')}\n}\n`);
-          json({ ok: true, clips });
+          // ...and one script line per line, its cues on it
+          if (A) {
+            const rows = Object.entries(A.acts).map(([k, v]) => `  ${JSON.stringify(k)}: { "hold": ${v.hold}, "act": ${JSON.stringify(v.act)} }`);
+            writeFileSync(ACTS_FILE, rows.length ? `{\n${rows.join(',\n')}\n}\n` : '{}\n');
+          }
+          json({ ok: true, clips, acts: A?.acts });
         });
         return;
       }

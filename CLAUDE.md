@@ -183,6 +183,9 @@ src/
                    name, previewed line by line through the scene's own actFrame
   payneclips.json  those clips: { take, from, to, step, back?, apex? } by name —
                    what a line's act list, the review page and payne-sheet read
+  payneacts.json   the lines whose cues Richard changed in that tab — OVERRIDES
+                   ONLY over payneintro.js's PAYNE_INTRO_CODE; `{}` is the intro
+                   as written. systems/payneacts.js is its one cleaner
   world/     build (all the geometry)  world (assembly, height queries)
   systems/   tournament  menagerie  arenaquest  leaderboard
              announce (ONE #announce card, one queue, and a speaker per line.
