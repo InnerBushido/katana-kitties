@@ -10,13 +10,16 @@
   "mask": { "take": "mask", "from": 6, "to": 120, "step": 3, "note": "The helmet going on, peace sign to fist on hip. Played backwards it is the helmet coming OFF." },
   "tadaa": { "take": "point", "from": 22, "to": 46, "step": 3, "note": "\"Ta-daa!\" — the free arm flung out." },
   "pointUp": { "take": "point", "from": 46, "to": 120, "step": 3, "note": "\"Look up.\" — from her pose, up, and HELD with the fingertip in frame." },
-  "pointPose": { "take": "point", "from": 24, "to": 120, "step": 3, "note": "Strikes a pose, then points straight up and holds — the point take from its 1s mark. Richard: \"starting at about the 1s mark so that she strikes a pose before smoothly transitioning to the pointUp animation\"." },
+  "pointPose": { "take": "point", "from": 42, "to": 81, "step": 3, "note": "Strikes a pose, then points straight up and holds — the point take from its 1s mark. Richard: \"starting at about the 1s mark so that she strikes a pose before smoothly transitioning to the pointUp animation\"." },
   "wag": { "take": "wag", "from": 4, "to": 61, "step": 3, "note": "A peace sign, waggled." },
   "wagTalk": { "take": "wag", "from": 0, "to": 48, "step": 3, "note": "Talking — the wag take's first two seconds. Richard: \"a talking animation like payne_wag_999697c0.mp4 has at the first 2 seconds\"." },
   "thumb": { "take": "wag", "from": 64, "to": 118, "step": 3, "note": "\"Payne.\" / \"Me?\" — a thumb at herself, and back." },
-  "talk": { "take": "talk", "from": 14, "to": 64, "step": 3, "note": "Talking." },
+  "talk": { "take": "talk", "from": 18, "to": 54, "step": 3, "note": "Talking." },
   "count": { "take": "talk", "from": 116, "to": 160, "step": 3, "note": "One finger, then two: counting the job off." },
   "wave": { "take": "talk", "from": 166, "to": 196, "step": 3, "note": "A wave, saying hello." },
   "laugh": { "take": "talk", "from": 204, "to": 240, "step": 3, "note": "A laugh." },
-  "hahaToKidding": { "take": "halt", "from": 79, "to": 84, "step": 3, "note": "" }
+  "hahaToKidding": { "take": "halt", "from": 79, "to": 84, "step": 3, "note": "" },
+  "talkRepeat": { "take": "talk", "from": 49, "to": 55, "step": 3, "note": "" },
+  "talkStillStart": { "take": "talk", "from": 17, "to": 17, "step": 3, "note": "" },
+  "talkMouthClosed": { "take": "talk", "from": 51, "to": 51, "step": 3, "note": "" }
 }

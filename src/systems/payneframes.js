@@ -128,15 +128,15 @@ export const INTRO_GEO = {
     "src": "point/46/120/3"
   },
   "pointPose": {
-    "n": 33,
+    "n": 14,
     "cols": 4,
     "perPage": 16,
-    "pages": 3,
+    "pages": 1,
     "x0": -0.4635,
     "x1": 0.3568,
     "y0": -0.0078,
     "y1": 1.3281,
-    "src": "point/24/120/3"
+    "src": "point/42/81/3"
   },
   "wag": {
     "n": 20,
@@ -172,15 +172,15 @@ export const INTRO_GEO = {
     "src": "wag/64/118/3"
   },
   "talk": {
-    "n": 17,
+    "n": 13,
     "cols": 4,
     "perPage": 20,
     "pages": 1,
     "x0": -0.3777,
-    "x1": 0.3223,
+    "x1": 0.3191,
     "y0": -0.0064,
     "y1": 1.0085,
-    "src": "talk/14/64/3"
+    "src": "talk/18/54/3"
   },
   "count": {
     "n": 15,
@@ -225,6 +225,39 @@ export const INTRO_GEO = {
     "y0": -0.0104,
     "y1": 0.9896,
     "src": "halt/79/84/3"
+  },
+  "talkRepeat": {
+    "n": 3,
+    "cols": 3,
+    "perPage": 15,
+    "pages": 1,
+    "x0": -0.2521,
+    "x1": 0.3181,
+    "y0": -0.0064,
+    "y1": 1.0085,
+    "src": "talk/49/55/3"
+  },
+  "talkStillStart": {
+    "n": 1,
+    "cols": 1,
+    "perPage": 5,
+    "pages": 1,
+    "x0": -0.3777,
+    "x1": 0.284,
+    "y0": -0.0064,
+    "y1": 0.9681,
+    "src": "talk/17/17/3"
+  },
+  "talkMouthClosed": {
+    "n": 1,
+    "cols": 1,
+    "perPage": 5,
+    "pages": 1,
+    "x0": -0.25,
+    "x1": 0.3191,
+    "y0": -0.0064,
+    "y1": 1.0085,
+    "src": "talk/51/51/3"
   }
 };
 
