@@ -178,7 +178,7 @@ const isNameClip = (id) => /^payne_(hey|oi)_/.test(id);
 /** Her card's dressing. Goblin green — nothing else in the HUD is green, and
  *  "which of the grown-ups is this" is answered by colour everywhere else
  *  (Mr. Satan gold, Patchfur parchment). */
-export const PAYNE_WHO = { name: 'PAYNE', sub: 'Goblin', colour: '#7fd35a' };
+export const PAYNE_WHO = { name: 'PAYNE', sub: 'Goblyn', colour: '#7fd35a' };
 
 /**
  * Where to find her face on each of her drawings: `[x, y, size]` on the baked
@@ -221,7 +221,7 @@ export const PAYNE_LINES = {
   payne_oi_storm: 'Oi! Storm!',
   payne_oi_blossom: 'Oi! Blossom!',
 
-  payne_hello: "I'm Payne! Goblin, fighter, and the best quest-giver in the whole sky. "
+  payne_hello: "I'm Payne! Goblyn, fighter, and the best quest-giver in the whole sky. "
     + "Stick with me, kitten — we're gonna make SO much mischief.",
   payne_back: "You're back! Missed me? Course you did.",
   payne_invite: "Psst! Come and find me in the town. I've got quests for you!",
@@ -259,15 +259,15 @@ export const PAYNE_LINES = {
      you need to go!" with "some extra funny comments and complaints... maybe
      she can even swear in goblin speak". The goblin is nonsense on purpose:
      the audience is nine and younger. */
-  payne_last_ice: 'Psst. Goblin secret! Icewhisker has a trick called Sense Mischief. It points right at '
+  payne_last_ice: 'Psst. Goblyn secret! Icewhisker has a trick called Sense Mischief. It points right at '
     + 'the nearest thing still standing! Go and swear to her, out on the frozen island. I marked her on your map.',
   payne_last_ice2: "Icewhisker! Frozen island! She's STILL on your map. Go, go, go!",
   payne_last_mad1: 'Are you serious with me? You already have the Sense Mischief ability! You know where you '
-    + "need to go! ... Snargle-blarg! Fizzwick-GRUNKLE-bonk! ... Hmph. That's goblin. Don't repeat it.",
+    + "need to go! ... Snargle-blarg! Fizzwick-GRUNKLE-bonk! ... Hmph. That's goblyn. Don't repeat it.",
   payne_last_mad2: 'AGAIN?! Okay. Look. See the arrow? The big, pointy, floaty ARROW? It points at the '
     + "mischief. That is its WHOLE JOB! ... Grrrrr... Blorka-snazz-FRAZZLE-flumph! ... Right. That's it. "
-    + 'Goblin... SWEEEEP!',
-  payne_last_mad3: 'You AGAIN?! Nope. Nope, nope, nope! Zibble-GRONK! Goblin... SWEEEEP!',
+    + 'Goblyn... SWEEEEP!',
+  payne_last_mad3: 'You AGAIN?! Nope. Nope, nope, nope! Zibble-GRONK! Goblyn... SWEEEEP!',
   payne_last_swept: 'And STAY swept! Follow the ARROW! ... Kittens. Honestly. I have a helmet to polish, you know.',
 
   /* The teases — "like goblins like to do". */
@@ -278,11 +278,11 @@ export const PAYNE_LINES = {
     + 'over on the ash island. I marked it!',
   payne_t_slow: "Hellooo? Did you fall asleep? That quest isn't gonna do itself!",
 
-  payne_trick_tease: "Finish my quests, then fight three rounds in the arena... and I'll teach you a secret goblin move.",
+  payne_trick_tease: "Finish my quests, then fight three rounds in the arena... and I'll teach you a secret goblyn move.",
   payne_trick_ready: "You're ready! Come and find me in the town. I've got something sneaky to teach you.",
-  payne_trick_teach: 'Okay. Secret goblin move. Hold run, stand really still... and swing! '
-    + "That's the Goblin Sweep. Everything around you goes flying!",
-  payne_hints_on: "Hints on! If you get stuck, I'll find you. Goblins always find you.",
+  payne_trick_teach: 'Okay. Secret goblyn move. Hold run, stand really still... and swing! '
+    + "That's the Goblyn Sweep. Everything around you goes flying!",
+  payne_hints_on: "Hints on! If you get stuck, I'll find you. Goblyns always find you.",
   payne_hints_off: "Hints off! Big kitten. I'll be right here if you need me.",
 
   /* THE DREAM DOJO. Richard: "Let's update Payne's Quest List to show the
@@ -1527,9 +1527,9 @@ export class Payne {
         blurb: 'Your quests and orbs, and trading. Everybody stops and gets their own cursor.',
       },
       {
-        key: 'trick', title: L.sweep ? 'THE GOBLIN SWEEP — SHOW ME AGAIN'
-          : ready ? 'LEARN A SECRET GOBLIN TRICK!' : 'SECRET GOBLIN TRICK — LOCKED',
-        blurb: L.sweep ? 'How to do it.' : ready ? 'She will teach you the Goblin Sweep.'
+        key: 'trick', title: L.sweep ? 'THE GOBLYN SWEEP — SHOW ME AGAIN'
+          : ready ? 'LEARN A SECRET GOBLYN TRICK!' : 'SECRET GOBLYN TRICK — LOCKED',
+        blurb: L.sweep ? 'How to do it.' : ready ? 'She will teach you the Goblyn Sweep.'
           : `To learn it: ${need.join(', and ')}.`,
         locked: !L.sweep && !ready,
       },
@@ -1742,7 +1742,7 @@ export class Payne {
     const talk = this.speaking(p);
     const said = talk ? `<div class="pn-said">“${esc(talk)}”</div>` : '';
     const head = `<div class="pc-head pn-head">${face}<div><span class="pn-name">PAYNE</span>
-      <span class="pc-dim">the goblin · talking to <span class="pc-who">${esc(p.name)}</span></span>
+      <span class="pc-dim">the goblyn · talking to <span class="pc-who">${esc(p.name)}</span></span>
       ${said}</div></div>`;
 
     if (state === 'payneQuests') {
@@ -1801,7 +1801,7 @@ export class Payne {
     if (state === 'payneTrick') {
       return `<div class="pc-inner pn-card">${head}
         <div class="pn-trick"><img src="${PAYNE_ART.sweep.src}" alt="">
-          <div><b class="pn-trick-name">THE GOBLIN SWEEP</b>
+          <div><b class="pn-trick-name">THE GOBLYN SWEEP</b>
           <p>Hold <b>RUN</b>, stand <b>still</b>, and press <b>ATTACK</b>.</p>
           <p class="pc-dim">A spin that knocks over everything around you — every barrel and lantern in a circle.
           In the arena it hits everybody round you too, and then needs a few seconds to catch its breath.</p></div>
