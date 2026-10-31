@@ -1,1 +1,3 @@
-{}
+{
+  "payne_intro_1": { "hold": 0, "act": [["halt",0],["haha",0.94],["hahaToKidding",1.96],["kidding",2.11,null,null,1.7],["beckon",4.94]] }
+}

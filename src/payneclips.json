@@ -7,7 +7,7 @@
   "beckon": { "take": "halt", "from": 84, "to": 120, "step": 3, "note": "\"Come closer\" — a beckon, and back to her pose." },
   "shrug": { "take": "shrug", "from": 28, "to": 82, "step": 3, "note": "\"Stuck?\" — palms up." },
   "salute": { "take": "shrug", "from": 84, "to": 120, "step": 3, "note": "\"Payne, out!\" — and held." },
-  "mask": { "take": "mask", "from": 0, "to": 120, "step": 3, "note": "The helmet going on, peace sign to fist on hip. Played backwards it is the helmet coming OFF." },
+  "mask": { "take": "mask", "from": 6, "to": 120, "step": 3, "note": "The helmet going on, peace sign to fist on hip. Played backwards it is the helmet coming OFF." },
   "tadaa": { "take": "point", "from": 22, "to": 46, "step": 3, "note": "\"Ta-daa!\" — the free arm flung out." },
   "pointUp": { "take": "point", "from": 46, "to": 120, "step": 3, "note": "\"Look up.\" — from her pose, up, and HELD with the fingertip in frame." },
   "pointPose": { "take": "point", "from": 24, "to": 120, "step": 3, "note": "Strikes a pose, then points straight up and holds — the point take from its 1s mark. Richard: \"starting at about the 1s mark so that she strikes a pose before smoothly transitioning to the pointUp animation\"." },
@@ -17,5 +17,6 @@
   "talk": { "take": "talk", "from": 14, "to": 64, "step": 3, "note": "Talking." },
   "count": { "take": "talk", "from": 116, "to": 160, "step": 3, "note": "One finger, then two: counting the job off." },
   "wave": { "take": "talk", "from": 166, "to": 196, "step": 3, "note": "A wave, saying hello." },
-  "laugh": { "take": "talk", "from": 204, "to": 240, "step": 3, "note": "A laugh." }
+  "laugh": { "take": "talk", "from": 204, "to": 240, "step": 3, "note": "A laugh." },
+  "hahaToKidding": { "take": "halt", "from": 79, "to": 84, "step": 3, "note": "" }
 }

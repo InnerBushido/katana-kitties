@@ -33,7 +33,9 @@
  * under it, and drawn on a track over its words: add one at the playhead,
  * change its clip, drag it along the track (Shift snaps to a word), or take it
  * out. Taking a clip out of every line that uses it is what then lets the clip
- * itself be deleted. Saved lines go to src/payneacts.json, OVERRIDES ONLY
+ * itself be deleted. A cue's own `from`/`to` are FRAMES OF THE TAKE, like the
+ * clip's (clipRun says why they stopped being cells), and ⇄ between them plays
+ * it backwards — which is the only way a clip runs in reverse. Saved lines go to src/payneacts.json, OVERRIDES ONLY
  * (systems/payneacts.js says why): a line put back to the code's cues leaves
  * the file.
  */
@@ -108,7 +110,7 @@ function editCue(i, patch) {
   if (!e) return;
   const [clip, at, from = null, to = null, rate = null] = e;
   const v = { clip, at, from, to, rate, ...patch };
-  // another clip's cell numbers mean nothing on this one
+  // another clip's frames mean nothing on this one
   if (patch.clip && patch.clip !== clip) { v.from = null; v.to = null; }
   const n = norm([v.clip, v.at, v.from, v.to, v.rate]);
   n[1] = freeAt(r, n[1], e);
@@ -450,10 +452,16 @@ function renderLine() {
   const names = Object.keys(draft);
   $('pn-cues').innerHTML = r.act.map(([c, at, from, to, rate], i) => {
     const w = wordAt(r, at + 0.001);
+    const C = draft[c];
+    // a frame the clip's trim has cut off still plays, held at the clip's end; say so
+    const fr = (k, v, dflt) => {
+      const out = C && v != null && (v < C.from || v > C.to);
+      return `<input data-k="${k}" type="number" min="0" placeholder="${dflt ?? ''}" value="${v ?? ''}"${out ? ` class="out" title="outside ${c}'s frames ${C.from}–${C.to}: held at its end"` : ` title="a frame of the ${C?.take ?? ''} take; blank is the clip's own ${k === 'from' ? 'first' : 'last'}"`}>`;
+    };
     const where = at >= end ? '<b class="warn">after the line ends</b>' : w ? `on “${esc(w)}”` : 'before the first word';
     return `<div class="pn-cue ${i === selCue ? 'sel' : ''}" data-i="${i}" style="border-left-color:${hue(c, 1)}">
       <div class="row"><select data-k="clip">${names.map((x) => `<option value="${x}"${x === c ? ' selected' : ''}>${x}</option>`).join('')}${draft[c] ? '' : `<option value="${esc(c)}" selected>${esc(c)} (gone)</option>`}</select><input data-k="at" type="number" step="0.01" value="${at}" title="seconds into the line's voice"><span class="tiny">s</span><button data-do="here" title="move this cue to the playhead">⌖</button><button data-do="seek" title="put the playhead on this cue">▶</button><button data-do="del" title="take this cue out of the line (Delete)">✕</button></div>
-      <div class="tiny">${where} · cells <input data-k="from" type="number" min="0" placeholder="all" value="${from ?? ''}">→<input data-k="to" type="number" min="0" value="${to ?? ''}"> ×<input data-k="rate" type="number" step="0.05" min="0.05" max="4" placeholder="1" value="${rate ?? ''}" title="speed: 1 is as cut, 1.7 is 70% faster"></div>
+      <div class="tiny">${where} · frames ${fr('from', from, C?.from)}<button data-do="rev" title="play it backwards (swap the two frames)">⇄</button>${fr('to', to, C?.to)} ×<input data-k="rate" type="number" step="0.05" min="0.05" max="4" placeholder="1" value="${rate ?? ''}" title="speed: 1 is as cut, 1.7 is 70% faster"></div>
     </div>`;
   }).join('');
   if (document.activeElement !== $('pn-hold')) $('pn-hold').value = r.hold ?? 0;
@@ -607,8 +615,9 @@ function wire() {
       return editCue(i, { rate: raw === '' || v === 1 ? null : v });
     }
     const v = Math.round(Number(raw));
-    const cells = clipFrames(draft[curLine().act[i][0]] ?? { from: 0, to: 0, step: 1 }).length;
-    if (raw !== '' && !(v >= 0 && v < cells)) { status(`Cells are 0 to ${cells - 1} on this clip (blank is the whole clip).`, true); return render(); }
+    const C = draft[curLine().act[i][0]];
+    const n = C ? takeLen(C.take) : 1000;
+    if (raw !== '' && !(v >= 0 && v < n)) { status(`Frames are 0 to ${n - 1} of the ${C?.take} take (blank is the clip's own end).`, true); return render(); }
     editCue(i, { [k]: raw === '' ? null : v });
   });
   $('pn-cues').addEventListener('click', (e) => {
@@ -618,6 +627,19 @@ function wire() {
     const r = curLine();
     const act = e.target.dataset.do;
     if (act === 'del') return delCue(i);
+    if (act === 'rev') {
+      const [c, , f, t] = r.act[i];
+      const C = draft[c];
+      if (!C) { status(`"${c}" is not a clip any more: pick one for this cue first.`, true); return; }
+      // into the clip's own frames as it turns round, so a frame the trim cut off is not carried along
+      const inside = (x) => Math.max(C.from, Math.min(C.to, x));
+      const nf = inside(t ?? C.to), nt = inside(f ?? C.from);
+      // forwards over the whole clip is what blank already says
+      const whole = nf === C.from && nt === C.to;
+      selCue = i;
+      status(nt < nf ? `${c} now plays backwards, frame ${nf} to ${nt}.` : `${c} plays forwards again.`);
+      return editCue(i, { from: whole ? null : nf, to: whole ? null : nt });
+    }
     if (act === 'here') return editCue(i, { at: play.t });
     if (act === 'seek') { selCue = i; seek(r.act[i][1]); return render(); }
     if (e.target.matches('input, select')) { selCue = i; return; }

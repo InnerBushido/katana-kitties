@@ -89,16 +89,20 @@ export const PAYNE_INTRO_CODE = [
   /* The face comes off AFTER "Fine." — "This is where we should start the
      face reveal, after she says fine. This is about 1.4s later" — so the
      unmask starts 1.36s later than it did (0.25 -> 1.61), and the faceplate
-     clears (cell 21, the first under MASK_ON: 19 cells at 1.33x = 1.79s) at
+     clears (frame 63, the first under MASK_ON: 19 cells back from 120 at
+     1.33x = 1.79s) at
      3.40, after the word (2.85-3.19). His two notes put the old reveal at
      +1.90 and the new one at +3.35. "Let's
      remove this 2nd Fine sentence": the recording is the same take cut at
      3.40, in the silence after the first, so it is still her one read. The
-     unmask runs to 5.37, so the line HOLDS until it is done and "Ta-daa!"
+     unmask runs to 5.18 (Richard trimmed the clip's first six frames, Oct 30;
+     it was 5.37), so the line HOLDS until it is done and "Ta-daa!"
      starts on the end of it: "We will likely want to delay the next tadaa
-     part to start about that much later as well". */
+     part to start about that much later as well". `120, 0` are FRAMES OF THE
+     TAKE (clipRun): all of it, backwards, and the clip's own trim holds the 0
+     to its first frame. */
   P(2, "You can't trust a face you can't see, right? Fine.",
-    [['restMasked', 0], ['mask', 1.61 /* right? — the hands go up */, 40, 0, 1.33]], { hold: 1.6 }),
+    [['restMasked', 0], ['mask', 1.61 /* right? — the hands go up */, 120, 0, 1.33]], { hold: 1.6 }),
   /* "Let's hard transition to a talking animation here like payne_wag has at
      the first 2 seconds" (`wagTalk`); the wave moved 0.15 earlier so its
      mouth starts ON "Hello!" (it opened 0.75s in); and after it, "start the
@@ -125,7 +129,7 @@ export const PAYNE_INTRO_CODE = [
     [['restHeld', 0], ['thumb', 3.46 /* Second */]]),
   /* "Me?" is a thumb at herself; the two "too much"es are counted off; and
      the helmet goes back on as the lens leaves the ground, done before the
-     line is (40 cells at 1.4x is 3.6s, from 9.28 to 12.85 of 13.87).
+     line is (38 cells at 1.4x is 3.4s, from 9.28 to 12.67 of 13.87).
      RE-WORDED AND RE-RECORDED, Oct 2026 — Richard: "Me? I've got a mission.
      Out there are other worlds with the same old, boring problems — too much
      order, too much monotony. Somebody has to go out there and shake things
@@ -133,7 +137,7 @@ export const PAYNE_INTRO_CODE = [
      it was on in the old take ("Out" for the cut, "monotony" where
      "boredom" was). */
   P(12, "Me? I've got a mission. Out there are other worlds with the same old, boring problems — too much order, too much monotony. Somebody has to go out there and shake things up!",
-    [['thumb', 0], ['count', 7.71 /* Too much order */], ['mask', 9.28 /* monotony */, 0, 40, 1.4]]),
+    [['thumb', 0], ['count', 7.71 /* Too much order */], ['mask', 9.28 /* monotony */, null, null, 1.4]]),
   /* Held a beat past the clip so the salute is SEEN before the fade: the
      salute is 1.6s from "Payne," at 2.36 and the line is 3.52. */
   P(13, 'Stuck? Come and find me. Payne, out!',
@@ -149,8 +153,10 @@ export const PAYNE_INTRO = _acts.rows;
 
 /** Clips she is wearing the helmet in. */
 const MASKED = new Set(Object.keys(INTRO_CLIPS).filter((c) => TAKE_FROM[INTRO_CLIPS[c].take] === 'town'));
-/** The `mask` clip's cell from which the helmet is on (read off its proof). */
-const MASK_ON = 22;
+/** The frame of the `mask` TAKE from which the helmet is on (read off its
+ *  proof: cell 22 when the clip was cut from frame 0). A frame and not a cell,
+ *  so trimming the clip in the sprite editor does not move it. */
+const MASK_ON = 66;
 /* NO CROSSFADE. There was one, 0.22s of the last frame fading under the
    next clip wherever two takes met, on the reasoning that two takes do not
    meet on the same pose. Richard, Oct 2026, watching it: "When we transition
@@ -181,7 +187,8 @@ export function actFrame(act, t) {
 }
 
 /** Is she masked in this cell? */
-export const maskedIn = (clip, cell) => MASKED.has(clip) || (clip === 'mask' && cell >= MASK_ON);
+export const maskedIn = (clip, cell) => MASKED.has(clip)
+  || (clip === 'mask' && !!INTRO_CLIPS.mask && INTRO_CLIPS.mask.from + cell * INTRO_CLIPS.mask.step >= MASK_ON);
 
 /* ------------------------------- the shots -------------------------------- */
 

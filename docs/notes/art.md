@@ -684,6 +684,16 @@ cautious tier.
   against the code's cues, so his own edit is never argued with; what must
   hold whatever he does (masked, unmasked, masked; real cells; every move
   once) runs on what plays.
+- **A cue's own frames are frames of the TAKE, not cells of the clip.**
+  Richard: "I trimmed out the first 6 frames of mask, but in line 2, rather
+  than starting after the trim, it is still starting at frame 0 but just
+  showing no sprite." They were cells counted from the clip's first frame, so
+  a trim slid them along and line 2's cell 40 was past the end of a 39-cell
+  clip. Now a cue says `120, 0` and means frames 120 down to 0 of the take;
+  one the trim cut off is held at the clip's end (drawn orange in the cue
+  row) instead of drawn as nothing. **⇄** between the two plays a cue
+  backwards, which is the only way to reverse a clip. `MASK_ON`, the frame the
+  helmet is on from, is a take frame for the same reason.
 - **One scale per take, one crop per clip.** Each take's first frame is the
   approved drawing it started from, so its ink height is one unit of her
   height and its feet are the origin. Every clip is then cropped to its own
