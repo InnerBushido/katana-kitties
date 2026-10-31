@@ -24,7 +24,7 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import WORDS from '../../src/voicewords.json' with { type: 'json' };
 import {
   INTRO_TAKES, TAKE_FROM, INTRO_CLIPS, INTRO_FPS, INTRO_UNIT_PX, INTRO_UNIT_PX_HALF,
-  clipFrames, pagePath,
+  clipFrames, clipRun, pagePath,
 } from '../../src/systems/payneclips.js';
 import { INTRO_GEO, INTRO_STAGE } from '../../src/systems/payneframes.js';
 import {
@@ -114,7 +114,8 @@ export async function payneIntroChecks({ ok, world }) {
         if (!(t0 > last)) bad.push(`${r.voice}: ${c} at ${t0} is not after ${last}`);
         // the half second StoryScene gives every line after its voice, and the line's own hold
         if (!(t0 < lenOf(r) + 0.5)) bad.push(`${r.voice}: ${c} at ${t0} is past the line`);
-        if (f != null && !(f >= 0 && f < n && t >= 0 && t < n)) bad.push(`${r.voice}: ${c} ${f}->${t} of ${n}`);
+        // frames of the take, not cells: clipRun holds one outside the clip to its end
+        if ([f, t].some((x) => x != null && !(Number.isInteger(x) && x >= 0 && x < 1000))) bad.push(`${r.voice}: ${c} frames ${f}->${t}`);
         last = t0;
       }
       for (const [t, { clip, cell }] of walk(r)) {
@@ -124,6 +125,19 @@ export async function payneIntroChecks({ ok, world }) {
     }
     ok('every cell any line asks for is a cell that was cut, in time order, inside the line',
       bad.length === 0, bad.slice(0, 4).join(' · ') || `${PAYNE_INTRO.reduce((s, r) => s + r.act.length, 0)} cues`);
+    /* A CUE'S FRAMES ARE FRAMES OF THE TAKE. Richard, Oct 30: "I trimmed out
+       the first 6 frames of mask, but in line 2, rather than starting after
+       the trim, it is still starting at frame 0 but just showing no sprite."
+       They were cells counted from the clip's start, so a trim moved them and
+       line 2 asked for cell 40 of 39. Red on that code: the trimmed clip's
+       backwards run started on cell 40, frame 126, which was never cut. */
+    const whole = { take: 'mask', from: 0, to: 120, step: 3 };
+    const trim = { take: 'mask', from: 6, to: 120, step: 3 };
+    const frameAt = (C, t, o) => { const { cell } = clipRun(C, t, o); return cell >= 0 && cell < clipFrames(C).length ? C.from + cell * C.step : `cell ${cell} of ${clipFrames(C).length}`; };
+    const back = { from: 120, to: 0 };
+    const seen = [frameAt(trim, 0, back), frameAt(trim, 99, back), frameAt(whole, 1, { from: 60, to: 90 }), frameAt(trim, 1, { from: 60, to: 90 })];
+    ok('...and a cue names FRAMES OF THE TAKE, so trimming a clip moves none of them: backwards from 120 starts on 120 and stops on the trim, and a part of it plays the same frames trimmed or not',
+      seen[0] === 120 && seen[1] === 6 && seen[2] === seen[3] && seen[2] === 84, seen.join(' · '));
   }
   {
     /* NO LOOP AND NO PINGPONG. Richard: "We shouldn't repeat the animations

@@ -103,14 +103,25 @@ export const clipFrames = (c) => {
  * Where a clip is `t` seconds after it started: the cell, and how long the
  * frame it stopped on has been held (0 while it moves — the bob waits on it).
  * ONE FUNCTION FOR THE GAME AND THE SPRITE EDITOR, so a clip previewed there
- * is the clip played here. `from`/`to` are cells (backwards when to < from),
- * `rate` a speed-up. A `back` clip goes out, holds `apex` seconds, comes home,
- * and holds its first cell.
+ * is the clip played here. `from`/`to` are FRAMES OF THE TAKE — the same
+ * numbers the clip itself is cut from — backwards when to < from, and held to
+ * the clip's own ends; `rate` a speed-up. A `back` clip goes out, holds `apex`
+ * seconds, comes home, and holds its first cell.
+ *
+ * THEY WERE CELLS until Oct 30, counted from the clip's first frame. Richard:
+ * "I trimmed out the first 6 frames of mask, but in line 2, rather than
+ * starting after the trim, it is still starting at frame 0 but just showing no
+ * sprite." A trim slid every cell number along under the cues that used it,
+ * so line 2's "cell 40" pointed past the end of what was now a 39-cell clip,
+ * and drew nothing. A frame of the take does not move when a clip is trimmed,
+ * and one the trim has cut off is held at the clip's end rather than drawn as
+ * a hole: it degrades instead of vanishing.
  */
 export function clipRun(C, t, { from, to, rate = 1 } = {}) {
   const n = clipFrames(C).length;
-  const a = from ?? 0;
-  const b = to ?? n - 1;
+  const cellOf = (f) => Math.max(0, Math.min(n - 1, Math.round((f - C.from) / C.step)));
+  const a = from == null ? 0 : cellOf(from);
+  const b = to == null ? n - 1 : cellOf(to);
   const len = Math.abs(b - a);
   const dir = Math.sign(b - a);
   const fps = INTRO_FPS * rate;

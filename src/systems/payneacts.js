@@ -46,7 +46,7 @@ export function cleanActs(o, clipNames) {
       if (!clipNames.includes(clip)) why.push(`${n}: there is no clip "${clip}"`);
       if (!(Number.isFinite(at) && at >= -2 && at <= 60)) why.push(`${n}: ${at} is not a time from -2 to 60 seconds`);
       for (const [k, v] of [['from', from], ['to', to]]) {
-        if (v != null && !(Number.isInteger(v) && v >= 0 && v < 1000)) why.push(`${n}: ${k} ${v} is not a cell number`);
+        if (v != null && !(Number.isInteger(v) && v >= 0 && v < 1000)) why.push(`${n}: ${k} ${v} is not a frame of the take`);
       }
       if (rate != null && !(Number.isFinite(rate) && rate > 0 && rate <= 4)) why.push(`${n}: speed ${rate} is not above 0 and up to 4`);
       const out = [clip, Number.isFinite(at) ? Math.round(at * 1000) / 1000 : at, from, to, rate];
