@@ -28,7 +28,7 @@ import {
 } from '../../src/systems/payneclips.js';
 import { INTRO_GEO, INTRO_STAGE } from '../../src/systems/payneframes.js';
 import {
-  PAYNE_INTRO, PAYNE_INTRO_CODE, INTRO_CUTS, BLAST, actFrame, maskedIn, introShot, introCtx, PayneActor,
+  PAYNE_INTRO, PAYNE_INTRO_CODE, INTRO_CUTS, BLAST, actFrame, actStep, maskedIn, introShot, introCtx, PayneActor,
 } from '../../src/systems/payneintro.js';
 import { cleanActs, applyActs } from '../../src/systems/payneacts.js';
 import ACTS from '../../src/payneacts.json' with { type: 'json' };
@@ -123,6 +123,24 @@ export async function payneIntroChecks({ ok, world }) {
         if (!(cell >= 0 && cell < n && Number.isInteger(cell))) { bad.push(`${r.voice} @${t.toFixed(2)} ${clip}:${cell}`); break; }
       }
     }
+    /* SCRUBBING A LINE (the sprite editor's Shift+, / Shift+.) lands on every
+       drawing in turn, forwards and back, and skips none: the drawings a fine
+       walk sees, in order, are the ones the steps visit. */
+    const scrubBad = [];
+    for (const r of PAYNE_INTRO) {
+      const end = lenOf(r) + 0.5;
+      const k = (t) => { const f = at(r, t); return `${f.clip}:${f.cell}`; };
+      const fine = [];
+      for (let i = 0, t = 0; t <= end; t = ++i / 1000) if (fine.at(-1) !== k(t)) fine.push(k(t));
+      const on = [k(0)];
+      for (let t = 0, i = 0; i < 2000; i++) { const s = actStep(r.act, t, 1, end); if (s <= t) break; t = s; if (k(t) !== on.at(-1)) on.push(k(t)); }
+      const back = [k(end)];
+      for (let t = end, i = 0; i < 2000; i++) { const s = actStep(r.act, t, -1, end); if (s >= t) break; t = s; if (k(t) !== back.at(-1)) back.push(k(t)); }
+      if (on.join() !== fine.join() || back.reverse().join() !== fine.join()) scrubBad.push(`${r.voice}: ${fine.length} drawings, on ${on.length}, back ${back.length}`);
+    }
+    const edSrc = read('src/sprite-editor-payne.js');
+    ok('in the sprite editor, Shift+, / Shift+. scrub a line a drawing at a time, forwards and back, missing none — keyed by e.code, since Shift makes , . into < >',
+      scrubBad.length === 0 && /e\.code === 'Comma'/.test(edSrc) && /actStep\(curLine\(\)\.act/.test(edSrc), scrubBad.slice(0, 3).join(' · ') || '13 lines');
     ok('every cell any line asks for is a cell that was cut, in time order, inside the line',
       bad.length === 0, bad.slice(0, 4).join(' · ') || `${PAYNE_INTRO.reduce((s, r) => s + r.act.length, 0)} cues`);
     /* A CUE'S FRAMES ARE FRAMES OF THE TAKE. Richard, Oct 30: "I trimmed out
