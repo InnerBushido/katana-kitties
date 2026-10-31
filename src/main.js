@@ -5389,6 +5389,7 @@ class Game {
     if (code === 'HousingOpen') this._debugHousing();
     if (code === 'HousingExport') this._debugHousingExport();
     if (code === 'HousingImport') this._debugHousingImport();
+    if (code === 'DragonGrow') this._debugDragons();
     if (code === 'DreamExtra') this._debugOpenExtra();
     /* 秘 EXTRA HARD in the Sine Gauntlet, on every course, for every kitten.
        Richard: "Add a debug unlock for this Extra hard level so I can test
@@ -5700,6 +5701,35 @@ class Game {
       no: 'NO, KEEP THESE HOMES',
       yes: 'YES, PICK A FILE',
       onYes: () => this.housing?.importJson(0),
+    });
+  }
+
+  /* THE DRAGON'S LAIR runs on the real clock, so without this a hatch is a
+     fifteen-minute wait at the desk and the adult is a week. Keyless and
+     asking, like the rows round it: it changes saved pets, and one stray click
+     must not grow a girl's dragon behind her back. */
+  _debugDragons() {
+    const all = Object.values(this.housing?.lair?.dragons() ?? {});
+    const eggs = all.filter((d) => d.egg).length;
+    const born = all.filter((d) => d.born).length;
+    if (!eggs && !born) {
+      this.toast('[debug] there are no eggs or dragons yet — build a DRAGON\'S LAIR and buy an egg first', 0);
+      return;
+    }
+    // counted in words, because "GROW ALL 1" is what the first version said to one egg
+    const what = [
+      eggs && (eggs === 1 ? 'the egg is ready to HATCH' : `all ${eggs} eggs are ready to HATCH`),
+      born && `${born === 1 ? 'the dragon goes' : `all ${born} dragons go`} up a level, ready to eat and play again`,
+    ].filter(Boolean).join(', and ');
+    this.confirm.ask({
+      title: 'GROW THE DRAGONS?',
+      body: `Winds the clock on, so ${what}.`,
+      no: 'NO, LEAVE THEM BE',
+      yes: eggs + born === 1 ? `YES, GROW ${eggs ? 'THE EGG' : 'HER'}` : `YES, GROW ALL ${eggs + born}`,
+      onYes: () => {
+        this.housing.lair.debugGrow();
+        this.toast(`[debug] done — ${what}`, 0);
+      },
     });
   }
 
@@ -6694,6 +6724,7 @@ class Game {
       ${row('HousingOpen', 'open the island shop, 40,000 each, go to Roshi', !!this.housing?.debugOpen)}
       ${row('HousingExport', 'save every home to a .json file')}
       ${row('HousingImport', 'load the homes from a .json file')}
+      ${row('DragonGrow', 'dragons: every egg ready, every dragon a level up')}
       <div class="dbg-sep">THIS DEVICE — what outlives the tab</div>
       ${row('BoardWipe', `wipe the RECORD BOARD (${this._boardRows()} results)`)}
       ${row('SaveWipe', `wipe the SAVED GAMES (${listSaves().length} of ${saveCap()})`)}
@@ -13991,6 +14022,7 @@ class Game {
     this.griffin?.faceCamera(camera);
     this.arenaExit?.faceCamera(camera);
     this.housing?.farm?.faceCamera(camera);
+    this.housing?.lair?.faceCamera(camera);
     /* THE FLASH STEP'S FIGURE, and only its three readouts: everything else it
        draws is a `THREE.Sprite`, which three.js turns during each pane's own
        render and so needs nothing from here. A `Label` is a quad on a mesh and

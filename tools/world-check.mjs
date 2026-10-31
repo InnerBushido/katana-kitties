@@ -48502,6 +48502,9 @@ console.log('\n--- the beat-map grid is one stop, then its lines, then a line\'s
 {
   const { housingChecks } = await import('./checks/housing.mjs');
   await housingChecks({ ok, world });
+  /* THE DRAGON'S LAIR — its own file and its own game row, after housing. */
+  const { dragonLairChecks } = await import('./checks/dragonlair.mjs');
+  await dragonLairChecks({ ok, world });
 }
 
 /* PAYNE'S INTRODUCTION TO THE WORLD — its own file, against this World. */

@@ -44,7 +44,7 @@ export function homeKey(session) {
 export const HOME_ROWS_KEPT = 8;
 
 export function emptyStore() {
-  return { v: HOME_VERSION, at: 0, homes: {}, bank: {}, records: {}, jukebox: {}, boons: {} };
+  return { v: HOME_VERSION, at: 0, homes: {}, bank: {}, records: {}, jukebox: {}, boons: {}, dragons: {} };
 }
 
 /** A fresh home row: who owns which site, and what is in it. */
@@ -135,6 +135,15 @@ export function normalise(s) {
   out.jukebox = s.jukebox && typeof s.jukebox === 'object' ? s.jukebox : {};
   /* What each kitten earned at home for her NEXT battle (housing/boons.js). */
   out.boons = s.boons && typeof s.boons === 'object' ? s.boons : {};
+  /* Each kitten's dragon (housing/lair.js), by NAME and beside the homes
+     rather than inside one: a lair sold or moved, or a whole home sold, must
+     never take a dragon with it (non-negotiable 4). A row that is not even
+     an object is dropped; a row with a bad field is kept — lair.js reads
+     every field with a default, so "most of her" always loads. */
+  out.dragons = {};
+  for (const [k, d] of Object.entries(s.dragons && typeof s.dragons === 'object' ? s.dragons : {})) {
+    if (d && typeof d === 'object') out.dragons[k] = d;
+  }
   return out;
 }
 

@@ -2281,6 +2281,10 @@ export class Tournament {
     } else {
       this.score = 0;
     }
+    /* Every fighter's dragon watched, win, lose or draw (housing/lair.js) —
+       so outside the `if`. Everybody seated fights (`sideOf`), so everybody
+       seated is a fighter; the winners learn more. */
+    this.game.housing?.battleFought?.(this.game.players.map((p) => p?.style?.name), this.winners.map((w) => w.style?.name));
     this._paintResult();
     this.resultEl?.classList.remove('hidden');
     this.hudEl?.classList.add('hidden');

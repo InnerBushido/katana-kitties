@@ -16,6 +16,7 @@ import { holoKit, holoWhyRemove, holoTubes, HOLO_TUBE_ID, HOLO_MAX_TUBES } from 
 import { KOI_COLOURS } from './koi.js';
 import { careBuff, ANIMALS } from './farm.js';
 import { petBoost, petLevel, BOOST_NAME, PLAY } from './petplay.js';
+import { LAIR_VIEWS } from './laircards.js';
 
 /* ---------------------------------------------------------------------------
    THE HOUSING CARDS — Roshi's counter, her home, the jukebox, the pond, the
@@ -261,7 +262,9 @@ export class HousingCards {
       // a bridge's card says whether it reaches, which changes with every door, turn count and corner
       top?.v === 'build' && top.kind === 'link'
         ? JSON.stringify([top.a, top.cur, top.counting, top.turns, top.vk, top.vk != null ? top.via?.map((v) => [Math.round(v.x * 2), Math.round(v.z * 2), !!v.smooth]) : 0]) : '',
-      p?.score, this.H.store.at, this.pending ? [...this.pending.yes].join(',') : '', c.i].join('|');
+      p?.score, this.H.store.at, this.pending ? [...this.pending.yes].join(',') : '', c.i,
+      // what a view says that changes with the clock alone — the egg's countdown (laircards.js `_sig_lair`)
+      top ? this[`_sig_${top.v}`]?.(index, top) ?? '' : ''].join('|');
   }
 
   back(index) {
@@ -1226,7 +1229,8 @@ export class HousingCards {
     const back = q?.free ? 0 : this._sellBack(it?.id);
     return {
       head: 'SELL IT BACK?',
-      body: q?.id === 'pen' || q?.id === 'koipond' ? '<div class="hs-note">The animals and the koi wait for you — build it again and they come back.</div>' : '',
+      body: q?.id === 'pen' || q?.id === 'koipond' ? '<div class="hs-note">The animals and the koi wait for you — build it again and they come back.</div>'
+        : q?.id === 'dragonlair' ? '<div class="hs-note">The dragons and their eggs wait for you — build a lair again and they come back to it.</div>' : '',
       rows: [
         { title: `NO, KEEP THE ${it?.name ?? 'THING'}`, go: () => { this._pop(index); return null; } },
         {
@@ -1911,3 +1915,7 @@ export class HousingCards {
   /* KOI_COLOURS is re-exported for the Help card, which lists the rares. */
   static get KOI() { return KOI_COLOURS; }
 }
+
+/* The dragon's lair's views live in their own file and join the stack here:
+   `_view` finds `_v_lair` on the prototype like any other. */
+Object.assign(HousingCards.prototype, LAIR_VIEWS);

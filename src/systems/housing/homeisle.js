@@ -14,6 +14,7 @@ import { wallSlots, yardR, rampLift } from './editor.js';
 import { buildTreehouse, slidePath } from './treehouse.js';
 import { HOLO_GEAR_SCALE, HOLO_TUBE, ensureHoloKit, holoCell, holoOut } from './holodeck.js';
 import { GEAR_ITEMS, GEAR_SCALE, GEAR_LIFT, gearModel, TUBE_VERT, TUBE_FRAG } from '../dream/gear.js';
+import { lairBody, LAIR_SPOT } from './lair.js';
 
 /* ---------------------------------------------------------------------------
    One sky site: its island, the house on it, the yard, the doors and the
@@ -1139,6 +1140,21 @@ export class HomeIsle {
         spot('animals');
         break;
       }
+      case 'dragonlair': {
+        /* lair.js draws it and says where its rocks are; the island only
+           places them. The dragons are NOT in this group: they live in the
+           scene (lair.js `DragonLair`), so a rebuild never loses one and she
+           can fly out of the yard after her kitten. */
+        const L = lairBody(this.plantMat);
+        add(L.group);
+        for (const [x, z, rr] of L.obstacles) {
+          const o = this.local(...this._itemToHouse(q, x, z));
+          this.obstacles.push({ x: o.x, z: o.z, r: rr });
+        }
+        this.fxSites.push(L.fx);
+        spot('lair', LAIR_SPOT.r);
+        break;
+      }
       case 'treehouse': {
         /* A LEVEL, not a prop (treehouse.js). Its geometry is in its own frame
            and goes in this group; its decks, walls and trunks come back in
@@ -1980,7 +1996,7 @@ export function steppingStones(it, rnd) {
 export const CEILING_GAP = 0.3;
 
 /** Yard things the build draws itself, rather than as one model: no look. */
-export const YARD_BUILT = new Set(['koipond', 'onsen', 'volleyball', 'bamboofarm', 'pen', 'treehouse', 'bladeforest', 'tiki', 'pathlamp', 'zengarden', ...ITEMS.filter((i) => i.path).map((i) => i.id)]);
+export const YARD_BUILT = new Set(['koipond', 'onsen', 'volleyball', 'bamboofarm', 'pen', 'dragonlair', 'treehouse', 'bladeforest', 'tiki', 'pathlamp', 'zengarden', ...ITEMS.filter((i) => i.path).map((i) => i.id)]);
 
 /**
  * A room thing's look, with the box it must stay in: under the ceiling (the

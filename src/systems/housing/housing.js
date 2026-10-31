@@ -93,6 +93,7 @@ export const BED = { g: 26, over: 0.25, through: 6, clear: 1, hop: 1.6, lift: 0.
 import { HoloDeck } from './holodeck.js';
 import { Angling } from './angling.js';
 import { PetPlay } from './petplay.js';
+import { DragonLair } from './lair.js';
 
 /** Roshi's tour: turn to the next island, then fly there; and the map's
  *  zoom-out. Seconds. */
@@ -267,6 +268,8 @@ export class Housing {
     this.angling = new Angling(this);
     /** Walks, fetch, catch, hop-along and the messes in the pen (`petplay.js`). */
     this.pets = new PetPlay(this);
+    /** Each kitten's dragon: the egg, the care, the walks and tag (`lair.js`). */
+    this.lair = new DragonLair(this);
     this.built = false;
   }
 
@@ -509,6 +512,7 @@ export class Housing {
       this.angling.drop(p.index);
       this.slides.drop(p.index);
       this.pets.drop(p.index);
+      this.lair.drop(p.index);
       p.homeBoon = null;
     }
     if (this.built) this._applyStore();
@@ -538,6 +542,16 @@ export class Housing {
     this.angling.sync();
     this.farm.sync();
     this.pets.sync();
+  }
+
+  /**
+   * AN ARENA BATTLE FOUGHT, won, lost or drawn: every fighter's dragon
+   * watched it and learns (lair.js `battleFought` — more for a win). Called
+   * once per match by the tournament, beside `battleWon`, whether or not the
+   * islands are up: a dragon is a row in the store, not a thing on a yard.
+   */
+  battleFought(names, winners = []) {
+    this.lair.battleFought(names.filter(Boolean), winners.filter(Boolean));
   }
 
   /** Cups on a home's shelf: every owner's wins together. */
@@ -1038,6 +1052,7 @@ export class Housing {
     this.angling.update(dt, players);
     this.farm.update(dt);
     this.pets.update(dt, players);
+    this.lair.update(dt, players);
     this.kendo.update(dt, players);
     this.builder.update(dt, this.time);
     this.activities.update(dt, players);
@@ -2306,6 +2321,8 @@ export class Housing {
     if (rod) return rod;
     const pet = this.pets.prompt(p);
     if (pet) return pet;
+    const dragon = this.lair.prompt(p);
+    if (dragon) return dragon;
     const s = this._spotFor(p);
     if (!s) return null;
     const own = s.home && s.home.owners.includes(p.style.name);
@@ -2331,6 +2348,7 @@ export class Housing {
       clean: 'CLEAN UP THE MESS',
       harvest: 'HARVEST BAMBOO',
       animals: 'THE ANIMALS',
+      lair: "THE DRAGON'S LAIR",
       kendo: 'KENDO GEAR',
       holodeck: p.simLook ? 'INTO THE SIMULATOR' : 'HOLODECK',
       chest: 'STORAGE CHEST',
@@ -2443,6 +2461,10 @@ export class Housing {
         return true;
       case 'animals':
         C.open(p.index, 'pen', { site: s.home.site });
+        return true;
+      case 'lair':
+        G.audio?.play?.('menu');
+        C.open(p.index, 'lair', { site: s.home.site });
         return true;
       case 'kendo':
         this.kendo.toggleGear(p);

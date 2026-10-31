@@ -432,6 +432,12 @@ export const ITEMS = [
     blurb: 'Bamboo that grows back in REAL time — harvest it and sell it to Roshi.' },
   { id: 'pen', name: 'ANIMAL PEN', where: ['yard'], r: 9, mult: 2, model: null, act: 'animals',
     blurb: 'Raise animals in real time. Feed them, clean up after them, walk them and PLAY with them.' },
+  /* lair.js: drawn there (`lairBody`), the dragons are per KITTEN in the
+     store, so selling this never loses one. A placeholder until Richard's
+     Polyfork "Dragons Lair" kit is processed — docs/notes/housing.md,
+     "The Dragon's Lair". */
+  { id: 'dragonlair', name: "DRAGON'S LAIR", where: ['yard'], r: 11, mult: 3, model: null, act: 'lair',
+    blurb: 'A rocky dragon pit with lava, green mist, spirit flames and crystals. Buy an egg, hatch it, name your baby dragon and raise her!' },
   { id: 'treehouse', name: 'TREEHOUSE', where: ['yard'], r: 11, mult: 1.8, model: null,
     blurb: 'Four trees, branches and rope bridges, and a little house at the top. Climb all the way up!' },
   { id: 'shrine', name: 'LITTLE SHRINE', where: ['yard'], r: 4.5, size: { h: 8 }, mult: 1.2, model: 'tiered-pagoda-f4ade0', act: 'pray',

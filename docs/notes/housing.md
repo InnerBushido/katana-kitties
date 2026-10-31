@@ -23,6 +23,7 @@ from the town, grown in her colours when she buys.
 | `editor.js` | the tatami grid, footprints, `fits`, `autoLayout` |
 | `purchasescene.js` | the purchase cutscene |
 | `roshi.js` `jukebox.js` `farm.js` `koi.js` `fishing.js` `angling.js` `holodeck.js` `petplay.js` `kendo.js` `models.js` | the realtor, the boombox, the bamboo farm and the animals, the koi, the fish table, fishing in the world, the holodeck's racks, playing with the animals, kendo, the vendored models |
+| `lair.js` `laircards.js` | the Dragon's Lair: each kitten's dragon, from the egg up (*The Dragon's Lair*, below) |
 
 ## Decisions, with the reason
 
@@ -237,6 +238,7 @@ Each one degrades: delete the file and the game draws the stand-in.
 | **Boosts for kotodama abilities** | not done: the animals boost JUMP HEIGHT, JUMP DISTANCE and SPRINT only | Richard also floated boosting the panda or her kotodama powers; it is a `petBoost` field plus the one line that reads it |
 | **Door mats** | DONE (Oct 2026): nineteen designs on ONE generated sheet (0.25 credits for the lot), a free `path_mat` at every front door, CUSTOMIZE ▸ LOOK picks the design | the leaders or the kittens on a mat would be a second sheet — not the kids' own drawings, so ask first |
 | **Windows open onto a gap, not glass** | the opening and two sliding panels | nothing needed unless a pane of glass is wanted |
+| **The Dragon's Lair** | drawn, with four Polyfork accents; the baby dragon is the world dragon tinted; her voice is blips | see *The Dragon's Lair* below — its own table, and its next passes |
 
 ## Boons — what home is worth in the ring
 
@@ -887,6 +889,105 @@ Richard's six notes, each quoted over its constant in `kendo.js`.
 - **The purchase scene's entrance appears together.** The torii, the doors,
   the hologram and the ramp's start reveal over `GATE_REVEAL` (2.2s), then
   hold for `GATE_HOLD` (1.5s), and only then does the bridge grow.
+
+## The Dragon's Lair — Oct 2026 (`feature/dragon-lair`, NOT on alpha yet)
+
+Richard asked for a lair she builds on her island. She buys a rare egg,
+hatches it and names the baby dragon. The dragon comes into battles to train
+and grows bigger. She feeds it, plays with it and takes it on walks. Later
+come fire-dodging games, tea and the onsen together, and an adult she rides in
+the arena. The adult takes four commands (come to me on the ground, rain fire,
+come above me, and dive-bomb when ridden), may enter once every 30 minutes,
+and has Mr. Satan's lines. Its colours, voice and personality are
+customisable, and a grown dragon can polymorph into a kitten vendor in town.
+He added: "All features to be implemented later."
+
+This first pass is on its own branch, because Richard tests it separately and
+merges it into alpha once it feels polished. It has:
+- the lair as a yard thing;
+- the egg, the hatch and the name;
+- feed, tag and walk;
+- battle training;
+- the look: colour, voice and personality;
+- growing up.
+
+| file | what it owns |
+| --- | --- |
+| `lair.js` | `LAIR` (every number that sets the pace), the pure rules, the drawn lair (`lairBody`), and `DragonLair` (`housing.lair`): the dragons in the world, the egg, the care, walks and tag |
+| `laircards.js` | the lair's views, mixed into `HousingCards` |
+| `tools/checks/dragonlair.mjs` | its checks, after the housing ones, on their own game row |
+
+- **A dragon belongs to a KITTEN, not to a lair.** Each dragon is a row in
+  `store.dragons[name]`, beside the boons. Selling the lair, moving it or
+  selling the whole home never loses one (non-negotiable 4). With no lair
+  she is *away*: she is not drawn, and the next lair her kitten builds finds
+  her in it. The sell-back question says so. Each kitten has one dragon,
+  which is one of the questions for Richard.
+- **The real clock, like the farm.** The egg is a timestamp:
+  - it hatches 15 minutes after it is laid;
+  - WARM THE EGG takes a minute off, once per 30 seconds;
+  - one egg in eight hatches SHINY GOLD.
+
+  The XP:
+  - a meal is +40, once an hour, and she is HUNGRY after 12 hours;
+  - TAG is +50, once per 10 minutes, for 5 touches inside 60 seconds;
+  - a walk is +4 per 10 units, up to 60;
+  - every battle is +40, and a win is +40 more.
+
+  She grows up at level 10 (1,900 XP), which is about a week of check-ins.
+  All of it is in `LAIR`.
+- **Neglect is HUNGRY, never death.** A hungry dragon sits still by her
+  pocket and learns nothing from play or battle until she is fed. The toast
+  says so when it happens, not after. No XP is ever taken away.
+- **She grows up on her kitten's YES.** Reaching level 10 only *offers* it.
+  The question opens on NO, because growing up cannot be undone. A grown
+  dragon is too big for tag ("she would squash you!"). She still goes on
+  walks, further back and higher.
+- **No combat** (non-negotiable 3). In a live match she hovers at her
+  kitten's shoulder and learns from it. `battleFought` is called once per
+  match and OUTSIDE the win branch, so a draw still teaches. Nothing in
+  `lair.js` calls `hurt`, and `world-check` pins it.
+- **The card's rows never move with the clock** (UI FALL-THROUGH,
+  gotchas.md). HATCH sits above WARM from the moment the egg is laid and is
+  greyed until the egg is ready. STOP PLAYING is last. `sig` gained a
+  per-view hook, `_sig_<view>`, so the egg's countdown repaints every second.
+- **She redraws herself.** `DragonLair` watches each island's `places` map
+  and the store by identity, instead of needing a `sync()` beside every
+  rebuild (the pen needs six call sites). A resync never moves a dragon
+  already drawn, so a rebuild mid-walk is not a teleport.
+- **Her size is a HEIGHT, measured off the sheet.** The dragon sheet's
+  drawing fills half its cell's height and is 1.75 times wider than it is
+  tall, so `STAGES` gives her height and her wings are `1.75 h` across. She is
+  1.2 tall when she hatches (a kitten is 2.9) and 7 when grown (the grown
+  panda is 5.6). The first pass called the number a width and hatched a baby
+  as tall as her kitten. As she grows, her spot moves in toward the middle so
+  her wings stay inside the rock (`roomFor`). `world-check` measures the sheet
+  and pins both.
+- **The pit is open to the sky.** A roof would hide the dragons. The rock
+  uses the island's x-ray plant material, because the back spires are taller
+  than a house. The boulders' colliders overlap, so the mouth is the only way
+  in, and `world-check` walks every other bearing to prove it.
+- **The debug panel has a row for it:** *dragons: every egg ready, every
+  dragon a level up*. It asks first, because it writes into the homes. Use it
+  together with *open the island shop*.
+
+**Placeholders, and what each one becomes:**
+
+| what | the stand-in | to finish it |
+| --- | --- | --- |
+| **The lair** | drawn (`lairBody`): the ring of boulders, the spires, the four pockets and the nest, plus four vendored Polyfork accents (`lava-rock-pile-d56d19`, `mushroom-cluster-18dc1d`, `obsidian-shard-cluster-c8f5d3`, `crystal-cluster-624138`) | Richard's 60-part "Dragons Lair" kit is queued at the Polyfork factory. Give its pieces model ids through `placeModel`, and the drawing becomes the stand-in |
+| **The baby dragon** | the world dragon's `dragon_sheet.png`, tinted, at one height per stage and level | a baby sheet (hatchling, youngling, juvenile), generated on magenta, about 0.25 credits each |
+| **Her voice** | synthesised blips at three pitches (`audio.voice`) | recorded chirps and roars (ElevenLabs sound effects) |
+| **Her name** | six ideas and SHOW ME OTHER NAMES | typing one (four kittens, one keyboard) |
+
+**Each next pass is already a row on the card that says it is coming.** In
+the order Richard listed them:
+- the adult in the arena: riding her, the four commands, once every 30
+  minutes, and Mr. Satan's lines;
+- dodging her fire, which needs the DRAGON BREATH oath;
+- tea and the onsen with her;
+- the polymorph into a kitten vendor who sells rare items and eggs;
+- lair music.
 
 ## Known rough edges
 

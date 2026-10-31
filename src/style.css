@@ -6689,6 +6689,14 @@ body.touch-ui .ke-foot .menu-btn, body.touch-ui .ke-row .menu-btn { font-size: 1
 .hs-note { margin: 0.3em 0 0.5em; line-height: 1.3; }
 .hs-perks { display: flex; flex-wrap: wrap; gap: 0.3em; margin: 0.2em 0 0.5em; }
 .hs-perks span { background: rgba(255, 255, 255, 0.12); border-radius: 0.6em; padding: 0.1em 0.55em; font-size: 0.85em; }
+/* THE DRAGON'S LAIR (systems/housing/laircards.js): her colour as a dot, and
+   her XP to the next level as a bar on its own line. Sized in em, so a phone's
+   smaller card text shrinks it with the words. */
+.hs-swatch { display: inline-block; width: 0.9em; height: 0.9em; border-radius: 50%; vertical-align: -0.1em; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.5); }
+.hs-xp { display: block; height: 0.45em; margin: 0.3em 0 0.25em; border-radius: 0.3em; background: rgba(255, 255, 255, 0.14); overflow: hidden; }
+.hs-xp i { display: block; height: 100%; background: linear-gradient(90deg, #ffb14a, #ffe27a); border-radius: inherit; }
+/* A landscape phone is SHORT: the lair's status note gives up a line's worth before the rows do. */
+body.touch-ui .hs-lair { font-size: 0.85em; line-height: 1.2; }
 .hs-card canvas.hs-grid,
 .hs-pad { display: flex; gap: 0.4em; justify-content: center; margin: 0.3em 0; }
 .hs-pad button {
