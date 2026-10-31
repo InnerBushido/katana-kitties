@@ -95,15 +95,15 @@ export const INTRO_GEO = {
     "src": "shrug/84/120/3"
   },
   "mask": {
-    "n": 41,
+    "n": 39,
     "cols": 4,
     "perPage": 20,
-    "pages": 3,
+    "pages": 2,
     "x0": -0.3691,
     "x1": 0.3351,
     "y0": -0.0064,
     "y1": 1.0149,
-    "src": "mask/0/120/3"
+    "src": "mask/6/120/3"
   },
   "tadaa": {
     "n": 9,
@@ -214,6 +214,17 @@ export const INTRO_GEO = {
     "y0": -0.0064,
     "y1": 1.0149,
     "src": "talk/204/240/3"
+  },
+  "hahaToKidding": {
+    "n": 2,
+    "cols": 2,
+    "perPage": 10,
+    "pages": 1,
+    "x0": -0.2891,
+    "x1": 0.2578,
+    "y0": -0.0104,
+    "y1": 0.9896,
+    "src": "halt/79/84/3"
   }
 };
 
