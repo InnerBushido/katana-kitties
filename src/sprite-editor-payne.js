@@ -41,7 +41,7 @@
  */
 import { INTRO_CLIPS, INTRO_TAKES, INTRO_FPS, clipFrames, clipRun, pagePath, blitCell } from './systems/payneclips.js';
 import { INTRO_GEO, INTRO_STAGE } from './systems/payneframes.js';
-import { PAYNE_INTRO, PAYNE_INTRO_CODE, INTRO_CUTS, actFrame } from './systems/payneintro.js';
+import { PAYNE_INTRO, PAYNE_INTRO_CODE, INTRO_CUTS, actFrame, actStep } from './systems/payneintro.js';
 import { voicePath } from './core/audio.js';
 
 const $ = (id) => document.getElementById(id);
@@ -697,7 +697,17 @@ function onKey(e) {
   if (e.key === 'Delete' && lineNo() && selCue >= 0) { delCue(selCue); return; }
   const n = takeLen(draft[sel].take);
   if (e.key === ' ') { e.preventDefault(); togglePlay(); }
-  else if (e.key === ',' || e.key === '.') head = Math.max(0, Math.min(n - 1, head + (e.key === '.' ? 1 : -1) * (e.shiftKey ? draft[sel].step : 1)));
+  /* Shift turns , and . into < and > on a US keyboard, so the Shift step,
+     which tested e.key for , and . only, never fired at all. The physical key
+     (e.code) first, and the four characters for an event that carries none. */
+  else if (e.code === 'Comma' || e.code === 'Period' || ',.<>'.includes(e.key || '_')) {
+    const dir = e.code === 'Period' || e.key === '.' || e.key === '>' ? 1 : -1;
+    // previewing a line, Shift scrubs THE LINE a drawing at a time (actStep); on a clip, a cell of the take
+    if (e.shiftKey && lineNo()) {
+      if (play.on) togglePlay();
+      seek(actStep(curLine().act, play.t, dir, lineLen(lineNo())));
+    } else head = Math.max(0, Math.min(n - 1, head + dir * (e.shiftKey ? draft[sel].step : 1)));
+  }
   else if (e.key === '[') $('pn-set-from').click();
   else if (e.key === ']') $('pn-set-to').click();
 }

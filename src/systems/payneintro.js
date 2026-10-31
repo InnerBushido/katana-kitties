@@ -186,6 +186,43 @@ export function actFrame(act, t) {
   return { clip, cell, entry: j, held };
 }
 
+/**
+ * Where the picture next changes from `t`, going `dir` (+1 or -1) along a
+ * line's `act` that is `end` seconds long: forwards, the first moment of the
+ * next drawing; backwards, the first moment of the one before. The sprite
+ * editor's Shift+, / Shift+. — Richard: "we can scrub back/forth with the ,
+ * and . keys. Is there a way to scrub the line animation like that?" A fixed
+ * step would land between drawings, since a cell is 1/8s at speed 1 and less
+ * on a sped-up cue, and a held frame can last seconds.
+ */
+export function actStep(act, t, dir, end) {
+  /* Scanned at 2ms, then halved down onto the change itself. Scanning alone
+     landed up to a step late, the lateness carried into the next press, and
+     a cue 10ms after the last one (line 3's wagTalk) was walked straight past. */
+  const dt = 0.002;
+  const key = (s) => { const f = actFrame(act, s); return `${f.clip}:${f.cell}`; };
+  // the first moment of the drawing that `hi` is in, `lo` being in another
+  const onto = (lo, hi) => {
+    const k = key(hi);
+    for (let i = 0; i < 24; i++) { const m = (lo + hi) / 2; if (key(m) === k) hi = m; else lo = m; }
+    return hi;
+  };
+  let s = Math.max(0, Math.min(end, t));
+  if (dir > 0) {
+    const k = key(s);
+    while (s < end && key(s) === k) s += dt;
+    if (s >= end && key(Math.min(s, end)) === k) return end;
+    return onto(s - dt, Math.min(s, end));
+  }
+  // back out of this drawing, then to the start of the one before it
+  const k = key(s);
+  while (s > 0 && key(s) === k) s -= dt;
+  if (s <= 0) return 0;
+  const k2 = key(s);
+  while (s > 0 && key(s - dt) === k2) s -= dt;
+  return s <= 0 ? 0 : onto(s - dt, s);
+}
+
 /** Is she masked in this cell? */
 export const maskedIn = (clip, cell) => MASKED.has(clip)
   || (clip === 'mask' && !!INTRO_CLIPS.mask && INTRO_CLIPS.mask.from + cell * INTRO_CLIPS.mask.step >= MASK_ON);

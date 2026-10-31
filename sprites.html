@@ -198,13 +198,13 @@ kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-
     <div class="row"><button id="pn-play">▶ play</button><label class="inl">speed</label><select id="pn-rate"><option>0.25</option><option>0.5</option><option selected>1</option></select><label class="inl"><input id="pn-loop" type="checkbox" checked> loop</label></div>
     <section id="pn-line" hidden>
       <h2>Line <span id="pn-line-n"></span> <span id="pn-line-src" class="tiny"></span></h2>
-      <div class="tiny">Each cue starts a clip, which plays once and holds until the next. On the track under her: drag a cue's edge (<kbd>Shift</kbd> snaps to a word), click to move the playhead. Click a cue here to show its clip above; <kbd>Delete</kbd> takes the selected one out.</div>
+      <div class="tiny">Each cue starts a clip, which plays once and holds until the next. On the track under her: drag a cue's edge (<kbd>Shift</kbd> snaps to a word), click to move the playhead. <kbd>Shift</kbd>+<kbd>,</kbd> <kbd>Shift</kbd>+<kbd>.</kbd> step the line back / on a drawing at a time. Click a cue here to show its clip above; <kbd>Delete</kbd> takes the selected one out.</div>
       <div id="pn-cues"></div>
       <div class="row"><button id="pn-cue-add" title="A cue of the clip picked above, at the preview's playhead">＋ at the playhead</button></div>
       <div class="row"><label>hold</label><input id="pn-hold" type="number" min="0" max="10" step="0.05" title="Extra seconds the line stays up after its voice and the half second every line gets"><span class="tiny">s past the voice, so a clip can finish</span></div>
       <div class="row"><button id="pn-line-revert" title="This line as it was last saved">revert line</button><button id="pn-line-code" title="The cues payneintro.js writes for this line; saving takes it out of src/payneacts.json">back to the code's cues</button></div>
     </section>
-    <div class="tiny">Left: the take at the playhead. Right: what plays, drawn the game's way — off the cut pages, or off the take (in orange) until it is cut. Strip: click a frame; <kbd>Shift</kbd>-click sets <b>from</b>, <kbd>Ctrl</kbd>-click sets <b>to</b>. Keys: <kbd>,</kbd> <kbd>.</kbd> a frame (<kbd>Shift</kbd>: a step), <kbd>[</kbd> <kbd>]</kbd> from / to, <kbd>Space</kbd> play.</div>
+    <div class="tiny">Left: the take at the playhead. Right: what plays, drawn the game's way — off the cut pages, or off the take (in orange) until it is cut. Strip: click a frame; <kbd>Shift</kbd>-click sets <b>from</b>, <kbd>Ctrl</kbd>-click sets <b>to</b>. Keys: <kbd>,</kbd> <kbd>.</kbd> a frame of the take (<kbd>Shift</kbd>: a cell, the clip's every-N frames; while a line is previewed, the line a drawing at a time), <kbd>[</kbd> <kbd>]</kbd> from / to, <kbd>Space</kbd> play.</div>
     <button class="save" id="pn-save" disabled>Nothing to save</button>
     <div class="row"><button id="pn-cut" disabled>✂ Every clip is cut</button></div>
     <div id="pn-status" class="tiny"></div>
