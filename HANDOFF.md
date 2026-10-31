@@ -1058,6 +1058,9 @@ script.
   kittens only in a live round, through the one gate.
 - **Open:** nobody has played it. The stuck timings are first guesses. The
   alternative held pose is kept outside the repo.
+- **Her introduction's animation: lines 1-4 are signed off** (Oct 31), lines
+  5-13 to do. Richard edits cues in the sprite editor's Payne tab and leaves
+  notes on recordings in `/review.html`; payne.md has the state.
 - **Richard's first fixes** (branch `mixed/payne-fixes-arena-camera`):
   - She is 6.0 tall, so her helmet (1.47) is wider than a kitten's head (1.42).
   - Her bubble sits beside her head and hides at talking range.

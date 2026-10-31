@@ -1,3 +1,5 @@
 {
-  "payne_intro_1": { "hold": 0, "act": [["halt",0],["haha",0.94],["hahaToKidding",1.96],["kidding",2.11,null,null,1.7],["beckon",4.94]] }
+  "payne_intro_1": { "hold": 0, "act": [["halt",0],["haha",0.94],["hahaToKidding",1.96],["kidding",2.11,null,null,1.7],["beckon",4.94]] },
+  "payne_intro_3": { "hold": 0, "act": [["tadaa",0],["thumb",1],["wagTalk",2.76],["wave",3.65],["tadaa",5.45]] },
+  "payne_intro_4": { "hold": 0, "act": [["pointPose",-0.3],["restHeld",1.31],["talkStillStart",7.8],["talk",8.8],["talkMouthClosed",10.39],["talkRepeat",10.85,55,49],["talkRepeat",11.31,55,49],["talkRepeat",11.68,55,49],["talkMouthClosed",12.28]] }
 }
