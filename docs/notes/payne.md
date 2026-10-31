@@ -481,6 +481,14 @@ much monotony. Somebody has to go out there and shake things up!").
   introduction*. With no sheets and no voice it still plays: a missing page
   draws her `town`/`held` still, and a missing clip becomes a reading time.
 
+**Lines 1-4 are signed off** (Richard, Oct 31: "marked as Lines 1 - 4
+animations are complete"). Lines 1, 3 and 4 play his own cues from the sprite
+editor (src/payneacts.json), with his own clips (`hahaToKidding`, `talkRepeat`,
+`talkStillStart`, `talkMouthClosed`, and `pointPose`/`talk` trimmed); line 2 is
+the code's cues, the unmask moved onto the camera cut at "right?" by his last
+note on the second recording. Leave all four, and the clips they use, alone
+unless he leaves a note on them. Lines 5-13 are still to do.
+
 **Nothing here waits on Payne.** The thirteen lines and the unmasked moving
 footage were first held for her sign-off; since 2026-10-28 new work with her in
 it no longer is (see the top of this file).

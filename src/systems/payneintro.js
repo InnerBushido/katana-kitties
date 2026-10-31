@@ -67,6 +67,11 @@ import ACTS from '../payneacts.json' with { type: 'json' };
  * RICHARD'S FIRST REVIEW, Oct 2026 (docs/reviews/payne-intro/): lines 1-4 are
  * re-cued off his notes on the recording, which are quoted beside them.
  *
+ * LINES 1-4 ARE SIGNED OFF (Richard, Oct 31: "marked as Lines 1 - 4
+ * animations are complete"). What plays for 1, 3 and 4 is his own, saved from
+ * the sprite editor into src/payneacts.json; line 2 is the code's cues below.
+ * Change none of the four, nor the clips they use, except on a note of his.
+ *
  * THESE ARE THE DEFAULTS. Richard edits a line's cues in the sprite editor's
  * PAYNE tab, and a line he has changed is played from src/payneacts.json
  * instead (payneacts.js says why it is overrides only). The comments here
@@ -88,21 +93,24 @@ export const PAYNE_INTRO_CODE = [
       ['kidding', 2.11 /* kidding */, null, null, 1.7], ['restMasked', 4.75 /* halts */], ['beckon', 4.94 /* Come */]]),
   /* The face comes off AFTER "Fine." — "This is where we should start the
      face reveal, after she says fine. This is about 1.4s later" — so the
-     unmask starts 1.36s later than it did (0.25 -> 1.61), and the faceplate
-     clears (frame 63, the first under MASK_ON: 19 cells back from 120 at
-     1.33x = 1.79s) at
-     3.40, after the word (2.85-3.19). His two notes put the old reveal at
-     +1.90 and the new one at +3.35. "Let's
+     unmask starts 1.36s later than it did (0.25 -> 1.61). Then, Oct 31,
+     "Have mask animation play here (or a bit later) to time the animation
+     with the camera change": the cut to her close-up is at 1.72, on
+     "right?", so the unmask starts ON the cut (1.61 -> 1.72) rather than a
+     tenth of a second before it. The faceplate clears (frame 63, the first
+     under MASK_ON: 19 cells back from 120 at 1.33x = 1.79s) at 3.51, after
+     the word (2.85-3.19). His first two notes put the old reveal at +1.90 and
+     the new one at +3.35. "Let's
      remove this 2nd Fine sentence": the recording is the same take cut at
      3.40, in the silence after the first, so it is still her one read. The
-     unmask runs to 5.18 (Richard trimmed the clip's first six frames, Oct 30;
-     it was 5.37), so the line HOLDS until it is done and "Ta-daa!"
+     unmask runs to 5.29 (Richard trimmed the clip's first six frames, Oct 30),
+     so the line HOLDS until it is done and "Ta-daa!"
      starts on the end of it: "We will likely want to delay the next tadaa
      part to start about that much later as well". `120, 0` are FRAMES OF THE
      TAKE (clipRun): all of it, backwards, and the clip's own trim holds the 0
      to its first frame. */
   P(2, "You can't trust a face you can't see, right? Fine.",
-    [['restMasked', 0], ['mask', 1.61 /* right? — the hands go up */, 120, 0, 1.33]], { hold: 1.6 }),
+    [['restMasked', 0], ['mask', 1.72 /* right? — the hands go up, on the cut to her close-up */, 120, 0, 1.33]], { hold: 1.6 }),
   /* "Let's hard transition to a talking animation here like payne_wag has at
      the first 2 seconds" (`wagTalk`); the wave moved 0.15 earlier so its
      mouth starts ON "Hello!" (it opened 0.75s in); and after it, "start the

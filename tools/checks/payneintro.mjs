@@ -220,8 +220,11 @@ export async function payneIntroChecks({ ok, world }) {
     ok('...on line 2: the face comes off AFTER "Fine.", the second "Fine!" is gone, and the line holds until the unmask is done',
       /* "Fine." SOUNDS from 2.85 to 3.19 (silence-measured when the second
          one was cut); whisper ends the last word of a line at 2.88, which is
-         no use. So: after its sound, and inside the line's own 3.40s. */
-      off > 3.19 && off <= WORDS.payne_intro_2.dur + 0.05 && fine[1] < 3.19 && !/Fine!/.test(L[1].text) && WORDS.payne_intro_2.words.length === 10
+         no use. So: after its sound, and before the line (voice and hold)
+         is over. It was "inside the voice's 3.40s", a bound of this check's
+         own and not his; his Oct 31 note put the unmask on the camera cut at
+         1.72, and the faceplate then clears at 3.51. */
+      off > 3.19 && off < lenOf(L[1]) && Math.abs(L[1].act.find(([c]) => c === 'mask')[1] - INTRO_CUTS.l2.cuts[1][1]) < 0.05 && fine[1] < 3.19 && !/Fine!/.test(L[1].text) && WORDS.payne_intro_2.words.length === 10
       // ...done inside the line, which StoryScene holds half a second past `lenOf`
       && at(L[1], lenOf(L[1]) + 0.49).cell === 0 && at(L[1], lenOf(L[1]) + 0.49).held > 0,
       `off at ${off?.toFixed(2)}, "Fine." ${fine[1]}-${fine[2]}`);
@@ -232,9 +235,13 @@ export async function payneIntroChecks({ ok, world }) {
       && C('wagTalk').take === 'wag' && C('wagTalk').from === 0
       && Math.abs(w[1] + 0.75 - word(3, /^Hello/i)) < 0.06 && L[2].act.at(-1)[0] === L[3].act[0][0],
       `wave mouth at ${(w[1] + 0.75).toFixed(2)}, "Hello!" ${word(3, /^Hello/i)}`);
-    // the point starts at the take's 1s mark, and line 4 picks it up where line 3 left it
-    ok('...and "Look up." is the point take from its 1s mark, carried across the line break, not restarted',
-      C('pointPose').take === 'point' && C('pointPose').from === 24 && L[3].act[0][1] < 0);
+    // the point, and line 4 picks it up where line 3 left it
+    /* It was "from its 1s mark" (frame 24) to the end of the take. Richard
+       then trimmed pointPose himself in the sprite editor (Oct 31: frames
+       42-81) and signed lines 1-4 off, so the frames are his and not pinned
+       here; the point take, carried across the line break, still is. */
+    ok('...and "Look up." is the point take, carried across the line break, not restarted',
+      C('pointPose').take === 'point' && L[3].act[0][1] < 0, `pointPose ${C('pointPose').from}-${C('pointPose').to}`);
     /* "dont do a fade between them, just do a hard cut": the actor keeps no
        previous frame to fade, and draws one image per change of cell. */
     const src = read('src/systems/payneintro.js');
@@ -450,7 +457,8 @@ export async function payneIntroChecks({ ok, world }) {
     }
     ok('...and on "Look up." the lens is low and far enough that her pointing hand is in frame',
       INTRO_CUTS.l4.cuts[0][0] === 'herLow' && INTRO_CLIPS[PAYNE_INTRO[3].act[0][0]].take === 'point'
-      && INTRO_CLIPS[PAYNE_INTRO[3].act[0][0]].to === 120 && top.every((y) => y < 0.97),
+      // MEASURED, not "held to frame 120": Richard trimmed pointPose to end at 81 (Oct 31), and the top of what is drawn is what matters
+      && top.every((y) => y < 0.97),
       top.map((y) => y.toFixed(2)).join(' '));
     /* OVER THE SHOULDER means the kitten is between the lens and her: the
        lens is on the kitten's side of Payne. */
