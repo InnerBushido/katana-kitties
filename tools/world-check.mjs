@@ -35121,6 +35121,46 @@ console.log('\n--- the arena doors, the carpet and the way back out ---');
     ['ember', 'frost', 'storm', 'blossom'].every((n) => PN.PAYNE_LINES[`payne_hey_${n}`] && PN.PAYNE_LINES[`payne_oi_${n}`]));
   ok('every step of every quest has a hint line',
     Object.values(PN.STEP_LINE).every((id) => PN.PAYNE_LINES[id]));
+
+  /* GOBLYN, NOT GOBLIN. Payne told Richard that is how it is spelled, and the
+     game took her word for it (Oct 2026): her lines and subtitles, her card,
+     the menu rows, the Help, and the ability's name. The VOICES were not
+     re-recorded — she still says it the way she says it — and so
+     src/voicewords.json is not asked about: it is faster-whisper's transcript
+     of the recording (it has her name as "Pain."), the next voice-words.py run
+     would write "Goblin." straight back, and the review page shows the LINE's
+     text over its timings, never whisper's words.
+     The source is read as well as the tables, because a new toast or a new
+     card is a string literal nobody would think to add to a list. Comments
+     are blanked first and identifiers are not strings, so `goblinSweep` and
+     sweepfx's `GOBLIN` colour are not what this is about. */
+  {
+    const { PAYNE_INTRO: PI } = await import('../src/systems/payneintro.js');
+    const said = [...Object.values(PN.PAYNE_LINES), PN.PAYNE_WHO.sub, ...PI.map((r) => r.text)];
+    ok('Payne spells it GOBLYN: every line she says, the subtitles of her intro, and her card',
+      said.length > 60 && said.every((s) => !/goblin/i.test(s)) && /Goblyn/.test(PI[2].text) && PN.PAYNE_WHO.sub === 'Goblyn',
+      said.filter((s) => /goblin/i.test(s)).slice(0, 2).join(' | ') || `${said.length} strings`);
+    const root = new URL('../', import.meta.url);
+    const tree = (dir) => readdirSync(new URL(dir, root), { withFileTypes: true })
+      .flatMap((e) => (e.isDirectory() ? tree(dir + e.name + '/') : [dir + e.name]));
+    const hits = [];
+    let scanned = 0;
+    for (const f of tree('src/').filter((f) => /\.(js|css)$/.test(f))) {
+      scanned++;
+      const code = stripComments(readFileSync(new URL(f, root), 'utf8'));
+      for (const m of code.matchAll(/(['"`])((?:(?!\1)[^\\]|\\.)*?)\1/g)) if (/goblin/i.test(m[2])) hits.push(`${f}: ${m[2].trim().slice(0, 50)}`);
+    }
+    // a page is ALL shown text once its comments are gone: an alt, a heading, a Help topic
+    const pages = readdirSync(root).filter((f) => f.endsWith('.html'))
+      .concat(tree('public/').filter((f) => /\.(html|json|txt|vtt|srt|webmanifest)$/.test(f)));
+    for (const f of pages) {
+      scanned++;
+      const t = stripComments(readFileSync(new URL(f, root), 'utf8').replace(/<!--[\s\S]*?-->/g, ' '));
+      for (const m of t.matchAll(/[^\n]{0,30}goblin[^\n]{0,20}/gi)) hits.push(`${f}: ${m[0].trim()}`);
+    }
+    ok('...and nothing else in the game says "goblin" on screen either: no string in src/, no page, nothing in public/',
+      hits.length === 0 && scanned > 100, hits.slice(0, 3).join(' · ') || `${scanned} files`);
+  }
   ok('...and the audio router sends her to her own folder',
     /\[\/\^payne_\/, 'payne'\]/.test(readFileSync(new URL('../src/core/audio.js', import.meta.url), 'utf8')));
   ok('"more than 2 minutes", twice: stuck and the baby panda',
@@ -35652,7 +35692,7 @@ console.log('\n--- the arena doors, the carpet and the way back out ---');
      slash as if they didn't have the ability." It used to blip and say
      "back in Ns" — a press that threw nothing, mid-fight. */
   ok('a second one inside the wait is an ordinary slash, not a spin',
-    a.sweepSeq === 1 && a.sweepT === 0 && a.attackTimer > 0 && !toasts.some((t) => /Goblin Sweep/.test(t)),
+    a.sweepSeq === 1 && a.sweepT === 0 && a.attackTimer > 0 && !toasts.some((t) => /Gobl[iy]n Sweep/.test(t)),
     `${a.sweepSeq} ${a.attackTimer.toFixed(2)} ${toasts.join(' | ')}`);
   for (let i = 0; i < 10; i++) { a.attackCooldown = 0; a.update(1 / 60, SWEEP, bare, [], hudK); }
   ok('...and mashing it is ten slashes and no message at all',

@@ -820,7 +820,7 @@ export class StoryScene {
     const lion = row.who === 'lion';
     const colour = lion ? '#ff4b4b' : '#7fd35a';
     if (this.nameEl) {
-      this.nameEl.textContent = lion ? 'LIONHEART  ·  the Dream Dojo' : 'PAYNE  ·  the goblin';
+      this.nameEl.textContent = lion ? 'LIONHEART  ·  the Dream Dojo' : 'PAYNE  ·  the goblyn';
       this.nameEl.style.color = colour;
     }
     this.boxEl?.style.setProperty('--cs-accent', colour);

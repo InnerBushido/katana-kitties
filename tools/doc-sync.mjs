@@ -156,7 +156,7 @@ const NUMBERS = () => [
   ['*tri / dive / charge*', TUNE, 'the three power-orb moves',
     'entries in the same table, so they cannot leak out of the ring'],
   ['*sweep*', TUNE, hit(attack('sweep')),
-    "Payne's Goblin Sweep: sprint held, stick still, attack. A full circle"],
+    "Payne's Goblyn Sweep: sprint held, stick still, attack. A full circle"],
   ['*riposte*', TUNE, hit(attack('riposte')),
     "返 Riposte's answer: a parry that catches a blow from in front throws this back at once"],
 ];

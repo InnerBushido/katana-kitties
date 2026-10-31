@@ -227,7 +227,7 @@ const GROUPS = {
         + 'catches, aimed straight at whoever she caught. A little longer than a '
         + 'standing slash, so every ordinary blow comes from inside it; a longer '
         + 'blade than this (Riverclaw and Long Cuts) is parried but not answered.',
-      sweep: 'PAYNE’S GOBLIN SWEEP — a full circle round her (Arc -1), taught '
+      sweep: 'PAYNE’S GOBLYN SWEEP — a full circle round her (Arc -1), taught '
         + 'after her quests and three arena rounds. Short and weak on purpose: '
         + 'it is the answer to being surrounded, not a better slash. No reach buff '
         + 'grows it, and it only finds kittens with their feet on the ground — '

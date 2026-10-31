@@ -108,7 +108,7 @@ export const PAYNE_INTRO_CODE = [
      mouth starts ON "Hello!" (it opened 0.75s in); and after it, "start the
      PointUp animation here, but using payne_point and starting at about the
      1s mark so that she strikes a pose" (`pointPose`), which line 4 carries. */
-  P(3, 'Ta-daa! Payne. Goblin. Professional helper. Hello!',
+  P(3, 'Ta-daa! Payne. Goblyn. Professional helper. Hello!',
     [['tadaa', 0], ['thumb', 1.0 /* Payne. — once the ta-daa has landed */], ['wagTalk', 2.76 /* Professional */],
       ['wave', 3.65 /* Hello! */], ['pointPose', 5.45 /* Hello! — after it */]]),
   P(4, 'Look up. These islands used to be ONE world. Then it got too tidy. Too still. And everything fell asleep — even the magic.',
@@ -436,7 +436,7 @@ function near(T, c, { dist, to, up, lookY, swing = 0.3, side = 0, from = null },
 export const INTRO_CUTS = {
   l1: { len: 7.79, cuts: [['two', 0], ['ots', 3.06 /* Nobody */]] },
   l2: { len: 3.4, cuts: [['ots', 0], ['herClose', 1.72 /* right? */]] },
-  l3: { len: 5.2, cuts: [['herClose', 0], ['twoOther', 1.48 /* Goblin. */], ['ots', 3.88 /* Hello! */]] },
+  l3: { len: 5.2, cuts: [['herClose', 0], ['twoOther', 1.48 /* Goblyn. */], ['ots', 3.88 /* Hello! */]] },
   l4: { len: 12.27, cuts: [['herLow', 0], ['archi', 1.15 /* These islands */], ['tidy', 4.46 /* Then it got */], ['her', 8.0 /* And everything */]] },
   l5: { len: 10.08, cuts: [['barrel', 0], ['crate', 0.92 /* every lantern */], ['bamboo', 2.06 /* every cane */], ['her', 3.96 /* is holding */], ['heap', 6.93 /* Knock */], ['herClose', 8.14 /* pop */]] },
   l6: { len: 10.37, cuts: [['herClose', 0], ['shrine', 2.65 /* Word-spirits */], ['two', 4.41 /* Catch them */], ['kit', 6.69 /* Run faster */]] },

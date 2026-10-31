@@ -291,7 +291,7 @@ something in the way.
 
 ## Ask Payne
 
-There's a goblin in the market with a robot helmet on her head. That's
+There's a goblyn in the market with a robot helmet on her head. That's
 **Payne**, and she's the best quest-giver in the whole sky (she says so). Walk
 up and press **interact**. She'll tell you your next quest, show you which ones
 you've done, and let you race your sisters for most mischief, most dragon balls
@@ -299,10 +299,10 @@ and most orbs.
 
 Turn **hints on** and she'll keep an eye on you. If you're stuck for two
 minutes, she pops up on your screen, calls you by name and marks where to go on
-your map. She'll also laugh at you a bit. That's goblins.
+your map. She'll also laugh at you a bit. That's goblyns.
 
 Finish her quests, win some fights in the arena, and she'll teach you a
-**secret goblin move**. Ask her what it is.
+**secret goblyn move**. Ask her what it is.
 
 ## The Dream Dojo
 
